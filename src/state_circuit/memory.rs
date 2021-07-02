@@ -5,7 +5,7 @@ use halo2::{
     poly::Rotation,
 };
 
-use pasta_curves::arithmetic::FieldExt;
+use pasta_curves::{arithmetic::FieldExt, pallas};
 use std::marker::PhantomData;
 
 /*
@@ -110,6 +110,8 @@ pub(crate) struct BusMapping<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub(crate) struct Config<F: FieldExt, const NUM_STEPS: usize> {
     q_memory: Selector,
+    q_memory_init: Selector,
+    q_same_value: Selector,
     address: Column<Advice>,
     step: Column<Advice>,
     value: Column<Advice>,
@@ -121,6 +123,8 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_memory = meta.selector();
+        let q_memory_init = meta.selector();
+        let q_same_value = meta.selector();
         let address = meta.advice_column();
         let step = meta.advice_column();
         let value = meta.advice_column();
@@ -129,21 +133,33 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         // Constraints for each step. These are activated when q_memory is nonzero.
         meta.create_gate("Memory operation", |meta| {
             let q_memory = meta.query_selector(q_memory);
+            let q_memory_init = meta.query_selector(q_memory_init);
+            let q_same_value = meta.query_selector(q_same_value);
 
             // If address_cur != address_prev, this is an `init`. We must constrain:
             //      - values[0] == [0]
             //      - flags[0] == 1
             //      - steps[0] == 0
 
+            let value_expr = meta.query_advice(value, Rotation::cur());
+            let flag = meta.query_advice(flag, Rotation::cur());
+            let step = meta.query_advice(step, Rotation::cur());
+
+            let check_flag_init = {
+                let one = Expression::Constant(F::one());
+                one - flag.clone()
+            };
+
             // flag == 0 or 1
             // (flag) * (1 - flag)
-            let flag = meta.query_advice(flag, Rotation::cur());
             let bool_check_flag = {
                 let one = Expression::Constant(F::one());
                 flag.clone() * (one - flag.clone())
             };
 
-            // TODO: If flag == 0 (read), and step != 0, value_prev == value_cur
+            // If flag == 0 (read), and step != 0, value_prev == value_cur
+            let value_prev = meta.query_advice(value, Rotation::prev());
+            let same_value_check = { value_expr.clone() - value_prev };
 
             // step_prev < step_cur
             // TODO: Figure out how to enforce this. Suggestion: lookup step_cur, step_prev,
@@ -151,11 +167,19 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
 
             // TODO: address[i] == address[i + 1] == ... == address[i + NUM_STEPS - 1]
 
-            vec![q_memory * bool_check_flag]
+            vec![
+                q_memory * bool_check_flag,
+                q_memory_init.clone() * value_expr,
+                q_memory_init.clone() * check_flag_init,
+                q_memory_init.clone() * step,
+                q_same_value * same_value_check,
+            ]
         });
 
         Config {
             q_memory,
+            q_memory_init,
+            q_same_value,
             address,
             step,
             value,
@@ -184,14 +208,9 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
                 for op in ops.iter() {
                     let address = op.address;
 
-                    self.init(&mut region, offset, address)?;
-
-                    // Increase offset by 1 after initialising.
-                    offset += 1;
-
                     for (step_offset, step) in op.steps.iter().enumerate() {
                         let bus_mapping =
-                            self.step(&mut region, offset + step_offset, address, step)?;
+                            self.step(step_offset, &mut region, offset, address, step)?;
 
                         offset += 1;
 
@@ -200,6 +219,18 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
                     }
                 }
 
+                // FIXME
+                // dummy:
+                let value = ops[0].steps[0]
+                    .as_ref()
+                    .map(|read_write| read_write.value().0);
+                region.assign_advice(
+                    || "value",
+                    self.value,
+                    31,
+                    || value.ok_or(Error::SynthesisError),
+                )?;
+
                 Ok(())
             },
         )?;
@@ -207,39 +238,20 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         Ok(bus_mappings)
     }
 
-    /// Initialise first row for a new operation.
-    fn init(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        address: MemoryAddress<F>,
-    ) -> Result<(), Error> {
-        self.q_memory.enable(region, offset)?;
-
-        // Assign `address`
-        region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
-
-        // Assign `step`
-        region.assign_advice(|| "init step", self.step, offset, || Ok(F::zero()))?;
-
-        // Assign `value`
-        region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
-
-        // Assign memory_flag
-        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
-
-        Ok(())
-    }
-
     /// Assign cells for each step in an operation.
     fn step(
         &self,
+        step_offset: usize,
         region: &mut Region<'_, F>,
         offset: usize,
         address: MemoryAddress<F>,
         read_write: &Option<ReadWrite<F>>,
     ) -> Result<BusMapping<F>, Error> {
-        self.q_memory.enable(region, offset)?;
+        if step_offset == 0 {
+            self.q_memory_init.enable(region, offset)?;
+        } else {
+            self.q_memory.enable(region, offset)?;
+        }
 
         // Assign `address`
         let memory_address = {
@@ -306,6 +318,10 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
             }
         };
 
+        if step_offset > 0 && !memory_flag.value.unwrap() {
+            self.q_same_value.enable(region, offset)?;
+        }
+
         Ok(BusMapping {
             step,
             memory_flag,
@@ -357,6 +373,7 @@ mod tests {
         let op_0 = MemoryOp {
             address: MemoryAddress(pallas::Base::zero()),
             steps: vec![
+                Some(ReadWrite::Write(Step(0), Value(pallas::Base::from_u64(0)))),
                 Some(ReadWrite::Write(
                     Step(12),
                     Value(pallas::Base::from_u64(12)),
@@ -368,6 +385,7 @@ mod tests {
         let op_1 = MemoryOp {
             address: MemoryAddress(pallas::Base::one()),
             steps: vec![
+                Some(ReadWrite::Write(Step(0), Value(pallas::Base::from_u64(0)))),
                 Some(ReadWrite::Write(
                     Step(17),
                     Value(pallas::Base::from_u64(32)),
@@ -381,7 +399,7 @@ mod tests {
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<pallas::Base>::run(11, &circuit, vec![]).unwrap();
+        let prover = MockProver::<pallas::Base>::run(5, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
 }
