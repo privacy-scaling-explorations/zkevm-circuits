@@ -1,7 +1,7 @@
 use crate::gadget::Variable;
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 
@@ -109,8 +109,7 @@ pub(crate) struct BusMapping<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config<F: FieldExt, const NUM_STEPS: usize> {
-    q_memory: Selector,
-    q_init: Selector,
+    q_memory: Column<Fixed>,
     address: Column<Advice>,
     step: Column<Advice>,
     value: Column<Advice>,
@@ -121,8 +120,7 @@ pub(crate) struct Config<F: FieldExt, const NUM_STEPS: usize> {
 impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let q_memory = meta.selector();
-        let q_init = meta.selector();
+        let q_memory = meta.fixed_column();
         let address = meta.advice_column();
         let step = meta.advice_column();
         let value = meta.advice_column();
@@ -130,7 +128,9 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
 
         // A gate for the first operation (does not need Rotation::prev).
         meta.create_gate("Memory init operation", |meta| {
-            let q_init = meta.query_selector(q_init);
+            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
+            let two = Expression::Constant(F::one() + F::one());
+            let is_first_row = q_memory.clone() * (two - q_memory);
 
             let value = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
@@ -141,15 +141,15 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
             //      - steps[0] == 0
 
             vec![
-                q_init.clone() * value,
-                q_init.clone() * (Expression::Constant(F::one()) - flag.clone()),
-                q_init * step,
+                is_first_row.clone() * value,
+                is_first_row.clone() * (Expression::Constant(F::one()) - flag.clone()),
+                is_first_row * step,
             ]
         });
 
         // Constraints for each step. These are activated when q_memory is nonzero.
         meta.create_gate("Memory operation", |meta| {
-            let q_memory = meta.query_selector(q_memory);
+            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
 
             // If address_cur != address_prev, this is an `init`. We must constrain:
             //      - values[0] == [0]
@@ -165,6 +165,9 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
             let value_cur = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
             let step = meta.query_advice(step, Rotation::cur());
+
+            let one = Expression::Constant(F::one());
+            let is_not_first_row = q_memory.clone() * (q_memory.clone() - one);
 
             let check_flag_init = {
                 let one = Expression::Constant(F::one());
@@ -185,24 +188,23 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
                 one - flag.clone()
             };
 
-            // step_prev < step_cur
+            // If address_prev == address_cur, step_prev < step_cur
             // TODO: Figure out how to enforce this. Suggestion: lookup step_cur, step_prev,
             // and their difference `step_cur - step_prev` in a table.
 
-            // TODO: address[i] == address[i + 1] == ... == address[i + NUM_STEPS - 1]
+            // TODO: if address_prev != address_cur, address_prev < address_cur
 
             vec![
-                q_memory.clone() * bool_check_flag,
-                q_memory.clone() * q_memory_init.clone() * value_cur.clone(),
-                q_memory.clone() * q_memory_init.clone() * check_flag_init,
-                q_memory.clone() * q_memory_init * step,
-                q_memory * q_read * (value_cur - value_prev),
+                is_not_first_row.clone() * bool_check_flag,
+                is_not_first_row.clone() * q_memory_init.clone() * value_cur.clone(),
+                is_not_first_row.clone() * q_memory_init.clone() * check_flag_init,
+                is_not_first_row.clone() * q_memory_init * step,
+                is_not_first_row * q_read * (value_cur - value_prev),
             ]
         });
 
         Config {
             q_memory,
-            q_init,
             address,
             step,
             value,
@@ -229,12 +231,21 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
             |mut region| {
                 let mut offset = 0;
 
-                self.q_init.enable(&mut region, 0)?;
-
-                for op in ops.iter() {
+                for (index, op) in ops.iter().enumerate() {
                     let address = op.address;
 
                     self.init(&mut region, offset, address)?;
+
+                    let mut selector_value = F::one();
+                    if index > 0 {
+                        selector_value = F::one() + F::one();
+                    }
+                    region.assign_fixed(
+                        || "Memory selector",
+                        self.q_memory,
+                        offset,
+                        || Ok(selector_value),
+                    )?;
 
                     // Increase offset by 1 after initialising.
                     offset += 1;
@@ -242,6 +253,12 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
                     for step in op.steps.iter() {
                         let bus_mapping = self.step(&mut region, offset, address, step)?;
 
+                        region.assign_fixed(
+                            || "Memory selector",
+                            self.q_memory,
+                            offset,
+                            || Ok(F::one() + F::one()),
+                        )?;
                         offset += 1;
 
                         // TODO: order by step
@@ -263,10 +280,6 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         offset: usize,
         address: MemoryAddress<F>,
     ) -> Result<(), Error> {
-        if offset > 0 {
-            self.q_memory.enable(region, offset)?;
-        }
-
         // Assign `address`
         region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
 
@@ -290,8 +303,6 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         address: MemoryAddress<F>,
         read_write: &Option<ReadWrite<F>>,
     ) -> Result<BusMapping<F>, Error> {
-        self.q_memory.enable(region, offset)?;
-
         // Assign `address`
         let memory_address = {
             let cell =
