@@ -9,17 +9,15 @@ use std::{marker::PhantomData, u64};
 #[derive(Clone, Debug)]
 pub(crate) struct MonotoneConfig {
     range_table: Column<Fixed>,
+    value: Column<Advice>,
 }
 
-/// MonotoneChip helps to check if an advice column is monotone increasing
+/// MonotoneChip helps to check if an advice column is monotonically increasing
 /// within a range. With strict enabled, it disallows equality of two cell.
 pub(crate) struct MonotoneChip<F, const RANGE: usize, const INCR: bool, const STRICT: bool> {
     config: MonotoneConfig,
     _marker: PhantomData<F>,
 }
-
-pub(crate) type StrictMonoIncrChip<F, const RANGE: usize> = MonotoneChip<F, RANGE, true, true>;
-pub(crate) type NonStrictMonoIncrChip<F, const RANGE: usize> = MonotoneChip<F, RANGE, true, false>;
 
 impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
     MonotoneChip<F, RANGE, INCR, STRICT>
@@ -33,7 +31,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
     ) -> MonotoneConfig {
         let range_table = meta.fixed_column();
 
-        let config = MonotoneConfig { range_table };
+        let config = MonotoneConfig { range_table, value };
 
         meta.lookup(|meta| {
             let q_enable = q_enable(meta);
@@ -103,7 +101,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip
 
 #[cfg(test)]
 mod test {
-    use super::{MonotoneConfig, NonStrictMonoIncrChip, StrictMonoIncrChip};
+    use super::{MonotoneChip, MonotoneConfig};
     use halo2::{
         arithmetic::FieldExt,
         circuit::{layouter::SingleChipLayouter, Layouter},
@@ -115,6 +113,9 @@ mod test {
     };
     use pasta_curves::pallas::Base;
     use std::marker::PhantomData;
+
+    type StrictMonoIncrChip<F, const RANGE: usize> = MonotoneChip<F, RANGE, true, true>;
+    type NonStrictMonoIncrChip<F, const RANGE: usize> = MonotoneChip<F, RANGE, true, false>;
 
     #[test]
     fn mono_incr() {
