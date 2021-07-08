@@ -114,108 +114,102 @@ mod test {
     use pasta_curves::pallas::Base;
     use std::marker::PhantomData;
 
-    type StrictMonoIncrChip<F, const RANGE: usize> = MonotoneChip<F, RANGE, true, true>;
-    type NonStrictMonoIncrChip<F, const RANGE: usize> = MonotoneChip<F, RANGE, true, false>;
+    #[derive(Clone, Debug)]
+    struct TestCircuitConfig {
+        q_enable: Selector,
+        value: Column<Advice>,
+        mono_incr: MonotoneConfig,
+    }
+
+    struct TestCircuit<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> {
+        values: Option<Vec<u64>>,
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Circuit<F>
+        for TestCircuit<F, RANGE, INCR, STRICT>
+    {
+        type Config = TestCircuitConfig;
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let q_enable = meta.selector();
+            let value = meta.advice_column();
+
+            let mono_incr = MonotoneChip::<F, RANGE, INCR, STRICT>::configure(
+                meta,
+                |meta| meta.query_selector(q_enable),
+                value,
+            );
+
+            let config = Self::Config {
+                q_enable,
+                value,
+                mono_incr,
+            };
+
+            config
+        }
+
+        fn synthesize(
+            &self,
+            cs: &mut impl Assignment<F>,
+            config: Self::Config,
+        ) -> Result<(), Error> {
+            let mut layouter = SingleChipLayouter::new(cs)?;
+            let monotone_chip =
+                MonotoneChip::<F, RANGE, INCR, STRICT>::construct(config.mono_incr.clone());
+
+            monotone_chip.load(&mut layouter)?;
+
+            let values: Vec<_> = self
+                .values
+                .as_ref()
+                .map(|values| values.iter().map(|value| F::from_u64(*value)).collect())
+                .ok_or(Error::SynthesisError)?;
+
+            layouter.assign_region(
+                || "witness",
+                |mut region| {
+                    for (idx, value) in values.iter().enumerate() {
+                        region.assign_advice(|| "value", config.value, idx, || Ok(*value))?;
+                        if idx > 0 {
+                            config.q_enable.enable(&mut region, idx)?;
+                        }
+                    }
+
+                    Ok(())
+                },
+            )
+        }
+    }
+
+    macro_rules! gen_try_test_circuit {
+        ($range:expr, $incr:expr, $strict:expr) => {
+            fn try_test_circuit(values: Vec<u64>, result: Result<(), Vec<VerifyFailure>>) {
+                let circuit = TestCircuit::<Base, $range, $incr, $strict> {
+                    values: Some(values),
+                    _marker: PhantomData,
+                };
+                let prover = MockProver::<Base>::run(
+                    usize::BITS - ($range as usize).leading_zeros(),
+                    &circuit,
+                    vec![],
+                )
+                .unwrap();
+                assert_eq!(prover.verify(), result);
+            }
+        };
+    }
 
     #[test]
-    fn mono_incr() {
-        #[derive(Clone, Debug)]
-        struct TestCircuitConfig {
-            q_enable: Selector,
-            value: Column<Advice>,
-            strict_mono_incr: MonotoneConfig,
-            non_strict_mono_incr: MonotoneConfig,
-        }
+    fn strict_monotonically_increasing() {
+        gen_try_test_circuit!(100, true, true);
 
-        struct TestCircuit<F: FieldExt, const RANGE: usize> {
-            values: Option<Vec<u64>>,
-            _marker: PhantomData<F>,
-        }
-
-        impl<F: FieldExt, const RANGE: usize> Circuit<F> for TestCircuit<F, RANGE> {
-            type Config = TestCircuitConfig;
-
-            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
-                let value = meta.advice_column();
-
-                let strict_mono_incr = StrictMonoIncrChip::<F, RANGE>::configure(
-                    meta,
-                    |meta| meta.query_selector(q_enable),
-                    value,
-                );
-                let non_strict_mono_incr = NonStrictMonoIncrChip::<F, RANGE>::configure(
-                    meta,
-                    |meta| meta.query_selector(q_enable),
-                    value,
-                );
-
-                let config = Self::Config {
-                    q_enable,
-                    value,
-                    strict_mono_incr,
-                    non_strict_mono_incr,
-                };
-
-                config
-            }
-
-            fn synthesize(
-                &self,
-                cs: &mut impl Assignment<F>,
-                config: Self::Config,
-            ) -> Result<(), Error> {
-                let mut layouter = SingleChipLayouter::new(cs)?;
-                let strict_monotone_chip =
-                    StrictMonoIncrChip::<F, RANGE>::construct(config.strict_mono_incr.clone());
-                let non_strict_monotone_chip = NonStrictMonoIncrChip::<F, RANGE>::construct(
-                    config.non_strict_mono_incr.clone(),
-                );
-
-                strict_monotone_chip.load(&mut layouter)?;
-                non_strict_monotone_chip.load(&mut layouter)?;
-
-                let values: Vec<_> = self
-                    .values
-                    .as_ref()
-                    .map(|values| values.iter().map(|value| F::from_u64(*value)).collect())
-                    .ok_or(Error::SynthesisError)?;
-
-                layouter.assign_region(
-                    || "witness",
-                    |mut region| {
-                        for (idx, value) in values.iter().enumerate() {
-                            region.assign_advice(|| "value", config.value, idx, || Ok(*value))?;
-                            if idx > 0 {
-                                config.q_enable.enable(&mut region, idx)?;
-                            }
-                        }
-
-                        Ok(())
-                    },
-                )
-            }
-        }
-
-        fn try_test_circuit<const RANGE: usize>(
-            values: Vec<u64>,
-            result: Result<(), Vec<VerifyFailure>>,
-        ) {
-            let circuit = TestCircuit::<Base, RANGE> {
-                values: Some(values),
-                _marker: PhantomData,
-            };
-            let prover =
-                MockProver::<Base>::run(usize::BITS - RANGE.leading_zeros(), &circuit, vec![])
-                    .unwrap();
-            assert_eq!(prover.verify(), result);
-        }
-
-        // both succeed
-        try_test_circuit::<100>(vec![1, 2, 3, 4, 104], Ok(()));
-        try_test_circuit::<100>(vec![1001, 1002, 1003, 1004, 1104], Ok(()));
-        // strict monotone fails (equal)
-        try_test_circuit::<100>(
+        // strict monotone in range (ok)
+        try_test_circuit(vec![1, 2, 3, 4, 104], Ok(()));
+        try_test_circuit(vec![1001, 1002, 1003, 1004, 1104], Ok(()));
+        // non-strict monotone in range (error)
+        try_test_circuit(
             vec![1, 2, 2, 4, 4],
             Err(vec![
                 Lookup {
@@ -228,33 +222,48 @@ mod test {
                 },
             ]),
         );
-        // both fail (out of range)
-        try_test_circuit::<100>(
+        // out of range (error)
+        try_test_circuit(
             vec![1, 2, 3, 4, 105],
-            Err(vec![
-                Lookup {
-                    lookup_index: 0,
-                    row: 4,
-                },
-                Lookup {
-                    lookup_index: 1,
-                    row: 4,
-                },
-            ]),
+            Err(vec![Lookup {
+                lookup_index: 0,
+                row: 4,
+            }]),
         );
-        // both fails (not monotone)
-        try_test_circuit::<100>(
+        // not monotone (error)
+        try_test_circuit(
             vec![1, 2, 3, 103, 4],
-            Err(vec![
-                Lookup {
-                    lookup_index: 0,
-                    row: 4,
-                },
-                Lookup {
-                    lookup_index: 1,
-                    row: 4,
-                },
-            ]),
+            Err(vec![Lookup {
+                lookup_index: 0,
+                row: 4,
+            }]),
+        );
+    }
+
+    #[test]
+    fn non_strict_monotonically_increasing() {
+        gen_try_test_circuit!(100, true, false);
+
+        // strict monotone in range (ok)
+        try_test_circuit(vec![1, 2, 3, 4, 104], Ok(()));
+        try_test_circuit(vec![1001, 1002, 1003, 1004, 1104], Ok(()));
+        // non-strict monotone in range (ok)
+        try_test_circuit(vec![1, 2, 2, 4, 4], Ok(()));
+        // out of range (error)
+        try_test_circuit(
+            vec![1, 2, 3, 4, 105],
+            Err(vec![Lookup {
+                lookup_index: 0,
+                row: 4,
+            }]),
+        );
+        // not monotone (error)
+        try_test_circuit(
+            vec![1, 2, 3, 103, 4],
+            Err(vec![Lookup {
+                lookup_index: 0,
+                row: 4,
+            }]),
         );
     }
 }
