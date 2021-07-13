@@ -7,24 +7,24 @@ use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
-    /// Given a `value_diff` to be checked if it is zero:
-    ///   - witnesses `inv0(value_diff)`, where `inv0(X)` is 0 when `X` = 0,
-    ///     and `1/X` otherwise;
+    /// Given a `value` to be checked if it is zero:
+    ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0,
+    ///     and `1/x` otherwise;
     ///   - and returns nothing (result should be access by is_zero_expression)
     fn is_zero(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value_diff: Option<F>,
+        value: Option<F>,
     ) -> Result<(), Error>;
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroConfig<F> {
     pub q_enable: Selector,
-    pub value_diff_inv: Column<Advice>,
+    pub value_inv: Column<Advice>,
     /// This can be used directly for custom gate at the offset if `is_zero` is
-    /// called, it will be 1 if `value_diff` is zero, and 0 otherwise.
+    /// called, it will be 1 if `value` is zero, and 0 otherwise.
     pub is_zero_expression: Expression<F>,
 }
 
@@ -37,32 +37,29 @@ impl<F: FieldExt> IsZeroChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
-        value_diff: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-        value_diff_inv: Column<Advice>,
+        value: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        value_inv: Column<Advice>,
     ) -> IsZeroConfig<F> {
         let mut is_zero_expression = None;
 
-        meta.create_gate(
-            "value_diff ⋅ (1 - value_diff ⋅ value_diff_inv) = 0",
-            |meta| {
-                let value_diff_inv = meta.query_advice(value_diff_inv, Rotation::cur());
-                let q_enable = meta.query_selector(q_enable);
+        meta.create_gate("value ⋅ (1 - value ⋅ value_inv) = 0", |meta| {
+            let value_inv = meta.query_advice(value_inv, Rotation::cur());
+            let q_enable = meta.query_selector(q_enable);
 
-                let one = Expression::Constant(F::one());
+            let one = Expression::Constant(F::one());
 
-                let value_diff = value_diff(meta);
-                is_zero_expression = Some(one - value_diff.clone() * value_diff_inv);
+            let value = value(meta);
+            is_zero_expression = Some(one - value.clone() * value_inv);
 
-                // This checks that (value_diff ⋅ value_diff_inv) is either 0 or 1.
-                let inv_check = value_diff * is_zero_expression.clone().unwrap();
+            // This checks that (value ⋅ value_inv) is either 0 or 1.
+            let inv_check = value * is_zero_expression.clone().unwrap();
 
-                vec![q_enable * inv_check]
-            },
-        );
+            vec![q_enable * inv_check]
+        });
 
         IsZeroConfig::<F> {
             q_enable,
-            value_diff_inv,
+            value_inv,
             is_zero_expression: is_zero_expression.unwrap(),
         }
     }
@@ -80,20 +77,19 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
         &self,
         mut region: &mut Region<'_, F>,
         offset: usize,
-        value_diff: Option<F>,
+        value: Option<F>,
     ) -> Result<(), Error> {
         let config = self.config();
 
         config.q_enable.enable(&mut region, offset)?;
 
-        let value_diff_invert =
-            value_diff.map(|value_diff| value_diff.invert().unwrap_or(F::zero()));
+        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
 
         region.assign_advice(
-            || "witness inverse of value_diff",
-            config.value_diff_inv,
+            || "witness inverse of value",
+            config.value_inv,
             offset,
-            || value_diff_invert.ok_or(Error::SynthesisError),
+            || value_invert.ok_or(Error::SynthesisError),
         )?;
 
         Ok(())
