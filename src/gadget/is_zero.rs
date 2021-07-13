@@ -4,7 +4,7 @@ use halo2::{
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
-use std::marker::PhantomData;
+use std::{array, marker::PhantomData};
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
     /// Given a `value` to be checked if it is zero:
@@ -42,19 +42,33 @@ impl<F: FieldExt> IsZeroChip<F> {
     ) -> IsZeroConfig<F> {
         let mut is_zero_expression = None;
 
-        meta.create_gate("value ⋅ (1 - value ⋅ value_inv) = 0", |meta| {
+        // Truth table of iz_zero gate:
+        // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
+        // | ok | value | value_inv | 1 - value ⋅ value_inv | value ⋅ (1 - value ⋅ value_inv) | value_inv ⋅ (1 - value ⋅ value_inv) |
+        // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
+        // | V  | 0     | 0         | 1                     | 0                               | 0                                   |
+        // |    | 0     | x         | 1                     | 0                               | x                                   |
+        // |    | x     | 0         | 1                     | x                               | 0                                   |
+        // | V  | x     | 1/x       | 0                     | 0                               | 0                                   |
+        // |    | x     | y         | 1 - xy                | x(1 - xy)                       | y(1 - xy)                           |
+        // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
+        meta.create_gate("is_zero gate", |meta| {
             let value_inv = meta.query_advice(value_inv, Rotation::cur());
             let q_enable = meta.query_selector(q_enable);
 
             let one = Expression::Constant(F::one());
 
             let value = value(meta);
-            is_zero_expression = Some(one - value.clone() * value_inv);
+            is_zero_expression = Some(one - value.clone() * value_inv.clone());
 
-            // This checks that (value ⋅ value_inv) is either 0 or 1.
-            let inv_check = value * is_zero_expression.clone().unwrap();
+            // This checks `value_inv ≡ value.invert()` when `value` is not zero:
+            // value ⋅ (1 - value ⋅ value_inv)
+            let poly1 = value * is_zero_expression.clone().unwrap();
+            // This checks `value_inv ≡ 0` when `value` is zero:
+            // value_inv ⋅ (1 - value ⋅ value_inv)
+            let poly2 = value_inv * is_zero_expression.clone().unwrap();
 
-            vec![q_enable * inv_check]
+            array::IntoIter::new([poly1, poly2]).map(move |poly| q_enable.clone() * poly)
         });
 
         IsZeroConfig::<F> {
