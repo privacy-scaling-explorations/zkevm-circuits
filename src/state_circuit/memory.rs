@@ -1,7 +1,7 @@
 use crate::gadget::Variable;
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 
@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 /*
 Example memory table:
 
-| address | step | value | flag |
+| address | global_counter | value | flag |
 ---------------------------------
 |    0    |   0  |   0   |   1  |
 |    0    |  12  |  12   |   1  |
@@ -24,7 +24,7 @@ Example memory table:
 /*
 Example bus mapping:
 
-| step | memory_flag | memory_address | memory_value |
+| global_counter | memory_flag | memory_address | memory_value |
 ------------------------------------------------------
 |  12  |      1      |        0       |      12      |
 |  17  |      1      |        1       |      32      |
@@ -32,7 +32,7 @@ Example bus mapping:
 |  89  |      0      |        1       |      32      |
 */
 
-/// In the state proof, memory operations are ordered first by address, and then by step.
+/// In the state proof, memory operations are ordered first by address, and then by global_counter.
 /// Memory is initialised at 0 for each new address.
 /// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word -> u8.
 #[derive(Copy, Clone, Debug)]
@@ -40,7 +40,7 @@ struct MemoryAddress<F: FieldExt>(F);
 
 /// Global counter
 #[derive(Copy, Clone, Debug)]
-struct Step(usize);
+struct GlobalCounter(usize);
 
 /// TODO: In the EVM we can only read memory values in 32 bytes, but can write either
 /// single-byte or 32-byte chunks. In zkEVM:
@@ -52,15 +52,15 @@ struct Value<F: FieldExt>(F);
 #[derive(Clone, Debug)]
 enum ReadWrite<F: FieldExt> {
     // flag == 0
-    Read(Step, Value<F>),
+    Read(GlobalCounter, Value<F>),
     // flag == 1
-    Write(Step, Value<F>),
+    Write(GlobalCounter, Value<F>),
 }
 
 impl<F: FieldExt> ReadWrite<F> {
-    fn step(&self) -> Step {
+    fn global_counter(&self) -> GlobalCounter {
         match self {
-            Self::Read(step, _) | Self::Write(step, _) => *step,
+            Self::Read(global_counter, _) | Self::Write(global_counter, _) => *global_counter,
         }
     }
 
@@ -82,13 +82,13 @@ impl<F: FieldExt> ReadWrite<F> {
 /// All the read/write operations that happen at this address.
 pub(crate) struct MemoryOp<F: FieldExt> {
     address: MemoryAddress<F>,
-    steps: Vec<Option<ReadWrite<F>>>,
+    global_counters: Vec<Option<ReadWrite<F>>>,
 }
 
 /*
 Example bus mapping:
 
-| step | memory_flag | memory_address | memory_value |
+| global_counter | memory_flag | memory_address | memory_value |
 ------------------------------------------------------
 |  12  |      1      |       0        |      12      |
 |  17  |      1      |       1        |      32      |
@@ -101,63 +101,113 @@ Example bus mapping:
 /// and opcode details as well.
 #[derive(Clone, Debug)]
 pub(crate) struct BusMapping<F: FieldExt> {
-    step: Variable<usize, F>,
+    global_counter: Variable<usize, F>,
     memory_flag: Variable<bool, F>,
     memory_address: Variable<F, F>,
     memory_value: Variable<F, F>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<F: FieldExt, const NUM_STEPS: usize> {
-    q_memory: Selector,
+pub(crate) struct Config<F: FieldExt> {
+    q_memory: Column<Fixed>,
     address: Column<Advice>,
-    step: Column<Advice>,
+    global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
+impl<F: FieldExt> Config<F> {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let q_memory = meta.selector();
+        let q_memory = meta.fixed_column();
         let address = meta.advice_column();
-        let step = meta.advice_column();
+        let global_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
 
-        // Constraints for each step. These are activated when q_memory is nonzero.
+        // A gate for the first operation (does not need Rotation::prev).
+        meta.create_gate("Memory init operation", |meta| {
+            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
+            let two = Expression::Constant(F::one() + F::one());
+            let is_first_row = q_memory.clone() * (two - q_memory);
+
+            let value = meta.query_advice(value, Rotation::cur());
+            let flag = meta.query_advice(flag, Rotation::cur());
+            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+
+            //      - values[0] == [0]
+            //      - flags[0] == 1
+            //      - global_counters[0] == 0
+
+            vec![
+                is_first_row.clone() * value,
+                is_first_row.clone() * (Expression::Constant(F::one()) - flag.clone()),
+                is_first_row * global_counter,
+            ]
+        });
+
+        // Constraints for each global counter. These are activated when q_memory is nonzero.
         meta.create_gate("Memory operation", |meta| {
-            let q_memory = meta.query_selector(q_memory);
+            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
 
             // If address_cur != address_prev, this is an `init`. We must constrain:
             //      - values[0] == [0]
             //      - flags[0] == 1
-            //      - steps[0] == 0
+            //      - global_counters[0] == 0
+
+            let q_memory_init = {
+                let address_prev = meta.query_advice(address, Rotation::prev());
+                let address_cur = meta.query_advice(address, Rotation::cur());
+                address_cur - address_prev
+            };
+
+            let value_cur = meta.query_advice(value, Rotation::cur());
+            let flag = meta.query_advice(flag, Rotation::cur());
+            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+
+            let one = Expression::Constant(F::one());
+            let is_not_first_row = q_memory.clone() * (q_memory.clone() - one);
+
+            let check_flag_init = {
+                let one = Expression::Constant(F::one());
+                one - flag.clone()
+            };
 
             // flag == 0 or 1
             // (flag) * (1 - flag)
-            let flag = meta.query_advice(flag, Rotation::cur());
             let bool_check_flag = {
                 let one = Expression::Constant(F::one());
                 flag.clone() * (one - flag.clone())
             };
 
-            // TODO: If flag == 0 (read), and step != 0, value_prev == value_cur
+            let value_prev = meta.query_advice(value, Rotation::prev());
+            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            let q_read = {
+                let one = Expression::Constant(F::one());
+                one - flag.clone()
+            };
 
-            // step_prev < step_cur
-            // TODO: Figure out how to enforce this. Suggestion: lookup step_cur, step_prev,
-            // and their difference `step_cur - step_prev` in a table.
+            // If address_prev == address_cur, global_counter_prev < global_counter_cur
+            // TODO: Figure out how to enforce this. Suggestion: lookup global_counter_cur,
+            // global_counter_prev, and their difference `global_counter_cur - global_counter_prev`
+            // in a table.
 
-            // TODO: address[i] == address[i + 1] == ... == address[i + NUM_STEPS - 1]
+            // TODO: if address_prev != address_cur, address_prev < address_cur
 
-            vec![q_memory * bool_check_flag]
+            vec![
+                is_not_first_row.clone() * bool_check_flag,
+                is_not_first_row.clone() * q_memory_init.clone() * value_cur.clone(),
+                is_not_first_row.clone() * q_memory_init.clone() * check_flag_init,
+                is_not_first_row.clone() * q_memory_init * global_counter,
+                is_not_first_row * q_read * (value_cur - value_prev),
+            ]
         });
 
         Config {
             q_memory,
             address,
-            step,
+            global_counter,
             value,
             flag,
             _marker: PhantomData,
@@ -181,21 +231,39 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
             || "Memory operations",
             |mut region| {
                 let mut offset = 0;
-                for op in ops.iter() {
+
+                for (index, op) in ops.iter().enumerate() {
                     let address = op.address;
 
                     self.init(&mut region, offset, address)?;
 
+                    let mut selector_value = F::one();
+                    if index > 0 {
+                        selector_value = F::one() + F::one();
+                    }
+                    region.assign_fixed(
+                        || "Memory selector",
+                        self.q_memory,
+                        offset,
+                        || Ok(selector_value),
+                    )?;
+
                     // Increase offset by 1 after initialising.
                     offset += 1;
 
-                    for (step_offset, step) in op.steps.iter().enumerate() {
+                    for global_counter in op.global_counters.iter() {
                         let bus_mapping =
-                            self.step(&mut region, offset + step_offset, address, step)?;
+                            self.assign_per_counter(&mut region, offset, address, global_counter)?;
 
+                        region.assign_fixed(
+                            || "Memory selector",
+                            self.q_memory,
+                            offset,
+                            || Ok(F::one() + F::one()),
+                        )?;
                         offset += 1;
 
-                        // TODO: order by step
+                        // TODO: order by global_counter
                         bus_mappings.push(bus_mapping);
                     }
                 }
@@ -214,13 +282,16 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         offset: usize,
         address: MemoryAddress<F>,
     ) -> Result<(), Error> {
-        self.q_memory.enable(region, offset)?;
-
         // Assign `address`
         region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
 
-        // Assign `step`
-        region.assign_advice(|| "init step", self.step, offset, || Ok(F::zero()))?;
+        // Assign `global_counter`
+        region.assign_advice(
+            || "init global counter",
+            self.global_counter,
+            offset,
+            || Ok(F::zero()),
+        )?;
 
         // Assign `value`
         region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
@@ -231,16 +302,14 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         Ok(())
     }
 
-    /// Assign cells for each step in an operation.
-    fn step(
+    /// Assign cells for each global counter in an operation.
+    fn assign_per_counter(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         address: MemoryAddress<F>,
         read_write: &Option<ReadWrite<F>>,
     ) -> Result<BusMapping<F>, Error> {
-        self.q_memory.enable(region, offset)?;
-
         // Assign `address`
         let memory_address = {
             let cell =
@@ -252,14 +321,16 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
             }
         };
 
-        // Assign `step`
-        let step = {
-            let value = read_write.as_ref().map(|read_write| read_write.step().0);
+        // Assign `global_counter`
+        let global_counter = {
+            let value = read_write
+                .as_ref()
+                .map(|read_write| read_write.global_counter().0);
             let field_elem = value.map(|value| F::from_u64(value as u64));
 
             let cell = region.assign_advice(
-                || "step",
-                self.step,
+                || "global counter",
+                self.global_counter,
                 offset,
                 || field_elem.ok_or(Error::SynthesisError),
             )?;
@@ -307,7 +378,7 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
         };
 
         Ok(BusMapping {
-            step,
+            global_counter,
             memory_flag,
             memory_address,
             memory_value,
@@ -317,7 +388,7 @@ impl<F: FieldExt, const NUM_STEPS: usize> Config<F, NUM_STEPS> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, MemoryAddress, MemoryOp, ReadWrite, Step, Value};
+    use super::{Config, GlobalCounter, MemoryAddress, MemoryOp, ReadWrite, Value};
     use halo2::{
         circuit::layouter::SingleChipLayouter,
         dev::MockProver,
@@ -329,13 +400,13 @@ mod tests {
 
     #[test]
     fn memory_circuit() {
-        struct MemoryCircuit<F: FieldExt, const NUM_STEPS: usize> {
+        struct MemoryCircuit<F: FieldExt> {
             ops: Vec<MemoryOp<F>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt, const NUM_STEPS: usize> Circuit<F> for MemoryCircuit<F, NUM_STEPS> {
-            type Config = Config<F, NUM_STEPS>;
+        impl<F: FieldExt> Circuit<F> for MemoryCircuit<F> {
+            type Config = Config<F>;
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 Config::configure(meta)
@@ -356,32 +427,38 @@ mod tests {
 
         let op_0 = MemoryOp {
             address: MemoryAddress(pallas::Base::zero()),
-            steps: vec![
+            global_counters: vec![
                 Some(ReadWrite::Write(
-                    Step(12),
+                    GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
                 )),
-                Some(ReadWrite::Read(Step(24), Value(pallas::Base::from_u64(12)))),
+                Some(ReadWrite::Read(
+                    GlobalCounter(24),
+                    Value(pallas::Base::from_u64(12)),
+                )),
             ],
         };
 
         let op_1 = MemoryOp {
             address: MemoryAddress(pallas::Base::one()),
-            steps: vec![
+            global_counters: vec![
                 Some(ReadWrite::Write(
-                    Step(17),
+                    GlobalCounter(17),
                     Value(pallas::Base::from_u64(32)),
                 )),
-                Some(ReadWrite::Read(Step(89), Value(pallas::Base::from_u64(32)))),
+                Some(ReadWrite::Read(
+                    GlobalCounter(89),
+                    Value(pallas::Base::from_u64(32)),
+                )),
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 4> {
+        let circuit = MemoryCircuit::<pallas::Base> {
             ops: vec![op_0, op_1],
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<pallas::Base>::run(11, &circuit, vec![]).unwrap();
+        let prover = MockProver::<pallas::Base>::run(5, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
 }
