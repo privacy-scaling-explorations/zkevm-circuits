@@ -9,3 +9,5 @@ pub(crate) struct Variable<T, F: FieldExt> {
     pub(crate) field_elem: Option<F>,
     pub(crate) value: Option<T>,
 }
+
+pub(crate) mod monotone;
