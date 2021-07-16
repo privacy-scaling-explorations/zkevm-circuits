@@ -1,7 +1,7 @@
 use crate::gadget::Variable;
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 
