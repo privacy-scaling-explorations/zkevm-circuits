@@ -2,6 +2,10 @@
 use halo2::circuit::Cell;
 use pasta_curves::arithmetic::FieldExt;
 
+pub(crate) mod evm_word;
+pub(crate) mod is_zero;
+pub(crate) mod monotone;
+
 /// An assigned cell in the circuit.
 #[derive(Clone, Debug)]
 pub(crate) struct Variable<T, F: FieldExt> {
@@ -19,7 +23,3 @@ impl<T, F: FieldExt> Variable<T, F> {
         }
     }
 }
-
-pub(crate) mod evm_word;
-pub(crate) mod is_zero;
-pub(crate) mod monotone;
