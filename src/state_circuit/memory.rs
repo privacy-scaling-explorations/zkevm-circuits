@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 
 /*
 Example memory table:
-
 | address | global_counter | value | flag |
 ---------------------------------
 |    0    |   0  |   0   |   1  |
@@ -85,17 +84,6 @@ pub(crate) struct MemoryOp<F: FieldExt> {
     global_counters: Vec<Option<ReadWrite<F>>>,
 }
 
-/*
-Example bus mapping:
-
-| global_counter | memory_flag | memory_address | memory_value |
-------------------------------------------------------
-|  12  |      1      |       0        |      12      |
-|  17  |      1      |       1        |      32      |
-|  24  |      0      |       0        |      12      |
-|  89  |      0      |       1        |      32      |
-*/
-
 /// A mapping derived from witnessed memory operations.
 /// TODO: The complete version of this mapping will involve storage, stack,
 /// and opcode details as well.
@@ -115,7 +103,6 @@ pub(crate) struct Config<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADD
     value: Column<Advice>,
     flag: Column<Advice>,
     global_counter_table: Column<Fixed>,
-    address_table: Column<Fixed>,
     address_table_zero: Column<Fixed>,
     _marker: PhantomData<F>,
 }
@@ -131,7 +118,6 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
         let value = meta.advice_column();
         let flag = meta.advice_column();
         let global_counter_table = meta.fixed_column();
-        let address_table = meta.fixed_column();
         let address_table_zero = meta.fixed_column();
 
         // Note:
@@ -183,26 +169,17 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
 
             let one = Expression::Constant(F::one());
-            let is_not_first_row = q_memory.clone() * (q_memory.clone() - one);
+            let is_not_first_row = q_memory.clone() * (q_memory.clone() - one.clone());
 
-            let check_flag_init = {
-                let one = Expression::Constant(F::one());
-                one - flag.clone()
-            };
+            let check_flag_init = one.clone() - flag.clone();
 
             // flag == 0 or 1
             // (flag) * (1 - flag)
-            let bool_check_flag = {
-                let one = Expression::Constant(F::one());
-                flag.clone() * (one - flag.clone())
-            };
+            let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
             let value_prev = meta.query_advice(value, Rotation::prev());
             // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
-            let q_read = {
-                let one = Expression::Constant(F::one());
-                one - flag.clone()
-            };
+            let q_read = one - flag.clone();
 
             // Note: is_not_first_row is either 0 or 2 (when q_memory is 2) or 6 (when q_memory is 3).
             // Having 2 or 6 in the constraints below is ok, we don't need to normalize it.
@@ -310,7 +287,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
         // if address_prev != address_cur, address_prev < address_cur;
         meta.lookup(|meta| {
             let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-            let address_table = meta.query_fixed(address_table, Rotation::cur());
+            let address_table_zero = meta.query_fixed(address_table_zero, Rotation::cur());
 
             let address_cur = meta.query_advice(address, Rotation::cur());
             let address_prev = meta.query_advice(address, Rotation::prev());
@@ -328,7 +305,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
                 // Note: is_init_and_not_first_row can only be 2 (when q_memory is 2) or 0 - we multiply it by 1/2 to get 1
                 is_init_and_not_first_row.clone() * address_diff.clone() * i.clone()
                     + (Expression::Constant(F::one()) - is_init_and_not_first_row.clone() * i), // default to 1 when is_init_and_not_first_row is 0
-                address_table,
+                address_table_zero, // address should actually be non-zero here, but we know it is not zero because q_memory is 2 here
             )]
         });
 
@@ -364,7 +341,6 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             value,
             flag,
             global_counter_table,
-            address_table,
             address_table_zero,
             _marker: PhantomData,
         }
@@ -377,41 +353,12 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
                 || "global counter table",
                 |mut region| {
                     // generate range table [1, GLOBAL_COUNTER_MAX-1]
-                    for idx in 0..GLOBAL_COUNTER_MAX.next_power_of_two() {
-                        let to = if idx > 0 && idx < GLOBAL_COUNTER_MAX {
-                            F::from_u64(idx as u64)
-                        } else {
-                            // padding with 1
-                            F::one()
-                        };
+                    for idx in 1..GLOBAL_COUNTER_MAX {
                         region.assign_fixed(
                             || "global counter table",
                             self.global_counter_table,
                             idx,
-                            || Ok(to),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
-
-        layouter
-            .assign_region(
-                || "address table",
-                |mut region| {
-                    for idx in 0..ADDRESS_MAX.next_power_of_two() {
-                        let to = if idx > 0 && idx < ADDRESS_MAX {
-                            F::from_u64(idx as u64)
-                        } else {
-                            // padding with 1
-                            F::one()
-                        };
-                        region.assign_fixed(
-                            || "address table",
-                            self.address_table,
-                            idx,
-                            || Ok(to),
+                            || Ok(F::from_u64(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -422,18 +369,12 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
         layouter.assign_region(
             || "address table with zero",
             |mut region| {
-                for idx in 0..ADDRESS_MAX.next_power_of_two() {
-                    let to = if idx < ADDRESS_MAX {
-                        F::from_u64(idx as u64)
-                    } else {
-                        // padding with 1
-                        F::one()
-                    };
+                for idx in 0..ADDRESS_MAX {
                     region.assign_fixed(
                         || "address table with zero",
                         self.address_table_zero,
                         idx,
-                        || Ok(to),
+                        || Ok(F::from_u64(idx as u64)),
                     )?;
                 }
                 Ok(())
@@ -789,6 +730,7 @@ mod tests {
         }
 
         const ADDRESS_MAX: usize = 100;
+        const GLOBAL_COUNTER_MAX: usize = 60000;
 
         let op_0 = MemoryOp {
             address: MemoryAddress(pallas::Base::from_u64((ADDRESS_MAX - 1) as u64)),
@@ -798,14 +740,18 @@ mod tests {
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Read(
-                    GlobalCounter(24),
+                    GlobalCounter(GLOBAL_COUNTER_MAX - 1),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Write(
+                    GlobalCounter(GLOBAL_COUNTER_MAX), // this global counter value is not in the allowed range
                     Value(pallas::Base::from_u64(12)),
                 )),
             ],
         };
 
         let op_1 = MemoryOp {
-            address: MemoryAddress(pallas::Base::from_u64(ADDRESS_MAX as u64)),
+            address: MemoryAddress(pallas::Base::from_u64(ADDRESS_MAX as u64)), // this address is not in the allowed range
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -818,26 +764,30 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 100, ADDRESS_MAX> {
+        let circuit = MemoryCircuit::<pallas::Base, GLOBAL_COUNTER_MAX, ADDRESS_MAX> {
             ops: vec![op_0, op_1],
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<pallas::Base>::run(14, &circuit, vec![]).unwrap();
+        let prover = MockProver::<pallas::Base>::run(16, &circuit, vec![]).unwrap();
         assert_eq!(
             prover.verify(),
             Err(vec![
                 Lookup {
                     lookup_index: 2,
-                    row: 3,
-                },
-                Lookup {
-                    lookup_index: 3,
                     row: 4,
                 },
                 Lookup {
                     lookup_index: 3,
                     row: 5,
+                },
+                Lookup {
+                    lookup_index: 3,
+                    row: 6,
+                },
+                Lookup {
+                    lookup_index: 5,
+                    row: 3,
                 }
             ])
         );
