@@ -147,8 +147,6 @@ mod test {
                 value,
             );
 
-            
-
             Self::Config {
                 q_enable,
                 value,
