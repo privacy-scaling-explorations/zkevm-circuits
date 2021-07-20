@@ -145,7 +145,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             // Having 2 in the constraints below is ok, we don't need to normalize it.
             vec![
                 is_first_row.clone() * value,
-                is_first_row.clone() * (Expression::Constant(F::one()) - flag.clone()),
+                is_first_row.clone() * (Expression::Constant(F::one()) - flag),
                 is_first_row * global_counter,
             ]
         });
@@ -169,7 +169,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
 
             let one = Expression::Constant(F::one());
-            let is_not_first_row = q_memory.clone() * (q_memory.clone() - one.clone());
+            let is_not_first_row = q_memory.clone() * (q_memory - one.clone());
 
             let check_flag_init = one.clone() - flag.clone();
 
@@ -179,7 +179,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
             let value_prev = meta.query_advice(value, Rotation::prev());
             // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
-            let q_read = one - flag.clone();
+            let q_read = one - flag;
 
             // Note: is_not_first_row is either 0 or 2 (when q_memory is 2) or 6 (when q_memory is 3).
             // Having 2 or 6 in the constraints below is ok, we don't need to normalize it.
@@ -204,15 +204,15 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::one() + F::one());
             let is_not_init = q_memory.clone()
-                * (q_memory.clone() - one.clone())
-                * (q_memory.clone() - two.clone());
+                * (q_memory.clone() - one)
+                * (q_memory - two);
 
-            let inv = F::from_u64(6 as u64).invert().unwrap();
+            let inv = F::from_u64(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             vec![(
                 // Note: is_not_init can only be 6 (when q_memory is 3) or 0 - we multiply it by 1/6 to get 1
-                is_not_init.clone() * i.clone() * (global_counter.clone() - global_counter_prev)
+                is_not_init.clone() * i.clone() * (global_counter - global_counter_prev)
                     + (Expression::Constant(F::one()) - is_not_init * i), // default to 1 when is_not_init is 0
                 global_counter_table,
             )]
@@ -230,14 +230,14 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let two = Expression::Constant(F::one() + F::one());
             let three = Expression::Constant(F::one() + F::one() + F::one());
             let is_first_row =
-                q_memory.clone() * (two - q_memory.clone()) * (three.clone() - q_memory.clone());
+                q_memory.clone() * (two - q_memory.clone()) * (three - q_memory);
 
-            let inv = F::from_u64(2 as u64).invert().unwrap();
+            let inv = F::from_u64(2_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             vec![(
                 // when q_memory is 1, is_first_row is 2 - multiply by 1/2
-                is_first_row.clone() * address_cur.clone() * i.clone(),
+                is_first_row * address_cur * i,
                 address_table_zero,
             )]
         });
@@ -253,12 +253,12 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let is_init_and_not_first_row =
                 q_memory.clone() * (q_memory.clone() - one) * (three - q_memory);
 
-            let inv = F::from_u64(2 as u64).invert().unwrap();
+            let inv = F::from_u64(2_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             vec![(
                 // when q_memory is 2, is_init_and_not_first_row is 2 - multiply by 1/2
-                is_init_and_not_first_row.clone() * address_cur.clone() * i.clone(),
+                is_init_and_not_first_row * address_cur * i,
                 address_table_zero,
             )]
         });
@@ -272,15 +272,15 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::one() + F::one());
             let is_not_init = q_memory.clone()
-                * (q_memory.clone() - one.clone())
-                * (q_memory.clone() - two.clone());
+                * (q_memory.clone() - one)
+                * (q_memory - two);
 
-            let inv = F::from_u64(6 as u64).invert().unwrap();
+            let inv = F::from_u64(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             vec![
                 // when q_memory is 3, is_not_init is 6 - multiply by 1/6
-                (is_not_init.clone() * address_cur * i, address_table_zero),
+                (is_not_init * address_cur * i, address_table_zero),
             ]
         });
 
@@ -291,20 +291,20 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
             let address_cur = meta.query_advice(address, Rotation::cur());
             let address_prev = meta.query_advice(address, Rotation::prev());
-            let address_diff = address_cur.clone() - address_prev;
+            let address_diff = address_cur - address_prev;
 
             let one = Expression::Constant(F::one());
             let three = Expression::Constant(F::one() + F::one() + F::one());
             let is_init_and_not_first_row =
-                q_memory.clone() * (q_memory.clone() - one.clone()) * (three - q_memory.clone());
+                q_memory.clone() * (q_memory.clone() - one) * (three - q_memory);
 
-            let inv = F::from_u64(2 as u64).invert().unwrap();
+            let inv = F::from_u64(2_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             vec![(
                 // Note: is_init_and_not_first_row can only be 2 (when q_memory is 2) or 0 - we multiply it by 1/2 to get 1
-                is_init_and_not_first_row.clone() * address_diff.clone() * i.clone()
-                    + (Expression::Constant(F::one()) - is_init_and_not_first_row.clone() * i), // default to 1 when is_init_and_not_first_row is 0
+                is_init_and_not_first_row.clone() * address_diff * i.clone()
+                    + (Expression::Constant(F::one()) - is_init_and_not_first_row * i), // default to 1 when is_init_and_not_first_row is 0
                 address_table_zero, // address should actually be non-zero here, but we know it is not zero because q_memory is 2 here
             )]
         });
@@ -319,9 +319,9 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::one() + F::one());
-            let qs_lookup = q_memory.clone() * (q_memory.clone() - one) * (q_memory.clone() - two);
+            let qs_lookup = q_memory.clone() * (q_memory.clone() - one) * (q_memory - two);
 
-            let inv = F::from_u64(6 as u64).invert().unwrap();
+            let inv = F::from_u64(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             vec![(

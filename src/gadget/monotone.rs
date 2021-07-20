@@ -147,13 +147,13 @@ mod test {
                 value,
             );
 
-            let config = Self::Config {
+            
+
+            Self::Config {
                 q_enable,
                 value,
                 mono_incr,
-            };
-
-            config
+            }
         }
 
         fn synthesize(
