@@ -203,9 +203,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::one() + F::one());
-            let is_not_init = q_memory.clone()
-                * (q_memory.clone() - one)
-                * (q_memory - two);
+            let is_not_init = q_memory.clone() * (q_memory.clone() - one) * (q_memory - two);
 
             let inv = F::from_u64(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
@@ -229,8 +227,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
             let two = Expression::Constant(F::one() + F::one());
             let three = Expression::Constant(F::one() + F::one() + F::one());
-            let is_first_row =
-                q_memory.clone() * (two - q_memory.clone()) * (three - q_memory);
+            let is_first_row = q_memory.clone() * (two - q_memory.clone()) * (three - q_memory);
 
             let inv = F::from_u64(2_u64).invert().unwrap();
             let i = Expression::Constant(inv);
@@ -271,9 +268,7 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::one() + F::one());
-            let is_not_init = q_memory.clone()
-                * (q_memory.clone() - one)
-                * (q_memory - two);
+            let is_not_init = q_memory.clone() * (q_memory.clone() - one) * (q_memory - two);
 
             let inv = F::from_u64(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
