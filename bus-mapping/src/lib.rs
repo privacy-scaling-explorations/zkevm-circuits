@@ -15,7 +15,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use itertools::{Itertools, Unique};
+use itertools::Itertools;
 use pasta_curves::arithmetic::FieldExt;
 
 // -------- EVM Circuit
@@ -28,13 +28,6 @@ use pasta_curves::arithmetic::FieldExt;
 // Group by key (location in memory/storage)
 // Sorty by gc
 //`MemoryElem{target 	gc 	val1 	val2 	val3}`
-
-// Impl compression
-// Impl dummy initialization
-// Impl import from JSON
-
-// impl IntoIter for BusMapping
-// Compression trait implemented by Memoryelem and StackElem via a closure applied to it.
 
 #[derive(Debug, Clone)]
 struct BlockConstants<F: FieldExt> {
@@ -54,7 +47,7 @@ enum RW {
 }
 
 /// Doc
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     /// Doc
     Memory,
@@ -98,6 +91,66 @@ impl<F: FieldExt> IndexMut<usize> for BusMapping<F> {
     }
 }
 
+impl<F: FieldExt> From<(Vec<Operation<F>>, BlockConstants<F>)> for BusMapping<F> {
+    fn from(inp: (Vec<Operation<F>>, BlockConstants<F>)) -> Self {
+        // Initialize the BTreeMaps with empty vecs for each key group
+        let mut mem_ops_sorted = BTreeMap::new();
+        let mut stack_ops_sorted = BTreeMap::new();
+        let mut storage_ops_sorted = BTreeMap::new();
+        inp.0
+            .iter()
+            .map(|op| op.key)
+            .unique()
+            .sorted()
+            .for_each(|key| {
+                mem_ops_sorted.insert(key, vec![]);
+                stack_ops_sorted.insert(key, vec![]);
+                storage_ops_sorted.insert(key, vec![]);
+            });
+
+        // Actually feed the BTreeMaps with the entries
+        inp.0
+            .iter()
+            .filter(|op| op.target == Target::Stack)
+            .for_each(|entry| {
+                mem_ops_sorted
+                    .get_mut(&entry.key)
+                    .expect("This invariant should be unreachable")
+                    .push(entry.clone())
+            });
+
+        // Actually feed the BTreeMaps with the entries
+        inp.0
+            .iter()
+            .filter(|op| op.target == Target::Memory)
+            .for_each(|entry| {
+                stack_ops_sorted
+                    .get_mut(&entry.key)
+                    .expect("This invariant should be unreachable")
+                    .push(entry.clone())
+            });
+
+        // Actually feed the BTreeMaps with the entries
+        inp.0
+            .iter()
+            .filter(|op| op.target == Target::Storage)
+            .for_each(|entry| {
+                storage_ops_sorted
+                    .get_mut(&entry.key)
+                    .expect("This invariant should be unreachable")
+                    .push(entry.clone())
+            });
+
+        Self {
+            entries: inp.0,
+            block_ctants: inp.1,
+            mem_ops_sorted,
+            stack_ops_sorted,
+            storage_ops_sorted,
+        }
+    }
+}
+
 impl<F: FieldExt> BusMapping<F> {
     /// Docs
     pub fn stack_part(&self) -> impl Iterator<Item = &Operation<F>> {
@@ -105,7 +158,7 @@ impl<F: FieldExt> BusMapping<F> {
         // group by idx first
         // sort idx increasingly
         // sort gc in each group
-        self.stack_ops_sorted.values().flatten()
+        self.stack_ops_sorted.values().rev().flatten()
     }
 
     /// Docs
