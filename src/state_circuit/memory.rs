@@ -1,7 +1,11 @@
-use crate::gadget::Variable;
+use crate::gadget::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    monotone::{MonotoneChip, MonotoneConfig},
+    Variable,
+};
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -96,23 +100,36 @@ pub(crate) struct BusMapping<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> {
-    q_memory: Column<Fixed>,
+pub(crate) struct Config<
+    F: FieldExt,
+    const MAX_MEMORY_ROWS: usize,
+    const GLOBAL_COUNTER_MAX: usize,
+    const ADDRESS_MAX: usize,
+> {
+    q_first: Selector,
+    q_not_first: Selector,
     address: Column<Advice>,
     global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
     global_counter_table: Column<Fixed>,
     address_table_zero: Column<Fixed>,
+    is_zero: IsZeroConfig<F>,
+    mono_incr: MonotoneConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
-    Config<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+impl<
+        F: FieldExt,
+        const MAX_MEMORY_ROWS: usize,
+        const GLOBAL_COUNTER_MAX: usize,
+        const ADDRESS_MAX: usize,
+    > Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
 {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let q_memory = meta.fixed_column();
+        let q_first = meta.selector();
+        let q_not_first = meta.selector();
         let address = meta.advice_column();
         let global_counter = meta.advice_column();
         let value = meta.advice_column();
@@ -120,18 +137,21 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
         let global_counter_table = meta.fixed_column();
         let address_table_zero = meta.fixed_column();
 
-        // Note:
-        // q_memory = 0: for rows for which we do not set any column
-        // q_memory = 1: first row
-        // q_memory = 2: init rows (except the first row)
-        // q_memory = 3: all rows (for which we do not set any column) except init rows
+        let is_zero = IsZeroChip::configure(meta, q_not_first, |meta| {
+            let value_a = meta.query_advice(address, Rotation::cur());
+            let value_b = meta.query_advice(address, Rotation::prev());
+            value_a - value_b
+        });
+
+        let mono_incr = MonotoneChip::<F, ADDRESS_MAX, true, false>::configure(
+            meta,
+            |meta| meta.query_selector(q_not_first),
+            address,
+        );
 
         // A gate for the first operation (does not need Rotation::prev).
         meta.create_gate("Memory first row operation", |meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-            let two = Expression::Constant(F::one() + F::one());
-            let three = Expression::Constant(F::one() + F::one() + F::one());
-            let is_first_row = q_memory.clone() * (two - q_memory.clone()) * (three - q_memory);
+            let q_first = meta.query_selector(q_first);
 
             let value = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
@@ -141,18 +161,15 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             //      - flags[0] == 1
             //      - global_counters[0] == 0
 
-            // Note: is_first_row is either 0 or 2 (when q_memory is 1).
-            // Having 2 in the constraints below is ok, we don't need to normalize it.
             vec![
-                is_first_row.clone() * value,
-                is_first_row.clone() * (Expression::Constant(F::one()) - flag),
-                is_first_row * global_counter,
+                q_first.clone() * value,
+                q_first.clone() * (Expression::Constant(F::one()) - flag),
+                q_first * global_counter,
             ]
         });
 
         meta.create_gate("Memory operation", |meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-
+            let q_not_first = meta.query_selector(q_not_first);
             // If address_cur != address_prev, this is an `init`. We must constrain:
             //      - values[0] == [0]
             //      - flags[0] == 1
@@ -169,49 +186,37 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
 
             let one = Expression::Constant(F::one());
-            let is_not_first_row = q_memory.clone() * (q_memory - one.clone());
-
             let check_flag_init = one.clone() - flag.clone();
 
             // flag == 0 or 1
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            let value_prev = meta.query_advice(value, Rotation::prev());
             // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one - flag;
 
-            // Note: is_not_first_row is either 0 or 2 (when q_memory is 2) or 6 (when q_memory is 3).
-            // Having 2 or 6 in the constraints below is ok, we don't need to normalize it.
             vec![
-                is_not_first_row.clone() * bool_check_flag,
-                is_not_first_row.clone() * address_diff.clone() * value_cur.clone(),
-                is_not_first_row.clone() * address_diff.clone() * check_flag_init,
-                is_not_first_row.clone() * address_diff * global_counter,
-                is_not_first_row * q_read * (value_cur - value_prev),
+                q_not_first.clone() * address_diff.clone() * value_cur.clone(),
+                q_not_first.clone() * address_diff.clone() * check_flag_init,
+                q_not_first.clone() * address_diff * global_counter,
+                q_not_first.clone() * bool_check_flag,
+                q_not_first * q_read * (value_cur - value_prev),
             ]
         });
 
         // global_counter monotonicity:
         meta.lookup(|meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-
+            let q_not_first = meta.query_selector(q_not_first);
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
-
             let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
 
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::one() + F::one());
-            let is_not_init = q_memory.clone() * (q_memory.clone() - one) * (q_memory - two);
-
-            let inv = F::from_u64(6_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
             vec![(
-                // Note: is_not_init can only be 6 (when q_memory is 3) or 0 - we multiply it by 1/6 to get 1
-                is_not_init.clone() * i.clone() * (global_counter - global_counter_prev)
-                    + (Expression::Constant(F::one()) - is_not_init * i), // default to 1 when is_not_init is 0
+                q_not_first
+                    * is_zero.clone().is_zero_expression
+                    * (global_counter - global_counter_prev)
+                    + (Expression::Constant(F::one()) - is_zero.clone().is_zero_expression), // default to 1 when is_zero_expression is 0
                 global_counter_table,
             )]
         });
@@ -219,124 +224,41 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
         // TODO: figure out why checks fail when put in the vec of the same meta.lookup call
         // (for some cases having a vector with more than one tuple works though)
 
-        // address is in the allowed range - for q_memory = 1:
+        // address is in the allowed range
         meta.lookup(|meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
+            let q_first = meta.query_selector(q_first);
+            let q_not_first = meta.query_selector(q_not_first);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let address_table_zero = meta.query_fixed(address_table_zero, Rotation::cur());
 
-            let two = Expression::Constant(F::one() + F::one());
-            let three = Expression::Constant(F::one() + F::one() + F::one());
-            let is_first_row = q_memory.clone() * (two - q_memory.clone()) * (three - q_memory);
-
-            let inv = F::from_u64(2_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            vec![(
-                // when q_memory is 1, is_first_row is 2 - multiply by 1/2
-                is_first_row * address_cur * i,
-                address_table_zero,
-            )]
-        });
-
-        // address is in the allowed range - for q_memory = 2:
-        meta.lookup(|meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let address_table_zero = meta.query_fixed(address_table_zero, Rotation::cur());
-
-            let one = Expression::Constant(F::one());
-            let three = Expression::Constant(F::one() + F::one() + F::one());
-            let is_init_and_not_first_row =
-                q_memory.clone() * (q_memory.clone() - one) * (three - q_memory);
-
-            let inv = F::from_u64(2_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            vec![(
-                // when q_memory is 2, is_init_and_not_first_row is 2 - multiply by 1/2
-                is_init_and_not_first_row * address_cur * i,
-                address_table_zero,
-            )]
-        });
-
-        // address is in the allowed range - for q_memory = 3:
-        meta.lookup(|meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-            let address_table_zero = meta.query_fixed(address_table_zero, Rotation::cur());
-            let address_cur = meta.query_advice(address, Rotation::cur());
-
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::one() + F::one());
-            let is_not_init = q_memory.clone() * (q_memory.clone() - one) * (q_memory - two);
-
-            let inv = F::from_u64(6_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            vec![
-                // when q_memory is 3, is_not_init is 6 - multiply by 1/6
-                (is_not_init * address_cur * i, address_table_zero),
-            ]
-        });
-
-        // if address_prev != address_cur, address_prev < address_cur;
-        meta.lookup(|meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-            let address_table_zero = meta.query_fixed(address_table_zero, Rotation::cur());
-
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let address_prev = meta.query_advice(address, Rotation::prev());
-            let address_diff = address_cur - address_prev;
-
-            let one = Expression::Constant(F::one());
-            let three = Expression::Constant(F::one() + F::one() + F::one());
-            let is_init_and_not_first_row =
-                q_memory.clone() * (q_memory.clone() - one) * (three - q_memory);
-
-            let inv = F::from_u64(2_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            vec![(
-                // Note: is_init_and_not_first_row can only be 2 (when q_memory is 2) or 0 - we multiply it by 1/2 to get 1
-                is_init_and_not_first_row.clone() * address_diff * i.clone()
-                    + (Expression::Constant(F::one()) - is_init_and_not_first_row * i), // default to 1 when is_init_and_not_first_row is 0
-                address_table_zero, // address should actually be non-zero here, but we know it is not zero because q_memory is 2 here
-            )]
+            vec![((q_first + q_not_first) * address_cur, address_table_zero)]
         });
 
         // global_counter is in the allowed range:
         meta.lookup(|meta| {
-            let q_memory = meta.query_fixed(q_memory, Rotation::cur());
-
+            let q_first = meta.query_selector(q_first);
+            let q_not_first = meta.query_selector(q_not_first);
+            let global_counter = meta.query_advice(global_counter, Rotation::cur());
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
 
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
-
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::one() + F::one());
-            let qs_lookup = q_memory.clone() * (q_memory.clone() - one) * (q_memory - two);
-
-            let inv = F::from_u64(6_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
             vec![(
-                // We only need to check global_counter is in some range when q_memory is 3.
-                // When q_memory is 1 and 2, the global counter must be 0 and this is checked
-                // by create_gate "Memory first row operation" and "Memory operation"
-                qs_lookup.clone() * i.clone() * global_counter
-                    + (Expression::Constant(F::one()) - qs_lookup * i), // default to 1 when qs_lookup is 0
+                (q_first.clone() + q_not_first.clone()) * global_counter
+                    + (Expression::Constant(F::one()) - (q_first + q_not_first)), // default to 1 when (q_first + q_not_first) is 0
                 global_counter_table,
             )]
         });
 
         Config {
-            q_memory,
+            q_first,
+            q_not_first,
             address,
             global_counter,
             value,
             flag,
             global_counter_table,
             address_table_zero,
+            is_zero,
+            mono_incr,
             _marker: PhantomData,
         }
     }
@@ -385,6 +307,11 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
+        let chip = IsZeroChip::construct(self.is_zero.clone());
+        let monotone_chip =
+            MonotoneChip::<F, ADDRESS_MAX, true, false>::construct(self.mono_incr.clone());
+        monotone_chip.load(&mut layouter)?;
+
         layouter.assign_region(
             || "Memory operations",
             |mut region| {
@@ -392,38 +319,70 @@ impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize>
 
                 for (index, op) in ops.iter().enumerate() {
                     let address = op.address;
-
-                    self.init(&mut region, offset, address)?;
-
-                    let mut selector_value = F::one();
+                    let mut address_prev = ops.first().unwrap().address;
                     if index > 0 {
-                        selector_value = F::one() + F::one();
+                        address_prev = ops[index - 1].address;
                     }
-                    region.assign_fixed(
-                        || "Memory selector",
-                        self.q_memory,
-                        offset,
-                        || Ok(selector_value),
-                    )?;
+
+                    if index == 0 {
+                        self.q_first.enable(&mut region, offset)?;
+                    } else {
+                        self.q_not_first.enable(&mut region, offset)?;
+                    }
+                    self.init(&mut region, offset, address)?;
+                    chip.assign(&mut region, offset, Some(address.0 - address_prev.0))?;
 
                     // Increase offset by 1 after initialising.
                     offset += 1;
 
                     for global_counter in op.global_counters.iter() {
+                        self.q_not_first.enable(&mut region, offset)?;
                         let bus_mapping =
                             self.assign_per_counter(&mut region, offset, address, global_counter)?;
+                        chip.assign(&mut region, offset, Some(F::zero()))?;
 
-                        region.assign_fixed(
-                            || "Memory selector",
-                            self.q_memory,
-                            offset,
-                            || Ok(F::one() + F::one() + F::one()),
-                        )?;
                         offset += 1;
 
                         // TODO: order by global_counter
                         bus_mappings.push(bus_mapping);
                     }
+                }
+
+                let last_address = ops.last().unwrap().address;
+                let last_gc = ops.last().unwrap().global_counters.last().unwrap();
+                let mut last_counter = last_gc.as_ref().unwrap().global_counter().0;
+
+                // We pad all remaining memory rows to avoid the check at the first unused row.
+                // Without padding, (address_cur - address_prev) would not be zero at the first unused row
+                // and some checks would be triggered.
+                for i in offset..MAX_MEMORY_ROWS {
+                    self.q_not_first.enable(&mut region, i)?;
+
+                    // Assign `address`
+                    region.assign_advice(
+                        || "init address",
+                        self.address,
+                        i,
+                        || Ok(last_address.0),
+                    )?;
+
+                    chip.assign(&mut region, i, Some(F::zero()))?;
+
+                    // Assign `global_counter`
+                    region.assign_advice(
+                        || "init global counter",
+                        self.global_counter,
+                        i,
+                        || Ok(F::from_u64(last_counter as u64)),
+                    )?;
+                    // To not break the global counter monotonicity
+                    last_counter += 1;
+
+                    // Assign `value`
+                    region.assign_advice(|| "init value", self.value, i, || Ok(F::zero()))?;
+
+                    // Assign memory_flag
+                    region.assign_advice(|| "init memory", self.flag, i, || Ok(F::one()))?;
                 }
 
                 Ok(())
@@ -559,15 +518,24 @@ mod tests {
     #[test]
     fn memory_circuit() {
         #[derive(Default)]
-        struct MemoryCircuit<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> {
+        struct MemoryCircuit<
+            F: FieldExt,
+            const MAX_MEMORY_ROWS: usize,
+            const GLOBAL_COUNTER_MAX: usize,
+            const ADDRESS_MAX: usize,
+        > {
             ops: Vec<MemoryOp<F>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> Circuit<F>
-            for MemoryCircuit<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+        impl<
+                F: FieldExt,
+                const MAX_MEMORY_ROWS: usize,
+                const GLOBAL_COUNTER_MAX: usize,
+                const ADDRESS_MAX: usize,
+            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
         {
-            type Config = Config<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -618,7 +586,10 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 100, 100> {
+        // Note: be careful when setting MAX_MEMORY_ROWS and GLOBAL_COUNTER_MAX -
+        // GLOBAL_COUNTER_MAX needs to be big enough for padded rows (unused memory rows
+        // that are filled with dummy values)
+        let circuit = MemoryCircuit::<pallas::Base, 1000, 2000, 100> {
             ops: vec![op_0, op_1],
             _marker: PhantomData,
         };
@@ -630,15 +601,24 @@ mod tests {
     #[test]
     fn same_address_read() {
         #[derive(Default)]
-        struct MemoryCircuit<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> {
+        struct MemoryCircuit<
+            F: FieldExt,
+            const MAX_MEMORY_ROWS: usize,
+            const GLOBAL_COUNTER_MAX: usize,
+            const ADDRESS_MAX: usize,
+        > {
             ops: Vec<MemoryOp<F>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> Circuit<F>
-            for MemoryCircuit<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+        impl<
+                F: FieldExt,
+                const MAX_MEMORY_ROWS: usize,
+                const GLOBAL_COUNTER_MAX: usize,
+                const ADDRESS_MAX: usize,
+            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
         {
-            type Config = Config<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -675,7 +655,7 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 100, 100> {
+        let circuit = MemoryCircuit::<pallas::Base, 1000, 2000, 100> {
             ops: vec![op_0],
             _marker: PhantomData,
         };
@@ -684,7 +664,7 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![ConstraintNotSatisfied {
-                constraint: ((1, "Memory operation").into(), 4, "").into(),
+                constraint: ((2, "Memory operation").into(), 4, "").into(),
                 row: 2
             },])
         );
@@ -693,15 +673,24 @@ mod tests {
     #[test]
     fn max_values() {
         #[derive(Default)]
-        struct MemoryCircuit<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> {
+        struct MemoryCircuit<
+            F: FieldExt,
+            const MAX_MEMORY_ROWS: usize,
+            const GLOBAL_COUNTER_MAX: usize,
+            const ADDRESS_MAX: usize,
+        > {
             ops: Vec<MemoryOp<F>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> Circuit<F>
-            for MemoryCircuit<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+        impl<
+                F: FieldExt,
+                const MAX_MEMORY_ROWS: usize,
+                const GLOBAL_COUNTER_MAX: usize,
+                const ADDRESS_MAX: usize,
+            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
         {
-            type Config = Config<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -724,6 +713,9 @@ mod tests {
             }
         }
 
+        // Small MAX_MEMORY_ROWS is set to avoid having padded rows (all padded rows would
+        // fail because of the address they would have - the address of the last unused row)
+        const MAX_MEMORY_ROWS: usize = 7;
         const ADDRESS_MAX: usize = 100;
         const GLOBAL_COUNTER_MAX: usize = 60000;
 
@@ -759,10 +751,11 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, GLOBAL_COUNTER_MAX, ADDRESS_MAX> {
-            ops: vec![op_0, op_1],
-            _marker: PhantomData,
-        };
+        let circuit =
+            MemoryCircuit::<pallas::Base, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX> {
+                ops: vec![op_0, op_1],
+                _marker: PhantomData,
+            };
 
         let prover = MockProver::<pallas::Base>::run(16, &circuit, vec![]).unwrap();
         assert_eq!(
@@ -773,15 +766,15 @@ mod tests {
                     row: 4,
                 },
                 Lookup {
-                    lookup_index: 3,
+                    lookup_index: 2,
                     row: 5,
                 },
                 Lookup {
-                    lookup_index: 3,
+                    lookup_index: 2,
                     row: 6,
                 },
                 Lookup {
-                    lookup_index: 5,
+                    lookup_index: 3,
                     row: 3,
                 }
             ])
@@ -791,15 +784,24 @@ mod tests {
     #[test]
     fn non_monotone_global_counter() {
         #[derive(Default)]
-        struct MemoryCircuit<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADRESS_MAX: usize> {
+        struct MemoryCircuit<
+            F: FieldExt,
+            const MAX_MEMORY_ROWS: usize,
+            const GLOBAL_COUNTER_MAX: usize,
+            const ADDRESS_MAX: usize,
+        > {
             ops: Vec<MemoryOp<F>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt, const GLOBAL_COUNTER_MAX: usize, const ADDRESS_MAX: usize> Circuit<F>
-            for MemoryCircuit<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+        impl<
+                F: FieldExt,
+                const MAX_MEMORY_ROWS: usize,
+                const GLOBAL_COUNTER_MAX: usize,
+                const ADDRESS_MAX: usize,
+            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
         {
-            type Config = Config<F, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -854,7 +856,7 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 10000, 10000> {
+        let circuit = MemoryCircuit::<pallas::Base, 100, 10000, 10000> {
             ops: vec![op_0, op_1],
             _marker: PhantomData,
         };
@@ -864,11 +866,11 @@ mod tests {
             prover.verify(),
             Err(vec![
                 Lookup {
-                    lookup_index: 0,
+                    lookup_index: 1,
                     row: 2,
                 },
                 Lookup {
-                    lookup_index: 0,
+                    lookup_index: 1,
                     row: 3,
                 }
             ])

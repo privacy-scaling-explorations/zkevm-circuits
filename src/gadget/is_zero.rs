@@ -9,9 +9,8 @@ use std::array;
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
     /// Given a `value` to be checked if it is zero:
     ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0,
-    ///     and `1/x` otherwise;
-    ///   - and returns nothing (result should be access by is_zero_expression)
-    fn is_zero(
+    ///     and `1/x` otherwise
+    fn assign(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -37,10 +36,10 @@ impl<F: FieldExt> IsZeroChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
         value: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-        value_inv: Column<Advice>,
     ) -> IsZeroConfig<F> {
         // dummy initialization
         let mut is_zero_expression = Expression::Constant(F::zero());
+        let value_inv = meta.advice_column();
 
         // Truth table of iz_zero gate:
         // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
@@ -54,6 +53,7 @@ impl<F: FieldExt> IsZeroChip<F> {
         // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
         meta.create_gate("is_zero gate", |meta| {
             let q_enable = meta.query_selector(q_enable);
+
             let value_inv = meta.query_advice(value_inv, Rotation::cur());
             let value = value(meta);
 
@@ -83,18 +83,15 @@ impl<F: FieldExt> IsZeroChip<F> {
 }
 
 impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
-    fn is_zero(
+    fn assign(
         &self,
-        mut region: &mut Region<'_, F>,
+        region: &mut Region<'_, F>,
         offset: usize,
         value: Option<F>,
     ) -> Result<(), Error> {
         let config = self.config();
 
-        config.q_enable.enable(&mut region, offset)?;
-
         let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
-
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
@@ -186,19 +183,13 @@ mod test {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.selector();
                 let value = meta.advice_column();
-                let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
 
-                let is_zero = IsZeroChip::configure(
-                    meta,
-                    q_enable,
-                    |meta| {
-                        let value_prev = meta.query_advice(value, Rotation::prev());
-                        let value_cur = meta.query_advice(value, Rotation::cur());
-                        value_cur - value_prev
-                    },
-                    value_diff_inv,
-                );
+                let is_zero = IsZeroChip::configure(meta, q_enable, |meta| {
+                    let value_prev = meta.query_advice(value, Rotation::prev());
+                    let value_cur = meta.query_advice(value, Rotation::cur());
+                    value_cur - value_prev
+                });
 
                 let config = Self::Config {
                     value,
@@ -259,8 +250,8 @@ mod test {
                                 || Ok(*value),
                             )?;
 
-                            // is_zero enables q_enable for us
-                            chip.is_zero(&mut region, idx + 1, Some(*value - value_prev))?;
+                            chip.config.q_enable.enable(&mut region, idx + 1)?;
+                            chip.assign(&mut region, idx + 1, Some(*value - value_prev))?;
 
                             value_prev = *value;
                         }
@@ -334,19 +325,13 @@ mod test {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.selector();
                 let (value_a, value_b) = (meta.advice_column(), meta.advice_column());
-                let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
 
-                let is_zero = IsZeroChip::configure(
-                    meta,
-                    q_enable,
-                    |meta| {
-                        let value_a = meta.query_advice(value_a, Rotation::cur());
-                        let value_b = meta.query_advice(value_b, Rotation::cur());
-                        value_a - value_b
-                    },
-                    value_diff_inv,
-                );
+                let is_zero = IsZeroChip::configure(meta, q_enable, |meta| {
+                    let value_a = meta.query_advice(value_a, Rotation::cur());
+                    let value_b = meta.query_advice(value_b, Rotation::cur());
+                    value_a - value_b
+                });
 
                 let config = Self::Config {
                     value_a,
@@ -413,8 +398,8 @@ mod test {
                                 || Ok(*value_b),
                             )?;
 
-                            // is_zero enables q_enable for us
-                            chip.is_zero(&mut region, idx + 1, Some(*value_a - *value_b))?;
+                            chip.config.q_enable.enable(&mut region, idx + 1)?;
+                            chip.assign(&mut region, idx + 1, Some(*value_a - *value_b))?;
                         }
 
                         Ok(())
