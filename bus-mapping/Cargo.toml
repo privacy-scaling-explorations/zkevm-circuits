@@ -1,0 +1,11 @@
+[package]
+name = "bus-mapping"
+version = "0.1.0"
+edition = "2018"
+authors = ["CPerezz <c.perezbaro@gmail.com>"]
+
+
+[dependencies]
+ff = "0.10"
+pasta_curves = "0.1"
+itertools = "0.10"
