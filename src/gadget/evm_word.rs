@@ -158,3 +158,112 @@ impl<F: FieldExt> WordConfig<F> {
         Ok(Word(bytes.try_into().unwrap()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2::{
+        circuit::SimpleFloorPlanner,
+        dev::{MockProver, VerifyFailure},
+        plonk::{Circuit, Instance},
+    };
+    use pasta_curves::pallas;
+    use std::marker::PhantomData;
+
+    #[test]
+    fn evm_word() {
+        #[derive(Default)]
+        struct MyCircuit<F: FieldExt> {
+            word: [Option<u8>; 32],
+            _marker: PhantomData<F>,
+        }
+
+        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+            // Introduce an additional instance column here to test lookups
+            // with public inputs. This is analogous to the bus mapping
+            // commitment which will be provided as public inputs.
+            type Config = (WordConfig<F>, Column<Instance>);
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                let r = r();
+
+                let q_encode = meta.selector();
+
+                let bytes: [Column<Advice>; 32] = (0..32)
+                    .map(|_| meta.advice_column())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap();
+                let byte_lookup = meta.fixed_column();
+
+                let config = WordConfig::configure(meta, r, q_encode, bytes, byte_lookup);
+
+                let pub_inputs = meta.instance_column();
+
+                // Make sure each encoded word has been committed to in the public inputs.
+                meta.lookup(|meta| {
+                    let q_encode = meta.query_selector(q_encode);
+                    let pub_inputs = meta.query_instance(pub_inputs, Rotation::cur());
+
+                    let encode_word = config.clone().encode_word_expr;
+
+                    vec![(q_encode * encode_word, pub_inputs)]
+                });
+
+                (config, pub_inputs)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<F>,
+            ) -> Result<(), Error> {
+                config.0.load(&mut layouter)?;
+
+                layouter.assign_region(
+                    || "assign word",
+                    |mut region| {
+                        let offset = 0;
+                        config.0.assign_word(&mut region, offset, self.word)
+                    },
+                )?;
+
+                Ok(())
+            }
+        }
+
+        {
+            let word = pallas::Base::rand();
+            let circuit = MyCircuit::<pallas::Base> {
+                word: word
+                    .to_bytes()
+                    .iter()
+                    .map(|b| Some(*b))
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                _marker: PhantomData,
+            };
+
+            // Test without public inputs
+            let prover = MockProver::<pallas::Base>::run(9, &circuit, vec![vec![]]).unwrap();
+            assert_eq!(
+                prover.verify(),
+                Err(vec![VerifyFailure::Lookup {
+                    lookup_index: 32,
+                    row: 0
+                }])
+            );
+
+            // Calculate word commitment and use it as public input.
+            let encoded: pallas::Base = encode(word.to_bytes().iter().rev().cloned(), r());
+            let prover = MockProver::<pallas::Base>::run(9, &circuit, vec![vec![encoded]]).unwrap();
+            assert_eq!(prover.verify(), Ok(()))
+        }
+    }
+}
