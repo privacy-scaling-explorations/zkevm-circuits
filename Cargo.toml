@@ -13,4 +13,4 @@ pasta_curves = "0.1"
 bigint = "4"
 
 [patch.crates-io]
-halo2 = { git = "https://github.com/zcash/halo2.git", rev = "d04b532368d05b505e622f8cac4c0693574fbd93" }
+halo2 = { git = "https://github.com/zcash/halo2.git", rev = "4283713ec76051eaf21a06d0279fa7d3497cafb6" }
