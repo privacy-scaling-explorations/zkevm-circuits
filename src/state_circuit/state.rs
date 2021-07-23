@@ -39,7 +39,7 @@ Example bus mapping:
 /// Memory is initialised at 0 for each new address.
 /// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word -> u8.
 #[derive(Copy, Clone, Debug)]
-struct MemoryAddress<F: FieldExt>(F);
+struct Address<F: FieldExt>(F);
 
 /// Global counter
 #[derive(Copy, Clone, Debug)]
@@ -83,8 +83,8 @@ impl<F: FieldExt> ReadWrite<F> {
 
 #[derive(Clone, Debug)]
 /// All the read/write operations that happen at this address.
-pub(crate) struct MemoryOp<F: FieldExt> {
-    address: MemoryAddress<F>,
+pub(crate) struct Op<F: FieldExt> {
+    address: Address<F>,
     global_counters: Vec<Option<ReadWrite<F>>>,
 }
 
@@ -102,9 +102,11 @@ pub(crate) struct BusMapping<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub(crate) struct Config<
     F: FieldExt,
-    const MAX_MEMORY_ROWS: usize,
+    const MAX_ROWS: usize,
     const GLOBAL_COUNTER_MAX: usize,
     const ADDRESS_MAX: usize,
+    const ADDRESS_INCR: bool,
+    const ADDRESS_DIFF_STRICT: bool,
 > {
     q_first: Selector,
     q_not_first: Selector,
@@ -124,7 +126,10 @@ impl<
         const MAX_MEMORY_ROWS: usize,
         const GLOBAL_COUNTER_MAX: usize,
         const ADDRESS_MAX: usize,
-    > Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+        const ADDRESS_INCR: bool,
+        const ADDRESS_DIFF_STRICT: bool,
+    >
+    Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>
 {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
@@ -143,14 +148,15 @@ impl<
             value_a - value_b
         });
 
-        let mono_incr = MonotoneChip::<F, ADDRESS_MAX, true, false>::configure(
-            meta,
-            |meta| meta.query_selector(q_not_first),
-            address,
-        );
+        let mono_incr =
+            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
+                meta,
+                |meta| meta.query_selector(q_not_first),
+                address,
+            );
 
         // A gate for the first operation (does not need Rotation::prev).
-        meta.create_gate("Memory first row operation", |meta| {
+        meta.create_gate("First row operation", |meta| {
             let q_first = meta.query_selector(q_first);
 
             let value = meta.query_advice(value, Rotation::cur());
@@ -161,14 +167,24 @@ impl<
             //      - flags[0] == 1
             //      - global_counters[0] == 0
 
+            // TODO: global_counter can't be 0 for both - memory and stack init rows
+
+            let address = meta.query_advice(address, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let max_address = Expression::Constant(F::from_u64(ADDRESS_MAX as u64));
+            // For stack init operation: ADDRESS_INCR is false (thus 0) and the address must be ADDRESS_MAX (that is 1023)
+            let init_address = (one - Expression::Constant(F::from_u64(ADDRESS_INCR as u64)))
+                * (max_address - address);
+
             vec![
                 q_first.clone() * value,
                 q_first.clone() * (Expression::Constant(F::one()) - flag),
-                q_first * global_counter,
+                q_first.clone() * global_counter,
+                q_first * init_address,
             ]
         });
 
-        meta.create_gate("Memory operation", |meta| {
+        meta.create_gate("State operation", |meta| {
             let q_not_first = meta.query_selector(q_not_first);
             // If address_cur != address_prev, this is an `init`. We must constrain:
             //      - values[0] == [0]
@@ -180,6 +196,8 @@ impl<
                 let address_cur = meta.query_advice(address, Rotation::cur());
                 address_cur - address_prev
             };
+            // Note: address_diff is negative when addresses are decreasingly ordered, but this is ok
+            // in this gate.
 
             let value_cur = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
@@ -269,8 +287,11 @@ impl<
             .assign_region(
                 || "global counter table",
                 |mut region| {
-                    // generate range table [1, GLOBAL_COUNTER_MAX-1]
-                    for idx in 1..GLOBAL_COUNTER_MAX {
+                    // generate range table [1, GLOBAL_COUNTER_MAX]
+                    // Note: 0 is not included because global_counter needs to be strictly increasing
+                    // and we are checking (global_counter_cur - global_counter_prev) which must be
+                    // in [1, GLOBAL_COUNTER_MAX]
+                    for idx in 1..=GLOBAL_COUNTER_MAX {
                         region.assign_fixed(
                             || "global counter table",
                             self.global_counter_table,
@@ -286,7 +307,7 @@ impl<
         layouter.assign_region(
             || "address table with zero",
             |mut region| {
-                for idx in 0..ADDRESS_MAX {
+                for idx in 0..=ADDRESS_MAX {
                     region.assign_fixed(
                         || "address table with zero",
                         self.address_table_zero,
@@ -303,7 +324,7 @@ impl<
     pub(crate) fn assign(
         &self,
         mut layouter: impl Layouter<F>,
-        ops: Vec<MemoryOp<F>>,
+        ops: Vec<Op<F>>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
@@ -313,7 +334,7 @@ impl<
         monotone_chip.load(&mut layouter)?;
 
         layouter.assign_region(
-            || "Memory operations",
+            || "State operations",
             |mut region| {
                 let mut offset = 0;
 
@@ -397,7 +418,7 @@ impl<
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        address: MemoryAddress<F>,
+        address: Address<F>,
     ) -> Result<(), Error> {
         // Assign `address`
         region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
@@ -424,7 +445,7 @@ impl<
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        address: MemoryAddress<F>,
+        address: Address<F>,
         read_write: &Option<ReadWrite<F>>,
     ) -> Result<BusMapping<F>, Error> {
         // Assign `address`
@@ -505,7 +526,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, GlobalCounter, MemoryAddress, MemoryOp, ReadWrite, Value};
+    use super::{Address, Config, GlobalCounter, Op, ReadWrite, Value};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup},
@@ -515,6 +536,8 @@ mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
     use std::marker::PhantomData;
 
+    // TODO: shrink tests
+
     #[test]
     fn memory_circuit() {
         #[derive(Default)]
@@ -523,8 +546,10 @@ mod tests {
             const MAX_MEMORY_ROWS: usize,
             const GLOBAL_COUNTER_MAX: usize,
             const ADDRESS_MAX: usize,
+            const ADDRESS_INCR: bool,
+            const ADDRESS_DIFF_STRICT: bool,
         > {
-            ops: Vec<MemoryOp<F>>,
+            ops: Vec<Op<F>>,
             _marker: PhantomData<F>,
         }
 
@@ -533,9 +558,26 @@ mod tests {
                 const MAX_MEMORY_ROWS: usize,
                 const GLOBAL_COUNTER_MAX: usize,
                 const ADDRESS_MAX: usize,
-            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+                const ADDRESS_INCR: bool,
+                const ADDRESS_DIFF_STRICT: bool,
+            > Circuit<F>
+            for MemoryCircuit<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >
         {
-            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -558,8 +600,8 @@ mod tests {
             }
         }
 
-        let op_0 = MemoryOp {
-            address: MemoryAddress(pallas::Base::zero()),
+        let op_0 = Op {
+            address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -572,8 +614,8 @@ mod tests {
             ],
         };
 
-        let op_1 = MemoryOp {
-            address: MemoryAddress(pallas::Base::one()),
+        let op_1 = Op {
+            address: Address(pallas::Base::one()),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
@@ -589,7 +631,7 @@ mod tests {
         // Note: be careful when setting MAX_MEMORY_ROWS and GLOBAL_COUNTER_MAX -
         // GLOBAL_COUNTER_MAX needs to be big enough for padded rows (unused memory rows
         // that are filled with dummy values)
-        let circuit = MemoryCircuit::<pallas::Base, 1000, 2000, 100> {
+        let circuit = MemoryCircuit::<pallas::Base, 1000, 2000, 100, true, false> {
             ops: vec![op_0, op_1],
             _marker: PhantomData,
         };
@@ -606,8 +648,10 @@ mod tests {
             const MAX_MEMORY_ROWS: usize,
             const GLOBAL_COUNTER_MAX: usize,
             const ADDRESS_MAX: usize,
+            const ADDRESS_INCR: bool,
+            const ADDRESS_DIFF_STRICT: bool,
         > {
-            ops: Vec<MemoryOp<F>>,
+            ops: Vec<Op<F>>,
             _marker: PhantomData<F>,
         }
 
@@ -616,9 +660,26 @@ mod tests {
                 const MAX_MEMORY_ROWS: usize,
                 const GLOBAL_COUNTER_MAX: usize,
                 const ADDRESS_MAX: usize,
-            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+                const ADDRESS_INCR: bool,
+                const ADDRESS_DIFF_STRICT: bool,
+            > Circuit<F>
+            for MemoryCircuit<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >
         {
-            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -641,8 +702,8 @@ mod tests {
             }
         }
 
-        let op_0 = MemoryOp {
-            address: MemoryAddress(pallas::Base::zero()),
+        let op_0 = Op {
+            address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -655,7 +716,7 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 1000, 2000, 100> {
+        let circuit = MemoryCircuit::<pallas::Base, 1000, 2000, 100, true, false> {
             ops: vec![op_0],
             _marker: PhantomData,
         };
@@ -664,7 +725,7 @@ mod tests {
         assert_eq!(
             prover.verify(),
             Err(vec![ConstraintNotSatisfied {
-                constraint: ((2, "Memory operation").into(), 4, "").into(),
+                constraint: ((2, "State operation").into(), 4, "").into(),
                 row: 2
             },])
         );
@@ -678,8 +739,10 @@ mod tests {
             const MAX_MEMORY_ROWS: usize,
             const GLOBAL_COUNTER_MAX: usize,
             const ADDRESS_MAX: usize,
+            const ADDRESS_INCR: bool,
+            const ADDRESS_DIFF_STRICT: bool,
         > {
-            ops: Vec<MemoryOp<F>>,
+            ops: Vec<Op<F>>,
             _marker: PhantomData<F>,
         }
 
@@ -688,9 +751,26 @@ mod tests {
                 const MAX_MEMORY_ROWS: usize,
                 const GLOBAL_COUNTER_MAX: usize,
                 const ADDRESS_MAX: usize,
-            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+                const ADDRESS_INCR: bool,
+                const ADDRESS_DIFF_STRICT: bool,
+            > Circuit<F>
+            for MemoryCircuit<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >
         {
-            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -719,26 +799,26 @@ mod tests {
         const ADDRESS_MAX: usize = 100;
         const GLOBAL_COUNTER_MAX: usize = 60000;
 
-        let op_0 = MemoryOp {
-            address: MemoryAddress(pallas::Base::from_u64((ADDRESS_MAX - 1) as u64)),
+        let op_0 = Op {
+            address: Address(pallas::Base::from_u64(ADDRESS_MAX as u64)),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Read(
-                    GlobalCounter(GLOBAL_COUNTER_MAX - 1),
+                    GlobalCounter(GLOBAL_COUNTER_MAX),
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Write(
-                    GlobalCounter(GLOBAL_COUNTER_MAX), // this global counter value is not in the allowed range
+                    GlobalCounter(GLOBAL_COUNTER_MAX + 1), // this global counter value is not in the allowed range
                     Value(pallas::Base::from_u64(12)),
                 )),
             ],
         };
 
-        let op_1 = MemoryOp {
-            address: MemoryAddress(pallas::Base::from_u64(ADDRESS_MAX as u64)), // this address is not in the allowed range
+        let op_1 = Op {
+            address: Address(pallas::Base::from_u64((ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -751,11 +831,17 @@ mod tests {
             ],
         };
 
-        let circuit =
-            MemoryCircuit::<pallas::Base, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX> {
-                ops: vec![op_0, op_1],
-                _marker: PhantomData,
-            };
+        let circuit = MemoryCircuit::<
+            pallas::Base,
+            MAX_MEMORY_ROWS,
+            GLOBAL_COUNTER_MAX,
+            ADDRESS_MAX,
+            true,
+            false,
+        > {
+            ops: vec![op_0, op_1],
+            _marker: PhantomData,
+        };
 
         let prover = MockProver::<pallas::Base>::run(16, &circuit, vec![]).unwrap();
         assert_eq!(
@@ -789,8 +875,10 @@ mod tests {
             const MAX_MEMORY_ROWS: usize,
             const GLOBAL_COUNTER_MAX: usize,
             const ADDRESS_MAX: usize,
+            const ADDRESS_INCR: bool,
+            const ADDRESS_DIFF_STRICT: bool,
         > {
-            ops: Vec<MemoryOp<F>>,
+            ops: Vec<Op<F>>,
             _marker: PhantomData<F>,
         }
 
@@ -799,9 +887,26 @@ mod tests {
                 const MAX_MEMORY_ROWS: usize,
                 const GLOBAL_COUNTER_MAX: usize,
                 const ADDRESS_MAX: usize,
-            > Circuit<F> for MemoryCircuit<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>
+                const ADDRESS_INCR: bool,
+                const ADDRESS_DIFF_STRICT: bool,
+            > Circuit<F>
+            for MemoryCircuit<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >
         {
-            type Config = Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX>;
+            type Config = Config<
+                F,
+                MAX_MEMORY_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -824,8 +929,8 @@ mod tests {
             }
         }
 
-        let op_0 = MemoryOp {
-            address: MemoryAddress(pallas::Base::zero()),
+        let op_0 = Op {
+            address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(1352),
@@ -842,8 +947,8 @@ mod tests {
             ],
         };
 
-        let op_1 = MemoryOp {
-            address: MemoryAddress(pallas::Base::one()),
+        let op_1 = Op {
+            address: Address(pallas::Base::one()),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(1788),
@@ -856,7 +961,7 @@ mod tests {
             ],
         };
 
-        let circuit = MemoryCircuit::<pallas::Base, 100, 10000, 10000> {
+        let circuit = MemoryCircuit::<pallas::Base, 100, 10000, 10000, true, false> {
             ops: vec![op_0, op_1],
             _marker: PhantomData,
         };
@@ -873,6 +978,227 @@ mod tests {
                     lookup_index: 1,
                     row: 3,
                 }
+            ])
+        );
+    }
+
+    #[test]
+    fn stack_circuit() {
+        #[derive(Default)]
+        struct StackCircuit<
+            F: FieldExt,
+            const MAX_ROWS: usize,
+            const GLOBAL_COUNTER_MAX: usize,
+            const ADDRESS_MAX: usize,
+            const ADDRESS_INCR: bool,
+            const ADDRESS_DIFF_STRICT: bool,
+        > {
+            ops: Vec<Op<F>>,
+            _marker: PhantomData<F>,
+        }
+
+        impl<
+                F: FieldExt,
+                const MAX_ROWS: usize,
+                const GLOBAL_COUNTER_MAX: usize,
+                const ADDRESS_MAX: usize,
+                const ADDRESS_INCR: bool,
+                const ADDRESS_DIFF_STRICT: bool,
+            > Circuit<F>
+            for StackCircuit<
+                F,
+                MAX_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >
+        {
+            type Config = Config<
+                F,
+                MAX_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                Config::configure(meta)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<F>,
+            ) -> Result<(), Error> {
+                config.load(&mut layouter)?;
+                config.assign(layouter, self.ops.clone())?;
+
+                Ok(())
+            }
+        }
+
+        let op_0 = Op {
+            address: Address(pallas::Base::from_u64(1023)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(12),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(24),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+            ],
+        };
+
+        let op_1 = Op {
+            address: Address(pallas::Base::from_u64(1022)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(17),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(87),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+            ],
+        };
+
+        // Note: be careful when setting MAX_ROWS and GLOBAL_COUNTER_MAX -
+        // GLOBAL_COUNTER_MAX needs to be big enough for padded rows (unused memory rows
+        // that are filled with dummy values)
+        let circuit = StackCircuit::<pallas::Base, 1000, 2000, 1023, false, false> {
+            ops: vec![op_0, op_1],
+            _marker: PhantomData,
+        };
+
+        let prover = MockProver::<pallas::Base>::run(14, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn stack_circuit_max() {
+        #[derive(Default)]
+        struct StackCircuit<
+            F: FieldExt,
+            const MAX_ROWS: usize,
+            const GLOBAL_COUNTER_MAX: usize,
+            const ADDRESS_MAX: usize,
+            const ADDRESS_INCR: bool,
+            const ADDRESS_DIFF_STRICT: bool,
+        > {
+            ops: Vec<Op<F>>,
+            _marker: PhantomData<F>,
+        }
+
+        impl<
+                F: FieldExt,
+                const MAX_ROWS: usize,
+                const GLOBAL_COUNTER_MAX: usize,
+                const ADDRESS_MAX: usize,
+                const ADDRESS_INCR: bool,
+                const ADDRESS_DIFF_STRICT: bool,
+            > Circuit<F>
+            for StackCircuit<
+                F,
+                MAX_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >
+        {
+            type Config = Config<
+                F,
+                MAX_ROWS,
+                GLOBAL_COUNTER_MAX,
+                ADDRESS_MAX,
+                ADDRESS_INCR,
+                ADDRESS_DIFF_STRICT,
+            >;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                Config::configure(meta)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<F>,
+            ) -> Result<(), Error> {
+                config.load(&mut layouter)?;
+                config.assign(layouter, self.ops.clone())?;
+
+                Ok(())
+            }
+        }
+
+        let op_0 = Op {
+            address: Address(pallas::Base::from_u64(1024)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(12),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(24),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+            ],
+        };
+
+        let op_1 = Op {
+            address: Address(pallas::Base::from_u64(1022)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(17),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(87),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+            ],
+        };
+
+        let circuit = StackCircuit::<pallas::Base, 1000, 2000, 1023, false, false> {
+            ops: vec![op_0, op_1],
+            _marker: PhantomData,
+        };
+
+        let prover = MockProver::<pallas::Base>::run(14, &circuit, vec![]).unwrap();
+        assert_eq!(
+            prover.verify(),
+            Err(vec![
+                ConstraintNotSatisfied {
+                    constraint: ((1, "First row operation").into(), 3, "").into(),
+                    row: 0
+                },
+                Lookup {
+                    lookup_index: 2,
+                    row: 0,
+                },
+                Lookup {
+                    lookup_index: 2,
+                    row: 1,
+                },
+                Lookup {
+                    lookup_index: 2,
+                    row: 2,
+                },
             ])
         );
     }
