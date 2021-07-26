@@ -660,16 +660,7 @@ mod tests {
                 )),
             ],
         };
-        test_state_circuit!(
-            14,
-            1000,
-            2000,
-            100,
-            true,
-            false,
-            vec![op_0, op_1],
-            Ok(())
-        );
+        test_state_circuit!(14, 1000, 2000, 100, true, false, vec![op_0, op_1], Ok(()));
     }
 
     #[test]
