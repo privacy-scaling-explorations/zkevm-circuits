@@ -667,7 +667,7 @@ mod tests {
             100,
             true,
             false,
-            vec![op_0.clone(), op_1.clone()],
+            vec![op_0, op_1],
             Ok(())
         );
     }
@@ -695,7 +695,7 @@ mod tests {
             100,
             true,
             false,
-            vec![op_0.clone()],
+            vec![op_0],
             Err(vec![constraint_not_satisfied(2, 2, "State operation", 4)])
         );
     }
@@ -747,7 +747,7 @@ mod tests {
             ADDRESS_MAX,
             true,
             false,
-            vec![op_0.clone(), op_1.clone()],
+            vec![op_0, op_1],
             Err(vec![
                 lookup_fail(4, 2),
                 lookup_fail(5, 2),
@@ -798,7 +798,7 @@ mod tests {
             10000,
             true,
             false,
-            vec![op_0.clone(), op_1.clone()],
+            vec![op_0, op_1],
             Err(vec![lookup_fail(2, 1), lookup_fail(3, 1),])
         );
     }
@@ -842,7 +842,7 @@ mod tests {
             1023,
             ADDRESS_INCR,
             false,
-            vec![op_0.clone(), op_1.clone()],
+            vec![op_0, op_1],
             Ok(())
         );
     }
