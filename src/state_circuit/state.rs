@@ -621,22 +621,19 @@ mod tests {
         gate_name: &'static str,
         index: usize,
     ) -> halo2::dev::VerifyFailure {
-        return ConstraintNotSatisfied {
+        ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
-            row: row,
-        };
+            row,
+        }
     }
 
     fn lookup_fail(row: usize, lookup_index: usize) -> halo2::dev::VerifyFailure {
-        return Lookup {
-            lookup_index: lookup_index,
-            row: row,
-        };
+        Lookup { lookup_index, row }
     }
 
     #[test]
-    fn state_circuit() {
-        let mut op_0 = Op {
+    fn memory_circuit() {
+        let op_0 = Op {
             address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -650,7 +647,7 @@ mod tests {
             ],
         };
 
-        let mut op_1 = Op {
+        let op_1 = Op {
             address: Address(pallas::Base::one()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -673,8 +670,11 @@ mod tests {
             vec![op_0.clone(), op_1.clone()],
             Ok(())
         );
+    }
 
-        op_0 = Op {
+    #[test]
+    fn same_address_read() {
+        let op_0 = Op {
             address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -698,8 +698,11 @@ mod tests {
             vec![op_0.clone()],
             Err(vec![constraint_not_satisfied(2, 2, "State operation", 4)])
         );
+    }
 
-        op_0 = Op {
+    #[test]
+    fn max_values() {
+        let op_0 = Op {
             address: Address(pallas::Base::from_u64(ADDRESS_MAX as u64)),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -717,7 +720,7 @@ mod tests {
             ],
         };
 
-        op_1 = Op {
+        let op_1 = Op {
             address: Address(pallas::Base::from_u64((ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -752,8 +755,11 @@ mod tests {
                 lookup_fail(3, 3)
             ])
         );
+    }
 
-        op_0 = Op {
+    #[test]
+    fn non_monotone_global_counter() {
+        let op_0 = Op {
             address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -771,7 +777,7 @@ mod tests {
             ],
         };
 
-        op_1 = Op {
+        let op_1 = Op {
             address: Address(pallas::Base::one()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -795,10 +801,11 @@ mod tests {
             vec![op_0.clone(), op_1.clone()],
             Err(vec![lookup_fail(2, 1), lookup_fail(3, 1),])
         );
+    }
 
-        // Stack circuits:
-
-        op_0 = Op {
+    #[test]
+    fn stack_circuit() {
+        let op_0 = Op {
             address: Address(pallas::Base::from_u64(1023)),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -812,7 +819,7 @@ mod tests {
             ],
         };
 
-        op_1 = Op {
+        let op_1 = Op {
             address: Address(pallas::Base::from_u64(1022)),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -838,8 +845,11 @@ mod tests {
             vec![op_0.clone(), op_1.clone()],
             Ok(())
         );
+    }
 
-        op_0 = Op {
+    #[test]
+    fn stack_circuit_max() {
+        let op_0 = Op {
             address: Address(pallas::Base::from_u64(1024)),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -853,7 +863,7 @@ mod tests {
             ],
         };
 
-        op_1 = Op {
+        let op_1 = Op {
             address: Address(pallas::Base::from_u64(1022)),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -868,6 +878,7 @@ mod tests {
         };
 
         // For stack circuit we use ADDRESS_INCR = false
+        const ADDRESS_INCR: bool = false;
         test_state_circuit!(
             14,
             1000,
@@ -875,7 +886,7 @@ mod tests {
             1023,
             ADDRESS_INCR,
             false,
-            vec![op_0.clone(), op_1.clone()],
+            vec![op_0, op_1],
             Err(vec![
                 constraint_not_satisfied(0, 1, "First row operation", 3),
                 lookup_fail(0, 2),
