@@ -20,6 +20,7 @@ pub(crate) trait IsZeroInstruction<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroConfig<F> {
+    // Note that the selector needs to be enabled by the caller.
     pub q_enable: Selector,
     pub value_inv: Column<Advice>,
     /// This can be used directly for custom gate at the offset if `is_zero` is
@@ -36,10 +37,10 @@ impl<F: FieldExt> IsZeroChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
         value: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        value_inv: Column<Advice>,
     ) -> IsZeroConfig<F> {
         // dummy initialization
         let mut is_zero_expression = Expression::Constant(F::zero());
-        let value_inv = meta.advice_column();
 
         // Truth table of iz_zero gate:
         // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
@@ -183,13 +184,19 @@ mod test {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.selector();
                 let value = meta.advice_column();
+                let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
 
-                let is_zero = IsZeroChip::configure(meta, q_enable, |meta| {
-                    let value_prev = meta.query_advice(value, Rotation::prev());
-                    let value_cur = meta.query_advice(value, Rotation::cur());
-                    value_cur - value_prev
-                });
+                let is_zero = IsZeroChip::configure(
+                    meta,
+                    q_enable,
+                    |meta| {
+                        let value_prev = meta.query_advice(value, Rotation::prev());
+                        let value_cur = meta.query_advice(value, Rotation::cur());
+                        value_cur - value_prev
+                    },
+                    value_diff_inv,
+                );
 
                 let config = Self::Config {
                     value,
@@ -325,13 +332,19 @@ mod test {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.selector();
                 let (value_a, value_b) = (meta.advice_column(), meta.advice_column());
+                let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
 
-                let is_zero = IsZeroChip::configure(meta, q_enable, |meta| {
-                    let value_a = meta.query_advice(value_a, Rotation::cur());
-                    let value_b = meta.query_advice(value_b, Rotation::cur());
-                    value_a - value_b
-                });
+                let is_zero = IsZeroChip::configure(
+                    meta,
+                    q_enable,
+                    |meta| {
+                        let value_a = meta.query_advice(value_a, Rotation::cur());
+                        let value_b = meta.query_advice(value_b, Rotation::cur());
+                        value_a - value_b
+                    },
+                    value_diff_inv,
+                );
 
                 let config = Self::Config {
                     value_a,

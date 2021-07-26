@@ -111,6 +111,7 @@ pub(crate) struct Config<
     q_first: Selector,
     q_not_first: Selector,
     address: Column<Advice>,
+    address_diff_inv: Column<Advice>,
     global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
@@ -136,17 +137,23 @@ impl<
         let q_first = meta.selector();
         let q_not_first = meta.selector();
         let address = meta.advice_column();
+        let address_diff_inv = meta.advice_column();
         let global_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
         let global_counter_table = meta.fixed_column();
         let address_table_zero = meta.fixed_column();
 
-        let is_zero = IsZeroChip::configure(meta, q_not_first, |meta| {
-            let value_a = meta.query_advice(address, Rotation::cur());
-            let value_b = meta.query_advice(address, Rotation::prev());
-            value_a - value_b
-        });
+        let is_zero = IsZeroChip::configure(
+            meta,
+            q_not_first,
+            |meta| {
+                let value_a = meta.query_advice(address, Rotation::cur());
+                let value_b = meta.query_advice(address, Rotation::prev());
+                value_a - value_b
+            },
+            address_diff_inv,
+        );
 
         let mono_incr =
             MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
@@ -239,9 +246,6 @@ impl<
             )]
         });
 
-        // TODO: figure out why checks fail when put in the vec of the same meta.lookup call
-        // (for some cases having a vector with more than one tuple works though)
-
         // address is in the allowed range
         meta.lookup(|meta| {
             let q_first = meta.query_selector(q_first);
@@ -270,6 +274,7 @@ impl<
             q_first,
             q_not_first,
             address,
+            address_diff_inv,
             global_counter,
             value,
             flag,
@@ -330,7 +335,9 @@ impl<
 
         let chip = IsZeroChip::construct(self.is_zero.clone());
         let monotone_chip =
-            MonotoneChip::<F, ADDRESS_MAX, true, false>::construct(self.mono_incr.clone());
+            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::construct(
+                self.mono_incr.clone(),
+            );
         monotone_chip.load(&mut layouter)?;
 
         layouter.assign_region(
