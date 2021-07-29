@@ -1,0 +1,5 @@
+address_incr="false"
+address_diff_strict="false"
+max_rows="1000"
+global_counter_max="2000"
+address_max="1023"

@@ -10,28 +10,38 @@ use std::{marker::PhantomData, u64};
 pub(crate) struct MonotoneConfig {
     range_table: Column<Fixed>,
     value: Column<Advice>,
+    range: usize,
+    incr: bool,
+    strict: bool,
 }
 
 /// MonotoneChip helps to check if an advice column is monotonically increasing
 /// within a range. With strict enabled, it disallows equality of two cell.
-pub(crate) struct MonotoneChip<F, const RANGE: usize, const INCR: bool, const STRICT: bool> {
+pub(crate) struct MonotoneChip<F> {
     config: MonotoneConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
-    MonotoneChip<F, RANGE, INCR, STRICT>
-{
+impl<F: FieldExt> MonotoneChip<F> {
     /// configure which column should be check. q_enable here as a fn is
     /// flexible for synthetic selector instead of a fixed one.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         value: Column<Advice>,
+        range: usize,
+        incr: bool,
+        strict: bool,
     ) -> MonotoneConfig {
         let range_table = meta.fixed_column();
 
-        let config = MonotoneConfig { range_table, value };
+        let config = MonotoneConfig {
+            range_table,
+            value,
+            range,
+            incr,
+            strict,
+        };
 
         meta.lookup(|meta| {
             let q_enable = q_enable(meta);
@@ -39,7 +49,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
             let value_diff = {
                 let value_cur = meta.query_advice(value, Rotation::cur());
                 let value_prev = meta.query_advice(value, Rotation::prev());
-                if INCR {
+                if incr {
                     value_cur - value_prev
                 } else {
                     value_prev - value_cur
@@ -48,7 +58,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
 
             // If strict monotone, we subtract diff by one
             // to make sure zero lookup fail
-            let min_diff = Expression::Constant(F::from_u64(STRICT as u64));
+            let min_diff = Expression::Constant(F::from_u64(strict as u64));
 
             vec![(q_enable * (value_diff - min_diff), range_table)]
         });
@@ -60,7 +70,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
         layouter.assign_region(
             || "range_table",
             |mut meta| {
-                let max = RANGE - STRICT as usize;
+                let max = self.config.range - self.config.strict as usize;
 
                 for idx in 0..=max {
                     meta.assign_fixed(
@@ -84,9 +94,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
     }
 }
 
-impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip<F>
-    for MonotoneChip<F, RANGE, INCR, STRICT>
-{
+impl<F: FieldExt> Chip<F> for MonotoneChip<F> {
     type Config = MonotoneConfig;
     type Loaded = ();
 
@@ -114,82 +122,87 @@ mod test {
     use pasta_curves::pallas::Base;
     use std::marker::PhantomData;
 
-    #[derive(Clone, Debug)]
-    struct TestCircuitConfig {
-        q_enable: Selector,
-        value: Column<Advice>,
-        mono_incr: MonotoneConfig,
-    }
-
-    #[derive(Default)]
-    struct TestCircuit<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> {
-        values: Option<Vec<u64>>,
-        _marker: PhantomData<F>,
-    }
-
-    impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Circuit<F>
-        for TestCircuit<F, RANGE, INCR, STRICT>
-    {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let q_enable = meta.selector();
-            let value = meta.advice_column();
-
-            let mono_incr = MonotoneChip::<F, RANGE, INCR, STRICT>::configure(
-                meta,
-                |meta| meta.query_selector(q_enable),
-                value,
-            );
-
-            Self::Config {
-                q_enable,
-                value,
-                mono_incr,
-            }
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            let monotone_chip =
-                MonotoneChip::<F, RANGE, INCR, STRICT>::construct(config.mono_incr.clone());
-
-            monotone_chip.load(&mut layouter)?;
-
-            let values: Vec<_> = self
-                .values
-                .as_ref()
-                .map(|values| values.iter().map(|value| F::from_u64(*value)).collect())
-                .ok_or(Error::SynthesisError)?;
-
-            layouter.assign_region(
-                || "witness",
-                |mut region| {
-                    for (idx, value) in values.iter().enumerate() {
-                        region.assign_advice(|| "value", config.value, idx, || Ok(*value))?;
-                        if idx > 0 {
-                            config.q_enable.enable(&mut region, idx)?;
-                        }
-                    }
-
-                    Ok(())
-                },
-            )
-        }
-    }
-
     macro_rules! gen_try_test_circuit {
         ($range:expr, $incr:expr, $strict:expr) => {
+            #[derive(Clone, Debug)]
+            struct TestCircuitConfig {
+                q_enable: Selector,
+                value: Column<Advice>,
+                mono_incr: MonotoneConfig,
+            }
+
+            #[derive(Default)]
+            struct TestCircuit<F: FieldExt> {
+                values: Option<Vec<u64>>,
+                _marker: PhantomData<F>,
+            }
+
+            impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+                type Config = TestCircuitConfig;
+                type FloorPlanner = SimpleFloorPlanner;
+
+                fn without_witnesses(&self) -> Self {
+                    Self::default()
+                }
+
+                fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                    let q_enable = meta.selector();
+                    let value = meta.advice_column();
+
+                    let mono_incr = MonotoneChip::<F>::configure(
+                        meta,
+                        |meta| meta.query_selector(q_enable),
+                        value,
+                        $range,
+                        $incr,
+                        $strict,
+                    );
+
+                    Self::Config {
+                        q_enable,
+                        value,
+                        mono_incr,
+                    }
+                }
+
+                fn synthesize(
+                    &self,
+                    config: Self::Config,
+                    mut layouter: impl Layouter<F>,
+                ) -> Result<(), Error> {
+                    let monotone_chip = MonotoneChip::<F>::construct(config.mono_incr.clone());
+
+                    monotone_chip.load(&mut layouter)?;
+
+                    let values: Vec<_> = self
+                        .values
+                        .as_ref()
+                        .map(|values| values.iter().map(|value| F::from_u64(*value)).collect())
+                        .ok_or(Error::SynthesisError)?;
+
+                    layouter.assign_region(
+                        || "witness",
+                        |mut region| {
+                            for (idx, value) in values.iter().enumerate() {
+                                region.assign_advice(
+                                    || "value",
+                                    config.value,
+                                    idx,
+                                    || Ok(*value),
+                                )?;
+                                if idx > 0 {
+                                    config.q_enable.enable(&mut region, idx)?;
+                                }
+                            }
+
+                            Ok(())
+                        },
+                    )
+                }
+            }
+
             fn try_test_circuit(values: Vec<u64>, result: Result<(), Vec<VerifyFailure>>) {
-                let circuit = TestCircuit::<Base, $range, $incr, $strict> {
+                let circuit = TestCircuit::<Base> {
                     values: Some(values),
                     _marker: PhantomData,
                 };

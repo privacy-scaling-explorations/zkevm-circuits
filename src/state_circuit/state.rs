@@ -100,14 +100,12 @@ pub(crate) struct BusMapping<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<
-    F: FieldExt,
-    const MAX_ROWS: usize,
-    const GLOBAL_COUNTER_MAX: usize,
-    const ADDRESS_MAX: usize,
-    const ADDRESS_INCR: bool,
-    const ADDRESS_DIFF_STRICT: bool,
-> {
+pub(crate) struct Config<F: FieldExt> {
+    max_rows: usize,
+    global_counter_max: usize,
+    address_max: usize,
+    address_incr: bool,
+    address_diff_strict: bool,
     q_first: Selector,
     q_not_first: Selector,
     address: Column<Advice>,
@@ -122,18 +120,18 @@ pub(crate) struct Config<
     _marker: PhantomData<F>,
 }
 
-impl<
-        F: FieldExt,
-        const MAX_MEMORY_ROWS: usize,
-        const GLOBAL_COUNTER_MAX: usize,
-        const ADDRESS_MAX: usize,
-        const ADDRESS_INCR: bool,
-        const ADDRESS_DIFF_STRICT: bool,
-    >
-    Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>
-{
+impl<F: FieldExt> Config<F> {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        let mut settings = config::Config::default();
+        settings.merge(config::File::with_name("Config")).unwrap();
+
+        let max_rows = settings.get_int("max_rows").unwrap() as usize;
+        let global_counter_max = settings.get_int("global_counter_max").unwrap() as usize;
+        let address_max = settings.get_int("address_max").unwrap() as usize;
+        let address_incr = settings.get_bool("address_incr").unwrap();
+        let address_diff_strict = settings.get_bool("address_diff_strict").unwrap();
+
         let q_first = meta.selector();
         let q_not_first = meta.selector();
         let address = meta.advice_column();
@@ -155,12 +153,14 @@ impl<
             address_diff_inv,
         );
 
-        let mono_incr =
-            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
-                meta,
-                |meta| meta.query_selector(q_not_first),
-                address,
-            );
+        let mono_incr = MonotoneChip::<F>::configure(
+            meta,
+            |meta| meta.query_selector(q_not_first),
+            address,
+            address_max,
+            address_incr,
+            address_diff_strict,
+        );
 
         // A gate for the first operation (does not need Rotation::prev).
         meta.create_gate("First row operation", |meta| {
@@ -178,9 +178,9 @@ impl<
 
             let address = meta.query_advice(address, Rotation::cur());
             let one = Expression::Constant(F::one());
-            let max_address = Expression::Constant(F::from_u64(ADDRESS_MAX as u64));
+            let max_address = Expression::Constant(F::from_u64(address_max as u64));
             // For stack init operation: ADDRESS_INCR is false (thus 0) and the address must be ADDRESS_MAX (that is 1023)
-            let init_address = (one - Expression::Constant(F::from_u64(ADDRESS_INCR as u64)))
+            let init_address = (one - Expression::Constant(F::from_u64(address_incr as u64)))
                 * (max_address - address);
 
             vec![
@@ -271,6 +271,11 @@ impl<
         });
 
         Config {
+            max_rows,
+            global_counter_max,
+            address_max,
+            address_incr,
+            address_diff_strict,
             q_first,
             q_not_first,
             address,
@@ -296,7 +301,7 @@ impl<
                     // Note: 0 is not included because global_counter needs to be strictly increasing
                     // and we are checking (global_counter_cur - global_counter_prev) which must be
                     // in [1, GLOBAL_COUNTER_MAX]
-                    for idx in 1..=GLOBAL_COUNTER_MAX {
+                    for idx in 1..=self.global_counter_max {
                         region.assign_fixed(
                             || "global counter table",
                             self.global_counter_table,
@@ -312,7 +317,7 @@ impl<
         layouter.assign_region(
             || "address table with zero",
             |mut region| {
-                for idx in 0..=ADDRESS_MAX {
+                for idx in 0..=self.address_max {
                     region.assign_fixed(
                         || "address table with zero",
                         self.address_table_zero,
@@ -334,10 +339,7 @@ impl<
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let chip = IsZeroChip::construct(self.is_zero.clone());
-        let monotone_chip =
-            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::construct(
-                self.mono_incr.clone(),
-            );
+        let monotone_chip = MonotoneChip::<F>::construct(self.mono_incr.clone());
         monotone_chip.load(&mut layouter)?;
 
         layouter.assign_region(
@@ -383,7 +385,7 @@ impl<
                 // We pad all remaining memory rows to avoid the check at the first unused row.
                 // Without padding, (address_cur - address_prev) would not be zero at the first unused row
                 // and some checks would be triggered.
-                for i in offset..MAX_MEMORY_ROWS {
+                for i in offset..self.max_rows {
                     self.q_not_first.enable(&mut region, i)?;
 
                     // Assign `address`
@@ -534,55 +536,27 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::{Address, Config, GlobalCounter, Op, ReadWrite, Value};
+    use config::Source;
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup},
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use serial_test::serial;
 
     use pasta_curves::{arithmetic::FieldExt, pallas};
-    use std::marker::PhantomData;
+    use std::{fs::OpenOptions, io::Write, marker::PhantomData, path::Path};
 
     macro_rules! test_state_circuit {
-        ($k:expr, $max_rows:expr, $global_counter_max:expr, $address_max:expr, $address_incr:expr, $address_diff_strict:expr, $ops:expr, $result:expr) => {{
+        ($k:expr, $ops:expr, $result:expr) => {{
             #[derive(Default)]
-            struct StateCircuit<
-                F: FieldExt,
-                const MAX_ROWS: usize,
-                const GLOBAL_COUNTER_MAX: usize,
-                const ADDRESS_MAX: usize,
-                const ADDRESS_INCR: bool,
-                const ADDRESS_DIFF_STRICT: bool,
-            > {
+            struct StateCircuit<F: FieldExt> {
                 ops: Vec<Op<F>>,
                 _marker: PhantomData<F>,
             }
 
-            impl<
-                    F: FieldExt,
-                    const MAX_ROWS: usize,
-                    const GLOBAL_COUNTER_MAX: usize,
-                    const ADDRESS_MAX: usize,
-                    const ADDRESS_INCR: bool,
-                    const ADDRESS_DIFF_STRICT: bool,
-                > Circuit<F>
-                for StateCircuit<
-                    F,
-                    MAX_ROWS,
-                    GLOBAL_COUNTER_MAX,
-                    ADDRESS_MAX,
-                    ADDRESS_INCR,
-                    ADDRESS_DIFF_STRICT,
-                >
-            {
-                type Config = Config<
-                    F,
-                    MAX_ROWS,
-                    GLOBAL_COUNTER_MAX,
-                    ADDRESS_MAX,
-                    ADDRESS_INCR,
-                    ADDRESS_DIFF_STRICT,
-                >;
+            impl<F: FieldExt> Circuit<F> for StateCircuit<F> {
+                type Config = Config<F>;
                 type FloorPlanner = SimpleFloorPlanner;
 
                 fn without_witnesses(&self) -> Self {
@@ -605,14 +579,7 @@ mod tests {
                 }
             }
 
-            let circuit = StateCircuit::<
-                pallas::Base,
-                $max_rows,
-                $global_counter_max,
-                $address_max,
-                $address_incr,
-                $address_diff_strict,
-            > {
+            let circuit = StateCircuit::<pallas::Base> {
                 ops: $ops,
                 _marker: PhantomData,
             };
@@ -638,7 +605,36 @@ mod tests {
         Lookup { lookup_index, row }
     }
 
+    pub fn set_settings(
+        max_rows: &str,
+        global_counter_max: &str,
+        address_max: &str,
+        address_incr: bool,
+        address_diff_strict: bool,
+    ) {
+        let mut settings = config::Config::default();
+
+        settings.set("max_rows", max_rows).ok();
+        settings.set("global_counter_max", global_counter_max).ok();
+        settings.set("address_max", address_max).ok();
+        settings.set("address_incr", address_incr).ok();
+        settings
+            .set("address_diff_strict", address_diff_strict)
+            .ok();
+
+        let path = Path::new("Config.toml");
+
+        if let Ok(mut file) = OpenOptions::new().write(true).open(path) {
+            file.set_len(0).unwrap();
+            for (key, value) in settings.collect().unwrap() {
+                file.write_all(format!("{}=\"{}\"\n", key, value.into_str().unwrap()).as_bytes())
+                    .unwrap();
+            }
+        }
+    }
+
     #[test]
+    #[serial]
     fn memory_circuit() {
         let op_0 = Op {
             address: Address(pallas::Base::zero()),
@@ -667,10 +663,13 @@ mod tests {
                 )),
             ],
         };
-        test_state_circuit!(14, 1000, 2000, 100, true, false, vec![op_0, op_1], Ok(()));
+        set_settings("1000", "2000", "100", true, false);
+
+        test_state_circuit!(14, vec![op_0, op_1], Ok(()));
     }
 
     #[test]
+    #[serial]
     fn same_address_read() {
         let op_0 = Op {
             address: Address(pallas::Base::zero()),
@@ -686,40 +685,40 @@ mod tests {
             ],
         };
 
+        set_settings("1000", "2000", "100", true, false);
+
         test_state_circuit!(
             14,
-            1000,
-            2000,
-            100,
-            true,
-            false,
             vec![op_0],
             Err(vec![constraint_not_satisfied(2, 2, "State operation", 4)])
         );
     }
 
     #[test]
+    #[serial]
     fn max_values() {
+        let address_max = 100;
+        let global_counter_max = 60000;
         let op_0 = Op {
-            address: Address(pallas::Base::from_u64(ADDRESS_MAX as u64)),
+            address: Address(pallas::Base::from_u64(address_max as u64)),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Read(
-                    GlobalCounter(GLOBAL_COUNTER_MAX),
+                    GlobalCounter(global_counter_max),
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Write(
-                    GlobalCounter(GLOBAL_COUNTER_MAX + 1), // this global counter value is not in the allowed range
+                    GlobalCounter(global_counter_max + 1), // this global counter value is not in the allowed range
                     Value(pallas::Base::from_u64(12)),
                 )),
             ],
         };
 
         let op_1 = Op {
-            address: Address(pallas::Base::from_u64((ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
+            address: Address(pallas::Base::from_u64((address_max + 1) as u64)), // this address is not in the allowed range
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -734,17 +733,16 @@ mod tests {
 
         // Small MAX_ROWS is set to avoid having padded rows (all padded rows would
         // fail because of the address they would have - the address of the last unused row)
-        const MAX_ROWS: usize = 7;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
-        const ADDRESS_MAX: usize = 100;
+        set_settings(
+            "7",
+            &global_counter_max.to_string(),
+            &address_max.to_string(),
+            true,
+            false,
+        );
 
         test_state_circuit!(
             16,
-            MAX_ROWS,
-            GLOBAL_COUNTER_MAX,
-            ADDRESS_MAX,
-            true,
-            false,
             vec![op_0, op_1],
             Err(vec![
                 lookup_fail(4, 2),
@@ -756,6 +754,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn non_monotone_global_counter() {
         let op_0 = Op {
             address: Address(pallas::Base::zero()),
@@ -789,19 +788,16 @@ mod tests {
             ],
         };
 
+        set_settings("100", "10000", "10000", true, false);
         test_state_circuit!(
             15,
-            100,
-            10000,
-            10000,
-            true,
-            false,
             vec![op_0, op_1],
             Err(vec![lookup_fail(2, 1), lookup_fail(3, 1),])
         );
     }
 
     #[test]
+    #[serial]
     fn stack_circuit() {
         let op_0 = Op {
             address: Address(pallas::Base::from_u64(1023)),
@@ -831,21 +827,13 @@ mod tests {
             ],
         };
 
-        // For stack circuit we use ADDRESS_INCR = false
-        const ADDRESS_INCR: bool = false;
-        test_state_circuit!(
-            14,
-            1000,
-            2000,
-            1023,
-            ADDRESS_INCR,
-            false,
-            vec![op_0, op_1],
-            Ok(())
-        );
+        // For stack circuit we use address_incr = false
+        set_settings("1000", "2000", "1023", false, false);
+        test_state_circuit!(14, vec![op_0, op_1], Ok(()));
     }
 
     #[test]
+    #[serial]
     fn stack_circuit_max() {
         let op_0 = Op {
             address: Address(pallas::Base::from_u64(1024)),
@@ -876,14 +864,9 @@ mod tests {
         };
 
         // For stack circuit we use ADDRESS_INCR = false
-        const ADDRESS_INCR: bool = false;
+        set_settings("1000", "2000", "1023", false, false);
         test_state_circuit!(
             14,
-            1000,
-            2000,
-            1023,
-            ADDRESS_INCR,
-            false,
             vec![op_0, op_1],
             Err(vec![
                 constraint_not_satisfied(0, 1, "First row operation", 3),
