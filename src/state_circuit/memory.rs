@@ -390,9 +390,9 @@ impl<F: FieldExt> Config<F> {
 mod tests {
     use super::{Config, GlobalCounter, MemoryAddress, MemoryOp, ReadWrite, Value};
     use halo2::{
-        circuit::layouter::SingleChipLayouter,
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
 
     use pasta_curves::{arithmetic::FieldExt, pallas};
@@ -400,6 +400,7 @@ mod tests {
 
     #[test]
     fn memory_circuit() {
+        #[derive(Default)]
         struct MemoryCircuit<F: FieldExt> {
             ops: Vec<MemoryOp<F>>,
             _marker: PhantomData<F>,
@@ -407,6 +408,11 @@ mod tests {
 
         impl<F: FieldExt> Circuit<F> for MemoryCircuit<F> {
             type Config = Config<F>;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 Config::configure(meta)
@@ -414,11 +420,9 @@ mod tests {
 
             fn synthesize(
                 &self,
-                cs: &mut impl Assignment<F>,
                 config: Self::Config,
+                layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let layouter = SingleChipLayouter::new(cs)?;
-
                 config.assign(layouter, self.ops.clone())?;
 
                 Ok(())

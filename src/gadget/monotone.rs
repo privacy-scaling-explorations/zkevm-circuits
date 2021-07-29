@@ -104,12 +104,12 @@ mod test {
     use super::{MonotoneChip, MonotoneConfig};
     use halo2::{
         arithmetic::FieldExt,
-        circuit::{layouter::SingleChipLayouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::{
             MockProver,
             VerifyFailure::{self, Lookup},
         },
-        plonk::{Advice, Assignment, Circuit, Column, ConstraintSystem, Error, Selector},
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
     use pasta_curves::pallas::Base;
     use std::marker::PhantomData;
@@ -121,6 +121,7 @@ mod test {
         mono_incr: MonotoneConfig,
     }
 
+    #[derive(Default)]
     struct TestCircuit<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> {
         values: Option<Vec<u64>>,
         _marker: PhantomData<F>,
@@ -130,6 +131,11 @@ mod test {
         for TestCircuit<F, RANGE, INCR, STRICT>
     {
         type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let q_enable = meta.selector();
@@ -152,10 +158,9 @@ mod test {
 
         fn synthesize(
             &self,
-            cs: &mut impl Assignment<F>,
             config: Self::Config,
+            mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let mut layouter = SingleChipLayouter::new(cs)?;
             let monotone_chip =
                 MonotoneChip::<F, RANGE, INCR, STRICT>::construct(config.mono_incr.clone());
 
