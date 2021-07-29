@@ -10,34 +10,34 @@ use halo2::{
 };
 use pasta_curves::arithmetic::FieldExt;
 
-use std::marker::PhantomData;
-
 /*
 Example memory table:
+
 | address | global_counter | value | flag |
----------------------------------
-|    0    |   0  |   0   |   1  |
-|    0    |  12  |  12   |   1  |
-|    0    |  24  |  12   |   0  |
-|    1    |   0  |   0   |   1  |
-|    1    |  17  |  32   |   1  |
-|    1    |  89  |  32   |   0  |
+-------------------------------------------
+|    0    |        0       |   0   |   1  |
+|    0    |       12       |  12   |   1  |
+|    0    |       24       |  12   |   0  |
+|    1    |        0       |   0   |   1  |
+|    1    |       17       |  32   |   1  |
+|    1    |       89       |  32   |   0  |
 */
 
 /*
 Example bus mapping:
 
 | global_counter | memory_flag | memory_address | memory_value |
-------------------------------------------------------
-|  12  |      1      |        0       |      12      |
-|  17  |      1      |        1       |      32      |
-|  24  |      0      |        0       |      12      |
-|  89  |      0      |        1       |      32      |
+----------------------------------------------------------------
+|       12       |      1      |        0       |      12      |
+|       17       |      1      |        1       |      32      |
+|       24       |      0      |        0       |      12      |
+|       89       |      0      |        1       |      32      |
 */
 
 /// In the state proof, memory operations are ordered first by address, and then by global_counter.
 /// Memory is initialised at 0 for each new address.
 /// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word -> u8.
+/// TODO: Confirm if we are using 253- or 256-bit memory addresses.
 #[derive(Copy, Clone, Debug)]
 struct Address<F: FieldExt>(F);
 
@@ -118,8 +118,7 @@ pub(crate) struct Config<
     global_counter_table: Column<Fixed>,
     address_table_zero: Column<Fixed>,
     is_zero: IsZeroConfig<F>,
-    mono_incr: MonotoneConfig,
-    _marker: PhantomData<F>,
+    monotone: MonotoneConfig,
 }
 
 impl<
@@ -148,19 +147,18 @@ impl<
             meta,
             q_not_first,
             |meta| {
-                let value_a = meta.query_advice(address, Rotation::cur());
-                let value_b = meta.query_advice(address, Rotation::prev());
-                value_a - value_b
+                let address_cur = meta.query_advice(address, Rotation::cur());
+                let address_prev = meta.query_advice(address, Rotation::prev());
+                address_cur - address_prev
             },
             address_diff_inv,
         );
 
-        let mono_incr =
-            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
-                meta,
-                |meta| meta.query_selector(q_not_first),
-                address,
-            );
+        let monotone = MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
+            meta,
+            |meta| meta.query_selector(q_not_first),
+            address,
+        );
 
         // A gate for the first operation (does not need Rotation::prev).
         meta.create_gate("First row operation", |meta| {
@@ -180,12 +178,13 @@ impl<
             let one = Expression::Constant(F::one());
             let max_address = Expression::Constant(F::from_u64(ADDRESS_MAX as u64));
             // For stack init operation: ADDRESS_INCR is false (thus 0) and the address must be ADDRESS_MAX (that is 1023)
-            let init_address = (one - Expression::Constant(F::from_u64(ADDRESS_INCR as u64)))
+            let init_address = (one.clone()
+                - Expression::Constant(F::from_u64(ADDRESS_INCR as u64)))
                 * (max_address - address);
 
             vec![
                 q_first.clone() * value,
-                q_first.clone() * (Expression::Constant(F::one()) - flag),
+                q_first.clone() * (one - flag),
                 q_first.clone() * global_counter,
                 q_first * init_address,
             ]
@@ -230,7 +229,8 @@ impl<
             ]
         });
 
-        // global_counter monotonicity:
+        // global_counter monotonicity is only checked when address_cur == address_prev.
+        // (Recall that operations are ordered first by address, and then by global_counter.)
         meta.lookup(|meta| {
             let q_not_first = meta.query_selector(q_not_first);
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
@@ -281,8 +281,7 @@ impl<
             global_counter_table,
             address_table_zero,
             is_zero,
-            mono_incr,
-            _marker: PhantomData,
+            monotone,
         }
     }
 
@@ -333,10 +332,10 @@ impl<
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
-        let chip = IsZeroChip::construct(self.is_zero.clone());
+        let is_zero_chip = IsZeroChip::construct(self.is_zero.clone());
         let monotone_chip =
             MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::construct(
-                self.mono_incr.clone(),
+                self.monotone.clone(),
             );
         monotone_chip.load(&mut layouter)?;
 
@@ -358,7 +357,7 @@ impl<
                         self.q_not_first.enable(&mut region, offset)?;
                     }
                     self.init(&mut region, offset, address)?;
-                    chip.assign(&mut region, offset, Some(address.0 - address_prev.0))?;
+                    is_zero_chip.assign(&mut region, offset, Some(address.0 - address_prev.0))?;
 
                     // Increase offset by 1 after initialising.
                     offset += 1;
@@ -367,7 +366,8 @@ impl<
                         self.q_not_first.enable(&mut region, offset)?;
                         let bus_mapping =
                             self.assign_per_counter(&mut region, offset, address, global_counter)?;
-                        chip.assign(&mut region, offset, Some(F::zero()))?;
+                        // Non-init rows in the same operation have the same address.
+                        is_zero_chip.assign(&mut region, offset, Some(F::zero()))?;
 
                         offset += 1;
 
@@ -394,7 +394,7 @@ impl<
                         || Ok(last_address.0),
                     )?;
 
-                    chip.assign(&mut region, i, Some(F::zero()))?;
+                    is_zero_chip.assign(&mut region, i, Some(F::zero()))?;
 
                     // Assign `global_counter`
                     region.assign_advice(
@@ -541,7 +541,6 @@ mod tests {
     };
 
     use pasta_curves::{arithmetic::FieldExt, pallas};
-    use std::marker::PhantomData;
 
     macro_rules! test_state_circuit {
         ($k:expr, $max_rows:expr, $global_counter_max:expr, $address_max:expr, $address_incr:expr, $address_diff_strict:expr, $ops:expr, $result:expr) => {{
@@ -555,7 +554,6 @@ mod tests {
                 const ADDRESS_DIFF_STRICT: bool,
             > {
                 ops: Vec<Op<F>>,
-                _marker: PhantomData<F>,
             }
 
             impl<
@@ -614,7 +612,6 @@ mod tests {
                 $address_diff_strict,
             > {
                 ops: $ops,
-                _marker: PhantomData,
             };
 
             let prover = MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
