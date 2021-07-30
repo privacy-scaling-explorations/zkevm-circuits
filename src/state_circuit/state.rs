@@ -106,7 +106,6 @@ pub(crate) struct Config<
     const GLOBAL_COUNTER_MAX: usize,
     const ADDRESS_MAX: usize,
     const ADDRESS_INCR: bool,
-    const ADDRESS_DIFF_STRICT: bool,
 > {
     q_first: Selector,
     q_not_first: Selector,
@@ -129,9 +128,7 @@ impl<
         const GLOBAL_COUNTER_MAX: usize,
         const ADDRESS_MAX: usize,
         const ADDRESS_INCR: bool,
-        const ADDRESS_DIFF_STRICT: bool,
-    >
-    Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>
+    > Config<F, MAX_MEMORY_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX, ADDRESS_INCR>
 {
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
@@ -162,7 +159,7 @@ impl<
             address_diff_inv,
         );
 
-        let monotone = MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
+        let monotone = MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, false>::configure(
             meta,
             |meta| {
                 let padding = meta.query_advice(padding, Rotation::cur());
@@ -355,9 +352,7 @@ impl<
 
         let is_zero_chip = IsZeroChip::construct(self.is_zero.clone());
         let monotone_chip =
-            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::construct(
-                self.monotone.clone(),
-            );
+            MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, false>::construct(self.monotone.clone());
         monotone_chip.load(&mut layouter)?;
         let monotone_padding_chip =
             MonotoneChip::<F, 1, true, false>::construct(self.monotone_padding.clone());
@@ -563,7 +558,7 @@ mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
     macro_rules! test_state_circuit {
-        ($k:expr, $max_rows:expr, $global_counter_max:expr, $address_max:expr, $address_incr:expr, $address_diff_strict:expr, $ops:expr, $result:expr) => {{
+        ($k:expr, $max_rows:expr, $global_counter_max:expr, $address_max:expr, $address_incr:expr, $ops:expr, $result:expr) => {{
             #[derive(Default)]
             struct StateCircuit<
                 F: FieldExt,
@@ -571,7 +566,6 @@ mod tests {
                 const GLOBAL_COUNTER_MAX: usize,
                 const ADDRESS_MAX: usize,
                 const ADDRESS_INCR: bool,
-                const ADDRESS_DIFF_STRICT: bool,
             > {
                 ops: Vec<Op<F>>,
             }
@@ -582,25 +576,10 @@ mod tests {
                     const GLOBAL_COUNTER_MAX: usize,
                     const ADDRESS_MAX: usize,
                     const ADDRESS_INCR: bool,
-                    const ADDRESS_DIFF_STRICT: bool,
                 > Circuit<F>
-                for StateCircuit<
-                    F,
-                    MAX_ROWS,
-                    GLOBAL_COUNTER_MAX,
-                    ADDRESS_MAX,
-                    ADDRESS_INCR,
-                    ADDRESS_DIFF_STRICT,
-                >
+                for StateCircuit<F, MAX_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX, ADDRESS_INCR>
             {
-                type Config = Config<
-                    F,
-                    MAX_ROWS,
-                    GLOBAL_COUNTER_MAX,
-                    ADDRESS_MAX,
-                    ADDRESS_INCR,
-                    ADDRESS_DIFF_STRICT,
-                >;
+                type Config = Config<F, MAX_ROWS, GLOBAL_COUNTER_MAX, ADDRESS_MAX, ADDRESS_INCR>;
                 type FloorPlanner = SimpleFloorPlanner;
 
                 fn without_witnesses(&self) -> Self {
@@ -629,7 +608,6 @@ mod tests {
                 $global_counter_max,
                 $address_max,
                 $address_incr,
-                $address_diff_strict,
             > {
                 ops: $ops,
             };
@@ -684,7 +662,7 @@ mod tests {
                 )),
             ],
         };
-        test_state_circuit!(14, 1000, 2000, 100, true, false, vec![op_0, op_1], Ok(()));
+        test_state_circuit!(14, 1000, 2000, 100, true, vec![op_0, op_1], Ok(()));
     }
 
     #[test]
@@ -709,7 +687,6 @@ mod tests {
             2000,
             100,
             true,
-            false,
             vec![op_0],
             Err(vec![constraint_not_satisfied(2, 2, "State operation", 4)])
         );
@@ -761,7 +738,6 @@ mod tests {
             GLOBAL_COUNTER_MAX,
             ADDRESS_MAX,
             true,
-            false,
             vec![op_0, op_1],
             Err(vec![
                 lookup_fail(4, 3),
@@ -812,7 +788,6 @@ mod tests {
             10000,
             10000,
             true,
-            false,
             vec![op_0, op_1],
             Err(vec![lookup_fail(2, 2), lookup_fail(3, 2),])
         );
@@ -850,16 +825,7 @@ mod tests {
 
         // For stack circuit we use ADDRESS_INCR = false
         const ADDRESS_INCR: bool = false;
-        test_state_circuit!(
-            14,
-            1000,
-            2000,
-            1023,
-            ADDRESS_INCR,
-            false,
-            vec![op_0, op_1],
-            Ok(())
-        );
+        test_state_circuit!(14, 1000, 2000, 1023, ADDRESS_INCR, vec![op_0, op_1], Ok(()));
     }
 
     #[test]
@@ -900,7 +866,6 @@ mod tests {
             2000,
             1023,
             ADDRESS_INCR,
-            false,
             vec![op_0, op_1],
             Err(vec![
                 constraint_not_satisfied(0, 1, "First row operation", 3),
