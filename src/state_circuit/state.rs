@@ -115,10 +115,12 @@ pub(crate) struct Config<
     global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
+    padding: Column<Advice>,
     global_counter_table: Column<Fixed>,
     address_table_zero: Column<Fixed>,
     is_zero: IsZeroConfig<F>,
     monotone: MonotoneConfig,
+    monotone_padding: MonotoneConfig,
 }
 
 impl<
@@ -140,12 +142,18 @@ impl<
         let global_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
+        let padding = meta.advice_column();
         let global_counter_table = meta.fixed_column();
         let address_table_zero = meta.fixed_column();
 
         let is_zero = IsZeroChip::configure(
             meta,
-            q_not_first,
+            |meta| {
+                let padding = meta.query_advice(padding, Rotation::cur());
+                let one = Expression::Constant(F::one());
+                let is_not_padding = one - padding;
+                meta.query_selector(q_not_first) * is_not_padding
+            },
             |meta| {
                 let address_cur = meta.query_advice(address, Rotation::cur());
                 let address_prev = meta.query_advice(address, Rotation::prev());
@@ -156,8 +164,19 @@ impl<
 
         let monotone = MonotoneChip::<F, ADDRESS_MAX, ADDRESS_INCR, ADDRESS_DIFF_STRICT>::configure(
             meta,
-            |meta| meta.query_selector(q_not_first),
+            |meta| {
+                let padding = meta.query_advice(padding, Rotation::cur());
+                let one = Expression::Constant(F::one());
+                let is_not_padding = one - padding;
+                meta.query_selector(q_not_first) * is_not_padding
+            },
             address,
+        );
+
+        let monotone_padding = MonotoneChip::<F, 1, true, false>::configure(
+            meta,
+            |meta| meta.query_selector(q_not_first),
+            padding,
         );
 
         // A gate for the first operation (does not need Rotation::prev).
@@ -278,10 +297,12 @@ impl<
             global_counter,
             value,
             flag,
+            padding,
             global_counter_table,
             address_table_zero,
             is_zero,
             monotone,
+            monotone_padding,
         }
     }
 
@@ -338,6 +359,9 @@ impl<
                 self.monotone.clone(),
             );
         monotone_chip.load(&mut layouter)?;
+        let monotone_padding_chip =
+            MonotoneChip::<F, 1, true, false>::construct(self.monotone_padding.clone());
+        monotone_padding_chip.load(&mut layouter)?;
 
         layouter.assign_region(
             || "State operations",
@@ -376,41 +400,32 @@ impl<
                     }
                 }
 
-                let last_address = ops.last().unwrap().address;
-                let last_gc = ops.last().unwrap().global_counters.last().unwrap();
-                let mut last_counter = last_gc.as_ref().unwrap().global_counter().0;
-
                 // We pad all remaining memory rows to avoid the check at the first unused row.
                 // Without padding, (address_cur - address_prev) would not be zero at the first unused row
                 // and some checks would be triggered.
                 for i in offset..MAX_MEMORY_ROWS {
                     self.q_not_first.enable(&mut region, i)?;
 
-                    // Assign `address`
-                    region.assign_advice(
-                        || "init address",
-                        self.address,
-                        i,
-                        || Ok(last_address.0),
-                    )?;
+                    region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
 
                     is_zero_chip.assign(&mut region, i, Some(F::zero()))?;
+
+                    // Assign `address`
+                    region.assign_advice(|| "init address", self.address, i, || Ok(F::zero()))?;
+
+                    // Assign `value`
+                    region.assign_advice(|| "value", self.value, i, || Ok(F::zero()))?;
 
                     // Assign `global_counter`
                     region.assign_advice(
                         || "init global counter",
                         self.global_counter,
                         i,
-                        || Ok(F::from_u64(last_counter as u64)),
+                        || Ok(F::zero()),
                     )?;
-                    // To not break the global counter monotonicity
-                    last_counter += 1;
-
-                    // Assign `value`
-                    region.assign_advice(|| "init value", self.value, i, || Ok(F::zero()))?;
 
                     // Assign memory_flag
-                    region.assign_advice(|| "init memory", self.flag, i, || Ok(F::one()))?;
+                    region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
                 }
 
                 Ok(())
@@ -443,6 +458,9 @@ impl<
 
         // Assign memory_flag
         region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
+
+        // Assign padding
+        region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
 
         Ok(())
     }
@@ -521,6 +539,8 @@ impl<
                 value,
             }
         };
+
+        region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
 
         Ok(BusMapping {
             global_counter,
@@ -744,10 +764,10 @@ mod tests {
             false,
             vec![op_0, op_1],
             Err(vec![
-                lookup_fail(4, 2),
-                lookup_fail(5, 2),
-                lookup_fail(6, 2),
-                lookup_fail(3, 3)
+                lookup_fail(4, 3),
+                lookup_fail(5, 3),
+                lookup_fail(6, 3),
+                lookup_fail(3, 4)
             ])
         );
     }
@@ -794,7 +814,7 @@ mod tests {
             true,
             false,
             vec![op_0, op_1],
-            Err(vec![lookup_fail(2, 1), lookup_fail(3, 1),])
+            Err(vec![lookup_fail(2, 2), lookup_fail(3, 2),])
         );
     }
 
@@ -884,9 +904,9 @@ mod tests {
             vec![op_0, op_1],
             Err(vec![
                 constraint_not_satisfied(0, 1, "First row operation", 3),
-                lookup_fail(0, 2),
-                lookup_fail(1, 2),
-                lookup_fail(2, 2),
+                lookup_fail(0, 3),
+                lookup_fail(1, 3),
+                lookup_fail(2, 3),
             ])
         );
     }
