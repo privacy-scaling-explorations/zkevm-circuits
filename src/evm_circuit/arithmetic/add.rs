@@ -228,3 +228,126 @@ impl<F: FieldExt> Config<F> {
         Ok((a, b, c))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gadget::evm_word;
+    use halo2::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+    };
+    use std::{convert::TryInto, marker::PhantomData};
+
+    // Note: Using the MockProver here causes an out-of-memory error.
+    use halo2::plonk::*;
+    use pasta_curves::{arithmetic::FieldExt, pallas};
+
+    #[test]
+    fn test_add() {
+        #[derive(Default)]
+        struct AddCircuit<F: FieldExt> {
+            a: [Option<u8>; 32],
+            b: [Option<u8>; 32],
+            c: [Option<u8>; 32],
+            carry: [Option<bool>; 32],
+            _marker: PhantomData<F>,
+        }
+
+        impl<F: FieldExt> Circuit<F> for AddCircuit<F> {
+            type Config = Config<F>;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                let q_group_4 = meta.fixed_column();
+                let op = meta.advice_column();
+                let global_counter = meta.advice_column();
+                let stack_pointer = meta.advice_column();
+                let bytes = (0..32).map(|_| meta.advice_column()).collect::<Vec<_>>();
+
+                Config::configure(
+                    evm_word::r(),
+                    meta,
+                    q_group_4,
+                    op,
+                    global_counter,
+                    stack_pointer,
+                    bytes.try_into().unwrap(),
+                )
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<F>,
+            ) -> Result<(), Error> {
+                config.word_config.load(&mut layouter)?;
+
+                layouter.assign_region(
+                    || "a + b = c",
+                    |mut region| config.assign(&mut region, 0, self.a, self.b, self.c, self.carry),
+                )?;
+
+                Ok(())
+            }
+        }
+
+        let a = pallas::Base::rand().to_bytes();
+        let b = pallas::Base::rand().to_bytes();
+        let mut c: Vec<u8> = Vec::with_capacity(32);
+        let mut carry = vec![false];
+
+        for (idx, (a_byte, b_byte)) in a.iter().zip(b.iter()).enumerate() {
+            let (c_byte, c_carry) = {
+                let c_byte = *a_byte as u16 + *b_byte as u16 + carry[idx] as u16;
+                if c_byte >= (1 << 8) {
+                    ((c_byte - (1 << 8)) as u8, true)
+                } else {
+                    (c_byte as u8, false)
+                }
+            };
+
+            if idx < 31 {
+                carry.push(c_carry);
+            } else {
+                // Since the first carry-in is always zero, we use that cell to
+                // witness the last carry-out.
+                carry[0] = c_carry;
+            }
+            c.push(c_byte);
+        }
+
+        let circuit = AddCircuit::<pallas::Base> {
+            a: a.iter()
+                .map(|b| Some(*b))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            b: b.iter()
+                .map(|b| Some(*b))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            c: c.iter()
+                .map(|b| Some(*b))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            carry: carry
+                .iter()
+                .map(|b| Some(*b))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            _marker: PhantomData,
+        };
+
+        // Test without public inputs
+        let prover = MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
+}
