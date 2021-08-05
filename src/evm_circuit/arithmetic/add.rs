@@ -183,12 +183,12 @@ impl<F: FieldExt> Config<F> {
         carry: [Option<bool>; 32],
     ) -> Result<(Word<F>, Word<F>, Word<F>), Error> {
         #[cfg(test)]
-        for idx in 0..31 {
+        for idx in 0..32 {
             let a = a[idx].unwrap_or(0);
             let b = b[idx].unwrap_or(0);
             let c = c[idx].unwrap_or(0);
-            let carry_in = carry[idx].unwrap_or(false);
-            let carry_out = carry[idx + 1].unwrap_or(false);
+            let carry_in = if idx == 0 { None } else { carry[idx] }.unwrap_or(false);
+            let carry_out = if idx == 31 { carry[0] } else { carry[idx + 1] }.unwrap_or(false);
 
             assert_eq!(
                 a as u16 + b as u16 + carry_in as u16,
@@ -202,7 +202,7 @@ impl<F: FieldExt> Config<F> {
         let b = self.word_config.assign_word(region, offset, b)?;
         let offset = offset + 1;
 
-        let _carry: Result<Vec<Cell>, Error> = carry
+        let _carry = carry
             .iter()
             .enumerate()
             .map(|(idx, carry)| -> Result<Cell, Error> {
@@ -217,7 +217,7 @@ impl<F: FieldExt> Config<F> {
                     },
                 )
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         let offset = offset + 1;
 
         let c = self.word_config.assign_word(region, offset, c)?;
@@ -298,7 +298,7 @@ mod tests {
 
         let a = pallas::Base::rand().to_bytes();
         let b = pallas::Base::rand().to_bytes();
-        let mut c: Vec<u8> = Vec::with_capacity(32);
+        let mut c = Vec::with_capacity(32);
         let mut carry = vec![false];
 
         for (idx, (a_byte, b_byte)) in a.iter().zip(b.iter()).enumerate() {
