@@ -29,7 +29,7 @@ use pasta_curves::arithmetic::FieldExt;
 // Sorty by gc
 //`MemoryElem{target 	gc 	val1 	val2 	val3}`
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct BlockConstants<F: FieldExt> {
     hash: [u8; 256], // Until we know how to deal with it
     coinbase: F,
@@ -40,14 +40,14 @@ struct BlockConstants<F: FieldExt> {
     chain_id: F,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum RW {
     READ,
     WRITE,
 }
 
 /// Doc
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum Target {
     /// Doc
     Memory,
@@ -58,13 +58,13 @@ pub enum Target {
 }
 
 /// Doc
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Operation<F: FieldExt> {
-    mem_op: RW,
+    rw: RW,
     target: Target,
-    key: usize,
+    key: F,
     value: F,
-    opcode_info: String,
+    opcode_info: &'static str,
 }
 
 /// Bus Mapping structure
@@ -73,8 +73,11 @@ pub struct BusMapping<F: FieldExt> {
     entries: Vec<Operation<F>>,
     block_ctants: BlockConstants<F>,
     // Helper to sort by key groups. We store how many different keys we have when building the Bus Mapping
+    #[doc(hidden)]
     mem_ops_sorted: BTreeMap<usize, Vec<Operation<F>>>,
+    #[doc(hidden)]
     stack_ops_sorted: BTreeMap<usize, Vec<Operation<F>>>,
+    #[doc(hidden)]
     storage_ops_sorted: BTreeMap<usize, Vec<Operation<F>>>,
 }
 
@@ -108,38 +111,17 @@ impl<F: FieldExt> From<(Vec<Operation<F>>, BlockConstants<F>)> for BusMapping<F>
                 storage_ops_sorted.insert(key, vec![]);
             });
 
-        // Actually feed the BTreeMaps with the entries
-        inp.0
-            .iter()
-            .filter(|op| op.target == Target::Stack)
-            .for_each(|entry| {
-                mem_ops_sorted
-                    .get_mut(&entry.key)
-                    .expect("This invariant should be unreachable")
-                    .push(entry.clone())
-            });
-
-        // Actually feed the BTreeMaps with the entries
-        inp.0
-            .iter()
-            .filter(|op| op.target == Target::Memory)
-            .for_each(|entry| {
-                stack_ops_sorted
-                    .get_mut(&entry.key)
-                    .expect("This invariant should be unreachable")
-                    .push(entry.clone())
-            });
-
-        // Actually feed the BTreeMaps with the entries
-        inp.0
-            .iter()
-            .filter(|op| op.target == Target::Storage)
-            .for_each(|entry| {
-                storage_ops_sorted
-                    .get_mut(&entry.key)
-                    .expect("This invariant should be unreachable")
-                    .push(entry.clone())
-            });
+        inp.0.iter().for_each(|op| match op.target {
+            Target::Memory => {
+                mem_ops_sorted.entry(op.key).or_default().push(*op);
+            }
+            Target::Stack => {
+                stack_ops_sorted.entry(op.key).or_default().push(*op);
+            }
+            Target::Storage => {
+                storage_ops_sorted.entry(op.key).or_default().push(*op);
+            }
+        });
 
         Self {
             entries: inp.0,
