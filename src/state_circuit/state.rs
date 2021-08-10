@@ -195,7 +195,8 @@ impl<
             address,
         );
 
-        let monotone_padding = MonotoneChip::<F, 1, true, false>::configure(
+        // todo: padding monotone for each target
+        let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
             meta,
             |meta| meta.query_selector(q_not_first),
             padding,
@@ -282,15 +283,20 @@ impl<
             let one = Expression::Constant(F::one());
             let three = Expression::Constant(F::from_u64(3));
             let four = Expression::Constant(F::from_u64(4));
-            let q_memory =
-                (q_target.clone() - one) * (three - q_target.clone()) * (four - q_target);
+
+            // todo: init memory row should be constrained too
+
+            let q_memory = q_target.clone()
+                * (q_target.clone() - one)
+                * (three - q_target.clone())
+                * (four - q_target);
 
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
-            // q_memory is 2 when target is 2, we use 1/2 to normalize the value
-            let inv = F::from_u64(2 as u64).invert().unwrap_or(F::zero());
+            // q_memory is 4 when target is 2, we use 1/4 to normalize the value
+            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             vec![(q_memory * i * address_cur, memory_address_table_zero)]
@@ -302,14 +308,20 @@ impl<
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::from_u64(2));
             let four = Expression::Constant(F::from_u64(4));
-            let q_stack = (q_target.clone() - one) * (q_target.clone() - two) * (four - q_target);
+
+            // todo: init stack row should be constrained too
+
+            let q_stack = q_target.clone()
+                * (q_target.clone() - one)
+                * (q_target.clone() - two)
+                * (four - q_target);
 
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
 
-            // q_stack is 2 when target is 3, we use 1/2 to normalize the value
-            let inv = F::from_u64(2 as u64).invert().unwrap_or(F::zero());
+            // q_stack is 6 when target is 3, we use 1/6 to normalize the value
+            let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             vec![(q_stack * i * address_cur, stack_address_table_zero)]
@@ -344,7 +356,7 @@ impl<
             stack_address_table_zero,
             address_diff_is_zero,
             memory_address_monotone: monotone,
-            padding_monotone: monotone_padding,
+            padding_monotone,
         }
     }
 
@@ -406,94 +418,87 @@ impl<
 
     fn assign_operations(
         &self,
-        mut layouter: impl Layouter<F>,
         ops: Vec<Op<F>>,
-        target: F,
-        address_diff_is_zero_chip: IsZeroChip<F>,
         max_rows: usize,
-    ) {
-        layouter.assign_region(
-            || "State operations",
-            |mut region| {
-                let mut offset = 0;
+        target: F,
+        address_diff_is_zero_chip: &IsZeroChip<F>,
+        start_offset: usize,
+        region: &mut Region<F>,
+    ) -> Result<Vec<BusMapping<F>>, Error> {
+        let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
-                for (index, op) in ops.iter().enumerate() {
-                    let address = op.address;
-                    let mut address_prev = ops.first().unwrap().address;
-                    if index > 0 {
-                        address_prev = ops[index - 1].address;
-                    }
+        let mut offset = start_offset;
+        for (index, op) in ops.iter().enumerate() {
+            let address = op.address;
+            let mut address_prev = ops.first().unwrap().address;
+            if index > 0 {
+                address_prev = ops[index - 1].address;
+            }
 
-                    if index == 0 {
-                        self.q_first.enable(&mut region, offset)?;
-                        self.init(&mut region, offset, address, F::one())?;
-                    } else {
-                        self.q_not_first.enable(&mut region, offset)?;
-                        self.init(&mut region, offset, address, target)?;
-                    }
-                    address_diff_is_zero_chip.assign(
-                        &mut region,
-                        offset,
-                        Some(address.0 - address_prev.0),
-                    )?;
+            println!("{} {}", index, offset);
 
-                    // Increase offset by 1 after initialising.
-                    offset += 1;
+            if index == 0 {
+                self.q_first.enable(region, offset)?;
+                self.init(region, offset, address, F::one())?;
+            } else {
+                self.q_not_first.enable(region, offset)?;
+                self.init(region, offset, address, target)?;
+            }
+            address_diff_is_zero_chip.assign(region, offset, Some(address.0 - address_prev.0))?;
 
-                    for global_counter in op.global_counters.iter() {
-                        self.q_not_first.enable(&mut region, offset)?;
-                        let bus_mapping = self.assign_per_counter(
-                            &mut region,
-                            offset,
-                            address,
-                            global_counter,
-                            target,
-                        )?;
-                        // Non-init rows in the same operation have the same address.
-                        address_diff_is_zero_chip.assign(&mut region, offset, Some(F::zero()))?;
+            // Increase offset by 1 after initialising.
+            offset += 1;
 
-                        offset += 1;
+            for global_counter in op.global_counters.iter() {
+                self.q_not_first.enable(region, offset)?;
+                let bus_mapping =
+                    self.assign_per_counter(region, offset, address, global_counter, target)?;
+                // Non-init rows in the same operation have the same address.
+                address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
 
-                        // TODO: order by global_counter
-                        // TODO: bus_mappings.push(bus_mapping);
-                    }
-                }
+                println!("{} {} ++", index, offset);
 
-                // We pad all remaining rows to avoid the check at the first unused row.
-                // Without padding, (address_cur - address_prev) would not be zero at the first unused row
-                // and some checks would be triggered.
-                // todo: handle offset properly
-                for i in offset..max_rows {
-                    self.q_not_first.enable(&mut region, i)?;
+                offset += 1;
 
-                    region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
+                // TODO: order by global_counter
+                bus_mappings.push(bus_mapping);
+            }
+        }
 
-                    address_diff_is_zero_chip.assign(&mut region, i, Some(F::zero()))?;
+        // We pad all remaining rows to avoid the check at the first unused row.
+        // Without padding, (address_cur - address_prev) would not be zero at the first unused row
+        // and some checks would be triggered.
+        for i in offset..start_offset + max_rows {
+            self.q_not_first.enable(region, i)?;
 
-                    // Assign `address`
-                    region.assign_advice(|| "init address", self.address, i, || Ok(F::zero()))?;
+            println!("{} ++ --", i);
 
-                    // Assign `value`
-                    region.assign_advice(|| "value", self.value, i, || Ok(F::zero()))?;
+            region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
 
-                    // Assign `global_counter`
-                    region.assign_advice(
-                        || "init global counter",
-                        self.global_counter,
-                        i,
-                        || Ok(F::zero()),
-                    )?;
+            address_diff_is_zero_chip.assign(region, i, Some(F::zero()))?;
 
-                    // Assign memory_flag
-                    region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
+            // Assign `address`
+            region.assign_advice(|| "init address", self.address, i, || Ok(F::zero()))?;
 
-                    // Assign target
-                    region.assign_fixed(|| "target", self.q_target, i, || Ok(target))?;
-                }
+            // Assign `value`
+            region.assign_advice(|| "value", self.value, i, || Ok(F::zero()))?;
 
-                Ok(())
-            },
-        );
+            // Assign `global_counter`
+            region.assign_advice(
+                || "init global counter",
+                self.global_counter,
+                i,
+                || Ok(F::zero()),
+            )?;
+
+            // Assign memory_flag
+            region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
+
+            // Assign target
+            region.assign_fixed(|| "target", self.q_target, i, || Ok(target))?;
+        }
+
+        Ok(bus_mappings)
     }
 
     /// Assign cells.
@@ -516,15 +521,36 @@ impl<
             MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
         padding_monotone_chip.load(&mut layouter)?;
 
-        self.assign_operations(
-            layouter,
-            memory_ops,
-            F::from_u64(2 as u64),
-            address_diff_is_zero_chip,
-            MEMORY_ROWS_MAX,
-        );
+        // todo: handle number of ops > max ops
 
-        Ok(bus_mappings)
+        layouter.assign_region(
+            || "State operations",
+            |mut region| {
+                let memory_mappings = self.assign_operations(
+                    memory_ops.clone(),
+                    MEMORY_ROWS_MAX,
+                    F::from_u64(2 as u64),
+                    &address_diff_is_zero_chip,
+                    0,
+                    &mut region,
+                );
+                bus_mappings.extend(memory_mappings.unwrap());
+
+                let stack_mappings = self.assign_operations(
+                    stack_ops.clone(),
+                    STACK_ROWS_MAX,
+                    F::from_u64(3 as u64),
+                    &address_diff_is_zero_chip,
+                    MEMORY_ROWS_MAX,
+                    &mut region,
+                );
+                bus_mappings.extend(stack_mappings.unwrap());
+
+                Ok(bus_mappings.clone())
+            },
+        )
+
+        // Ok(bus_mappings)
     }
 
     /// Initialise first row for a new operation.
@@ -759,8 +785,8 @@ mod tests {
     }
 
     #[test]
-    fn memory_circuit() {
-        let op_0 = Op {
+    fn state_circuit() {
+        let memory_op_0 = Op {
             address: Address(pallas::Base::zero()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -774,7 +800,7 @@ mod tests {
             ],
         };
 
-        let op_1 = Op {
+        let memory_op_1 = Op {
             address: Address(pallas::Base::one()),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -787,6 +813,21 @@ mod tests {
                 )),
             ],
         };
+
+        let stack_op_0 = Op {
+            address: Address(pallas::Base::one()),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(17),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(87),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+            ],
+        };
+
         test_state_circuit!(
             14,
             2000,
@@ -794,8 +835,8 @@ mod tests {
             1000,
             100,
             1023,
-            vec![op_0, op_1],
-            vec![],
+            vec![memory_op_0, memory_op_1],
+            vec![stack_op_0],
             Ok(())
         );
     }
@@ -831,7 +872,7 @@ mod tests {
 
     #[test]
     fn max_values() {
-        let op_0 = Op {
+        let memory_op_0 = Op {
             address: Address(pallas::Base::from_u64(MEMORY_ADDRESS_MAX as u64)),
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -849,7 +890,7 @@ mod tests {
             ],
         };
 
-        let op_1 = Op {
+        let memory_op_1 = Op {
             address: Address(pallas::Base::from_u64((MEMORY_ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
             global_counters: vec![
                 Some(ReadWrite::Write(
@@ -863,27 +904,45 @@ mod tests {
             ],
         };
 
-        // TODO: add test for stack max
+        let stack_op_0 = Op {
+            address: Address(pallas::Base::from_u64((STACK_ADDRESS_MAX + 1) as u64)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(12),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(24),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+            ],
+        };
 
-        // Small MAX_ROWS is set to avoid having padded rows (all padded rows would
+        // todo: test init rows
+
+        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded rows would
         // fail because of the address they would have - the address of the last unused row)
         const MEMORY_ROWS_MAX: usize = 7;
+        const STACK_ROWS_MAX: usize = 7;
         const GLOBAL_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
+        const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit!(
             16,
             GLOBAL_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
-            7,
-            1023,
-            vec![op_0, op_1],
-            vec![],
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            vec![memory_op_0, memory_op_1],
+            vec![stack_op_0],
             Err(vec![
                 lookup_fail(4, 3),
                 lookup_fail(5, 3),
                 lookup_fail(6, 3),
+                lookup_fail(8, 4),
+                lookup_fail(9, 4),
                 lookup_fail(3, 5)
             ])
         );
