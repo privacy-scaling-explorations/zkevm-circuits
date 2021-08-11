@@ -35,7 +35,7 @@ Example bus mapping:
 */
 
 // target:
-// 1 - first row of either target (to avoid Rotation:prev problems)
+// 1 - first row of either target (Note: only the first row, not all init rows)
 // 2 - memory
 // 3 - stack
 // 4 - storage
@@ -283,9 +283,6 @@ impl<
             let one = Expression::Constant(F::one());
             let three = Expression::Constant(F::from_u64(3));
             let four = Expression::Constant(F::from_u64(4));
-
-            // todo: init memory row should be constrained too
-
             let q_memory = q_target.clone()
                 * (q_target.clone() - one)
                 * (three - q_target.clone())
@@ -302,15 +299,43 @@ impl<
             vec![(q_memory * i * address_cur, memory_address_table_zero)]
         });
 
+        // Memory first row address is in the allowed range.
+        // Note: only the first memory row, not all memory init rows (non-first one have q_target = 2).
+        meta.lookup(|meta| {
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            let four = Expression::Constant(F::from_u64(4));
+            // q_target_cur must be 1
+            // q_target_next must be 2
+            let q_memory_first = q_target_cur.clone()
+                * (two - q_target_cur.clone())
+                * (three.clone() - q_target_cur.clone())
+                * (four.clone() - q_target_cur)
+                * (q_target_next.clone() - one)
+                * (three - q_target_next.clone())
+                * (four - q_target_next);
+
+            let address_cur = meta.query_advice(address, Rotation::cur());
+            let memory_address_table_zero =
+                meta.query_fixed(memory_address_table_zero, Rotation::cur());
+
+            // q_memory_init is 12 when q_target_cur is 1 and q_target_next is 2,
+            // we use 1/12 to normalize the value
+            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            vec![(q_memory_first * i * address_cur, memory_address_table_zero)]
+        });
+
         // stack address is in the allowed range
         meta.lookup(|meta| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::from_u64(2));
             let four = Expression::Constant(F::from_u64(4));
-
-            // todo: init stack row should be constrained too
-
             let q_stack = q_target.clone()
                 * (q_target.clone() - one)
                 * (q_target.clone() - two)
@@ -325,6 +350,37 @@ impl<
             let i = Expression::Constant(inv);
 
             vec![(q_stack * i * address_cur, stack_address_table_zero)]
+        });
+
+        // Stack first row address is in the allowed range.
+        // Note: only the first stack row, not all stack init rows (non-first one have q_target = 3).
+        meta.lookup(|meta| {
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            let four = Expression::Constant(F::from_u64(4));
+            // q_target_cur must be 1
+            // q_target_next must be 3
+            let q_stack_first = q_target_cur.clone()
+                * (two.clone() - q_target_cur.clone())
+                * (three.clone() - q_target_cur.clone())
+                * (four.clone() - q_target_cur)
+                * (q_target_next.clone() - one)
+                * (q_target_next.clone() - two)
+                * (four - q_target_next);
+
+            let address_cur = meta.query_advice(address, Rotation::cur());
+            let stack_address_table_zero =
+                meta.query_fixed(stack_address_table_zero, Rotation::cur());
+
+            // q_memory_init is 12 when q_target_cur is 1 and q_target_next is 3,
+            // we use 1/12 to normalize the value
+            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            vec![(q_stack_first * i * address_cur, stack_address_table_zero)]
         });
 
         // global_counter is in the allowed range:
@@ -905,7 +961,7 @@ mod tests {
         };
 
         let stack_op_0 = Op {
-            address: Address(pallas::Base::from_u64((STACK_ADDRESS_MAX + 1) as u64)),
+            address: Address(pallas::Base::from_u64(STACK_ADDRESS_MAX as u64)),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -918,7 +974,19 @@ mod tests {
             ],
         };
 
-        // todo: test init rows
+        let stack_op_1 = Op {
+            address: Address(pallas::Base::from_u64((STACK_ADDRESS_MAX + 1) as u64)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(17),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Write(
+                    GlobalCounter(19),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+            ],
+        };
 
         // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded rows would
         // fail because of the address they would have - the address of the last unused row)
@@ -936,14 +1004,67 @@ mod tests {
             STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
             vec![memory_op_0, memory_op_1],
-            vec![stack_op_0],
+            vec![stack_op_0, stack_op_1],
             Err(vec![
                 lookup_fail(4, 3),
                 lookup_fail(5, 3),
                 lookup_fail(6, 3),
-                lookup_fail(8, 4),
-                lookup_fail(9, 4),
-                lookup_fail(3, 5)
+                lookup_fail(10, 5),
+                lookup_fail(11, 5),
+                lookup_fail(12, 5),
+                lookup_fail(3, 7)
+            ])
+        );
+    }
+
+    #[test]
+    fn max_values_first_row() {
+        // first row of a target needs to be checked for address to be in range too
+        let memory_op_0 = Op {
+            address: Address(pallas::Base::from_u64((MEMORY_ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
+            global_counters: vec![Some(ReadWrite::Write(
+                GlobalCounter(12),
+                Value(pallas::Base::from_u64(12)),
+            ))],
+        };
+
+        let stack_op_0 = Op {
+            address: Address(pallas::Base::from_u64((STACK_ADDRESS_MAX + 1) as u64)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(12),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(24),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+            ],
+        };
+
+        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded rows would
+        // fail because of the address they would have - the address of the last unused row)
+        const MEMORY_ROWS_MAX: usize = 2;
+        const STACK_ROWS_MAX: usize = 3;
+        const GLOBAL_COUNTER_MAX: usize = 60000;
+        const MEMORY_ADDRESS_MAX: usize = 100;
+        const STACK_ADDRESS_MAX: usize = 1023;
+
+        test_state_circuit!(
+            16,
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            vec![memory_op_0],
+            vec![stack_op_0],
+            Err(vec![
+                lookup_fail(1, 3),
+                lookup_fail(0, 4),
+                lookup_fail(3, 5),
+                lookup_fail(4, 5),
+                lookup_fail(2, 6),
             ])
         );
     }
