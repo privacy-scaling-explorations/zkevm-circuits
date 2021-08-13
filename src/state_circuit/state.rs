@@ -115,7 +115,6 @@ pub(crate) struct Config<
     const STACK_ADDRESS_MAX: usize,
 > {
     q_target: Column<Fixed>,
-    q_first: Selector, // first of a target
     q_not_first: Selector,
     address: Column<Advice>,
     address_diff_inv: Column<Advice>,
@@ -154,7 +153,6 @@ impl<
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_target = meta.fixed_column();
-        let q_first = meta.selector();
         let q_not_first = meta.selector();
         let address = meta.advice_column();
         let address_diff_inv = meta.advice_column();
@@ -410,13 +408,13 @@ impl<
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let one = Expression::Constant(F::one());
 
             vec![(
                 q_not_first
                     * address_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev)
-                    + (Expression::Constant(F::one())
-                        - address_diff_is_zero.clone().is_zero_expression), // default to 1 when is_zero_expression is 0
+                    * (global_counter - global_counter_prev - one.clone()) // - 1 because it needs to be strictly monotone
+                    + (one - address_diff_is_zero.clone().is_zero_expression), // default to 1 when is_zero_expression is 0
                 global_counter_table,
             )]
         });
@@ -498,16 +496,10 @@ impl<
 
         // global_counter is in the allowed range:
         meta.lookup(|meta| {
-            let q_first = meta.query_selector(q_first);
-            let q_not_first = meta.query_selector(q_not_first);
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
 
-            vec![(
-                (q_first.clone() + q_not_first.clone()) * global_counter
-                    + (Expression::Constant(F::one()) - (q_first + q_not_first)), // default to 1 when (q_first + q_not_first) is 0
-                global_counter_table,
-            )]
+            vec![(global_counter, global_counter_table)]
         });
 
         // Memory value (for non-first rows) is in the allowed range.
@@ -536,7 +528,6 @@ impl<
 
         Config {
             q_target,
-            q_first,
             q_not_first,
             address,
             address_diff_inv,
@@ -562,11 +553,7 @@ impl<
             .assign_region(
                 || "global counter table",
                 |mut region| {
-                    // generate range table [1, GLOBAL_COUNTER_MAX]
-                    // Note: 0 is not included because global_counter needs to be strictly increasing
-                    // and we are checking (global_counter_cur - global_counter_prev) which must be
-                    // in [1, GLOBAL_COUNTER_MAX]
-                    for idx in 1..=GLOBAL_COUNTER_MAX {
+                    for idx in 0..=GLOBAL_COUNTER_MAX {
                         region.assign_fixed(
                             || "global counter table",
                             self.global_counter_table,
@@ -670,7 +657,6 @@ impl<
                 println!("{} {}", index, offset);
                 // memory ops have init row
                 if index == 0 {
-                    self.q_first.enable(region, offset)?;
                     self.init(region, offset, address, F::one())?;
                 } else {
                     self.q_not_first.enable(region, offset)?;
@@ -694,7 +680,6 @@ impl<
                 } else if target == F::from_u64(3 as u64) {
                     if internal_ind == 0 {
                         if index == 0 {
-                            self.q_first.enable(region, offset)?;
                             // set some non-zero diff for the first stack op
                             address_diff_is_zero_chip.assign(region, offset, Some(F::one()))?;
                         } else {
@@ -728,7 +713,6 @@ impl<
         // todo: edge cases
         for i in offset..start_offset + max_rows {
             if i == start_offset {
-                self.q_first.enable(region, i)?;
                 region.assign_fixed(|| "target", self.q_target, i, || Ok(F::one()))?;
             } else {
                 self.q_not_first.enable(region, i)?;
@@ -1345,7 +1329,7 @@ mod tests {
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Read(
-                    GlobalCounter(1155),
+                    GlobalCounter(1255), // fails because it needs to be strictly monotone
                     Value(pallas::Base::from_u64(12)),
                 )),
             ],
@@ -1360,6 +1344,10 @@ mod tests {
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(217),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(217), // fails because it needs to be strictly monotone
                     Value(pallas::Base::from_u64(32)),
                 )),
             ],
@@ -1378,7 +1366,8 @@ mod tests {
             Err(vec![
                 lookup_fail(2, 4),
                 lookup_fail(3, 4),
-                lookup_fail(MEMORY_ROWS_MAX + 1, 4)
+                lookup_fail(MEMORY_ROWS_MAX + 1, 4),
+                lookup_fail(MEMORY_ROWS_MAX + 2, 4)
             ])
         );
     }
