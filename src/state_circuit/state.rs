@@ -115,7 +115,6 @@ pub(crate) struct Config<
     const STACK_ADDRESS_MAX: usize,
 > {
     q_target: Column<Fixed>,
-    q_not_first: Selector,
     address: Column<Advice>,
     address_diff_inv: Column<Advice>,
     global_counter: Column<Advice>,
@@ -153,7 +152,6 @@ impl<
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_target = meta.fixed_column();
-        let q_not_first = meta.selector();
         let address = meta.advice_column();
         let address_diff_inv = meta.advice_column();
         let global_counter = meta.advice_column();
@@ -172,11 +170,11 @@ impl<
                 let one = Expression::Constant(F::one());
                 let is_not_padding = one - padding;
 
-                // (q_target - one) could be used instead of q_not_first, but it can be different than
-                // 0 and 1, which causes problems (normalization would be needed)
-                // for example in checking global_counter monotonicity (where address_diff_is_zero is used).
-                // Also, some ConstraintPoisened errors appear which I haven't been able to resolve yet.
-                meta.query_selector(q_not_first) * is_not_padding
+                let q_target = meta.query_fixed(q_target, Rotation::cur());
+                let one = Expression::Constant(F::one());
+                let q_not_first = q_target.clone() * (q_target - one);
+
+                q_not_first * is_not_padding
             },
             |meta| {
                 let address_cur = meta.query_advice(address, Rotation::cur());
@@ -277,9 +275,8 @@ impl<
 
                 // first stack row shouldn't be checked as the address would be compared with
                 // the last memory address
-                let q_not_first = meta.query_selector(q_not_first);
 
-                q_not_first * q_stack * i
+                q_stack * i
             },
             padding,
         );
@@ -365,6 +362,29 @@ impl<
             ]
         });
 
+        meta.create_gate("First stack row operation", |meta| {
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            let four = Expression::Constant(F::from_u64(4));
+            let q_stack_first = q_target_cur.clone()
+                * (two.clone() - q_target_cur.clone())
+                * (three - q_target_cur.clone())
+                * (four.clone() - q_target_cur)
+                * (q_target_next.clone() - one.clone())
+                * (q_target_next.clone() - two)
+                * (four - q_target_next);
+
+            let flag = meta.query_advice(flag, Rotation::cur());
+            let q_read = one - flag;
+
+            vec![
+                q_stack_first.clone() * q_read.clone(), // first stack op has to be write (flag = 1)
+            ]
+        });
+
         meta.create_gate("Stack operation", |meta| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let one = Expression::Constant(F::one());
@@ -403,18 +423,71 @@ impl<
 
         // global_counter monotonicity is only checked when address_cur == address_prev.
         // (Recall that operations are ordered first by address, and then by global_counter.)
+        // stack non-first
         meta.lookup(|meta| {
-            let q_not_first = meta.query_selector(q_not_first);
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
             let one = Expression::Constant(F::one());
 
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let is_not_padding = one.clone() - padding;
+
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let four = Expression::Constant(F::from_u64(4));
+
+            // q_stack non-first
+            let q_stack = q_target.clone()
+                * (q_target.clone() - one.clone())
+                * (q_target.clone() - two)
+                * (four - q_target);
+
+            // q_stack is 6 when target is 3, we use 1/6 to normalize the value
+            let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
             vec![(
-                q_not_first
+                q_stack
+                    * i
+                    * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()) // - 1 because it needs to be strictly monotone
-                    + (one - address_diff_is_zero.clone().is_zero_expression), // default to 1 when is_zero_expression is 0
+                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
+                global_counter_table,
+            )]
+        });
+
+        // global_counter monotonicity is only checked when address_cur == address_prev.
+        // (Recall that operations are ordered first by address, and then by global_counter.)
+        // memory non-first
+        meta.lookup(|meta| {
+            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
+            let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
+            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let is_not_padding = one.clone() - padding;
+
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let three = Expression::Constant(F::from_u64(3));
+            let four = Expression::Constant(F::from_u64(4));
+            let q_memory = q_target.clone()
+                * (q_target.clone() - one.clone())
+                * (three - q_target.clone())
+                * (four - q_target);
+
+            // q_memory is 4 when target is 2, we use 1/4 to normalize the value
+            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            vec![(
+                q_memory
+                    * i
+                    * is_not_padding
+                    * address_diff_is_zero.clone().is_zero_expression
+                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
                 global_counter_table,
             )]
         });
@@ -472,7 +545,7 @@ impl<
             vec![(q_memory_first * i * address_cur, memory_address_table_zero)]
         });
 
-        // stack address is in the allowed range
+        // stack address is in the allowed range (non first row)
         meta.lookup(|meta| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let one = Expression::Constant(F::one());
@@ -492,6 +565,33 @@ impl<
             let i = Expression::Constant(inv);
 
             vec![(q_stack * i * address_cur, stack_address_table_zero)]
+        });
+
+        // stack address is in the allowed range (first row)
+        meta.lookup(|meta| {
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            let four = Expression::Constant(F::from_u64(4));
+            let q_stack_first = q_target_cur.clone()
+                * (two.clone() - q_target_cur.clone())
+                * (three - q_target_cur.clone())
+                * (four.clone() - q_target_cur)
+                * (q_target_next.clone() - one)
+                * (q_target_next.clone() - two)
+                * (four - q_target_next);
+
+            let address_cur = meta.query_advice(address, Rotation::cur());
+            let stack_address_table_zero =
+                meta.query_fixed(stack_address_table_zero, Rotation::cur());
+
+            // q_stack_first is 12, we use 1/12 to normalize the value
+            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            vec![(q_stack_first * i * address_cur, stack_address_table_zero)]
         });
 
         // global_counter is in the allowed range:
@@ -528,7 +628,6 @@ impl<
 
         Config {
             q_target,
-            q_not_first,
             address,
             address_diff_inv,
             global_counter,
@@ -659,7 +758,6 @@ impl<
                 if index == 0 {
                     self.init(region, offset, address, F::one())?;
                 } else {
-                    self.q_not_first.enable(region, offset)?;
                     self.init(region, offset, address, target)?;
                 }
                 address_diff_is_zero_chip.assign(
@@ -671,19 +769,33 @@ impl<
             }
 
             for (internal_ind, global_counter) in op.global_counters.iter().enumerate() {
-                let bus_mapping =
-                    self.assign_per_counter(region, offset, address, global_counter, target)?;
-
                 if target == F::from_u64(2 as u64) {
+                    let bus_mapping =
+                        self.assign_per_counter(region, offset, address, global_counter, target)?;
+                    bus_mappings.push(bus_mapping);
                     address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
-                    self.q_not_first.enable(region, offset)?;
                 } else if target == F::from_u64(3 as u64) {
                     if internal_ind == 0 {
                         if index == 0 {
+                            let bus_mapping = self.assign_per_counter(
+                                region,
+                                offset,
+                                address,
+                                global_counter,
+                                F::one(),
+                            )?;
+                            bus_mappings.push(bus_mapping);
                             // set some non-zero diff for the first stack op
                             address_diff_is_zero_chip.assign(region, offset, Some(F::one()))?;
                         } else {
-                            self.q_not_first.enable(region, offset)?;
+                            let bus_mapping = self.assign_per_counter(
+                                region,
+                                offset,
+                                address,
+                                global_counter,
+                                target,
+                            )?;
+                            bus_mappings.push(bus_mapping);
                             address_diff_is_zero_chip.assign(
                                 region,
                                 offset,
@@ -692,7 +804,15 @@ impl<
                         }
                     } else {
                         println!("{}", "---------");
-                        self.q_not_first.enable(region, offset)?;
+                        let bus_mapping = self.assign_per_counter(
+                            region,
+                            offset,
+                            address,
+                            global_counter,
+                            target,
+                        )?;
+                        bus_mappings.push(bus_mapping);
+
                         address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
                     }
                 }
@@ -700,9 +820,6 @@ impl<
                 println!("{} {} ++", index, offset);
 
                 offset += 1;
-
-                // TODO: order by global_counter
-                bus_mappings.push(bus_mapping);
             }
         }
 
@@ -715,7 +832,6 @@ impl<
             if i == start_offset {
                 region.assign_fixed(|| "target", self.q_target, i, || Ok(F::one()))?;
             } else {
-                self.q_not_first.enable(region, i)?;
                 region.assign_fixed(|| "target", self.q_target, i, || Ok(target))?;
             }
 
@@ -1088,7 +1204,65 @@ mod tests {
             14,
             2000,
             100,
-            1000,
+            2,
+            100,
+            1023,
+            vec![memory_op_0, memory_op_1],
+            vec![stack_op_0],
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn no_stack_padding() {
+        let memory_op_0 = Op {
+            address: Address(pallas::Base::zero()),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(12),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(24),
+                    Value(pallas::Base::from_u64(12)),
+                )),
+            ],
+        };
+
+        const STACK_ROWS_MAX: usize = 2;
+        let memory_op_1 = Op {
+            address: Address(pallas::Base::one()),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(17),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(87),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+            ],
+        };
+
+        let stack_op_0 = Op {
+            address: Address(pallas::Base::one()),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(17),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(87),
+                    Value(pallas::Base::from_u64(32)),
+                )),
+            ],
+        };
+
+        test_state_circuit!(
+            14,
+            2000,
+            100,
+            STACK_ROWS_MAX,
             100,
             1023,
             vec![memory_op_0, memory_op_1],
@@ -1138,7 +1312,7 @@ mod tests {
             vec![stack_op_0],
             Err(vec![
                 constraint_not_satisfied(2, 2, "Memory operation", 4),
-                constraint_not_satisfied(MEMORY_ROWS_MAX + 1, 3, "Stack operation", 2)
+                constraint_not_satisfied(MEMORY_ROWS_MAX + 1, 4, "Stack operation", 2)
             ])
         );
     }
@@ -1150,7 +1324,7 @@ mod tests {
             address: Address(pallas::Base::zero()),
             global_counters: vec![Some(ReadWrite::Read(
                 GlobalCounter(28),
-                Value(pallas::Base::from_u64(13)), // This should fail as it read op
+                Value(pallas::Base::from_u64(13)), // This should fail as it is read op
             ))],
         };
 
@@ -1167,8 +1341,8 @@ mod tests {
             Err(vec![constraint_not_satisfied(
                 MEMORY_ROWS_MAX,
                 3,
-                "Stack operation",
-                2
+                "First stack row operation",
+                0
             )])
         );
     }
@@ -1253,13 +1427,13 @@ mod tests {
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0, stack_op_1],
             Err(vec![
-                lookup_fail(4, 5),
-                lookup_fail(5, 5),
-                lookup_fail(6, 5),
-                lookup_fail(9, 7),
-                lookup_fail(10, 7),
-                lookup_fail(3, 8),
-                lookup_fail(10, 8)
+                lookup_fail(4, 6),
+                lookup_fail(5, 6),
+                lookup_fail(6, 6),
+                lookup_fail(9, 8),
+                lookup_fail(10, 8),
+                lookup_fail(3, 10),
+                lookup_fail(10, 10)
             ])
         );
     }
@@ -1307,10 +1481,10 @@ mod tests {
             vec![memory_op_0],
             vec![stack_op_0],
             Err(vec![
-                lookup_fail(1, 5),
-                lookup_fail(0, 6),
-                lookup_fail(2, 7),
-                lookup_fail(3, 7),
+                lookup_fail(1, 6),
+                lookup_fail(0, 7),
+                lookup_fail(3, 8),
+                lookup_fail(2, 9),
             ])
         );
     }
@@ -1364,10 +1538,10 @@ mod tests {
             vec![memory_op_0],
             vec![stack_op_0],
             Err(vec![
-                lookup_fail(2, 4),
-                lookup_fail(3, 4),
                 lookup_fail(MEMORY_ROWS_MAX + 1, 4),
-                lookup_fail(MEMORY_ROWS_MAX + 2, 4)
+                lookup_fail(MEMORY_ROWS_MAX + 2, 4),
+                lookup_fail(2, 5),
+                lookup_fail(3, 5),
             ])
         );
     }
@@ -1454,7 +1628,7 @@ mod tests {
             1023,
             vec![memory_op_0],
             vec![],
-            Err(vec![lookup_fail(1, 9),])
+            Err(vec![lookup_fail(1, 11),])
         );
     }
 }

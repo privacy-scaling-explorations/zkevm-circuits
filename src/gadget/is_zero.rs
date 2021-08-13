@@ -57,7 +57,7 @@ impl<F: FieldExt> IsZeroChip<F> {
             let value = value(meta);
 
             let one = Expression::Constant(F::one());
-            is_zero_expression = (one - value.clone() * value_inv.clone()) * q_enable.clone();
+            is_zero_expression = one - value.clone() * value_inv.clone();
 
             // This checks `value_inv ≡ value.invert()` when `value` is not zero:
             // value ⋅ (1 - value ⋅ value_inv)
