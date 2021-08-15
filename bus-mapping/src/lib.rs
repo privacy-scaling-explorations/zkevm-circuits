@@ -9,13 +9,15 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
-use std::{
-    collections::BTreeMap,
-    iter::Iterator,
-    ops::{Index, IndexMut},
-};
+mod error;
+mod evm;
+mod operation;
 
-use itertools::Itertools;
+use core::ops::{Index, IndexMut};
+
+pub use evm::{EvmWord, ExecutionStep, GlobalCounter, MemoryAddress, ProgramCounter, StackAddress};
+use operation::container::OperationContainer;
+pub use operation::{Operation, Target, RW};
 use pasta_curves::arithmetic::FieldExt;
 
 // -------- EVM Circuit
@@ -29,9 +31,10 @@ use pasta_curves::arithmetic::FieldExt;
 // Sorty by gc
 //`MemoryElem{target 	gc 	val1 	val2 	val3}`
 
-#[derive(Debug, Clone, Copy)]
+/// Doc
+#[derive(Debug, Clone)]
 struct BlockConstants<F: FieldExt> {
-    hash: [u8; 256], // Until we know how to deal with it
+    hash: EvmWord, // Until we know how to deal with it
     coinbase: F,
     timestamp: F,
     number: F,
@@ -40,61 +43,29 @@ struct BlockConstants<F: FieldExt> {
     chain_id: F,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum RW {
-    READ,
-    WRITE,
-}
-
 /// Doc
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum Target {
-    /// Doc
-    Memory,
-    /// Doc
-    Stack,
-    /// Doc
-    Storage,
-}
-
-/// Doc
-#[derive(Debug, Clone, Copy)]
-pub struct Operation<F: FieldExt> {
-    rw: RW,
-    target: Target,
-    key: F,
-    value: F,
-    opcode_info: &'static str,
-}
-
-/// Bus Mapping structure
 #[derive(Debug, Clone)]
-pub struct BusMapping<F: FieldExt> {
-    entries: Vec<Operation<F>>,
+pub struct ExecutionTrace<'a, F: FieldExt, T: Operation> {
+    entries: Vec<ExecutionStep<'a, T>>,
     block_ctants: BlockConstants<F>,
-    // Helper to sort by key groups. We store how many different keys we have when building the Bus Mapping
-    #[doc(hidden)]
-    mem_ops_sorted: BTreeMap<usize, Vec<Operation<F>>>,
-    #[doc(hidden)]
-    stack_ops_sorted: BTreeMap<usize, Vec<Operation<F>>>,
-    #[doc(hidden)]
-    storage_ops_sorted: BTreeMap<usize, Vec<Operation<F>>>,
+    // Add container
+    container: OperationContainer<T>,
 }
 
-impl<F: FieldExt> Index<usize> for BusMapping<F> {
-    type Output = Operation<F>;
+impl<'a, F: FieldExt, T: Operation> Index<usize> for ExecutionTrace<'a, F, T> {
+    type Output = ExecutionStep<'a, T>;
     fn index(&self, index: usize) -> &Self::Output {
         &self.entries[index]
     }
 }
 
-impl<F: FieldExt> IndexMut<usize> for BusMapping<F> {
+impl<'a, F: FieldExt, T: Operation> IndexMut<usize> for ExecutionTrace<'a, F, T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.entries[index]
     }
 }
 
-impl<F: FieldExt> From<(Vec<Operation<F>>, BlockConstants<F>)> for BusMapping<F> {
+/*impl<F: FieldExt> From<(Vec<Operation<F>>, BlockConstants<F>)> for ExecutionTrace<F> {
     fn from(inp: (Vec<Operation<F>>, BlockConstants<F>)) -> Self {
         // Initialize the BTreeMaps with empty vecs for each key group
         let mut mem_ops_sorted = BTreeMap::new();
@@ -132,28 +103,28 @@ impl<F: FieldExt> From<(Vec<Operation<F>>, BlockConstants<F>)> for BusMapping<F>
         }
     }
 }
-
-impl<F: FieldExt> BusMapping<F> {
+impl<F: FieldExt> ExecutionTrace<F> {
     /// Docs
-    pub fn stack_part(&self) -> impl Iterator<Item = &Operation<F>> {
+    pub fn stack_part(&self) -> impl Iterator<Item = &Operation> {
         // filter out Operation::Stack
         // group by idx first
         // sort idx increasingly
         // sort gc in each group
-        self.stack_ops_sorted.values().rev().flatten()
+        unimplemented!()
     }
 
     /// Docs
-    pub fn memory_part(&self) -> impl Iterator<Item = &Operation<F>> {
+    pub fn memory_part(&self) -> impl Iterator<Item = &Operation> {
         // filter out Operation::Memory
         // group by address first
         // sort address increasingly
         // sort gc in each group
-        self.mem_ops_sorted.values().flatten()
+        unimplemented!()
     }
 
     /// Docs
-    pub fn storage_part(&self) -> impl Iterator<Item = &Operation<F>> {
-        self.stack_ops_sorted.values().flatten()
+    pub fn storage_part(&self) -> impl Iterator<Item = &Operation> {
+        unimplemented!()
     }
 }
+*/
