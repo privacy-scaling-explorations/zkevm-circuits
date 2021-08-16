@@ -1,7 +1,7 @@
 //! Doc this
 
 use super::{EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter};
-use crate::{error::Error, operation::Operation};
+use crate::{error::Error, operation::Target};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -17,7 +17,7 @@ pub struct ExecutionStep<'a> {
     opcode: Instruction,
     pc: ProgramCounter,
     gc: GlobalCounter,
-    bus_mapping_instances: Vec<&'a dyn Operation>, // Holds refs to the container with the related mem ops.
+    bus_mapping_instances: Vec<&'a Target>, // Holds refs to the container with the related mem ops.
 }
 
 impl<'a> ExecutionStep<'a> {
@@ -28,7 +28,7 @@ impl<'a> ExecutionStep<'a> {
         opcode: Instruction,
         pc: ProgramCounter,
         gc: GlobalCounter,
-        instances: Vec<&'a dyn Operation>,
+        instances: Vec<&'a Target>,
     ) -> Self {
         ExecutionStep {
             memory,
@@ -112,7 +112,7 @@ mod tests {
         }
         "#;
 
-        let trace_loaded: ExecutionStep<'_, MemoryOp> = ExecutionStep::try_from((
+        let trace_loaded: ExecutionStep<'_> = ExecutionStep::try_from((
             &serde_json::from_str::<ParsedExecutionStep>(step_json).expect("Error on parsing"),
             GlobalCounter(0usize),
         ))

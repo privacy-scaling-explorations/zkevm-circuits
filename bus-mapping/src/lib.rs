@@ -16,7 +16,7 @@ mod operation;
 use core::ops::{Index, IndexMut};
 
 pub use evm::{EvmWord, ExecutionStep, GlobalCounter, MemoryAddress, ProgramCounter, StackAddress};
-use operation::container::OperationContainer;
+// use operation::container::OperationContainer;
 pub use operation::{Operation, Target, RW};
 use pasta_curves::arithmetic::FieldExt;
 
@@ -45,21 +45,21 @@ struct BlockConstants<F: FieldExt> {
 
 /// Doc
 #[derive(Debug, Clone)]
-pub struct ExecutionTrace<'a, F: FieldExt, T: Operation> {
+pub struct ExecutionTrace<'a, F: FieldExt> {
     entries: Vec<ExecutionStep<'a>>,
     block_ctants: BlockConstants<F>,
     // Add container
-    container: OperationContainer<T>,
+    container: Target,
 }
 
-impl<'a, F: FieldExt, T: Operation> Index<usize> for ExecutionTrace<'a, F, T> {
+impl<'a, F: FieldExt> Index<usize> for ExecutionTrace<'a, F> {
     type Output = ExecutionStep<'a>;
     fn index(&self, index: usize) -> &Self::Output {
         &self.entries[index]
     }
 }
 
-impl<'a, F: FieldExt, T: Operation> IndexMut<usize> for ExecutionTrace<'a, F, T> {
+impl<'a, F: FieldExt> IndexMut<usize> for ExecutionTrace<'a, F> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.entries[index]
     }

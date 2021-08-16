@@ -58,6 +58,24 @@ pub struct ProgramCounter(pub(crate) usize);
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct GlobalCounter(pub(crate) usize);
 
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Address {
+    Memory(MemoryAddress),
+    Stack(StackAddress),
+}
+
+impl From<MemoryAddress> for Address {
+    fn from(mem_addr: MemoryAddress) -> Self {
+        Self::Memory(mem_addr)
+    }
+}
+
+impl From<StackAddress> for Address {
+    fn from(stack_addr: StackAddress) -> Self {
+        Self::Stack(stack_addr)
+    }
+}
+
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemoryAddress(pub(crate) BigUint);

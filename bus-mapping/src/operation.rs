@@ -1,6 +1,6 @@
 pub mod container;
 
-use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
+use super::evm::{Address, EvmWord, GlobalCounter, MemoryAddress, StackAddress};
 use core::cmp::Ordering;
 
 /// Doc
@@ -13,14 +13,14 @@ pub enum RW {
 }
 
 /// Doc
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     /// Doc
-    Memory,
+    Memory(MemoryOp),
     /// Doc
-    Stack,
+    Stack(StackOp),
     /// Doc
-    Storage,
+    Storage(StorageOp),
 }
 
 /// Doc
@@ -29,15 +29,11 @@ where
     Self: Sized + Clone + Ord + PartialOrd,
 {
     /// Doc
-    type Address;
-    /// Doc
     fn rw(&self) -> RW;
-    /// Doc
-    fn target(&self) -> Target;
     /// Doc
     fn gc(&self) -> GlobalCounter;
     /// Doc
-    fn address(&self) -> &Self::Address;
+    fn address(&self) -> Address;
     /// Doc
     fn value(&self) -> &EvmWord;
 }
@@ -51,32 +47,43 @@ pub struct MemoryOp {
     value: EvmWord,
 }
 
-impl Operation for MemoryOp {
-    type Address = MemoryAddress;
+impl Operation for Target {
     fn rw(&self) -> RW {
-        self.rw
-    }
-
-    fn target(&self) -> Target {
-        Target::Memory
+        match self {
+            Self::Memory(op) => op.rw,
+            Self::Stack(op) => op.rw,
+            Self::Storage(_) => unimplemented!(),
+        }
     }
 
     fn gc(&self) -> GlobalCounter {
-        self.gc
+        match self {
+            Self::Memory(op) => op.gc,
+            Self::Stack(op) => op.gc,
+            Self::Storage(_) => unimplemented!(),
+        }
     }
 
-    fn address(&self) -> &Self::Address {
-        &self.addr
+    fn address(&self) -> Address {
+        match self {
+            Self::Memory(op) => op.addr.clone().into(),
+            Self::Stack(op) => op.addr.clone().into(),
+            Self::Storage(_) => unimplemented!(),
+        }
     }
 
     fn value(&self) -> &EvmWord {
-        &self.value
+        match self {
+            Self::Memory(op) => &op.value,
+            Self::Stack(op) => &op.value,
+            Self::Storage(_) => unimplemented!(),
+        }
     }
 }
 
-impl PartialOrd for MemoryOp {
-    fn partial_cmp(&self, other: &MemoryOp) -> Option<Ordering> {
-        match self.address().partial_cmp(other.address()) {
+impl PartialOrd for Target {
+    fn partial_cmp(&self, other: &Target) -> Option<Ordering> {
+        match self.address().partial_cmp(&other.address()) {
             None => None,
             Some(ord) => match ord {
                 std::cmp::Ordering::Equal => self.gc().partial_cmp(&other.gc()),
@@ -86,9 +93,9 @@ impl PartialOrd for MemoryOp {
     }
 }
 
-impl Ord for MemoryOp {
-    fn cmp(&self, other: &MemoryOp) -> Ordering {
-        let ord = self.address().cmp(other.address());
+impl Ord for Target {
+    fn cmp(&self, other: &Target) -> Ordering {
+        let ord = self.address().cmp(&other.address());
         match ord {
             std::cmp::Ordering::Equal => self.gc().cmp(&other.gc()),
             _ => ord,
@@ -105,50 +112,6 @@ pub struct StackOp {
     value: EvmWord,
 }
 
-impl Operation for StackOp {
-    type Address = StackAddress;
-    fn rw(&self) -> RW {
-        self.rw
-    }
-
-    fn target(&self) -> Target {
-        Target::Stack
-    }
-
-    fn gc(&self) -> GlobalCounter {
-        self.gc
-    }
-
-    fn address(&self) -> &Self::Address {
-        &self.addr
-    }
-
-    fn value(&self) -> &EvmWord {
-        &self.value
-    }
-}
-
-impl PartialOrd for StackOp {
-    fn partial_cmp(&self, other: &StackOp) -> Option<Ordering> {
-        match self.address().partial_cmp(other.address()) {
-            None => None,
-            Some(ord) => match ord {
-                std::cmp::Ordering::Equal => self.gc().partial_cmp(&other.gc()),
-                _ => Some(ord),
-            },
-        }
-    }
-}
-
-impl Ord for StackOp {
-    fn cmp(&self, other: &StackOp) -> Ordering {
-        let ord = self.address().cmp(other.address());
-        match ord {
-            std::cmp::Ordering::Equal => self.gc().cmp(&other.gc()),
-            _ => ord,
-        }
-    }
-}
-
 /// Doc
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
