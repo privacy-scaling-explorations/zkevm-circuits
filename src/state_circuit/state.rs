@@ -5,7 +5,7 @@ use crate::gadget::{
 };
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -423,7 +423,6 @@ impl<
 
         // global_counter monotonicity is only checked when address_cur == address_prev.
         // (Recall that operations are ordered first by address, and then by global_counter.)
-        // stack non-first
         meta.lookup(|meta| {
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
@@ -436,55 +435,31 @@ impl<
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
             let four = Expression::Constant(F::from_u64(4));
 
-            // q_stack non-first
-            let q_stack = q_target.clone()
+            // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
+            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+            let q_memory_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
-                * (q_target.clone() - two)
-                * (four - q_target);
+                * (three - q_target.clone())
+                * (four.clone() - q_target.clone())
+                * i;
 
-            // q_stack is 6 when target is 3, we use 1/6 to normalize the value
+            // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
             let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
-
-            vec![(
-                q_stack
-                    * i
-                    * is_not_padding
-                    * address_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
-            )]
-        });
-
-        // global_counter monotonicity is only checked when address_cur == address_prev.
-        // (Recall that operations are ordered first by address, and then by global_counter.)
-        // memory non-first
-        meta.lookup(|meta| {
-            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
-            let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
-
-            let padding = meta.query_advice(padding, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            let is_not_padding = one.clone() - padding;
-
-            let q_target = meta.query_fixed(q_target, Rotation::cur());
-            let three = Expression::Constant(F::from_u64(3));
-            let four = Expression::Constant(F::from_u64(4));
-            let q_memory = q_target.clone()
+            let q_stack_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
-                * (three - q_target.clone())
-                * (four - q_target);
+                * (q_target.clone() - two)
+                * (four - q_target)
+                * i;
 
-            // q_memory is 4 when target is 2, we use 1/4 to normalize the value
-            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
-            let i = Expression::Constant(inv);
+            let q_not_first = q_memory_not_first + q_stack_not_first;
 
             vec![(
-                q_memory
-                    * i
+                q_not_first
                     * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
                     * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
@@ -492,30 +467,7 @@ impl<
             )]
         });
 
-        // Memory address (for non-first rows) is in the allowed range.
-        meta.lookup(|meta| {
-            let q_target = meta.query_fixed(q_target, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            let three = Expression::Constant(F::from_u64(3));
-            let four = Expression::Constant(F::from_u64(4));
-            let q_memory = q_target.clone()
-                * (q_target.clone() - one)
-                * (three - q_target.clone())
-                * (four - q_target);
-
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let memory_address_table_zero =
-                meta.query_fixed(memory_address_table_zero, Rotation::cur());
-
-            // q_memory is 4 when target is 2, we use 1/4 to normalize the value
-            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
-            let i = Expression::Constant(inv);
-
-            vec![(q_memory * i * address_cur, memory_address_table_zero)]
-        });
-
-        // Memory first row address is in the allowed range.
-        // Note: only the first memory row, not all memory init rows (non-first one have q_target = 2).
+        // Memory address is in the allowed range.
         meta.lookup(|meta| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
@@ -523,6 +475,22 @@ impl<
             let two = Expression::Constant(F::from_u64(2));
             let three = Expression::Constant(F::from_u64(3));
             let four = Expression::Constant(F::from_u64(4));
+
+            // q_memory is 4 when target is 2, we use 1/4 to normalize the value
+            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            let q_memory_not_first = q_target_cur.clone()
+                * (q_target_cur.clone() - one.clone())
+                * (three.clone() - q_target_cur.clone())
+                * (four.clone() - q_target_cur.clone())
+                * i;
+
+            // q_memory_first is 12 when q_target_cur is 1 and q_target_next is 2,
+            // we use 1/12 to normalize the value
+            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
             // q_target_cur must be 1
             // q_target_next must be 2
             let q_memory_first = q_target_cur.clone()
@@ -531,43 +499,19 @@ impl<
                 * (four.clone() - q_target_cur)
                 * (q_target_next.clone() - one)
                 * (three - q_target_next.clone())
-                * (four - q_target_next);
+                * (four - q_target_next)
+                * i;
+
+            let q_memory = q_memory_first + q_memory_not_first;
 
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
-            // q_memory_first is 12 when q_target_cur is 1 and q_target_next is 2,
-            // we use 1/12 to normalize the value
-            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
-            let i = Expression::Constant(inv);
-
-            vec![(q_memory_first * i * address_cur, memory_address_table_zero)]
+            vec![(q_memory * address_cur, memory_address_table_zero)]
         });
 
-        // stack address is in the allowed range (non first row)
-        meta.lookup(|meta| {
-            let q_target = meta.query_fixed(q_target, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::from_u64(2));
-            let four = Expression::Constant(F::from_u64(4));
-            let q_stack = q_target.clone()
-                * (q_target.clone() - one)
-                * (q_target.clone() - two)
-                * (four - q_target);
-
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let stack_address_table_zero =
-                meta.query_fixed(stack_address_table_zero, Rotation::cur());
-
-            // q_stack is 6 when target is 3, we use 1/6 to normalize the value
-            let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
-            let i = Expression::Constant(inv);
-
-            vec![(q_stack * i * address_cur, stack_address_table_zero)]
-        });
-
-        // stack address is in the allowed range (first row)
+        // Stack address is in the allowed range.
         meta.lookup(|meta| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
@@ -575,23 +519,37 @@ impl<
             let two = Expression::Constant(F::from_u64(2));
             let three = Expression::Constant(F::from_u64(3));
             let four = Expression::Constant(F::from_u64(4));
+
+            // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
+            let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            let q_stack_not_first = q_target_cur.clone()
+                * (q_target_cur.clone() - one.clone())
+                * (q_target_cur.clone() - two.clone())
+                * (four.clone() - q_target_cur.clone())
+                * i;
+
+            // q_stack_first is 12, we use 1/12 to normalize the value
+            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
             let q_stack_first = q_target_cur.clone()
                 * (two.clone() - q_target_cur.clone())
                 * (three - q_target_cur.clone())
                 * (four.clone() - q_target_cur)
                 * (q_target_next.clone() - one)
                 * (q_target_next.clone() - two)
-                * (four - q_target_next);
+                * (four - q_target_next)
+                * i;
 
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
 
-            // q_stack_first is 12, we use 1/12 to normalize the value
-            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
-            let i = Expression::Constant(inv);
+            let q_stack = q_stack_first + q_stack_not_first;
 
-            vec![(q_stack_first * i * address_cur, stack_address_table_zero)]
+            vec![(q_stack * address_cur, stack_address_table_zero)]
         });
 
         // global_counter is in the allowed range:
@@ -603,6 +561,8 @@ impl<
         });
 
         // Memory value (for non-first rows) is in the allowed range.
+        // Memory first row value doesn't need to be checked - it is checked above
+        // where memory init row value has to be 0.
         meta.lookup(|meta| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let one = Expression::Constant(F::one());
@@ -622,9 +582,6 @@ impl<
 
             vec![(q_memory * i * value, memory_value_table)]
         });
-
-        // Memory first row value doesn't need to be checked - it is checked above
-        // where memory init row value has to be 0.
 
         Config {
             q_target,
@@ -753,7 +710,7 @@ impl<
             }
 
             if target == F::from_u64(2 as u64) {
-                println!("{} {}", index, offset);
+                // println!("{} {}", index, offset);
                 // memory ops have init row
                 if index == 0 {
                     self.init(region, offset, address, F::one())?;
@@ -803,7 +760,7 @@ impl<
                             )?;
                         }
                     } else {
-                        println!("{}", "---------");
+                        // println!("{}", "---------");
                         let bus_mapping = self.assign_per_counter(
                             region,
                             offset,
@@ -817,7 +774,7 @@ impl<
                     }
                 }
 
-                println!("{} {} ++", index, offset);
+                // println!("{} {} ++", index, offset);
 
                 offset += 1;
             }
@@ -835,7 +792,7 @@ impl<
                 region.assign_fixed(|| "target", self.q_target, i, || Ok(target))?;
             }
 
-            println!("{} ++ --", i);
+            // println!("{} ++ --", i);
 
             region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
 
@@ -906,7 +863,7 @@ impl<
                 );
                 bus_mappings.extend(memory_mappings.unwrap());
 
-                println!("{}", "===========================");
+                // println!("{}", "===========================");
 
                 let stack_mappings = self.assign_operations(
                     stack_ops.clone(),
@@ -1058,6 +1015,9 @@ mod tests {
         dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup},
         plonk::{Circuit, ConstraintSystem, Error},
     };
+
+    extern crate test;
+    use test::Bencher;
 
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
@@ -1427,13 +1387,13 @@ mod tests {
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0, stack_op_1],
             Err(vec![
-                lookup_fail(4, 6),
-                lookup_fail(5, 6),
-                lookup_fail(6, 6),
-                lookup_fail(9, 8),
-                lookup_fail(10, 8),
-                lookup_fail(3, 10),
-                lookup_fail(10, 10)
+                lookup_fail(4, 5),
+                lookup_fail(5, 5),
+                lookup_fail(6, 5),
+                lookup_fail(9, 6),
+                lookup_fail(10, 6),
+                lookup_fail(3, 7),
+                lookup_fail(10, 7)
             ])
         );
     }
@@ -1481,10 +1441,10 @@ mod tests {
             vec![memory_op_0],
             vec![stack_op_0],
             Err(vec![
-                lookup_fail(1, 6),
-                lookup_fail(0, 7),
-                lookup_fail(3, 8),
-                lookup_fail(2, 9),
+                lookup_fail(0, 5),
+                lookup_fail(1, 5),
+                lookup_fail(2, 6),
+                lookup_fail(3, 6),
             ])
         );
     }
@@ -1538,10 +1498,10 @@ mod tests {
             vec![memory_op_0],
             vec![stack_op_0],
             Err(vec![
+                lookup_fail(2, 4),
+                lookup_fail(3, 4),
                 lookup_fail(MEMORY_ROWS_MAX + 1, 4),
                 lookup_fail(MEMORY_ROWS_MAX + 2, 4),
-                lookup_fail(2, 5),
-                lookup_fail(3, 5),
             ])
         );
     }
@@ -1628,7 +1588,72 @@ mod tests {
             1023,
             vec![memory_op_0],
             vec![],
-            Err(vec![lookup_fail(1, 11),])
+            Err(vec![lookup_fail(1, 8),])
         );
+    }
+
+    fn state() {
+        const GLOBAL_COUNTER_MAX: usize = 60000;
+        const MEMORY_ROWS_MAX: usize = 2000;
+        const MEMORY_ADDRESS_MAX: usize = 100;
+        const STACK_ROWS_MAX: usize = 2000;
+        const STACK_ADDRESS_MAX: usize = 1023;
+
+        let mut memory_operations = Vec::new();
+        let gcs_per_address = 10;
+        for id in 0..100 {
+            let mut global_counters = Vec::new();
+            for id_int in 0..gcs_per_address {
+                let gc = Some(ReadWrite::Write(
+                    GlobalCounter(id + id_int + 1), // + 1, otherwise the first gc will be the same as for init row
+                    Value(pallas::Base::from_u64(0)),
+                ));
+                global_counters.push(gc);
+            }
+
+            let memory_op = Op {
+                address: Address(pallas::Base::from_u64(id as u64)),
+                global_counters: global_counters,
+            };
+
+            memory_operations.push(memory_op);
+        }
+
+        let mut stack_operations = Vec::new();
+        let gcs_per_address = 10;
+        for id in 0..100 {
+            let mut global_counters = Vec::new();
+            for id_int in 0..gcs_per_address {
+                let gc = Some(ReadWrite::Write(
+                    GlobalCounter(id + id_int), // no need for +1 as stack operations don't have init row
+                    Value(pallas::Base::from_u64(0)),
+                ));
+                global_counters.push(gc);
+            }
+
+            let stack_op = Op {
+                address: Address(pallas::Base::from_u64(id as u64)),
+                global_counters: global_counters,
+            };
+
+            stack_operations.push(stack_op);
+        }
+
+        test_state_circuit!(
+            16,
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            memory_operations,
+            stack_operations,
+            Ok(())
+        );
+    }
+
+    #[bench]
+    fn bench_state(b: &mut Bencher) {
+        b.iter(|| state());
     }
 }
