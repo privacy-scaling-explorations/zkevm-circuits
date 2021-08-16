@@ -11,34 +11,50 @@ use halo2::{
 use pasta_curves::arithmetic::FieldExt;
 
 /*
-Example memory table:
+Example state table:
 
-| address | global_counter | value | flag |
--------------------------------------------
-|    0    |        0       |   0   |   1  |
-|    0    |       12       |  12   |   1  |
-|    0    |       24       |  12   |   0  |
-|    1    |        0       |   0   |   1  |
-|    1    |       17       |  32   |   1  |
-|    1    |       89       |  32   |   0  |
+| q_target | address | address_diff | global_counter | value | flag | padding |
+-------------------------------------------------------------------------------
+|    1     |    0    |              |       0        |  0    |   1  |    0    |  // init row (write value 0)
+|    2     |    0    |              |       12       |  12   |   1  |    0    |
+|    2     |    0    |              |       24       |  12   |   0  |    0    |
+|    2     |    1    |              |       0        |  0    |   1  |    0    |  // init row (write value 0)
+|    2     |    1    |              |       2        |  12   |   0  |    0    |
+|          |         |              |                |       |      |    1    |  // padding
+|          |         |              |                |       |      |    1    |  // padding
+|    1     |    0    |              |       3        |  4    |   1  |    0    |  // first stack op at the address has to be write
+|    3     |    0    |              |       17       |  32   |   1  |    0    |
+|    3     |    0    |              |       89       |  32   |   0  |    0    |
+|    3     |    1    |              |       48       |  32   |   1  |    0    |  // first stack op at the address has to be write
+|    3     |    1    |              |       49       |  32   |   0  |    0    |
+|          |         |              |                |       |      |    1    |  // padding
 */
 
-/*
-Example bus mapping:
-
-| global_counter | memory_flag | memory_address | memory_value |
-----------------------------------------------------------------
-|       12       |      1      |        0       |      12      |
-|       17       |      1      |        1       |      32      |
-|       24       |      0      |        0       |      12      |
-|       89       |      0      |        1       |      32      |
-*/
-
-// target:
+// q_target:
 // 1 - first row of either target (Note: only the first row, not all init rows)
 // 2 - memory
 // 3 - stack
 // 4 - storage
+
+// address_diff is needed only internally to check whether the address changed
+// padding specifies whether the row is just a padding to fill all the rows that are intended
+// for a particular target
+
+/*
+Example bus mapping:
+// TODO: this is going to change
+
+| target | address | global_counter | value | flag |
+----------------------------------------------------
+|    2   |    0    |       12       |  12   |   1  |
+|    2   |    0    |       24       |  12   |   0  |
+|    2   |    1    |       2        |  12   |   0  |
+|    1   |    0    |       3        |  4    |   1  |
+|    3   |    0    |       17       |  32   |   1  |
+|    3   |    0    |       89       |  32   |   0  |
+|    3   |    1    |       48       |  32   |   1  |
+|    3   |    1    |       49       |  32   |   0  |
+*/
 
 /// In the state proof, memory operations are ordered first by address, and then by global_counter.
 /// Memory is initialised at 0 for each new address.
@@ -100,9 +116,10 @@ pub(crate) struct Op<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub(crate) struct BusMapping<F: FieldExt> {
     global_counter: Variable<usize, F>,
-    memory_flag: Variable<bool, F>,
-    memory_address: Variable<F, F>,
-    memory_value: Variable<F, F>,
+    target: Variable<usize, F>,
+    flag: Variable<bool, F>,
+    address: Variable<F, F>,
+    value: Variable<F, F>,
 }
 
 #[derive(Clone, Debug)]
@@ -224,7 +241,7 @@ impl<
         );
 
         // Padding monotonicity could be checked using gates (as padding only takes values 0 and 1),
-        // but it's much slower.
+        // but it's much slower than using a lookup.
         let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
             meta,
             |meta| {
@@ -674,19 +691,19 @@ impl<
         &self,
         ops: Vec<Op<F>>,
         max_rows: usize,
-        target: F,
+        target: usize,
         address_diff_is_zero_chip: &IsZeroChip<F>,
         start_offset: usize,
         region: &mut Region<F>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut ops_num = 0;
-        if target == F::from_u64(2 as u64) {
+        if target == 2 {
             // init rows need to be counted
             ops_num = ops
                 .clone()
                 .into_iter()
                 .fold(0, |acc, x| acc + x.global_counters.len() + 1);
-        } else if target == F::from_u64(2 as u64) {
+        } else if target == 2 {
             ops_num = ops
                 .clone()
                 .into_iter()
@@ -707,11 +724,10 @@ impl<
                 address_prev = ops[index - 1].address;
             }
 
-            if target == F::from_u64(2 as u64) {
-                // println!("{} {}", index, offset);
+            if target == 2 {
                 // memory ops have init row
                 if index == 0 {
-                    self.init(region, offset, address, F::one())?;
+                    self.init(region, offset, address, 1)?;
                 } else {
                     self.init(region, offset, address, target)?;
                 }
@@ -724,12 +740,12 @@ impl<
             }
 
             for (internal_ind, global_counter) in op.global_counters.iter().enumerate() {
-                if target == F::from_u64(2 as u64) {
+                if target == 2 {
                     let bus_mapping =
                         self.assign_per_counter(region, offset, address, global_counter, target)?;
                     bus_mappings.push(bus_mapping);
                     address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
-                } else if target == F::from_u64(3 as u64) {
+                } else if target == 3 {
                     if internal_ind == 0 {
                         if index == 0 {
                             let bus_mapping = self.assign_per_counter(
@@ -737,7 +753,7 @@ impl<
                                 offset,
                                 address,
                                 global_counter,
-                                F::one(),
+                                1,
                             )?;
                             bus_mappings.push(bus_mapping);
                             // set some non-zero diff for the first stack op
@@ -758,7 +774,6 @@ impl<
                             )?;
                         }
                     } else {
-                        // println!("{}", "---------");
                         let bus_mapping = self.assign_per_counter(
                             region,
                             offset,
@@ -771,8 +786,6 @@ impl<
                         address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
                     }
                 }
-
-                // println!("{} {} ++", index, offset);
 
                 offset += 1;
             }
@@ -787,7 +800,12 @@ impl<
             if i == start_offset {
                 region.assign_fixed(|| "target", self.q_target, i, || Ok(F::one()))?;
             } else {
-                region.assign_fixed(|| "target", self.q_target, i, || Ok(target))?;
+                region.assign_fixed(
+                    || "target",
+                    self.q_target,
+                    i,
+                    || Ok(F::from_u64(target as u64)),
+                )?;
             }
 
             region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
@@ -842,19 +860,17 @@ impl<
                 let memory_mappings = self.assign_operations(
                     memory_ops.clone(),
                     MEMORY_ROWS_MAX,
-                    F::from_u64(2 as u64),
+                    2,
                     &address_diff_is_zero_chip,
                     0,
                     &mut region,
                 );
                 bus_mappings.extend(memory_mappings.unwrap());
 
-                // println!("{}", "===========================");
-
                 let stack_mappings = self.assign_operations(
                     stack_ops.clone(),
                     STACK_ROWS_MAX,
-                    F::from_u64(3 as u64),
+                    3,
                     &address_diff_is_zero_chip,
                     MEMORY_ROWS_MAX,
                     &mut region,
@@ -864,8 +880,6 @@ impl<
                 Ok(bus_mappings.clone())
             },
         )
-
-        // Ok(bus_mappings)
     }
 
     /// Initialise first row for a new operation.
@@ -874,7 +888,7 @@ impl<
         region: &mut Region<'_, F>,
         offset: usize,
         address: Address<F>,
-        target: F,
+        target: usize,
     ) -> Result<(), Error> {
         // Assign `address`
         region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
@@ -897,7 +911,12 @@ impl<
         region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
 
         // Assign target
-        region.assign_fixed(|| "target", self.q_target, offset, || Ok(target))?;
+        region.assign_fixed(
+            || "target",
+            self.q_target,
+            offset,
+            || Ok(F::from_u64(target as u64)),
+        )?;
 
         Ok(())
     }
@@ -909,10 +928,10 @@ impl<
         offset: usize,
         address: Address<F>,
         read_write: &Option<ReadWrite<F>>,
-        target: F,
+        target: usize,
     ) -> Result<BusMapping<F>, Error> {
         // Assign `address`
-        let memory_address = {
+        let address = {
             let cell =
                 region.assign_advice(|| "address", self.address, offset, || Ok(address.0))?;
             Variable::<F, F> {
@@ -944,7 +963,7 @@ impl<
         };
 
         // Assign `value`
-        let memory_value = {
+        let value = {
             let value = read_write.as_ref().map(|read_write| read_write.value().0);
             let cell = region.assign_advice(
                 || "value",
@@ -960,8 +979,8 @@ impl<
             }
         };
 
-        // Assign memory_flag
-        let memory_flag = {
+        // Assign flag
+        let flag = {
             let value = read_write.as_ref().map(|read_write| read_write.flag());
             let field_elem = value.map(|value| F::from_u64(value as u64));
             let cell = region.assign_advice(
@@ -982,13 +1001,28 @@ impl<
         region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
 
         // Assign target
-        region.assign_fixed(|| "target", self.q_target, offset, || Ok(target))?;
+        let target = {
+            let value = Some(target);
+            let field_elem = Some(F::from_u64(target as u64));
+            let cell = region.assign_fixed(
+                || "target",
+                self.q_target,
+                offset,
+                || Ok(F::from_u64(target as u64)),
+            )?;
+            Variable::<usize, F> {
+                cell,
+                field_elem,
+                value,
+            }
+        };
 
         Ok(BusMapping {
             global_counter,
-            memory_flag,
-            memory_address,
-            memory_value,
+            target,
+            flag,
+            address,
+            value,
         })
     }
 }
