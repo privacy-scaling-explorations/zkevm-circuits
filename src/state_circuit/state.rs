@@ -216,7 +216,7 @@ impl<
                 let four = Expression::Constant(F::from_u64(4));
 
                 // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
-                let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+                let inv = F::from_u64(4_u64).invert().unwrap_or(F::zero());
                 let i = Expression::Constant(inv);
                 let q_memory_not_first = q_target.clone()
                     * (q_target.clone() - one.clone())
@@ -225,10 +225,10 @@ impl<
                     * i;
 
                 // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
-                let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
+                let inv = F::from_u64(6_u64).invert().unwrap_or(F::zero());
                 let i = Expression::Constant(inv);
                 let q_stack_not_first = q_target.clone()
-                    * (q_target.clone() - one.clone())
+                    * (q_target.clone() - one)
                     * (q_target.clone() - two)
                     * (four - q_target)
                     * i;
@@ -252,7 +252,7 @@ impl<
                 let four = Expression::Constant(F::from_u64(4));
 
                 // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
-                let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+                let inv = F::from_u64(4_u64).invert().unwrap_or(F::zero());
                 let i = Expression::Constant(inv);
                 let q_memory_not_first = q_target.clone()
                     * (q_target.clone() - one.clone())
@@ -261,17 +261,15 @@ impl<
                     * i;
 
                 // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
-                let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
+                let inv = F::from_u64(6_u64).invert().unwrap_or(F::zero());
                 let i = Expression::Constant(inv);
                 let q_stack_not_first = q_target.clone()
-                    * (q_target.clone() - one.clone())
+                    * (q_target.clone() - one)
                     * (q_target.clone() - two)
                     * (four - q_target)
                     * i;
 
-                let q_not_first = q_memory_not_first + q_stack_not_first;
-
-                q_not_first
+                q_memory_not_first + q_stack_not_first
             },
             padding,
         );
@@ -307,7 +305,7 @@ impl<
             vec![
                 q_memory_first.clone() * value,
                 q_memory_first.clone() * (one - flag),
-                q_memory_first.clone() * global_counter,
+                q_memory_first * global_counter,
             ]
         });
 
@@ -349,7 +347,7 @@ impl<
                 q_memory_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
                 q_memory_not_first.clone() * address_diff * global_counter, // when address changes, global_counter is 0
                 q_memory_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
-                q_memory_not_first.clone() * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
+                q_memory_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
             ]
         });
 
@@ -369,10 +367,10 @@ impl<
                 * (four - q_target_next);
 
             let flag = meta.query_advice(flag, Rotation::cur());
-            let q_read = one.clone() - flag;
+            let q_read = one - flag;
 
             vec![
-                q_stack_first.clone() * q_read.clone(), // first stack op has to be write (flag = 1)
+                q_stack_first * q_read, // first stack op has to be write (flag = 1)
             ]
         });
 
@@ -382,7 +380,7 @@ impl<
             let two = Expression::Constant(F::from_u64(2));
             let four = Expression::Constant(F::from_u64(4));
             let q_stack_not_first = q_target.clone()
-                * (q_target.clone() - one.clone())
+                * (q_target.clone() - one)
                 * (q_target.clone() - two)
                 * (four - q_target);
 
@@ -406,9 +404,9 @@ impl<
             let q_read = one - flag;
 
             vec![
-                q_stack_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
-                q_stack_not_first.clone() * bool_check_flag, // flag is either 0 or 1
-                q_stack_not_first.clone() * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
+                q_stack_not_first.clone() * address_diff * q_read.clone(), // when address changes, the flag is 1 (write)
+                q_stack_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
+                q_stack_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
             ]
         });
 
@@ -421,7 +419,7 @@ impl<
             let one = Expression::Constant(F::one());
 
             let padding = meta.query_advice(padding, Rotation::cur());
-            let is_not_padding = one.clone() - padding;
+            let is_not_padding = one - padding;
 
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let one = Expression::Constant(F::one());
@@ -430,7 +428,7 @@ impl<
             let four = Expression::Constant(F::from_u64(4));
 
             // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
-            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(4_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
             let q_memory_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
@@ -439,7 +437,7 @@ impl<
                 * i;
 
             // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
-            let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(6_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
             let q_stack_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
@@ -453,7 +451,7 @@ impl<
                 q_not_first
                     * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
+                    * (global_counter - global_counter_prev - one), // - 1 because it needs to be strictly monotone
                 global_counter_table,
             )]
         });
@@ -468,7 +466,7 @@ impl<
             let four = Expression::Constant(F::from_u64(4));
 
             // q_memory is 4 when target is 2, we use 1/4 to normalize the value
-            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(4_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             let q_memory_not_first = q_target_cur.clone()
@@ -479,7 +477,7 @@ impl<
 
             // q_memory_first is 12 when q_target_cur is 1 and q_target_next is 2,
             // we use 1/12 to normalize the value
-            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(12_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             // q_target_cur must be 1
@@ -512,7 +510,7 @@ impl<
             let four = Expression::Constant(F::from_u64(4));
 
             // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
-            let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(6_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             let q_stack_not_first = q_target_cur.clone()
@@ -522,7 +520,7 @@ impl<
                 * i;
 
             // q_stack_first is 12, we use 1/12 to normalize the value
-            let inv = F::from_u64(12 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(12_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             let q_stack_first = q_target_cur.clone()
@@ -568,7 +566,7 @@ impl<
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
 
             // q_memory is 4 when target is 2, we use 1/4 to normalize the value
-            let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(4_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
             vec![(q_memory * i * value, memory_value_table)]
@@ -1633,7 +1631,7 @@ mod tests {
 
             let memory_op = Op {
                 address: Address(pallas::Base::from_u64(id as u64)),
-                global_counters: global_counters,
+                global_counters,
             };
 
             memory_operations.push(memory_op);
@@ -1653,7 +1651,7 @@ mod tests {
 
             let stack_op = Op {
                 address: Address(pallas::Base::from_u64(id as u64)),
-                global_counters: global_counters,
+                global_counters,
             };
 
             stack_operations.push(stack_op);
@@ -1674,6 +1672,6 @@ mod tests {
 
     #[bench]
     fn bench_state(b: &mut Bencher) {
-        b.iter(|| state());
+        b.iter(state);
     }
 }
