@@ -46,14 +46,14 @@ struct BlockConstants<F: FieldExt> {
 /// Doc
 #[derive(Debug, Clone)]
 pub struct ExecutionTrace<'a, F: FieldExt, T: Operation> {
-    entries: Vec<ExecutionStep<'a, T>>,
+    entries: Vec<ExecutionStep<'a>>,
     block_ctants: BlockConstants<F>,
     // Add container
     container: OperationContainer<T>,
 }
 
 impl<'a, F: FieldExt, T: Operation> Index<usize> for ExecutionTrace<'a, F, T> {
-    type Output = ExecutionStep<'a, T>;
+    type Output = ExecutionStep<'a>;
     fn index(&self, index: usize) -> &Self::Output {
         &self.entries[index]
     }

@@ -11,16 +11,16 @@ use std::{
 
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExecutionStep<'a, T: Operation> {
+pub struct ExecutionStep<'a> {
     memory: BTreeMap<MemoryAddress, EvmWord>,
     stack: Vec<EvmWord>,
     opcode: Instruction,
     pc: ProgramCounter,
     gc: GlobalCounter,
-    bus_mapping_instances: Vec<&'a T>, // Holds refs to the container with the related mem ops.
+    bus_mapping_instances: Vec<&'a dyn Operation>, // Holds refs to the container with the related mem ops.
 }
 
-impl<'a, T: Operation> ExecutionStep<'a, T> {
+impl<'a> ExecutionStep<'a> {
     /// Doc
     pub fn new(
         memory: BTreeMap<MemoryAddress, EvmWord>,
@@ -28,7 +28,7 @@ impl<'a, T: Operation> ExecutionStep<'a, T> {
         opcode: Instruction,
         pc: ProgramCounter,
         gc: GlobalCounter,
-        instances: Vec<&'a T>,
+        instances: Vec<&'a dyn Operation>,
     ) -> Self {
         ExecutionStep {
             memory,
@@ -41,13 +41,11 @@ impl<'a, T: Operation> ExecutionStep<'a, T> {
     }
 }
 
-impl<'a, T: Operation> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter, Vec<&'a T>)>
-    for ExecutionStep<'a, T>
-{
+impl<'a> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter)> for ExecutionStep<'a> {
     type Error = Error;
 
     fn try_from(
-        parse_info: (&ParsedExecutionStep<'a>, GlobalCounter, Vec<&'a T>),
+        parse_info: (&ParsedExecutionStep<'a>, GlobalCounter),
     ) -> Result<Self, Self::Error> {
         // Memory part
         let mut mem_map = BTreeMap::new();
@@ -79,7 +77,7 @@ impl<'a, T: Operation> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter, Vec<&'a
             Instruction::from_str(parse_info.0.opcode)?,
             parse_info.0.pc,
             parse_info.1,
-            parse_info.2,
+            vec![],
         ))
     }
 }
@@ -96,7 +94,7 @@ struct ParsedExecutionStep<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::Opcode;
+    use crate::{evm::Opcode, operation::MemoryOp, ExecutionTrace};
     use num::BigUint;
 
     #[test]
@@ -114,7 +112,7 @@ mod tests {
         }
         "#;
 
-        let trace_loaded = ExecutionStep::try_from((
+        let trace_loaded: ExecutionStep<'_, MemoryOp> = ExecutionStep::try_from((
             &serde_json::from_str::<ParsedExecutionStep>(step_json).expect("Error on parsing"),
             GlobalCounter(0usize),
         ))
@@ -122,9 +120,18 @@ mod tests {
 
         let expected_trace = {
             let mut mem_map = BTreeMap::new();
-            mem_map.insert(MemoryAddress(0x00), EvmWord(BigUint::from(0u8)));
-            mem_map.insert(MemoryAddress(0x20), EvmWord(BigUint::from(0u8)));
-            mem_map.insert(MemoryAddress(0x40), EvmWord(BigUint::from(0x80u8)));
+            mem_map.insert(
+                MemoryAddress(BigUint::from(0x00u8)),
+                EvmWord(BigUint::from(0u8)),
+            );
+            mem_map.insert(
+                MemoryAddress(BigUint::from(0x20u8)),
+                EvmWord(BigUint::from(0u8)),
+            );
+            mem_map.insert(
+                MemoryAddress(BigUint::from(0x40u8)),
+                EvmWord(BigUint::from(0x80u8)),
+            );
 
             ExecutionStep::new(
                 mem_map,
@@ -132,10 +139,57 @@ mod tests {
                 Instruction::new(Opcode::JUMPDEST, None),
                 ProgramCounter(53),
                 GlobalCounter(0),
+                vec![],
             )
         };
 
         assert_eq!(trace_loaded, expected_trace)
+    }
+    /*
+    #[test]
+    fn parse_execution_trace() {
+        let input_trace = r#"
+        [
+            {
+                "memory": {
+                    "0": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "20": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "40": "0000000000000000000000000000000000000000000000000000000000000080"
+                },
+                "stack": [
+                    "40"
+                ],
+                "opcode": "PUSH1 40",
+                "pc": 54
+            },
+            {
+                "memory": {
+                    "00": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "20": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "40": "0000000000000000000000000000000000000000000000000000000000000080"
+                },
+                "stack": [
+                    "80"
+                ],
+                "opcode": "MLOAD",
+                "pc": 56
+            },
+        ]
+        "#;
+
+        let trace_loaded: Vec<ExecutionStep> =
+            serde_json::from_str::<Vec<ParsedExecutionStep>>(input_trace)
+                .expect("Error on parsing")
+                .iter()
+                .enumerate()
+                .map(|(idx, step)| ExecutionStep::try_from((step, GlobalCounter(idx))))
+                .collect::<Result<Vec<ExecutionStep>, Error>>()
+                .expect("Error on conversion");
+
+        let trace_global_obj = ExecutionTrace {
+            entries: trace_loaded,
+            block_ctants:
+        }
     }
 
     #[test]
@@ -162,11 +216,7 @@ mod tests {
                     "40"
                 ],
                 "opcode": "PUSH1 40",
-                "pc": 54,
-                "gc": 54,
-                "MemOps: [
-                    StackOp{gc, key, value, ....}
-                ]
+                "pc": 54
             },
             {
                 "memory": {
@@ -187,7 +237,7 @@ mod tests {
                     "40": "0000000000000000000000000000000000000000000000000000000000000080"
                 },
                 "stack": [
-                    "deadbeef",  
+                    "deadbeef",
                     "80"
                 ],
                 "opcode": "PUSH4 deadbeaf",
@@ -200,9 +250,9 @@ mod tests {
                     "40": "0000000000000000000000000000000000000000000000000000000000000080"
                 },
                 "stack": [
-                    "80",   
-                    "deadbeef",  
-                    "80"  
+                    "80",
+                    "deadbeef",
+                    "80"
                 ],
                 "opcode": "DUP2",
                 "pc": 62
@@ -257,8 +307,8 @@ mod tests {
                     "80": "00000000000000000000000000000000000000000000000000000000deadbeef"
                 },
                 "stack": [
-                    "deadbeef",   
-                    "faceb00c",  
+                    "deadbeef",
+                    "faceb00c",
                     "80"
                 ],
                 "opcode": "MLOAD",
@@ -423,4 +473,5 @@ mod tests {
 
         assert_eq!(*trace_loaded.last().unwrap(), expected_trace)
     }
+    */
 }
