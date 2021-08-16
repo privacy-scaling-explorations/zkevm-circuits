@@ -125,6 +125,7 @@ pub(crate) struct Config<
     memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
+    padding_value_table: Column<Fixed>,
     address_diff_is_zero: IsZeroConfig<F>,
     address_monotone: MonotoneConfig,
     padding_monotone: MonotoneConfig,
@@ -160,6 +161,7 @@ impl<
         let memory_address_table_zero = meta.fixed_column();
         let stack_address_table_zero = meta.fixed_column();
         let memory_value_table = meta.fixed_column();
+        let padding_value_table = meta.fixed_column();
 
         let address_diff_is_zero = IsZeroChip::configure(
             meta,
@@ -221,7 +223,7 @@ impl<
             address,
         );
 
-        // Padding monotonicity could be checked using gates too (as padding only takes values 0 and 1),
+        // Padding monotonicity could be checked using gates (as padding only takes values 0 and 1),
         // but it's much slower.
         let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
             meta,
@@ -555,6 +557,14 @@ impl<
             vec![(q_memory * i * value, memory_value_table)]
         });
 
+        // padding is in the allowed range:
+        meta.lookup(|meta| {
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let padding_value_table = meta.query_fixed(padding_value_table, Rotation::cur());
+
+            vec![(padding, padding_value_table)]
+        });
+
         Config {
             q_target,
             address,
@@ -567,6 +577,7 @@ impl<
             memory_address_table_zero,
             stack_address_table_zero,
             memory_value_table,
+            padding_value_table,
             address_diff_is_zero,
             address_monotone,
             padding_monotone,
@@ -611,7 +622,24 @@ impl<
 
         layouter
             .assign_region(
-                || "address table with zero",
+                || "padding value table",
+                |mut region| {
+                    for idx in 0..=1 {
+                        region.assign_fixed(
+                            || "padding value table",
+                            self.padding_value_table,
+                            idx,
+                            || Ok(F::from_u64(idx as u64)),
+                        )?;
+                    }
+                    Ok(())
+                },
+            )
+            .ok();
+
+        layouter
+            .assign_region(
+                || "memory address table with zero",
                 |mut region| {
                     for idx in 0..=MEMORY_ADDRESS_MAX {
                         region.assign_fixed(
@@ -762,17 +790,7 @@ impl<
                 region.assign_fixed(|| "target", self.q_target, i, || Ok(target))?;
             }
 
-            // println!("{} ++ --", i);
-
-            if i == start_offset + max_rows - 1 {
-                println!(
-                    "{} ++ -- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
-                    i
-                );
-                region.assign_advice(|| "padding", self.padding, i, || Ok(F::one() + F::one()))?;
-            } else {
-                region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
-            }
+            region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
 
             address_diff_is_zero_chip.assign(region, i, Some(F::zero()))?;
 
