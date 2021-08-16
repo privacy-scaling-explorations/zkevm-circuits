@@ -126,10 +126,8 @@ pub(crate) struct Config<
     stack_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
     address_diff_is_zero: IsZeroConfig<F>,
-    memory_address_monotone: MonotoneConfig,
-    stack_address_monotone: MonotoneConfig,
-    address_padding_monotone: MonotoneConfig,
-    stack_padding_monotone: MonotoneConfig,
+    address_monotone: MonotoneConfig,
+    padding_monotone: MonotoneConfig,
 }
 
 impl<
@@ -184,34 +182,8 @@ impl<
             address_diff_inv,
         );
 
-        let memory_address_monotone = MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::configure(
-            meta,
-            |meta| {
-                let padding = meta.query_advice(padding, Rotation::cur());
-                let one = Expression::Constant(F::one());
-                let is_not_padding = one - padding;
-
-                let q_target = meta.query_fixed(q_target, Rotation::cur());
-                let one = Expression::Constant(F::one());
-                let three = Expression::Constant(F::from_u64(3));
-                let four = Expression::Constant(F::from_u64(4));
-                let q_memory = q_target.clone()
-                    * (q_target.clone() - one.clone())
-                    * (three - q_target.clone())
-                    * (four.clone() - q_target.clone());
-
-                // q_memory is 4 when target is 2, we use 1/4 to normalize the value
-                let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
-                let i = Expression::Constant(inv);
-
-                q_memory * i * is_not_padding
-            },
-            address,
-        );
-
-        // todo: only one Monotone gadget could be used (with MEMORY_ADDRESS_MAX as it is bigger)
-        // if the normalization is somehow solved
-        let stack_address_monotone = MonotoneChip::<F, STACK_ADDRESS_MAX, true, false>::configure(
+        // Only one monotone gadget is used for memory and stack (with MEMORY_ADDRESS_MAX as it is bigger)
+        let address_monotone = MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::configure(
             meta,
             |meta| {
                 let padding = meta.query_advice(padding, Rotation::cur());
@@ -221,62 +193,66 @@ impl<
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let one = Expression::Constant(F::one());
                 let two = Expression::Constant(F::from_u64(2));
+                let three = Expression::Constant(F::from_u64(3));
                 let four = Expression::Constant(F::from_u64(4));
-                let q_stack = q_target.clone()
-                    * (q_target.clone() - one)
-                    * (q_target.clone() - two)
-                    * (four - q_target);
 
-                // q_stack is 6 when target is 3, we use 1/6 to normalize the value
+                // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
+                let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+                let i = Expression::Constant(inv);
+                let q_memory_not_first = q_target.clone()
+                    * (q_target.clone() - one.clone())
+                    * (three - q_target.clone())
+                    * (four.clone() - q_target.clone())
+                    * i;
+
+                // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
                 let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
                 let i = Expression::Constant(inv);
+                let q_stack_not_first = q_target.clone()
+                    * (q_target.clone() - one.clone())
+                    * (q_target.clone() - two)
+                    * (four - q_target)
+                    * i;
 
-                q_stack * i * is_not_padding
+                let q_not_first = q_memory_not_first + q_stack_not_first;
+
+                q_not_first * is_not_padding
             },
             address,
         );
 
-        let address_padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
-            meta,
-            |meta| {
-                let q_target = meta.query_fixed(q_target, Rotation::cur());
-                let one = Expression::Constant(F::one());
-                let three = Expression::Constant(F::from_u64(3));
-                let four = Expression::Constant(F::from_u64(4));
-                let q_memory = q_target.clone()
-                    * (q_target.clone() - one.clone())
-                    * (three - q_target.clone())
-                    * (four.clone() - q_target.clone());
-
-                // q_memory is 4 when target is 2, we use 1/4 to normalize the value
-                let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
-                let i = Expression::Constant(inv);
-
-                q_memory * i
-            },
-            padding,
-        );
-
-        let stack_padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
+        // Padding monotonicity could be checked using gates too (as padding only takes values 0 and 1),
+        // but it's much slower.
+        let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
             meta,
             |meta| {
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let one = Expression::Constant(F::one());
                 let two = Expression::Constant(F::from_u64(2));
+                let three = Expression::Constant(F::from_u64(3));
                 let four = Expression::Constant(F::from_u64(4));
-                let q_stack = q_target.clone()
-                    * (q_target.clone() - one)
-                    * (q_target.clone() - two)
-                    * (four - q_target);
 
-                // q_stack is 6 when target is 3, we use 1/6 to normalize the value
+                // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
+                let inv = F::from_u64(4 as u64).invert().unwrap_or(F::zero());
+                let i = Expression::Constant(inv);
+                let q_memory_not_first = q_target.clone()
+                    * (q_target.clone() - one.clone())
+                    * (three - q_target.clone())
+                    * (four.clone() - q_target.clone())
+                    * i;
+
+                // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
                 let inv = F::from_u64(6 as u64).invert().unwrap_or(F::zero());
                 let i = Expression::Constant(inv);
+                let q_stack_not_first = q_target.clone()
+                    * (q_target.clone() - one.clone())
+                    * (q_target.clone() - two)
+                    * (four - q_target)
+                    * i;
 
-                // first stack row shouldn't be checked as the address would be compared with
-                // the last memory address
+                let q_not_first = q_memory_not_first + q_stack_not_first;
 
-                q_stack * i
+                q_not_first
             },
             padding,
         );
@@ -297,7 +273,7 @@ impl<
                 * (two - q_target_cur.clone())
                 * (three.clone() - q_target_cur.clone())
                 * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one)
+                * (q_target_next.clone() - one.clone())
                 * (three - q_target_next.clone())
                 * (four - q_target_next);
 
@@ -309,12 +285,10 @@ impl<
             //      - flags[0] == 1
             //      - global_counters[0] == 0
 
-            let one = Expression::Constant(F::one());
-
             vec![
                 q_memory_first.clone() * value,
                 q_memory_first.clone() * (one - flag),
-                q_memory_first * global_counter,
+                q_memory_first.clone() * global_counter,
             ]
         });
 
@@ -328,8 +302,8 @@ impl<
             let one = Expression::Constant(F::one());
             let three = Expression::Constant(F::from_u64(3));
             let four = Expression::Constant(F::from_u64(4));
-            let q_memory = q_target.clone()
-                * (q_target.clone() - one)
+            let q_memory_not_first = q_target.clone()
+                * (q_target.clone() - one.clone())
                 * (three - q_target.clone())
                 * (four - q_target);
 
@@ -343,8 +317,6 @@ impl<
             let flag = meta.query_advice(flag, Rotation::cur());
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
 
-            let one = Expression::Constant(F::one());
-
             // flag == 0 or 1
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
@@ -354,11 +326,11 @@ impl<
             let q_read = one - flag;
 
             vec![
-                q_memory.clone() * address_diff.clone() * value_cur.clone(), // when address changes, the write value is 0
-                q_memory.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
-                q_memory.clone() * address_diff * global_counter, // when address changes, global_counter is 0
-                q_memory.clone() * bool_check_flag,               // flag is either 0 or 1
-                q_memory * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
+                q_memory_not_first.clone() * address_diff.clone() * value_cur.clone(), // when address changes, the write value is 0
+                q_memory_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
+                q_memory_not_first.clone() * address_diff * global_counter, // when address changes, global_counter is 0
+                q_memory_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
+                q_memory_not_first.clone() * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
             ]
         });
 
@@ -378,7 +350,7 @@ impl<
                 * (four - q_target_next);
 
             let flag = meta.query_advice(flag, Rotation::cur());
-            let q_read = one - flag;
+            let q_read = one.clone() - flag;
 
             vec![
                 q_stack_first.clone() * q_read.clone(), // first stack op has to be write (flag = 1)
@@ -390,8 +362,8 @@ impl<
             let one = Expression::Constant(F::one());
             let two = Expression::Constant(F::from_u64(2));
             let four = Expression::Constant(F::from_u64(4));
-            let q_stack = q_target.clone()
-                * (q_target.clone() - one)
+            let q_stack_not_first = q_target.clone()
+                * (q_target.clone() - one.clone())
                 * (q_target.clone() - two)
                 * (four - q_target);
 
@@ -415,9 +387,9 @@ impl<
             let q_read = one - flag;
 
             vec![
-                q_stack.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
-                q_stack.clone() * bool_check_flag,                       // flag is either 0 or 1
-                q_stack * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
+                q_stack_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
+                q_stack_not_first.clone() * bool_check_flag, // flag is either 0 or 1
+                q_stack_not_first.clone() * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
             ]
         });
 
@@ -596,10 +568,8 @@ impl<
             stack_address_table_zero,
             memory_value_table,
             address_diff_is_zero,
-            memory_address_monotone,
-            stack_address_monotone,
-            address_padding_monotone,
-            stack_padding_monotone,
+            address_monotone,
+            padding_monotone,
         }
     }
 
@@ -794,7 +764,15 @@ impl<
 
             // println!("{} ++ --", i);
 
-            region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
+            if i == start_offset + max_rows - 1 {
+                println!(
+                    "{} ++ -- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+                    i
+                );
+                region.assign_advice(|| "padding", self.padding, i, || Ok(F::one() + F::one()))?;
+            } else {
+                region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
+            }
 
             address_diff_is_zero_chip.assign(region, i, Some(F::zero()))?;
 
@@ -832,23 +810,13 @@ impl<
 
         let memory_address_monotone_chip =
             MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::construct(
-                self.memory_address_monotone.clone(),
+                self.address_monotone.clone(),
             );
         memory_address_monotone_chip.load(&mut layouter)?;
 
-        let stack_address_monotone_chip =
-            MonotoneChip::<F, STACK_ADDRESS_MAX, true, false>::construct(
-                self.stack_address_monotone.clone(),
-            );
-        stack_address_monotone_chip.load(&mut layouter)?;
-
-        let address_padding_monotone_chip =
-            MonotoneChip::<F, 1, true, false>::construct(self.address_padding_monotone.clone());
-        address_padding_monotone_chip.load(&mut layouter)?;
-
-        let stack_padding_monotone_chip =
-            MonotoneChip::<F, 1, true, false>::construct(self.stack_padding_monotone.clone());
-        stack_padding_monotone_chip.load(&mut layouter)?;
+        let padding_monotone_chip =
+            MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
+        padding_monotone_chip.load(&mut layouter)?;
 
         layouter.assign_region(
             || "State operations",
@@ -1387,13 +1355,13 @@ mod tests {
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0, stack_op_1],
             Err(vec![
-                lookup_fail(4, 5),
-                lookup_fail(5, 5),
-                lookup_fail(6, 5),
-                lookup_fail(9, 6),
-                lookup_fail(10, 6),
-                lookup_fail(3, 7),
-                lookup_fail(10, 7)
+                lookup_fail(4, 3),
+                lookup_fail(5, 3),
+                lookup_fail(6, 3),
+                lookup_fail(9, 4),
+                lookup_fail(10, 4),
+                lookup_fail(3, 5),
+                lookup_fail(10, 5)
             ])
         );
     }
@@ -1441,10 +1409,10 @@ mod tests {
             vec![memory_op_0],
             vec![stack_op_0],
             Err(vec![
-                lookup_fail(0, 5),
-                lookup_fail(1, 5),
-                lookup_fail(2, 6),
-                lookup_fail(3, 6),
+                lookup_fail(0, 3),
+                lookup_fail(1, 3),
+                lookup_fail(2, 4),
+                lookup_fail(3, 4),
             ])
         );
     }
@@ -1498,10 +1466,10 @@ mod tests {
             vec![memory_op_0],
             vec![stack_op_0],
             Err(vec![
-                lookup_fail(2, 4),
-                lookup_fail(3, 4),
-                lookup_fail(MEMORY_ROWS_MAX + 1, 4),
-                lookup_fail(MEMORY_ROWS_MAX + 2, 4),
+                lookup_fail(2, 2),
+                lookup_fail(3, 2),
+                lookup_fail(MEMORY_ROWS_MAX + 1, 2),
+                lookup_fail(MEMORY_ROWS_MAX + 2, 2),
             ])
         );
     }
@@ -1564,7 +1532,7 @@ mod tests {
             1023,
             vec![memory_op_0, memory_op_1, memory_op_2],
             vec![stack_op_0, stack_op_1, stack_op_2],
-            Err(vec![lookup_fail(4, 0), lookup_fail(MEMORY_ROWS_MAX + 2, 1)])
+            Err(vec![lookup_fail(4, 0), lookup_fail(MEMORY_ROWS_MAX + 2, 0)])
         );
     }
 
@@ -1588,7 +1556,7 @@ mod tests {
             1023,
             vec![memory_op_0],
             vec![],
-            Err(vec![lookup_fail(1, 8),])
+            Err(vec![lookup_fail(1, 6),])
         );
     }
 
