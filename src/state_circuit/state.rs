@@ -703,7 +703,7 @@ impl<
                 .clone()
                 .into_iter()
                 .fold(0, |acc, x| acc + x.global_counters.len() + 1);
-        } else if target == 2 {
+        } else if target == 3 {
             ops_num = ops
                 .clone()
                 .into_iter()
