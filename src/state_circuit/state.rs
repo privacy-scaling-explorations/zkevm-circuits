@@ -1034,9 +1034,6 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
-    extern crate test;
-    use test::Bencher;
-
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
     macro_rules! test_state_circuit {
@@ -1608,70 +1605,5 @@ mod tests {
             vec![],
             Err(vec![lookup_fail(1, 6),])
         );
-    }
-
-    fn state() {
-        const GLOBAL_COUNTER_MAX: usize = 60000;
-        const MEMORY_ROWS_MAX: usize = 2000;
-        const MEMORY_ADDRESS_MAX: usize = 100;
-        const STACK_ROWS_MAX: usize = 2000;
-        const STACK_ADDRESS_MAX: usize = 1023;
-
-        let mut memory_operations = Vec::new();
-        let gcs_per_address = 10;
-        for id in 0..100 {
-            let mut global_counters = Vec::new();
-            for id_int in 0..gcs_per_address {
-                let gc = Some(ReadWrite::Write(
-                    GlobalCounter(id + id_int + 1), // + 1, otherwise the first gc will be the same as for init row
-                    Value(pallas::Base::from_u64(0)),
-                ));
-                global_counters.push(gc);
-            }
-
-            let memory_op = Op {
-                address: Address(pallas::Base::from_u64(id as u64)),
-                global_counters,
-            };
-
-            memory_operations.push(memory_op);
-        }
-
-        let mut stack_operations = Vec::new();
-        let gcs_per_address = 10;
-        for id in 0..100 {
-            let mut global_counters = Vec::new();
-            for id_int in 0..gcs_per_address {
-                let gc = Some(ReadWrite::Write(
-                    GlobalCounter(id + id_int), // no need for +1 as stack operations don't have init row
-                    Value(pallas::Base::from_u64(0)),
-                ));
-                global_counters.push(gc);
-            }
-
-            let stack_op = Op {
-                address: Address(pallas::Base::from_u64(id as u64)),
-                global_counters,
-            };
-
-            stack_operations.push(stack_op);
-        }
-
-        test_state_circuit!(
-            16,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
-            STACK_ADDRESS_MAX,
-            memory_operations,
-            stack_operations,
-            Ok(())
-        );
-    }
-
-    #[bench]
-    fn bench_state(b: &mut Bencher) {
-        b.iter(state);
     }
 }

@@ -8,7 +8,6 @@
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
-#![feature(test)]
 
 pub mod evm_circuit;
 pub mod gadget;
