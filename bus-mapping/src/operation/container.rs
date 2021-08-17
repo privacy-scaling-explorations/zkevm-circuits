@@ -1,41 +1,50 @@
-use super::{Operation, Target};
+use super::{MemoryOp, Operation, OperationRef, StackOp, StorageOp, Target};
 
 /// Doc
-#[derive(Debug, Clone)]
-pub(crate) struct OperationContainer<T: Operation> {
-    memory: Vec<T>,
-    stack: Vec<T>,
-    storage: Vec<T>,
+pub struct OperationContainer {
+    memory: Vec<MemoryOp>,
+    stack: Vec<StackOp>,
+    storage: Vec<StorageOp>,
 }
 
-impl<T: Operation> OperationContainer<T> {
-    pub fn into_inner(&self, target: Target) -> &Vec<T> {
-        match target {
-            Target::Memory => &self.memory,
-            Target::Stack => &self.stack,
-            Target::Storage => &self.storage,
+impl OperationContainer {
+    pub fn new() -> Self {
+        Self {
+            memory: Vec::<MemoryOp>::new(),
+            stack: Vec::<StackOp>::new(),
+            storage: Vec::<StorageOp>::new(),
         }
     }
 
-    pub fn into_inner_mut(&mut self, target: Target) -> &mut Vec<T> {
-        match target {
-            Target::Memory => &mut self.memory,
-            Target::Stack => &mut self.stack,
-            Target::Storage => &mut self.storage,
+    pub fn insert(&mut self, op: Operation) -> OperationRef {
+        match op {
+            Operation::Memory(mem_op) => {
+                self.memory.push(mem_op);
+                self.memory.last().unwrap().into()
+            }
+            Operation::Stack(stack_op) => {
+                self.stack.push(stack_op);
+                self.stack.last().unwrap().into()
+            }
+            Operation::Storage(storage_op) => {
+                self.storage.push(storage_op);
+                self.storage.last().unwrap().into()
+            }
         }
     }
 
-    pub fn insert(&mut self, op: T) -> &T {
-        let target = op.clone().target();
-        self.into_inner_mut(target).push(op);
-        // The `None` invariant should be impossible to reach
-        &self
-            .into_inner(target)
-            .last()
-            .expect("None invariant should be unreachable")
+    pub fn sorted_memory(&mut self) -> &Vec<MemoryOp> {
+        self.memory.sort();
+        &self.memory
     }
 
-    pub fn sort_sub_container(&mut self, target: Target) {
-        self.into_inner_mut(target).sort();
+    pub fn sorted_stack(&mut self) -> &Vec<StackOp> {
+        self.stack.sort();
+        &self.stack
+    }
+
+    pub fn sorted_storage(&mut self) -> &Vec<StorageOp> {
+        self.storage.sort();
+        &self.storage
     }
 }
