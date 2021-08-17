@@ -5,8 +5,7 @@
 #![allow(dead_code)]
 // Catch documentation errors caused by code changes.
 #![deny(broken_intra_doc_links)]
-#![deny(missing_debug_implementations)]
-#![deny(missing_docs)]
+//#![deny(missing_docs)]
 #![deny(unsafe_code)]
 
 mod error;
@@ -44,87 +43,21 @@ struct BlockConstants<F: FieldExt> {
 }
 
 /// Doc
-#[derive(Debug, Clone)]
-pub struct ExecutionTrace<'a, F: FieldExt, T: Operation> {
-    entries: Vec<ExecutionStep<'a, T>>,
+pub struct ExecutionTrace<'a, F: FieldExt> {
+    entries: Vec<ExecutionStep<'a>>,
     block_ctants: BlockConstants<F>,
-    // Add container
-    container: OperationContainer<T>,
+    container: OperationContainer,
 }
 
-impl<'a, F: FieldExt, T: Operation> Index<usize> for ExecutionTrace<'a, F, T> {
-    type Output = ExecutionStep<'a, T>;
+impl<'a, F: FieldExt> Index<usize> for ExecutionTrace<'a, F> {
+    type Output = ExecutionStep<'a>;
     fn index(&self, index: usize) -> &Self::Output {
         &self.entries[index]
     }
 }
 
-impl<'a, F: FieldExt, T: Operation> IndexMut<usize> for ExecutionTrace<'a, F, T> {
+impl<'a, F: FieldExt> IndexMut<usize> for ExecutionTrace<'a, F> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.entries[index]
     }
 }
-
-/*impl<F: FieldExt> From<(Vec<Operation<F>>, BlockConstants<F>)> for ExecutionTrace<F> {
-    fn from(inp: (Vec<Operation<F>>, BlockConstants<F>)) -> Self {
-        // Initialize the BTreeMaps with empty vecs for each key group
-        let mut mem_ops_sorted = BTreeMap::new();
-        let mut stack_ops_sorted = BTreeMap::new();
-        let mut storage_ops_sorted = BTreeMap::new();
-        inp.0
-            .iter()
-            .map(|op| op.key)
-            .unique()
-            .sorted()
-            .for_each(|key| {
-                mem_ops_sorted.insert(key, vec![]);
-                stack_ops_sorted.insert(key, vec![]);
-                storage_ops_sorted.insert(key, vec![]);
-            });
-
-        inp.0.iter().for_each(|op| match op.target {
-            Target::Memory => {
-                mem_ops_sorted.entry(op.key).or_default().push(*op);
-            }
-            Target::Stack => {
-                stack_ops_sorted.entry(op.key).or_default().push(*op);
-            }
-            Target::Storage => {
-                storage_ops_sorted.entry(op.key).or_default().push(*op);
-            }
-        });
-
-        Self {
-            entries: inp.0,
-            block_ctants: inp.1,
-            mem_ops_sorted,
-            stack_ops_sorted,
-            storage_ops_sorted,
-        }
-    }
-}
-impl<F: FieldExt> ExecutionTrace<F> {
-    /// Docs
-    pub fn stack_part(&self) -> impl Iterator<Item = &Operation> {
-        // filter out Operation::Stack
-        // group by idx first
-        // sort idx increasingly
-        // sort gc in each group
-        unimplemented!()
-    }
-
-    /// Docs
-    pub fn memory_part(&self) -> impl Iterator<Item = &Operation> {
-        // filter out Operation::Memory
-        // group by address first
-        // sort address increasingly
-        // sort gc in each group
-        unimplemented!()
-    }
-
-    /// Docs
-    pub fn storage_part(&self) -> impl Iterator<Item = &Operation> {
-        unimplemented!()
-    }
-}
-*/
