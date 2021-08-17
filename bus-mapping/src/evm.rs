@@ -1,66 +1,72 @@
 //! Evm types needed for parsing instruction sets as well
 
-mod exec_step;
-mod opcodes;
+pub mod exec_step;
+pub mod instruction;
+pub mod opcodes;
+
+use core::ops::Add;
 use core::{convert::TryInto, str::FromStr};
 
-use crate::error::Error;
+use crate::{
+    error::Error,
+    operation::{MemoryOp, StackOp},
+};
+use core::cmp::Ordering;
 pub use exec_step::ExecutionStep;
-use num::{BigUint, Num};
+use instruction::Instruction;
+use lazy_static::lazy_static;
+use num::{BigUint, Num, Zero};
 use opcodes::Opcode;
 use serde::{Deserialize, Serialize};
 
-/// Doc
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Instruction {
-    opcode: Opcode,
-    assoc_value: Option<EvmWord>,
-}
-
-impl Instruction {
-    pub const fn new(op: Opcode, val: Option<EvmWord>) -> Self {
-        Instruction {
-            opcode: op,
-            assoc_value: val,
-        }
-    }
-
-    pub const fn opcode(&self) -> Opcode {
-        self.opcode
-    }
-
-    pub const fn value(&self) -> Option<&EvmWord> {
-        self.assoc_value.as_ref()
-    }
-}
-
-impl FromStr for Instruction {
-    type Err = crate::error::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Separate the instruction from the possible Value associated to it.
-        let words: Vec<&str> = s.split_whitespace().into_iter().collect();
-        // Allocate value
-        let val = match words.get(1) {
-            Some(val) => Some(EvmWord::from_str(val)?),
-            None => None,
-        };
-
-        Ok(Instruction::new(Opcode::from_str(words[0])?, val))
-    }
+lazy_static! {
+    /// Ref to zero addr for Memory
+    pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(BigUint::zero());
+    /// Ref to zero addr for Stack
+    pub(crate) static ref STACK_ADDR_ZERO: StackAddress = StackAddress(1024usize);
 }
 
 /// Doc
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ProgramCounter(pub(crate) usize);
 
+impl From<ProgramCounter> for usize {
+    fn from(addr: ProgramCounter) -> usize {
+        addr.0
+    }
+}
+
 /// Doc
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct GlobalCounter(pub(crate) usize);
 
+impl From<GlobalCounter> for usize {
+    fn from(addr: GlobalCounter) -> usize {
+        addr.0
+    }
+}
+
+impl From<usize> for GlobalCounter {
+    fn from(gc: usize) -> Self {
+        GlobalCounter(gc)
+    }
+}
+
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemoryAddress(pub(crate) BigUint);
+
+impl MemoryAddress {
+    pub fn zero() -> MemoryAddress {
+        MemoryAddress(BigUint::zero())
+    }
+}
+
+impl From<MemoryAddress> for BigUint {
+    fn from(addr: MemoryAddress) -> BigUint {
+        addr.0
+    }
+}
 
 impl FromStr for MemoryAddress {
     type Err = Error;
@@ -75,6 +81,24 @@ impl FromStr for MemoryAddress {
 /// Doc
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct StackAddress(pub(crate) usize);
+
+impl StackAddress {
+    pub const fn new(addr: usize) -> StackAddress {
+        StackAddress(addr)
+    }
+}
+
+impl From<StackAddress> for usize {
+    fn from(addr: StackAddress) -> usize {
+        addr.0
+    }
+}
+
+impl From<usize> for StackAddress {
+    fn from(addr: usize) -> StackAddress {
+        StackAddress(addr)
+    }
+}
 
 impl FromStr for StackAddress {
     type Err = Error;
