@@ -1,7 +1,7 @@
-use super::{MemoryOp, Operation, OperationRef, StackOp, StorageOp, Target};
+use super::{MemoryOp, Operation, OperationRef, StackOp, StorageOp};
 
 /// Doc
-pub struct OperationContainer {
+pub(crate) struct OperationContainer {
     memory: Vec<MemoryOp>,
     stack: Vec<StackOp>,
     storage: Vec<StorageOp>,

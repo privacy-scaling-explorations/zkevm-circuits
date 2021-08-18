@@ -4,31 +4,23 @@ pub mod exec_step;
 pub mod instruction;
 pub mod opcodes;
 
-use core::ops::Add;
 use core::{convert::TryInto, str::FromStr};
 
-use crate::{
-    error::Error,
-    operation::{MemoryOp, StackOp},
-};
-use core::cmp::Ordering;
-pub use exec_step::ExecutionStep;
+use crate::error::Error;
+pub(crate) use exec_step::ExecutionStep;
 use instruction::Instruction;
 use lazy_static::lazy_static;
 use num::{BigUint, Num, Zero};
-use opcodes::Opcode;
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
     /// Ref to zero addr for Memory
     pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(BigUint::zero());
-    /// Ref to zero addr for Stack
-    pub(crate) static ref STACK_ADDR_ZERO: StackAddress = StackAddress(1024usize);
 }
 
 /// Doc
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct ProgramCounter(pub(crate) usize);
+pub(crate) struct ProgramCounter(pub(crate) usize);
 
 impl From<ProgramCounter> for usize {
     fn from(addr: ProgramCounter) -> usize {
@@ -38,7 +30,7 @@ impl From<ProgramCounter> for usize {
 
 /// Doc
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct GlobalCounter(pub(crate) usize);
+pub(crate) struct GlobalCounter(pub(crate) usize);
 
 impl From<GlobalCounter> for usize {
     fn from(addr: GlobalCounter) -> usize {
@@ -54,7 +46,7 @@ impl From<usize> for GlobalCounter {
 
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) BigUint);
+pub(crate) struct MemoryAddress(pub(crate) BigUint);
 
 impl MemoryAddress {
     pub fn zero() -> MemoryAddress {
@@ -80,7 +72,7 @@ impl FromStr for MemoryAddress {
 
 /// Doc
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct StackAddress(pub(crate) usize);
+pub(crate) struct StackAddress(pub(crate) usize);
 
 impl StackAddress {
     pub const fn new(addr: usize) -> StackAddress {
@@ -121,7 +113,7 @@ impl FromStr for StackAddress {
 /// Doc
 // XXX: Consider to move this to [u8;32] soon
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct EvmWord(pub(crate) BigUint);
+pub(crate) struct EvmWord(pub(crate) BigUint);
 
 impl FromStr for EvmWord {
     type Err = Error;

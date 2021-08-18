@@ -4,7 +4,7 @@ use core::fmt::{Display, Formatter, Result as FmtResult};
 use std::error::Error as StdError;
 
 #[derive(Debug, Copy, Clone)]
-pub enum Error {
+pub(crate) enum Error {
     OpcodeParsing,
     MemAddressParsing,
     EvmWordParsing,

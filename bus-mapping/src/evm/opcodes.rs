@@ -14,7 +14,7 @@ use crate::{
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct OpcodeId(pub u8);
+pub(crate) struct OpcodeId(pub u8);
 
 // Core opcodes.
 impl OpcodeId {
@@ -416,7 +416,7 @@ impl FromStr for OpcodeId {
     }
 }
 
-pub trait Opcode<'a, F: Field>: Into<OpcodeId> + Copy + Debug {
+pub(crate) trait Opcode<'a, F: Field>: Into<OpcodeId> + Copy + Debug {
     fn gen_associated_operations(
         exec_step: &'a ExecutionStep<'a>,
         container: &'a mut OperationContainer,

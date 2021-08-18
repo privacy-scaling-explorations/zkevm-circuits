@@ -3,11 +3,11 @@ pub mod container;
 
 use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
 use core::cmp::Ordering;
-use std::{convert::TryInto, fmt::Debug};
+use core::fmt::Debug;
 
 /// Doc
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RW {
+pub(crate) enum RW {
     /// Doc
     READ,
     /// Doc
@@ -16,7 +16,7 @@ pub enum RW {
 
 /// Doc
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum Target {
+pub(crate) enum Target {
     /// Doc
     Memory,
     /// Doc
@@ -27,7 +27,7 @@ pub enum Target {
 
 /// Doc
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MemoryOp {
+pub(crate) struct MemoryOp {
     rw: RW,
     gc: GlobalCounter,
     addr: MemoryAddress,
@@ -89,7 +89,7 @@ impl Ord for MemoryOp {
 
 /// Doc
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StackOp {
+pub(crate) struct StackOp {
     rw: RW,
     gc: GlobalCounter,
     addr: StackAddress,
@@ -151,11 +151,11 @@ impl Ord for StackOp {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 /// Doc
-pub struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
+pub(crate) struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
 
 /// Doc
 #[derive(Debug, Clone)]
-pub enum Operation {
+pub(crate) enum Operation {
     /// Doc
     Stack(StackOp),
     /// Doc
@@ -220,7 +220,7 @@ impl PartialEq for Operation {
                 memory_op_1.eq(memory_op_2)
             }
             (Operation::Storage(storage_op_1), Operation::Storage(storage_op_2)) => {
-                unimplemented!()
+                storage_op_1.eq(storage_op_2)
             }
             _ => false,
         }
@@ -239,7 +239,7 @@ impl PartialOrd for Operation {
                 memory_op_1.partial_cmp(memory_op_2)
             }
             (Operation::Storage(storage_op_1), Operation::Storage(storage_op_2)) => {
-                unimplemented!()
+                storage_op_1.partial_cmp(storage_op_2)
             }
             _ => None,
         }
@@ -247,7 +247,7 @@ impl PartialOrd for Operation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperationRef<'a> {
+pub(crate) enum OperationRef<'a> {
     Stack(&'a StackOp),
     Memory(&'a MemoryOp),
     Storage(&'a StorageOp),

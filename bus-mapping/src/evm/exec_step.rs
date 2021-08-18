@@ -1,24 +1,17 @@
 //! Doc this
 
 use super::{
-    EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter, MEM_ADDR_ZERO,
-    STACK_ADDR_ZERO,
+    EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter, StackAddress, MEM_ADDR_ZERO,
 };
-use crate::{
-    error::Error,
-    operation::{bus_mapping::BusMappingInstance, Operation},
-    StackAddress,
-};
-use core::str::FromStr;
+use crate::{error::Error, operation::bus_mapping::BusMappingInstance};
+use alloc::collections::BTreeMap;
+use core::{convert::TryFrom, str::FromStr};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, HashMap},
-    convert::TryFrom,
-};
+use std::collections::HashMap;
 
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExecutionStep<'a> {
+pub(crate) struct ExecutionStep<'a> {
     memory: BTreeMap<MemoryAddress, EvmWord>,
     stack: Vec<EvmWord>,
     instruction: Instruction,
@@ -57,7 +50,7 @@ impl<'a> ExecutionStep<'a> {
     }
 
     pub fn stack_addr(&self) -> StackAddress {
-        StackAddress::from(1024 - self.stack_addr().0)
+        StackAddress::from(1024 - self.stack.len())
     }
 
     pub fn memory_addr(&self) -> &MemoryAddress {
@@ -139,8 +132,8 @@ struct ParsedExecutionStep<'a> {
 mod tests {
     use super::*;
     use crate::{
-        evm::{opcodes::OpcodeId, Opcode},
-        operation::{container::OperationContainer, MemoryOp, StackOp, RW},
+        evm::opcodes::OpcodeId,
+        operation::{container::OperationContainer, StackOp, RW},
         BlockConstants, ExecutionTrace,
     };
     use num::BigUint;
@@ -254,6 +247,8 @@ mod tests {
             StackAddress::from(1024),
             EvmWord(BigUint::from(0x40u8)),
         );
+        bus_mapping_inst.insert(container.insert(mem.into()));
+
         let mem = StackOp::new(
             RW::WRITE,
             GlobalCounter(3usize),
@@ -262,7 +257,7 @@ mod tests {
         );
         bus_mapping_inst.insert(container.insert(mem.into()));
 
-        let trace_global_obj = ExecutionTrace {
+        let _trace_global_obj = ExecutionTrace {
             entries: trace_loaded,
             block_ctants,
             container,

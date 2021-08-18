@@ -5,18 +5,18 @@
 #![allow(dead_code)]
 // Catch documentation errors caused by code changes.
 #![deny(broken_intra_doc_links)]
-//#![deny(missing_docs)]
+#![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+extern crate alloc;
 mod error;
 mod evm;
 mod operation;
 
 use core::ops::{Index, IndexMut};
 
-pub use evm::{EvmWord, ExecutionStep, GlobalCounter, MemoryAddress, ProgramCounter, StackAddress};
+use evm::{EvmWord, ExecutionStep};
 use operation::container::OperationContainer;
-pub use operation::{Operation, Target, RW};
 use pasta_curves::arithmetic::FieldExt;
 
 // -------- EVM Circuit
@@ -32,7 +32,7 @@ use pasta_curves::arithmetic::FieldExt;
 
 /// Doc
 #[derive(Debug, Clone)]
-struct BlockConstants<F: FieldExt> {
+pub(crate) struct BlockConstants<F: FieldExt> {
     hash: EvmWord, // Until we know how to deal with it
     coinbase: F,
     timestamp: F,
@@ -43,7 +43,7 @@ struct BlockConstants<F: FieldExt> {
 }
 
 /// Doc
-pub struct ExecutionTrace<'a, F: FieldExt> {
+pub(crate) struct ExecutionTrace<'a, F: FieldExt> {
     entries: Vec<ExecutionStep<'a>>,
     block_ctants: BlockConstants<F>,
     container: OperationContainer,

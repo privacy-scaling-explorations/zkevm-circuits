@@ -1,7 +1,7 @@
-use super::{MemoryOp, Operation, OperationRef, StackOp, StorageOp, Target};
+use super::OperationRef;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BusMappingInstance<'a> {
+pub(crate) struct BusMappingInstance<'a> {
     memory: Vec<OperationRef<'a>>,
     stack: Vec<OperationRef<'a>>,
     storage: Vec<OperationRef<'a>>,

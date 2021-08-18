@@ -1,13 +1,9 @@
-use crate::{operation::bus_mapping::BusMappingInstance, EvmWord, ExecutionStep};
+use super::{opcodes::OpcodeId, EvmWord};
 use core::str::FromStr;
-use ff::Field;
-use halo2::plonk::ConstraintSystem;
-
-use super::opcodes::{Opcode, OpcodeId};
 
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Instruction {
+pub(crate) struct Instruction {
     opcode: OpcodeId,
     assoc_value: Option<EvmWord>,
 }
