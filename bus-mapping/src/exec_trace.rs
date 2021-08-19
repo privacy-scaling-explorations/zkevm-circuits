@@ -170,7 +170,7 @@ mod trace_tests {
 
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
-            mem_map.clone(),
+            mem_map,
             vec![
                 EvmWord(BigUint::from(0x40u8)),
                 EvmWord(BigUint::from(0x80u8)),

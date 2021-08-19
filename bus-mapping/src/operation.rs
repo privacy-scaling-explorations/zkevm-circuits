@@ -70,7 +70,7 @@ impl MemoryOp {
 
 impl PartialOrd for MemoryOp {
     fn partial_cmp(&self, other: &MemoryOp) -> Option<Ordering> {
-        match self.address().partial_cmp(&other.address()) {
+        match self.address().partial_cmp(other.address()) {
             None => None,
             Some(ord) => match ord {
                 std::cmp::Ordering::Equal => self.gc().partial_cmp(&other.gc()),
@@ -82,7 +82,7 @@ impl PartialOrd for MemoryOp {
 
 impl Ord for MemoryOp {
     fn cmp(&self, other: &MemoryOp) -> Ordering {
-        match self.address().cmp(&other.address()) {
+        match self.address().cmp(other.address()) {
             Ordering::Equal => self.gc().cmp(&other.gc()),
             Ordering::Less => Ordering::Less,
             Ordering::Greater => Ordering::Greater,
@@ -143,7 +143,7 @@ impl StackOp {
 
 impl PartialOrd for StackOp {
     fn partial_cmp(&self, other: &StackOp) -> Option<Ordering> {
-        match self.address().partial_cmp(&other.address()) {
+        match self.address().partial_cmp(other.address()) {
             None => None,
             Some(ord) => match ord {
                 std::cmp::Ordering::Equal => self.gc().partial_cmp(&other.gc()),
@@ -155,7 +155,7 @@ impl PartialOrd for StackOp {
 
 impl Ord for StackOp {
     fn cmp(&self, other: &StackOp) -> Ordering {
-        match self.address().cmp(&other.address()) {
+        match self.address().cmp(other.address()) {
             Ordering::Equal => self.gc().cmp(&other.gc()),
             Ordering::Less => Ordering::Less,
             Ordering::Greater => Ordering::Greater,
@@ -293,22 +293,22 @@ impl Operation {
         matches!(*self, Operation::Storage(_))
     }
 
-    pub fn into_stack_unchecked(&self) -> StackOp {
-        match self.clone() {
+    pub fn into_stack_unchecked(self) -> StackOp {
+        match self {
             Operation::Stack(stack_op) => unsafe { std::mem::transmute(stack_op) },
             _ => panic!("Broken Invariant"),
         }
     }
 
-    pub fn into_memory_unchecked(&self) -> MemoryOp {
-        match self.clone() {
+    pub fn into_memory_unchecked(self) -> MemoryOp {
+        match self {
             Operation::Memory(memory_op) => unsafe { std::mem::transmute(memory_op) },
             _ => panic!("Broken Invariant"),
         }
     }
 
-    pub fn into_storage_unchecked(&self) -> StorageOp {
-        match self.clone() {
+    pub fn into_storage_unchecked(self) -> StorageOp {
+        match self {
             Operation::Storage(storage_op) => unsafe { std::mem::transmute(storage_op) },
             _ => panic!("Broken Invariant"),
         }

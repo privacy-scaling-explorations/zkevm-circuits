@@ -23,8 +23,8 @@ impl Opcode for OpcodeId {
         exec_step: &mut ExecutionStep,
         container: &mut OperationContainer,
     ) -> usize {
-        match self {
-            &OpcodeId::PUSH1 => Push1 {}.gen_associated_ops(exec_step, container),
+        match *self {
+            OpcodeId::PUSH1 => Push1 {}.gen_associated_ops(exec_step, container),
             _ => unimplemented!(),
         }
     }
@@ -34,8 +34,8 @@ impl Opcode for OpcodeId {
         exec_step: &ExecutionStep,
         cs: &mut ConstraintSystem<F>,
     ) {
-        match self {
-            &OpcodeId::PUSH1 => Push1 {}.add_constraints(exec_step, cs),
+        match *self {
+            OpcodeId::PUSH1 => Push1 {}.add_constraints(exec_step, cs),
             _ => unimplemented!(),
         }
     }

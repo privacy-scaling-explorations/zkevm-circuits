@@ -110,23 +110,17 @@ impl<'a> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter)> for ExecutionStep {
             .0
             .memory
             .iter()
-            .map(|(mem_addr, word)| {
+            .try_for_each(|(mem_addr, word)| {
                 mem_map.insert(MemoryAddress::from_str(mem_addr)?, EvmWord::from_str(word)?);
                 Ok(())
-            })
-            .collect::<Result<(), Error>>()?;
+            })?;
 
         // Stack part
         let mut stack = vec![];
-        parse_info
-            .0
-            .stack
-            .iter()
-            .map(|word| {
-                stack.push(EvmWord::from_str(word)?);
-                Ok(())
-            })
-            .collect::<Result<(), Error>>()?;
+        parse_info.0.stack.iter().try_for_each(|word| {
+            stack.push(EvmWord::from_str(word)?);
+            Ok(())
+        })?;
 
         Ok(ExecutionStep::new(
             mem_map,

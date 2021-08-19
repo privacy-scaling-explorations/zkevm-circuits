@@ -142,7 +142,7 @@ impl<F: FieldExt> Config<F> {
 
             vec![
                 is_first_row.clone() * value,
-                is_first_row.clone() * (Expression::Constant(F::one()) - flag.clone()),
+                is_first_row.clone() * (Expression::Constant(F::one()) - flag),
                 is_first_row * global_counter,
             ]
         });
@@ -167,7 +167,7 @@ impl<F: FieldExt> Config<F> {
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
 
             let one = Expression::Constant(F::one());
-            let is_not_first_row = q_memory.clone() * (q_memory.clone() - one);
+            let is_not_first_row = q_memory.clone() * (q_memory - one);
 
             let check_flag_init = {
                 let one = Expression::Constant(F::one());
@@ -185,7 +185,7 @@ impl<F: FieldExt> Config<F> {
             // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
             let q_read = {
                 let one = Expression::Constant(F::one());
-                one - flag.clone()
+                one - flag
             };
 
             // If address_prev == address_cur, global_counter_prev < global_counter_cur
