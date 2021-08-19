@@ -1,26 +1,24 @@
-use super::OperationRef;
+use super::{container::OperationContainer, Operation, OperationRef};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BusMappingInstance<'a> {
-    memory: Vec<OperationRef<'a>>,
-    stack: Vec<OperationRef<'a>>,
-    storage: Vec<OperationRef<'a>>,
-}
+pub(crate) struct BusMappingInstance(pub(crate) Vec<OperationRef>);
 
-impl<'a> BusMappingInstance<'a> {
-    pub const fn new() -> BusMappingInstance<'a> {
-        BusMappingInstance {
-            memory: Vec::new(),
-            stack: Vec::new(),
-            storage: Vec::new(),
-        }
+// XXX: Impl Index for BusMappingInstance
+
+impl BusMappingInstance {
+    pub const fn new() -> BusMappingInstance {
+        BusMappingInstance(Vec::new())
     }
 
-    pub fn insert(&mut self, op: OperationRef<'a>) {
-        match op {
-            OperationRef::Memory(_) => self.memory.push(op),
-            OperationRef::Stack(_) => self.stack.push(op),
-            OperationRef::Storage(_) => self.storage.push(op),
-        }
+    pub fn insert(&mut self, op: OperationRef) {
+        self.0.push(op)
+    }
+
+    pub fn register_and_insert(
+        &mut self,
+        container: &mut OperationContainer,
+        op: impl Into<Operation>,
+    ) {
+        self.insert(container.insert(op))
     }
 }

@@ -1,9 +1,12 @@
 pub mod bus_mapping;
 pub mod container;
 
+use crate::error::Error;
+
 use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
 use core::cmp::Ordering;
 use core::fmt::Debug;
+use std::convert::TryFrom;
 
 /// Doc
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,6 +90,17 @@ impl Ord for MemoryOp {
     }
 }
 
+impl TryFrom<Operation> for MemoryOp {
+    type Error = Error;
+
+    fn try_from(op: Operation) -> Result<Self, Self::Error> {
+        match op {
+            Operation::Memory(memory_op) => Ok(memory_op),
+            _ => Err(Error::InvalidOpConversion),
+        }
+    }
+}
+
 /// Doc
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StackOp {
@@ -149,9 +163,31 @@ impl Ord for StackOp {
     }
 }
 
+impl TryFrom<Operation> for StackOp {
+    type Error = Error;
+
+    fn try_from(op: Operation) -> Result<Self, Self::Error> {
+        match op {
+            Operation::Stack(stack_op) => Ok(stack_op),
+            _ => Err(Error::InvalidOpConversion),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 /// Doc
 pub(crate) struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
+
+impl TryFrom<Operation> for StorageOp {
+    type Error = Error;
+
+    fn try_from(op: Operation) -> Result<Self, Self::Error> {
+        match op {
+            Operation::Storage(storage_op) => Ok(storage_op),
+            _ => Err(Error::InvalidOpConversion),
+        }
+    }
+}
 
 /// Doc
 #[derive(Debug, Clone)]
@@ -200,16 +236,6 @@ impl From<StorageOp> for Operation {
     }
 }
 
-impl<'a> From<OperationRef<'a>> for Operation {
-    fn from(op: OperationRef<'a>) -> Operation {
-        match op {
-            OperationRef::Memory(mem_ref) => Operation::Memory(mem_ref.clone()),
-            OperationRef::Stack(mem_ref) => Operation::Stack(mem_ref.clone()),
-            OperationRef::Storage(mem_ref) => Operation::Storage(mem_ref.clone()),
-        }
-    }
-}
-
 impl PartialEq for Operation {
     fn eq(&self, other: &Operation) -> bool {
         match (self, other) {
@@ -246,27 +272,98 @@ impl PartialOrd for Operation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum OperationRef<'a> {
-    Stack(&'a StackOp),
-    Memory(&'a MemoryOp),
-    Storage(&'a StorageOp),
-}
+impl Operation {
+    pub const fn target(&self) -> Target {
+        match self {
+            Operation::Memory(_) => Target::Memory,
+            Operation::Stack(_) => Target::Stack,
+            Operation::Storage(_) => Target::Storage,
+        }
+    }
 
-impl<'a> From<&'a StackOp> for OperationRef<'a> {
-    fn from(op: &'a StackOp) -> Self {
-        OperationRef::Stack(op)
+    pub const fn is_stack(&self) -> bool {
+        matches!(*self, Operation::Stack(_))
+    }
+
+    pub const fn is_memory(&self) -> bool {
+        matches!(*self, Operation::Memory(_))
+    }
+
+    pub const fn is_storage(&self) -> bool {
+        matches!(*self, Operation::Storage(_))
+    }
+
+    pub fn into_stack_unchecked(&self) -> StackOp {
+        match self.clone() {
+            Operation::Stack(stack_op) => unsafe { std::mem::transmute(stack_op) },
+            _ => panic!("Broken Invariant"),
+        }
+    }
+
+    pub fn into_memory_unchecked(&self) -> MemoryOp {
+        match self.clone() {
+            Operation::Memory(memory_op) => unsafe { std::mem::transmute(memory_op) },
+            _ => panic!("Broken Invariant"),
+        }
+    }
+
+    pub fn into_storage_unchecked(&self) -> StorageOp {
+        match self.clone() {
+            Operation::Storage(storage_op) => unsafe { std::mem::transmute(storage_op) },
+            _ => panic!("Broken Invariant"),
+        }
     }
 }
 
-impl<'a> From<&'a MemoryOp> for OperationRef<'a> {
-    fn from(op: &'a MemoryOp) -> Self {
-        OperationRef::Memory(op)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OperationRef(Target, usize);
+
+impl From<(Target, usize)> for OperationRef {
+    fn from(op_ref_data: (Target, usize)) -> Self {
+        match op_ref_data.0 {
+            Target::Memory => Self(Target::Memory, op_ref_data.1),
+            Target::Stack => Self(Target::Stack, op_ref_data.1),
+            Target::Storage => Self(Target::Storage, op_ref_data.1),
+        }
     }
 }
 
-impl<'a> From<&'a StorageOp> for OperationRef<'a> {
-    fn from(op: &'a StorageOp) -> Self {
-        OperationRef::Storage(op)
+impl OperationRef {
+    pub const fn as_usize(&self) -> usize {
+        self.1
+    }
+
+    pub const fn target(&self) -> Target {
+        self.0
+    }
+}
+
+#[cfg(test)]
+mod operation_tests {
+    use super::*;
+    use num::BigUint;
+
+    #[test]
+    fn unchecked_op_transmutations_are_safe() {
+        let stack_op = StackOp::new(
+            RW::WRITE,
+            GlobalCounter(1usize),
+            StackAddress::from(1024),
+            EvmWord(BigUint::from(0x40u8)),
+        );
+
+        let stack_op_as_operation = Operation::from(stack_op.clone());
+
+        let memory_op = MemoryOp::new(
+            RW::WRITE,
+            GlobalCounter(1usize),
+            MemoryAddress(BigUint::from(0x40u8)),
+            EvmWord(BigUint::from(0x40u8)),
+        );
+
+        let memory_op_as_operation = Operation::from(memory_op.clone());
+
+        assert_eq!(stack_op, stack_op_as_operation.into_stack_unchecked());
+        assert_eq!(memory_op, memory_op_as_operation.into_memory_unchecked())
     }
 }
