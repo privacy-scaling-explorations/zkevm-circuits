@@ -1,14 +1,11 @@
 //! Evm types needed for parsing instruction sets as well
 
-pub mod exec_step;
-pub mod instruction;
-pub mod opcodes;
-
-use core::{convert::TryInto, str::FromStr};
+pub(crate) mod instruction;
+pub(crate) mod opcodes;
 
 use crate::error::Error;
-pub(crate) use exec_step::ExecutionStep;
-use instruction::Instruction;
+use core::{convert::TryInto, str::FromStr};
+pub(crate) use instruction::Instruction;
 use lazy_static::lazy_static;
 use num::{BigUint, Num, Zero};
 use serde::{Deserialize, Serialize};
@@ -25,6 +22,12 @@ pub(crate) struct ProgramCounter(pub(crate) usize);
 impl From<ProgramCounter> for usize {
     fn from(addr: ProgramCounter) -> usize {
         addr.0
+    }
+}
+
+impl From<usize> for ProgramCounter {
+    fn from(pc: usize) -> Self {
+        ProgramCounter(pc)
     }
 }
 

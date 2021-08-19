@@ -1,4 +1,4 @@
-use super::{opcodes::OpcodeId, EvmWord};
+use super::{opcodes::ids::OpcodeId, EvmWord};
 use core::str::FromStr;
 
 /// Doc
@@ -16,7 +16,7 @@ impl Instruction {
         }
     }
 
-    pub const fn opcode(&self) -> OpcodeId {
+    pub const fn opcode_id(&self) -> OpcodeId {
         self.opcode
     }
 
