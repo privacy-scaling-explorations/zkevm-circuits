@@ -8,6 +8,7 @@ pub(crate) enum Error {
     OpcodeParsing,
     MemAddressParsing,
     EvmWordParsing,
+    InvalidOpConversion,
 }
 
 impl Display for Error {
