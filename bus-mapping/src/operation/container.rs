@@ -1,50 +1,51 @@
 use super::{MemoryOp, Operation, OperationRef, StackOp, StorageOp};
+use itertools::Itertools;
+use std::convert::TryInto;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Doc
-pub(crate) struct OperationContainer {
-    memory: Vec<MemoryOp>,
-    stack: Vec<StackOp>,
-    storage: Vec<StorageOp>,
-}
+pub(crate) struct OperationContainer(pub(crate) Vec<Operation>);
+
+/// TODO: impl Index for OperationContainer
 
 impl OperationContainer {
     pub fn new() -> Self {
-        Self {
-            memory: Vec::<MemoryOp>::new(),
-            stack: Vec::<StackOp>::new(),
-            storage: Vec::<StorageOp>::new(),
-        }
+        Self(Vec::new())
     }
 
-    pub fn insert(&mut self, op: Operation) -> OperationRef {
-        match op {
-            Operation::Memory(mem_op) => {
-                self.memory.push(mem_op);
-                self.memory.last().unwrap().into()
-            }
-            Operation::Stack(stack_op) => {
-                self.stack.push(stack_op);
-                self.stack.last().unwrap().into()
-            }
-            Operation::Storage(storage_op) => {
-                self.storage.push(storage_op);
-                self.storage.last().unwrap().into()
-            }
-        }
+    pub fn insert(&mut self, op: impl Into<Operation>) -> OperationRef {
+        let op = op.into();
+        self.0.push(op.clone());
+        OperationRef::from((op.target(), self.0.len()))
     }
 
-    pub fn sorted_memory(&mut self) -> &Vec<MemoryOp> {
-        self.memory.sort();
-        &self.memory
+    pub fn sorted_memory(&self) -> Vec<MemoryOp> {
+        self.0
+            .iter()
+            .map(|op| op.clone().try_into())
+            .filter(|result| result.is_ok())
+            .map(|result| result.unwrap())
+            .sorted()
+            .collect()
     }
 
-    pub fn sorted_stack(&mut self) -> &Vec<StackOp> {
-        self.stack.sort();
-        &self.stack
+    pub fn sorted_stack(&self) -> Vec<StackOp> {
+        self.0
+            .iter()
+            .map(|op| op.clone().try_into())
+            .filter(|result| result.is_ok())
+            .map(|result| result.unwrap())
+            .sorted()
+            .collect()
     }
 
-    pub fn sorted_storage(&mut self) -> &Vec<StorageOp> {
-        self.storage.sort();
-        &self.storage
+    pub fn sorted_storage(&self) -> Vec<StorageOp> {
+        self.0
+            .iter()
+            .map(|op| op.clone().try_into())
+            .filter(|result| result.is_ok())
+            .map(|result| result.unwrap())
+            .sorted()
+            .collect()
     }
 }
