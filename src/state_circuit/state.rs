@@ -466,7 +466,7 @@ impl<
             let i = Expression::Constant(inv);
             let q_memory_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
-                * (three.clone() - q_target.clone())
+                * (three - q_target.clone())
                 * (four.clone() - q_target.clone())
                 * i;
 
@@ -475,8 +475,8 @@ impl<
             let i = Expression::Constant(inv);
             let q_stack_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
-                * (q_target.clone() - two.clone())
-                * (four - q_target.clone())
+                * (q_target.clone() - two)
+                * (four - q_target)
                 * i;
 
             let q_not_first = q_memory_not_first + q_stack_not_first;
@@ -645,7 +645,7 @@ impl<
             let q_storage_first = q_target_cur.clone()
                 * (two.clone() - q_target_cur.clone())
                 * (three.clone() - q_target_cur.clone())
-                * (four.clone() - q_target_cur)
+                * (four - q_target_cur)
                 * (q_target_next.clone() - one.clone())
                 * (q_target_next.clone() - two)
                 * (q_target_next - three);
@@ -666,7 +666,7 @@ impl<
             let q_storage_not_first = q_target.clone()
                 * (q_target.clone() - one)
                 * (q_target.clone() - two)
-                * (q_target.clone() - three);
+                * (q_target - three);
 
             let address_diff = {
                 let address_prev = meta.query_advice(address, Rotation::prev());
@@ -695,13 +695,13 @@ impl<
             let q_read = one.clone() - flag.clone();
 
             let padding = meta.query_advice(padding, Rotation::cur());
-            let is_not_padding = one.clone() - padding;
+            let is_not_padding = one - padding;
 
             vec![
-                q_storage_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
-                q_storage_not_first.clone() * storage_key_diff.clone() * q_read.clone(), // when storage_key_diff changes, the flag is 1 (write)
+                q_storage_not_first.clone() * address_diff * q_read.clone(), // when address changes, the flag is 1 (write)
+                q_storage_not_first.clone() * storage_key_diff * q_read.clone(), // when storage_key_diff changes, the flag is 1 (write)
                 q_storage_not_first.clone() * bool_check_flag, // flag is either 0 or 1
-                q_storage_not_first.clone() * q_read.clone() * (value_cur - value_previous.clone()), // when reading, the value is the same as at the previous op
+                q_storage_not_first.clone() * q_read * (value_cur - value_previous.clone()), // when reading, the value is the same as at the previous op
                 // Note that this last constraint needs to hold only when address and storage key don't change,
                 // but we don't need to check this as the first operation at new address and
                 // new storage key always has to be write - that means q_read is 1 only when
@@ -739,7 +739,7 @@ impl<
             let q_storage_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
                 * (q_target.clone() - two)
-                * (q_target.clone() - three)
+                * (q_target - three)
                 * i;
 
             vec![(
@@ -922,58 +922,18 @@ impl<
                         self.assign_per_counter(region, offset, address, global_counter, target)?;
                     bus_mappings.push(bus_mapping);
                     address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
-                } else {
-                    if internal_ind == 0 {
-                        if index == 0 {
-                            let bus_mapping = self.assign_per_counter(
-                                region,
-                                offset,
-                                address,
-                                global_counter,
-                                1,
-                            )?;
-                            bus_mappings.push(bus_mapping);
-                            // set some non-zero diff for the first stack op
-                            address_diff_is_zero_chip.assign(region, offset, Some(F::one()))?;
-                        } else {
-                            let bus_mapping = self.assign_per_counter(
-                                region,
-                                offset,
-                                address,
-                                global_counter,
-                                target,
-                            )?;
-                            bus_mappings.push(bus_mapping);
-
-                            address_diff_is_zero_chip.assign(
-                                region,
-                                offset,
-                                Some(address.0 - address_prev.0),
-                            )?;
-
-                            let storage_key_prev = ops[index - 1]
-                                .global_counters
-                                .last()
-                                .unwrap()
-                                .as_ref()
-                                .unwrap()
-                                .storage_key()
-                                .unwrap_or(Value(F::zero()))
-                                .0;
-
-                            let storage_key = global_counter
-                                .as_ref()
-                                .unwrap()
-                                .storage_key()
-                                .unwrap_or(Value(F::zero()))
-                                .0;
-
-                            storage_key_diff_is_zero_chip.assign(
-                                region,
-                                offset,
-                                Some(storage_key - storage_key_prev),
-                            )?;
-                        }
+                } else if internal_ind == 0 {
+                    if index == 0 {
+                        let bus_mapping = self.assign_per_counter(
+                            region,
+                            offset,
+                            address,
+                            global_counter,
+                            1,
+                        )?;
+                        bus_mappings.push(bus_mapping);
+                        // set some non-zero diff for the first stack op
+                        address_diff_is_zero_chip.assign(region, offset, Some(F::one()))?;
                     } else {
                         let bus_mapping = self.assign_per_counter(
                             region,
@@ -984,6 +944,22 @@ impl<
                         )?;
                         bus_mappings.push(bus_mapping);
 
+                        address_diff_is_zero_chip.assign(
+                            region,
+                            offset,
+                            Some(address.0 - address_prev.0),
+                        )?;
+
+                        let storage_key_prev = ops[index - 1]
+                            .global_counters
+                            .last()
+                            .unwrap()
+                            .as_ref()
+                            .unwrap()
+                            .storage_key()
+                            .unwrap_or(Value(F::zero()))
+                            .0;
+
                         let storage_key = global_counter
                             .as_ref()
                             .unwrap()
@@ -991,20 +967,42 @@ impl<
                             .unwrap_or(Value(F::zero()))
                             .0;
 
-                        let storage_key_prev = op.global_counters[internal_ind - 1]
-                            .as_ref()
-                            .unwrap()
-                            .storage_key()
-                            .unwrap_or(Value(F::zero()))
-                            .0;
+                        storage_key_diff_is_zero_chip.assign(
+                            region,
+                            offset,
+                            Some(storage_key - storage_key_prev),
+                        )?;
+                    }
+                } else {
+                    let bus_mapping = self.assign_per_counter(
+                        region,
+                        offset,
+                        address,
+                        global_counter,
+                        target,
+                    )?;
+                    bus_mappings.push(bus_mapping);
 
-                        if target == 4 {
-                            storage_key_diff_is_zero_chip.assign(
-                                region,
-                                offset,
-                                Some(storage_key - storage_key_prev),
-                            )?;
-                        }
+                    let storage_key = global_counter
+                        .as_ref()
+                        .unwrap()
+                        .storage_key()
+                        .unwrap_or(Value(F::zero()))
+                        .0;
+
+                    let storage_key_prev = op.global_counters[internal_ind - 1]
+                        .as_ref()
+                        .unwrap()
+                        .storage_key()
+                        .unwrap_or(Value(F::zero()))
+                        .0;
+
+                    if target == 4 {
+                        storage_key_diff_is_zero_chip.assign(
+                            region,
+                            offset,
+                            Some(storage_key - storage_key_prev),
+                        )?;
                     }
                 }
 
