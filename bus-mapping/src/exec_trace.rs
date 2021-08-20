@@ -49,10 +49,10 @@ impl<F: FieldExt> ExecutionTrace<F> {
         let mut gc = 0usize;
 
         entries.iter_mut().for_each(|exec_step| {
-            exec_step.set_gc(gc_counter);
-            gc_counter += exec_step.gen_associated_ops::<F>(&mut container);
+            exec_step.set_gc(gc);
+            gc += exec_step.gen_associated_ops::<F>(&mut container);
             // Sum 1 to counter so that we set the next exec_step GC to the correct index
-            gc_counter += 1;
+            gc += 1;
         });
 
         ExecutionTrace {
