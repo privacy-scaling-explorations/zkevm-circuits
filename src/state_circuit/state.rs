@@ -13,21 +13,24 @@ use pasta_curves::arithmetic::FieldExt;
 /*
 Example state table:
 
-| q_target | address | address_diff | global_counter | value | flag | padding |
--------------------------------------------------------------------------------
-|    1     |    0    |              |       0        |  0    |   1  |    0    |  // init row (write value 0)
-|    2     |    0    |              |       12       |  12   |   1  |    0    |
-|    2     |    0    |              |       24       |  12   |   0  |    0    |
-|    2     |    1    |              |       0        |  0    |   1  |    0    |  // init row (write value 0)
-|    2     |    1    |              |       2        |  12   |   0  |    0    |
-|          |         |              |                |       |      |    1    |  // padding
-|          |         |              |                |       |      |    1    |  // padding
-|    1     |    0    |              |       3        |  4    |   1  |    0    |  // first stack op at the address has to be write
-|    3     |    0    |              |       17       |  32   |   1  |    0    |
-|    3     |    0    |              |       89       |  32   |   0  |    0    |
-|    3     |    1    |              |       48       |  32   |   1  |    0    |  // first stack op at the address has to be write
-|    3     |    1    |              |       49       |  32   |   0  |    0    |
-|          |         |              |                |       |      |    1    |  // padding
+| q_target | address | global_counter | value | flag | padding | storage_key | value_prev |
+-------------------------------------------------------------------------------------------
+|    1     |    0    |       0        |  0    |   1  |    0    |             |            |   // init row (write value 0)
+|    2     |    0    |       12       |  12   |   1  |    0    |             |            |
+|    2     |    0    |       24       |  12   |   0  |    0    |             |            |
+|    2     |    1    |       0        |  0    |   1  |    0    |             |            |   // init row (write value 0)
+|    2     |    1    |       2        |  12   |   0  |    0    |             |            |
+|    2     |         |                |       |      |    1    |             |            |   // padding
+|    2     |         |                |       |      |    1    |             |            |   // padding
+|    1     |    0    |       3        |  4    |   1  |    0    |             |            |   // first stack op at the new address has to be write
+|    3     |    0    |       17       |  32   |   1  |    0    |             |            |
+|    3     |    0    |       89       |  32   |   0  |    0    |             |            |
+|    3     |    1    |       48       |  32   |   1  |    0    |             |            |   // first stack op at the new address has to be write
+|    3     |    1    |       49       |  32   |   0  |    0    |             |            |
+|    3     |         |                |       |      |    1    |             |            |   // padding
+|    1     |    1    |       55       |  32   |   1  |    0    |      5      |     0      |   // first storage op at the new address has to be write
+|    4     |    1    |       56       |  33   |   1  |    0    |      8      |     32     |
+|    4     |         |                |       |      |    1    |             |            |   // padding
 */
 
 // q_target:
@@ -36,24 +39,25 @@ Example state table:
 // 3 - stack
 // 4 - storage
 
-// address_diff is needed only internally to check whether the address changed
-// padding specifies whether the row is just a padding to fill all the rows that are intended
-// for a particular target
+// address presents memory address, stack pointer, and account address for memory, stack, and storage ops respectively
+// two columns are not displayed: address_diff and storage_key_diff (needed to check whether the address or storage_key changed)
+// storage_key and value_prev are needed for storage ops only
+// padding specifies whether the row is just a padding to fill all the rows that are intended for a particular target
 
 /*
 Example bus mapping:
 // TODO: this is going to change
 
-| target | address | global_counter | value | flag |
-----------------------------------------------------
-|    2   |    0    |       12       |  12   |   1  |
-|    2   |    0    |       24       |  12   |   0  |
-|    2   |    1    |       2        |  12   |   0  |
-|    1   |    0    |       3        |  4    |   1  |
-|    3   |    0    |       17       |  32   |   1  |
-|    3   |    0    |       89       |  32   |   0  |
-|    3   |    1    |       48       |  32   |   1  |
-|    3   |    1    |       49       |  32   |   0  |
+| target | address | global_counter | value | storage_key | value_prev | flag |
+-------------------------------------------------------------------------------
+|    2   |    0    |       12       |  12   |             |            |  1   |
+|    2   |    0    |       24       |  12   |             |            |  0   |
+|    2   |    1    |       2        |  12   |             |            |  0   |
+|    1   |    0    |       3        |  4    |             |            |  1   |
+|    3   |    0    |       17       |  32   |             |            |  1   |
+|    3   |    0    |       89       |  32   |             |            |  0   |
+|    3   |    1    |       48       |  32   |             |            |  1   |
+|    3   |    1    |       49       |  32   |             |            |  0   |
 */
 
 /// In the state proof, memory operations are ordered first by address, and then by global_counter.
@@ -77,21 +81,23 @@ struct Value<F: FieldExt>(F);
 #[derive(Clone, Debug)]
 enum ReadWrite<F: FieldExt> {
     // flag == 0
-    Read(GlobalCounter, Value<F>),
+    Read(GlobalCounter, Value<F>, Option<Value<F>>, Option<Value<F>>), // gc, value, storage_key, value_prev
     // flag == 1
-    Write(GlobalCounter, Value<F>),
+    Write(GlobalCounter, Value<F>, Option<Value<F>>, Option<Value<F>>),
 }
 
 impl<F: FieldExt> ReadWrite<F> {
     fn global_counter(&self) -> GlobalCounter {
         match self {
-            Self::Read(global_counter, _) | Self::Write(global_counter, _) => *global_counter,
+            Self::Read(global_counter, _, _, _) | Self::Write(global_counter, _, _, _) => {
+                *global_counter
+            }
         }
     }
 
     fn value(&self) -> Value<F> {
         match self {
-            Self::Read(_, value) | Self::Write(_, value) => *value,
+            Self::Read(_, value, _, _) | Self::Write(_, value, _, _) => *value,
         }
     }
 
@@ -99,6 +105,18 @@ impl<F: FieldExt> ReadWrite<F> {
         match self {
             Self::Read(..) => false,
             Self::Write(..) => true,
+        }
+    }
+
+    fn storage_key(&self) -> Option<Value<F>> {
+        match self {
+            Self::Read(_, _, storage_key, _) | Self::Write(_, _, storage_key, _) => *storage_key,
+        }
+    }
+
+    fn value_prev(&self) -> Option<Value<F>> {
+        match self {
+            Self::Read(_, _, _, value_prev) | Self::Write(_, _, _, value_prev) => *value_prev,
         }
     }
 }
@@ -120,6 +138,8 @@ pub(crate) struct BusMapping<F: FieldExt> {
     flag: Variable<bool, F>,
     address: Variable<F, F>,
     value: Variable<F, F>,
+    storage_key: Variable<F, F>,
+    value_prev: Variable<F, F>,
 }
 
 #[derive(Clone, Debug)]
@@ -130,14 +150,18 @@ pub(crate) struct Config<
     const MEMORY_ADDRESS_MAX: usize,
     const STACK_ROWS_MAX: usize,
     const STACK_ADDRESS_MAX: usize,
+    const STORAGE_ROWS_MAX: usize,
 > {
     q_target: Column<Fixed>,
-    address: Column<Advice>,
+    address: Column<Advice>, // used for memory address, stack pointer, and account address (for storage)
     address_diff_inv: Column<Advice>,
     global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
     padding: Column<Advice>,
+    storage_key: Column<Advice>,
+    storage_key_diff_inv: Column<Advice>,
+    value_prev: Column<Advice>,
     global_counter_table: Column<Fixed>,
     memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
@@ -146,6 +170,7 @@ pub(crate) struct Config<
     address_diff_is_zero: IsZeroConfig<F>,
     address_monotone: MonotoneConfig,
     padding_monotone: MonotoneConfig,
+    storage_key_diff_is_zero: IsZeroConfig<F>,
 }
 
 impl<
@@ -155,6 +180,7 @@ impl<
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
         const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
     >
     Config<
         F,
@@ -163,6 +189,7 @@ impl<
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
     >
 {
     /// Set up custom gates and lookup arguments for this configuration.
@@ -174,6 +201,9 @@ impl<
         let value = meta.advice_column();
         let flag = meta.advice_column();
         let padding = meta.advice_column();
+        let storage_key = meta.advice_column();
+        let storage_key_diff_inv = meta.advice_column();
+        let value_prev = meta.advice_column();
         let global_counter_table = meta.fixed_column();
         let memory_address_table_zero = meta.fixed_column();
         let stack_address_table_zero = meta.fixed_column();
@@ -348,6 +378,10 @@ impl<
                 q_memory_not_first.clone() * address_diff * global_counter, // when address changes, global_counter is 0
                 q_memory_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
                 q_memory_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
+                                                                        // Note that this last constraint needs to hold only when address doesn't change,
+                                                                        // but we don't need to check this as the first operation at the address always
+                                                                        // has to be write - that means q_read is 1 only when
+                                                                        // the address and storage key don't change.
             ]
         });
 
@@ -410,7 +444,7 @@ impl<
             ]
         });
 
-        // global_counter monotonicity is only checked when address_cur == address_prev.
+        // global_counter monotonicity is checked for memory and stack when address_cur == address_prev.
         // (Recall that operations are ordered first by address, and then by global_counter.)
         meta.lookup(|meta| {
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
@@ -432,7 +466,7 @@ impl<
             let i = Expression::Constant(inv);
             let q_memory_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
-                * (three - q_target.clone())
+                * (three.clone() - q_target.clone())
                 * (four.clone() - q_target.clone())
                 * i;
 
@@ -441,8 +475,8 @@ impl<
             let i = Expression::Constant(inv);
             let q_stack_not_first = q_target.clone()
                 * (q_target.clone() - one.clone())
-                * (q_target.clone() - two)
-                * (four - q_target)
+                * (q_target.clone() - two.clone())
+                * (four - q_target.clone())
                 * i;
 
             let q_not_first = q_memory_not_first + q_stack_not_first;
@@ -580,6 +614,146 @@ impl<
             vec![(padding, padding_value_table)]
         });
 
+        let storage_key_diff_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| {
+                let padding = meta.query_advice(padding, Rotation::cur());
+                let one = Expression::Constant(F::one());
+                let is_not_padding = one - padding;
+
+                let q_target = meta.query_fixed(q_target, Rotation::cur());
+                let one = Expression::Constant(F::one());
+                let q_not_first = q_target.clone() * (q_target - one);
+
+                q_not_first * is_not_padding
+            },
+            |meta| {
+                let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
+                let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
+                storage_key_cur - storage_key_prev
+            },
+            storage_key_diff_inv,
+        );
+
+        meta.create_gate("First storage row operation", |meta| {
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            let four = Expression::Constant(F::from_u64(4));
+            let q_storage_first = q_target_cur.clone()
+                * (two.clone() - q_target_cur.clone())
+                * (three.clone() - q_target_cur.clone())
+                * (four.clone() - q_target_cur)
+                * (q_target_next.clone() - one.clone())
+                * (q_target_next.clone() - two)
+                * (q_target_next - three);
+
+            let flag = meta.query_advice(flag, Rotation::cur());
+            let q_read = one - flag;
+
+            vec![
+                q_storage_first * q_read, // first storage op has to be write (flag = 1)
+            ]
+        });
+
+        meta.create_gate("Storage operation", |meta| {
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            let q_storage_not_first = q_target.clone()
+                * (q_target.clone() - one)
+                * (q_target.clone() - two)
+                * (q_target.clone() - three);
+
+            let address_diff = {
+                let address_prev = meta.query_advice(address, Rotation::prev());
+                let address_cur = meta.query_advice(address, Rotation::cur());
+                address_cur - address_prev
+            };
+
+            let storage_key_diff = {
+                let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
+                let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
+                storage_key_cur - storage_key_prev
+            };
+
+            let value_cur = meta.query_advice(value, Rotation::cur());
+            let value_prev_cur = meta.query_advice(value_prev, Rotation::cur());
+            let flag = meta.query_advice(flag, Rotation::cur());
+
+            let one = Expression::Constant(F::one());
+
+            // flag == 0 or 1
+            // (flag) * (1 - flag)
+            let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
+
+            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            let value_previous = meta.query_advice(value, Rotation::prev());
+            let q_read = one.clone() - flag.clone();
+
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let is_not_padding = one.clone() - padding;
+
+            vec![
+                q_storage_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
+                q_storage_not_first.clone() * storage_key_diff.clone() * q_read.clone(), // when storage_key_diff changes, the flag is 1 (write)
+                q_storage_not_first.clone() * bool_check_flag, // flag is either 0 or 1
+                q_storage_not_first.clone() * q_read.clone() * (value_cur - value_previous.clone()), // when reading, the value is the same as at the previous op
+                // Note that this last constraint needs to hold only when address and storage key don't change,
+                // but we don't need to check this as the first operation at new address and
+                // new storage key always has to be write - that means q_read is 1 only when
+                // the address and storage key doesn't change.
+                is_not_padding
+                    * q_storage_not_first
+                    * flag
+                    * address_diff_is_zero.clone().is_zero_expression
+                    * storage_key_diff_is_zero.clone().is_zero_expression
+                    * (value_prev_cur - value_previous), // when writing, value_prev_cur = value_previous
+            ]
+        });
+
+        // global_counter monotonicity is checked for storage when address_cur == address_prev
+        // and storage_key_cur = storage_key_prev.
+        // (Recall that storage operations are ordered first by account address, then by storage_key,
+        // and finally by global_counter.)
+        meta.lookup(|meta| {
+            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
+            let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
+            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let one = Expression::Constant(F::one());
+
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let is_not_padding = one - padding;
+
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+
+            // q_storage_not_first is 24 when target is 4, we use 1/24 to normalize the value
+            let inv = F::from_u64(24_u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+            let q_storage_not_first = q_target.clone()
+                * (q_target.clone() - one.clone())
+                * (q_target.clone() - two)
+                * (q_target.clone() - three)
+                * i;
+
+            vec![(
+                q_storage_not_first
+                    * is_not_padding
+                    * address_diff_is_zero.clone().is_zero_expression
+                    * storage_key_diff_is_zero.clone().is_zero_expression
+                    * (global_counter - global_counter_prev - one), // - 1 because it needs to be strictly monotone
+                global_counter_table,
+            )]
+        });
+
+        // TODO: monotone address for storage
+
         Config {
             q_target,
             address,
@@ -588,6 +762,9 @@ impl<
             value,
             flag,
             padding,
+            storage_key,
+            storage_key_diff_inv,
+            value_prev,
             global_counter_table,
             memory_address_table_zero,
             stack_address_table_zero,
@@ -596,6 +773,7 @@ impl<
             address_diff_is_zero,
             address_monotone,
             padding_monotone,
+            storage_key_diff_is_zero,
         }
     }
 
@@ -691,6 +869,7 @@ impl<
         max_rows: usize,
         target: usize,
         address_diff_is_zero_chip: &IsZeroChip<F>,
+        storage_key_diff_is_zero_chip: &IsZeroChip<F>,
         start_offset: usize,
         region: &mut Region<F>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
@@ -701,7 +880,7 @@ impl<
                 .clone()
                 .into_iter()
                 .fold(0, |acc, x| acc + x.global_counters.len() + 1);
-        } else if target == 3 {
+        } else {
             ops_num = ops
                 .clone()
                 .into_iter()
@@ -743,7 +922,7 @@ impl<
                         self.assign_per_counter(region, offset, address, global_counter, target)?;
                     bus_mappings.push(bus_mapping);
                     address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
-                } else if target == 3 {
+                } else {
                     if internal_ind == 0 {
                         if index == 0 {
                             let bus_mapping = self.assign_per_counter(
@@ -765,10 +944,34 @@ impl<
                                 target,
                             )?;
                             bus_mappings.push(bus_mapping);
+
                             address_diff_is_zero_chip.assign(
                                 region,
                                 offset,
                                 Some(address.0 - address_prev.0),
+                            )?;
+
+                            let storage_key_prev = ops[index - 1]
+                                .global_counters
+                                .last()
+                                .unwrap()
+                                .as_ref()
+                                .unwrap()
+                                .storage_key()
+                                .unwrap_or(Value(F::zero()))
+                                .0;
+
+                            let storage_key = global_counter
+                                .as_ref()
+                                .unwrap()
+                                .storage_key()
+                                .unwrap_or(Value(F::zero()))
+                                .0;
+
+                            storage_key_diff_is_zero_chip.assign(
+                                region,
+                                offset,
+                                Some(storage_key - storage_key_prev),
                             )?;
                         }
                     } else {
@@ -781,7 +984,27 @@ impl<
                         )?;
                         bus_mappings.push(bus_mapping);
 
-                        address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
+                        let storage_key = global_counter
+                            .as_ref()
+                            .unwrap()
+                            .storage_key()
+                            .unwrap_or(Value(F::zero()))
+                            .0;
+
+                        let storage_key_prev = op.global_counters[internal_ind - 1]
+                            .as_ref()
+                            .unwrap()
+                            .storage_key()
+                            .unwrap_or(Value(F::zero()))
+                            .0;
+
+                        if target == 4 {
+                            storage_key_diff_is_zero_chip.assign(
+                                region,
+                                offset,
+                                Some(storage_key - storage_key_prev),
+                            )?;
+                        }
                     }
                 }
 
@@ -837,6 +1060,7 @@ impl<
         mut layouter: impl Layouter<F>,
         memory_ops: Vec<Op<F>>,
         stack_ops: Vec<Op<F>>,
+        storage_ops: Vec<Op<F>>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
@@ -852,6 +1076,9 @@ impl<
             MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
         padding_monotone_chip.load(&mut layouter)?;
 
+        let storage_key_diff_is_zero_chip =
+            IsZeroChip::construct(self.storage_key_diff_is_zero.clone());
+
         layouter.assign_region(
             || "State operations",
             |mut region| {
@@ -860,6 +1087,7 @@ impl<
                     MEMORY_ROWS_MAX,
                     2,
                     &address_diff_is_zero_chip,
+                    &storage_key_diff_is_zero_chip,
                     0,
                     &mut region,
                 );
@@ -870,10 +1098,22 @@ impl<
                     STACK_ROWS_MAX,
                     3,
                     &address_diff_is_zero_chip,
+                    &storage_key_diff_is_zero_chip,
                     MEMORY_ROWS_MAX,
                     &mut region,
                 );
                 bus_mappings.extend(stack_mappings.unwrap());
+
+                let storage_mappings = self.assign_operations(
+                    storage_ops.clone(),
+                    STORAGE_ROWS_MAX,
+                    4,
+                    &address_diff_is_zero_chip,
+                    &storage_key_diff_is_zero_chip,
+                    MEMORY_ROWS_MAX + STACK_ROWS_MAX,
+                    &mut region,
+                );
+                bus_mappings.extend(storage_mappings.unwrap());
 
                 Ok(bus_mappings.clone())
             },
@@ -995,6 +1235,44 @@ impl<
             }
         };
 
+        // Assign `storage_key`
+        let storage_key = {
+            let value = read_write
+                .as_ref()
+                .map(|read_write| read_write.storage_key().unwrap_or(Value(F::zero())).0);
+            let cell = region.assign_advice(
+                || "storage key",
+                self.storage_key,
+                offset,
+                || value.ok_or(Error::SynthesisError),
+            )?;
+
+            Variable::<F, F> {
+                cell,
+                field_elem: value,
+                value,
+            }
+        };
+
+        // Assign `value_prev`
+        let value_prev = {
+            let value = read_write
+                .as_ref()
+                .map(|read_write| read_write.value_prev().unwrap_or(Value(F::zero())).0);
+            let cell = region.assign_advice(
+                || "value prev",
+                self.value_prev,
+                offset,
+                || value.ok_or(Error::SynthesisError),
+            )?;
+
+            Variable::<F, F> {
+                cell,
+                field_elem: value,
+                value,
+            }
+        };
+
         // Assign padding
         region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
 
@@ -1021,6 +1299,8 @@ impl<
             flag,
             address,
             value,
+            storage_key,
+            value_prev,
         })
     }
 }
@@ -1037,7 +1317,7 @@ mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
     macro_rules! test_state_circuit {
-        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $memory_ops:expr, $stack_ops:expr, $result:expr) => {{
+        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
             #[derive(Default)]
             struct StateCircuit<
                 F: FieldExt,
@@ -1046,9 +1326,11 @@ mod tests {
                 const MEMORY_ADDRESS_MAX: usize,
                 const STACK_ROWS_MAX: usize,
                 const STACK_ADDRESS_MAX: usize,
+                const STORAGE_ROWS_MAX: usize,
             > {
                 memory_ops: Vec<Op<F>>,
                 stack_ops: Vec<Op<F>>,
+                storage_ops: Vec<Op<F>>,
             }
 
             impl<
@@ -1058,6 +1340,7 @@ mod tests {
                     const MEMORY_ADDRESS_MAX: usize,
                     const STACK_ROWS_MAX: usize,
                     const STACK_ADDRESS_MAX: usize,
+                    const STORAGE_ROWS_MAX: usize,
                 > Circuit<F>
                 for StateCircuit<
                     F,
@@ -1066,6 +1349,7 @@ mod tests {
                     MEMORY_ADDRESS_MAX,
                     STACK_ROWS_MAX,
                     STACK_ADDRESS_MAX,
+                    STORAGE_ROWS_MAX,
                 >
             {
                 type Config = Config<
@@ -1075,6 +1359,7 @@ mod tests {
                     MEMORY_ADDRESS_MAX,
                     STACK_ROWS_MAX,
                     STACK_ADDRESS_MAX,
+                    STORAGE_ROWS_MAX,
                 >;
                 type FloorPlanner = SimpleFloorPlanner;
 
@@ -1092,7 +1377,12 @@ mod tests {
                     mut layouter: impl Layouter<F>,
                 ) -> Result<(), Error> {
                     config.load(&mut layouter)?;
-                    config.assign(layouter, self.memory_ops.clone(), self.stack_ops.clone())?;
+                    config.assign(
+                        layouter,
+                        self.memory_ops.clone(),
+                        self.stack_ops.clone(),
+                        self.storage_ops.clone(),
+                    )?;
 
                     Ok(())
                 }
@@ -1105,9 +1395,11 @@ mod tests {
                 $memory_address_max,
                 $stack_rows_max,
                 $stack_address_max,
+                $storage_rows_max,
             > {
                 memory_ops: $memory_ops,
                 stack_ops: $stack_ops,
+                storage_ops: $storage_ops,
             };
 
             let prover = MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
@@ -1139,10 +1431,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1153,10 +1449,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(87),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1167,10 +1467,38 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(87),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
+                )),
+            ],
+        };
+
+        let storage_op_0 = Op {
+            address: Address(pallas::Base::from_u64(2)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(18),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+                Some(ReadWrite::Write(
+                    GlobalCounter(19),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(1))),
+                    Some(Value(pallas::Base::from_u64(32))),
+                )),
+                Some(ReadWrite::Write(
+                    GlobalCounter(20),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(1))),
+                    Some(Value(pallas::Base::from_u64(32))),
                 )),
             ],
         };
@@ -1182,8 +1510,10 @@ mod tests {
             2,
             100,
             1023,
+            1000,
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0],
+            vec![storage_op_0],
             Ok(())
         );
     }
@@ -1196,10 +1526,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1211,10 +1545,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(87),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1225,10 +1563,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(87),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1240,8 +1582,10 @@ mod tests {
             STACK_ROWS_MAX,
             100,
             1023,
+            1000,
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0],
+            vec![],
             Ok(())
         );
     }
@@ -1254,10 +1598,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
                     Value(pallas::Base::from_u64(13)), // This should fail as it not the same value as in previous write op
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1267,10 +1615,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(19),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(28),
                     Value(pallas::Base::from_u64(13)), // This should fail as it not the same value as in previous write op
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1283,8 +1635,10 @@ mod tests {
             1000,
             100,
             1023,
+            1000,
             vec![memory_op_0],
             vec![stack_op_0],
+            vec![],
             Err(vec![
                 constraint_not_satisfied(2, 2, "Memory operation", 4),
                 constraint_not_satisfied(MEMORY_ROWS_MAX + 1, 4, "Stack operation", 2)
@@ -1293,32 +1647,89 @@ mod tests {
     }
 
     #[test]
-    fn stack_first_write() {
-        // first stack op when address changes is write
+    fn first_write() {
         let stack_op_0 = Op {
             address: Address(pallas::Base::zero()),
             global_counters: vec![Some(ReadWrite::Read(
+                // Fails because first stack op needs to be write
                 GlobalCounter(28),
-                Value(pallas::Base::from_u64(13)), // This should fail as it is read op
+                Value(pallas::Base::from_u64(13)),
+                None,
+                None,
+            ))],
+        };
+
+        let storage_op_0 = Op {
+            address: Address(pallas::Base::from_u64(2)),
+            global_counters: vec![
+                Some(ReadWrite::Read(
+                    // Fails because the first stack op needs to be write
+                    GlobalCounter(18),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+                Some(ReadWrite::Read(
+                    // Fails because when storage key changes, the op needs to be write
+                    GlobalCounter(19),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(1))), // storage key
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+            ],
+        };
+
+        let storage_op_1 = Op {
+            address: Address(pallas::Base::from_u64(3)),
+            global_counters: vec![Some(ReadWrite::Read(
+                // Fails because when address changes, the op needs to be write
+                GlobalCounter(20),
+                Value(pallas::Base::from_u64(32)),
+                Some(Value(pallas::Base::from_u64(0))), // intentionally different storage key as the last one in the previous ops to have two conditions met
+                Some(Value(pallas::Base::from_u64(0))),
             ))],
         };
 
         const MEMORY_ROWS_MAX: usize = 2;
+        const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit!(
             14,
             2000,
             MEMORY_ROWS_MAX,
             1000,
-            3,
+            STORAGE_ROWS_MAX,
             1023,
+            1000,
             vec![],
             vec![stack_op_0],
-            Err(vec![constraint_not_satisfied(
-                MEMORY_ROWS_MAX,
-                3,
-                "First stack row operation",
-                0
-            )])
+            vec![storage_op_0, storage_op_1],
+            Err(vec![
+                constraint_not_satisfied(MEMORY_ROWS_MAX, 3, "First stack row operation", 0),
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX,
+                    6,
+                    "First storage row operation",
+                    0
+                ),
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
+                    7,
+                    "Storage operation",
+                    1
+                ),
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
+                    7,
+                    "Storage operation",
+                    0
+                ),
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
+                    7,
+                    "Storage operation",
+                    1
+                ),
+            ])
         );
     }
 
@@ -1330,14 +1741,20 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(GLOBAL_COUNTER_MAX),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Write(
                     GlobalCounter(GLOBAL_COUNTER_MAX + 1), // this global counter value is not in the allowed range
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1348,10 +1765,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1362,10 +1783,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1376,10 +1801,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Write(
                     GlobalCounter(GLOBAL_COUNTER_MAX + 1),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1388,6 +1817,7 @@ mod tests {
         // fail because of the address they would have - the address of the last unused row)
         const MEMORY_ROWS_MAX: usize = 7;
         const STACK_ROWS_MAX: usize = 7;
+        const STORAGE_ROWS_MAX: usize = 7;
         const GLOBAL_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
@@ -1399,8 +1829,10 @@ mod tests {
             MEMORY_ADDRESS_MAX,
             STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0, stack_op_1],
+            vec![],
             Err(vec![
                 lookup_fail(4, 3),
                 lookup_fail(5, 3),
@@ -1421,6 +1853,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(12),
                 Value(pallas::Base::from_u64(12)),
+                None,
+                None,
             ))],
         };
 
@@ -1430,10 +1864,14 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1442,6 +1880,7 @@ mod tests {
         // fail because of the address they would have - the address of the last unused row)
         const MEMORY_ROWS_MAX: usize = 2;
         const STACK_ROWS_MAX: usize = 2;
+        const STORAGE_ROWS_MAX: usize = 2;
         const GLOBAL_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
@@ -1453,8 +1892,10 @@ mod tests {
             MEMORY_ADDRESS_MAX,
             STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
             vec![memory_op_0],
             vec![stack_op_0],
+            vec![],
             Err(vec![
                 lookup_fail(0, 3),
                 lookup_fail(1, 3),
@@ -1472,14 +1913,20 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(1352),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(1255),
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(1255), // fails because it needs to be strictly monotone
                     Value(pallas::Base::from_u64(12)),
+                    None,
+                    None,
                 )),
             ],
         };
@@ -1490,33 +1937,85 @@ mod tests {
                 Some(ReadWrite::Write(
                     GlobalCounter(228),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(217),
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(217), // fails because it needs to be strictly monotone
                     Value(pallas::Base::from_u64(32)),
+                    None,
+                    None,
                 )),
             ],
         };
 
+        let storage_op_0 = Op {
+            address: Address(pallas::Base::one()),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(301),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(302),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(302), // fails because the address and storage key are the same as in the previous row
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+                Some(ReadWrite::Write(
+                    GlobalCounter(297),
+                    // global counter goes down, but it doesn't fail because the storage key is not the same as in the previous row
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(1))),
+                    Some(Value(pallas::Base::from_u64(32))),
+                )),
+            ],
+        };
+
+        let storage_op_1 = Op {
+            address: Address(pallas::Base::from_u64(2_u64)),
+            global_counters: vec![Some(ReadWrite::Write(
+                GlobalCounter(296),
+                // global counter goes down, but it doesn't fail because the address is not the same as in the previous row (while the storage key is)
+                Value(pallas::Base::from_u64(32)),
+                Some(Value(pallas::Base::from_u64(1))),
+                Some(Value(pallas::Base::from_u64(0))),
+            ))],
+        };
+
         const MEMORY_ROWS_MAX: usize = 100;
+        const STACK_ROWS_MAX: usize = 100;
         test_state_circuit!(
             15,
             10000,
             MEMORY_ROWS_MAX,
             10000,
-            100,
+            STACK_ROWS_MAX,
             1023,
+            1000,
             vec![memory_op_0],
             vec![stack_op_0],
+            vec![storage_op_0, storage_op_1],
             Err(vec![
                 lookup_fail(2, 2),
                 lookup_fail(3, 2),
                 lookup_fail(MEMORY_ROWS_MAX + 1, 2),
                 lookup_fail(MEMORY_ROWS_MAX + 2, 2),
+                lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 8),
             ])
         );
     }
@@ -1528,6 +2027,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(1352),
                 Value(pallas::Base::from_u64(12)),
+                None,
+                None,
             ))],
         };
 
@@ -1536,6 +2037,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(42),
                 Value(pallas::Base::from_u64(12)),
+                None,
+                None,
             ))],
         };
 
@@ -1544,6 +2047,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(135),
                 Value(pallas::Base::from_u64(12)),
+                None,
+                None,
             ))],
         };
 
@@ -1552,6 +2057,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(228),
                 Value(pallas::Base::from_u64(32)),
+                None,
+                None,
             ))],
         };
         let stack_op_1 = Op {
@@ -1559,6 +2066,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(229),
                 Value(pallas::Base::from_u64(32)),
+                None,
+                None,
             ))],
         };
         let stack_op_2 = Op {
@@ -1566,6 +2075,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(230),
                 Value(pallas::Base::from_u64(32)),
+                None,
+                None,
             ))],
         };
 
@@ -1577,8 +2088,10 @@ mod tests {
             10000,
             10,
             1023,
+            1000,
             vec![memory_op_0, memory_op_1, memory_op_2],
             vec![stack_op_0, stack_op_1, stack_op_2],
+            vec![],
             Err(vec![lookup_fail(4, 0), lookup_fail(MEMORY_ROWS_MAX + 2, 0)])
         );
     }
@@ -1590,6 +2103,8 @@ mod tests {
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(1352),
                 Value(pallas::Base::from_u64(256)),
+                None,
+                None,
             ))],
         };
 
@@ -1601,9 +2116,67 @@ mod tests {
             10000,
             100,
             1023,
+            1000,
             vec![memory_op_0],
             vec![],
+            vec![],
             Err(vec![lookup_fail(1, 6),])
+        );
+    }
+
+    #[test]
+    fn storage() {
+        let storage_op_0 = Op {
+            address: Address(pallas::Base::from_u64(2)),
+            global_counters: vec![
+                Some(ReadWrite::Write(
+                    GlobalCounter(18),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))),
+                )),
+                Some(ReadWrite::Read(
+                    GlobalCounter(19),
+                    Value(pallas::Base::from_u64(33)), // fails because not the same value
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(3))), // this will cause fail in the next row
+                )),
+                Some(ReadWrite::Write(
+                    GlobalCounter(20),
+                    Value(pallas::Base::from_u64(32)),
+                    Some(Value(pallas::Base::from_u64(0))),
+                    Some(Value(pallas::Base::from_u64(0))), // fails because not the same as in the previous row
+                )),
+            ],
+        };
+
+        const MEMORY_ROWS_MAX: usize = 2;
+        const STORAGE_ROWS_MAX: usize = 2;
+        test_state_circuit!(
+            14,
+            2000,
+            MEMORY_ROWS_MAX,
+            1000,
+            STORAGE_ROWS_MAX,
+            1023,
+            1000,
+            vec![],
+            vec![],
+            vec![storage_op_0],
+            Err(vec![
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
+                    7,
+                    "Storage operation",
+                    3
+                ),
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
+                    7,
+                    "Storage operation",
+                    4
+                ),
+            ])
         );
     }
 }
