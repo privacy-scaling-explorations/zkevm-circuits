@@ -46,7 +46,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     // Generates the trace setting the propper GC's and BusMappings for each step.
     pub fn new(mut entries: Vec<ExecutionStep>, block_ctants: BlockConstants<F>) -> Self {
         let mut container = OperationContainer::new();
-        let mut gc_counter = 0usize;
+        let mut gc = 0usize;
 
         entries.iter_mut().for_each(|exec_step| {
             exec_step.set_gc(gc_counter);
