@@ -165,7 +165,7 @@ mod trace_tests {
             StackOp::new(
                 RW::WRITE,
                 GlobalCounter(1usize),
-                StackAddress::from(1024),
+                StackAddress::from(1023),
                 EvmWord(BigUint::from(0x40u8)),
             ),
         );
@@ -188,7 +188,7 @@ mod trace_tests {
             StackOp::new(
                 RW::WRITE,
                 GlobalCounter(3usize),
-                StackAddress::from(1023),
+                StackAddress::from(1022),
                 EvmWord(BigUint::from(0x80u8)),
             ),
         );

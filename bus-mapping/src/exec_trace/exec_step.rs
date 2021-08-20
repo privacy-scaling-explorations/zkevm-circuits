@@ -54,8 +54,9 @@ impl ExecutionStep {
     }
 
     pub fn stack_addr(&self) -> StackAddress {
-        // First allocation slot for us in the stack is 1024.
-        StackAddress::from(1025 - self.stack.len())
+        // Stack has 1024 slots.
+        // First allocation slot for us in the stack is 1023.
+        StackAddress::from(1024 - self.stack.len())
     }
 
     pub fn memory_addr(&self) -> &MemoryAddress {
