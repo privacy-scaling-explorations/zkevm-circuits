@@ -181,8 +181,6 @@ impl OpcodeId {
     pub const ADDRESS: OpcodeId = OpcodeId(0x30);
     /// `BALANCE`
     pub const BALANCE: OpcodeId = OpcodeId(0x31);
-    /// `SELFBALANCE`
-    pub const SELFBALANCE: OpcodeId = OpcodeId(0x47);
     /// `ORIGIN`
     pub const ORIGIN: OpcodeId = OpcodeId(0x32);
     /// `CALLER`
@@ -213,6 +211,12 @@ impl OpcodeId {
     pub const DIFFICULTY: OpcodeId = OpcodeId(0x44);
     /// `GASLIMIT`
     pub const GASLIMIT: OpcodeId = OpcodeId(0x45);
+    /// `CHAINID`
+    pub const CHAINID: OpcodeId = OpcodeId(0x46);
+    /// `SELFBALANCE`
+    pub const SELFBALANCE: OpcodeId = OpcodeId(0x47);
+    /// `BASEFEE`
+    pub const BASEFEE: OpcodeId = OpcodeId(0x48);
     /// `SLOAD`
     pub const SLOAD: OpcodeId = OpcodeId(0x54);
     /// `SSTORE`
@@ -239,8 +243,6 @@ impl OpcodeId {
     pub const STATICCALL: OpcodeId = OpcodeId(0xfa);
     /// `SUICIDE`
     pub const SUICIDE: OpcodeId = OpcodeId(0xff);
-    /// `CHAINID`
-    pub const CHAINID: OpcodeId = OpcodeId(0x46);
 }
 
 impl OpcodeId {

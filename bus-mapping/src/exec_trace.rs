@@ -15,6 +15,7 @@ pub(crate) struct BlockConstants<F: FieldExt> {
     difficulty: F,
     gaslimit: F,
     chain_id: F,
+    base_fee: F,
 }
 
 /// Doc
@@ -126,6 +127,7 @@ mod trace_tests {
             difficulty: pasta_curves::Fp::zero(),
             gaslimit: pasta_curves::Fp::zero(),
             chain_id: pasta_curves::Fp::zero(),
+            base_fee: pasta_curves::Fp::zero(),
         };
 
         // Generate the expected ExecutionTrace corresponding to the JSON provided above.
