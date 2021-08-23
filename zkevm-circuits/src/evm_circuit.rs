@@ -2,121 +2,233 @@
 
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{Cell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression},
+    circuit::{self, Layouter, Region},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use std::{collections::HashSet, convert::TryInto, iter::FromIterator};
+use std::convert::TryInto;
 
-// immutable
-enum InterpreterContextKey {
-    // global counter at the end of call, used for locating reverting section
+mod op_execution;
+use op_execution::{OpExecutionGadget, OpExecutionState};
+
+#[derive(Clone, Debug)]
+enum CallField {
+    // Transaction id.
+    TxId,
+    // Global counter at the begin of call.
+    GlobalCounterBegin,
+    // Global counter at the end of call, used for locating reverting section.
     GlobalCounterEnd,
-    // caller’s unique identifier
+    // Caller’s unique identifier.
     CallerID,
-    // offset of calldata
+    // Offset of calldata.
     CalldataOffset,
-    // size of calldata
+    // Size of calldata.
     CalldataSize,
-    // address of tx sender (EOA address)
-    TxOrigin,
-    // gas price of tx
-    GasPrice,
-    // depth of call, should ∈ [0,1024]
+    // Depth of call, should be expected in range 0..=1024.
     Depth,
-    // address of caller
+    // Address of caller.
     CallerAddress,
-    // address of code which interpreter is executing, could differ from `address` when delegate call
+    // Address of code which interpreter is executing, could differ from
+    // `ReceiverAddress` when delegate call.
     CodeAddress,
-    // address of receiver
-    Address,
-    // gas given of call
+    // Address of receiver.
+    ReceiverAddress,
+    // Gas given of call.
     GasAvailable,
-    // value in wei of call
+    // Value in wei of call.
     Value,
-    // if call succeeds or not in the future
+    // If call succeeds or not in the future.
     IsPersistant,
-    // if call is within a static call
+    // If call is within a static call.
     IsStatic,
-    // more would be needed like:
-    // GasBaseFee,
+    // If call is `CREATE*`. We lookup op from calldata when is create,
+    // otherwise we lookup code under address.
+    IsCreate,
 }
 
-// mutable
-enum InterpreterStateKey {
-    // global counter
-    GlobalCounter,
-    // program counter
+#[derive(Clone, Debug)]
+enum CallStateField {
+    // Program counter.
     ProgramCounter,
-    // stack pointer
+    // Stack pointer.
     StackPointer,
-    // memory size
+    // Memory size.
     MemeorySize,
-    // if call is `CREATE*`, if true we lookup op from calldata, otherwise we lookup code under address
-    IsCreate,
-    // gas counter
+    // Gas counter.
     GasCounter,
-    // state trie write counter
+    // State trie write counter.
     StateWriteCounter,
-    // number of slot to continue the same op for
-    SlotTodo,
-    // last callee's unique identifier
+    // Last callee's unique identifier.
     CalleeID,
-    // offset of returndata
+    // Offset of returndata.
     ReturndataOffset,
-    // size of returndata
+    // Size of returndata.
     ReturndataSize,
 }
 
+#[derive(Clone, Debug)]
 enum BusMappingLookup<F> {
-    InterpreterContext {
-        key: InterpreterContextKey,
-        value: Expression<F>,
-    },
-    InterpreterState {
-        key: InterpreterStateKey,
+    // Read-Write
+    OpExecutionState {
+        field: CallStateField,
         value: Expression<F>,
         is_write: bool,
     },
     Stack {
-        // one can access its own stack, so id is no needed to be specify
-        // stack index is always deterministic respect to stack pointer, so an
-        // index offset is enough
+        // One can only access its own stack, so id is no needed to be
+        // specified. Stack index is always deterministic respect to
+        // stack pointer, so an index offset is enough.
         index_offset: i32,
         value: Expression<F>,
         is_write: bool,
     },
     Memory {
-        // some op like CALLDATALOAD can peek caller's memeory, so we allow it
-        // to specify the id.
+        // Some ops like CALLDATALOAD can peek caller's memeory as calldata, so
+        // we allow it to specify the id.
         id: Expression<F>,
         index: Expression<F>,
         value: Expression<F>,
         is_write: bool,
     },
-    Storage {
+    AccountStorage {
         address: Expression<F>,
         location: Expression<F>,
         value: Expression<F>,
         is_write: bool,
     },
-    // more would be needed like:
-    // Code,
-    // Block,
-    // Tx,
-    // TxCalldata,
-    // AccountNonce,
-    // AccountBalance,
-    // AccountCodeHash,
-    // AccountStorageRoot,
+    // TODO: AccountNonce,
+    // TODO: AccountBalance,
+    // TODO: AccountCodeHash,
+
+    // Read-Only
+    Call {
+        field: CallField,
+        value: Expression<F>,
+    },
+    /* TODO: Block,
+     * TODO: Bytecode,
+     * TODO: Tx,
+     * TODO: TxCalldata, */
 }
 
+#[derive(Clone, Debug)]
 enum Lookup<F> {
     RangeLookup(/* usize, Expression<F> */),
     BusMappingLookup(BusMappingLookup<F>),
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
+struct Constraint<F> {
+    name: &'static str,
+    selector: Expression<F>,
+    linear_combinations: Vec<Expression<F>>,
+    lookups: Vec<Lookup<F>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Cell<F> {
+    // expression for constraint
+    expression: Expression<F>,
+    // relative position to selector for synthesis
+    column: Column<Advice>,
+    offset: usize,
+}
+
+impl<F: FieldExt> Cell<F> {
+    fn exp(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+
+    fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: Option<F>,
+    ) -> Result<circuit::Cell, Error> {
+        region.assign_advice(
+            || {
+                format!(
+                    "Cell {{ column: {:?}, offset: {}}}",
+                    self.column, self.offset
+                )
+            },
+            self.column,
+            offset + self.offset,
+            || value.ok_or(Error::SynthesisError),
+        )
+    }
+}
+
+// TODO: Integrate with evm_word
+#[derive(Clone, Debug)]
+struct Word<F> {
+    // random linear combination exp for configuration
+    expression: Expression<F>,
+    // inner cells for syntesis
+    cells: [Cell<F>; 32],
+}
+
+impl<F: FieldExt> Word<F> {
+    fn encode(cells: &[Cell<F>], r: F) -> Self {
+        let r = Expression::Constant(r);
+        Self {
+            expression: cells
+                .iter()
+                .rev()
+                .fold(Expression::Constant(F::zero()), |acc, byte| {
+                    acc * r.clone() + byte.exp()
+                }),
+            cells: cells.to_owned().try_into().unwrap(),
+        }
+    }
+
+    fn exp(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+
+    fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        word: Option<[u8; 32]>,
+    ) -> Result<Vec<circuit::Cell>, Error> {
+        word.map_or(Err(Error::SynthesisError), |word| {
+            self.cells
+                .iter()
+                .zip(word.iter())
+                .map(|(cell, byte)| {
+                    cell.assign(region, offset, Some(F::from_u64(*byte as u64)))
+                })
+                .collect()
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct OpExecutionStateInstance {
+    is_executing: bool,
+    global_counter: usize,
+    call_id: usize,
+    program_counter: usize,
+    stack_pointer: usize,
+    gas_counter: usize,
+}
+
+impl OpExecutionStateInstance {
+    fn new(call_id: usize) -> Self {
+        OpExecutionStateInstance {
+            is_executing: false,
+            global_counter: 0,
+            call_id,
+            program_counter: 0,
+            stack_pointer: 1024,
+            gas_counter: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Case {
     Success,
     // out of gas
@@ -133,333 +245,192 @@ enum Case {
     MaxCodeSizeExceeded,
     // invalid jump destination
     InvalidJump,
-    // is_write protection
+    // static call protection
     WriteProtection,
     // return data out of bound
     ReturnDataOutOfBounds,
     // contract must not begin with 0xef due to EOF
     InvalidBeginningCode,
     // stack underflow
-    StackUnderflow(usize),
+    StackUnderflow,
     // stack overflow
-    StackOverflow(usize),
+    StackOverflow,
     // invalid opcode
     InvalidCode,
 }
 
-struct ExecutionResult<F> {
+// TODO: use ExecutionStep from bus_mapping
+pub(crate) struct ExecutionStep {
+    opcode: u8,
     case: Case,
-    linear_constraints: Vec<Expression<F>>,
-    lookups: Vec<Lookup<F>>,
+    values: Vec<[u8; 32]>,
 }
 
-#[derive(Clone, Debug)]
-struct Allocation<F> {
-    // expression for configuration
-    exp: Expression<F>,
-    // relative position to selector for synthesis
-    column: Column<Advice>,
-    offset: usize,
-}
-
-impl<F: FieldExt> Allocation<F> {
-    fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        value: Option<F>,
-    ) -> Result<Cell, Error> {
-        region.assign_advice(
-            || format!("assign allocation {:?}", self.column),
-            self.column,
-            offset + self.offset,
-            || value.ok_or(Error::SynthesisError),
-        )
-    }
-}
-
-// TODO: Integrate with evm_word
-#[derive(Clone, Debug)]
-struct Word<F> {
-    // random linear combination exp for configuration
-    exp: Expression<F>,
-    // inner allocations for syntesis
-    allocs: [Allocation<F>; 32],
-}
-
-impl<F: FieldExt> Word<F> {
-    fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        /* value: [Option<u8>; 32] or U256 */
-    ) -> Result<Cell, Error> {
-        Err(Error::SynthesisError)
-    }
-}
-
-struct InterpreterState<F> {
-    // unique id for each interpreter, could be the global counter of the call beginning
-    id: Expression<F>,
-    global_counter: Expression<F>,
-    program_counter: Expression<F>,
-    stack_pointer: Expression<F>,
-    gas_counter: Expression<F>,
-    memory_size: Expression<F>,
-}
-
-struct InterpreterStateInstance {
-    id: usize,
-    global_counter: usize,
-    program_counter: usize,
-    stack_pointer: usize,
-    gas_counter: u64,
-    memory_size: usize,
-}
-
-trait OpGadget<F: FieldExt> {
-    fn cases() -> HashSet<Case>;
-
-    fn construct(words: &[Word<F>], all: &[Allocation<F>]) -> Self;
-
-    fn constraints(
-        &self,
-        interpreter_state_curr: &InterpreterState<F>,
-        interpreter_state_next: &InterpreterState<F>,
-    ) -> Vec<ExecutionResult<F>>;
-
-    fn transit(&self, interpreter_state: &mut InterpreterStateInstance);
-
-    fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        /* TODO: execution_result: ExecutionResultInstance */
-    );
-
-    // TODO: figure out how the parsing api would be like
-}
-
-struct AddGadget<F> {
-    success: (Word<F>, Word<F>, Word<F>, [Allocation<F>; 32]),
-    out_of_gas: (Allocation<F>, Allocation<F>),
-}
-
-impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
-    fn cases() -> HashSet<Case> {
-        HashSet::from_iter([Case::Success, Case::OutOfGas, Case::StackUnderflow(2)])
-    }
-
-    fn construct(words: &[Word<F>], all: &[Allocation<F>]) -> Self {
-        Self {
-            success: (
-                words[0].clone(),
-                words[1].clone(),
-                words[2].clone(),
-                all[96..128].to_owned().try_into().unwrap(),
-            ),
-            out_of_gas: (all[0].clone(), all[1].clone()),
-        }
-    }
-
-    fn constraints(
-        &self,
-        interpreter_state_curr: &InterpreterState<F>,
-        interpreter_state_next: &InterpreterState<F>,
-    ) -> Vec<ExecutionResult<F>> {
-        let success = {
-            let exp_256 = Expression::Constant(F::from_u64(1 << 8));
-
-            // interpreter state transition constraints
-            let interpreter_state_transition_constraints = vec![
-                interpreter_state_next.global_counter.clone()
-                    - (interpreter_state_curr.global_counter.clone()
-                        + Expression::Constant(F::from_u64(3))),
-                interpreter_state_next.stack_pointer.clone()
-                    - (interpreter_state_curr.stack_pointer.clone()
-                        + Expression::Constant(F::from_u64(1))),
-                interpreter_state_next.program_counter.clone()
-                    - (interpreter_state_curr.program_counter.clone()
-                        + Expression::Constant(F::from_u64(1))),
-                interpreter_state_next.gas_counter.clone()
-                    - (interpreter_state_curr.gas_counter.clone()
-                        + Expression::Constant(F::from_u64(3))),
-            ];
-
-            let (a, b, c, carry) = &self.success;
-            // add constraints
-            let mut add_constraints = vec![
-                (carry[0].exp.clone() * exp_256.clone() + c.exp.clone())
-                    - (a.allocs[0].exp.clone() + b.allocs[0].exp.clone()),
-            ];
-            for idx in 1..32 {
-                add_constraints.push(
-                    (carry[idx].exp.clone() * exp_256.clone() + c.exp.clone())
-                        - (a.allocs[idx].exp.clone()
-                            + b.allocs[idx].exp.clone()
-                            + carry[idx - 1].exp.clone()),
-                )
-            }
-
-            ExecutionResult {
-                case: Case::Success,
-                linear_constraints: [interpreter_state_transition_constraints, add_constraints]
-                    .concat(),
-                lookups: vec![
-                    Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                        index_offset: 1,
-                        value: a.exp.clone(),
-                        is_write: false,
-                    }),
-                    Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                        index_offset: 2,
-                        value: b.exp.clone(),
-                        is_write: false,
-                    }),
-                    Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                        index_offset: 1,
-                        value: c.exp.clone(),
-                        is_write: true,
-                    }),
-                ],
-            }
-        };
-
-        let out_of_gas = {
-            let (one, two, three) = (
-                Expression::Constant(F::from_u64(1)),
-                Expression::Constant(F::from_u64(2)),
-                Expression::Constant(F::from_u64(3)),
-            );
-            let (gas_available, gas_overdemand) = &self.out_of_gas;
-            ExecutionResult {
-                case: Case::OutOfGas,
-                linear_constraints: vec![
-                    interpreter_state_curr.gas_counter.clone() + three.clone()
-                        - (gas_available.exp.clone() + gas_overdemand.exp.clone()),
-                    (gas_overdemand.exp.clone() - one)
-                        * (gas_overdemand.exp.clone() - two)
-                        * (gas_overdemand.exp.clone() - three),
-                ],
-                lookups: vec![Lookup::BusMappingLookup(
-                    BusMappingLookup::InterpreterContext {
-                        key: InterpreterContextKey::GasAvailable,
-                        value: gas_available.exp.clone(),
-                    },
-                )],
-            }
-        };
-
-        vec![success, out_of_gas]
-    }
-
-    fn transit(&self, interpreter_state: &mut InterpreterStateInstance) {
-        interpreter_state.global_counter += 3;
-        interpreter_state.program_counter += 1;
-        interpreter_state.stack_pointer += 1;
-        interpreter_state.gas_counter += 3;
-    }
-
-    fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        /* TODO: execution_result: ExecutionResultInstance */
-    ) {
-    }
-}
-
+#[derive(Clone)]
 struct EvmCircuit<F> {
-    add_gadget: AddGadget<F>,
+    selector: Selector,
+    op_execution_gadget: OpExecutionGadget<F>,
 }
 
 impl<F: FieldExt> EvmCircuit<F> {
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        // TODO: figure out how many min cells required
-        let min_cells_required = 320;
-        let width = 32;
-        let height = min_cells_required / width + (min_cells_required % width != 0) as usize;
+    // FIXME: naive estimation, should be optmize to fit in the future
+    const WIDTH: usize = 32;
+    const HEIGHT: usize = 8;
 
-        let columns = (0..width).map(|_| meta.advice_column()).collect::<Vec<_>>();
-        let mut allocations = Vec::with_capacity(width * height);
-        meta.create_gate("allocations", |meta| {
-            for w in 0..width {
-                for h in 0..height as i32 {
-                    allocations.push(meta.query_advice(columns[w], Rotation(h)));
+    fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+        let selector = meta.selector();
+        let columns = (0..Self::WIDTH)
+            .map(|_| meta.advice_column())
+            .collect::<Vec<_>>();
+
+        let mut selector_exp = Expression::Constant(F::zero());
+        let mut cells = Vec::with_capacity(Self::WIDTH * Self::HEIGHT);
+        meta.create_gate("Query cells for current step", |meta| {
+            selector_exp = meta.query_selector(selector);
+
+            for h in 0..Self::HEIGHT as i32 {
+                for &column in columns.iter() {
+                    cells.push(Cell {
+                        expression: meta.query_advice(column, Rotation(h)),
+                        column,
+                        offset: h as usize,
+                    });
                 }
             }
+
             vec![Expression::Constant(F::zero())]
         });
 
-        // TODO: allocate op switch
-        // TODO: allocate case switch
-        // TODO: allocate ? word
-        // TODO: handle common error like StackUnderflow or StackOverflow
+        let (op_execution_state_curr_cells, free_cells) =
+            cells.split_at(OpExecutionState::<F>::SIZE);
 
-        let add_gadget = AddGadget::construct(&[], &[]);
+        let op_execution_state_next_cells =
+            &mut op_execution_state_curr_cells.to_vec()[..];
+        meta.create_gate("Query cells for next step", |meta| {
+            for cell in op_execution_state_next_cells.iter_mut() {
+                cell.expression = meta.query_advice(
+                    cell.column,
+                    Rotation((cell.offset + Self::HEIGHT) as i32),
+                );
+            }
 
-        EvmCircuit { add_gadget }
+            vec![Expression::Constant(F::zero())]
+        });
+
+        let op_execution_state_curr =
+            OpExecutionState::new(op_execution_state_curr_cells);
+        let op_execution_state_next =
+            OpExecutionState::new(op_execution_state_next_cells);
+
+        let op_execution_gadget = OpExecutionGadget::configure(
+            meta,
+            selector_exp,
+            op_execution_state_curr,
+            op_execution_state_next,
+            free_cells,
+            r,
+        );
+
+        // TODO: call_initialization_gadget
+
+        // TODO: handle lookups
+
+        EvmCircuit {
+            selector,
+            op_execution_gadget,
+        }
     }
 
     fn assign(
         &self,
         mut layouter: impl Layouter<F>,
-        /* TODO: execution_results: Vec<ExecutionResultInstance> */
+        execution_steps: &[ExecutionStep],
     ) -> Result<(), Error> {
-        // for execution_result in execution_results {
-        //     self.opcode_gadgets[0]
-        // }
-        Ok(())
+        layouter.assign_region(
+            || "evm circuit",
+            |mut region| {
+                let mut op_execution_state = OpExecutionStateInstance::new(0);
+
+                // TODO: call_initialization should maintain this
+                op_execution_state.is_executing = true;
+
+                for (idx, execution_step) in execution_steps.iter().enumerate()
+                {
+                    let offset = idx * Self::HEIGHT;
+
+                    self.selector.enable(&mut region, offset)?;
+
+                    self.op_execution_gadget.assign_execution_step(
+                        &mut region,
+                        offset,
+                        &mut op_execution_state,
+                        Some(execution_step),
+                    )?;
+                }
+
+                self.op_execution_gadget.assign_execution_step(
+                    &mut region,
+                    execution_steps.len() * Self::HEIGHT,
+                    &mut op_execution_state,
+                    None,
+                )?;
+
+                Ok(())
+            },
+        )
     }
 }
 
-// DISCUSSION:
-// 1. How would ExecutionResultInstance be like? (it should be parse from the output of zkevm-test-vector)
-// enum BusMappingInstance {
-//     InterpreterContext {
-//         key: InterpreterContextKey,
-//         value: [u8; 32], /* U256 or Word */
-//     },
-//     InterpreterState {
-//         key: InterpreterStateKey,
-//         value: [u8; 32], /* U256 or Word */
-//         is_write: bool,
-//     },
-//     Stack {
-//         index: usize,
-//         value: [u8; 32], /* U256 or Word */
-//         is_write: bool,
-//     },
-//     MemoryWord {
-//         id: usize,
-//         index: usize,
-//         value: Vec<u8>,
-//         is_write: bool,
-//     },
-//     MemoryByte {
-//         id: usize,
-//         index: usize,
-//         value: u8,
-//         is_write: bool,
-//     },
-//     Storage {
-//         address: [u8; 20],  /* U160 or Address */
-//         location: [u8; 32], /* U160 or Address */
-//         value: [u8; 32],    /* U256 or Word */
-//         is_write: bool,
-//     },
-//     // Code,
-//     // Block,
-//     // Tx,
-//     // TxCalldata,
-//     // AccountNonce,
-//     // AccountBalance,
-//     // AccountCodeHash,
-//     // AccountStorageRoot,
-// }
+#[cfg(test)]
+mod test {
+    use super::{EvmCircuit, ExecutionStep};
+    use halo2::{
+        arithmetic::FieldExt,
+        circuit::{Layouter, SimpleFloorPlanner},
+        plonk::{Circuit, ConstraintSystem, Error},
+    };
+    use std::marker::PhantomData;
 
-// struct ExecutionResultInstance {
-//     opcode: u8,
-//     case: Case,
-//     bas_mappings: Vec<BusMappingInstance>,
-// }
+    #[derive(Clone)]
+    pub(crate) struct TestCircuitConfig<F> {
+        evm_circuit: EvmCircuit<F>,
+    }
+
+    #[derive(Default)]
+    pub(crate) struct TestCircuit<F> {
+        execution_steps: Vec<ExecutionStep>,
+        _marker: PhantomData<F>,
+    }
+
+    impl<F> TestCircuit<F> {
+        pub(crate) fn new(execution_steps: Vec<ExecutionStep>) -> Self {
+            Self {
+                execution_steps,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        type Config = TestCircuitConfig<F>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            Self::Config {
+                evm_circuit: EvmCircuit::configure(meta, F::one()),
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.evm_circuit.assign(layouter, &self.execution_steps)
+        }
+    }
+}
