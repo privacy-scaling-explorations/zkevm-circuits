@@ -1,5 +1,5 @@
 //! An EVM word (256 bits) is represented as a linear combination of 32 bytes:
-//!         encode(word) = b_0 + r * b_1 + ... + r^{31} * b_{31},
+//! `encode(word) = b_0 + r * b_1 + ... + r^{31} * b_{31}`,
 //! where `word` is a 256-bit word, b_i's are bytes, and `r` is a random factor.
 //! This helper returns an expression of `encode(word)`.
 //!

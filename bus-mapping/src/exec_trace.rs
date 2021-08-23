@@ -238,15 +238,16 @@ mod trace_tests {
         };
 
         // Obtained trace computation
-        let trace_loaded = serde_json::from_str::<
-            Vec<ParsedExecutionStep>,
-        >(input_trace)
-        .expect("Error on parsing")
-        .iter()
-        .enumerate()
-        .map(|(idx, step)| ExecutionStep::try_from((step, GlobalCounter(idx))))
-        .collect::<Result<Vec<ExecutionStep>, Error>>()
-        .expect("Error on conversion");
+        let trace_loaded =
+            serde_json::from_str::<Vec<ParsedExecutionStep>>(input_trace)
+                .expect("Error on parsing")
+                .iter()
+                .enumerate()
+                .map(|(idx, step)| {
+                    ExecutionStep::try_from((step, GlobalCounter(idx)))
+                })
+                .collect::<Result<Vec<ExecutionStep>, Error>>()
+                .expect("Error on conversion");
 
         let obtained_exec_trace =
             ExecutionTrace::new(trace_loaded, block_ctants);
