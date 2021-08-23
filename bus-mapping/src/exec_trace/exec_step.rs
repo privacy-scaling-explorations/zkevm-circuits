@@ -3,16 +3,14 @@
 use crate::evm::{
     EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter, StackAddress, MEM_ADDR_ZERO,
 };
-use crate::{
-    error::Error,
-    evm::opcodes::Opcode,
-    operation::{bus_mapping::BusMappingInstance, container::OperationContainer},
-};
+use crate::{error::Error, evm::opcodes::Opcode, operation::container::OperationContainer};
 use alloc::collections::BTreeMap;
 use core::{convert::TryFrom, str::FromStr};
 use halo2::arithmetic::FieldExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use super::OperationRef;
 
 /// Doc
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,7 +21,7 @@ pub(crate) struct ExecutionStep {
     pc: ProgramCounter,
     gc: GlobalCounter,
     // Holds refs to the container with the related mem ops.
-    bus_mapping_instances: BusMappingInstance,
+    bus_mapping_instances: Vec<OperationRef>,
 }
 
 impl ExecutionStep {
@@ -41,7 +39,7 @@ impl ExecutionStep {
             instruction,
             pc,
             gc,
-            bus_mapping_instances: BusMappingInstance::new(),
+            bus_mapping_instances: Vec::new(),
         }
     }
 
@@ -83,11 +81,11 @@ impl ExecutionStep {
         self.gc = gc.into()
     }
 
-    pub const fn bus_mapping_instances(&self) -> &BusMappingInstance {
+    pub const fn bus_mapping_instances(&self) -> &Vec<OperationRef> {
         &self.bus_mapping_instances
     }
 
-    pub fn bus_mapping_instances_mut(&mut self) -> &mut BusMappingInstance {
+    pub fn bus_mapping_instances_mut(&mut self) -> &mut Vec<OperationRef> {
         &mut self.bus_mapping_instances
     }
 

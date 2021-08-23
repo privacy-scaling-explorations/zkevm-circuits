@@ -68,7 +68,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
         let op_ref = self.container_mut().insert(op);
         self.entries[exec_step_idx]
             .bus_mapping_instances_mut()
-            .insert(op_ref);
+            .push(op_ref);
     }
 }
 
@@ -185,15 +185,14 @@ mod trace_tests {
         );
 
         // Add StackOp associated to this opcode to the container & step.bus_mapping
-        step_1.bus_mapping_instances_mut().register_and_insert(
-            &mut container,
-            StackOp::new(
+        step_1
+            .bus_mapping_instances_mut()
+            .push(container.insert(StackOp::new(
                 RW::WRITE,
                 GlobalCounter(1usize),
                 StackAddress::from(1023),
                 EvmWord(BigUint::from(0x40u8)),
-            ),
-        );
+            )));
 
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
@@ -208,15 +207,14 @@ mod trace_tests {
         );
 
         // Add StackOp associated to this opcode to the container & step.bus_mapping
-        step_2.bus_mapping_instances_mut().register_and_insert(
-            &mut container,
-            StackOp::new(
+        step_2
+            .bus_mapping_instances_mut()
+            .push(container.insert(StackOp::new(
                 RW::WRITE,
                 GlobalCounter(3usize),
                 StackAddress::from(1022),
                 EvmWord(BigUint::from(0x80u8)),
-            ),
-        );
+            )));
         let expected_exec_trace = ExecutionTrace {
             entries: vec![step_1, step_2],
             block_ctants: block_ctants.clone(),

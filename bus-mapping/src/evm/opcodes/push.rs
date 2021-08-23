@@ -30,7 +30,7 @@ impl Opcode for Push1 {
 
         exec_step
             .bus_mapping_instances_mut()
-            .insert(container.insert(op));
+            .push(container.insert(op));
 
         PUSH1_OP_NUM
     }
