@@ -45,15 +45,20 @@ impl<F: FieldExt> ExecutionTrace<F> {
         &mut self.container
     }
 
-    // Generates the trace setting the propper GC's and BusMappings for each step.
-    pub fn new(mut entries: Vec<ExecutionStep>, block_ctants: BlockConstants<F>) -> Self {
+    // Generates the trace setting the propper GC's and BusMappings for each
+    // step.
+    pub fn new(
+        mut entries: Vec<ExecutionStep>,
+        block_ctants: BlockConstants<F>,
+    ) -> Self {
         let mut container = OperationContainer::new();
         let mut gc = 0usize;
 
         entries.iter_mut().for_each(|exec_step| {
             exec_step.set_gc(gc);
             gc += exec_step.gen_associated_ops::<F>(&mut container);
-            // Sum 1 to counter so that we set the next exec_step GC to the correct index
+            // Sum 1 to counter so that we set the next exec_step GC to the
+            // correct index
             gc += 1;
         });
 
@@ -73,7 +78,8 @@ impl<F: FieldExt> ExecutionTrace<F> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// The target and index of an `Operation` in the context of an `ExecutionTrace`.
+/// The target and index of an `Operation` in the context of an
+/// `ExecutionTrace`.
 pub(crate) struct OperationRef(Target, usize);
 
 impl From<(Target, usize)> for OperationRef {
@@ -102,8 +108,8 @@ mod trace_tests {
     use crate::error::Error;
     use crate::{
         evm::{
-            opcodes::ids::OpcodeId, GlobalCounter, Instruction, MemoryAddress, ProgramCounter,
-            StackAddress,
+            opcodes::ids::OpcodeId, GlobalCounter, Instruction, MemoryAddress,
+            ProgramCounter, StackAddress,
         },
         exec_trace::{exec_step::ParsedExecutionStep, ExecutionStep},
         operation::{StackOp, RW},
@@ -155,12 +161,14 @@ mod trace_tests {
             base_fee: pasta_curves::Fp::zero(),
         };
 
-        // Generate the expected ExecutionTrace corresponding to the JSON provided above.
+        // Generate the expected ExecutionTrace corresponding to the JSON
+        // provided above.
 
         // Container is shared across ExecutionSteps
         let mut container = OperationContainer::new();
 
-        // The memory is the same in both steps as none of them touches the memory of the EVM.
+        // The memory is the same in both steps as none of them touches the
+        // memory of the EVM.
         let mut mem_map = BTreeMap::new();
         mem_map.insert(
             MemoryAddress(BigUint::from(0x00u8)),
@@ -179,20 +187,24 @@ mod trace_tests {
         let mut step_1 = ExecutionStep::new(
             mem_map.clone(),
             vec![EvmWord(BigUint::from(0x40u8))],
-            Instruction::new(OpcodeId::PUSH1, Some(EvmWord(BigUint::from(0x40u8)))),
+            Instruction::new(
+                OpcodeId::PUSH1,
+                Some(EvmWord(BigUint::from(0x40u8))),
+            ),
             ProgramCounter::from(0),
             GlobalCounter::from(0),
         );
 
-        // Add StackOp associated to this opcode to the container & step.bus_mapping
-        step_1
-            .bus_mapping_instances_mut()
-            .push(container.insert(StackOp::new(
+        // Add StackOp associated to this opcode to the container &
+        // step.bus_mapping
+        step_1.bus_mapping_instances_mut().push(container.insert(
+            StackOp::new(
                 RW::WRITE,
                 GlobalCounter(1usize),
                 StackAddress::from(1023),
                 EvmWord(BigUint::from(0x40u8)),
-            )));
+            ),
+        ));
 
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
@@ -201,20 +213,24 @@ mod trace_tests {
                 EvmWord(BigUint::from(0x40u8)),
                 EvmWord(BigUint::from(0x80u8)),
             ],
-            Instruction::new(OpcodeId::PUSH1, Some(EvmWord(BigUint::from(0x80u8)))),
+            Instruction::new(
+                OpcodeId::PUSH1,
+                Some(EvmWord(BigUint::from(0x80u8))),
+            ),
             ProgramCounter::from(1),
             GlobalCounter::from(2),
         );
 
-        // Add StackOp associated to this opcode to the container & step.bus_mapping
-        step_2
-            .bus_mapping_instances_mut()
-            .push(container.insert(StackOp::new(
+        // Add StackOp associated to this opcode to the container &
+        // step.bus_mapping
+        step_2.bus_mapping_instances_mut().push(container.insert(
+            StackOp::new(
                 RW::WRITE,
                 GlobalCounter(3usize),
                 StackAddress::from(1022),
                 EvmWord(BigUint::from(0x80u8)),
-            )));
+            ),
+        ));
         let expected_exec_trace = ExecutionTrace {
             entries: vec![step_1, step_2],
             block_ctants: block_ctants.clone(),
@@ -222,16 +238,18 @@ mod trace_tests {
         };
 
         // Obtained trace computation
-        let trace_loaded: Vec<ExecutionStep> =
-            serde_json::from_str::<Vec<ParsedExecutionStep>>(input_trace)
-                .expect("Error on parsing")
-                .iter()
-                .enumerate()
-                .map(|(idx, step)| ExecutionStep::try_from((step, GlobalCounter(idx))))
-                .collect::<Result<Vec<ExecutionStep>, Error>>()
-                .expect("Error on conversion");
+        let trace_loaded: Vec<ExecutionStep> = serde_json::from_str::<
+            Vec<ParsedExecutionStep>,
+        >(input_trace)
+        .expect("Error on parsing")
+        .iter()
+        .enumerate()
+        .map(|(idx, step)| ExecutionStep::try_from((step, GlobalCounter(idx))))
+        .collect::<Result<Vec<ExecutionStep>, Error>>()
+        .expect("Error on conversion");
 
-        let obtained_exec_trace = ExecutionTrace::new(trace_loaded, block_ctants);
+        let obtained_exec_trace =
+            ExecutionTrace::new(trace_loaded, block_ctants);
 
         assert_eq!(obtained_exec_trace, expected_exec_trace)
     }

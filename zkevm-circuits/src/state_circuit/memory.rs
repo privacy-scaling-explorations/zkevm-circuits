@@ -32,9 +32,10 @@ Example bus mapping:
 |  89  |      0      |        1       |      32      |
 */
 
-/// In the state proof, memory operations are ordered first by address, and then by global_counter.
-/// Memory is initialised at 0 for each new address.
-/// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word -> u8.
+/// In the state proof, memory operations are ordered first by address, and then
+/// by global_counter. Memory is initialised at 0 for each new address.
+/// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word ->
+/// u8.
 #[derive(Copy, Clone, Debug)]
 struct MemoryAddress<F: FieldExt>(F);
 
@@ -42,8 +43,8 @@ struct MemoryAddress<F: FieldExt>(F);
 #[derive(Copy, Clone, Debug)]
 struct GlobalCounter(usize);
 
-/// TODO: In the EVM we can only read memory values in 32 bytes, but can write either
-/// single-byte or 32-byte chunks. In zkEVM:
+/// TODO: In the EVM we can only read memory values in 32 bytes, but can write
+/// either single-byte or 32-byte chunks. In zkEVM:
 /// - Are we reading single bytes or 32-byte chunks? TBD
 /// - We are writing a single field element (253 bits)
 #[derive(Copy, Clone, Debug)]
@@ -60,7 +61,9 @@ enum ReadWrite<F: FieldExt> {
 impl<F: FieldExt> ReadWrite<F> {
     fn global_counter(&self) -> GlobalCounter {
         match self {
-            Self::Read(global_counter, _) | Self::Write(global_counter, _) => *global_counter,
+            Self::Read(global_counter, _) | Self::Write(global_counter, _) => {
+                *global_counter
+            }
         }
     }
 
@@ -134,8 +137,10 @@ impl<F: FieldExt> Config<F> {
 
             let value = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let global_counter =
+                meta.query_advice(global_counter, Rotation::cur());
 
+            //
             //      - values[0] == [0]
             //      - flags[0] == 1
             //      - global_counters[0] == 0
@@ -147,11 +152,13 @@ impl<F: FieldExt> Config<F> {
             ]
         });
 
-        // Constraints for each global counter. These are activated when q_memory is nonzero.
+        // Constraints for each global counter. These are activated when
+        // q_memory is nonzero.
         meta.create_gate("Memory operation", |meta| {
             let q_memory = meta.query_fixed(q_memory, Rotation::cur());
 
-            // If address_cur != address_prev, this is an `init`. We must constrain:
+            // If address_cur != address_prev, this is an `init`. We must
+            // constrain:
             //      - values[0] == [0]
             //      - flags[0] == 1
             //      - global_counters[0] == 0
@@ -164,7 +171,8 @@ impl<F: FieldExt> Config<F> {
 
             let value_cur = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let global_counter =
+                meta.query_advice(global_counter, Rotation::cur());
 
             let one = Expression::Constant(F::one());
             let is_not_first_row = q_memory.clone() * (q_memory - one);
@@ -182,23 +190,29 @@ impl<F: FieldExt> Config<F> {
             };
 
             let value_prev = meta.query_advice(value, Rotation::prev());
-            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            // If flag == 0 (read), and global_counter != 0, value_prev ==
+            // value_cur
             let q_read = {
                 let one = Expression::Constant(F::one());
                 one - flag
             };
 
-            // If address_prev == address_cur, global_counter_prev < global_counter_cur
-            // TODO: Figure out how to enforce this. Suggestion: lookup global_counter_cur,
-            // global_counter_prev, and their difference `global_counter_cur - global_counter_prev`
-            // in a table.
+            // If address_prev == address_cur, global_counter_prev <
+            // global_counter_cur TODO: Figure out how to enforce
+            // this. Suggestion: lookup global_counter_cur,
+            // global_counter_prev, and their difference `global_counter_cur -
+            // global_counter_prev` in a table.
 
             // TODO: if address_prev != address_cur, address_prev < address_cur
 
             vec![
                 is_not_first_row.clone() * bool_check_flag,
-                is_not_first_row.clone() * q_memory_init.clone() * value_cur.clone(),
-                is_not_first_row.clone() * q_memory_init.clone() * check_flag_init,
+                is_not_first_row.clone()
+                    * q_memory_init.clone()
+                    * value_cur.clone(),
+                is_not_first_row.clone()
+                    * q_memory_init.clone()
+                    * check_flag_init,
                 is_not_first_row.clone() * q_memory_init * global_counter,
                 is_not_first_row * q_read * (value_cur - value_prev),
             ]
@@ -215,7 +229,10 @@ impl<F: FieldExt> Config<F> {
     }
 
     /// Load lookup table / other fixed constants for this configuration.
-    pub(crate) fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load(
+        &self,
+        _layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
         todo!()
     }
 
@@ -252,8 +269,12 @@ impl<F: FieldExt> Config<F> {
                     offset += 1;
 
                     for global_counter in op.global_counters.iter() {
-                        let bus_mapping =
-                            self.assign_per_counter(&mut region, offset, address, global_counter)?;
+                        let bus_mapping = self.assign_per_counter(
+                            &mut region,
+                            offset,
+                            address,
+                            global_counter,
+                        )?;
 
                         region.assign_fixed(
                             || "Memory selector",
@@ -283,7 +304,12 @@ impl<F: FieldExt> Config<F> {
         address: MemoryAddress<F>,
     ) -> Result<(), Error> {
         // Assign `address`
-        region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
+        region.assign_advice(
+            || "init address",
+            self.address,
+            offset,
+            || Ok(address.0),
+        )?;
 
         // Assign `global_counter`
         region.assign_advice(
@@ -294,10 +320,20 @@ impl<F: FieldExt> Config<F> {
         )?;
 
         // Assign `value`
-        region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "init value",
+            self.value,
+            offset,
+            || Ok(F::zero()),
+        )?;
 
         // Assign memory_flag
-        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
+        region.assign_advice(
+            || "init memory",
+            self.flag,
+            offset,
+            || Ok(F::one()),
+        )?;
 
         Ok(())
     }
@@ -312,8 +348,12 @@ impl<F: FieldExt> Config<F> {
     ) -> Result<BusMapping<F>, Error> {
         // Assign `address`
         let memory_address = {
-            let cell =
-                region.assign_advice(|| "address", self.address, offset, || Ok(address.0))?;
+            let cell = region.assign_advice(
+                || "address",
+                self.address,
+                offset,
+                || Ok(address.0),
+            )?;
             Variable::<F, F> {
                 cell,
                 field_elem: Some(address.0),
@@ -344,7 +384,8 @@ impl<F: FieldExt> Config<F> {
 
         // Assign `value`
         let memory_value = {
-            let value = read_write.as_ref().map(|read_write| read_write.value().0);
+            let value =
+                read_write.as_ref().map(|read_write| read_write.value().0);
             let cell = region.assign_advice(
                 || "value",
                 self.value,
@@ -388,7 +429,9 @@ impl<F: FieldExt> Config<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, GlobalCounter, MemoryAddress, MemoryOp, ReadWrite, Value};
+    use super::{
+        Config, GlobalCounter, MemoryAddress, MemoryOp, ReadWrite, Value,
+    };
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
@@ -462,7 +505,8 @@ mod tests {
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<pallas::Base>::run(5, &circuit, vec![]).unwrap();
+        let prover =
+            MockProver::<pallas::Base>::run(5, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
 }
