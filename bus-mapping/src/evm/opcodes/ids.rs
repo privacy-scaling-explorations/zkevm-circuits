@@ -241,8 +241,8 @@ impl OpcodeId {
     pub const DELEGATECALL: OpcodeId = OpcodeId(0xf4);
     /// `STATICCALL`
     pub const STATICCALL: OpcodeId = OpcodeId(0xfa);
-    /// `SUICIDE`
-    pub const SUICIDE: OpcodeId = OpcodeId(0xff);
+    /// `SELFDESTRUCT`
+    pub const SELFDESTRUCT: OpcodeId = OpcodeId(0xff);
 }
 
 impl OpcodeId {
@@ -402,7 +402,7 @@ impl FromStr for OpcodeId {
             "CALLCODE" => OpcodeId::CALLCODE,
             "DELEGATECALL" => OpcodeId::DELEGATECALL,
             "STATICCALL" => OpcodeId::STATICCALL,
-            "SUICIDE" => OpcodeId::SUICIDE,
+            "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
             _ => return Err(Error::OpcodeParsing),
         })
