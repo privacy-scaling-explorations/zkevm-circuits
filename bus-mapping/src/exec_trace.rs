@@ -1,5 +1,6 @@
 pub(crate) mod exec_step;
 use crate::evm::EvmWord;
+use crate::operation::Target;
 use crate::operation::{container::OperationContainer, Operation};
 use core::ops::{Index, IndexMut};
 pub(crate) use exec_step::ExecutionStep;
@@ -68,6 +69,30 @@ impl<F: FieldExt> ExecutionTrace<F> {
         self.entries[exec_step_idx]
             .bus_mapping_instances_mut()
             .insert(op_ref);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The target and index of an `Operation` in the context of an `ExecutionTrace`.
+pub(crate) struct OperationRef(Target, usize);
+
+impl From<(Target, usize)> for OperationRef {
+    fn from(op_ref_data: (Target, usize)) -> Self {
+        match op_ref_data.0 {
+            Target::Memory => Self(Target::Memory, op_ref_data.1),
+            Target::Stack => Self(Target::Stack, op_ref_data.1),
+            Target::Storage => Self(Target::Storage, op_ref_data.1),
+        }
+    }
+}
+
+impl OperationRef {
+    pub const fn as_usize(&self) -> usize {
+        self.1
+    }
+
+    pub const fn target(&self) -> Target {
+        self.0
     }
 }
 

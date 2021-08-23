@@ -1,3 +1,5 @@
+use crate::error::Error;
+
 use super::{opcodes::ids::OpcodeId, EvmWord};
 use core::str::FromStr;
 
@@ -37,6 +39,10 @@ impl FromStr for Instruction {
             None => None,
         };
 
-        Ok(Instruction::new(OpcodeId::from_str(words[0])?, val))
+        if let Some(word) = words.get(0) {
+            Ok(Instruction::new(OpcodeId::from_str(word)?, val))
+        } else {
+            Err(Error::OpcodeParsing)
+        }
     }
 }

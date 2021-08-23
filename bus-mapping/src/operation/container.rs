@@ -1,4 +1,5 @@
-use super::{MemoryOp, Operation, OperationRef, StackOp, StorageOp};
+use super::{MemoryOp, Operation, StackOp, StorageOp};
+use crate::exec_trace::OperationRef;
 use itertools::Itertools;
 use std::convert::TryInto;
 

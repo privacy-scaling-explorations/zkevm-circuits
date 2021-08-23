@@ -1,4 +1,5 @@
-use super::{container::OperationContainer, Operation, OperationRef};
+use super::{container::OperationContainer, Operation};
+use crate::exec_trace::OperationRef;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BusMappingInstance(pub(crate) Vec<OperationRef>);
