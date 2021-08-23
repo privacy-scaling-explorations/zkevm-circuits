@@ -238,7 +238,7 @@ mod trace_tests {
         };
 
         // Obtained trace computation
-        let trace_loaded: Vec<ExecutionStep> = serde_json::from_str::<
+        let trace_loaded = serde_json::from_str::<
             Vec<ParsedExecutionStep>,
         >(input_trace)
         .expect("Error on parsing")
