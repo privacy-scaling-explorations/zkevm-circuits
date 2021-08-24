@@ -166,7 +166,6 @@ pub(crate) struct Config<
     memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
-    padding_value_table: Column<Fixed>,
     address_diff_is_zero: IsZeroConfig<F>,
     address_monotone: MonotoneConfig,
     padding_monotone: MonotoneConfig,
@@ -208,7 +207,6 @@ impl<
         let memory_address_table_zero = meta.fixed_column();
         let stack_address_table_zero = meta.fixed_column();
         let memory_value_table = meta.fixed_column();
-        let padding_value_table = meta.fixed_column();
 
         let q_memory_first = |meta: &mut VirtualCells<F>| {
             // For first memory row it holds q_target_cur = 1 and q_target_next = 2.
@@ -390,7 +388,7 @@ impl<
             ]
         });
 
-        meta.create_gate("Memory operation", |meta| {
+        meta.create_gate("Memory operation + padding", |meta| {
             // If address_cur != address_prev, this is an `init`. We must constrain:
             //      - values[0] == [0]
             //      - flags[0] == 1
@@ -415,16 +413,22 @@ impl<
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one - flag;
 
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let bool_check_padding = padding.clone() * (one.clone() - padding.clone());
+
             vec![
                 q_memory_not_first.clone() * address_diff.clone() * value_cur.clone(), // when address changes, the write value is 0
                 q_memory_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
                 q_memory_not_first.clone() * address_diff * global_counter, // when address changes, global_counter is 0
                 q_memory_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
                 q_memory_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
-                                                                        // Note that this last constraint needs to hold only when address doesn't change,
-                                                                        // but we don't need to check this as the first operation at the address always
-                                                                        // has to be write - that means q_read is 1 only when
-                                                                        // the address and storage key don't change.
+                // Note that this last constraint needs to hold only when address doesn't change,
+                // but we don't need to check this as the first operation at the address always
+                // has to be write - that means q_read is 1 only when
+                // the address and storage key don't change.
+                q_target * bool_check_padding, // padding is 0 or 1
             ]
         });
 
@@ -522,14 +526,6 @@ impl<
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
 
             vec![(q_memory_not_first * value, memory_value_table)]
-        });
-
-        // padding is in the allowed range:
-        meta.lookup(|meta| {
-            let padding = meta.query_advice(padding, Rotation::cur());
-            let padding_value_table = meta.query_fixed(padding_value_table, Rotation::cur());
-
-            vec![(padding, padding_value_table)]
         });
 
         let storage_key_diff_is_zero = IsZeroChip::configure(
@@ -665,7 +661,6 @@ impl<
             memory_address_table_zero,
             stack_address_table_zero,
             memory_value_table,
-            padding_value_table,
             address_diff_is_zero,
             address_monotone,
             padding_monotone,
@@ -700,23 +695,6 @@ impl<
                         region.assign_fixed(
                             || "memory value table",
                             self.memory_value_table,
-                            idx,
-                            || Ok(F::from_u64(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
-
-        layouter
-            .assign_region(
-                || "padding value table",
-                |mut region| {
-                    for idx in 0..=1 {
-                        region.assign_fixed(
-                            || "padding value table",
-                            self.padding_value_table,
                             idx,
                             || Ok(F::from_u64(idx as u64)),
                         )?;
@@ -1502,7 +1480,7 @@ mod tests {
             vec![stack_op_0],
             vec![],
             Err(vec![
-                constraint_not_satisfied(2, 2, "Memory operation", 4),
+                constraint_not_satisfied(2, 2, "Memory operation + padding", 4),
                 constraint_not_satisfied(MEMORY_ROWS_MAX + 1, 4, "Stack operation", 2)
             ])
         );
@@ -1877,7 +1855,7 @@ mod tests {
                 lookup_fail(3, 2),
                 lookup_fail(MEMORY_ROWS_MAX + 1, 2),
                 lookup_fail(MEMORY_ROWS_MAX + 2, 2),
-                lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 8),
+                lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 7),
             ])
         );
     }
