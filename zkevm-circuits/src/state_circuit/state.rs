@@ -307,6 +307,26 @@ impl<
             e * i
         };
 
+        let q_storage_not_first = |meta: &mut VirtualCells<F>| {
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
+            q_target.clone()
+                * (q_target.clone() - one)
+                * (q_target.clone() - two)
+                * (q_target - three)
+        };
+
+        let q_storage_not_first_norm = |meta: &mut VirtualCells<F>| {
+            let e = q_storage_not_first(meta);
+            // q_storage_not_first is 24 when target is 4, we use 1/24 to normalize the value
+            let inv = F::from_u64(24_u64).invert().unwrap_or(F::zero());
+            let i = Expression::Constant(inv);
+
+            e * i
+        };
+
         let address_diff_is_zero = IsZeroChip::configure(
             meta,
             |meta| {
@@ -557,15 +577,7 @@ impl<
         });
 
         meta.create_gate("Storage operation", |meta| {
-            let q_target = meta.query_fixed(q_target, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::from_u64(2));
-            let three = Expression::Constant(F::from_u64(3));
-            let q_storage_not_first = q_target.clone()
-                * (q_target.clone() - one)
-                * (q_target.clone() - two)
-                * (q_target - three);
-
+            let q_storage_not_first = q_storage_not_first(meta);
             let address_diff = {
                 let address_prev = meta.query_advice(address, Rotation::prev());
                 let address_cur = meta.query_advice(address, Rotation::cur());
@@ -622,23 +634,9 @@ impl<
             let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
             let global_counter = meta.query_advice(global_counter, Rotation::cur());
             let one = Expression::Constant(F::one());
-
             let padding = meta.query_advice(padding, Rotation::cur());
-            let is_not_padding = one - padding;
-
-            let q_target = meta.query_fixed(q_target, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::from_u64(2));
-            let three = Expression::Constant(F::from_u64(3));
-
-            // q_storage_not_first is 24 when target is 4, we use 1/24 to normalize the value
-            let inv = F::from_u64(24_u64).invert().unwrap_or(F::zero());
-            let i = Expression::Constant(inv);
-            let q_storage_not_first = q_target.clone()
-                * (q_target.clone() - one.clone())
-                * (q_target.clone() - two)
-                * (q_target - three)
-                * i;
+            let is_not_padding = one.clone() - padding;
+            let q_storage_not_first = q_storage_not_first_norm(meta);
 
             vec![(
                 q_storage_not_first
@@ -819,19 +817,11 @@ impl<
                     let bus_mapping =
                         self.assign_per_counter(region, offset, address, global_counter, target)?;
                     bus_mappings.push(bus_mapping);
-                    address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
                 } else if internal_ind == 0 {
                     if index == 0 {
-                        let bus_mapping = self.assign_per_counter(
-                            region,
-                            offset,
-                            address,
-                            global_counter,
-                            1,
-                        )?;
+                        let bus_mapping =
+                            self.assign_per_counter(region, offset, address, global_counter, 1)?;
                         bus_mappings.push(bus_mapping);
-                        // set some non-zero diff for the first stack op
-                        address_diff_is_zero_chip.assign(region, offset, Some(F::one()))?;
                     } else {
                         let bus_mapping = self.assign_per_counter(
                             region,
@@ -872,13 +862,8 @@ impl<
                         )?;
                     }
                 } else {
-                    let bus_mapping = self.assign_per_counter(
-                        region,
-                        offset,
-                        address,
-                        global_counter,
-                        target,
-                    )?;
+                    let bus_mapping =
+                        self.assign_per_counter(region, offset, address, global_counter, target)?;
                     bus_mappings.push(bus_mapping);
 
                     let storage_key = global_counter
@@ -924,26 +909,7 @@ impl<
                     || Ok(F::from_u64(target as u64)),
                 )?;
             }
-
             region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
-
-            address_diff_is_zero_chip.assign(region, i, Some(F::zero()))?;
-
-            // Assign `address`
-            region.assign_advice(|| "init address", self.address, i, || Ok(F::zero()))?;
-
-            // Assign `value`
-            region.assign_advice(|| "value", self.value, i, || Ok(F::zero()))?;
-
-            // Assign `global_counter`
-            region.assign_advice(
-                || "init global counter",
-                self.global_counter,
-                i,
-                || Ok(F::zero()),
-            )?;
-
-            // Assign memory_flag
             region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
         }
 
