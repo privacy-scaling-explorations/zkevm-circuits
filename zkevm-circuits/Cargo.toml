@@ -13,3 +13,10 @@ pasta_curves = "0.1"
 bigint = "4"
 sha3 = "0.7.2"
 digest = "0.7.6"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "binary_value"
+harness = false
