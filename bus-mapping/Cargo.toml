@@ -1,0 +1,18 @@
+[package]
+name = "bus-mapping"
+version = "0.1.0"
+edition = "2018"
+authors = ["CPerezz <c.perezbaro@gmail.com>"]
+
+
+[dependencies]
+ff = "0.10"
+pasta_curves = "0.1"
+itertools = "0.10"
+serde = {version = "1.0.127", features = ["derive"] }
+num = "0.4"
+halo2 = "0.0"
+lazy_static = "1.4"
+
+[dev-dependencies]
+serde_json = "1.0.66"
