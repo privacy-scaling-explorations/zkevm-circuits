@@ -640,7 +640,6 @@ impl<
                     let bus_mapping =
                         self.assign_per_counter(region, offset, address, global_counter, target)?;
                     bus_mappings.push(bus_mapping);
-                    address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
                 } else if target == 3 {
                     if internal_ind == 0 {
                         if index == 0 {
@@ -652,8 +651,6 @@ impl<
                                 1,
                             )?;
                             bus_mappings.push(bus_mapping);
-                            // set some non-zero diff for the first stack op
-                            address_diff_is_zero_chip.assign(region, offset, Some(F::one()))?;
                         } else {
                             let bus_mapping = self.assign_per_counter(
                                 region,
@@ -678,8 +675,6 @@ impl<
                             target,
                         )?;
                         bus_mappings.push(bus_mapping);
-
-                        address_diff_is_zero_chip.assign(region, offset, Some(F::zero()))?;
                     }
                 }
 
@@ -703,26 +698,7 @@ impl<
                     || Ok(F::from_u64(target as u64)),
                 )?;
             }
-
             region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
-
-            address_diff_is_zero_chip.assign(region, i, Some(F::zero()))?;
-
-            // Assign `address`
-            region.assign_advice(|| "init address", self.address, i, || Ok(F::zero()))?;
-
-            // Assign `value`
-            region.assign_advice(|| "value", self.value, i, || Ok(F::zero()))?;
-
-            // Assign `global_counter`
-            region.assign_advice(
-                || "init global counter",
-                self.global_counter,
-                i,
-                || Ok(F::zero()),
-            )?;
-
-            // Assign memory_flag
             region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
         }
 
