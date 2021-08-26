@@ -246,11 +246,13 @@ impl OpcodeId {
 }
 
 impl OpcodeId {
+    /// Returns the `OpcodeId` as a `u8`.
     #[inline]
     pub const fn as_u8(&self) -> u8 {
         self.0
     }
 
+    /// Returns the `OpcodeId` as a `usize`.
     #[inline]
     pub const fn as_usize(&self) -> usize {
         self.0 as usize

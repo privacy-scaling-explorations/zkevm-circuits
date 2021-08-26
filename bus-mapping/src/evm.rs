@@ -11,11 +11,11 @@ use num::{BigUint, Num, Zero};
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
-    /// Ref to zero addr for Memory
+    /// Ref to zero addr for Memory.
     pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(BigUint::zero());
 }
 
-/// Doc
+/// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
 )]
@@ -33,7 +33,10 @@ impl From<usize> for ProgramCounter {
     }
 }
 
-/// Doc
+/// Wrapper type over `usize` which represents the global counter associated to
+/// an [`ExecutionStep`] or [`Operation`]. The purpose of the `GlobalCounter` is
+/// to enforce that each Opcode/Instruction and Operation is unique and just
+/// executed once.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub(crate) struct GlobalCounter(pub(crate) usize);
 
@@ -49,7 +52,7 @@ impl From<usize> for GlobalCounter {
     }
 }
 
-/// Doc
+/// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub(crate) struct MemoryAddress(pub(crate) BigUint);
 
@@ -76,7 +79,8 @@ impl FromStr for MemoryAddress {
     }
 }
 
-/// Doc
+/// Represents a `StackAddress` of the EVM.
+/// The address range goes `TOP -> DOWN (1024, 0]`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub(crate) struct StackAddress(pub(crate) usize);
 
@@ -116,10 +120,10 @@ impl FromStr for StackAddress {
     }
 }
 
-/// Doc
 // XXX: Consider to move this to [u8;32] soon
+/// Representation of an EVM word which is basically a 32-byte word.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub(crate) struct EvmWord(pub(crate) BigUint);
+pub struct EvmWord(pub(crate) BigUint);
 
 impl FromStr for EvmWord {
     type Err = Error;
