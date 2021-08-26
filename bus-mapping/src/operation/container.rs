@@ -20,6 +20,12 @@ use std::convert::TryInto;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationContainer(pub(crate) Vec<Operation>);
 
+impl Default for OperationContainer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // TODO: impl Index for OperationContainer
 impl OperationContainer {
     /// Generates a enw instance of an `OperationContainer`.

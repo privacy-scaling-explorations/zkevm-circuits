@@ -23,6 +23,7 @@ pub struct BlockConstants<F: FieldExt> {
 }
 
 impl<F: FieldExt> BlockConstants<F> {
+    #[allow(clippy::too_many_arguments)]
     /// Generates a new `BlockConstants` instance from it's fields.
     pub fn new(
         hash: EvmWord,
