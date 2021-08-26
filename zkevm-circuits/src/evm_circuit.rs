@@ -249,7 +249,7 @@ enum Case {
     WriteProtection,
     // return data out of bound
     ReturnDataOutOfBounds,
-    // contract must not begin with 0xef due to EOF
+    // contract must not begin with 0xef due to EIP #3541 EVM Object Format (EOF)
     InvalidBeginningCode,
     // stack underflow
     StackUnderflow,
