@@ -11,7 +11,7 @@ use halo2::{arithmetic::FieldExt, plonk::ConstraintSystem};
 const PUSH1_OP_NUM: usize = 1;
 
 /// Structure used to implement [`Opcode`] trait over it corresponding to the
-/// `PUSH1 X` [`Instruction`].
+/// `PUSH1 X` [`Instruction`](crate::evm::instruction::Instruction).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Push1;
 

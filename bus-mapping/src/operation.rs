@@ -1,21 +1,29 @@
-pub mod container;
-
-use crate::error::Error;
+//! Collection of structs and functions used to:
+//! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
+//! - Define the actual operation types and a wrapper over them (the
+//!   [`Operation`] enum).
+//! - Define structures that interact with operations such as
+//!   [`OperationContainer`].
+pub(crate) mod container;
 
 use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
+use crate::error::Error;
+pub use container::OperationContainer;
 use core::cmp::Ordering;
 use core::fmt::Debug;
 use std::convert::TryFrom;
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum RW {
+pub enum RW {
+    /// Marks op as READ.
     READ,
+    /// Marks op as WRITE.
     WRITE,
 }
 
 impl RW {
-    /// Returns true if the RW corresponds internally to a [`READ`].
+    /// Returns true if the RW corresponds internally to a [`READ`](RW::READ).
     pub const fn is_read(&self) -> bool {
         match self {
             RW::READ => true,
@@ -23,7 +31,7 @@ impl RW {
         }
     }
 
-    /// Returns true if the RW corresponds internally to a [`WRITE`].
+    /// Returns true if the RW corresponds internally to a [`WRITE`](RW::WRITE).
     pub const fn is_write(&self) -> bool {
         match self {
             RW::WRITE => true,
@@ -34,16 +42,20 @@ impl RW {
 
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub(crate) enum Target {
+pub enum Target {
+    /// Means the target of the operation is the Memory.
     Memory,
+    /// Means the target of the operation is the Stack.
     Stack,
+    /// Means the target of the operation is the Storage.
     Storage,
 }
 
-/// Represents a [`READ`]/[`WRITE`] into the memory implied by an specific
-/// [`OpcodeId`] of the [`ExecutionTrace`].
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
+/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MemoryOp {
+pub struct MemoryOp {
     rw: RW,
     gc: GlobalCounter,
     addr: MemoryAddress,
@@ -126,10 +138,11 @@ impl TryFrom<Operation> for MemoryOp {
     }
 }
 
-/// Represents a [`READ`]/[`WRITE`] into the stack implied by an specific
-/// [`OpcodeId`] of the [`ExecutionTrace`].
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
+/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StackOp {
+pub struct StackOp {
     rw: RW,
     gc: GlobalCounter,
     addr: StackAddress,
@@ -212,10 +225,11 @@ impl TryFrom<Operation> for StackOp {
     }
 }
 
-/// Represents a [`READ`]/[`WRITE`] into the storage implied by an specific
-/// [`OpcodeId`] of the [`ExecutionTrace`].
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
+/// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
+/// the [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
+pub struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
 
 impl TryFrom<Operation> for StorageOp {
     type Error = Error;
@@ -231,7 +245,7 @@ impl TryFrom<Operation> for StorageOp {
 /// Generic enum that wraps over all the operation types possible.
 /// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
-pub(crate) enum Operation {
+pub enum Operation {
     /// Doc
     Stack(StackOp),
     /// Doc

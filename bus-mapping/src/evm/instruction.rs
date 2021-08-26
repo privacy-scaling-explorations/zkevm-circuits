@@ -5,11 +5,12 @@ use core::str::FromStr;
 
 /// Represents the union between an [`OpcodeId`] and the actual associated value
 /// (if it has any).
-/// `Instruction`s are the core of the [`ExecutionStep`] as they contain all the
+/// `Instruction`s are the core of the
+/// [`ExecutionStep`](crate::exec_trace::ExecutionStep) as they contain all the
 /// key parts related to the witness generation which is delegated to the
 /// [`OpcodeId`]s that they contain.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Instruction {
+pub struct Instruction {
     opcode: OpcodeId,
     assoc_value: Option<EvmWord>,
 }

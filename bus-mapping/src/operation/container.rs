@@ -4,12 +4,13 @@ use itertools::Itertools;
 use std::convert::TryInto;
 
 /// The `OperationContainer` is meant to store all of the [`Operation`]s that an
-/// [`ExecutionTrace`] performs during it's execution.
+/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace) performs during it's
+/// execution.
 ///
 /// Once an operation is inserted into the container, it returns an
 /// [`OperationRef`] which holds an index to the operation just inserted.
 /// These references are stored inside of the bus-mapping instances of each
-/// [`ExecutionStep`].
+/// [`ExecutionStep`](crate::exec_trace::ExecutionStep).
 ///
 /// Finally, the container also provides the capability of retrieving all of the
 /// `Stack`, `Memory` or `Storage` operations ordered according to the criterias
@@ -17,7 +18,7 @@ use std::convert::TryInto;
 /// That serves as a way to get an input with which is easy to work with in
 /// order to construct the State proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OperationContainer(pub(crate) Vec<Operation>);
+pub struct OperationContainer(pub(crate) Vec<Operation>);
 
 // TODO: impl Index for OperationContainer
 impl OperationContainer {
@@ -27,7 +28,7 @@ impl OperationContainer {
     }
 
     /// Inserts an [`Operation`] into the  container returning a lightwheight
-    /// reference to it in the form of an [`OpearationRef`] which points to the
+    /// reference to it in the form of an [`OperationRef`] which points to the
     /// location of the inserted operation inside the container.
     pub fn insert(&mut self, op: impl Into<Operation>) -> OperationRef {
         let op = op.into();

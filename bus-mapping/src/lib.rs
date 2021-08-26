@@ -39,12 +39,13 @@
 //! Provided a JSON file or a JSON as a stream of bytes, which contains an
 //! execution trace from an EVM, you can parse it and construct an
 //! `ExecutionTrace` instance from it. That will automatically fill all of the
-//! bus-mapping instances of each [`ExecutionStep`] plus fill in an
-//! [`OperationContainer`] with all of the Memory, Stack and Storage ops
-//! performed by the provided trace.
+//! bus-mapping instances of each
+//! [`ExecutionStep`](crate::exec_trace::ExecutionStep) plus fill in an
+//! [`OperationContainer`](crate::operation::container::OperationContainer) with
+//! all of the Memory, Stack and Storage ops performed by the provided trace.
 //!
 //! ```rust,ignore
-//! use bus_mapping::{ExecutionTrace, BlockConstants};
+//! use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error};
 //! use pasta_curves::arithmetic::FieldExt;
 //! use num::BigUint;
 //!
@@ -107,7 +108,7 @@
 //! ```
 //!
 //! Assume we have the following trace:
-//! ```ignore
+//! ```text,ignore
 //! pc  op              stack (top -> down)                  memory
 //! --  --------------  ----------------------------------   ---------------------------------------  
 //! ...
@@ -138,7 +139,7 @@
 //!   ordered on the way the State Proof needs.
 //!
 //! On that way, we would get something like this for the Memory ops:
-//! ```ignore
+//! ```text,ignore
 //! | `key`  | `val`         | `rw`    | `gc` | Note                                     |
 //! |:------:| ------------- | ------- | ---- | ---------------------------------------- |
 //! | `0x40` | `0`           | `Write` |      | Init                                     |
@@ -159,8 +160,8 @@
 //!
 //! Asode from that, we also can iterate over the `ExecutionTrace` itself over
 //! each Evm Instruction in order to add constrains for each Opcode is executed.
-//! This is also automatically done via the [`Opcode`] trait defined in this
-//! crate.
+//! This is also automatically done via the
+//! [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
 //!  
 //! ## Documentation
 //! For extra documentation, check the book with the specs written for the
@@ -179,6 +180,9 @@
 
 extern crate alloc;
 mod error;
-mod evm;
-mod exec_trace;
-mod operation;
+pub mod evm;
+pub mod exec_trace;
+pub mod operation;
+
+pub use error::Error;
+pub use exec_trace::{BlockConstants, ExecutionStep, ExecutionTrace};

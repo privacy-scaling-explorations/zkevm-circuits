@@ -1,9 +1,11 @@
+//! This module contains the logic for parsing and interacting with EVM
+//! execution traces.
 pub(crate) mod exec_step;
 use crate::evm::EvmWord;
 use crate::operation::Target;
 use crate::operation::{container::OperationContainer, Operation};
 use core::ops::{Index, IndexMut};
-pub(crate) use exec_step::ExecutionStep;
+pub use exec_step::ExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
 
 /// Definition of all of the constants related to an Ethereum block and
@@ -100,15 +102,19 @@ impl<F: FieldExt> BlockConstants<F> {
 /// format for now).
 ///
 /// 2. Generate and provide an iterator over all of the
-/// [`Instruction`]s of the trace and apply it's respective constraints
-/// into a provided a mutable reference to a [`ConstraintSystyem`]`.
+/// [`Instruction`](crate::evm::Instruction)s of the trace and apply it's
+/// respective constraints into a provided a mutable reference to a
+/// [`ConstraintSystyem`](halo2::plonk::ConstraintSystem).
 ///
-/// 3. Generate and provide and ordered list of all of the [`StackOp`]s,
-/// [`MemoryOp`]s and [`StorageOp`]s that each [`Instruction`] that derive from
-/// the trace so that the State Proof witnesses are already obtained on a
-/// structured manner and ready to be added into the State circuit.
+/// 3. Generate and provide and ordered list of all of the
+/// [`StackOp`](crate::operation::StackOp)s,
+/// [`MemoryOp`](crate::operation::MemoryOp)s and
+/// [`StorageOp`](crate::operation::StorageOp)s that each
+/// [`Instruction`](crate::evm::Instruction) that derive from the trace so that
+/// the State Proof witnesses are already obtained on a structured manner and
+/// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ExecutionTrace<F: FieldExt> {
+pub struct ExecutionTrace<F: FieldExt> {
     entries: Vec<ExecutionStep>,
     block_ctants: BlockConstants<F>,
     container: OperationContainer,
@@ -131,10 +137,11 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// Given a vector of [`ExecutionStep`]s and a [`BlockConstants`] instance,
     /// generate an [`ExecutionTrace`] by:
     ///
-    /// 1) Setting the correct [`GlobalCounter`] to each [`ExecutionStep`].
-    /// 2) Generating the corresponding [`Operation`]s, registering them in the
-    /// container and storing the [`OperationRef`]s to each one of the
-    /// generated ops into the bus-mapping instances of each [`ExecutionStep`].
+    /// 1) Setting the correct [`GlobalCounter`](crate::evm::GlobalCounter) to
+    /// each [`ExecutionStep`]. 2) Generating the corresponding
+    /// [`Operation`]s, registering them in the container and storing the
+    /// [`OperationRef`]s to each one of the generated ops into the
+    /// bus-mapping instances of each [`ExecutionStep`].
     pub fn new(
         mut entries: Vec<ExecutionStep>,
         block_ctants: BlockConstants<F>,
@@ -182,7 +189,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// The target and index of an `Operation` in the context of an
 /// `ExecutionTrace`.
-pub(crate) struct OperationRef(Target, usize);
+pub struct OperationRef(Target, usize);
 
 impl From<(Target, usize)> for OperationRef {
     fn from(op_ref_data: (Target, usize)) -> Self {
