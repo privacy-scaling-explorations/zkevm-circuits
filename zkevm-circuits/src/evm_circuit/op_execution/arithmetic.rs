@@ -1,5 +1,5 @@
 use super::super::{
-    BusMappingLookup, Case, Cell, Constraint, ExecutionStep, Lookup, Word,
+    Case, Cell, Constraint, ExecutionStep, FixedLookup, Lookup, Word,
 };
 use super::{
     CaseAllocation, CaseConfig, OpExecutionState, OpExecutionStateInstance,
@@ -82,19 +82,20 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
         op_execution_state_curr: &OpExecutionState<F>,
         op_execution_state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
+        let zero = Expression::Constant(F::zero());
         let (add, sub) = (
             Expression::Constant(F::from_u64(1)),
             Expression::Constant(F::from_u64(3)),
         );
-        let opcode = op_execution_state_curr.opcode.exp();
+
+        let OpExecutionState { opcode, .. } = &op_execution_state_curr;
 
         let common = {
             Constraint {
                 name: "AddGadget common",
                 selector: Expression::Constant(F::one()),
                 linear_combinations: vec![
-                    (opcode.clone() - add.clone())
-                        * (opcode.clone() - sub.clone()),
+                    (opcode.exp() - add.clone()) * (opcode.exp() - sub.clone()),
                 ],
                 lookups: vec![],
             }
@@ -135,8 +136,8 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             let no_swap = one - swap.exp();
             let swap_constraints = vec![
                 swap.exp() * no_swap.clone(),
-                swap.exp() * (opcode.clone() - sub),
-                no_swap.clone() * (opcode - add),
+                swap.exp() * (opcode.exp() - sub),
+                no_swap * (opcode.exp() - add),
             ];
 
             // add constraints
@@ -153,7 +154,39 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 )
             }
 
-            #[allow(clippy::suspicious_operation_groupings)]
+            let byte_range_lookup = [a, b, c]
+                .iter()
+                .flat_map(|word| {
+                    word.cells
+                        .iter()
+                        .map(|cell| {
+                            Lookup::FixedLookup(
+                                FixedLookup::Range256,
+                                [cell.exp(), zero.clone(), zero.clone()],
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+
+            let bus_mapping_lookups = vec![
+                // Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                //     index_offset: 1,
+                //     value: swap.exp() * c.exp() + no_swap.clone() * a.exp(),
+                //     is_write: false,
+                // }),
+                // Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                //     index_offset: 2,
+                //     value: b.exp(),
+                //     is_write: false,
+                // }),
+                // Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                //     index_offset: 1,
+                //     value: swap.exp() * a.exp() + no_swap * c.exp(),
+                //     is_write: true,
+                // }),
+            ];
+
             Constraint {
                 name: "AddGadget success",
                 selector: case_selector.exp(),
@@ -163,23 +196,7 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                     add_constraints,
                 ]
                 .concat(),
-                lookups: vec![
-                    Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                        index_offset: 1,
-                        value: swap.exp() * c.exp() + no_swap.clone() * a.exp(),
-                        is_write: false,
-                    }),
-                    Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                        index_offset: 2,
-                        value: b.exp(),
-                        is_write: false,
-                    }),
-                    Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                        index_offset: 1,
-                        value: swap.exp() * a.exp() + no_swap * c.exp(),
-                        is_write: true,
-                    }),
-                ],
+                lookups: [byte_range_lookup, bus_mapping_lookups].concat(),
             }
         };
 
