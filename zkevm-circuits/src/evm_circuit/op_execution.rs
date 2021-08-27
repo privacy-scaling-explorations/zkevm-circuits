@@ -1,5 +1,6 @@
 use super::{
-    Case, Cell, Constraint, ExecutionStep, OpExecutionStateInstance, Word,
+    Case, Cell, Constraint, ExecutionStep, Lookup, OpExecutionStateInstance,
+    Word,
 };
 use halo2::{
     arithmetic::FieldExt,
@@ -10,6 +11,24 @@ use std::collections::HashMap;
 
 mod arithmetic;
 use arithmetic::AddGadget;
+
+fn bool_switches_constraints<F: FieldExt>(
+    bool_switches: &[Cell<F>],
+) -> Vec<Expression<F>> {
+    let one = Expression::Constant(F::one());
+
+    let mut constraints = Vec::with_capacity(bool_switches.len() + 1);
+    let mut sum_to_one = Expression::Constant(F::zero());
+
+    for switch in bool_switches {
+        constraints.push(switch.exp() * (one.clone() - switch.exp()));
+        sum_to_one = sum_to_one + switch.exp();
+    }
+
+    constraints.push(one - sum_to_one);
+
+    constraints
+}
 
 #[derive(Debug)]
 struct CaseConfig {
@@ -129,11 +148,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
+        r: F,
         selector: Expression<F>,
         op_execution_state_curr: OpExecutionState<F>,
         op_execution_state_next: OpExecutionState<F>,
         cells: &[Cell<F>],
-        r: F,
+        independent_lookups: &mut Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) -> Self {
         let (op_selectors, free_cells) = cells.split_at(Self::NUM_OP_GADGETS);
         let resumption = Resumption::new(
@@ -155,13 +175,13 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             {} => {};
             {$name:ident = $gadget:ident} => {
                 let $name = Self::constrcut_op_gadget::<$gadget::<F>>(
+                    r,
                     &op_execution_state_curr,
                     &op_execution_state_next,
                     op_selectors,
                     op_selector_idx,
                     free_cells,
                     &resumption,
-                    r,
                     &mut op_selector_idx_map,
                     &mut default_values_map,
                     &mut constraints,
@@ -186,27 +206,31 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 name,
                 selector: constraint_selector,
                 linear_combinations,
-                ..
-                // lookups,
+                lookups,
             } = constraint;
 
+            let synthetic_selector =
+                selector.clone() * constraint_selector.clone();
+
             meta.create_gate(name, |_| {
-                let synthetic_selector = selector.clone() * constraint_selector;
+                if linear_combinations.is_empty() {
+                    return vec![Expression::Constant(F::zero())];
+                }
                 linear_combinations
                     .into_iter()
                     .map(|poly| synthetic_selector.clone() * poly)
                     .collect::<Vec<_>>()
             });
 
-            // TODO: propagate lookups to top level with correct selector
+            independent_lookups.push((synthetic_selector, lookups));
         }
 
         Self {
+            r,
             op_execution_state_curr,
             op_execution_state_next,
             op_selectors: op_selectors.to_vec(),
             free_cells: free_cells.to_vec(),
-            r,
             op_selector_idx_map,
             default_values_map,
             resumption,
@@ -216,13 +240,13 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
     #[allow(clippy::too_many_arguments)]
     fn constrcut_op_gadget<O: OpGadget<F>>(
+        r: F,
         op_execution_state_curr: &OpExecutionState<F>,
         op_execution_state_next: &OpExecutionState<F>,
         op_selectors: &[Cell<F>],
         op_selector_idx: usize,
         free_cells: &[Cell<F>],
         resumption: &Resumption<F>,
-        r: F,
         op_selector_idx_map: &mut HashMap<u8, usize>,
         default_values_map: &mut HashMap<(usize, Case), Vec<(usize, F)>>,
         constraints: &mut Vec<Constraint<F>>,
@@ -272,8 +296,6 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     total_cells <= free_cells.len(),
                     "too many cells allocated"
                 );
-
-                // TODO: add word's cells into 8-bit range lookup
 
                 let num_cell_of_word = 32 * case_config.num_word;
                 let words = free_cells[offset..offset + num_cell_of_word]
@@ -422,22 +444,4 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         Ok(())
     }
-}
-
-fn bool_switches_constraints<F: FieldExt>(
-    bool_switches: &[Cell<F>],
-) -> Vec<Expression<F>> {
-    let one = Expression::Constant(F::one());
-
-    let mut constraints = Vec::with_capacity(bool_switches.len() + 1);
-    let mut sum_to_one = Expression::Constant(F::zero());
-
-    for switch in bool_switches {
-        constraints.push(switch.exp() * (one.clone() - switch.exp()));
-        sum_to_one = sum_to_one + switch.exp();
-    }
-
-    constraints.push(one - sum_to_one);
-
-    constraints
 }
