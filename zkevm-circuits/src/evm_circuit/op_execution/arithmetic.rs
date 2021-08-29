@@ -1,17 +1,15 @@
 use super::super::{
-    Case, Cell, Constraint, ExecutionStep, FixedLookup, Lookup, Word,
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, FixedLookup,
+    Lookup, Word,
 };
-use super::{
-    CaseAllocation, CaseConfig, OpExecutionState, OpExecutionStateInstance,
-    OpGadget,
-};
+use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 struct AddSuccessAllocation<F> {
-    case_selector: Cell<F>,
+    selector: Cell<F>,
     swap: Cell<F>,
     a: Word<F>,
     b: Word<F>,
@@ -62,16 +60,16 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             case_allocations.try_into().unwrap();
         Self {
             success: AddSuccessAllocation {
-                case_selector: success.case_selector.clone(),
+                selector: success.selector.clone(),
                 swap: success.cells[0].clone(),
                 a: success.words.pop().unwrap(),
                 b: success.words.pop().unwrap(),
                 c: success.words.pop().unwrap(),
                 carry: success.cells[1..].to_owned().try_into().unwrap(),
             },
-            stack_underflow: stack_underflow.case_selector.clone(),
+            stack_underflow: stack_underflow.selector.clone(),
             out_of_gas: (
-                out_of_gas.case_selector.clone(),
+                out_of_gas.selector.clone(),
                 out_of_gas.resumption.unwrap().gas_available.clone(),
             ),
         }
@@ -124,7 +122,7 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             ];
 
             let AddSuccessAllocation {
-                case_selector,
+                selector,
                 swap,
                 a,
                 b,
@@ -169,6 +167,7 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 })
                 .collect::<Vec<_>>();
 
+            // TODO: uncomment when bus mapping is supported
             let bus_mapping_lookups = vec![
                 // Lookup::BusMappingLookup(BusMappingLookup::Stack {
                 //     index_offset: 1,
@@ -189,7 +188,7 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
 
             Constraint {
                 name: "AddGadget success",
-                selector: case_selector.exp(),
+                selector: selector.exp(),
                 linear_combinations: [
                     op_execution_state_transition_constraints,
                     swap_constraints,
@@ -223,13 +222,13 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 Expression::Constant(F::from_u64(2)),
                 Expression::Constant(F::from_u64(3)),
             );
-            let (case_selector, gas_available) = &self.out_of_gas;
+            let (selector, gas_available) = &self.out_of_gas;
             let gas_overdemand = op_execution_state_curr.gas_counter.exp()
                 + three.clone()
                 - gas_available.exp();
             Constraint {
                 name: "AddGadget out of gas",
-                selector: case_selector.exp(),
+                selector: selector.exp(),
                 linear_combinations: vec![
                     (gas_overdemand.clone() - one)
                         * (gas_overdemand.clone() - two)
@@ -246,20 +245,19 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        op_execution_state: &mut OpExecutionStateInstance,
+        core_state: &mut CoreStateInstance,
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
         match execution_step.case {
-            Case::Success => self.assign_success(
-                region,
-                offset,
-                op_execution_state,
-                execution_step,
-            ),
+            Case::Success => {
+                self.assign_success(region, offset, core_state, execution_step)
+            }
             Case::StackUnderflow => {
+                // TODO:
                 unimplemented!()
             }
             Case::OutOfGas => {
+                // TODO:
                 unimplemented!()
             }
             _ => unreachable!(),
@@ -272,13 +270,13 @@ impl<F: FieldExt> AddGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        op_execution_state: &mut OpExecutionStateInstance,
+        core_state: &mut CoreStateInstance,
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
-        op_execution_state.global_counter += 3;
-        op_execution_state.program_counter += 1;
-        op_execution_state.stack_pointer += 1;
-        op_execution_state.gas_counter += 3;
+        core_state.global_counter += 3;
+        core_state.program_counter += 1;
+        core_state.stack_pointer += 1;
+        core_state.gas_counter += 3;
 
         self.success.swap.assign(
             region,

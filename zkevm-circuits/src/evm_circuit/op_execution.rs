@@ -1,6 +1,9 @@
 use super::{
-    Case, Cell, Constraint, ExecutionStep, Lookup, OpExecutionStateInstance,
-    Word,
+    param::{
+        NUM_CELL_OP_EXECTION_STATE, NUM_CELL_OP_GADGET_SELECTOR,
+        NUM_CELL_RESUMPTION,
+    },
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Lookup, Word,
 };
 use halo2::{
     arithmetic::FieldExt,
@@ -39,11 +42,11 @@ struct CaseConfig {
 }
 
 impl CaseConfig {
-    fn total_cells<F: FieldExt>(&self) -> usize {
+    fn total_cells(&self) -> usize {
         32 * self.num_word
             + self.num_cell
             + if self.will_resume {
-                Resumption::<F>::SIZE
+                NUM_CELL_RESUMPTION
             } else {
                 0
             }
@@ -52,7 +55,7 @@ impl CaseConfig {
 
 #[derive(Debug)]
 struct CaseAllocation<'a, F> {
-    case_selector: &'a Cell<F>,
+    selector: &'a Cell<F>,
     words: Vec<Word<F>>,
     cells: &'a [Cell<F>],
     resumption: Option<&'a Resumption<F>>,
@@ -65,10 +68,8 @@ struct Resumption<F> {
 }
 
 impl<F: FieldExt> Resumption<F> {
-    const SIZE: usize = 2;
-
     fn new(cells: &[Cell<F>]) -> Self {
-        assert_eq!(cells.len(), Self::SIZE);
+        assert_eq!(cells.len(), NUM_CELL_RESUMPTION);
 
         Self {
             caller_id: cells[0].clone(),
@@ -89,10 +90,8 @@ pub(crate) struct OpExecutionState<F> {
 }
 
 impl<F: FieldExt> OpExecutionState<F> {
-    pub(crate) const SIZE: usize = 7;
-
     pub(crate) fn new(cells: &[Cell<F>]) -> Self {
-        assert_eq!(cells.len(), Self::SIZE);
+        assert_eq!(cells.len(), NUM_CELL_OP_EXECTION_STATE);
 
         Self {
             is_executing: cells[0].clone(),
@@ -123,7 +122,7 @@ trait OpGadget<F: FieldExt> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        op_execution_state: &mut OpExecutionStateInstance,
+        core_state: &mut CoreStateInstance,
         execution_step: &ExecutionStep,
     ) -> Result<(), Error>;
 }
@@ -143,21 +142,19 @@ pub(crate) struct OpExecutionGadget<F> {
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
-    // FIXME: naive estimation, should be optmize to fit in the future
-    pub(crate) const NUM_OP_GADGETS: usize = 80;
-
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         r: F,
-        selector: Expression<F>,
+        q_step: Expression<F>,
         op_execution_state_curr: OpExecutionState<F>,
         op_execution_state_next: OpExecutionState<F>,
-        cells: &[Cell<F>],
+        free_cells: Vec<Cell<F>>,
         independent_lookups: &mut Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) -> Self {
-        let (op_selectors, free_cells) = cells.split_at(Self::NUM_OP_GADGETS);
+        let (op_selectors, free_cells) =
+            free_cells.split_at(NUM_CELL_OP_GADGET_SELECTOR);
         let resumption = Resumption::new(
-            &free_cells[free_cells.len() - Resumption::<F>::SIZE..],
+            &free_cells[free_cells.len() - NUM_CELL_RESUMPTION..],
         );
 
         let mut op_selector_idx_map = HashMap::new();
@@ -210,7 +207,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             } = constraint;
 
             let synthetic_selector =
-                selector.clone() * constraint_selector.clone();
+                q_step.clone() * constraint_selector.clone();
 
             meta.create_gate(name, |_| {
                 if linear_combinations.is_empty() {
@@ -251,7 +248,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         default_values_map: &mut HashMap<(usize, Case), Vec<(usize, F)>>,
         constraints: &mut Vec<Constraint<F>>,
     ) -> O {
-        assert!(op_selector_idx < Self::NUM_OP_GADGETS);
+        assert!(op_selector_idx < NUM_CELL_OP_GADGET_SELECTOR);
 
         let op_selector = op_selectors[op_selector_idx].clone();
 
@@ -291,7 +288,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     ));
                 }
 
-                let total_cells = num_case + case_config.total_cells::<F>();
+                let total_cells = num_case + case_config.total_cells();
                 assert!(
                     total_cells <= free_cells.len(),
                     "too many cells allocated"
@@ -300,7 +297,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 let num_cell_of_word = 32 * case_config.num_word;
                 let words = free_cells[offset..offset + num_cell_of_word]
                     .chunks(32)
-                    .map(|free_cells| Word::encode(free_cells, r))
+                    .map(|free_cells| Word::new(free_cells, r))
                     .collect::<Vec<_>>();
                 offset += num_cell_of_word;
 
@@ -339,7 +336,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 });
 
                 CaseAllocation {
-                    case_selector,
+                    selector: case_selector,
                     words,
                     cells,
                     resumption,
@@ -368,10 +365,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        op_execution_state: &mut OpExecutionStateInstance,
+        core_state: &mut CoreStateInstance,
         execution_step: Option<&ExecutionStep>,
     ) -> Result<(), Error> {
-        assert!(op_execution_state.is_executing);
+        assert!(core_state.is_executing);
 
         self.op_execution_state_curr.is_executing.assign(
             region,
@@ -381,27 +378,27 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         self.op_execution_state_curr.global_counter.assign(
             region,
             offset,
-            Some(F::from_u64(op_execution_state.global_counter as u64)),
+            Some(F::from_u64(core_state.global_counter as u64)),
         )?;
         self.op_execution_state_curr.call_id.assign(
             region,
             offset,
-            Some(F::from_u64(op_execution_state.call_id as u64)),
+            Some(F::from_u64(core_state.call_id as u64)),
         )?;
         self.op_execution_state_curr.program_counter.assign(
             region,
             offset,
-            Some(F::from_u64(op_execution_state.program_counter as u64)),
+            Some(F::from_u64(core_state.program_counter as u64)),
         )?;
         self.op_execution_state_curr.stack_pointer.assign(
             region,
             offset,
-            Some(F::from_u64(op_execution_state.stack_pointer as u64)),
+            Some(F::from_u64(core_state.stack_pointer as u64)),
         )?;
         self.op_execution_state_curr.gas_counter.assign(
             region,
             offset,
-            Some(F::from_u64(op_execution_state.gas_counter as u64)),
+            Some(F::from_u64(core_state.gas_counter as u64)),
         )?;
 
         if let Some(execution_step) = execution_step {
@@ -435,7 +432,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 1 | 3 => self.add_gadget.assign(
                     region,
                     offset,
-                    op_execution_state,
+                    core_state,
                     execution_step,
                 )?,
                 _ => unimplemented!(),
