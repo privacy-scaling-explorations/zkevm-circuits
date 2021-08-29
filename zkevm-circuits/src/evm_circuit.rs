@@ -11,7 +11,11 @@ use halo2::{
 use std::convert::TryInto;
 
 mod op_execution;
-use op_execution::{OpExecutionGadget, OpExecutionState};
+mod param;
+use self::{
+    op_execution::{OpExecutionGadget, OpExecutionState},
+    param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) enum CallField {
@@ -182,14 +186,14 @@ impl<F: FieldExt> Cell<F> {
 // TODO: Integrate with evm_word
 #[derive(Clone, Debug)]
 struct Word<F> {
-    // random linear combination exp for configuration
+    // random linear combination expression of cells
     expression: Expression<F>,
     // inner cells for syntesis
     cells: [Cell<F>; 32],
 }
 
 impl<F: FieldExt> Word<F> {
-    fn encode(cells: &[Cell<F>], r: F) -> Self {
+    fn new(cells: &[Cell<F>], r: F) -> Self {
         let r = Expression::Constant(r);
         Self {
             expression: cells
@@ -224,8 +228,10 @@ impl<F: FieldExt> Word<F> {
     }
 }
 
+// TODO: Should we maintain these state in circuit or we prepare all of them
+// when parsing debug trace?
 #[derive(Debug)]
-pub(crate) struct OpExecutionStateInstance {
+pub(crate) struct CoreStateInstance {
     is_executing: bool,
     global_counter: usize,
     call_id: usize,
@@ -234,9 +240,9 @@ pub(crate) struct OpExecutionStateInstance {
     gas_counter: usize,
 }
 
-impl OpExecutionStateInstance {
+impl CoreStateInstance {
     fn new(call_id: usize) -> Self {
-        OpExecutionStateInstance {
+        Self {
             is_executing: false,
             global_counter: 0,
             call_id,
@@ -287,42 +293,87 @@ pub(crate) struct ExecutionStep {
 
 #[derive(Clone)]
 struct EvmCircuit<F> {
-    selector: Selector,
-    fixed_table: [Column<Fixed>; 4],
+    q_step: Selector,
+    table_fixed: [Column<Fixed>; 4],
     op_execution_gadget: OpExecutionGadget<F>,
 }
 
 impl<F: FieldExt> EvmCircuit<F> {
-    // FIXME: naive estimation, should be optmize to fit in the future
-    const WIDTH: usize = 32;
-    const HEIGHT: usize = 8;
-
     fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
-        let selector = meta.selector();
-        let columns = (0..Self::WIDTH)
+        let q_step = meta.selector();
+        let advices = (0..CIRCUIT_WIDTH)
             .map(|_| meta.advice_column())
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
 
-        // fixed_table contains pre-built tables identified by tag including:
+        // table_fixed contains pre-built tables identified by tag including:
         // - different size range tables
         // - bitwise table
         // - comparator table
         // - ...
-        let fixed_table = [
+        let table_fixed = [
             meta.fixed_column(), // tag
             meta.fixed_column(),
             meta.fixed_column(),
             meta.fixed_column(),
         ];
 
-        let mut selector_exp = Expression::Constant(F::zero());
-        let mut cells = Vec::with_capacity(Self::WIDTH * Self::HEIGHT);
-        meta.create_gate("Query cells for current step", |meta| {
-            selector_exp = meta.query_selector(selector);
+        let (
+            q_step_exp,
+            op_execution_state_curr,
+            op_execution_state_next,
+            op_execution_free_cells,
+        ) = Self::configure_allocations(meta, q_step, advices);
 
-            for h in 0..Self::HEIGHT as i32 {
-                for &column in columns.iter() {
-                    cells.push(Cell {
+        // independent_lookups collect lookups by independent selectors, which
+        // means we can sum some of them together to save lookups.
+        let mut independent_lookups =
+            Vec::<(Expression<F>, Vec<Lookup<F>>)>::new();
+
+        let op_execution_gadget = OpExecutionGadget::configure(
+            meta,
+            r,
+            q_step_exp,
+            op_execution_state_curr,
+            op_execution_state_next,
+            op_execution_free_cells,
+            &mut independent_lookups,
+        );
+
+        // TODO: call_initialization_gadget
+
+        Self::configure_lookups(meta, &table_fixed, independent_lookups);
+
+        EvmCircuit {
+            q_step,
+            table_fixed,
+            op_execution_gadget,
+        }
+    }
+
+    fn configure_allocations(
+        meta: &mut ConstraintSystem<F>,
+        q_step: Selector,
+        advices: [Column<Advice>; CIRCUIT_WIDTH],
+    ) -> (
+        Expression<F>,
+        OpExecutionState<F>,
+        OpExecutionState<F>,
+        Vec<Cell<F>>,
+    ) {
+        let mut q_step_exp = Expression::Constant(F::zero());
+        meta.create_gate("Query q_step", |meta| {
+            q_step_exp = meta.query_selector(q_step);
+
+            vec![Expression::Constant(F::zero())]
+        });
+
+        let mut cells_curr = Vec::with_capacity(CIRCUIT_WIDTH * CIRCUIT_HEIGHT);
+        meta.create_gate("Query cells for current step", |meta| {
+            for h in 0..CIRCUIT_HEIGHT as i32 {
+                for &column in advices.iter() {
+                    cells_curr.push(Cell {
                         expression: meta.query_advice(column, Rotation(h)),
                         column,
                         offset: h as usize,
@@ -333,16 +384,15 @@ impl<F: FieldExt> EvmCircuit<F> {
             vec![Expression::Constant(F::zero())]
         });
 
-        let (op_execution_state_curr_cells, free_cells) =
-            cells.split_at(OpExecutionState::<F>::SIZE);
+        let num_cells_next_asseccible = NUM_CELL_OP_EXECTION_STATE;
 
-        let op_execution_state_next_cells =
-            &mut op_execution_state_curr_cells.to_vec()[..];
+        let cells_next =
+            &mut cells_curr[..num_cells_next_asseccible].to_vec()[..];
         meta.create_gate("Query cells for next step", |meta| {
-            for cell in op_execution_state_next_cells.iter_mut() {
+            for cell in cells_next.iter_mut() {
                 cell.expression = meta.query_advice(
                     cell.column,
-                    Rotation((cell.offset + Self::HEIGHT) as i32),
+                    Rotation((cell.offset + CIRCUIT_HEIGHT) as i32),
                 );
             }
 
@@ -350,39 +400,23 @@ impl<F: FieldExt> EvmCircuit<F> {
         });
 
         let op_execution_state_curr =
-            OpExecutionState::new(op_execution_state_curr_cells);
+            OpExecutionState::new(&cells_curr[..NUM_CELL_OP_EXECTION_STATE]);
         let op_execution_state_next =
-            OpExecutionState::new(op_execution_state_next_cells);
+            OpExecutionState::new(&cells_next[..NUM_CELL_OP_EXECTION_STATE]);
+        let op_execution_free_cells =
+            cells_curr[NUM_CELL_OP_EXECTION_STATE..].to_vec();
 
-        // independent_lookups collect lookups by independent selectors, which
-        // means we can sum some of them together to save lookups.
-        let mut independent_lookups =
-            Vec::<(Expression<F>, Vec<Lookup<F>>)>::new();
-
-        let op_execution_gadget = OpExecutionGadget::configure(
-            meta,
-            r,
-            selector_exp,
+        (
+            q_step_exp,
             op_execution_state_curr,
             op_execution_state_next,
-            free_cells,
-            &mut independent_lookups,
-        );
-
-        // TODO: call_initialization_gadget
-
-        Self::configure_lookups(meta, &fixed_table, independent_lookups);
-
-        EvmCircuit {
-            selector,
-            fixed_table,
-            op_execution_gadget,
-        }
+            op_execution_free_cells,
+        )
     }
 
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
-        fixed_table: &[Column<Fixed>; 4],
+        table_fixed: &[Column<Fixed>; 4],
         independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) {
         // TODO: call_lookups
@@ -435,7 +469,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             meta.lookup(|meta| {
                 fixed_lookup
                     .iter()
-                    .zip(fixed_table.iter())
+                    .zip(table_fixed.iter())
                     .map(|(exp, fixed)| {
                         (exp.clone(), meta.query_fixed(*fixed, Rotation::cur()))
                     })
@@ -454,7 +488,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                 let mut offest = 0;
 
                 // Noop
-                for (idx, column) in self.fixed_table.iter().enumerate() {
+                for (idx, column) in self.table_fixed.iter().enumerate() {
                     region.assign_fixed(
                         || format!("Noop: {}", idx),
                         *column,
@@ -468,18 +502,18 @@ impl<F: FieldExt> EvmCircuit<F> {
                 for idx in 0..256 {
                     region.assign_fixed(
                         || "Range256: tag",
-                        self.fixed_table[0],
+                        self.table_fixed[0],
                         offest,
                         || Ok(F::from_u64(FixedLookup::Range256 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range256: value",
-                        self.fixed_table[1],
+                        self.table_fixed[1],
                         offest,
                         || Ok(F::from_u64(idx as u64)),
                     )?;
                     for (idx, column) in
-                        self.fixed_table[2..].iter().enumerate()
+                        self.table_fixed[2..].iter().enumerate()
                     {
                         region.assign_fixed(
                             || format!("Range256: padding {}", idx),
@@ -508,29 +542,29 @@ impl<F: FieldExt> EvmCircuit<F> {
         layouter.assign_region(
             || "evm circuit",
             |mut region| {
-                let mut op_execution_state = OpExecutionStateInstance::new(0);
+                let mut core_state = CoreStateInstance::new(0);
 
                 // TODO: call_initialization should maintain this
-                op_execution_state.is_executing = true;
+                core_state.is_executing = true;
 
                 for (idx, execution_step) in execution_steps.iter().enumerate()
                 {
-                    let offset = idx * Self::HEIGHT;
+                    let offset = idx * CIRCUIT_HEIGHT;
 
-                    self.selector.enable(&mut region, offset)?;
+                    self.q_step.enable(&mut region, offset)?;
 
                     self.op_execution_gadget.assign_execution_step(
                         &mut region,
                         offset,
-                        &mut op_execution_state,
+                        &mut core_state,
                         Some(execution_step),
                     )?;
                 }
 
                 self.op_execution_gadget.assign_execution_step(
                     &mut region,
-                    execution_steps.len() * Self::HEIGHT,
-                    &mut op_execution_state,
+                    execution_steps.len() * CIRCUIT_HEIGHT,
+                    &mut core_state,
                     None,
                 )?;
 
