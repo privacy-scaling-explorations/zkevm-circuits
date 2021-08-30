@@ -243,7 +243,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         macro_rules! construct_op_gadget {
             {} => {};
             {$name:ident = $gadget:ident} => {
-                let $name = Self::constrcut_op_gadget::<$gadget::<F>>(
+                let $name = Self::construct_op_gadget::<$gadget::<F>>(
                     r,
                     &state_curr,
                     &state_next,
@@ -270,12 +270,6 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             add_gadget = AddGadget;
             push_gadget = PushGadget;
         }
-
-        /*
-        construct_op_gadget! {
-            push_gadget = PushGadget;
-        }
-        */
 
         for constraint in constraints.into_iter() {
             let Constraint {
@@ -316,7 +310,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn constrcut_op_gadget<O: OpGadget<F>>(
+    fn construct_op_gadget<O: OpGadget<F>>(
         r: F,
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,

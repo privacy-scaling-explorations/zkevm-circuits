@@ -145,6 +145,7 @@ pub(crate) enum FixedLookup {
     Noop,
     // meaningful tags start with 1
     Range256,
+    Range32,
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
@@ -681,31 +682,31 @@ impl<F: FieldExt> EvmCircuit<F> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
-                let mut offest = 0;
+                let mut offset = 0;
 
                 // Noop
                 for (idx, column) in self.fixed_table.iter().enumerate() {
                     region.assign_fixed(
                         || format!("Noop: {}", idx),
                         *column,
-                        offest,
+                        offset,
                         || Ok(F::zero()),
                     )?;
                 }
-                offest += 1;
+                offset += 1;
 
                 // Range256
                 for idx in 0..256 {
                     region.assign_fixed(
                         || "Range256: tag",
                         self.fixed_table[0],
-                        offest,
+                        offset,
                         || Ok(F::from_u64(FixedLookup::Range256 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range256: value",
                         self.fixed_table[1],
-                        offest,
+                        offset,
                         || Ok(F::from_u64(idx as u64)),
                     )?;
                     for (idx, column) in
@@ -714,11 +715,38 @@ impl<F: FieldExt> EvmCircuit<F> {
                         region.assign_fixed(
                             || format!("Range256: padding {}", idx),
                             *column,
-                            offest,
+                            offset,
                             || Ok(F::zero()),
                         )?;
                     }
-                    offest += 1;
+                    offset += 1;
+                }
+
+                // Range32
+                for idx in 0..31 {
+                    region.assign_fixed(
+                        || "Range32: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::Range32 as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "Range32: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[2..].iter().enumerate()
+                    {
+                        region.assign_fixed(
+                            || format!("Range32: padding {}", idx),
+                            *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
                 }
 
                 // TODO: BitwiseAnd

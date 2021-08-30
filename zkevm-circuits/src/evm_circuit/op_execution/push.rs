@@ -1,5 +1,6 @@
 use super::super::{
-    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, FixedLookup,
+    Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use halo2::plonk::Error;
@@ -17,7 +18,7 @@ struct PushSuccessAllocation<F> {
 #[derive(Clone, Debug)]
 pub struct PushGadget<F> {
     success: PushSuccessAllocation<F>,
-    stack_underflow: Cell<F>, // case selector
+    stack_overflow: Cell<F>, // case selector
     out_of_gas: (
         Cell<F>, // case selector
         Cell<F>, // gas available
@@ -39,7 +40,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             will_resume: false,
         },
         CaseConfig {
-            case: Case::StackUnderflow,
+            case: Case::StackOverflow,
             num_word: 0,
             num_cell: 0,
             will_resume: true,
@@ -53,58 +54,53 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
     ];
 
     fn construct(case_allocations: Vec<CaseAllocation<F>>) -> Self {
-        let [mut success, stack_underflow, out_of_gas]: [CaseAllocation<F>; 3] =
+        let [mut success, stack_overflow, out_of_gas]: [CaseAllocation<F>; 3] =
             case_allocations.try_into().unwrap();
         Self {
             success: PushSuccessAllocation {
                 case_selector: success.selector.clone(),
                 word: success.words.pop().unwrap(),
-                selectors: success.cells.to_owned().try_into().unwrap(),
+                selectors: success.cells.try_into().unwrap(),
             },
-            stack_underflow: stack_underflow.selector.clone(),
+            stack_overflow: stack_overflow.selector,
             out_of_gas: (
-                out_of_gas.selector.clone(),
-                out_of_gas.resumption.unwrap().gas_available.clone(),
+                out_of_gas.selector,
+                out_of_gas.resumption.unwrap().gas_available,
             ),
         }
     }
 
     fn constraints(
         &self,
-        op_execution_state_curr: &OpExecutionState<F>,
-        op_execution_state_next: &OpExecutionState<F>,
+        state_curr: &OpExecutionState<F>,
+        state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
         let push1 = Expression::Constant(F::from_u64(96));
-        let opcode = op_execution_state_curr.opcode.expr();
+        let OpExecutionState { opcode, .. } = &state_curr;
 
-        let common = {
-            Constraint {
-                name: "PushGadget common",
-                selector: Expression::Constant(F::one()),
-                polys: vec![],
-                lookups: vec![], /* TODO: opcode - push1
-                                  * in 1..32 */
-            }
-        };
+        let zero = Expression::Constant(F::zero());
+        let common_lookups = vec![Lookup::FixedLookup(
+            FixedLookup::Range32,
+            [opcode.expr() - push1.clone(), zero.clone(), zero],
+        )];
 
         let success = {
             let one = Expression::Constant(F::one());
 
             // interpreter state transition constraints
-            let op_execution_state_transition_constraints = vec![
-                op_execution_state_next.global_counter.expr()
-                    - (op_execution_state_curr.global_counter.expr()
+            let state_transition_constraints = vec![
+                state_next.global_counter.expr()
+                    - (state_curr.global_counter.expr()
                         + Expression::Constant(F::from_u64(1))),
-                op_execution_state_next.stack_pointer.expr()
-                    - (op_execution_state_curr.stack_pointer.expr()
-                        + Expression::Constant(F::from_u64(1))),
-                op_execution_state_next.program_counter.expr()
-                    - (op_execution_state_curr.program_counter.expr()
-                        + opcode.clone()
+                state_next.program_counter.expr()
+                    - (state_curr.program_counter.expr() + opcode.expr()
                         - push1.clone()
                         + one.clone()),
-                op_execution_state_next.gas_counter.expr()
-                    - (op_execution_state_curr.gas_counter.expr()
+                state_next.stack_pointer.expr()
+                    - (state_curr.stack_pointer.expr()
+                        + Expression::Constant(F::from_u64(1))),
+                state_next.gas_counter.expr()
+                    - (state_curr.gas_counter.expr()
                         + Expression::Constant(F::from_u64(3))),
             ];
 
@@ -115,7 +111,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             } = &self.success;
 
             let mut push_constraints = vec![];
-            for idx in 1..32 {
+            for idx in 0..31 {
                 // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
                 // 0, 0, 0]
                 if idx > 0 {
@@ -138,7 +134,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             let selectors_sum = selectors
                 .iter()
                 .fold(Expression::Constant(F::zero()), |sum, s| sum + s.expr());
-            push_constraints.push(selectors_sum - opcode + push1 - one);
+            push_constraints.push(selectors_sum - opcode.expr() + push1 - one);
 
             let bus_mapping_lookups = vec![/*Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 1,
@@ -149,29 +145,26 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             Constraint {
                 name: "PushGadget success",
                 selector: case_selector.expr(),
-                polys: [
-                    op_execution_state_transition_constraints,
-                    push_constraints,
-                ]
-                .concat(),
-                lookups: bus_mapping_lookups,
+                polys: [state_transition_constraints, push_constraints]
+                    .concat(),
+                lookups: [common_lookups.clone(), bus_mapping_lookups].concat(),
             }
         };
 
-        let stack_underflow = {
+        let stack_overflow = {
             let (zero, minus_one) = (
                 Expression::Constant(F::from_u64(1024)),
                 Expression::Constant(F::from_u64(1023)),
             );
-            let stack_pointer = op_execution_state_curr.stack_pointer.expr();
+            let stack_pointer = state_curr.stack_pointer.expr();
             Constraint {
-                name: "PushGadget stack underflow",
-                selector: self.stack_underflow.expr(),
+                name: "PushGadget stack overflow",
+                selector: self.stack_overflow.expr(),
                 polys: vec![
                     (stack_pointer.clone() - zero)
                         * (stack_pointer - minus_one),
                 ],
-                lookups: vec![],
+                lookups: common_lookups.clone(),
             }
         };
 
@@ -182,8 +175,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
                 Expression::Constant(F::from_u64(3)),
             );
             let (case_selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = op_execution_state_curr.gas_counter.expr()
-                + three.clone()
+            let gas_overdemand = state_curr.gas_counter.expr() + three.clone()
                 - gas_available.expr();
             Constraint {
                 name: "PushGadget out of gas",
@@ -193,11 +185,11 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
                         * (gas_overdemand.clone() - two)
                         * (gas_overdemand - three),
                 ],
-                lookups: vec![],
+                lookups: common_lookups,
             }
         };
 
-        vec![common, success, stack_underflow, out_of_gas]
+        vec![success, stack_overflow, out_of_gas]
     }
 
     fn assign(
@@ -211,7 +203,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             Case::Success => {
                 self.assign_success(region, offset, core_state, execution_step)
             }
-            Case::StackUnderflow => {
+            Case::StackOverflow => {
                 unimplemented!()
             }
             Case::OutOfGas => {
