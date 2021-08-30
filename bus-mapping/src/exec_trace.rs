@@ -2,8 +2,8 @@
 //! execution traces.
 pub(crate) mod exec_step;
 use crate::evm::EvmWord;
-use crate::operation::Target;
 use crate::operation::{container::OperationContainer, Operation};
+use crate::operation::{MemoryOp, StackOp, StorageOp, Target};
 use core::ops::{Index, IndexMut};
 pub use exec_step::ExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
@@ -187,6 +187,27 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// for.
     pub fn container(&self) -> &OperationContainer {
         &self.container
+    }
+
+    /// Returns an ordered `Vec` containing all the [`StackOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_stack_ops(&self) -> Vec<StackOp> {
+        self.container.sorted_stack()
+    }
+
+    /// Returns an ordered `Vec` containing all the [`MemoryOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_memory_ops(&self) -> Vec<MemoryOp> {
+        self.container.sorted_memory()
+    }
+
+    /// Returns an ordered `Vec` containing all the [`StorageOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_storage_ops(&self) -> Vec<StorageOp> {
+        self.container.sorted_storage()
     }
 
     /// Registers an [`Operation`] into the [`OperationContainer`] and then adds
