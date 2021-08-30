@@ -158,7 +158,7 @@ pub(crate) struct Cell<F> {
 }
 
 impl<F: FieldExt> Cell<F> {
-    fn exp(&self) -> Expression<F> {
+    fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 
@@ -199,13 +199,13 @@ impl<F: FieldExt> Word<F> {
                 .iter()
                 .rev()
                 .fold(Expression::Constant(F::zero()), |acc, byte| {
-                    acc * r.clone() + byte.exp()
+                    acc * r.clone() + byte.expr()
                 }),
             cells: cells.to_owned().try_into().unwrap(),
         }
     }
 
-    fn exp(&self) -> Expression<F> {
+    fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 
@@ -439,7 +439,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             "Query synthetic selector for OpExecutionGadget",
             |meta| {
                 qs_op_execution = meta.query_selector(q_step)
-                    * op_execution_state_curr.is_executing.exp();
+                    * op_execution_state_curr.is_executing.expr();
 
                 vec![Expression::Constant(F::zero())]
             },

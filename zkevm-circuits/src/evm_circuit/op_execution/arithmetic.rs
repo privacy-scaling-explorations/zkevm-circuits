@@ -76,18 +76,18 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
 
     fn constraints(
         &self,
-        op_execution_state_curr: &OpExecutionState<F>,
-        op_execution_state_next: &OpExecutionState<F>,
+        state_curr: &OpExecutionState<F>,
+        state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
         let (add, sub) = (
             Expression::Constant(F::from_u64(1)),
             Expression::Constant(F::from_u64(3)),
         );
 
-        let OpExecutionState { opcode, .. } = &op_execution_state_curr;
+        let OpExecutionState { opcode, .. } = &state_curr;
 
         let common_polys =
-            vec![(opcode.exp() - add.clone()) * (opcode.exp() - sub.clone())];
+            vec![(opcode.expr() - add.clone()) * (opcode.expr() - sub.clone())];
 
         let success = {
             let (one, exp_256) = (
@@ -96,18 +96,18 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             );
 
             // interpreter state transition constraints
-            let op_execution_state_transition_constraints = vec![
-                op_execution_state_next.global_counter.exp()
-                    - (op_execution_state_curr.global_counter.exp()
+            let state_transition_constraints = vec![
+                state_next.global_counter.expr()
+                    - (state_curr.global_counter.expr()
                         + Expression::Constant(F::from_u64(3))),
-                op_execution_state_next.stack_pointer.exp()
-                    - (op_execution_state_curr.stack_pointer.exp()
+                state_next.program_counter.expr()
+                    - (state_curr.program_counter.expr()
                         + Expression::Constant(F::from_u64(1))),
-                op_execution_state_next.program_counter.exp()
-                    - (op_execution_state_curr.program_counter.exp()
+                state_next.stack_pointer.expr()
+                    - (state_curr.stack_pointer.expr()
                         + Expression::Constant(F::from_u64(1))),
-                op_execution_state_next.gas_counter.exp()
-                    - (op_execution_state_curr.gas_counter.exp()
+                state_next.gas_counter.expr()
+                    - (state_curr.gas_counter.expr()
                         + Expression::Constant(F::from_u64(3))),
             ];
 
@@ -121,24 +121,24 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             } = &self.success;
 
             // swap a and c if it's SUB
-            let no_swap = one - swap.exp();
+            let no_swap = one - swap.expr();
             let swap_constraints = vec![
-                swap.exp() * no_swap.clone(),
-                swap.exp() * (opcode.exp() - sub),
-                no_swap * (opcode.exp() - add),
+                swap.expr() * no_swap.clone(),
+                swap.expr() * (opcode.expr() - sub),
+                no_swap * (opcode.expr() - add),
             ];
 
             // add constraints
             let mut add_constraints = vec![
-                (carry[0].exp() * exp_256.clone() + c.cells[0].exp())
-                    - (a.cells[0].exp() + b.cells[0].exp()),
+                (carry[0].expr() * exp_256.clone() + c.cells[0].expr())
+                    - (a.cells[0].expr() + b.cells[0].expr()),
             ];
             for idx in 1..32 {
                 add_constraints.push(
-                    (carry[idx].exp() * exp_256.clone() + c.cells[idx].exp())
-                        - (a.cells[idx].exp()
-                            + b.cells[idx].exp()
-                            + carry[idx - 1].exp()),
+                    (carry[idx].expr() * exp_256.clone() + c.cells[idx].expr())
+                        - (a.cells[idx].expr()
+                            + b.cells[idx].expr()
+                            + carry[idx - 1].expr()),
                 )
             }
 
@@ -146,27 +146,27 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             let bus_mapping_lookups = vec![
                 // Lookup::BusMappingLookup(BusMappingLookup::Stack {
                 //     index_offset: 1,
-                //     value: swap.exp() * c.exp() + no_swap.clone() * a.exp(),
+                //     value: swap.expr() * c.expr() + no_swap.clone() * a.expr(),
                 //     is_write: false,
                 // }),
                 // Lookup::BusMappingLookup(BusMappingLookup::Stack {
                 //     index_offset: 2,
-                //     value: b.exp(),
+                //     value: b.expr(),
                 //     is_write: false,
                 // }),
                 // Lookup::BusMappingLookup(BusMappingLookup::Stack {
                 //     index_offset: 1,
-                //     value: swap.exp() * a.exp() + no_swap * c.exp(),
+                //     value: swap.expr() * a.expr() + no_swap * c.expr(),
                 //     is_write: true,
                 // }),
             ];
 
             Constraint {
                 name: "AddGadget success",
-                selector: selector.exp(),
+                selector: selector.expr(),
                 polys: [
                     common_polys.clone(),
-                    op_execution_state_transition_constraints,
+                    state_transition_constraints,
                     swap_constraints,
                     add_constraints,
                 ]
@@ -180,10 +180,10 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 Expression::Constant(F::from_u64(1024)),
                 Expression::Constant(F::from_u64(1023)),
             );
-            let stack_pointer = op_execution_state_curr.stack_pointer.exp();
+            let stack_pointer = state_curr.stack_pointer.expr();
             Constraint {
                 name: "AddGadget stack underflow",
-                selector: self.stack_underflow.exp(),
+                selector: self.stack_underflow.expr(),
                 polys: [
                     common_polys.clone(),
                     vec![
@@ -203,12 +203,11 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 Expression::Constant(F::from_u64(3)),
             );
             let (selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = op_execution_state_curr.gas_counter.exp()
-                + three.clone()
-                - gas_available.exp();
+            let gas_overdemand = state_curr.gas_counter.expr() + three.clone()
+                - gas_available.expr();
             Constraint {
                 name: "AddGadget out of gas",
-                selector: selector.exp(),
+                selector: selector.expr(),
                 polys: [
                     common_polys,
                     vec![
