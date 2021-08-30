@@ -16,7 +16,9 @@ lazy_static! {
 }
 
 /// Doc
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
+)]
 pub(crate) struct ProgramCounter(pub(crate) usize);
 
 impl From<ProgramCounter> for usize {
@@ -68,7 +70,8 @@ impl FromStr for MemoryAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
-            BigUint::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
+            BigUint::from_str_radix(s, 16)
+                .map_err(|_| Error::EvmWordParsing)?,
         ))
     }
 }
@@ -123,7 +126,8 @@ impl FromStr for EvmWord {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(EvmWord(
-            BigUint::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
+            BigUint::from_str_radix(s, 16)
+                .map_err(|_| Error::EvmWordParsing)?,
         ))
     }
 }

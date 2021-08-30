@@ -24,7 +24,8 @@ impl Opcode for Push1 {
             GlobalCounter::from(exec_step.gc().0 + 1),
             exec_step.stack_addr(),
             // TODO: This could be more robust.
-            // We should have a way to collect this addr (the parsed one which is not tied to 1024)
+            // We should have a way to collect this addr (the parsed one which
+            // is not tied to 1024)
             exec_step.stack()[exec_step.stack().len() - 1].clone(),
         );
 

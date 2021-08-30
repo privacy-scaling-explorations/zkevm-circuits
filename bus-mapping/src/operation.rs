@@ -37,7 +37,12 @@ pub(crate) struct MemoryOp {
 }
 
 impl MemoryOp {
-    pub const fn new(rw: RW, gc: GlobalCounter, addr: MemoryAddress, value: EvmWord) -> MemoryOp {
+    pub const fn new(
+        rw: RW,
+        gc: GlobalCounter,
+        addr: MemoryAddress,
+        value: EvmWord,
+    ) -> MemoryOp {
         MemoryOp {
             rw,
             gc,
@@ -110,7 +115,12 @@ pub(crate) struct StackOp {
 }
 
 impl StackOp {
-    pub const fn new(rw: RW, gc: GlobalCounter, addr: StackAddress, value: EvmWord) -> StackOp {
+    pub const fn new(
+        rw: RW,
+        gc: GlobalCounter,
+        addr: StackAddress,
+        value: EvmWord,
+    ) -> StackOp {
         StackOp {
             rw,
             gc,
@@ -241,12 +251,14 @@ impl PartialEq for Operation {
             (Operation::Stack(stack_op_1), Operation::Stack(stack_op_2)) => {
                 stack_op_1.eq(stack_op_2)
             }
-            (Operation::Memory(memory_op_1), Operation::Memory(memory_op_2)) => {
-                memory_op_1.eq(memory_op_2)
-            }
-            (Operation::Storage(storage_op_1), Operation::Storage(storage_op_2)) => {
-                storage_op_1.eq(storage_op_2)
-            }
+            (
+                Operation::Memory(memory_op_1),
+                Operation::Memory(memory_op_2),
+            ) => memory_op_1.eq(memory_op_2),
+            (
+                Operation::Storage(storage_op_1),
+                Operation::Storage(storage_op_2),
+            ) => storage_op_1.eq(storage_op_2),
             _ => false,
         }
     }
@@ -260,12 +272,14 @@ impl PartialOrd for Operation {
             (Operation::Stack(stack_op_1), Operation::Stack(stack_op_2)) => {
                 stack_op_1.partial_cmp(stack_op_2)
             }
-            (Operation::Memory(memory_op_1), Operation::Memory(memory_op_2)) => {
-                memory_op_1.partial_cmp(memory_op_2)
-            }
-            (Operation::Storage(storage_op_1), Operation::Storage(storage_op_2)) => {
-                storage_op_1.partial_cmp(storage_op_2)
-            }
+            (
+                Operation::Memory(memory_op_1),
+                Operation::Memory(memory_op_2),
+            ) => memory_op_1.partial_cmp(memory_op_2),
+            (
+                Operation::Storage(storage_op_1),
+                Operation::Storage(storage_op_2),
+            ) => storage_op_1.partial_cmp(storage_op_2),
             _ => None,
         }
     }
@@ -294,21 +308,27 @@ impl Operation {
 
     pub fn into_stack_unchecked(self) -> StackOp {
         match self {
-            Operation::Stack(stack_op) => unsafe { std::mem::transmute(stack_op) },
+            Operation::Stack(stack_op) => unsafe {
+                std::mem::transmute(stack_op)
+            },
             _ => panic!("Broken Invariant"),
         }
     }
 
     pub fn into_memory_unchecked(self) -> MemoryOp {
         match self {
-            Operation::Memory(memory_op) => unsafe { std::mem::transmute(memory_op) },
+            Operation::Memory(memory_op) => unsafe {
+                std::mem::transmute(memory_op)
+            },
             _ => panic!("Broken Invariant"),
         }
     }
 
     pub fn into_storage_unchecked(self) -> StorageOp {
         match self {
-            Operation::Storage(storage_op) => unsafe { std::mem::transmute(storage_op) },
+            Operation::Storage(storage_op) => unsafe {
+                std::mem::transmute(storage_op)
+            },
             _ => panic!("Broken Invariant"),
         }
     }

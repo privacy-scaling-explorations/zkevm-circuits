@@ -1,6 +1,8 @@
 use halo2::{
     circuit::{Chip, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, VirtualCells,
+    },
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -8,8 +10,8 @@ use std::array;
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
     /// Given a `value` to be checked if it is zero:
-    ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0,
-    ///     and `1/x` otherwise
+    ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
+    ///     `1/x` otherwise
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -40,6 +42,7 @@ impl<F: FieldExt> IsZeroChip<F> {
         // dummy initialization
         let mut is_zero_expression = Expression::Constant(F::zero());
 
+        #[rustfmt::skip]
         // Truth table of iz_zero gate:
         // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
         // | ok | value | value_inv | 1 - value ⋅ value_inv | value ⋅ (1 - value ⋅ value_inv) | value_inv ⋅ (1 - value ⋅ value_inv) |
@@ -59,14 +62,15 @@ impl<F: FieldExt> IsZeroChip<F> {
             let one = Expression::Constant(F::one());
             is_zero_expression = one - value.clone() * value_inv.clone();
 
-            // This checks `value_inv ≡ value.invert()` when `value` is not zero:
-            // value ⋅ (1 - value ⋅ value_inv)
+            // This checks `value_inv ≡ value.invert()` when `value` is not
+            // zero: value ⋅ (1 - value ⋅ value_inv)
             let poly1 = value * is_zero_expression.clone();
             // This checks `value_inv ≡ 0` when `value` is zero:
             // value_inv ⋅ (1 - value ⋅ value_inv)
             let poly2 = value_inv * is_zero_expression.clone();
 
-            array::IntoIter::new([poly1, poly2]).map(move |poly| q_enable.clone() * poly)
+            array::IntoIter::new([poly1, poly2])
+                .map(move |poly| q_enable.clone() * poly)
         });
 
         IsZeroConfig::<F> {
@@ -89,7 +93,8 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
     ) -> Result<(), Error> {
         let config = self.config();
 
-        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
+        let value_invert =
+            value.map(|value| value.invert().unwrap_or(F::zero()));
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
@@ -189,8 +194,10 @@ mod test {
                     meta,
                     |meta| meta.query_selector(q_enable),
                     |meta| {
-                        let value_prev = meta.query_advice(value, Rotation::prev());
-                        let value_cur = meta.query_advice(value, Rotation::cur());
+                        let value_prev =
+                            meta.query_advice(value, Rotation::prev());
+                        let value_cur =
+                            meta.query_advice(value, Rotation::cur());
                         value_cur - value_prev
                     },
                     value_diff_inv,
@@ -207,9 +214,14 @@ mod test {
                     let q_enable = meta.query_selector(q_enable);
 
                     // This verifies is_zero is calculated correctly
-                    let check = meta.query_advice(config.check, Rotation::cur());
+                    let check =
+                        meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.is_zero.is_zero_expression.clone() - check)]
+                    vec![
+                        q_enable
+                            * (config.is_zero.is_zero_expression.clone()
+                                - check),
+                    ]
                 });
 
                 config
@@ -225,9 +237,12 @@ mod test {
                 let values: Vec<_> = self
                     .values
                     .as_ref()
-                    .map(|values| values.iter().map(|value| F::from_u64(*value)).collect())
+                    .map(|values| {
+                        values.iter().map(|value| F::from_u64(*value)).collect()
+                    })
                     .ok_or(Error::SynthesisError)?;
-                let checks = self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                let checks =
+                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
                 let (first_value, values) = values.split_at(1);
                 let first_value = first_value[0];
 
@@ -242,7 +257,9 @@ mod test {
                         )?;
 
                         let mut value_prev = first_value;
-                        for (idx, (value, check)) in values.iter().zip(checks).enumerate() {
+                        for (idx, (value, check)) in
+                            values.iter().zip(checks).enumerate()
+                        {
                             region.assign_advice(
                                 || "check",
                                 config.check,
@@ -257,7 +274,11 @@ mod test {
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(&mut region, idx + 1, Some(*value - value_prev))?;
+                            chip.assign(
+                                &mut region,
+                                idx + 1,
+                                Some(*value - value_prev),
+                            )?;
 
                             value_prev = *value;
                         }
@@ -331,7 +352,8 @@ mod test {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.selector();
-                let (value_a, value_b) = (meta.advice_column(), meta.advice_column());
+                let (value_a, value_b) =
+                    (meta.advice_column(), meta.advice_column());
                 let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
 
@@ -339,8 +361,10 @@ mod test {
                     meta,
                     |meta| meta.query_selector(q_enable),
                     |meta| {
-                        let value_a = meta.query_advice(value_a, Rotation::cur());
-                        let value_b = meta.query_advice(value_b, Rotation::cur());
+                        let value_a =
+                            meta.query_advice(value_a, Rotation::cur());
+                        let value_b =
+                            meta.query_advice(value_b, Rotation::cur());
                         value_a - value_b
                     },
                     value_diff_inv,
@@ -358,9 +382,14 @@ mod test {
                     let q_enable = meta.query_selector(q_enable);
 
                     // This verifies is_zero is calculated correctly
-                    let check = meta.query_advice(config.check, Rotation::cur());
+                    let check =
+                        meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.is_zero.is_zero_expression.clone() - check)]
+                    vec![
+                        q_enable
+                            * (config.is_zero.is_zero_expression.clone()
+                                - check),
+                    ]
                 });
 
                 config
@@ -385,7 +414,8 @@ mod test {
                             .collect()
                     })
                     .ok_or(Error::SynthesisError)?;
-                let checks = self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                let checks =
+                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
 
                 layouter.assign_region(
                     || "witness",
@@ -413,7 +443,11 @@ mod test {
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(&mut region, idx + 1, Some(*value_a - *value_b))?;
+                            chip.assign(
+                                &mut region,
+                                idx + 1,
+                                Some(*value_a - *value_b),
+                            )?;
                         }
 
                         Ok(())

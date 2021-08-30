@@ -1,9 +1,13 @@
 // Doc this
 
 use crate::evm::{
-    EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter, StackAddress, MEM_ADDR_ZERO,
+    EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter,
+    StackAddress, MEM_ADDR_ZERO,
 };
-use crate::{error::Error, evm::opcodes::Opcode, operation::container::OperationContainer};
+use crate::{
+    error::Error, evm::opcodes::Opcode,
+    operation::container::OperationContainer,
+};
 use alloc::collections::BTreeMap;
 use core::{convert::TryFrom, str::FromStr};
 use halo2::arithmetic::FieldExt;
@@ -90,7 +94,10 @@ impl ExecutionStep {
     }
 
     // Returns the # operations added by the opcode
-    pub fn gen_associated_ops<F: FieldExt>(&mut self, container: &mut OperationContainer) -> usize {
+    pub fn gen_associated_ops<F: FieldExt>(
+        &mut self,
+        container: &mut OperationContainer,
+    ) -> usize {
         self.instruction()
             .opcode_id()
             .gen_associated_ops(self, container)
@@ -110,7 +117,10 @@ impl<'a> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter)> for ExecutionStep {
             .memory
             .iter()
             .try_for_each(|(mem_addr, word)| {
-                mem_map.insert(MemoryAddress::from_str(mem_addr)?, EvmWord::from_str(word)?);
+                mem_map.insert(
+                    MemoryAddress::from_str(mem_addr)?,
+                    EvmWord::from_str(word)?,
+                );
                 Ok(())
             })?;
 
@@ -162,7 +172,8 @@ mod tests {
         "#;
 
         let step_loaded: ExecutionStep = ExecutionStep::try_from((
-            &serde_json::from_str::<ParsedExecutionStep>(step_json).expect("Error on parsing"),
+            &serde_json::from_str::<ParsedExecutionStep>(step_json)
+                .expect("Error on parsing"),
             GlobalCounter(0usize),
         ))
         .expect("Error on conversion");
