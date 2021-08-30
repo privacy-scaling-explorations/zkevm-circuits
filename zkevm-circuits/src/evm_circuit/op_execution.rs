@@ -24,8 +24,8 @@ fn bool_switches_constraints<F: FieldExt>(
     let mut sum_to_one = Expression::Constant(F::zero());
 
     for switch in bool_switches {
-        constraints.push(switch.exp() * (one.clone() - switch.exp()));
-        sum_to_one = sum_to_one + switch.exp();
+        constraints.push(switch.expr() * (one.clone() - switch.expr()));
+        sum_to_one = sum_to_one + switch.expr();
     }
 
     constraints.push(one - sum_to_one);
@@ -171,8 +171,8 @@ trait OpGadget<F: FieldExt> {
 
     fn constraints(
         &self,
-        op_execution_state_curr: &OpExecutionState<F>,
-        op_execution_state_next: &OpExecutionState<F>,
+        state_curr: &OpExecutionState<F>,
+        state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>>;
 
     fn assign(
@@ -195,8 +195,8 @@ struct Preset<F> {
 pub(crate) struct OpExecutionGadget<F> {
     r: F,
     qs_byte_lookups: Vec<Cell<F>>,
-    op_execution_state_curr: OpExecutionState<F>,
-    op_execution_state_next: OpExecutionState<F>,
+    state_curr: OpExecutionState<F>,
+    state_next: OpExecutionState<F>,
     qs_ops: Vec<Cell<F>>,
     free_cells: Vec<Cell<F>>,
     resumption: Resumption<F>,
@@ -214,8 +214,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         r: F,
         qs_op_execution: Expression<F>,
         qs_byte_lookups: Vec<Cell<F>>,
-        op_execution_state_curr: OpExecutionState<F>,
-        op_execution_state_next: OpExecutionState<F>,
+        state_curr: OpExecutionState<F>,
+        state_next: OpExecutionState<F>,
         free_cells: Vec<Cell<F>>,
         independent_lookups: &mut Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) -> Self {
@@ -241,8 +241,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             {$name:ident = $gadget:ident} => {
                 let $name = Self::constrcut_op_gadget::<$gadget::<F>>(
                     r,
-                    &op_execution_state_curr,
-                    &op_execution_state_next,
+                    &state_curr,
+                    &state_next,
                     qs_ops,
                     qs_op_idx,
                     free_cells,
@@ -292,8 +292,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         Self {
             r,
             qs_byte_lookups,
-            op_execution_state_curr,
-            op_execution_state_next,
+            state_curr,
+            state_next,
             qs_ops: qs_ops.to_vec(),
             free_cells: free_cells.to_vec(),
             qs_op_idx_map,
@@ -306,8 +306,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
     #[allow(clippy::too_many_arguments)]
     fn constrcut_op_gadget<O: OpGadget<F>>(
         r: F,
-        op_execution_state_curr: &OpExecutionState<F>,
-        op_execution_state_next: &OpExecutionState<F>,
+        state_curr: &OpExecutionState<F>,
+        state_next: &OpExecutionState<F>,
         qs_ops: &[Cell<F>],
         qs_op_idx: usize,
         free_cells: &[Cell<F>],
@@ -334,7 +334,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         constraints.push(Constraint {
             name: "case selectors",
-            selector: qs_op.exp(),
+            selector: qs_op.expr(),
             polys: bool_switches_constraints(qs_cases),
             lookups: vec![],
         });
@@ -392,10 +392,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 let qs_case = &qs_cases[q_case_idx];
                 constraints.push(Constraint {
                     name: "case unused",
-                    selector: qs_op.exp() * qs_case.exp(),
+                    selector: qs_op.expr() * qs_case.expr(),
                     polys: unused_idxs
                         .into_iter()
-                        .map(|idx| free_cells[idx].exp())
+                        .map(|idx| free_cells[idx].expr())
                         .collect(),
                     lookups: vec![],
                 });
@@ -413,7 +413,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         constraints.append(
             &mut gadget
-                .constraints(op_execution_state_curr, op_execution_state_next)
+                .constraints(state_curr, state_next)
                 .into_iter()
                 .map(|mut constraint| {
                     assert!(
@@ -422,7 +422,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     );
 
                     constraint.selector =
-                        qs_op.exp() * constraint.selector.clone();
+                        qs_op.expr() * constraint.selector.clone();
                     constraint
                 })
                 .collect(),
@@ -440,39 +440,37 @@ impl<F: FieldExt> OpExecutionGadget<F> {
     ) -> Result<(), Error> {
         assert!(core_state.is_executing);
 
-        self.op_execution_state_curr.is_executing.assign(
-            region,
-            offset,
-            Some(F::one()),
-        )?;
-        self.op_execution_state_curr.global_counter.assign(
+        self.state_curr
+            .is_executing
+            .assign(region, offset, Some(F::one()))?;
+        self.state_curr.global_counter.assign(
             region,
             offset,
             Some(F::from_u64(core_state.global_counter as u64)),
         )?;
-        self.op_execution_state_curr.call_id.assign(
+        self.state_curr.call_id.assign(
             region,
             offset,
             Some(F::from_u64(core_state.call_id as u64)),
         )?;
-        self.op_execution_state_curr.program_counter.assign(
+        self.state_curr.program_counter.assign(
             region,
             offset,
             Some(F::from_u64(core_state.program_counter as u64)),
         )?;
-        self.op_execution_state_curr.stack_pointer.assign(
+        self.state_curr.stack_pointer.assign(
             region,
             offset,
             Some(F::from_u64(core_state.stack_pointer as u64)),
         )?;
-        self.op_execution_state_curr.gas_counter.assign(
+        self.state_curr.gas_counter.assign(
             region,
             offset,
             Some(F::from_u64(core_state.gas_counter as u64)),
         )?;
 
         if let Some(execution_step) = execution_step {
-            self.op_execution_state_curr.opcode.assign(
+            self.state_curr.opcode.assign(
                 region,
                 offset,
                 Some(F::from_u64(execution_step.opcode as u64)),
