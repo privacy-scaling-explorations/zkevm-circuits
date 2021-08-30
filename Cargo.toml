@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "zkevm-circuits",
-    "bus-mapping"
+    "bus-mapping",
+    "keccak256"
     ]
 
 [patch.crates-io]
