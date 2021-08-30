@@ -1,5 +1,6 @@
 // FIXME: decide a optimal circuit dimension in the future
 // Circuit dimension
+// NOTE: CIRCUIT_WIDTH should be divide 32 evenly for whole row byte lookup
 pub const CIRCUIT_WIDTH: usize = 32;
 pub const CIRCUIT_HEIGHT: usize = 10;
 
