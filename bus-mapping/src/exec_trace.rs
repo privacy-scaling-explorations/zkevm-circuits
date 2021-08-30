@@ -4,9 +4,13 @@ pub(crate) mod exec_step;
 use crate::evm::EvmWord;
 use crate::operation::{container::OperationContainer, Operation};
 use crate::operation::{MemoryOp, StackOp, StorageOp, Target};
+use crate::Error;
 use core::ops::{Index, IndexMut};
 pub use exec_step::ExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
+use std::convert::TryFrom;
+
+use self::exec_step::ParsedExecutionStep;
 
 /// Definition of all of the constants related to an Ethereum block and
 /// therefore, related with an [`ExecutionTrace`].
@@ -135,6 +139,24 @@ impl<F: FieldExt> IndexMut<usize> for ExecutionTrace<F> {
 }
 
 impl<F: FieldExt> ExecutionTrace<F> {
+    /// Given an EVM trace in JSON format according to the specs and format
+    /// shown in [zkevm-test-vectors crate](https://github.com/appliedzkp/zkevm-testing-vectors), generate an `ExecutionTrace`
+    /// and generate all of the [`Operation`]s associated to each one of it's
+    /// [`ExecutionStep`]s filling them bus-mapping instances.
+    pub fn from_trace_bytes<T: AsRef<[u8]>>(
+        bytes: T,
+        block_ctants: BlockConstants<F>,
+    ) -> Result<ExecutionTrace<F>, Error> {
+        let trace_loaded =
+            serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
+                .map_err(|_| Error::SerdeError)?
+                .iter()
+                .map(ExecutionStep::try_from)
+                .collect::<Result<Vec<ExecutionStep>, Error>>()?;
+
+        Ok(ExecutionTrace::<F>::new(trace_loaded, block_ctants))
+    }
+
     /// Given a vector of [`ExecutionStep`]s and a [`BlockConstants`] instance,
     /// generate an [`ExecutionTrace`] by:
     ///
@@ -143,7 +165,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// 2) Generating the corresponding [`Operation`]s, registering them in the
     /// container and storing the [`OperationRef`]s to each one of the
     /// generated ops into the bus-mapping instances of each [`ExecutionStep`].
-    pub fn new(
+    pub(crate) fn new(
         entries: Vec<ExecutionStep>,
         block_ctants: BlockConstants<F>,
     ) -> Self {
@@ -261,18 +283,16 @@ impl OperationRef {
 #[cfg(test)]
 mod trace_tests {
     use super::*;
-    use crate::error::Error;
     use crate::{
         evm::{
             opcodes::ids::OpcodeId, GlobalCounter, Instruction, MemoryAddress,
             ProgramCounter, StackAddress,
         },
-        exec_trace::{exec_step::ParsedExecutionStep, ExecutionStep},
+        exec_trace::ExecutionStep,
         operation::{StackOp, RW},
     };
     use alloc::collections::BTreeMap;
     use num::BigUint;
-    use std::convert::TryFrom;
 
     #[test]
     fn exec_trace_parsing() {
@@ -394,19 +414,11 @@ mod trace_tests {
         };
 
         // Obtained trace computation
-        let trace_loaded =
-            serde_json::from_str::<Vec<ParsedExecutionStep>>(input_trace)
-                .expect("Error on parsing")
-                .iter()
-                .enumerate()
-                .map(|(idx, step)| {
-                    ExecutionStep::try_from((step, GlobalCounter(idx)))
-                })
-                .collect::<Result<Vec<ExecutionStep>, Error>>()
-                .expect("Error on conversion");
-
-        let obtained_exec_trace =
-            ExecutionTrace::new(trace_loaded, block_ctants);
+        let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
+            input_trace.as_bytes(),
+            block_ctants,
+        )
+        .expect("Error on trace generation");
 
         assert_eq!(obtained_exec_trace, expected_exec_trace)
     }
