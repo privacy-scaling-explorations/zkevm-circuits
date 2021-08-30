@@ -118,10 +118,10 @@ pub(crate) enum BusMappingLookup<F> {
         index: Expression<F>,
         value: Expression<F>,
     },
-    // TODO: Block,
-    // TODO: Bytecode,
-    // TODO: Tx,
-    // TODO: TxCalldata,
+    /* TODO: Block,
+     * TODO: Bytecode,
+     * TODO: Tx,
+     * TODO: TxCalldata, */
 }
 
 impl<F: FieldExt> BusMappingLookup<F> {
@@ -288,7 +288,8 @@ enum Case {
     WriteProtection,
     // return data out of bound
     ReturnDataOutOfBounds,
-    // contract must not begin with 0xef due to EIP #3541 EVM Object Format (EOF)
+    // contract must not begin with 0xef due to EIP #3541 EVM Object Format
+    // (EOF)
     InvalidBeginningCode,
     // stack underflow
     StackUnderflow,
