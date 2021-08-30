@@ -101,7 +101,7 @@ impl ExecutionStep {
 
     /// Sets the global counter of the [`Instruction`] execution to the one sent
     /// in the params.
-    pub fn set_gc(&mut self, gc: impl Into<GlobalCounter>) {
+    pub(crate) fn set_gc(&mut self, gc: impl Into<GlobalCounter>) {
         self.gc = gc.into()
     }
 
@@ -111,7 +111,9 @@ impl ExecutionStep {
     }
 
     /// Returns a mutable reference to the bus-mapping instance.
-    pub fn bus_mapping_instance_mut(&mut self) -> &mut Vec<OperationRef> {
+    pub(crate) fn bus_mapping_instance_mut(
+        &mut self,
+    ) -> &mut Vec<OperationRef> {
         &mut self.bus_mapping_instance
     }
 
@@ -123,7 +125,7 @@ impl ExecutionStep {
     ///
     /// ## Returns the #operations added by the
     /// [`OpcodeId`](crate::evm::OpcodeId) into the container.
-    pub fn gen_associated_ops<F: FieldExt>(
+    pub(crate) fn gen_associated_ops<F: FieldExt>(
         &mut self,
         container: &mut OperationContainer,
     ) -> usize {
