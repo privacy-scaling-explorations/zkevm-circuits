@@ -139,30 +139,54 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// generate an [`ExecutionTrace`] by:
     ///
     /// 1) Setting the correct [`GlobalCounter`](crate::evm::GlobalCounter) to
-    /// each [`ExecutionStep`]. 2) Generating the corresponding
-    /// [`Operation`]s, registering them in the container and storing the
-    /// [`OperationRef`]s to each one of the generated ops into the
-    /// bus-mapping instances of each [`ExecutionStep`].
+    /// each [`ExecutionStep`].
+    /// 2) Generating the corresponding [`Operation`]s, registering them in the
+    /// container and storing the [`OperationRef`]s to each one of the
+    /// generated ops into the bus-mapping instances of each [`ExecutionStep`].
     pub fn new(
-        mut entries: Vec<ExecutionStep>,
+        entries: Vec<ExecutionStep>,
         block_ctants: BlockConstants<F>,
     ) -> Self {
-        let mut container = OperationContainer::new();
-        let mut gc = 0usize;
+        ExecutionTrace {
+            entries,
+            block_ctants,
+            /// Dummy empty container to enable build.
+            container: OperationContainer::new(),
+        }
+        .build()
+    }
 
-        entries.iter_mut().for_each(|exec_step| {
+    /// Traverses the trace step by step, and for each [`ExecutionStep`]:
+    /// 1. Sets the correct [`GlobalCounter`].
+    /// 2. Generates the corresponding [`Operation`]s and stores them inside the
+    /// [`OperationContainer`] instance stored inside of the trace + adds the
+    /// [`OperationRef`]s obtained from the container addition into each
+    /// [`ExecutionStep`] bus-mapping instances.
+    fn build(mut self) -> Self {
+        // Set a counter to add the correct global counters.
+        let mut gc = 0usize;
+        let mut new_container = OperationContainer::new();
+        self.entries_mut().iter_mut().for_each(|exec_step| {
+            // Set correct global counter
             exec_step.set_gc(gc);
-            gc += exec_step.gen_associated_ops::<F>(&mut container);
+            // Add the `OpcodeId` associated ops and increment the gc counting
+            // all of them.
+            gc += exec_step.gen_associated_ops::<F>(&mut new_container);
             // Sum 1 to counter so that we set the next exec_step GC to the
             // correct index
             gc += 1;
         });
 
-        ExecutionTrace {
-            entries,
-            block_ctants,
-            container,
-        }
+        // Replace the empty original container with the new one we just filled.
+        self.container = new_container;
+        self
+    }
+
+    /// Returns a reference to the [`OperationContainer`] which stores all the
+    /// [`Operation`]s for the instance of ExecutionTrace that is called
+    /// for.
+    pub fn container(&self) -> &OperationContainer {
+        &self.container
     }
 
     /// Registers an [`Operation`] into the [`OperationContainer`] and then adds
@@ -184,6 +208,12 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// the `ExecutionTrace` holds.
     fn container_mut(&mut self) -> &mut OperationContainer {
         &mut self.container
+    }
+
+    /// Returns a mutable reference to the [`ExecutionStep`] vector instance
+    /// that the `ExecutionTrace` holds.
+    fn entries_mut(&mut self) -> &mut Vec<ExecutionStep> {
+        &mut self.entries
     }
 }
 
