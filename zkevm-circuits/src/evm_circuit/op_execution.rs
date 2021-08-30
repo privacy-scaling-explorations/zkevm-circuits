@@ -232,7 +232,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         let mut constraints = vec![Constraint {
             name: "op selectors",
             selector: Expression::Constant(F::one()),
-            linear_combinations: bool_switches_constraints(qs_ops),
+            polys: bool_switches_constraints(qs_ops),
             lookups: vec![],
         }];
 
@@ -269,18 +269,18 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         for constraint in constraints.into_iter() {
             let Constraint {
                 name,
-                selector: qs_constraint,
-                linear_combinations,
+                selector: qs_op_case,
+                polys,
                 lookups,
             } = constraint;
 
-            let qs = qs_op_execution.clone() * qs_constraint.clone();
+            let qs = qs_op_execution.clone() * qs_op_case.clone();
 
             meta.create_gate(name, |_| {
-                if linear_combinations.is_empty() {
+                if polys.is_empty() {
                     return vec![Expression::Constant(F::zero())];
                 }
-                linear_combinations
+                polys
                     .into_iter()
                     .map(|poly| qs.clone() * poly)
                     .collect::<Vec<_>>()
@@ -335,7 +335,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         constraints.push(Constraint {
             name: "case selectors",
             selector: qs_op.exp(),
-            linear_combinations: bool_switches_constraints(qs_cases),
+            polys: bool_switches_constraints(qs_cases),
             lookups: vec![],
         });
 
@@ -393,7 +393,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 constraints.push(Constraint {
                     name: "case unused",
                     selector: qs_op.exp() * qs_case.exp(),
-                    linear_combinations: unused_idxs
+                    polys: unused_idxs
                         .into_iter()
                         .map(|idx| free_cells[idx].exp())
                         .collect(),
@@ -416,6 +416,11 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 .constraints(op_execution_state_curr, op_execution_state_next)
                 .into_iter()
                 .map(|mut constraint| {
+                    assert!(
+                        matches!(constraint.selector, Expression::Advice{ .. }),
+                        "constraint selector of case should be a queried advice"
+                    );
+
                     constraint.selector =
                         qs_op.exp() * constraint.selector.clone();
                     constraint
