@@ -155,7 +155,7 @@ pub(crate) struct Cell<F> {
     expression: Expression<F>,
     // relative position to selector for synthesis
     column: Column<Advice>,
-    offset: usize,
+    rotation: usize,
 }
 
 impl<F: FieldExt> Cell<F> {
@@ -172,12 +172,12 @@ impl<F: FieldExt> Cell<F> {
         region.assign_advice(
             || {
                 format!(
-                    "Cell {{ column: {:?}, offset: {}}}",
-                    self.column, self.offset
+                    "Cell column: {:?} and rotation: {}",
+                    self.column, self.rotation
                 )
             },
             self.column,
-            offset + self.offset,
+            offset + self.rotation,
             || value.ok_or(Error::SynthesisError),
         )
     }
@@ -294,25 +294,27 @@ pub(crate) struct ExecutionStep {
 #[derive(Clone)]
 struct EvmCircuit<F> {
     q_step: Selector,
-    table_fixed: [Column<Fixed>; 4],
+    qs_byte_lookup: Column<Advice>,
+    fixed_table: [Column<Fixed>; 4],
     op_execution_gadget: OpExecutionGadget<F>,
 }
 
 impl<F: FieldExt> EvmCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
         let q_step = meta.selector();
+        let qs_byte_lookup = meta.advice_column();
         let advices = (0..CIRCUIT_WIDTH)
             .map(|_| meta.advice_column())
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
 
-        // table_fixed contains pre-built tables identified by tag including:
+        // fixed_table contains pre-built tables identified by tag including:
         // - different size range tables
         // - bitwise table
         // - comparator table
         // - ...
-        let table_fixed = [
+        let fixed_table = [
             meta.fixed_column(), // tag
             meta.fixed_column(),
             meta.fixed_column(),
@@ -320,11 +322,12 @@ impl<F: FieldExt> EvmCircuit<F> {
         ];
 
         let (
-            q_step_exp,
+            qs_op_execution,
+            qs_byte_lookups,
             op_execution_state_curr,
             op_execution_state_next,
             op_execution_free_cells,
-        ) = Self::configure_allocations(meta, q_step, advices);
+        ) = Self::configure_allocations(meta, q_step, qs_byte_lookup, advices);
 
         // independent_lookups collect lookups by independent selectors, which
         // means we can sum some of them together to save lookups.
@@ -334,7 +337,8 @@ impl<F: FieldExt> EvmCircuit<F> {
         let op_execution_gadget = OpExecutionGadget::configure(
             meta,
             r,
-            q_step_exp,
+            qs_op_execution,
+            qs_byte_lookups,
             op_execution_state_curr,
             op_execution_state_next,
             op_execution_free_cells,
@@ -343,31 +347,56 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // TODO: call_initialization_gadget
 
-        Self::configure_lookups(meta, &table_fixed, independent_lookups);
+        Self::configure_lookups(
+            meta,
+            qs_byte_lookup,
+            advices,
+            fixed_table,
+            independent_lookups,
+        );
 
         EvmCircuit {
             q_step,
-            table_fixed,
+            qs_byte_lookup,
+            fixed_table,
             op_execution_gadget,
         }
     }
 
+    // TODO: refactor return type
+    #[allow(clippy::type_complexity)]
     fn configure_allocations(
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
+        qs_byte_lookup: Column<Advice>,
         advices: [Column<Advice>; CIRCUIT_WIDTH],
     ) -> (
         Expression<F>,
+        Vec<Cell<F>>,
         OpExecutionState<F>,
         OpExecutionState<F>,
         Vec<Cell<F>>,
     ) {
-        let mut q_step_exp = Expression::Constant(F::zero());
-        meta.create_gate("Query q_step", |meta| {
-            q_step_exp = meta.query_selector(q_step);
+        let mut qs_byte_lookups = Vec::with_capacity(CIRCUIT_HEIGHT);
+        meta.create_gate("Query byte lookup as a synthetic selector", |meta| {
+            for h in 0..CIRCUIT_HEIGHT as i32 {
+                qs_byte_lookups.push(Cell {
+                    expression: meta.query_advice(qs_byte_lookup, Rotation(h)),
+                    column: qs_byte_lookup,
+                    rotation: h as usize,
+                });
+            }
 
             vec![Expression::Constant(F::zero())]
         });
+
+        // TODO: Enable this when switch to kzg branch and remove the failure
+        //       VerifyFailure::ConstraintPoison
+        // meta.create_gate("Query byte lookup as a synthetic selector", |meta| {
+        //     let exp = meta.query_advice(qs_byte_lookup, Rotation::cur());
+
+        //     vec![exp.clone() * (Expression::Constant(F::one()) - exp)]
+        // });
 
         let mut cells_curr = Vec::with_capacity(CIRCUIT_WIDTH * CIRCUIT_HEIGHT);
         meta.create_gate("Query cells for current step", |meta| {
@@ -376,7 +405,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     cells_curr.push(Cell {
                         expression: meta.query_advice(column, Rotation(h)),
                         column,
-                        offset: h as usize,
+                        rotation: h as usize,
                     });
                 }
             }
@@ -392,7 +421,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             for cell in cells_next.iter_mut() {
                 cell.expression = meta.query_advice(
                     cell.column,
-                    Rotation((cell.offset + CIRCUIT_HEIGHT) as i32),
+                    Rotation((cell.rotation + CIRCUIT_HEIGHT) as i32),
                 );
             }
 
@@ -406,8 +435,20 @@ impl<F: FieldExt> EvmCircuit<F> {
         let op_execution_free_cells =
             cells_curr[NUM_CELL_OP_EXECTION_STATE..].to_vec();
 
+        let mut qs_op_execution = Expression::Constant(F::zero());
+        meta.create_gate(
+            "Query synthetic selector for OpExecutionGadget",
+            |meta| {
+                qs_op_execution = meta.query_selector(q_step)
+                    * op_execution_state_curr.is_executing.exp();
+
+                vec![Expression::Constant(F::zero())]
+            },
+        );
+
         (
-            q_step_exp,
+            qs_op_execution,
+            qs_byte_lookups,
             op_execution_state_curr,
             op_execution_state_next,
             op_execution_free_cells,
@@ -416,7 +457,9 @@ impl<F: FieldExt> EvmCircuit<F> {
 
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
-        table_fixed: &[Column<Fixed>; 4],
+        qs_byte_lookup: Column<Advice>,
+        advices: [Column<Advice>; CIRCUIT_WIDTH],
+        fixed_table: [Column<Fixed>; 4],
         independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) {
         // TODO: call_lookups
@@ -425,7 +468,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         let mut fixed_lookups = Vec::<[Expression<F>; 4]>::new();
 
-        for (lookup_selector, lookups) in independent_lookups {
+        for (qs_lookup, lookups) in independent_lookups {
             let mut fixed_lookup_count = 0;
 
             for lookup in lookups {
@@ -439,9 +482,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 [tag_exp]
                                     .iter()
                                     .chain(exps.iter())
-                                    .map(|exp| {
-                                        lookup_selector.clone() * exp.clone()
-                                    })
+                                    .map(|exp| qs_lookup.clone() * exp.clone())
                                     .collect::<Vec<_>>()
                                     .try_into()
                                     .unwrap(),
@@ -452,7 +493,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 .zip([tag_exp].iter().chain(exps.iter()))
                             {
                                 *acc = acc.clone()
-                                    + lookup_selector.clone() * exp.clone();
+                                    + qs_lookup.clone() * exp.clone();
                             }
                         }
                         fixed_lookup_count += 1;
@@ -465,13 +506,40 @@ impl<F: FieldExt> EvmCircuit<F> {
             }
         }
 
+        // Configure whole row lookups by qs_byte_lookup
+        let zero = Expression::Constant(F::zero());
+        for column in advices {
+            meta.lookup(|meta| {
+                let tag = Expression::Constant(F::from_u64(
+                    FixedLookup::Range256 as u64,
+                ));
+                let qs_byte_lookup =
+                    meta.query_advice(qs_byte_lookup, Rotation::cur());
+                [
+                    qs_byte_lookup.clone() * tag,
+                    qs_byte_lookup * meta.query_advice(column, Rotation::cur()),
+                    zero.clone(),
+                    zero.clone(),
+                ]
+                .iter()
+                .zip(fixed_table.iter())
+                .map(|(exp, column)| {
+                    (exp.clone(), meta.query_fixed(*column, Rotation::cur()))
+                })
+                .collect::<Vec<_>>()
+            });
+        }
+
         for fixed_lookup in fixed_lookups.iter() {
             meta.lookup(|meta| {
                 fixed_lookup
                     .iter()
-                    .zip(table_fixed.iter())
-                    .map(|(exp, fixed)| {
-                        (exp.clone(), meta.query_fixed(*fixed, Rotation::cur()))
+                    .zip(fixed_table.iter())
+                    .map(|(exp, column)| {
+                        (
+                            exp.clone(),
+                            meta.query_fixed(*column, Rotation::cur()),
+                        )
                     })
                     .collect::<Vec<_>>()
             });
@@ -488,7 +556,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                 let mut offest = 0;
 
                 // Noop
-                for (idx, column) in self.table_fixed.iter().enumerate() {
+                for (idx, column) in self.fixed_table.iter().enumerate() {
                     region.assign_fixed(
                         || format!("Noop: {}", idx),
                         *column,
@@ -502,18 +570,18 @@ impl<F: FieldExt> EvmCircuit<F> {
                 for idx in 0..256 {
                     region.assign_fixed(
                         || "Range256: tag",
-                        self.table_fixed[0],
+                        self.fixed_table[0],
                         offest,
                         || Ok(F::from_u64(FixedLookup::Range256 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range256: value",
-                        self.table_fixed[1],
+                        self.fixed_table[1],
                         offest,
                         || Ok(F::from_u64(idx as u64)),
                     )?;
                     for (idx, column) in
-                        self.table_fixed[2..].iter().enumerate()
+                        self.fixed_table[2..].iter().enumerate()
                     {
                         region.assign_fixed(
                             || format!("Range256: padding {}", idx),
