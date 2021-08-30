@@ -42,7 +42,8 @@ impl OperationContainer {
         OperationRef::from((op.target(), self.0.len()))
     }
 
-    /// Given a [`MemoryRef`] return the actual [`Operation`] it is refering to.
+    /// Given a [`OperationRef`] return the actual [`Operation`] it is refering
+    /// to.
     pub(crate) fn fetch_op(&self, reference: OperationRef) -> &Operation {
         self.0.get(reference.as_usize()).expect("it should not be possible to have a ref to a non-existent operation")
     }
