@@ -3,14 +3,20 @@ use crate::error::Error;
 use super::{opcodes::ids::OpcodeId, EvmWord};
 use core::str::FromStr;
 
-/// Doc
+/// Represents the union between an [`OpcodeId`] and the actual associated value
+/// (if it has any).
+/// `Instruction`s are the core of the
+/// [`ExecutionStep`](crate::exec_trace::ExecutionStep) as they contain all the
+/// key parts related to the witness generation which is delegated to the
+/// [`OpcodeId`]s that they contain.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Instruction {
+pub struct Instruction {
     opcode: OpcodeId,
     assoc_value: Option<EvmWord>,
 }
 
 impl Instruction {
+    /// Generate a new instance of an `Instruction` from it's fields.
     pub const fn new(op: OpcodeId, val: Option<EvmWord>) -> Self {
         Instruction {
             opcode: op,
@@ -18,10 +24,13 @@ impl Instruction {
         }
     }
 
+    /// Returns the [`OpcodeId`] associated to this instruction.
     pub const fn opcode_id(&self) -> OpcodeId {
         self.opcode
     }
 
+    /// Returns an [`Option`] with a reference to it's associated [`EvmWord`]
+    /// (if there's any).
     pub const fn value(&self) -> Option<&EvmWord> {
         self.assoc_value.as_ref()
     }
