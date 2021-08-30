@@ -156,8 +156,29 @@ impl<F: FieldExt> ExecutionTrace<F> {
         .build()
     }
 
+    /// Returns an ordered `Vec` containing all the [`StackOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_stack_ops(&self) -> Vec<StackOp> {
+        self.container.sorted_stack()
+    }
+
+    /// Returns an ordered `Vec` containing all the [`MemoryOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_memory_ops(&self) -> Vec<MemoryOp> {
+        self.container.sorted_memory()
+    }
+
+    /// Returns an ordered `Vec` containing all the [`StorageOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_storage_ops(&self) -> Vec<StorageOp> {
+        self.container.sorted_storage()
+    }
+
     /// Traverses the trace step by step, and for each [`ExecutionStep`]:
-    /// 1. Sets the correct [`GlobalCounter`].
+    /// 1. Sets the correct [`GlobalCounter`](crate::evm::GlobalCounter).
     /// 2. Generates the corresponding [`Operation`]s and stores them inside the
     /// [`OperationContainer`] instance stored inside of the trace + adds the
     /// [`OperationRef`]s obtained from the container addition into each
@@ -182,34 +203,6 @@ impl<F: FieldExt> ExecutionTrace<F> {
         self
     }
 
-    /// Returns a reference to the [`OperationContainer`] which stores all the
-    /// [`Operation`]s for the instance of ExecutionTrace that is called
-    /// for.
-    pub fn container(&self) -> &OperationContainer {
-        &self.container
-    }
-
-    /// Returns an ordered `Vec` containing all the [`StackOp`]s of the actual
-    /// `ExecutionTrace` so that they can be directly included in the State
-    /// proof.
-    pub fn sorted_stack_ops(&self) -> Vec<StackOp> {
-        self.container.sorted_stack()
-    }
-
-    /// Returns an ordered `Vec` containing all the [`MemoryOp`]s of the actual
-    /// `ExecutionTrace` so that they can be directly included in the State
-    /// proof.
-    pub fn sorted_memory_ops(&self) -> Vec<MemoryOp> {
-        self.container.sorted_memory()
-    }
-
-    /// Returns an ordered `Vec` containing all the [`StorageOp`]s of the actual
-    /// `ExecutionTrace` so that they can be directly included in the State
-    /// proof.
-    pub fn sorted_storage_ops(&self) -> Vec<StorageOp> {
-        self.container.sorted_storage()
-    }
-
     /// Registers an [`Operation`] into the [`OperationContainer`] and then adds
     /// a reference to the stored operation ([`OperationRef`]) inside the
     /// bus-mapping instance of the [`ExecutionStep`] located at `exec_step_idx`
@@ -225,16 +218,16 @@ impl<F: FieldExt> ExecutionTrace<F> {
             .push(op_ref);
     }
 
-    /// Returns a mutable reference to the [`OperationContainer`] instance that
-    /// the `ExecutionTrace` holds.
-    fn container_mut(&mut self) -> &mut OperationContainer {
-        &mut self.container
-    }
-
     /// Returns a mutable reference to the [`ExecutionStep`] vector instance
     /// that the `ExecutionTrace` holds.
     fn entries_mut(&mut self) -> &mut Vec<ExecutionStep> {
         &mut self.entries
+    }
+
+    /// Returns a mutable reference to the [`OperationContainer`] instance that
+    /// the `ExecutionTrace` holds.
+    fn container_mut(&mut self) -> &mut OperationContainer {
+        &mut self.container
     }
 }
 
