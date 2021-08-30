@@ -1,6 +1,5 @@
 use super::super::{
-    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, FixedLookup,
-    Lookup, Word,
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use halo2::plonk::Error;
@@ -60,17 +59,17 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             case_allocations.try_into().unwrap();
         Self {
             success: AddSuccessAllocation {
-                selector: success.selector.clone(),
-                swap: success.cells[0].clone(),
+                selector: success.selector,
+                swap: success.cells.pop().unwrap(),
                 a: success.words.pop().unwrap(),
                 b: success.words.pop().unwrap(),
                 c: success.words.pop().unwrap(),
-                carry: success.cells[1..].to_owned().try_into().unwrap(),
+                carry: success.cells.try_into().unwrap(),
             },
-            stack_underflow: stack_underflow.selector.clone(),
+            stack_underflow: stack_underflow.selector,
             out_of_gas: (
-                out_of_gas.selector.clone(),
-                out_of_gas.resumption.unwrap().gas_available.clone(),
+                out_of_gas.selector,
+                out_of_gas.resumption.unwrap().gas_available,
             ),
         }
     }
@@ -80,7 +79,6 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
         op_execution_state_curr: &OpExecutionState<F>,
         op_execution_state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
-        let zero = Expression::Constant(F::zero());
         let (add, sub) = (
             Expression::Constant(F::from_u64(1)),
             Expression::Constant(F::from_u64(3)),
@@ -152,21 +150,6 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 )
             }
 
-            let byte_range_lookup = [a, b, c]
-                .iter()
-                .flat_map(|word| {
-                    word.cells
-                        .iter()
-                        .map(|cell| {
-                            Lookup::FixedLookup(
-                                FixedLookup::Range256,
-                                [cell.exp(), zero.clone(), zero.clone()],
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-
             // TODO: uncomment when bus mapping is supported
             let bus_mapping_lookups = vec![
                 // Lookup::BusMappingLookup(BusMappingLookup::Stack {
@@ -195,7 +178,7 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                     add_constraints,
                 ]
                 .concat(),
-                lookups: [byte_range_lookup, bus_mapping_lookups].concat(),
+                lookups: [bus_mapping_lookups].concat(),
             }
         };
 
@@ -302,8 +285,8 @@ impl<F: FieldExt> AddGadget<F> {
             .carry
             .iter()
             .zip(execution_step.values[3].iter())
-            .map(|(alloc, byte)| {
-                alloc.assign(region, offset, Some(F::from_u64(*byte as u64)))
+            .map(|(alloc, carry)| {
+                alloc.assign(region, offset, Some(F::from_u64(*carry as u64)))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
