@@ -210,15 +210,15 @@ mod tests {
             let mut mem_map = BTreeMap::new();
             mem_map.insert(
                 MemoryAddress(BigUint::from(0x00u8)),
-                EvmWord(BigUint::from(0u8)),
+                EvmWord::from(0u8),
             );
             mem_map.insert(
                 MemoryAddress(BigUint::from(0x20u8)),
-                EvmWord(BigUint::from(0u8)),
+                EvmWord::from(0u8),
             );
             mem_map.insert(
                 MemoryAddress(BigUint::from(0x40u8)),
-                EvmWord(BigUint::from(0x80u8)),
+                EvmWord::from(0x80u8),
             );
 
             ExecutionStep::new(

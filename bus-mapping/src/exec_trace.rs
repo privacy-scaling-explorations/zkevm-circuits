@@ -120,7 +120,7 @@ impl<F: FieldExt> BlockConstants<F> {
 /// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionTrace<F: FieldExt> {
-    entries: Vec<ExecutionStep>,
+    steps: Vec<ExecutionStep>,
     block_ctants: BlockConstants<F>,
     container: OperationContainer,
 }
@@ -128,13 +128,13 @@ pub struct ExecutionTrace<F: FieldExt> {
 impl<F: FieldExt> Index<usize> for ExecutionTrace<F> {
     type Output = ExecutionStep;
     fn index(&self, index: usize) -> &Self::Output {
-        &self.entries[index]
+        &self.steps[index]
     }
 }
 
 impl<F: FieldExt> IndexMut<usize> for ExecutionTrace<F> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.entries[index]
+        &mut self.steps[index]
     }
 }
 
@@ -166,11 +166,11 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// container and storing the [`OperationRef`]s to each one of the
     /// generated ops into the bus-mapping instances of each [`ExecutionStep`].
     pub(crate) fn new(
-        entries: Vec<ExecutionStep>,
+        steps: Vec<ExecutionStep>,
         block_ctants: BlockConstants<F>,
     ) -> Self {
         ExecutionTrace {
-            entries,
+            steps,
             block_ctants,
             /// Dummy empty container to enable build.
             container: OperationContainer::new(),
@@ -209,7 +209,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
         // Set a counter to add the correct global counters.
         let mut gc = 0usize;
         let mut new_container = OperationContainer::new();
-        self.entries_mut().iter_mut().for_each(|exec_step| {
+        self.steps_mut().iter_mut().for_each(|exec_step| {
             // Set correct global counter
             exec_step.set_gc(gc);
             // Add the `OpcodeId` associated ops and increment the gc counting
@@ -235,15 +235,21 @@ impl<F: FieldExt> ExecutionTrace<F> {
         exec_step_idx: usize,
     ) {
         let op_ref = self.container_mut().insert(op);
-        self.entries[exec_step_idx]
+        self.steps[exec_step_idx]
             .bus_mapping_instance_mut()
             .push(op_ref);
     }
 
+    /// Returns a reference to the [`ExecutionStep`] vector instance
+    /// that the `ExecutionTrace` holds.
+    pub fn steps(&self) -> &Vec<ExecutionStep> {
+        &self.steps
+    }
+
     /// Returns a mutable reference to the [`ExecutionStep`] vector instance
     /// that the `ExecutionTrace` holds.
-    fn entries_mut(&mut self) -> &mut Vec<ExecutionStep> {
-        &mut self.entries
+    fn steps_mut(&mut self) -> &mut Vec<ExecutionStep> {
+        &mut self.steps
     }
 
     /// Returns a mutable reference to the [`OperationContainer`] instance that
@@ -327,7 +333,7 @@ mod trace_tests {
         "#;
 
         let block_ctants = BlockConstants::new(
-            EvmWord(BigUint::from(0u8)),
+            EvmWord::from(0u8),
             pasta_curves::Fp::zero(),
             pasta_curves::Fp::zero(),
             pasta_curves::Fp::zero(),
@@ -346,27 +352,18 @@ mod trace_tests {
         // The memory is the same in both steps as none of them touches the
         // memory of the EVM.
         let mut mem_map = BTreeMap::new();
-        mem_map.insert(
-            MemoryAddress(BigUint::from(0x00u8)),
-            EvmWord(BigUint::from(0u8)),
-        );
-        mem_map.insert(
-            MemoryAddress(BigUint::from(0x20u8)),
-            EvmWord(BigUint::from(0u8)),
-        );
-        mem_map.insert(
-            MemoryAddress(BigUint::from(0x40u8)),
-            EvmWord(BigUint::from(0u8)),
-        );
+        mem_map
+            .insert(MemoryAddress(BigUint::from(0x00u8)), EvmWord::from(0u8));
+        mem_map
+            .insert(MemoryAddress(BigUint::from(0x20u8)), EvmWord::from(0u8));
+        mem_map
+            .insert(MemoryAddress(BigUint::from(0x40u8)), EvmWord::from(0u8));
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep::new(
             mem_map.clone(),
-            vec![EvmWord(BigUint::from(0x40u8))],
-            Instruction::new(
-                OpcodeId::PUSH1,
-                Some(EvmWord(BigUint::from(0x40u8))),
-            ),
+            vec![EvmWord::from(0x40u8)],
+            Instruction::new(OpcodeId::PUSH1, Some(EvmWord::from(0x40u8))),
             ProgramCounter::from(0),
             GlobalCounter::from(0),
         );
@@ -379,20 +376,14 @@ mod trace_tests {
                 RW::WRITE,
                 GlobalCounter(1usize),
                 StackAddress::from(1023),
-                EvmWord(BigUint::from(0x40u8)),
+                EvmWord::from(0x40u8),
             )));
 
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
             mem_map,
-            vec![
-                EvmWord(BigUint::from(0x40u8)),
-                EvmWord(BigUint::from(0x80u8)),
-            ],
-            Instruction::new(
-                OpcodeId::PUSH1,
-                Some(EvmWord(BigUint::from(0x80u8))),
-            ),
+            vec![EvmWord::from(0x40u8), EvmWord::from(0x80u8)],
+            Instruction::new(OpcodeId::PUSH1, Some(EvmWord::from(0x80u8))),
             ProgramCounter::from(1),
             GlobalCounter::from(2),
         );
@@ -405,10 +396,10 @@ mod trace_tests {
                 RW::WRITE,
                 GlobalCounter(3usize),
                 StackAddress::from(1022),
-                EvmWord(BigUint::from(0x80u8)),
+                EvmWord::from(0x80u8),
             )));
         let expected_exec_trace = ExecutionTrace {
-            entries: vec![step_1, step_2],
+            steps: vec![step_1, step_2],
             block_ctants: block_ctants.clone(),
             container,
         };

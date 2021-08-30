@@ -141,3 +141,15 @@ impl FromStr for EvmWord {
         ))
     }
 }
+
+macro_rules! impl_from_basic_types {
+    ($($t:ty),*) => {
+        $(impl From<$t> for EvmWord {
+            fn from(item: $t) -> EvmWord {
+                EvmWord(BigUint::from(item))
+            }
+        })*
+    };
+}
+
+impl_from_basic_types!(u8, u16, u32, u64, u128);
