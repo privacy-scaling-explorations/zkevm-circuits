@@ -86,16 +86,8 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
 
         let OpExecutionState { opcode, .. } = &op_execution_state_curr;
 
-        let common = {
-            Constraint {
-                name: "AddGadget common",
-                selector: Expression::Constant(F::one()),
-                linear_combinations: vec![
-                    (opcode.exp() - add.clone()) * (opcode.exp() - sub.clone()),
-                ],
-                lookups: vec![],
-            }
-        };
+        let common_polys =
+            vec![(opcode.exp() - add.clone()) * (opcode.exp() - sub.clone())];
 
         let success = {
             let (one, exp_256) = (
@@ -172,13 +164,14 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             Constraint {
                 name: "AddGadget success",
                 selector: selector.exp(),
-                linear_combinations: [
+                polys: [
+                    common_polys.clone(),
                     op_execution_state_transition_constraints,
                     swap_constraints,
                     add_constraints,
                 ]
                 .concat(),
-                lookups: [bus_mapping_lookups].concat(),
+                lookups: bus_mapping_lookups,
             }
         };
 
@@ -191,10 +184,14 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             Constraint {
                 name: "AddGadget stack underflow",
                 selector: self.stack_underflow.exp(),
-                linear_combinations: vec![
-                    (stack_pointer.clone() - zero)
-                        * (stack_pointer - minus_one),
-                ],
+                polys: [
+                    common_polys.clone(),
+                    vec![
+                        (stack_pointer.clone() - zero)
+                            * (stack_pointer - minus_one),
+                    ],
+                ]
+                .concat(),
                 lookups: vec![],
             }
         };
@@ -212,16 +209,20 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             Constraint {
                 name: "AddGadget out of gas",
                 selector: selector.exp(),
-                linear_combinations: vec![
-                    (gas_overdemand.clone() - one)
-                        * (gas_overdemand.clone() - two)
-                        * (gas_overdemand - three),
-                ],
+                polys: [
+                    common_polys,
+                    vec![
+                        (gas_overdemand.clone() - one)
+                            * (gas_overdemand.clone() - two)
+                            * (gas_overdemand - three),
+                    ],
+                ]
+                .concat(),
                 lookups: vec![],
             }
         };
 
-        vec![common, success, stack_underflow, out_of_gas]
+        vec![success, stack_underflow, out_of_gas]
     }
 
     fn assign(

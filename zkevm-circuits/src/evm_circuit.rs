@@ -145,10 +145,9 @@ pub(crate) enum Lookup<F> {
 struct Constraint<F> {
     name: &'static str,
     selector: Expression<F>,
-    linear_combinations: Vec<Expression<F>>,
+    polys: Vec<Expression<F>>,
     lookups: Vec<Lookup<F>>,
 }
-
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
     // expression for constraint
