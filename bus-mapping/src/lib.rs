@@ -133,7 +133,7 @@
 //! ...
 //! ```                   
 //!
-//! Once you have the trace built (following the code found avobe) you can
+//! Once you have the trace built (following the code found above) you can
 //! basically:
 //! - Get an iterator/vector over the `Stack`, `Memory` or `Storage` operations
 //!   ordered on the way the State Proof needs.
@@ -158,7 +158,7 @@
 //! Where as you see, we group by `memory_address` and then order by
 //! `global_counter`.
 //!
-//! Asode from that, we also can iterate over the `ExecutionTrace` itself over
+//! Aside from that, we also can iterate over the `ExecutionTrace` itself over
 //! each Evm Instruction in order to add constrains for each Opcode is executed.
 //! This is also automatically done via the
 //! [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
