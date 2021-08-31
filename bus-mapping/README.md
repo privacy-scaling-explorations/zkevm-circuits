@@ -47,7 +47,7 @@ bus-mapping instances of each
 all of the Memory, Stack and Storage ops performed by the provided trace.
 
 ```rust
-use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error};
+use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
 use pasta_curves::arithmetic::FieldExt;
 use num::BigUint;
 
@@ -82,7 +82,7 @@ let input_trace = r#"
 "#;
 
 let block_ctants = BlockConstants::new(
-    EvmWord(BigUint::from(0u8)),
+    EvmWord::from(0u8),
     pasta_curves::Fp::zero(),
     pasta_curves::Fp::zero(),
     pasta_curves::Fp::zero(),
@@ -92,21 +92,17 @@ let block_ctants = BlockConstants::new(
     pasta_curves::Fp::zero(),
 );
 
-// XXX: This will change once we include a better API for ExecutionStep.
-let trace_loaded =
-    serde_json::from_str::<Vec<ParsedExecutionStep>>(input_trace)
-        .expect("Error on parsing")
-        .iter()
-        .enumerate()
-        .map(|(idx, step)| {
-            ExecutionStep::try_from((step, GlobalCounter(idx)))
-        })
-        .collect::<Result<Vec<ExecutionStep>, Error>>()
-        .expect("Error on conversion");
-
 // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.
-let obtained_exec_trace =
-    ExecutionTrace::new(trace_loaded, block_ctants);
+let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
+    input_trace.as_bytes(),
+    block_ctants,
+).expect("Error on trace generation");
+
+// Get an ordered vector with all of the Stack operations of this trace.
+let stack_ops = obtained_exec_trace.sorted_stack_ops();
+
+// You can also iterate over the steps of the trace and witness the EVM Proof.
+obtained_exec_trace.steps().iter();
 ```
 
 Assume we have the following trace:
