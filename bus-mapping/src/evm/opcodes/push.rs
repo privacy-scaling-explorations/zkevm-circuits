@@ -10,6 +10,8 @@ use halo2::{arithmetic::FieldExt, plonk::ConstraintSystem};
 /// Number of ops that PUSH1 adds to the container & busmapping
 const PUSH1_OP_NUM: usize = 1;
 
+/// Structure used to implement [`Opcode`] trait over it corresponding to the
+/// `PUSH1 X` [`Instruction`](crate::evm::instruction::Instruction).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Push1;
 
@@ -30,7 +32,7 @@ impl Opcode for Push1 {
         );
 
         exec_step
-            .bus_mapping_instances_mut()
+            .bus_mapping_instance_mut()
             .push(container.insert(op));
 
         PUSH1_OP_NUM

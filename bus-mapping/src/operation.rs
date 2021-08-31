@@ -1,35 +1,61 @@
-pub mod container;
-
-use crate::error::Error;
+//! Collection of structs and functions used to:
+//! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
+//! - Define the actual operation types and a wrapper over them (the
+//!   [`Operation`] enum).
+//! - Define structures that interact with operations such as
+//!   [`OperationContainer`].
+pub(crate) mod container;
 
 use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
+use crate::error::Error;
+pub use container::OperationContainer;
 use core::cmp::Ordering;
 use core::fmt::Debug;
 use std::convert::TryFrom;
 
-/// Doc
+/// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum RW {
-    /// Doc
+pub enum RW {
+    /// Marks op as READ.
     READ,
-    /// Doc
+    /// Marks op as WRITE.
     WRITE,
 }
 
-/// Doc
+impl RW {
+    /// Returns true if the RW corresponds internally to a [`READ`](RW::READ).
+    pub const fn is_read(&self) -> bool {
+        match self {
+            RW::READ => true,
+            RW::WRITE => false,
+        }
+    }
+
+    /// Returns true if the RW corresponds internally to a [`WRITE`](RW::WRITE).
+    pub const fn is_write(&self) -> bool {
+        match self {
+            RW::WRITE => true,
+            RW::READ => false,
+        }
+    }
+}
+
+/// Enum used to differenciate between EVM Stack, Memory and Storage operations.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub(crate) enum Target {
-    /// Doc
+pub enum Target {
+    /// Means the target of the operation is the Memory.
     Memory,
-    /// Doc
+    /// Means the target of the operation is the Stack.
     Stack,
-    /// Doc
+    /// Means the target of the operation is the Storage.
     Storage,
 }
 
-/// Doc
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
+/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MemoryOp {
+pub struct MemoryOp {
     rw: RW,
     gc: GlobalCounter,
     addr: MemoryAddress,
@@ -37,6 +63,7 @@ pub(crate) struct MemoryOp {
 }
 
 impl MemoryOp {
+    /// Create a new instance of a `MemoryOp` from it's components.
     pub const fn new(
         rw: RW,
         gc: GlobalCounter,
@@ -51,22 +78,28 @@ impl MemoryOp {
         }
     }
 
+    /// Returns the internal [`RW`] which says whether the operation corresponds
+    /// to a Read or a Write into memory.
     pub const fn rw(&self) -> RW {
         self.rw
     }
 
+    /// Returns the [`Target`] (operation type) of this operation.
     pub const fn target(&self) -> Target {
         Target::Memory
     }
 
+    /// Returns the [`GlobalCounter`] associated to this Operation.
     pub const fn gc(&self) -> GlobalCounter {
         self.gc
     }
 
+    /// Returns the [`MemoryAddress`] associated to this Operation.
     pub const fn address(&self) -> &MemoryAddress {
         &self.addr
     }
 
+    /// Returns the [`EvmWord`] read or written by this operation.
     pub const fn value(&self) -> &EvmWord {
         &self.value
     }
@@ -105,9 +138,11 @@ impl TryFrom<Operation> for MemoryOp {
     }
 }
 
-/// Doc
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
+/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StackOp {
+pub struct StackOp {
     rw: RW,
     gc: GlobalCounter,
     addr: StackAddress,
@@ -115,6 +150,7 @@ pub(crate) struct StackOp {
 }
 
 impl StackOp {
+    /// Create a new instance of a `MemoryOp` from it's components.
     pub const fn new(
         rw: RW,
         gc: GlobalCounter,
@@ -129,22 +165,28 @@ impl StackOp {
         }
     }
 
+    /// Returns the internal [`RW`] which says whether the operation corresponds
+    /// to a Read or a Write into memory.
     pub const fn rw(&self) -> RW {
         self.rw
     }
 
+    /// Returns the [`Target`] (operation type) of this operation.
     pub const fn target(&self) -> Target {
         Target::Stack
     }
 
+    /// Returns the [`GlobalCounter`] associated to this Operation.
     pub const fn gc(&self) -> GlobalCounter {
         self.gc
     }
 
+    /// Returns the [`StackAddress`] associated to this Operation.
     pub const fn address(&self) -> &StackAddress {
         &self.addr
     }
 
+    /// Returns the [`EvmWord`] read or written by this operation.
     pub const fn value(&self) -> &EvmWord {
         &self.value
     }
@@ -183,9 +225,11 @@ impl TryFrom<Operation> for StackOp {
     }
 }
 
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
+/// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
+/// the [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-/// Doc
-pub(crate) struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
+pub struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
 
 impl TryFrom<Operation> for StorageOp {
     type Error = Error;
@@ -198,9 +242,10 @@ impl TryFrom<Operation> for StorageOp {
     }
 }
 
-/// Doc
+/// Generic enum that wraps over all the operation types possible.
+/// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
-pub(crate) enum Operation {
+pub enum Operation {
     /// Doc
     Stack(StackOp),
     /// Doc
@@ -286,6 +331,8 @@ impl PartialOrd for Operation {
 }
 
 impl Operation {
+    /// Matches over an `Operation` returning the [`Target`] of the iternal op
+    /// it stores inside.
     pub const fn target(&self) -> Target {
         match self {
             Operation::Memory(_) => Target::Memory,
@@ -294,18 +341,23 @@ impl Operation {
         }
     }
 
+    /// Returns true if the Operation hold internally is a [`StackOp`].
     pub const fn is_stack(&self) -> bool {
         matches!(*self, Operation::Stack(_))
     }
 
+    /// Returns true if the Operation hold internally is a [`MemoryOp`].
     pub const fn is_memory(&self) -> bool {
         matches!(*self, Operation::Memory(_))
     }
 
+    /// Returns true if the Operation hold internally is a [`StorageOp`].
     pub const fn is_storage(&self) -> bool {
         matches!(*self, Operation::Storage(_))
     }
 
+    /// Transmutes the internal (unlabeled) repr of the operation contained
+    /// inside of the enum into a [`StackOp`].
     pub fn into_stack_unchecked(self) -> StackOp {
         match self {
             Operation::Stack(stack_op) => unsafe {
@@ -315,6 +367,8 @@ impl Operation {
         }
     }
 
+    /// Transmutes the internal (unlabeled) repr of the operation contained
+    /// inside of the enum into a [`MemoryOp`].
     pub fn into_memory_unchecked(self) -> MemoryOp {
         match self {
             Operation::Memory(memory_op) => unsafe {
@@ -324,6 +378,8 @@ impl Operation {
         }
     }
 
+    /// Transmutes the internal (unlabeled) repr of the operation contained
+    /// inside of the enum into a [`StorageOp`].
     pub fn into_storage_unchecked(self) -> StorageOp {
         match self {
             Operation::Storage(storage_op) => unsafe {

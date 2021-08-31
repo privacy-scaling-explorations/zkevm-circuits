@@ -1,27 +1,121 @@
+//! This module contains the logic for parsing and interacting with EVM
+//! execution traces.
 pub(crate) mod exec_step;
 use crate::evm::EvmWord;
 use crate::operation::Target;
 use crate::operation::{container::OperationContainer, Operation};
 use core::ops::{Index, IndexMut};
-pub(crate) use exec_step::ExecutionStep;
+pub use exec_step::ExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
 
-/// Doc
+/// Definition of all of the constants related to an Ethereum block and
+/// therefore, related with an [`ExecutionTrace`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BlockConstants<F: FieldExt> {
+pub struct BlockConstants<F: FieldExt> {
     hash: EvmWord, // Until we know how to deal with it
     coinbase: F,
     timestamp: F,
     number: F,
     difficulty: F,
-    gaslimit: F,
+    gas_limit: F,
     chain_id: F,
     base_fee: F,
 }
 
-/// Doc
+impl<F: FieldExt> BlockConstants<F> {
+    #[allow(clippy::too_many_arguments)]
+    /// Generates a new `BlockConstants` instance from it's fields.
+    pub fn new(
+        hash: EvmWord,
+        coinbase: F,
+        timestamp: F,
+        number: F,
+        difficulty: F,
+        gas_limit: F,
+        chain_id: F,
+        base_fee: F,
+    ) -> BlockConstants<F> {
+        BlockConstants {
+            hash,
+            coinbase,
+            timestamp,
+            number,
+            difficulty,
+            gas_limit,
+            chain_id,
+            base_fee,
+        }
+    }
+    #[inline]
+    /// Return the hash of a block.
+    pub fn hash(&self) -> &EvmWord {
+        &self.hash
+    }
+
+    #[inline]
+    /// Return the coinbase of a block.
+    pub fn coinbase(&self) -> &F {
+        &self.coinbase
+    }
+
+    #[inline]
+    /// Return the timestamp of a block.
+    pub fn timestamp(&self) -> &F {
+        &self.timestamp
+    }
+
+    #[inline]
+    /// Return the block number.
+    pub fn number(&self) -> &F {
+        &self.number
+    }
+
+    #[inline]
+    /// Return the difficulty of a block.
+    pub fn difficulty(&self) -> &F {
+        &self.difficulty
+    }
+
+    #[inline]
+    /// Return the gas_limit of a block.
+    pub fn gas_limit(&self) -> &F {
+        &self.gas_limit
+    }
+
+    #[inline]
+    /// Return the chain ID associated to a block.
+    pub fn chain_id(&self) -> &F {
+        &self.chain_id
+    }
+
+    #[inline]
+    /// Return the base fee of a block.
+    pub fn base_fee(&self) -> &F {
+        &self.base_fee
+    }
+}
+
+/// Result of the parsing of an EVM execution trace.
+/// This structure is the centre of the crate and is intended to be the only
+/// entry point to it. The `ExecutionTrace` provides three main actions:
+///
+/// 1. Generate an `ExecutionTrace` instance by parsing an EVM trace (JSON
+/// format for now).
+///
+/// 2. Generate and provide an iterator over all of the
+/// [`Instruction`](crate::evm::Instruction)s of the trace and apply it's
+/// respective constraints into a provided a mutable reference to a
+/// [`ConstraintSystyem`](halo2::plonk::ConstraintSystem).
+///
+/// 3. Generate and provide and ordered list of all of the
+/// [`StackOp`](crate::operation::StackOp)s,
+/// [`MemoryOp`](crate::operation::MemoryOp)s and
+/// [`StorageOp`](crate::operation::StorageOp)s that each
+/// [`Instruction`](crate::evm::Instruction) that derive from the trace so that
+/// the State Proof witnesses are already obtained on a structured manner and
+/// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ExecutionTrace<F: FieldExt> {
+pub struct ExecutionTrace<F: FieldExt> {
     entries: Vec<ExecutionStep>,
     block_ctants: BlockConstants<F>,
     container: OperationContainer,
@@ -41,12 +135,14 @@ impl<F: FieldExt> IndexMut<usize> for ExecutionTrace<F> {
 }
 
 impl<F: FieldExt> ExecutionTrace<F> {
-    fn container_mut(&mut self) -> &mut OperationContainer {
-        &mut self.container
-    }
-
-    // Generates the trace setting the propper GC's and BusMappings for each
-    // step.
+    /// Given a vector of [`ExecutionStep`]s and a [`BlockConstants`] instance,
+    /// generate an [`ExecutionTrace`] by:
+    ///
+    /// 1) Setting the correct [`GlobalCounter`](crate::evm::GlobalCounter) to
+    /// each [`ExecutionStep`]. 2) Generating the corresponding
+    /// [`Operation`]s, registering them in the container and storing the
+    /// [`OperationRef`]s to each one of the generated ops into the
+    /// bus-mapping instances of each [`ExecutionStep`].
     pub fn new(
         mut entries: Vec<ExecutionStep>,
         block_ctants: BlockConstants<F>,
@@ -69,18 +165,32 @@ impl<F: FieldExt> ExecutionTrace<F> {
         }
     }
 
-    pub fn add_op_to_container(&mut self, op: Operation, exec_step_idx: usize) {
+    /// Registers an [`Operation`] into the [`OperationContainer`] and then adds
+    /// a reference to the stored operation ([`OperationRef`]) inside the
+    /// bus-mapping instance of the [`ExecutionStep`] located at `exec_step_idx`
+    /// inside the [`ExecutionTrace`].
+    pub(crate) fn add_op_to_container(
+        &mut self,
+        op: Operation,
+        exec_step_idx: usize,
+    ) {
         let op_ref = self.container_mut().insert(op);
         self.entries[exec_step_idx]
-            .bus_mapping_instances_mut()
+            .bus_mapping_instance_mut()
             .push(op_ref);
+    }
+
+    /// Returns a mutable reference to the [`OperationContainer`] instance that
+    /// the `ExecutionTrace` holds.
+    fn container_mut(&mut self) -> &mut OperationContainer {
+        &mut self.container
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// The target and index of an `Operation` in the context of an
 /// `ExecutionTrace`.
-pub(crate) struct OperationRef(Target, usize);
+pub struct OperationRef(Target, usize);
 
 impl From<(Target, usize)> for OperationRef {
     fn from(op_ref_data: (Target, usize)) -> Self {
@@ -93,10 +203,12 @@ impl From<(Target, usize)> for OperationRef {
 }
 
 impl OperationRef {
+    /// Return the `OperationRef` as a `usize`.
     pub const fn as_usize(&self) -> usize {
         self.1
     }
 
+    /// Return the [`Target`] op type of the `OperationRef`.
     pub const fn target(&self) -> Target {
         self.0
     }
@@ -150,16 +262,16 @@ mod trace_tests {
         ]
         "#;
 
-        let block_ctants = BlockConstants {
-            hash: EvmWord(BigUint::from(0u8)),
-            coinbase: pasta_curves::Fp::zero(),
-            timestamp: pasta_curves::Fp::zero(),
-            number: pasta_curves::Fp::zero(),
-            difficulty: pasta_curves::Fp::zero(),
-            gaslimit: pasta_curves::Fp::zero(),
-            chain_id: pasta_curves::Fp::zero(),
-            base_fee: pasta_curves::Fp::zero(),
-        };
+        let block_ctants = BlockConstants::new(
+            EvmWord(BigUint::from(0u8)),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+        );
 
         // Generate the expected ExecutionTrace corresponding to the JSON
         // provided above.
@@ -197,14 +309,14 @@ mod trace_tests {
 
         // Add StackOp associated to this opcode to the container &
         // step.bus_mapping
-        step_1.bus_mapping_instances_mut().push(container.insert(
-            StackOp::new(
+        step_1
+            .bus_mapping_instance_mut()
+            .push(container.insert(StackOp::new(
                 RW::WRITE,
                 GlobalCounter(1usize),
                 StackAddress::from(1023),
                 EvmWord(BigUint::from(0x40u8)),
-            ),
-        ));
+            )));
 
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
@@ -223,14 +335,14 @@ mod trace_tests {
 
         // Add StackOp associated to this opcode to the container &
         // step.bus_mapping
-        step_2.bus_mapping_instances_mut().push(container.insert(
-            StackOp::new(
+        step_2
+            .bus_mapping_instance_mut()
+            .push(container.insert(StackOp::new(
                 RW::WRITE,
                 GlobalCounter(3usize),
                 StackAddress::from(1022),
                 EvmWord(BigUint::from(0x80u8)),
-            ),
-        ));
+            )));
         let expected_exec_trace = ExecutionTrace {
             entries: vec![step_1, step_2],
             block_ctants: block_ctants.clone(),
