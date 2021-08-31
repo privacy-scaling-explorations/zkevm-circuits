@@ -199,7 +199,7 @@ impl<
                 * (two - q_target_cur.clone())
                 * (three.clone() - q_target_cur.clone())
                 * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
+                * (q_target_next.clone() - one)
                 * (three - q_target_next.clone())
                 * (four - q_target_next)
         };
@@ -221,9 +221,9 @@ impl<
             let four = Expression::Constant(F::from_u64(4));
 
             q_target.clone()
-                * (q_target.clone() - one.clone())
+                * (q_target.clone() - one)
                 * (three - q_target.clone())
-                * (four.clone() - q_target.clone())
+                * (four - q_target)
         };
 
         let q_memory_not_first_norm = |meta: &mut VirtualCells<F>| {
@@ -247,7 +247,7 @@ impl<
                 * (two.clone() - q_target_cur.clone())
                 * (three - q_target_cur.clone())
                 * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
+                * (q_target_next.clone() - one)
                 * (q_target_next.clone() - two)
                 * (four - q_target_next)
         };
@@ -381,7 +381,7 @@ impl<
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             let padding = meta.query_advice(padding, Rotation::cur());
             let one = Expression::Constant(F::one());
-            let bool_check_padding = padding.clone() * (one.clone() - padding.clone());
+            let bool_check_padding = padding.clone() * (one - padding);
 
             vec![
                 q_memory_not_first.clone() * address_diff.clone() * value_cur.clone(), // when address changes, the write value is 0
@@ -956,7 +956,7 @@ impl<
 mod tests {
     use super::{Address, Config, GlobalCounter, Op, ReadWrite, Value};
     use bus_mapping::{
-        evm::EvmWord, BlockConstants, ExecutionStep, ExecutionTrace,
+        evm::EvmWord, BlockConstants, ExecutionTrace,
     };
 
     use halo2::{

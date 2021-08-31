@@ -94,7 +94,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 // (flag) * (1 - flag)
                 let bool_check_flag = {
                     let one = Expression::Constant(F::one());
-                    flag.clone() * (one - flag.clone())
+                    flag.clone() * (one - flag)
                 };
 
                 vec![q_target * bool_check_flag]
@@ -137,7 +137,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 |mut region| {
                     let mut offset = 0;
 
-                    for (index, op) in ops.iter().enumerate() {
+                    for (_index, op) in ops.iter().enumerate() {
                         let address = op.address;
 
                         self.init(&mut region, offset, address)?;
@@ -280,7 +280,7 @@ macro_rules! test_state_circuit {
         }
 
         let mut ops = vec![];
-        for i in 0..10000 {
+        for _i in 0..10000 {
             let op = MemoryOp {
                 address: MemoryAddress(pallas::Base::zero()),
                 global_counters: vec![
@@ -298,7 +298,7 @@ macro_rules! test_state_circuit {
         }
 
         let circuit = MemoryCircuit::<pallas::Base, $lookup> {
-            ops: ops,
+            ops,
             _marker: PhantomData,
         };
 
@@ -314,7 +314,7 @@ fn binary() {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("checking binary values", |b| b.iter(|| binary()));
+    c.bench_function("checking binary values", |b| b.iter(binary));
 }
 
 criterion_group!(benches, criterion_benchmark);
