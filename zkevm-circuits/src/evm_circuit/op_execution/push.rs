@@ -85,20 +85,21 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
         )];
 
         let success = {
-            let one = Expression::Constant(F::one());
+            let (one, two) = (
+                Expression::Constant(F::one()),
+                Expression::Constant(F::from_u64(2)),
+            );
 
             // interpreter state transition constraints
             let state_transition_constraints = vec![
                 state_next.global_counter.expr()
-                    - (state_curr.global_counter.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                    - (state_curr.global_counter.expr() + one.clone()),
                 state_next.program_counter.expr()
                     - (state_curr.program_counter.expr() + opcode.expr()
                         - push1.clone()
-                        + one.clone()),
+                        + two),
                 state_next.stack_pointer.expr()
-                    - (state_curr.stack_pointer.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                    - (state_curr.stack_pointer.expr() - one.clone()),
                 state_next.gas_counter.expr()
                     - (state_curr.gas_counter.expr()
                         + Expression::Constant(F::from_u64(3))),
@@ -223,8 +224,8 @@ impl<F: FieldExt> PushGadget<F> {
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
         core_state.global_counter += 1;
-        core_state.program_counter += (execution_step.opcode - 95) as usize;
-        core_state.stack_pointer += 1;
+        core_state.program_counter += (execution_step.opcode - 94) as usize;
+        core_state.stack_pointer -= 1;
         core_state.gas_counter += 3;
 
         self.success.word.assign(
