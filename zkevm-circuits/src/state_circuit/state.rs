@@ -5,7 +5,10 @@ use crate::gadget::{
 };
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -37,8 +40,8 @@ Example state table:
 // 4 - storage
 
 // address_diff is needed only internally to check whether the address changed
-// padding specifies whether the row is just a padding to fill all the rows that are intended
-// for a particular target
+// padding specifies whether the row is just a padding to fill all the rows that
+// are intended for a particular target
 
 /*
 Example bus mapping:
@@ -56,10 +59,10 @@ Example bus mapping:
 |    3   |    1    |       49       |  32   |   0  |
 */
 
-/// In the state proof, memory operations are ordered first by address, and then by global_counter.
-/// Memory is initialised at 0 for each new address.
-/// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word -> u8.
-/// TODO: Confirm if we are using 253- or 256-bit memory addresses.
+/// In the state proof, memory operations are ordered first by address, and then
+/// by global_counter. Memory is initialised at 0 for each new address.
+/// Memory is a word-addressed byte array, i.e. a mapping from a 253-bit word ->
+/// u8. TODO: Confirm if we are using 253- or 256-bit memory addresses.
 #[derive(Copy, Clone, Debug)]
 struct Address<F: FieldExt>(F);
 
@@ -67,8 +70,8 @@ struct Address<F: FieldExt>(F);
 #[derive(Copy, Clone, Debug)]
 struct GlobalCounter(usize);
 
-/// TODO: In the EVM we can only read memory values in 32 bytes, but can write either
-/// single-byte or 32-byte chunks. In zkEVM:
+/// TODO: In the EVM we can only read memory values in 32 bytes, but can write
+/// either single-byte or 32-byte chunks. In zkEVM:
 /// - Are we reading single bytes or 32-byte chunks? TBD
 /// - We are writing a single field element (253 bits)
 #[derive(Copy, Clone, Debug)]
@@ -85,7 +88,9 @@ enum ReadWrite<F: FieldExt> {
 impl<F: FieldExt> ReadWrite<F> {
     fn global_counter(&self) -> GlobalCounter {
         match self {
-            Self::Read(global_counter, _) | Self::Write(global_counter, _) => *global_counter,
+            Self::Read(global_counter, _) | Self::Write(global_counter, _) => {
+                *global_counter
+            }
         }
     }
 
@@ -179,7 +184,8 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let q_memory_first = |meta: &mut VirtualCells<F>| {
-            // For first memory row it holds q_target_cur = 1 and q_target_next = 2.
+            // For first memory row it holds q_target_cur = 1 and q_target_next
+            // = 2.
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
             let one = Expression::Constant(F::one());
@@ -200,8 +206,8 @@ impl<
 
         let q_memory_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_memory_first(meta);
-            // q_memory_first is 12 when q_target_cur is 1 and q_target_next is 2,
-            // we use 1/12 to normalize the value
+            // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
+            // 2, we use 1/12 to normalize the value
             let inv = F::from_u64(12_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
@@ -222,7 +228,8 @@ impl<
 
         let q_memory_not_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_memory_not_first(meta);
-            // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize the value
+            // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize
+            // the value
             let inv = F::from_u64(4_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
@@ -268,7 +275,8 @@ impl<
 
         let q_stack_not_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_stack_not_first(meta);
-            // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize the value
+            // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize
+            // the value
             let inv = F::from_u64(6_u64).invert().unwrap_or(F::zero());
             let i = Expression::Constant(inv);
 
@@ -296,23 +304,28 @@ impl<
             address_diff_inv,
         );
 
-        // Only one monotone gadget is used for memory and stack (with MEMORY_ADDRESS_MAX as it is bigger)
-        let address_monotone = MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::configure(
-            meta,
-            |meta| {
-                let padding = meta.query_advice(padding, Rotation::cur());
-                let one = Expression::Constant(F::one());
-                let is_not_padding = one - padding;
-                // Since q_memory_not_first and q_stack_non_first are mutually exclusive, q_not_first is binary.
-                let q_not_first = q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
+        // Only one monotone gadget is used for memory and stack (with
+        // MEMORY_ADDRESS_MAX as it is bigger)
+        let address_monotone =
+            MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::configure(
+                meta,
+                |meta| {
+                    let padding = meta.query_advice(padding, Rotation::cur());
+                    let one = Expression::Constant(F::one());
+                    let is_not_padding = one - padding;
+                    // Since q_memory_not_first and q_stack_non_first are
+                    // mutually exclusive, q_not_first is binary.
+                    let q_not_first = q_memory_not_first_norm(meta)
+                        + q_stack_not_first_norm(meta);
 
-                q_not_first * is_not_padding
-            },
-            address,
-        );
+                    q_not_first * is_not_padding
+                },
+                address,
+            );
 
-        // Padding monotonicity could be checked using gates (as padding only takes values 0 and 1),
-        // but it's much slower than using a lookup.
+        // Padding monotonicity could be checked using gates (as padding only
+        // takes values 0 and 1), but it's much slower than using a
+        // lookup.
         let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
             meta,
             |meta| q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta),
@@ -323,10 +336,12 @@ impl<
         meta.create_gate("First memory row operation", |meta| {
             let value = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let global_counter =
+                meta.query_advice(global_counter, Rotation::cur());
             let q_memory_first = q_memory_first(meta);
             let one = Expression::Constant(F::one());
 
+            //
             //      - values[0] == [0]
             //      - flags[0] == 1
             //      - global_counters[0] == 0
@@ -384,7 +399,8 @@ impl<
             let flag = meta.query_advice(flag, Rotation::cur());
 
             vec![
-                q_stack_first * (one - flag), // first stack op has to be write (flag = 1)
+                q_stack_first * (one - flag), /* first stack op has to be
+                                               * write (flag = 1) */
             ]
         });
 
@@ -415,8 +431,9 @@ impl<
             ]
         });
 
-        // global_counter monotonicity is only checked when address_cur == address_prev.
-        // (Recall that operations are ordered first by address, and then by global_counter.)
+        // global_counter monotonicity is only checked when address_cur ==
+        // address_prev. (Recall that operations are ordered first by
+        // address, and then by global_counter.)
         meta.lookup(|meta| {
             let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
@@ -437,7 +454,8 @@ impl<
 
         // Memory address is in the allowed range.
         meta.lookup(|meta| {
-            let q_memory = q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
+            let q_memory =
+                q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
@@ -447,7 +465,8 @@ impl<
 
         // Stack address is in the allowed range.
         meta.lookup(|meta| {
-            let q_stack = q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
+            let q_stack =
+                q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
@@ -457,19 +476,22 @@ impl<
 
         // global_counter is in the allowed range:
         meta.lookup(|meta| {
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
-            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
+            let global_counter =
+                meta.query_advice(global_counter, Rotation::cur());
+            let global_counter_table =
+                meta.query_fixed(global_counter_table, Rotation::cur());
 
             vec![(global_counter, global_counter_table)]
         });
 
         // Memory value (for non-first rows) is in the allowed range.
-        // Memory first row value doesn't need to be checked - it is checked above
-        // where memory init row value has to be 0.
+        // Memory first row value doesn't need to be checked - it is checked
+        // above where memory init row value has to be 0.
         meta.lookup(|meta| {
             let q_memory_not_first = q_memory_not_first_norm(meta);
             let value = meta.query_advice(value, Rotation::cur());
-            let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
+            let memory_value_table =
+                meta.query_fixed(memory_value_table, Rotation::cur());
 
             vec![(q_memory_not_first * value, memory_value_table)]
         });
@@ -493,7 +515,10 @@ impl<
     }
 
     /// Load lookup table / other fixed constants for this configuration.
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load(
+        &self,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
         layouter
             .assign_region(
                 || "global counter table",
@@ -613,10 +638,17 @@ impl<
                 offset += 1;
             }
 
-            for (internal_ind, global_counter) in op.global_counters.iter().enumerate() {
+            for (internal_ind, global_counter) in
+                op.global_counters.iter().enumerate()
+            {
                 if target == 2 {
-                    let bus_mapping =
-                        self.assign_per_counter(region, offset, address, global_counter, target)?;
+                    let bus_mapping = self.assign_per_counter(
+                        region,
+                        offset,
+                        address,
+                        global_counter,
+                        target,
+                    )?;
                     bus_mappings.push(bus_mapping);
                 } else if target == 3 {
                     if internal_ind == 0 {
@@ -661,13 +693,18 @@ impl<
         }
 
         // We pad all remaining rows to avoid the check at the first unused row.
-        // Without padding, (address_cur - address_prev) would not be zero at the first unused row
-        // and some checks would be triggered.
+        // Without padding, (address_cur - address_prev) would not be zero at
+        // the first unused row and some checks would be triggered.
 
         // todo: edge cases
         for i in offset..start_offset + max_rows {
             if i == start_offset {
-                region.assign_fixed(|| "target", self.q_target, i, || Ok(F::one()))?;
+                region.assign_fixed(
+                    || "target",
+                    self.q_target,
+                    i,
+                    || Ok(F::one()),
+                )?;
             } else {
                 region.assign_fixed(
                     || "target",
@@ -676,7 +713,12 @@ impl<
                     || Ok(F::from_u64(target as u64)),
                 )?;
             }
-            region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
+            region.assign_advice(
+                || "padding",
+                self.padding,
+                i,
+                || Ok(F::one()),
+            )?;
             region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
         }
 
@@ -692,7 +734,8 @@ impl<
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
-        let address_diff_is_zero_chip = IsZeroChip::construct(self.address_diff_is_zero.clone());
+        let address_diff_is_zero_chip =
+            IsZeroChip::construct(self.address_diff_is_zero.clone());
 
         let memory_address_monotone_chip =
             MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::construct(
@@ -701,7 +744,9 @@ impl<
         memory_address_monotone_chip.load(&mut layouter)?;
 
         let padding_monotone_chip =
-            MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
+            MonotoneChip::<F, 1, true, false>::construct(
+                self.padding_monotone.clone(),
+            );
         padding_monotone_chip.load(&mut layouter)?;
 
         layouter.assign_region(
@@ -741,7 +786,12 @@ impl<
         target: usize,
     ) -> Result<(), Error> {
         // Assign `address`
-        region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
+        region.assign_advice(
+            || "init address",
+            self.address,
+            offset,
+            || Ok(address.0),
+        )?;
 
         // Assign `global_counter`
         region.assign_advice(
@@ -752,13 +802,28 @@ impl<
         )?;
 
         // Assign `value`
-        region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "init value",
+            self.value,
+            offset,
+            || Ok(F::zero()),
+        )?;
 
         // Assign memory_flag
-        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
+        region.assign_advice(
+            || "init memory",
+            self.flag,
+            offset,
+            || Ok(F::one()),
+        )?;
 
         // Assign padding
-        region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "padding",
+            self.padding,
+            offset,
+            || Ok(F::zero()),
+        )?;
 
         // Assign target
         region.assign_fixed(
@@ -782,8 +847,12 @@ impl<
     ) -> Result<BusMapping<F>, Error> {
         // Assign `address`
         let address = {
-            let cell =
-                region.assign_advice(|| "address", self.address, offset, || Ok(address.0))?;
+            let cell = region.assign_advice(
+                || "address",
+                self.address,
+                offset,
+                || Ok(address.0),
+            )?;
             Variable::<F, F> {
                 cell,
                 field_elem: Some(address.0),
@@ -814,7 +883,8 @@ impl<
 
         // Assign `value`
         let value = {
-            let value = read_write.as_ref().map(|read_write| read_write.value().0);
+            let value =
+                read_write.as_ref().map(|read_write| read_write.value().0);
             let cell = region.assign_advice(
                 || "value",
                 self.value,
@@ -848,7 +918,12 @@ impl<
         };
 
         // Assign padding
-        region.assign_advice(|| "padding", self.padding, offset, || Ok(F::zero()))?;
+        region.assign_advice(
+            || "padding",
+            self.padding,
+            offset,
+            || Ok(F::zero()),
+        )?;
 
         // Assign target
         let target = {
@@ -880,9 +955,16 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::{Address, Config, GlobalCounter, Op, ReadWrite, Value};
+    use bus_mapping::{
+        evm::EvmWord, BlockConstants, ExecutionStep, ExecutionTrace,
+    };
+
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup},
+        dev::{
+            MockProver, VerifyFailure::ConstraintNotSatisfied,
+            VerifyFailure::Lookup,
+        },
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
@@ -944,7 +1026,11 @@ mod tests {
                     mut layouter: impl Layouter<F>,
                 ) -> Result<(), Error> {
                     config.load(&mut layouter)?;
-                    config.assign(layouter, self.memory_ops.clone(), self.stack_ops.clone())?;
+                    config.assign(
+                        layouter,
+                        self.memory_ops.clone(),
+                        self.stack_ops.clone(),
+                    )?;
 
                     Ok(())
                 }
@@ -962,7 +1048,8 @@ mod tests {
                 stack_ops: $stack_ops,
             };
 
-            let prover = MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
+            let prover =
+                MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -979,7 +1066,10 @@ mod tests {
         }
     }
 
-    fn lookup_fail(row: usize, lookup_index: usize) -> halo2::dev::VerifyFailure {
+    fn lookup_fail(
+        row: usize,
+        lookup_index: usize,
+    ) -> halo2::dev::VerifyFailure {
         Lookup { lookup_index, row }
     }
 
@@ -1109,7 +1199,7 @@ mod tests {
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(24),
-                    Value(pallas::Base::from_u64(13)), // This should fail as it not the same value as in previous write op
+                    Value(pallas::Base::from_u64(13)), /* This should fail as it not the same value as in previous write op */
                 )),
             ],
         };
@@ -1122,7 +1212,7 @@ mod tests {
                 )),
                 Some(ReadWrite::Read(
                     GlobalCounter(28),
-                    Value(pallas::Base::from_u64(13)), // This should fail as it not the same value as in previous write op
+                    Value(pallas::Base::from_u64(13)), /* This should fail as it not the same value as in previous write op */
                 )),
             ],
         };
@@ -1139,7 +1229,12 @@ mod tests {
             vec![stack_op_0],
             Err(vec![
                 constraint_not_satisfied(2, 2, "Memory operation + padding", 4),
-                constraint_not_satisfied(MEMORY_ROWS_MAX + 1, 4, "Stack operation", 2)
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + 1,
+                    4,
+                    "Stack operation",
+                    2
+                )
             ])
         );
     }
@@ -1151,7 +1246,8 @@ mod tests {
             address: Address(pallas::Base::zero()),
             global_counters: vec![Some(ReadWrite::Read(
                 GlobalCounter(28),
-                Value(pallas::Base::from_u64(13)), // This should fail as it is read op
+                Value(pallas::Base::from_u64(13)), /* This should fail as it
+                                                    * is read op */
             ))],
         };
 
@@ -1188,14 +1284,16 @@ mod tests {
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Write(
-                    GlobalCounter(GLOBAL_COUNTER_MAX + 1), // this global counter value is not in the allowed range
+                    GlobalCounter(GLOBAL_COUNTER_MAX + 1), /* this global counter value is not in the allowed range */
                     Value(pallas::Base::from_u64(12)),
                 )),
             ],
         };
 
         let memory_op_1 = Op {
-            address: Address(pallas::Base::from_u64((MEMORY_ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
+            address: Address(pallas::Base::from_u64(
+                (MEMORY_ADDRESS_MAX + 1) as u64,
+            )), // this address is not in the allowed range
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -1223,7 +1321,9 @@ mod tests {
         };
 
         let stack_op_1 = Op {
-            address: Address(pallas::Base::from_u64((STACK_ADDRESS_MAX + 1) as u64)),
+            address: Address(pallas::Base::from_u64(
+                (STACK_ADDRESS_MAX + 1) as u64,
+            )),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(17),
@@ -1236,8 +1336,9 @@ mod tests {
             ],
         };
 
-        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded rows would
-        // fail because of the address they would have - the address of the last unused row)
+        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
+        // rows would fail because of the address they would have - the
+        // address of the last unused row)
         const MEMORY_ROWS_MAX: usize = 7;
         const STACK_ROWS_MAX: usize = 7;
         const GLOBAL_COUNTER_MAX: usize = 60000;
@@ -1267,9 +1368,12 @@ mod tests {
 
     #[test]
     fn max_values_first_row() {
-        // first row of a target needs to be checked for address to be in range too
+        // first row of a target needs to be checked for address to be in range
+        // too
         let memory_op_0 = Op {
-            address: Address(pallas::Base::from_u64((MEMORY_ADDRESS_MAX + 1) as u64)), // this address is not in the allowed range
+            address: Address(pallas::Base::from_u64(
+                (MEMORY_ADDRESS_MAX + 1) as u64,
+            )), // this address is not in the allowed range
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(12),
                 Value(pallas::Base::from_u64(12)),
@@ -1277,7 +1381,9 @@ mod tests {
         };
 
         let stack_op_0 = Op {
-            address: Address(pallas::Base::from_u64((STACK_ADDRESS_MAX + 1) as u64)),
+            address: Address(pallas::Base::from_u64(
+                (STACK_ADDRESS_MAX + 1) as u64,
+            )),
             global_counters: vec![
                 Some(ReadWrite::Write(
                     GlobalCounter(12),
@@ -1290,8 +1396,9 @@ mod tests {
             ],
         };
 
-        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded rows would
-        // fail because of the address they would have - the address of the last unused row)
+        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
+        // rows would fail because of the address they would have - the
+        // address of the last unused row)
         const MEMORY_ROWS_MAX: usize = 2;
         const STACK_ROWS_MAX: usize = 2;
         const GLOBAL_COUNTER_MAX: usize = 60000;
@@ -1330,7 +1437,8 @@ mod tests {
                     Value(pallas::Base::from_u64(12)),
                 )),
                 Some(ReadWrite::Read(
-                    GlobalCounter(1255), // fails because it needs to be strictly monotone
+                    GlobalCounter(1255), /* fails because it needs to be
+                                          * strictly monotone */
                     Value(pallas::Base::from_u64(12)),
                 )),
             ],
@@ -1348,7 +1456,8 @@ mod tests {
                     Value(pallas::Base::from_u64(32)),
                 )),
                 Some(ReadWrite::Read(
-                    GlobalCounter(217), // fails because it needs to be strictly monotone
+                    GlobalCounter(217), /* fails because it needs to be
+                                         * strictly monotone */
                     Value(pallas::Base::from_u64(32)),
                 )),
             ],
@@ -1392,7 +1501,9 @@ mod tests {
         };
 
         let memory_op_2 = Op {
-            address: Address(pallas::Base::zero()), // this fails because the address is not monotone
+            address: Address(pallas::Base::zero()), /* this fails because the
+                                                     * address is not
+                                                     * monotone */
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(135),
                 Value(pallas::Base::from_u64(12)),
@@ -1414,7 +1525,9 @@ mod tests {
             ))],
         };
         let stack_op_2 = Op {
-            address: Address(pallas::Base::zero()), // this fails because the address is not monotone
+            address: Address(pallas::Base::zero()), /* this fails because the
+                                                     * address is not
+                                                     * monotone */
             global_counters: vec![Some(ReadWrite::Write(
                 GlobalCounter(230),
                 Value(pallas::Base::from_u64(32)),
@@ -1456,6 +1569,96 @@ mod tests {
             vec![memory_op_0],
             vec![],
             Err(vec![lookup_fail(1, 6),])
+        );
+    }
+
+    #[test]
+    fn trace() {
+        let input_trace = r#"
+[
+    {
+        "memory": {
+            "0": "0000000000000000000000000000000000000000000000000000000000000000",
+            "20": "0000000000000000000000000000000000000000000000000000000000000000",
+            "40": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "stack": [
+            "40"
+        ],
+        "opcode": "PUSH1 40",
+        "pc": 0
+    },
+    {
+        "memory": {
+            "00": "0000000000000000000000000000000000000000000000000000000000000000",
+            "20": "0000000000000000000000000000000000000000000000000000000000000000",
+            "40": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "stack": [
+            "40",
+            "80"
+        ],
+        "opcode": "PUSH1 80",
+        "pc": 1
+    }
+]
+"#;
+
+        let block_ctants = BlockConstants::new(
+            EvmWord::from(0u8),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+            pasta_curves::Fp::zero(),
+        );
+
+        let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
+            input_trace.as_bytes(),
+            block_ctants,
+        )
+        .expect("Error on trace generation");
+
+        let trace_stack_ops = obtained_exec_trace.sorted_stack_ops();
+        // todo: sort by address
+        let mut stack_ops = vec![];
+        for op in trace_stack_ops.iter() {
+            let mut gcs = vec![];
+            // todo: get all ops for the address
+            if op.rw().is_read() {
+                gcs.push(Some(ReadWrite::Read(
+                    GlobalCounter(usize::from(op.gc())),
+                    Value(pallas::Base::from_u64(32)),
+                )));
+            } else {
+                gcs.push(Some(ReadWrite::Write(
+                    GlobalCounter(usize::from(op.gc())),
+                    Value(pallas::Base::from_u64(32)),
+                )));
+            }
+
+            let stack_op = Op {
+                address: Address(pallas::Base::from_u64(usize::from(
+                    *op.address(),
+                )
+                    as u64)),
+                global_counters: gcs,
+            };
+            stack_ops.push(stack_op);
+        }
+
+        test_state_circuit!(
+            14,
+            2000,
+            100,
+            2,
+            100,
+            1023,
+            vec![],
+            stack_ops,
+            Ok(())
         );
     }
 }
