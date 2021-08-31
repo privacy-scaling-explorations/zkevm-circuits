@@ -65,6 +65,15 @@ impl MemoryAddress {
     pub fn zero() -> MemoryAddress {
         MEM_ADDR_ZERO.clone()
     }
+
+    /// Return the little-endian byte representation of the word as a 32-byte
+    /// array.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&self.0.to_bytes_le());
+
+        array
+    }
 }
 
 impl From<MemoryAddress> for BigUint {
@@ -152,4 +161,15 @@ macro_rules! impl_from_basic_types {
     };
 }
 
-impl_from_basic_types!(u8, u16, u32, u64, u128);
+impl_from_basic_types!(u8, u16, u32, u64, u128, usize);
+
+impl EvmWord {
+    /// Return the little-endian byte representation of the word as a 32-byte
+    /// array.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&self.0.to_bytes_le());
+
+        array
+    }
+}
