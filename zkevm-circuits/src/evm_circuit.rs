@@ -418,9 +418,10 @@ impl<F: FieldExt> EvmCircuit<F> {
             &mut cells_curr[..num_cells_next_asseccible].to_vec()[..];
         meta.create_gate("Query cells for next step", |meta| {
             for cell in cells_next.iter_mut() {
+                cell.rotation += CIRCUIT_HEIGHT;
                 cell.expression = meta.query_advice(
                     cell.column,
-                    Rotation((cell.rotation + CIRCUIT_HEIGHT) as i32),
+                    Rotation((cell.rotation) as i32),
                 );
             }
 
