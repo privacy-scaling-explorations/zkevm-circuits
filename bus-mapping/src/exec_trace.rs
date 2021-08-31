@@ -2,11 +2,15 @@
 //! execution traces.
 pub(crate) mod exec_step;
 use crate::evm::EvmWord;
-use crate::operation::Target;
 use crate::operation::{container::OperationContainer, Operation};
+use crate::operation::{MemoryOp, StackOp, StorageOp, Target};
+use crate::Error;
 use core::ops::{Index, IndexMut};
 pub use exec_step::ExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
+use std::convert::TryFrom;
+
+use self::exec_step::ParsedExecutionStep;
 
 /// Definition of all of the constants related to an Ethereum block and
 /// therefore, related with an [`ExecutionTrace`].
@@ -116,7 +120,7 @@ impl<F: FieldExt> BlockConstants<F> {
 /// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionTrace<F: FieldExt> {
-    entries: Vec<ExecutionStep>,
+    steps: Vec<ExecutionStep>,
     block_ctants: BlockConstants<F>,
     container: OperationContainer,
 }
@@ -124,45 +128,101 @@ pub struct ExecutionTrace<F: FieldExt> {
 impl<F: FieldExt> Index<usize> for ExecutionTrace<F> {
     type Output = ExecutionStep;
     fn index(&self, index: usize) -> &Self::Output {
-        &self.entries[index]
+        &self.steps[index]
     }
 }
 
 impl<F: FieldExt> IndexMut<usize> for ExecutionTrace<F> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.entries[index]
+        &mut self.steps[index]
     }
 }
 
 impl<F: FieldExt> ExecutionTrace<F> {
+    /// Given an EVM trace in JSON format according to the specs and format
+    /// shown in [zkevm-test-vectors crate](https://github.com/appliedzkp/zkevm-testing-vectors), generate an `ExecutionTrace`
+    /// and generate all of the [`Operation`]s associated to each one of it's
+    /// [`ExecutionStep`]s filling them bus-mapping instances.
+    pub fn from_trace_bytes<T: AsRef<[u8]>>(
+        bytes: T,
+        block_ctants: BlockConstants<F>,
+    ) -> Result<ExecutionTrace<F>, Error> {
+        let trace_loaded =
+            serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
+                .map_err(|_| Error::SerdeError)?
+                .iter()
+                .map(ExecutionStep::try_from)
+                .collect::<Result<Vec<ExecutionStep>, Error>>()?;
+
+        Ok(ExecutionTrace::<F>::new(trace_loaded, block_ctants))
+    }
+
     /// Given a vector of [`ExecutionStep`]s and a [`BlockConstants`] instance,
     /// generate an [`ExecutionTrace`] by:
     ///
     /// 1) Setting the correct [`GlobalCounter`](crate::evm::GlobalCounter) to
-    /// each [`ExecutionStep`]. 2) Generating the corresponding
-    /// [`Operation`]s, registering them in the container and storing the
-    /// [`OperationRef`]s to each one of the generated ops into the
-    /// bus-mapping instances of each [`ExecutionStep`].
-    pub fn new(
-        mut entries: Vec<ExecutionStep>,
+    /// each [`ExecutionStep`].
+    /// 2) Generating the corresponding [`Operation`]s, registering them in the
+    /// container and storing the [`OperationRef`]s to each one of the
+    /// generated ops into the bus-mapping instances of each [`ExecutionStep`].
+    pub(crate) fn new(
+        steps: Vec<ExecutionStep>,
         block_ctants: BlockConstants<F>,
     ) -> Self {
-        let mut container = OperationContainer::new();
-        let mut gc = 0usize;
+        ExecutionTrace {
+            steps,
+            block_ctants,
+            /// Dummy empty container to enable build.
+            container: OperationContainer::new(),
+        }
+        .build()
+    }
 
-        entries.iter_mut().for_each(|exec_step| {
+    /// Returns an ordered `Vec` containing all the [`StackOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_stack_ops(&self) -> Vec<StackOp> {
+        self.container.sorted_stack()
+    }
+
+    /// Returns an ordered `Vec` containing all the [`MemoryOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_memory_ops(&self) -> Vec<MemoryOp> {
+        self.container.sorted_memory()
+    }
+
+    /// Returns an ordered `Vec` containing all the [`StorageOp`]s of the actual
+    /// `ExecutionTrace` so that they can be directly included in the State
+    /// proof.
+    pub fn sorted_storage_ops(&self) -> Vec<StorageOp> {
+        self.container.sorted_storage()
+    }
+
+    /// Traverses the trace step by step, and for each [`ExecutionStep`]:
+    /// 1. Sets the correct [`GlobalCounter`](crate::evm::GlobalCounter).
+    /// 2. Generates the corresponding [`Operation`]s and stores them inside the
+    /// [`OperationContainer`] instance stored inside of the trace + adds the
+    /// [`OperationRef`]s obtained from the container addition into each
+    /// [`ExecutionStep`] bus-mapping instances.
+    fn build(mut self) -> Self {
+        // Set a counter to add the correct global counters.
+        let mut gc = 0usize;
+        let mut new_container = OperationContainer::new();
+        self.steps_mut().iter_mut().for_each(|exec_step| {
+            // Set correct global counter
             exec_step.set_gc(gc);
-            gc += exec_step.gen_associated_ops::<F>(&mut container);
+            // Add the `OpcodeId` associated ops and increment the gc counting
+            // all of them.
+            gc += exec_step.gen_associated_ops::<F>(&mut new_container);
             // Sum 1 to counter so that we set the next exec_step GC to the
             // correct index
             gc += 1;
         });
 
-        ExecutionTrace {
-            entries,
-            block_ctants,
-            container,
-        }
+        // Replace the empty original container with the new one we just filled.
+        self.container = new_container;
+        self
     }
 
     /// Registers an [`Operation`] into the [`OperationContainer`] and then adds
@@ -175,9 +235,21 @@ impl<F: FieldExt> ExecutionTrace<F> {
         exec_step_idx: usize,
     ) {
         let op_ref = self.container_mut().insert(op);
-        self.entries[exec_step_idx]
+        self.steps[exec_step_idx]
             .bus_mapping_instance_mut()
             .push(op_ref);
+    }
+
+    /// Returns a reference to the [`ExecutionStep`] vector instance
+    /// that the `ExecutionTrace` holds.
+    pub fn steps(&self) -> &Vec<ExecutionStep> {
+        &self.steps
+    }
+
+    /// Returns a mutable reference to the [`ExecutionStep`] vector instance
+    /// that the `ExecutionTrace` holds.
+    fn steps_mut(&mut self) -> &mut Vec<ExecutionStep> {
+        &mut self.steps
     }
 
     /// Returns a mutable reference to the [`OperationContainer`] instance that
@@ -217,18 +289,16 @@ impl OperationRef {
 #[cfg(test)]
 mod trace_tests {
     use super::*;
-    use crate::error::Error;
     use crate::{
         evm::{
             opcodes::ids::OpcodeId, GlobalCounter, Instruction, MemoryAddress,
             ProgramCounter, StackAddress,
         },
-        exec_trace::{exec_step::ParsedExecutionStep, ExecutionStep},
+        exec_trace::ExecutionStep,
         operation::{StackOp, RW},
     };
     use alloc::collections::BTreeMap;
     use num::BigUint;
-    use std::convert::TryFrom;
 
     #[test]
     fn exec_trace_parsing() {
@@ -263,7 +333,7 @@ mod trace_tests {
         "#;
 
         let block_ctants = BlockConstants::new(
-            EvmWord(BigUint::from(0u8)),
+            EvmWord::from(0u8),
             pasta_curves::Fp::zero(),
             pasta_curves::Fp::zero(),
             pasta_curves::Fp::zero(),
@@ -282,27 +352,18 @@ mod trace_tests {
         // The memory is the same in both steps as none of them touches the
         // memory of the EVM.
         let mut mem_map = BTreeMap::new();
-        mem_map.insert(
-            MemoryAddress(BigUint::from(0x00u8)),
-            EvmWord(BigUint::from(0u8)),
-        );
-        mem_map.insert(
-            MemoryAddress(BigUint::from(0x20u8)),
-            EvmWord(BigUint::from(0u8)),
-        );
-        mem_map.insert(
-            MemoryAddress(BigUint::from(0x40u8)),
-            EvmWord(BigUint::from(0u8)),
-        );
+        mem_map
+            .insert(MemoryAddress(BigUint::from(0x00u8)), EvmWord::from(0u8));
+        mem_map
+            .insert(MemoryAddress(BigUint::from(0x20u8)), EvmWord::from(0u8));
+        mem_map
+            .insert(MemoryAddress(BigUint::from(0x40u8)), EvmWord::from(0u8));
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep::new(
             mem_map.clone(),
-            vec![EvmWord(BigUint::from(0x40u8))],
-            Instruction::new(
-                OpcodeId::PUSH1,
-                Some(EvmWord(BigUint::from(0x40u8))),
-            ),
+            vec![EvmWord::from(0x40u8)],
+            Instruction::new(OpcodeId::PUSH1, Some(EvmWord::from(0x40u8))),
             ProgramCounter::from(0),
             GlobalCounter::from(0),
         );
@@ -315,20 +376,14 @@ mod trace_tests {
                 RW::WRITE,
                 GlobalCounter(1usize),
                 StackAddress::from(1023),
-                EvmWord(BigUint::from(0x40u8)),
+                EvmWord::from(0x40u8),
             )));
 
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
             mem_map,
-            vec![
-                EvmWord(BigUint::from(0x40u8)),
-                EvmWord(BigUint::from(0x80u8)),
-            ],
-            Instruction::new(
-                OpcodeId::PUSH1,
-                Some(EvmWord(BigUint::from(0x80u8))),
-            ),
+            vec![EvmWord::from(0x40u8), EvmWord::from(0x80u8)],
+            Instruction::new(OpcodeId::PUSH1, Some(EvmWord::from(0x80u8))),
             ProgramCounter::from(1),
             GlobalCounter::from(2),
         );
@@ -341,28 +396,20 @@ mod trace_tests {
                 RW::WRITE,
                 GlobalCounter(3usize),
                 StackAddress::from(1022),
-                EvmWord(BigUint::from(0x80u8)),
+                EvmWord::from(0x80u8),
             )));
         let expected_exec_trace = ExecutionTrace {
-            entries: vec![step_1, step_2],
+            steps: vec![step_1, step_2],
             block_ctants: block_ctants.clone(),
             container,
         };
 
         // Obtained trace computation
-        let trace_loaded =
-            serde_json::from_str::<Vec<ParsedExecutionStep>>(input_trace)
-                .expect("Error on parsing")
-                .iter()
-                .enumerate()
-                .map(|(idx, step)| {
-                    ExecutionStep::try_from((step, GlobalCounter(idx)))
-                })
-                .collect::<Result<Vec<ExecutionStep>, Error>>()
-                .expect("Error on conversion");
-
-        let obtained_exec_trace =
-            ExecutionTrace::new(trace_loaded, block_ctants);
+        let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
+            input_trace.as_bytes(),
+            block_ctants,
+        )
+        .expect("Error on trace generation");
 
         assert_eq!(obtained_exec_trace, expected_exec_trace)
     }

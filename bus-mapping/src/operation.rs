@@ -401,7 +401,7 @@ mod operation_tests {
             RW::WRITE,
             GlobalCounter(1usize),
             StackAddress::from(1024),
-            EvmWord(BigUint::from(0x40u8)),
+            EvmWord::from(0x40u8),
         );
 
         let stack_op_as_operation = Operation::from(stack_op.clone());
@@ -410,7 +410,7 @@ mod operation_tests {
             RW::WRITE,
             GlobalCounter(1usize),
             MemoryAddress(BigUint::from(0x40u8)),
-            EvmWord(BigUint::from(0x40u8)),
+            EvmWord::from(0x40u8),
         );
 
         let memory_op_as_operation = Operation::from(memory_op.clone());

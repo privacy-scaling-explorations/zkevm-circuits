@@ -101,7 +101,7 @@ impl ExecutionStep {
 
     /// Sets the global counter of the [`Instruction`] execution to the one sent
     /// in the params.
-    pub fn set_gc(&mut self, gc: impl Into<GlobalCounter>) {
+    pub(crate) fn set_gc(&mut self, gc: impl Into<GlobalCounter>) {
         self.gc = gc.into()
     }
 
@@ -111,7 +111,9 @@ impl ExecutionStep {
     }
 
     /// Returns a mutable reference to the bus-mapping instance.
-    pub fn bus_mapping_instance_mut(&mut self) -> &mut Vec<OperationRef> {
+    pub(crate) fn bus_mapping_instance_mut(
+        &mut self,
+    ) -> &mut Vec<OperationRef> {
         &mut self.bus_mapping_instance
     }
 
@@ -123,7 +125,7 @@ impl ExecutionStep {
     ///
     /// ## Returns the #operations added by the
     /// [`OpcodeId`](crate::evm::OpcodeId) into the container.
-    pub fn gen_associated_ops<F: FieldExt>(
+    pub(crate) fn gen_associated_ops<F: FieldExt>(
         &mut self,
         container: &mut OperationContainer,
     ) -> usize {
@@ -133,29 +135,25 @@ impl ExecutionStep {
     }
 }
 
-impl<'a> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter)> for ExecutionStep {
+impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
     type Error = Error;
 
     fn try_from(
-        parse_info: (&ParsedExecutionStep<'a>, GlobalCounter),
+        parsed_step: &ParsedExecutionStep<'a>,
     ) -> Result<Self, Self::Error> {
         // Memory part
         let mut mem_map = BTreeMap::new();
-        parse_info
-            .0
-            .memory
-            .iter()
-            .try_for_each(|(mem_addr, word)| {
-                mem_map.insert(
-                    MemoryAddress::from_str(mem_addr)?,
-                    EvmWord::from_str(word)?,
-                );
-                Ok(())
-            })?;
+        parsed_step.memory.iter().try_for_each(|(mem_addr, word)| {
+            mem_map.insert(
+                MemoryAddress::from_str(mem_addr)?,
+                EvmWord::from_str(word)?,
+            );
+            Ok(())
+        })?;
 
         // Stack part
         let mut stack = vec![];
-        parse_info.0.stack.iter().try_for_each(|word| {
+        parsed_step.stack.iter().try_for_each(|word| {
             stack.push(EvmWord::from_str(word)?);
             Ok(())
         })?;
@@ -163,9 +161,9 @@ impl<'a> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter)> for ExecutionStep {
         Ok(ExecutionStep::new(
             mem_map,
             stack,
-            Instruction::from_str(parse_info.0.opcode)?,
-            parse_info.0.pc,
-            parse_info.1,
+            Instruction::from_str(parsed_step.opcode)?,
+            parsed_step.pc,
+            0.into(),
         ))
     }
 }
@@ -174,7 +172,7 @@ impl<'a> TryFrom<(&ParsedExecutionStep<'a>, GlobalCounter)> for ExecutionStep {
 /// derivation guide for the serde Derive macro.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[doc(hidden)]
-pub struct ParsedExecutionStep<'a> {
+pub(crate) struct ParsedExecutionStep<'a> {
     memory: HashMap<&'a str, &'a str>,
     stack: Vec<&'a str>,
     opcode: &'a str,
@@ -202,26 +200,25 @@ mod tests {
         }
         "#;
 
-        let step_loaded: ExecutionStep = ExecutionStep::try_from((
+        let step_loaded: ExecutionStep = ExecutionStep::try_from(
             &serde_json::from_str::<ParsedExecutionStep>(step_json)
                 .expect("Error on parsing"),
-            GlobalCounter(0usize),
-        ))
+        )
         .expect("Error on conversion");
 
         let expected_step = {
             let mut mem_map = BTreeMap::new();
             mem_map.insert(
                 MemoryAddress(BigUint::from(0x00u8)),
-                EvmWord(BigUint::from(0u8)),
+                EvmWord::from(0u8),
             );
             mem_map.insert(
                 MemoryAddress(BigUint::from(0x20u8)),
-                EvmWord(BigUint::from(0u8)),
+                EvmWord::from(0u8),
             );
             mem_map.insert(
                 MemoryAddress(BigUint::from(0x40u8)),
-                EvmWord(BigUint::from(0x80u8)),
+                EvmWord::from(0x80u8),
             );
 
             ExecutionStep::new(

@@ -14,6 +14,8 @@ pub enum Error {
     EvmWordParsing,
     /// Error while trying to convert to an incorrect `OpcodeId`.
     InvalidOpConversion,
+    /// Serde de/serialization error.
+    SerdeError,
 }
 
 impl Display for Error {
