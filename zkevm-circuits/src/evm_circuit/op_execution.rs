@@ -13,7 +13,9 @@ use halo2::{
 use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
+mod pop;
 use arithmetic::AddGadget;
+use pop::PopGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -204,6 +206,7 @@ pub(crate) struct OpExecutionGadget<F> {
     qs_op_idx_map: HashMap<u8, usize>,
     preset_map: HashMap<(usize, Case), Preset<F>>,
     add_gadget: AddGadget<F>,
+    pop_gadget: PopGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -227,7 +230,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         let mut qs_op_idx_map = HashMap::new();
         let mut preset_map = HashMap::new();
-        let /* mut */ qs_op_idx = 0;
+        let mut  qs_op_idx = 0;
 
         let mut constraints = vec![Constraint {
             name: "op selectors",
@@ -264,6 +267,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         constrcut_op_gadget! {
             add_gadget = AddGadget;
+            pop_gadget = PopGadget;
         }
 
         for constraint in constraints.into_iter() {
@@ -300,6 +304,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             preset_map,
             resumption,
             add_gadget,
+            pop_gadget,
         }
     }
 
@@ -506,6 +511,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
             match execution_step.opcode {
                 1 | 3 => self.add_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                80 => self.pop_gadget.assign(
                     region,
                     offset,
                     core_state,
