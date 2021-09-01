@@ -1,11 +1,11 @@
 use super::super::{
-    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, FixedLookup,
-    Lookup, Word,
+    BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
+    FixedLookup, Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
-use std::convert::TryInto;
+use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
 struct PushSuccessAllocation<F> {
@@ -137,18 +137,19 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
                 .fold(Expression::Constant(F::zero()), |sum, s| sum + s.expr());
             push_constraints.push(selectors_sum - opcode.expr() + push1 - one);
 
-            let bus_mapping_lookups = vec![/*Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1,
+            let bus_mapping_lookups =
+                vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: -1,
                     value: word.expr(),
-                    is_write: false,
-                })*/];
+                    is_write: true,
+                })];
 
             Constraint {
                 name: "PushGadget success",
                 selector: case_selector.expr(),
                 polys: [state_transition_constraints, push_constraints]
                     .concat(),
-                lookups: [common_lookups.clone(), bus_mapping_lookups].concat(),
+                lookups: bus_mapping_lookups,
             }
         };
 
@@ -165,7 +166,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
                     (stack_pointer.clone() - zero)
                         * (stack_pointer - minus_one),
                 ],
-                lookups: common_lookups.clone(),
+                lookups: vec![],
             }
         };
 
@@ -186,11 +187,17 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
                         * (gas_overdemand.clone() - two)
                         * (gas_overdemand - three),
                 ],
-                lookups: common_lookups,
+                lookups: vec![],
             }
         };
 
-        vec![success, stack_overflow, out_of_gas]
+        array::IntoIter::new([success, stack_overflow, out_of_gas])
+            .map(move |mut constraint| {
+                constraint.lookups =
+                    [common_lookups.clone(), constraint.lookups].concat();
+                constraint
+            })
+            .collect()
     }
 
     fn assign(
@@ -247,13 +254,17 @@ impl<F: FieldExt> PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use super::super::super::{test::TestCircuit, Case, ExecutionStep};
-    use halo2::dev::MockProver;
+    use super::super::super::{
+        test::TestCircuit, Case, ExecutionStep, Operation,
+    };
+    use bus_mapping::operation::Target;
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {
-        ($execution_steps:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Base>::new($execution_steps);
+        ($execution_steps:expr, $operations:expr, $result:expr) => {{
+            let circuit =
+                TestCircuit::<Base>::new($execution_steps, $operations);
             let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
@@ -278,6 +289,17 @@ mod test {
                         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     ]
                 ],
+            }],
+            vec![Operation {
+                gc: 1,
+                target: Target::Stack,
+                is_write: true,
+                values: [
+                    Base::zero(),
+                    Base::from_u64(1023),
+                    Base::from_u64(2 + 2),
+                    Base::zero(),
+                ]
             }],
             Ok(())
         );

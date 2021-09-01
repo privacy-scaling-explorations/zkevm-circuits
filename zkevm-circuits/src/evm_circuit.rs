@@ -543,6 +543,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         fixed_lookup_count += 1;
                     }
                     Lookup::BusMappingLookup(bm_lookup) => {
+                        let OpExecutionState {
+                            global_counter,
+                            call_id,
+                            stack_pointer,
+                            ..
+                        } = &op_execution_state_curr;
+
                         if rw_lookups.len() == rw_lookup_count {
                             rw_lookups.push(
                                 vec![zero.clone(); 7].try_into().unwrap(),
@@ -550,7 +557,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         }
 
                         let mut exprs = vec![
-                            op_execution_state_curr.global_counter.expr()
+                            global_counter.expr()
                                 + Expression::Constant(F::from_u64(
                                     rw_lookup_count as u64,
                                 )),
@@ -561,18 +568,26 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 is_write,
                                 index_offset,
                                 value,
-                            } => [
-                                Expression::Constant(F::from_u64(
-                                    is_write as u64,
-                                )),
-                                op_execution_state_curr.call_id.expr(),
-                                op_execution_state_curr.stack_pointer.expr()
-                                    + Expression::Constant(F::from_u64(
-                                        index_offset as u64,
+                            } => {
+                                let stack_index = stack_pointer.expr()
+                                    + Expression::Constant(
+                                        F::from_u64(index_offset.abs() as u64)
+                                            * if index_offset.is_negative() {
+                                                -F::one()
+                                            } else {
+                                                F::one()
+                                            },
+                                    );
+                                [
+                                    Expression::Constant(F::from_u64(
+                                        is_write as u64,
                                     )),
-                                value,
-                                zero.clone(),
-                            ],
+                                    call_id.expr(),
+                                    stack_index,
+                                    value,
+                                    zero.clone(),
+                                ]
+                            }
                             BusMappingLookup::Memory {
                                 is_write,
                                 call_id,
