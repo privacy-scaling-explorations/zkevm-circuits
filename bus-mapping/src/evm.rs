@@ -172,4 +172,9 @@ impl EvmWord {
 
         array
     }
+
+    /// Returns the underlying representation of the `EvmWord` as a [`BigUint`].
+    pub fn as_big_uint(&self) -> &BigUint {
+        &self.0
+    }
 }
