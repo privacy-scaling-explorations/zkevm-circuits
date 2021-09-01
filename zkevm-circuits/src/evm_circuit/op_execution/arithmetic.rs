@@ -3,6 +3,7 @@ use super::super::{
     Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use bus_mapping::evm::OpcodeId;
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -35,7 +36,8 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
     // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
     // when it's SUB, we annotate stack as [c, b, ...] and [a, ...].
     // Then we verify if a + b - c is zero.
-    const RESPONSIBLE_OPCODES: &'static [u8] = &[1, 3];
+    const RESPONSIBLE_OPCODES: &'static [OpcodeId] =
+        &[OpcodeId::ADD, OpcodeId::SUB];
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
         CaseConfig {
@@ -266,7 +268,7 @@ impl<F: FieldExt> AddGadget<F> {
         self.success.swap.assign(
             region,
             offset,
-            Some(F::from_u64((execution_step.opcode == 3) as u64)),
+            Some(F::from_u64((execution_step.opcode == OpcodeId::SUB) as u64)),
         )?;
         self.success.a.assign(
             region,
@@ -300,7 +302,7 @@ mod test {
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
-    use bus_mapping::operation::Target;
+    use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
 
@@ -322,7 +324,7 @@ mod test {
         try_test_circuit!(
             vec![
                 ExecutionStep {
-                    opcode: 98,
+                    opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
                         [
@@ -338,7 +340,7 @@ mod test {
                     ],
                 },
                 ExecutionStep {
-                    opcode: 98,
+                    opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
                         [
@@ -354,7 +356,7 @@ mod test {
                     ],
                 },
                 ExecutionStep {
-                    opcode: 1,
+                    opcode: OpcodeId::ADD,
                     case: Case::Success,
                     values: vec![
                         [
@@ -443,7 +445,7 @@ mod test {
         try_test_circuit!(
             vec![
                 ExecutionStep {
-                    opcode: 98,
+                    opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
                         [
@@ -459,7 +461,7 @@ mod test {
                     ],
                 },
                 ExecutionStep {
-                    opcode: 98,
+                    opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
                         [
@@ -475,7 +477,7 @@ mod test {
                     ],
                 },
                 ExecutionStep {
-                    opcode: 3,
+                    opcode: OpcodeId::SUB,
                     case: Case::Success,
                     values: vec![
                         [

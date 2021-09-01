@@ -5,6 +5,7 @@ use super::{
     },
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Lookup, Word,
 };
+use bus_mapping::evm::OpcodeId;
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -166,7 +167,7 @@ impl<F: FieldExt> OpExecutionState<F> {
 }
 
 trait OpGadget<F: FieldExt> {
-    const RESPONSIBLE_OPCODES: &'static [u8];
+    const RESPONSIBLE_OPCODES: &'static [OpcodeId];
 
     const CASE_CONFIGS: &'static [CaseConfig];
 
@@ -203,8 +204,7 @@ pub(crate) struct OpExecutionGadget<F> {
     qs_ops: Vec<Cell<F>>,
     free_cells: Vec<Cell<F>>,
     resumption: Resumption<F>,
-    // TODO: use OpcodeId from bus_mapping
-    qs_op_idx_map: HashMap<u8, usize>,
+    qs_op_idx_map: HashMap<OpcodeId, usize>,
     preset_map: HashMap<(usize, Case), Preset<F>>,
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
@@ -318,7 +318,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         qs_op_idx: usize,
         free_cells: &[Cell<F>],
         resumption: &Resumption<F>,
-        qs_op_idx_map: &mut HashMap<u8, usize>,
+        qs_op_idx_map: &mut HashMap<OpcodeId, usize>,
         preset_map: &mut HashMap<(usize, Case), Preset<F>>,
         constraints: &mut Vec<Constraint<F>>,
     ) -> O {
@@ -479,7 +479,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             self.state_curr.opcode.assign(
                 region,
                 offset,
-                Some(F::from_u64(execution_step.opcode as u64)),
+                Some(F::from_u64(execution_step.opcode.as_u8() as u64)),
             )?;
 
             let &qs_op_idx = self
@@ -511,13 +511,14 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             }
 
             match execution_step.opcode {
-                1 | 3 => self.add_gadget.assign(
+                OpcodeId::ADD | OpcodeId::SUB => self.add_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                96..=127 => self.push_gadget.assign(
+                // PUSH1, ..., PUSH32
+                OpcodeId(0x60..=0x7f) => self.push_gadget.assign(
                     region,
                     offset,
                     core_state,

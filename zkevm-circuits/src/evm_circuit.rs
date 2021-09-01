@@ -1,6 +1,6 @@
 //! The EVM circuit implementation.
 
-use bus_mapping::operation::Target;
+use bus_mapping::{evm::OpcodeId, operation::Target};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Layouter, Region},
@@ -302,7 +302,7 @@ enum Case {
 
 // TODO: use ExecutionStep from bus_mapping
 pub(crate) struct ExecutionStep {
-    opcode: u8,
+    opcode: OpcodeId,
     case: Case,
     values: Vec<[u8; 32]>,
 }
