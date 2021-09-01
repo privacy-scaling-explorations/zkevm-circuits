@@ -42,19 +42,19 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             case: Case::Success,
             num_word: 3,  // a + b + c
             num_cell: 33, // 32 carry + swap
-            will_resume: false,
+            will_halt: false,
         },
         CaseConfig {
             case: Case::StackUnderflow,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
         CaseConfig {
             case: Case::OutOfGas,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
     ];
 

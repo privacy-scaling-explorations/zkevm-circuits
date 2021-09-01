@@ -41,14 +41,14 @@ struct CaseConfig {
     case: Case,
     num_word: usize,
     num_cell: usize,
-    will_resume: bool,
+    will_halt: bool,
 }
 
 impl CaseConfig {
     fn num_total_cell(&self) -> usize {
         32 * self.num_word
             + self.num_cell
-            + if self.will_resume {
+            + if self.will_halt {
                 NUM_CELL_RESUMPTION
             } else {
                 0
@@ -378,7 +378,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     .map(|idx| free_cells[idx].clone())
                     .collect();
 
-                let resumption = if case_config.will_resume {
+                let resumption = if case_config.will_halt {
                     Some(resumption.clone())
                 } else {
                     None
