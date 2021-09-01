@@ -37,19 +37,19 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             case: Case::Success,
             num_word: 1,
             num_cell: 32, // for PUSH selectors
-            will_resume: false,
+            will_halt: false,
         },
         CaseConfig {
             case: Case::StackOverflow,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
         CaseConfig {
             case: Case::OutOfGas,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
     ];
 
