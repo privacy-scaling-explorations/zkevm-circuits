@@ -5,7 +5,6 @@ use crate::{
     exec_trace::ExecutionStep,
     operation::{container::OperationContainer, StackOp, RW},
 };
-use halo2::{arithmetic::FieldExt, plonk::ConstraintSystem};
 
 /// Number of ops that PUSH1 adds to the container & busmapping
 const PUSH1_OP_NUM: usize = 1;
@@ -36,14 +35,5 @@ impl Opcode for Push1 {
             .push(container.insert(op));
 
         PUSH1_OP_NUM
-    }
-
-    #[allow(unused_variables)]
-    fn add_constraints<F: FieldExt>(
-        &self,
-        exec_step: &ExecutionStep,
-        cs: &mut ConstraintSystem<F>,
-    ) {
-        unimplemented!()
     }
 }
