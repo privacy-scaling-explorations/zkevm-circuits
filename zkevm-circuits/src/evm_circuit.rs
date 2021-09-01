@@ -118,10 +118,10 @@ pub(crate) enum BusMappingLookup<F> {
         index: Expression<F>,
         value: Expression<F>,
     },
-    // TODO: Block,
-    // TODO: Bytecode,
-    // TODO: Tx,
-    // TODO: TxCalldata,
+    /* TODO: Block,
+     * TODO: Bytecode,
+     * TODO: Tx,
+     * TODO: TxCalldata, */
 }
 
 impl<F: FieldExt> BusMappingLookup<F> {
@@ -145,6 +145,7 @@ pub(crate) enum FixedLookup {
     Noop,
     // meaningful tags start with 1
     Range256,
+    Range32,
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
@@ -288,7 +289,8 @@ enum Case {
     WriteProtection,
     // return data out of bound
     ReturnDataOutOfBounds,
-    // contract must not begin with 0xef due to EIP #3541 EVM Object Format (EOF)
+    // contract must not begin with 0xef due to EIP #3541 EVM Object Format
+    // (EOF)
     InvalidBeginningCode,
     // stack underflow
     StackUnderflow,
@@ -541,6 +543,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         fixed_lookup_count += 1;
                     }
                     Lookup::BusMappingLookup(bm_lookup) => {
+                        let OpExecutionState {
+                            global_counter,
+                            call_id,
+                            stack_pointer,
+                            ..
+                        } = &op_execution_state_curr;
+
                         if rw_lookups.len() == rw_lookup_count {
                             rw_lookups.push(
                                 vec![zero.clone(); 7].try_into().unwrap(),
@@ -548,7 +557,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         }
 
                         let mut exprs = vec![
-                            op_execution_state_curr.global_counter.expr()
+                            global_counter.expr()
                                 + Expression::Constant(F::from_u64(
                                     rw_lookup_count as u64,
                                 )),
@@ -559,18 +568,26 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 is_write,
                                 index_offset,
                                 value,
-                            } => [
-                                Expression::Constant(F::from_u64(
-                                    is_write as u64,
-                                )),
-                                op_execution_state_curr.call_id.expr(),
-                                op_execution_state_curr.stack_pointer.expr()
-                                    + Expression::Constant(F::from_u64(
-                                        index_offset as u64,
+                            } => {
+                                let stack_index = stack_pointer.expr()
+                                    + Expression::Constant(
+                                        F::from_u64(index_offset.abs() as u64)
+                                            * if index_offset.is_negative() {
+                                                -F::one()
+                                            } else {
+                                                F::one()
+                                            },
+                                    );
+                                [
+                                    Expression::Constant(F::from_u64(
+                                        is_write as u64,
                                     )),
-                                value,
-                                zero.clone(),
-                            ],
+                                    call_id.expr(),
+                                    stack_index,
+                                    value,
+                                    zero.clone(),
+                                ]
+                            }
                             BusMappingLookup::Memory {
                                 is_write,
                                 call_id,
@@ -680,31 +697,31 @@ impl<F: FieldExt> EvmCircuit<F> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
-                let mut offest = 0;
+                let mut offset = 0;
 
                 // Noop
                 for (idx, column) in self.fixed_table.iter().enumerate() {
                     region.assign_fixed(
                         || format!("Noop: {}", idx),
                         *column,
-                        offest,
+                        offset,
                         || Ok(F::zero()),
                     )?;
                 }
-                offest += 1;
+                offset += 1;
 
                 // Range256
                 for idx in 0..256 {
                     region.assign_fixed(
                         || "Range256: tag",
                         self.fixed_table[0],
-                        offest,
+                        offset,
                         || Ok(F::from_u64(FixedLookup::Range256 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range256: value",
                         self.fixed_table[1],
-                        offest,
+                        offset,
                         || Ok(F::from_u64(idx as u64)),
                     )?;
                     for (idx, column) in
@@ -713,11 +730,38 @@ impl<F: FieldExt> EvmCircuit<F> {
                         region.assign_fixed(
                             || format!("Range256: padding {}", idx),
                             *column,
-                            offest,
+                            offset,
                             || Ok(F::zero()),
                         )?;
                     }
-                    offest += 1;
+                    offset += 1;
+                }
+
+                // Range32
+                for idx in 0..31 {
+                    region.assign_fixed(
+                        || "Range32: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::Range32 as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "Range32: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[2..].iter().enumerate()
+                    {
+                        region.assign_fixed(
+                            || format!("Range32: padding {}", idx),
+                            *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
                 }
 
                 // TODO: BitwiseAnd

@@ -318,39 +318,76 @@ mod test {
 
     #[test]
     fn add_gadget() {
-        // FIXME: Add PUSH to avoid stack index like 1025 (stack index range is checked in state circuit)
         // ADD
         try_test_circuit!(
-            vec![ExecutionStep {
-                opcode: 1,
-                case: Case::Success,
-                values: vec![
-                    [
-                        1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            vec![
+                ExecutionStep {
+                    opcode: 98,
+                    case: Case::Success,
+                    values: vec![
+                        [
+                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
                     ],
-                    [
-                        4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                },
+                ExecutionStep {
+                    opcode: 98,
+                    case: Case::Success,
+                    values: vec![
+                        [
+                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
                     ],
-                    [
-                        5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                },
+                ExecutionStep {
+                    opcode: 1,
+                    case: Case::Success,
+                    values: vec![
+                        [
+                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
                     ],
-                    [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ]
-                ],
-            }],
+                }
+            ],
             vec![
                 Operation {
                     gc: 1,
                     target: Target::Stack,
-                    is_write: false,
+                    is_write: true,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1024),
+                        Base::from_u64(1023),
                         Base::from_u64(1 + 2 + 3),
                         Base::zero(),
                     ]
@@ -358,10 +395,10 @@ mod test {
                 Operation {
                     gc: 2,
                     target: Target::Stack,
-                    is_write: false,
+                    is_write: true,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1025),
+                        Base::from_u64(1022),
                         Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
@@ -369,10 +406,32 @@ mod test {
                 Operation {
                     gc: 3,
                     target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(4 + 5 + 6),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
                     is_write: true,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1025),
+                        Base::from_u64(1023),
                         Base::from_u64(5 + 7 + 9),
                         Base::zero(),
                     ]
@@ -382,36 +441,74 @@ mod test {
         );
         // SUB
         try_test_circuit!(
-            vec![ExecutionStep {
-                opcode: 3,
-                case: Case::Success,
-                values: vec![
-                    [
-                        1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            vec![
+                ExecutionStep {
+                    opcode: 98,
+                    case: Case::Success,
+                    values: vec![
+                        [
+                            5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
                     ],
-                    [
-                        4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                },
+                ExecutionStep {
+                    opcode: 98,
+                    case: Case::Success,
+                    values: vec![
+                        [
+                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
                     ],
-                    [
-                        5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                },
+                ExecutionStep {
+                    opcode: 3,
+                    case: Case::Success,
+                    values: vec![
+                        [
+                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        [
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
                     ],
-                    [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ]
-                ],
-            }],
+                }
+            ],
             vec![
                 Operation {
                     gc: 1,
                     target: Target::Stack,
-                    is_write: false,
+                    is_write: true,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1024),
+                        Base::from_u64(1023),
                         Base::from_u64(5 + 7 + 9),
                         Base::zero(),
                     ]
@@ -419,10 +516,10 @@ mod test {
                 Operation {
                     gc: 2,
                     target: Target::Stack,
-                    is_write: false,
+                    is_write: true,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1025),
+                        Base::from_u64(1022),
                         Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
@@ -430,10 +527,32 @@ mod test {
                 Operation {
                     gc: 3,
                     target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(4 + 5 + 6),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
                     is_write: true,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1025),
+                        Base::from_u64(1023),
                         Base::from_u64(1 + 2 + 3),
                         Base::zero(),
                     ]

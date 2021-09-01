@@ -13,7 +13,10 @@ use halo2::{
 use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
+mod push;
+
 use arithmetic::AddGadget;
+use push::PushGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -204,6 +207,7 @@ pub(crate) struct OpExecutionGadget<F> {
     qs_op_idx_map: HashMap<u8, usize>,
     preset_map: HashMap<(usize, Case), Preset<F>>,
     add_gadget: AddGadget<F>,
+    push_gadget: PushGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -227,7 +231,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         let mut qs_op_idx_map = HashMap::new();
         let mut preset_map = HashMap::new();
-        let /* mut */ qs_op_idx = 0;
+        let mut qs_op_idx = 0;
 
         let mut constraints = vec![Constraint {
             name: "op selectors",
@@ -236,10 +240,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             lookups: vec![],
         }];
 
-        macro_rules! constrcut_op_gadget {
+        macro_rules! construct_op_gadget {
             {} => {};
             {$name:ident = $gadget:ident} => {
-                let $name = Self::constrcut_op_gadget::<$gadget::<F>>(
+                let $name = Self::construct_op_gadget::<$gadget::<F>>(
                     r,
                     &state_curr,
                     &state_next,
@@ -253,17 +257,18 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 );
             };
             {$name:ident = $gadget:ident;} => {
-                constrcut_op_gadget!{$name = $gadget};
+                construct_op_gadget!{$name = $gadget};
             };
             {$name:ident = $gadget:ident; $($tail:tt)+} => {
-                constrcut_op_gadget!{$name = $gadget};
+                construct_op_gadget!{$name = $gadget};
                 qs_op_idx += 1;
-                constrcut_op_gadget!{$($tail)+};
+                construct_op_gadget!{$($tail)+};
             };
         }
 
-        constrcut_op_gadget! {
+        construct_op_gadget! {
             add_gadget = AddGadget;
+            push_gadget = PushGadget;
         }
 
         for constraint in constraints.into_iter() {
@@ -300,11 +305,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             preset_map,
             resumption,
             add_gadget,
+            push_gadget,
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn constrcut_op_gadget<O: OpGadget<F>>(
+    fn construct_op_gadget<O: OpGadget<F>>(
         r: F,
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
@@ -506,6 +512,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
             match execution_step.opcode {
                 1 | 3 => self.add_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                96..=127 => self.push_gadget.assign(
                     region,
                     offset,
                     core_state,
