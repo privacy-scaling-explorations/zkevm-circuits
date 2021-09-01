@@ -3,6 +3,7 @@ use super::super::{
     FixedLookup, Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use bus_mapping::evm::OpcodeId;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::{array, convert::TryInto};
@@ -26,10 +27,39 @@ pub struct PushGadget<F> {
 }
 
 impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
-    const RESPONSIBLE_OPCODES: &'static [u8] = &[
-        96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
-        111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124,
-        125, 126, 127,
+    const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[
+        OpcodeId::PUSH1,
+        OpcodeId::PUSH2,
+        OpcodeId::PUSH3,
+        OpcodeId::PUSH4,
+        OpcodeId::PUSH5,
+        OpcodeId::PUSH6,
+        OpcodeId::PUSH7,
+        OpcodeId::PUSH8,
+        OpcodeId::PUSH9,
+        OpcodeId::PUSH10,
+        OpcodeId::PUSH11,
+        OpcodeId::PUSH12,
+        OpcodeId::PUSH13,
+        OpcodeId::PUSH14,
+        OpcodeId::PUSH15,
+        OpcodeId::PUSH16,
+        OpcodeId::PUSH17,
+        OpcodeId::PUSH18,
+        OpcodeId::PUSH19,
+        OpcodeId::PUSH20,
+        OpcodeId::PUSH21,
+        OpcodeId::PUSH22,
+        OpcodeId::PUSH23,
+        OpcodeId::PUSH24,
+        OpcodeId::PUSH25,
+        OpcodeId::PUSH26,
+        OpcodeId::PUSH27,
+        OpcodeId::PUSH28,
+        OpcodeId::PUSH29,
+        OpcodeId::PUSH30,
+        OpcodeId::PUSH31,
+        OpcodeId::PUSH32,
     ];
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
@@ -75,7 +105,8 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
-        let push1 = Expression::Constant(F::from_u64(96));
+        let push1 =
+            Expression::Constant(F::from_u64(OpcodeId::PUSH1.as_u8() as u64));
         let OpExecutionState { opcode, .. } = &state_curr;
 
         let zero = Expression::Constant(F::zero());
@@ -85,19 +116,17 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
         )];
 
         let success = {
-            let (one, two) = (
-                Expression::Constant(F::one()),
-                Expression::Constant(F::from_u64(2)),
-            );
+            let one = Expression::Constant(F::one());
+            let num_pushed = opcode.expr() - push1 + one.clone();
 
             // interpreter state transition constraints
             let state_transition_constraints = vec![
                 state_next.global_counter.expr()
                     - (state_curr.global_counter.expr() + one.clone()),
                 state_next.program_counter.expr()
-                    - (state_curr.program_counter.expr() + opcode.expr()
-                        - push1.clone()
-                        + two),
+                    - (state_curr.program_counter.expr()
+                        + one.clone()
+                        + num_pushed.clone()),
                 state_next.stack_pointer.expr()
                     - (state_curr.stack_pointer.expr() - one.clone()),
                 state_next.gas_counter.expr()
@@ -135,14 +164,37 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
             let selectors_sum = selectors
                 .iter()
                 .fold(Expression::Constant(F::zero()), |sum, s| sum + s.expr());
-            push_constraints.push(selectors_sum - opcode.expr() + push1 - one);
+            push_constraints.push(selectors_sum - num_pushed);
 
-            let bus_mapping_lookups =
+            let bus_mapping_lookups = [
+                // TODO: add 32 Bytecode lookups when supported
+                // selectors
+                //     .iter()
+                //     .zip(word.cells.iter())
+                //     .enumerate()
+                //     .map(|(idx, (selector, cell))| {
+                //         let OpExecutionState {
+                //             program_counter, ..
+                //         } = &state_curr;
+                //         Lookup::BusMappingLookup(BusMappingLookup::Bytecode {
+                //             hash: selector.expr() * hash,
+                //             index: selector.expr()
+                //                 * (program_counter.expr()
+                //                     + one.clone()
+                //                     + Expression::Constant(F::from_u64(
+                //                         idx as u64,
+                //                     ))),
+                //             value: cell.expr(),
+                //         })
+                //     })
+                //     .collect::<Vec<_>>(),
                 vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: -1,
                     value: word.expr(),
                     is_write: true,
-                })];
+                })],
+            ]
+            .concat();
 
             Constraint {
                 name: "PushGadget success",
@@ -154,18 +206,11 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
         };
 
         let stack_overflow = {
-            let (zero, minus_one) = (
-                Expression::Constant(F::from_u64(1024)),
-                Expression::Constant(F::from_u64(1023)),
-            );
             let stack_pointer = state_curr.stack_pointer.expr();
             Constraint {
                 name: "PushGadget stack overflow",
                 selector: self.stack_overflow.expr(),
-                polys: vec![
-                    (stack_pointer.clone() - zero)
-                        * (stack_pointer - minus_one),
-                ],
+                polys: vec![stack_pointer],
                 lookups: vec![],
             }
         };
@@ -231,7 +276,9 @@ impl<F: FieldExt> PushGadget<F> {
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
         core_state.global_counter += 1;
-        core_state.program_counter += (execution_step.opcode - 94) as usize;
+        core_state.program_counter += 1
+            + (execution_step.opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1)
+                as usize;
         core_state.stack_pointer -= 1;
         core_state.gas_counter += 3;
 
@@ -257,7 +304,7 @@ mod test {
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
-    use bus_mapping::operation::Target;
+    use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
 
@@ -277,7 +324,7 @@ mod test {
     fn push_gadget() {
         try_test_circuit!(
             vec![ExecutionStep {
-                opcode: 97, // PUSH2
+                opcode: OpcodeId::PUSH2,
                 case: Case::Success,
                 values: vec![
                     [
