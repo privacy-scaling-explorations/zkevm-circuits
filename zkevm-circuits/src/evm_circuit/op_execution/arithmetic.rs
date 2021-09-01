@@ -1,10 +1,14 @@
 use super::super::{
-    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
+    BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
+    Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
-use std::convert::TryInto;
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::Region,
+    plonk::{Error, Expression},
+};
+use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
 struct AddSuccessAllocation<F> {
@@ -90,7 +94,7 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             vec![(opcode.expr() - add.clone()) * (opcode.expr() - sub.clone())];
 
         let success = {
-            let (one, exp_256) = (
+            let (one, expr_256) = (
                 Expression::Constant(F::one()),
                 Expression::Constant(F::from_u64(1 << 8)),
             );
@@ -125,47 +129,47 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             let swap_constraints = vec![
                 swap.expr() * no_swap.clone(),
                 swap.expr() * (opcode.expr() - sub),
-                no_swap * (opcode.expr() - add),
+                no_swap.clone() * (opcode.expr() - add),
             ];
 
             // add constraints
             let mut add_constraints = vec![
-                (carry[0].expr() * exp_256.clone() + c.cells[0].expr())
+                (carry[0].expr() * expr_256.clone() + c.cells[0].expr())
                     - (a.cells[0].expr() + b.cells[0].expr()),
             ];
             for idx in 1..32 {
                 add_constraints.push(
-                    (carry[idx].expr() * exp_256.clone() + c.cells[idx].expr())
+                    (carry[idx].expr() * expr_256.clone()
+                        + c.cells[idx].expr())
                         - (a.cells[idx].expr()
                             + b.cells[idx].expr()
                             + carry[idx - 1].expr()),
                 )
             }
 
-            // TODO: uncomment when bus mapping is supported
+            #[allow(clippy::suspicious_operation_groupings)]
             let bus_mapping_lookups = vec![
-                // Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                //     index_offset: 1,
-                //     value: swap.expr() * c.expr() + no_swap.clone() * a.expr(),
-                //     is_write: false,
-                // }),
-                // Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                //     index_offset: 2,
-                //     value: b.expr(),
-                //     is_write: false,
-                // }),
-                // Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                //     index_offset: 1,
-                //     value: swap.expr() * a.expr() + no_swap * c.expr(),
-                //     is_write: true,
-                // }),
+                Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: 0,
+                    value: swap.expr() * c.expr() + no_swap.clone() * a.expr(),
+                    is_write: false,
+                }),
+                Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: 1,
+                    value: b.expr(),
+                    is_write: false,
+                }),
+                Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: 1,
+                    value: swap.expr() * a.expr() + no_swap * c.expr(),
+                    is_write: true,
+                }),
             ];
 
             Constraint {
                 name: "AddGadget success",
                 selector: selector.expr(),
                 polys: [
-                    common_polys.clone(),
                     state_transition_constraints,
                     swap_constraints,
                     add_constraints,
@@ -184,14 +188,10 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             Constraint {
                 name: "AddGadget stack underflow",
                 selector: self.stack_underflow.expr(),
-                polys: [
-                    common_polys.clone(),
-                    vec![
-                        (stack_pointer.clone() - zero)
-                            * (stack_pointer - minus_one),
-                    ],
-                ]
-                .concat(),
+                polys: vec![
+                    (stack_pointer.clone() - zero)
+                        * (stack_pointer - minus_one),
+                ],
                 lookups: vec![],
             }
         };
@@ -208,20 +208,22 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             Constraint {
                 name: "AddGadget out of gas",
                 selector: selector.expr(),
-                polys: [
-                    common_polys,
-                    vec![
-                        (gas_overdemand.clone() - one)
-                            * (gas_overdemand.clone() - two)
-                            * (gas_overdemand - three),
-                    ],
-                ]
-                .concat(),
+                polys: vec![
+                    (gas_overdemand.clone() - one)
+                        * (gas_overdemand.clone() - two)
+                        * (gas_overdemand - three),
+                ],
                 lookups: vec![],
             }
         };
 
-        vec![success, stack_underflow, out_of_gas]
+        array::IntoIter::new([success, stack_underflow, out_of_gas])
+            .map(move |mut constraint| {
+                constraint.polys =
+                    [common_polys.clone(), constraint.polys].concat();
+                constraint
+            })
+            .collect()
     }
 
     fn assign(
@@ -295,13 +297,17 @@ impl<F: FieldExt> AddGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use super::super::super::{test::TestCircuit, Case, ExecutionStep};
-    use halo2::dev::MockProver;
+    use super::super::super::{
+        test::TestCircuit, Case, ExecutionStep, Operation,
+    };
+    use bus_mapping::operation::Target;
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {
-        ($execution_steps:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Base>::new($execution_steps);
+        ($execution_steps:expr, $operations:expr, $result:expr) => {{
+            let circuit =
+                TestCircuit::<Base>::new($execution_steps, $operations);
             let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
@@ -312,6 +318,7 @@ mod test {
 
     #[test]
     fn add_gadget() {
+        // FIXME: Add PUSH to avoid stack index like 1025 (stack index range is checked in state circuit)
         // ADD
         try_test_circuit!(
             vec![ExecutionStep {
@@ -336,6 +343,41 @@ mod test {
                     ]
                 ],
             }],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1024),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1025),
+                        Base::from_u64(4 + 5 + 6),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1025),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                }
+            ],
             Ok(())
         );
         // SUB
@@ -362,6 +404,41 @@ mod test {
                     ]
                 ],
             }],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1024),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1025),
+                        Base::from_u64(4 + 5 + 6),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1025),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                }
+            ],
             Ok(())
         );
     }

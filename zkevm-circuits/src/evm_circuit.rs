@@ -1,5 +1,6 @@
 //! The EVM circuit implementation.
 
+use bus_mapping::operation::Target;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Layouter, Region},
@@ -8,14 +9,12 @@ use halo2::{
     },
     poly::Rotation,
 };
-use std::convert::TryInto;
+use std::{convert::TryInto, iter};
 
 mod op_execution;
+use op_execution::{OpExecutionGadget, OpExecutionState};
 mod param;
-use self::{
-    op_execution::{OpExecutionGadget, OpExecutionState},
-    param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE},
-};
+use param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE};
 
 #[derive(Clone, Debug)]
 pub(crate) enum CallField {
@@ -77,32 +76,33 @@ pub(crate) enum CallStateField {
 pub(crate) enum BusMappingLookup<F> {
     // Read-Write
     OpExecutionState {
+        is_write: bool,
         field: CallStateField,
         value: Expression<F>,
-        is_write: bool,
     },
     Stack {
+        is_write: bool,
         // One can only access its own stack, so id is no needed to be
         // specified.
         // Stack index is always deterministic respect to stack pointer, so an
         // index offset is enough.
         index_offset: i32,
         value: Expression<F>,
-        is_write: bool,
     },
     Memory {
+        is_write: bool,
         // Some ops like CALLDATALOAD can peek caller's memeory as calldata, so
-        // we allow it to specify the id.
-        id: Expression<F>,
+        // we allow it to specify the call id.
+        call_id: Expression<F>,
         index: Expression<F>,
         value: Expression<F>,
-        is_write: bool,
     },
     AccountStorage {
+        is_write: bool,
         address: Expression<F>,
         location: Expression<F>,
         value: Expression<F>,
-        is_write: bool,
+        value_prev: Expression<F>,
     },
     // TODO: AccountNonce,
     // TODO: AccountBalance,
@@ -122,6 +122,21 @@ pub(crate) enum BusMappingLookup<F> {
     // TODO: Bytecode,
     // TODO: Tx,
     // TODO: TxCalldata,
+}
+
+impl<F: FieldExt> BusMappingLookup<F> {
+    fn tag_expr(&self) -> Expression<F> {
+        Expression::Constant(self.tag())
+    }
+
+    fn tag(&self) -> F {
+        match self {
+            Self::Stack { .. } => F::from_u64(Target::Stack as u64),
+            Self::Memory { .. } => F::from_u64(Target::Memory as u64),
+            Self::AccountStorage { .. } => F::from_u64(Target::Storage as u64),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialOrd, PartialEq, Eq, Ord)]
@@ -243,7 +258,7 @@ impl CoreStateInstance {
     fn new(call_id: usize) -> Self {
         Self {
             is_executing: false,
-            global_counter: 0,
+            global_counter: 1,
             call_id,
             program_counter: 0,
             stack_pointer: 1024,
@@ -290,11 +305,20 @@ pub(crate) struct ExecutionStep {
     values: Vec<[u8; 32]>,
 }
 
+// TODO: use Operation from bus_mapping
+pub(crate) struct Operation<F> {
+    gc: usize,
+    target: Target,
+    is_write: bool,
+    values: [F; 4],
+}
+
 #[derive(Clone)]
 struct EvmCircuit<F> {
     q_step: Selector,
     qs_byte_lookup: Column<Advice>,
     fixed_table: [Column<Fixed>; 4],
+    rw_table: [Column<Advice>; 7],
     op_execution_gadget: OpExecutionGadget<F>,
 }
 
@@ -307,6 +331,18 @@ impl<F: FieldExt> EvmCircuit<F> {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
+
+        // TODO: consider encode first 3 information into one field element
+        // rw_table contains read-write data in bus mapping for lookup
+        let rw_table = [
+            meta.advice_column(), // global_counter
+            meta.advice_column(), // target
+            meta.advice_column(), // is_write
+            meta.advice_column(), // val1
+            meta.advice_column(), // val2
+            meta.advice_column(), // val3
+            meta.advice_column(), // val4
+        ];
 
         // fixed_table contains pre-built tables identified by tag including:
         // - different size range tables
@@ -338,7 +374,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             r,
             qs_op_execution,
             qs_byte_lookups,
-            op_execution_state_curr,
+            op_execution_state_curr.clone(),
             op_execution_state_next,
             op_execution_free_cells,
             &mut independent_lookups,
@@ -351,6 +387,8 @@ impl<F: FieldExt> EvmCircuit<F> {
             qs_byte_lookup,
             advices,
             fixed_table,
+            rw_table,
+            op_execution_state_curr,
             independent_lookups,
         );
 
@@ -358,6 +396,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             q_step,
             qs_byte_lookup,
             fixed_table,
+            rw_table,
             op_execution_gadget,
         }
     }
@@ -392,9 +431,9 @@ impl<F: FieldExt> EvmCircuit<F> {
         // TODO: Enable this when switch to kzg branch and remove the failure
         //       VerifyFailure::ConstraintPoison
         // meta.create_gate("Query byte lookup as a synthetic selector", |meta| {
-        //     let exp = meta.query_advice(qs_byte_lookup, Rotation::cur());
+        //     let expr = meta.query_advice(qs_byte_lookup, Rotation::cur());
 
-        //     vec![exp.clone() * (Expression::Constant(F::one()) - exp)]
+        //     vec![expr.clone() * (Expression::Constant(F::one()) - expr)]
         // });
 
         let mut cells_curr = Vec::with_capacity(CIRCUIT_WIDTH * CIRCUIT_HEIGHT);
@@ -460,6 +499,8 @@ impl<F: FieldExt> EvmCircuit<F> {
         qs_byte_lookup: Column<Advice>,
         advices: [Column<Advice>; CIRCUIT_WIDTH],
         fixed_table: [Column<Fixed>; 4],
+        rw_table: [Column<Advice>; 7],
+        op_execution_state_curr: OpExecutionState<F>,
         independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) {
         // TODO: call_lookups
@@ -467,40 +508,109 @@ impl<F: FieldExt> EvmCircuit<F> {
         // TODO: rw_lookups
 
         let mut fixed_lookups = Vec::<[Expression<F>; 4]>::new();
+        let mut rw_lookups = Vec::<[Expression<F>; 7]>::new();
 
         for (qs_lookup, lookups) in independent_lookups {
+            let zero = Expression::Constant(F::zero());
             let mut fixed_lookup_count = 0;
+            let mut rw_lookup_count = 0;
 
             for lookup in lookups {
                 match lookup {
-                    Lookup::FixedLookup(tag, exps) => {
-                        let tag_exp =
+                    Lookup::FixedLookup(tag, exprs) => {
+                        let tag_expr =
                             Expression::Constant(F::from_u64(tag as u64));
+                        let exprs = iter::once(tag_expr).chain(exprs.clone());
 
                         if fixed_lookups.len() == fixed_lookup_count {
                             fixed_lookups.push(
-                                [tag_exp]
-                                    .iter()
-                                    .chain(exps.iter())
-                                    .map(|exp| qs_lookup.clone() * exp.clone())
+                                exprs
+                                    .map(|expr| qs_lookup.clone() * expr)
                                     .collect::<Vec<_>>()
                                     .try_into()
                                     .unwrap(),
                             );
                         } else {
-                            for (acc, exp) in fixed_lookups[fixed_lookup_count]
+                            for (acc, expr) in fixed_lookups[fixed_lookup_count]
                                 .iter_mut()
-                                .zip([tag_exp].iter().chain(exps.iter()))
+                                .zip(exprs)
                             {
-                                *acc = acc.clone()
-                                    + qs_lookup.clone() * exp.clone();
+                                *acc = acc.clone() + qs_lookup.clone() * expr;
                             }
                         }
                         fixed_lookup_count += 1;
                     }
-                    Lookup::BusMappingLookup(_) => {
-                        // TODO:
-                        unimplemented!()
+                    Lookup::BusMappingLookup(bm_lookup) => {
+                        if rw_lookups.len() == rw_lookup_count {
+                            rw_lookups.push(
+                                vec![zero.clone(); 7].try_into().unwrap(),
+                            );
+                        }
+
+                        let mut exprs = vec![
+                            op_execution_state_curr.global_counter.expr()
+                                + Expression::Constant(F::from_u64(
+                                    rw_lookup_count as u64,
+                                )),
+                            bm_lookup.tag_expr(),
+                        ];
+                        exprs.extend(match bm_lookup {
+                            BusMappingLookup::Stack {
+                                is_write,
+                                index_offset,
+                                value,
+                            } => [
+                                Expression::Constant(F::from_u64(
+                                    is_write as u64,
+                                )),
+                                op_execution_state_curr.call_id.expr(),
+                                op_execution_state_curr.stack_pointer.expr()
+                                    + Expression::Constant(F::from_u64(
+                                        index_offset as u64,
+                                    )),
+                                value,
+                                zero.clone(),
+                            ],
+                            BusMappingLookup::Memory {
+                                is_write,
+                                call_id,
+                                index,
+                                value,
+                            } => [
+                                Expression::Constant(F::from_u64(
+                                    is_write as u64,
+                                )),
+                                call_id,
+                                index,
+                                value,
+                                zero.clone(),
+                            ],
+                            BusMappingLookup::AccountStorage {
+                                is_write,
+                                address,
+                                location,
+                                value,
+                                value_prev,
+                            } => [
+                                Expression::Constant(F::from_u64(
+                                    is_write as u64,
+                                )),
+                                address,
+                                location,
+                                value,
+                                value_prev,
+                            ],
+                            // TODO:
+                            _ => unimplemented!(),
+                        });
+
+                        for (acc, expr) in
+                            rw_lookups[rw_lookup_count].iter_mut().zip(exprs)
+                        {
+                            *acc = acc.clone() + qs_lookup.clone() * expr;
+                        }
+
+                        rw_lookup_count += 1;
                     }
                 }
             }
@@ -523,22 +633,39 @@ impl<F: FieldExt> EvmCircuit<F> {
                 ]
                 .iter()
                 .zip(fixed_table.iter())
-                .map(|(exp, column)| {
-                    (exp.clone(), meta.query_fixed(*column, Rotation::cur()))
+                .map(|(expr, column)| {
+                    (expr.clone(), meta.query_fixed(*column, Rotation::cur()))
                 })
                 .collect::<Vec<_>>()
             });
         }
 
+        // Configure fixed lookups
         for fixed_lookup in fixed_lookups.iter() {
             meta.lookup(|meta| {
                 fixed_lookup
                     .iter()
                     .zip(fixed_table.iter())
-                    .map(|(exp, column)| {
+                    .map(|(expr, column)| {
                         (
-                            exp.clone(),
+                            expr.clone(),
                             meta.query_fixed(*column, Rotation::cur()),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+        }
+
+        // Configure rw lookups
+        for rw_lookup in rw_lookups.iter() {
+            meta.lookup(|meta| {
+                rw_lookup
+                    .iter()
+                    .zip(rw_table.iter())
+                    .map(|(expr, column)| {
+                        (
+                            expr.clone(),
+                            meta.query_advice(*column, Rotation::cur()),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -602,6 +729,59 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
+    fn load_rw_tables(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        operations: &[Operation<F>],
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "rw table",
+            |mut region| {
+                let mut offset = 0;
+
+                for column in self.rw_table.iter() {
+                    region.assign_advice(
+                        || "Read-Write noop",
+                        *column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                for operation in operations.iter() {
+                    // TODO: Ensure we got a sorted by gc operation from bus-mapping
+                    assert_eq!(
+                        operation.gc, offset,
+                        "global counter uniqueness assumption is broken"
+                    );
+
+                    let values = [
+                        vec![
+                            F::from_u64(operation.gc as u64),
+                            F::from_u64(operation.target as u64),
+                            F::from_u64(operation.is_write as u64),
+                        ],
+                        operation.values.to_vec(),
+                    ]
+                    .concat();
+
+                    for (column, value) in self.rw_table.iter().zip(values) {
+                        region.assign_advice(
+                            || "Read-Write table",
+                            *column,
+                            offset,
+                            || Ok(value),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                Ok(())
+            },
+        )
+    }
+
     fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -644,13 +824,12 @@ impl<F: FieldExt> EvmCircuit<F> {
 
 #[cfg(test)]
 mod test {
-    use super::{EvmCircuit, ExecutionStep};
+    use super::{EvmCircuit, ExecutionStep, Operation};
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::{Circuit, ConstraintSystem, Error},
     };
-    use std::marker::PhantomData;
 
     #[derive(Clone)]
     pub(crate) struct TestCircuitConfig<F> {
@@ -660,14 +839,17 @@ mod test {
     #[derive(Default)]
     pub(crate) struct TestCircuit<F> {
         execution_steps: Vec<ExecutionStep>,
-        _marker: PhantomData<F>,
+        operations: Vec<Operation<F>>,
     }
 
     impl<F> TestCircuit<F> {
-        pub(crate) fn new(execution_steps: Vec<ExecutionStep>) -> Self {
+        pub fn new(
+            execution_steps: Vec<ExecutionStep>,
+            operations: Vec<Operation<F>>,
+        ) -> Self {
             Self {
                 execution_steps,
-                _marker: PhantomData,
+                operations,
             }
         }
     }
@@ -682,6 +864,7 @@ mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             Self::Config {
+                // TODO: use a random r instead of 1
                 evm_circuit: EvmCircuit::configure(meta, F::one()),
             }
         }
@@ -692,6 +875,9 @@ mod test {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             config.evm_circuit.load_fixed_tables(&mut layouter)?;
+            config
+                .evm_circuit
+                .load_rw_tables(&mut layouter, &self.operations)?;
             config
                 .evm_circuit
                 .assign(&mut layouter, &self.execution_steps)
