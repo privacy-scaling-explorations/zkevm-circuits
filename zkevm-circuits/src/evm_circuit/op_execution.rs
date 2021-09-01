@@ -138,10 +138,10 @@ impl<F: FieldExt> Resumption<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct OpExecutionState<F> {
     pub is_executing: Cell<F>,
-    global_counter: Cell<F>,
-    call_id: Cell<F>,
-    program_counter: Cell<F>,
-    stack_pointer: Cell<F>,
+    pub global_counter: Cell<F>,
+    pub call_id: Cell<F>,
+    pub program_counter: Cell<F>,
+    pub stack_pointer: Cell<F>,
     gas_counter: Cell<F>,
     opcode: Cell<F>,
 }

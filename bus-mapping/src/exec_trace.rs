@@ -270,6 +270,7 @@ impl From<(Target, usize)> for OperationRef {
             Target::Memory => Self(Target::Memory, op_ref_data.1),
             Target::Stack => Self(Target::Stack, op_ref_data.1),
             Target::Storage => Self(Target::Storage, op_ref_data.1),
+            _ => unreachable!(),
         }
     }
 }
