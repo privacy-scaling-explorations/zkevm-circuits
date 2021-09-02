@@ -313,7 +313,8 @@ impl<
 
             let value_cur = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let global_counter =
+                meta.query_advice(global_counter, Rotation::cur());
 
             // flag == 0 or 1
             // (flag) * (1 - flag)
@@ -329,12 +330,16 @@ impl<
             let bool_check_padding = padding.clone() * (one - padding);
 
             vec![
-                q_memory_not_first.clone() * address_diff.clone() * value_cur.clone(), // when address changes, the write value is 0
-                q_memory_not_first.clone() * address_diff.clone() * q_read.clone(), // when address changes, the flag is 1 (write)
+                q_memory_not_first.clone()
+                    * address_diff.clone()
+                    * value_cur.clone(), // when address changes, the write value is 0
+                q_memory_not_first.clone()
+                    * address_diff.clone()
+                    * q_read.clone(), // when address changes, the flag is 1 (write)
                 q_memory_not_first.clone() * address_diff * global_counter, // when address changes, global_counter is 0
-                q_memory_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
+                q_memory_not_first.clone() * bool_check_flag, // flag is either 0 or 1
                 q_memory_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
-                q_target * bool_check_padding,                          // padding is 0 or 1
+                q_target * bool_check_padding, // padding is 0 or 1
             ]
         });
 
@@ -371,7 +376,7 @@ impl<
 
             vec![
                 q_stack_not_first.clone() * address_diff * q_read.clone(), // when address changes, the flag is 1 (write)
-                q_stack_not_first.clone() * bool_check_flag,               // flag is either 0 or 1
+                q_stack_not_first.clone() * bool_check_flag, // flag is either 0 or 1
                 q_stack_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
             ]
         });
@@ -380,13 +385,17 @@ impl<
         // address_prev. (Recall that operations are ordered first by
         // address, and then by global_counter.)
         meta.lookup(|meta| {
-            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
-            let global_counter_prev = meta.query_advice(global_counter, Rotation::prev());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let global_counter_table =
+                meta.query_fixed(global_counter_table, Rotation::cur());
+            let global_counter_prev =
+                meta.query_advice(global_counter, Rotation::prev());
+            let global_counter =
+                meta.query_advice(global_counter, Rotation::cur());
             let one = Expression::Constant(F::one());
             let padding = meta.query_advice(padding, Rotation::cur());
             let is_not_padding = one.clone() - padding;
-            let q_not_first = q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
+            let q_not_first =
+                q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
 
             vec![(
                 q_not_first
