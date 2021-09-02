@@ -6,3 +6,4 @@ edition = "2018"
 [dependencies]
 halo2 = "0.0"
 tiny-keccak = {version="2.0.2", features = ["keccak"]}
+pasta_curves = "0.1"

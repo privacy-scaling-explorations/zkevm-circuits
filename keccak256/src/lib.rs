@@ -1,71 +1,43 @@
-use halo2:: {
-    pasta::Fp,
+use halo2::{
     arithmetic::FieldExt,
-    circuit::{Layouter, SimpleFloorPlanner, Chip},
-    plonk::{Circuit, ConstraintSystem, Error},
+    circuit::{Chip, Layouter, SimpleFloorPlanner},
+    pasta::Fp,
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
 };
+use pasta_curves::pallas;
+use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
+pub const KECCAK_NUM_ROUNDS: usize = 24;
+
+pub struct ThetaConfig<F> {
+    _marker: PhantomData<F>,
+}
+
+pub struct RhoConfig<F> {
+    _marker: PhantomData<F>,
+}
+
+pub struct PiConfig<F> {
+    _marker: PhantomData<F>,
+}
+
+pub struct XiIotaConfig<F> {
+    _marker: PhantomData<F>,
+}
+
 pub struct KeccakConfig<F> {
-    foo: F
+    // Each of these 25 lanes contains a 64-bit word.
+    // The first 17 lanes (1088 bits) are used to absorb inputs.
+    state: [Column<Advice>; 25],
+    theta_config: ThetaConfig<F>,
+    rho_config: RhoConfig<F>,
+    pi_config: PiConfig<F>,
+    xi_iota_config: XiIotaConfig<F>,
 }
-
-pub struct KeccakChip<F: FieldExt> {
-    config: KeccakConfig<F>,
-}
-
-impl<F: FieldExt> KeccakChip<F> {
-    pub fn configure() -> KeccakConfig<F>{}
-    pub fn construct(config: KeccakConfig<F>) -> Self {
-        KeccakChip { config }
-    }
-}
-
-impl<F: FieldExt> Chip<F> for KeccakChip<F> {
-    type Config = KeccakConfig<F>;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
-}
-
-
-#[derive(Default)]
-struct HashCircuit {
-    message: Option<[Fp; 2]>,
-    output: Option<Fp>,
-}
-
-impl Circuit<Fp> for HashCircuit {
-    type Config = KeccakConfig<Fp>;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<Fp>) -> KeccakConfig<Fp> {
-    }
-
-    fn synthesize(
-        &self,
-        config: KeccakConfig<Fp>,
-        mut layouter: impl Layouter<Fp>,
-    ) -> Result<(), Error> {
-        let chip = KeccakChip::construct(config.clone());
-
-    }
-}
-
 
 #[test]
 fn keccak_hash() {
-    use tiny_keccak::{Keccak, Hasher};
+    use tiny_keccak::{Hasher, Keccak};
     let mut keccak = Keccak::v256();
     let mut output = [0u8; 32];
     keccak.update(b"foo");
