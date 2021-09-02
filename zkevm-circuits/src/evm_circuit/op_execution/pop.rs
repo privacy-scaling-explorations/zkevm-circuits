@@ -4,6 +4,7 @@ use super::{
     CaseAllocation, CaseConfig, OpExecutionState, CoreStateInstance,
     OpGadget
 };
+use bus_mapping::evm::OpcodeId;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryInto;
@@ -26,28 +27,29 @@ pub struct PopGadget<F> {
 }
 
 impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
-    const RESPONSIBLE_OPCODES: &'static [u8] = &[
-        80 // 0x50 of op id
+    const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[
+        OpcodeId::POP // 0x50 of op id
     ];
+
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
         CaseConfig {
             case: Case::Success,
             num_word: 0,// no operand required for pop 
             num_cell: 0, 
-            will_resume: false,
+            will_halt: false,
         },
         CaseConfig {
             case: Case::StackUnderflow,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
         CaseConfig {
             case: Case::OutOfGas,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
     ];
 
@@ -99,7 +101,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                 // selector,
             } = &self.success;
 
-            // TODO: consider more about pop constraint ?
+            // TODO: more about pop constraint ?
 
             Constraint {
                 name: "PopGadget success",
@@ -211,28 +213,40 @@ impl<F: FieldExt> PopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use super::super::super::{test::TestCircuit, Case, ExecutionStep};
-    use halo2::dev::MockProver;
+    use super::super::super::{test::TestCircuit, Case, ExecutionStep, Operation};
+    use bus_mapping::{evm::OpcodeId, operation::Target};
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
 
-    macro_rules! try_test_circuit {
-        ($execution_steps:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Base>::new($execution_steps);
+        macro_rules! try_test_circuit {
+        ($execution_steps:expr, $operations:expr, $result:expr) => {{
+            let circuit =
+                TestCircuit::<Base>::new($execution_steps, $operations);
             let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
 
-    // TODO: use evm word
     // TODO: add failure cases
 
     #[test]
     fn pop_gadget() {
         try_test_circuit!(
             vec![ExecutionStep {
-                opcode: 80, // pop
+                opcode: OpcodeId::POP,
                 case: Case::Success,
                 values: vec![],
+            }],
+            vec![Operation {
+                gc: 1,
+                target: Target::Stack,
+                is_write: true,
+                values: [
+                    Base::zero(),
+                    Base::from_u64(1020),
+                    Base::from_u64(2 + 2),
+                    Base::zero(),
+                ]
             }],
             Ok(())
         );

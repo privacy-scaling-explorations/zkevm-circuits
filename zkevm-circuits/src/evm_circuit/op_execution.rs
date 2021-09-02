@@ -542,7 +542,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-                80 => self.pop_gadget.assign(
+                OpcodeId(0x50) => self.pop_gadget.assign(
                     region,
                     offset,
                     core_state,
