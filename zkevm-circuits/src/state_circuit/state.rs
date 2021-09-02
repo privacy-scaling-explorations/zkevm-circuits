@@ -788,6 +788,7 @@ impl<
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_op(
         &self,
         region: &mut Region<'_, F>,
@@ -860,13 +861,6 @@ impl<
             }
         };
 
-        region.assign_advice(
-            || "padding",
-            self.padding,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
         let target = {
             let value = Some(target);
             let field_elem = Some(F::from_u64(target as u64));
@@ -898,7 +892,7 @@ mod tests {
     use std::str::FromStr;
 
     use super::Config;
-    use bus_mapping::evm::{MemoryAddress, StackAddress};
+    use bus_mapping::evm::{GlobalCounter, MemoryAddress, StackAddress};
     use bus_mapping::{evm::EvmWord, BlockConstants, ExecutionTrace};
 
     use bus_mapping::operation::{MemoryOp, StackOp, RW};
@@ -1017,39 +1011,39 @@ mod tests {
     fn state_circuit() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(24),
+            GlobalCounter::from(24),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
 
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(17),
+            GlobalCounter::from(17),
             MemoryAddress::from_str("1").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_3 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(87),
+            GlobalCounter::from(87),
             MemoryAddress::from_str("1").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(17),
+            GlobalCounter::from(17),
             StackAddress::from(1),
             EvmWord::from_str("32").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(87),
+            GlobalCounter::from(87),
             StackAddress::from(1),
             EvmWord::from_str("32").unwrap(),
         );
@@ -1071,39 +1065,39 @@ mod tests {
     fn no_stack_padding() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(24),
+            GlobalCounter::from(24),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
 
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(17),
+            GlobalCounter::from(17),
             MemoryAddress::from_str("1").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_3 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(87),
+            GlobalCounter::from(87),
             MemoryAddress::from_str("1").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(17),
+            GlobalCounter::from(17),
             StackAddress::from(1),
             EvmWord::from_str("32").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(87),
+            GlobalCounter::from(87),
             StackAddress::from(1),
             EvmWord::from_str("32").unwrap(),
         );
@@ -1126,13 +1120,13 @@ mod tests {
     fn same_address_read() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("31").unwrap(),
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(24),
+            GlobalCounter::from(24),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(), /* This should fail as it not
                                                * the same value as in
@@ -1141,13 +1135,13 @@ mod tests {
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(19),
+            GlobalCounter::from(19),
             StackAddress::from(0),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(28),
+            GlobalCounter::from(28),
             StackAddress::from(0),
             EvmWord::from_str("13").unwrap(), /* This should fail as it not
                                                * the same value as in the
@@ -1181,7 +1175,7 @@ mod tests {
         let stack_op_0 = StackOp::new(
             RW::READ, /* This fails because the first stack op when address
                        * changes should be write. */
-            bus_mapping::operation::GlobalCounter::from(28),
+            GlobalCounter::from(28),
             StackAddress::from(0),
             EvmWord::from_str("13").unwrap(),
         );
@@ -1209,21 +1203,21 @@ mod tests {
     fn max_values() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             MemoryAddress::from_str(&format!("{:X}", MEMORY_ADDRESS_MAX))
                 .unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(GLOBAL_COUNTER_MAX),
+            GlobalCounter::from(GLOBAL_COUNTER_MAX),
             MemoryAddress::from_str(&format!("{:X}", MEMORY_ADDRESS_MAX))
                 .unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+            GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
             MemoryAddress::from_str(&format!("{:X}", MEMORY_ADDRESS_MAX))
                 .unwrap(),
             EvmWord::from_str("32").unwrap(),
@@ -1231,14 +1225,14 @@ mod tests {
 
         let memory_op_3 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             MemoryAddress::from_str(&format!("{:X}", MEMORY_ADDRESS_MAX + 1))
                 .unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_4 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(24),
+            GlobalCounter::from(24),
             MemoryAddress::from_str(&format!("{:X}", MEMORY_ADDRESS_MAX + 1))
                 .unwrap(),
             EvmWord::from_str("32").unwrap(),
@@ -1246,26 +1240,26 @@ mod tests {
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             StackAddress::from(STACK_ADDRESS_MAX),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(24),
+            GlobalCounter::from(24),
             StackAddress::from(STACK_ADDRESS_MAX),
             EvmWord::from_str("12").unwrap(),
         );
 
         let stack_op_2 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(17),
+            GlobalCounter::from(17),
             StackAddress::from(STACK_ADDRESS_MAX + 1),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_3 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+            GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
             StackAddress::from(STACK_ADDRESS_MAX + 1),
             EvmWord::from_str("12").unwrap(),
         );
@@ -1312,7 +1306,7 @@ mod tests {
         // too
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             MemoryAddress::from_str(&format!("{:X}", MEMORY_ADDRESS_MAX + 1))
                 .unwrap(), // this address is not in the allowed range
             EvmWord::from_str("32").unwrap(),
@@ -1320,13 +1314,13 @@ mod tests {
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(12),
+            GlobalCounter::from(12),
             StackAddress::from(STACK_ADDRESS_MAX + 1),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(24),
+            GlobalCounter::from(24),
             StackAddress::from(STACK_ADDRESS_MAX + 1),
             EvmWord::from_str("12").unwrap(),
         );
@@ -1362,40 +1356,40 @@ mod tests {
     fn non_monotone_global_counter() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(1352),
+            GlobalCounter::from(1352),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(1255),
+            GlobalCounter::from(1255),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
 
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(1255), /* fails because it needs to be
-                                                                * strictly monotone */
+            GlobalCounter::from(1255), /* fails because it needs to be
+                                        * strictly monotone */
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(228),
+            GlobalCounter::from(228),
             StackAddress::from(1),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(217),
+            GlobalCounter::from(217),
             StackAddress::from(1),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_2 = StackOp::new(
             RW::READ,
-            bus_mapping::operation::GlobalCounter::from(217),
+            GlobalCounter::from(217),
             StackAddress::from(1),
             EvmWord::from_str("12").unwrap(),
         );
@@ -1423,19 +1417,19 @@ mod tests {
     fn non_monotone_address() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(1352),
+            GlobalCounter::from(1352),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_1 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(1255),
+            GlobalCounter::from(1255),
             MemoryAddress::from_str("1").unwrap(),
             EvmWord::from_str("32").unwrap(),
         );
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(1255),
+            GlobalCounter::from(1255),
             MemoryAddress::from_str("0").unwrap(), /* fails because the
                                                     * address is not
                                                     * monotone */
@@ -1444,19 +1438,19 @@ mod tests {
 
         let stack_op_0 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(228),
+            GlobalCounter::from(228),
             StackAddress::from(0),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_1 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(229),
+            GlobalCounter::from(229),
             StackAddress::from(1),
             EvmWord::from_str("12").unwrap(),
         );
         let stack_op_2 = StackOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(230),
+            GlobalCounter::from(230),
             StackAddress::from(0), /* this fails because the
                                     * address is not
                                     * monotone */
@@ -1481,7 +1475,7 @@ mod tests {
     fn memory_values() {
         let memory_op_0 = MemoryOp::new(
             RW::WRITE,
-            bus_mapping::operation::GlobalCounter::from(1352),
+            GlobalCounter::from(1352),
             MemoryAddress::from_str("0").unwrap(),
             EvmWord::from_str(&format!("{:X}", 256)).unwrap(),
         );
