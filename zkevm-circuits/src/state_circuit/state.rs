@@ -3,6 +3,7 @@ use crate::gadget::{
     monotone::{MonotoneChip, MonotoneConfig},
     Variable,
 };
+use bus_mapping::operation::StackOp;
 use halo2::{
     circuit::{Layouter, Region},
     plonk::{
@@ -586,6 +587,99 @@ impl<
         )
     }
 
+    fn assign_stack_ops(
+        &self,
+        region: &mut Region<F>,
+        ops: Vec<StackOp>,
+        address_diff_is_zero_chip: &IsZeroChip<F>,
+    ) -> Result<Vec<BusMapping<F>>, Error> {
+        if ops.len() > STACK_ROWS_MAX {
+            panic!("too many stack operations");
+        }
+        let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
+
+        let mut address_prev = F::zero();
+        if ops.len() > 0 {
+            F::from_u64(usize::from(*ops.first().unwrap().address()) as u64);
+        }
+        let mut offset = MEMORY_ROWS_MAX;
+        for (index, op) in ops.iter().enumerate() {
+            let address = F::from_u64(usize::from(*op.address()) as u64);
+            let gc = usize::from(op.gc());
+            let v_bytes = op.value().to_bytes();
+            let val = F::from_bytes(&v_bytes).unwrap();
+
+            let mut target = 1;
+            if index > 0 {
+                target = 3;
+            }
+
+            let bus_mapping = self.assign_op(
+                region,
+                offset,
+                address,
+                gc,
+                val,
+                op.rw().is_write(),
+                target,
+            )?;
+            bus_mappings.push(bus_mapping);
+
+            address_diff_is_zero_chip.assign(
+                region,
+                offset,
+                Some(address - address_prev),
+            )?;
+
+            address_prev = address;
+            offset += 1;
+        }
+
+        self.pad_rows(region, offset, MEMORY_ROWS_MAX, STACK_ROWS_MAX, 3)?;
+
+        Ok(bus_mappings)
+    }
+
+    fn pad_rows(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        start_offset: usize,
+        max_rows: usize,
+        target: usize,
+    ) -> Result<(), Error> {
+        // We pad all remaining rows to avoid the check at the first unused row.
+        // Without padding, (address_cur - address_prev) would not be zero at
+        // the first unused row and some checks would be triggered.
+
+        for i in offset..start_offset + max_rows {
+            if i == start_offset {
+                region.assign_fixed(
+                    || "target",
+                    self.q_target,
+                    i,
+                    || Ok(F::one()),
+                )?;
+            } else {
+                region.assign_fixed(
+                    || "target",
+                    self.q_target,
+                    i,
+                    || Ok(F::from_u64(target as u64)),
+                )?;
+            }
+            region.assign_advice(
+                || "padding",
+                self.padding,
+                i,
+                || Ok(F::one()),
+            )?;
+            region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
+        }
+
+        Ok(())
+    }
+
     fn assign_operations(
         &self,
         ops: Vec<Op<F>>,
@@ -730,7 +824,7 @@ impl<
         &self,
         mut layouter: impl Layouter<F>,
         memory_ops: Vec<Op<F>>,
-        stack_ops: Vec<Op<F>>,
+        stack_ops: Vec<StackOp>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
@@ -762,6 +856,12 @@ impl<
                 );
                 bus_mappings.extend(memory_mappings.unwrap());
 
+                let stack_mappings = self.assign_stack_ops(
+                    &mut region,
+                    stack_ops.clone(),
+                    &address_diff_is_zero_chip,
+                );
+                /*
                 let stack_mappings = self.assign_operations(
                     stack_ops.clone(),
                     STACK_ROWS_MAX,
@@ -770,6 +870,7 @@ impl<
                     MEMORY_ROWS_MAX,
                     &mut region,
                 );
+                */
                 bus_mappings.extend(stack_mappings.unwrap());
 
                 Ok(bus_mappings.clone())
@@ -834,6 +935,110 @@ impl<
         )?;
 
         Ok(())
+    }
+
+    fn assign_op(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        address: F,
+        global_counter: usize,
+        value: F,
+        flag: bool,
+        target: usize,
+    ) -> Result<BusMapping<F>, Error> {
+        let address = {
+            let cell = region.assign_advice(
+                || "address",
+                self.address,
+                offset,
+                || Ok(address),
+            )?;
+            Variable::<F, F> {
+                cell,
+                field_elem: Some(address),
+                value: Some(address),
+            }
+        };
+
+        let global_counter = {
+            let field_elem = F::from_u64(global_counter as u64);
+
+            let cell = region.assign_advice(
+                || "global counter",
+                self.global_counter,
+                offset,
+                || Ok(field_elem),
+            )?;
+
+            Variable::<usize, F> {
+                cell,
+                field_elem: Some(field_elem),
+                value: Some(global_counter),
+            }
+        };
+
+        let value = {
+            let cell = region.assign_advice(
+                || "value",
+                self.value,
+                offset,
+                || Ok(value),
+            )?;
+
+            Variable::<F, F> {
+                cell,
+                field_elem: Some(value),
+                value: Some(value),
+            }
+        };
+
+        let flag = {
+            let field_elem = F::from_u64(flag as u64);
+            let cell = region.assign_advice(
+                || "flag",
+                self.flag,
+                offset,
+                || Ok(field_elem),
+            )?;
+
+            Variable::<bool, F> {
+                cell,
+                field_elem: Some(field_elem),
+                value: Some(flag),
+            }
+        };
+
+        region.assign_advice(
+            || "padding",
+            self.padding,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        let target = {
+            let value = Some(target);
+            let field_elem = Some(F::from_u64(target as u64));
+            let cell = region.assign_fixed(
+                || "target",
+                self.q_target,
+                offset,
+                || Ok(F::from_u64(target as u64)),
+            )?;
+            Variable::<usize, F> {
+                cell,
+                field_elem,
+                value,
+            }
+        };
+
+        Ok(BusMapping {
+            global_counter,
+            target,
+            flag,
+            address,
+            value,
+        })
     }
 
     /// Assign cells for each global counter in an operation.
@@ -954,11 +1159,13 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use super::{Address, Config, GlobalCounter, Op, ReadWrite, Value};
-    use bus_mapping::{
-        evm::EvmWord, BlockConstants, ExecutionTrace,
-    };
+    use std::str::FromStr;
 
+    use super::{Address, Config, GlobalCounter, Op, ReadWrite, Value};
+    use bus_mapping::evm::StackAddress;
+    use bus_mapping::{evm::EvmWord, BlockConstants, ExecutionTrace};
+
+    use bus_mapping::operation::{StackOp, RW};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{
@@ -982,7 +1189,7 @@ mod tests {
                 const STACK_ADDRESS_MAX: usize,
             > {
                 memory_ops: Vec<Op<F>>,
-                stack_ops: Vec<Op<F>>,
+                stack_ops: Vec<StackOp>,
             }
 
             impl<
@@ -1103,19 +1310,18 @@ mod tests {
             ],
         };
 
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::one()),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(17),
-                    Value(pallas::Base::from_u64(32)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(87),
-                    Value(pallas::Base::from_u64(32)),
-                )),
-            ],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(17),
+            StackAddress::from(1),
+            EvmWord::from_str("32").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(87),
+            StackAddress::from(1),
+            EvmWord::from_str("32").unwrap(),
+        );
 
         test_state_circuit!(
             14,
@@ -1125,7 +1331,7 @@ mod tests {
             100,
             1023,
             vec![memory_op_0, memory_op_1],
-            vec![stack_op_0],
+            vec![stack_op_0, stack_op_1],
             Ok(())
         );
     }
@@ -1161,19 +1367,18 @@ mod tests {
             ],
         };
 
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::one()),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(17),
-                    Value(pallas::Base::from_u64(32)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(87),
-                    Value(pallas::Base::from_u64(32)),
-                )),
-            ],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(17),
+            StackAddress::from(1),
+            EvmWord::from_str("32").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(87),
+            StackAddress::from(1),
+            EvmWord::from_str("32").unwrap(),
+        );
 
         test_state_circuit!(
             14,
@@ -1183,7 +1388,7 @@ mod tests {
             100,
             1023,
             vec![memory_op_0, memory_op_1],
-            vec![stack_op_0],
+            vec![stack_op_0, stack_op_1],
             Ok(())
         );
     }
@@ -1203,19 +1408,21 @@ mod tests {
                 )),
             ],
         };
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::zero()),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(19),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(28),
-                    Value(pallas::Base::from_u64(13)), /* This should fail as it not the same value as in previous write op */
-                )),
-            ],
-        };
+
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(19),
+            StackAddress::from(0),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(28),
+            StackAddress::from(0),
+            EvmWord::from_str("13").unwrap(), /* This should fail as it not
+                                               * the same value as in the
+                                               * previous write op */
+        );
 
         const MEMORY_ROWS_MAX: usize = 7;
         test_state_circuit!(
@@ -1226,7 +1433,7 @@ mod tests {
             100,
             1023,
             vec![memory_op_0],
-            vec![stack_op_0],
+            vec![stack_op_0, stack_op_1],
             Err(vec![
                 constraint_not_satisfied(2, 2, "Memory operation + padding", 4),
                 constraint_not_satisfied(
@@ -1241,15 +1448,13 @@ mod tests {
 
     #[test]
     fn stack_first_write() {
-        // first stack op when address changes is write
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::zero()),
-            global_counters: vec![Some(ReadWrite::Read(
-                GlobalCounter(28),
-                Value(pallas::Base::from_u64(13)), /* This should fail as it
-                                                    * is read op */
-            ))],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::READ, /* This fails because the first stack op when address
+                       * changes should be write. */
+            bus_mapping::operation::GlobalCounter::from(28),
+            StackAddress::from(0),
+            EvmWord::from_str("13").unwrap(),
+        );
 
         const MEMORY_ROWS_MAX: usize = 2;
         test_state_circuit!(
@@ -1306,35 +1511,31 @@ mod tests {
             ],
         };
 
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::from_u64(STACK_ADDRESS_MAX as u64)),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(12),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(24),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-            ],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(12),
+            StackAddress::from(STACK_ADDRESS_MAX),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(24),
+            StackAddress::from(STACK_ADDRESS_MAX),
+            EvmWord::from_str("12").unwrap(),
+        );
 
-        let stack_op_1 = Op {
-            address: Address(pallas::Base::from_u64(
-                (STACK_ADDRESS_MAX + 1) as u64,
-            )),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(17),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-                Some(ReadWrite::Write(
-                    GlobalCounter(GLOBAL_COUNTER_MAX + 1),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-            ],
-        };
+        let stack_op_2 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(17),
+            StackAddress::from(STACK_ADDRESS_MAX + 1),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_3 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+            StackAddress::from(STACK_ADDRESS_MAX + 1),
+            EvmWord::from_str("12").unwrap(),
+        );
 
         // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
         // rows would fail because of the address they would have - the
@@ -1353,7 +1554,7 @@ mod tests {
             STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
             vec![memory_op_0, memory_op_1],
-            vec![stack_op_0, stack_op_1],
+            vec![stack_op_0, stack_op_1, stack_op_2, stack_op_3],
             Err(vec![
                 lookup_fail(4, 3),
                 lookup_fail(5, 3),
@@ -1380,21 +1581,18 @@ mod tests {
             ))],
         };
 
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::from_u64(
-                (STACK_ADDRESS_MAX + 1) as u64,
-            )),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(12),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(24),
-                    Value(pallas::Base::from_u64(12)),
-                )),
-            ],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(12),
+            StackAddress::from(STACK_ADDRESS_MAX + 1),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(24),
+            StackAddress::from(STACK_ADDRESS_MAX + 1),
+            EvmWord::from_str("12").unwrap(),
+        );
 
         // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
         // rows would fail because of the address they would have - the
@@ -1413,7 +1611,7 @@ mod tests {
             STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
             vec![memory_op_0],
-            vec![stack_op_0],
+            vec![stack_op_0, stack_op_1],
             Err(vec![
                 lookup_fail(0, 3),
                 lookup_fail(1, 3),
@@ -1444,24 +1642,24 @@ mod tests {
             ],
         };
 
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::one()),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(228),
-                    Value(pallas::Base::from_u64(32)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(217),
-                    Value(pallas::Base::from_u64(32)),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(217), /* fails because it needs to be
-                                         * strictly monotone */
-                    Value(pallas::Base::from_u64(32)),
-                )),
-            ],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(228),
+            StackAddress::from(1),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(217),
+            StackAddress::from(1),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_2 = StackOp::new(
+            RW::READ,
+            bus_mapping::operation::GlobalCounter::from(217),
+            StackAddress::from(1),
+            EvmWord::from_str("12").unwrap(),
+        );
 
         const MEMORY_ROWS_MAX: usize = 100;
         test_state_circuit!(
@@ -1472,7 +1670,7 @@ mod tests {
             100,
             1023,
             vec![memory_op_0],
-            vec![stack_op_0],
+            vec![stack_op_0, stack_op_1, stack_op_2],
             Err(vec![
                 lookup_fail(2, 2),
                 lookup_fail(3, 2),
@@ -1510,29 +1708,26 @@ mod tests {
             ))],
         };
 
-        let stack_op_0 = Op {
-            address: Address(pallas::Base::zero()),
-            global_counters: vec![Some(ReadWrite::Write(
-                GlobalCounter(228),
-                Value(pallas::Base::from_u64(32)),
-            ))],
-        };
-        let stack_op_1 = Op {
-            address: Address(pallas::Base::one()),
-            global_counters: vec![Some(ReadWrite::Write(
-                GlobalCounter(229),
-                Value(pallas::Base::from_u64(32)),
-            ))],
-        };
-        let stack_op_2 = Op {
-            address: Address(pallas::Base::zero()), /* this fails because the
-                                                     * address is not
-                                                     * monotone */
-            global_counters: vec![Some(ReadWrite::Write(
-                GlobalCounter(230),
-                Value(pallas::Base::from_u64(32)),
-            ))],
-        };
+        let stack_op_0 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(228),
+            StackAddress::from(0),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_1 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(229),
+            StackAddress::from(1),
+            EvmWord::from_str("12").unwrap(),
+        );
+        let stack_op_2 = StackOp::new(
+            RW::WRITE,
+            bus_mapping::operation::GlobalCounter::from(230),
+            StackAddress::from(0), /* this fails because the
+                                    * address is not
+                                    * monotone */
+            EvmWord::from_str("12").unwrap(),
+        );
 
         const MEMORY_ROWS_MAX: usize = 10;
         test_state_circuit!(
@@ -1621,33 +1816,7 @@ mod tests {
         )
         .expect("Error on trace generation");
 
-        let trace_stack_ops = obtained_exec_trace.sorted_stack_ops();
-        // todo: sort by address
-        let mut stack_ops = vec![];
-        for op in trace_stack_ops.iter() {
-            let mut gcs = vec![];
-            // todo: get all ops for the address
-            if op.rw().is_read() {
-                gcs.push(Some(ReadWrite::Read(
-                    GlobalCounter(usize::from(op.gc())),
-                    Value(pallas::Base::from_u64(32)),
-                )));
-            } else {
-                gcs.push(Some(ReadWrite::Write(
-                    GlobalCounter(usize::from(op.gc())),
-                    Value(pallas::Base::from_u64(32)),
-                )));
-            }
-
-            let stack_op = Op {
-                address: Address(pallas::Base::from_u64(usize::from(
-                    *op.address(),
-                )
-                    as u64)),
-                global_counters: gcs,
-            };
-            stack_ops.push(stack_op);
-        }
+        let stack_ops = obtained_exec_trace.sorted_stack_ops();
 
         test_state_circuit!(
             14,

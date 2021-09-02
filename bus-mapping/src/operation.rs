@@ -6,7 +6,7 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
+pub use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
 use crate::error::Error;
 pub use container::OperationContainer;
 use core::cmp::Ordering;
