@@ -2,6 +2,7 @@ use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use bus_mapping::evm::OpcodeId;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryInto;
@@ -29,26 +30,27 @@ pub struct LtGadget<F> {
 }
 
 impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
-    const RESPONSIBLE_OPCODES: &'static [u8] = &[10, 11];
+    const RESPONSIBLE_OPCODES: &'static [OpcodeId] =
+        &[OpcodeId::LT, OpcodeId::GT];
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
         CaseConfig {
             case: Case::Success,
             num_word: 3,
             num_cell: 4,
-            will_resume: false,
+            will_halt: false,
         },
         CaseConfig {
             case: Case::StackUnderflow,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
         CaseConfig {
             case: Case::OutOfGas,
             num_word: 0,
             num_cell: 0,
-            will_resume: true,
+            will_halt: true,
         },
     ];
 
@@ -73,7 +75,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             ),
         }
     }
-    
+
     fn constraints(
         &self,
         state_curr: &OpExecutionState<F>,
@@ -86,7 +88,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
 
         let OpExecutionState { opcode, .. } = &state_curr;
 
-        let common_polys = 
+        let common_polys =
         vec![(opcode.expr() - lt.clone()) * (opcode.expr() - gt.clone())];
         let success = {
             let (one, exp_256) = (
@@ -127,7 +129,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             ];
 
             let mut lt_constraints = vec![];
-            
+
             let mut pw_now = Expression::Constant(F::from_u64(1));
             let mut lhs = Expression::Constant(F::zero());
             let mut rhs = Expression::Constant(F::zero());
@@ -155,7 +157,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             let bus_mapping_lookups = vec![
                 //todo
             ];
-            
+
             let sum_equal_constraints = vec![sum_c_expr - sumc.expr()];
 
             let not_zero_constraints = vec![one - sumc.expr() * sumc_inv.expr()];
@@ -192,7 +194,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                     ],
                 ]
                 .concat(),
-                lookups: vec![],           
+                lookups: vec![],
             }
         };
 
@@ -261,7 +263,7 @@ impl<F: FieldExt> LtGadget<F> {
         self.success.swap.assign(
             region,
             offset,
-            Some(F::from_u64((execution_step.opcode == 11) as u64)),
+            Some(F::from_u64((execution_step.opcode == OpcodeId::GT) as u64)),
         )?;
         self.success.a.assign(
             region,
@@ -326,7 +328,7 @@ mod test {
         ];
         let b: [u8; 32] = [
             5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let c: [u8; 32] = [
             4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -343,23 +345,24 @@ mod test {
             sumc = sumc >> 8;
         }
         try_test_circuit!(
-            vec![ExecutionStep {
-                opcode: 10,
-                case: Case::Success,
-                values: vec![
-                    a,
-                    b,
-                    c,
-                    carry,
-                    sumc_array,
-                ],
-            }],
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::LT,
+                    case: Case::Success,
+                    values: vec![
+                        a,
+                        b,
+                        c,
+                        carry,
+                        sumc_array,
+                    ],
+                }],
             Ok(())
         );
         // GT
         try_test_circuit!(
             vec![ExecutionStep {
-                opcode: 11,
+                opcode: OpcodeId::GT,
                 case: Case::Success,
                 values: vec![
                     a,

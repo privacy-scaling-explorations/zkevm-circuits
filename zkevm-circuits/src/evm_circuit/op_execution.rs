@@ -264,7 +264,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         construct_op_gadget!(add_gadget);
         construct_op_gadget!(push_gadget);
-        constrcut_op_gadget!(lt_gadget);
+        construct_op_gadget!(lt_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -520,7 +520,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-                10 | 11 => self.lt_gadget.assign(
+                OpcodeId::LT | OpcodeId::GT => self.lt_gadget.assign(
                     region,
                     offset,
                     core_state,
