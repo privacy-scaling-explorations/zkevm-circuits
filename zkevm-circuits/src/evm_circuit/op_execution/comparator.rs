@@ -1,10 +1,14 @@
 use super::super::{
-    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
+    BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
+    Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use bus_mapping::evm::OpcodeId;
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::Region,
+    plonk::{Error, Expression},
+};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -37,7 +41,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         CaseConfig {
             case: Case::Success,
             num_word: 3,
-            num_cell: 4,
+            num_cell: 4,//carry,swap,sumc,sumc_inv
             will_halt: false,
         },
         CaseConfig {
@@ -82,8 +86,8 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
         let (lt, gt) = (
-            Expression::Constant(F::from_u64(10)),
-            Expression::Constant(F::from_u64(11)),
+            Expression::Constant(F::from_u64((OpcodeId::LT).as_u8() as u64)),
+            Expression::Constant(F::from_u64((OpcodeId::GT).as_u8() as u64)),
         );
 
         let OpExecutionState { opcode, .. } = &state_curr;
@@ -95,18 +99,18 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 Expression::Constant(F::one()),
                 Expression::Constant(F::from_u64(1 << 8)),
             );
-            let op_execution_state_transition_constraints = vec![
-                state_next.global_counter.expr()
-                    - (state_curr.global_counter.expr())
+            let state_transition_constraints = vec![
+                state_curr.global_counter.expr()
+                    - (state_next.global_counter.expr())
                         + Expression::Constant(F::from_u64(3)),
-                state_next.stack_pointer.expr()
-                    - (state_curr.stack_pointer.expr())
+                state_curr.stack_pointer.expr()
+                    - (state_next.stack_pointer.expr())
                         + Expression::Constant(F::from_u64(1)),
-                state_next.program_counter.expr()
-                    - (state_curr.program_counter.expr())
+                state_curr.program_counter.expr()
+                    - (state_next.program_counter.expr())
                         + Expression::Constant(F::from_u64(1)),
-                state_next.gas_counter.expr()
-                    - (state_curr.gas_counter.expr())
+                state_curr.gas_counter.expr()
+                    - (state_next.gas_counter.expr())
                         + Expression::Constant(F::from_u64(3)),
             ];
 
@@ -125,7 +129,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             let swap_constraints = vec![
                 swap.expr() * no_swap.clone(),
                 swap.expr() * (opcode.expr() - gt),
-                no_swap * (opcode.expr() - lt),
+                no_swap.clone() * (opcode.expr() - lt),
             ];
 
             let mut lt_constraints = vec![];
@@ -142,6 +146,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             }
             rhs = rhs + carry.expr() * pw_now;
             lt_constraints.push(lhs - rhs);
+            //assert_eq!(lhs - rhs, Expression::Constant(F::zero()));
 
             pw_now = Expression::Constant(F::from_u64(1));
             lhs = carry.expr();
@@ -156,6 +161,21 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
 
             let bus_mapping_lookups = vec![
                 //todo
+                Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: 0,
+                    value: swap.expr() * b.expr() + no_swap.clone() * a.expr(),
+                    is_write: false,
+                }),
+                Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: 1,
+                    value: swap.expr() * a.expr() + no_swap.clone() * b.expr(),
+                    is_write: false,
+                }),
+                Lookup::BusMappingLookup(BusMappingLookup::Stack {
+                    index_offset: 1,
+                    value: Expression::Constant(F::one()),
+                    is_write: true,
+                }),
             ];
 
             let sum_equal_constraints = vec![sum_c_expr - sumc.expr()];
@@ -166,14 +186,14 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 selector: selector.expr(),
                 polys: [
                     common_polys.clone(),
-                    op_execution_state_transition_constraints,
+                    state_transition_constraints,//failed
                     swap_constraints,
                     lt_constraints,
                     sum_equal_constraints,
                     not_zero_constraints,
                 ]
                 .concat(),
-                lookups: bus_mapping_lookups,
+                lookups: /*vec![], */bus_mapping_lookups,//failed
             }
         };
 
@@ -307,14 +327,18 @@ impl<F: FieldExt> LtGadget<F> {
 }
 #[cfg(test)]
 mod test {
-    use super::super::super::{test::TestCircuit, Case, ExecutionStep};
-    use halo2::dev::MockProver;
+    use super::super::super::{
+        test::TestCircuit, Case, ExecutionStep, Operation,
+    };
+    use bus_mapping::{evm::OpcodeId, operation::Target};
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {
-        ($execution_step:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Base>::new($execution_step);
+        ($execution_step:expr, $operations:expr, $result:expr) => {{
+            let circuit = TestCircuit::<Base>::new($execution_step, $operations);
             let prover = MockProver::<Base>::run(9, &circuit, vec![]).unwrap();
+            //println!("table is now ready!");
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -347,6 +371,124 @@ mod test {
         try_test_circuit!(
             vec![
                 ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        b.clone(),
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        a.clone(),
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::LT,
+                    case: Case::Success,
+                    values: vec![
+                        a.clone(),
+                        b.clone(),
+                        c.clone(),
+                        carry.clone(),
+                        sumc_array.clone(),
+                    ],
+                }
+            ],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1),
+                        Base::zero(),
+                    ]
+                }
+            ],
+            Ok(())
+        );
+        // GT
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        a.clone(),
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        b.clone(),
+                        [
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        ]
+                    ],
+                },
+                ExecutionStep {
                     opcode: OpcodeId::LT,
                     case: Case::Success,
                     values: vec![
@@ -356,22 +498,65 @@ mod test {
                         carry,
                         sumc_array,
                     ],
-                }],
-            Ok(())
-        );
-        // GT
-        try_test_circuit!(
-            vec![ExecutionStep {
-                opcode: OpcodeId::GT,
-                case: Case::Success,
-                values: vec![
-                    a,
-                    b,
-                    c,
-                    carry,
-                    sumc_array,
-                ],
-            }],
+                }
+            ],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1),
+                        Base::zero(),
+                    ]
+                }
+            ],
             Ok(())
         );
     }
