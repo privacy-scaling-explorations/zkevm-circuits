@@ -738,7 +738,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                 }
 
                 // Range32
-                for idx in 0..31 {
+                for idx in 0..32 {
                     region.assign_fixed(
                         || "Range32: tag",
                         self.fixed_table[0],
