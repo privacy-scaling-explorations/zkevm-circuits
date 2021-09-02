@@ -240,10 +240,11 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             lookups: vec![],
         }];
 
+        // This helps construct different gadgets that implement trait OpGadget
+        // with identical inputs.
         macro_rules! construct_op_gadget {
-            {} => {};
-            {$name:ident = $gadget:ident} => {
-                let $name = Self::construct_op_gadget::<$gadget::<F>>(
+            ($name:ident) => {
+                let $name = Self::construct_op_gadget(
                     r,
                     &state_curr,
                     &state_next,
@@ -255,21 +256,13 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     &mut preset_map,
                     &mut constraints,
                 );
-            };
-            {$name:ident = $gadget:ident;} => {
-                construct_op_gadget!{$name = $gadget};
-            };
-            {$name:ident = $gadget:ident; $($tail:tt)+} => {
-                construct_op_gadget!{$name = $gadget};
                 qs_op_idx += 1;
-                construct_op_gadget!{$($tail)+};
             };
         }
 
-        construct_op_gadget! {
-            add_gadget = AddGadget;
-            push_gadget = PushGadget;
-        }
+        construct_op_gadget!(add_gadget);
+        construct_op_gadget!(push_gadget);
+        let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
             let Constraint {
@@ -372,7 +365,6 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     })
                     .collect::<Vec<_>>();
 
-                // Use drain to move out reallocated free_cells
                 let cells = cell_idxs
                     .into_iter()
                     .map(|idx| free_cells[idx].clone())
