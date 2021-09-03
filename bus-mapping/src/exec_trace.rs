@@ -1,7 +1,7 @@
 //! This module contains the logic for parsing and interacting with EVM
 //! execution traces.
 pub(crate) mod exec_step;
-use crate::evm::EvmWord;
+use crate::evm::{EvmWord, Stack};
 use crate::operation::{container::OperationContainer, Operation};
 use crate::operation::{MemoryOp, StackOp, StorageOp, Target};
 use crate::Error;
@@ -363,7 +363,7 @@ mod trace_tests {
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep::new(
             mem_map.clone(),
-            vec![EvmWord::from(0x40u8)],
+            Stack::from(vec![EvmWord::from(0x40u8)]),
             Instruction::new(OpcodeId::PUSH1, Some(EvmWord::from(0x40u8))),
             ProgramCounter::from(0),
             GlobalCounter::from(0),
@@ -383,7 +383,7 @@ mod trace_tests {
         // Generate Step2 corresponding to PUSH1 80
         let mut step_2 = ExecutionStep::new(
             mem_map,
-            vec![EvmWord::from(0x40u8), EvmWord::from(0x80u8)],
+            Stack::from(vec![EvmWord::from(0x40u8), EvmWord::from(0x80u8)]),
             Instruction::new(OpcodeId::PUSH1, Some(EvmWord::from(0x80u8))),
             ProgramCounter::from(1),
             GlobalCounter::from(2),

@@ -2,7 +2,7 @@
 
 use crate::evm::{
     EvmWord, GlobalCounter, Instruction, MemoryAddress, ProgramCounter,
-    StackAddress, MEM_ADDR_ZERO,
+    StackAddress, MEM_ADDR_ZERO, Stack,
 };
 use crate::{
     error::Error, evm::opcodes::Opcode,
@@ -28,7 +28,7 @@ use super::OperationRef;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutionStep {
     memory: BTreeMap<MemoryAddress, EvmWord>,
-    stack: Vec<EvmWord>,
+    stack: Stack,
     instruction: Instruction,
     pc: ProgramCounter,
     gc: GlobalCounter,
@@ -41,7 +41,7 @@ impl ExecutionStep {
     /// bus-mapping instance vec.
     pub fn new(
         memory: BTreeMap<MemoryAddress, EvmWord>,
-        stack: Vec<EvmWord>,
+        stack: Stack,
         instruction: Instruction,
         pc: ProgramCounter,
         gc: GlobalCounter,
@@ -64,14 +64,12 @@ impl ExecutionStep {
 
     /// Returns the Stack view of this `ExecutionStep` in the form of a Vector.
     pub const fn stack(&self) -> &Vec<EvmWord> {
-        &self.stack
+        &self.stack.0
     }
 
     /// Returns the stack pointer at this execution step height.
     pub fn stack_addr(&self) -> StackAddress {
-        // Stack has 1024 slots.
-        // First allocation slot for us in the stack is 1023.
-        StackAddress::from(1024 - self.stack.len())
+        StackAddress::from(self.stack.stack_pointer())
     }
 
     /// Returns the last memory region written at this execution step height.
@@ -160,7 +158,7 @@ impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
 
         Ok(ExecutionStep::new(
             mem_map,
-            stack,
+            Stack::from(stack),
             Instruction::from_str(parsed_step.opcode)?,
             parsed_step.pc,
             0.into(),
@@ -194,7 +192,10 @@ mod tests {
                 "20": "0000000000000000000000000000000000000000000000000000000000000000",
                 "40": "0000000000000000000000000000000000000000000000000000000000000080"
             },
-            "stack": [],
+            "stack": [
+                "40",
+                "80"
+            ],
             "opcode": "JUMPDEST",
             "pc": 53
         }
@@ -223,7 +224,7 @@ mod tests {
 
             ExecutionStep::new(
                 mem_map,
-                vec![],
+                Stack::from(vec![EvmWord::from(0x40u8), EvmWord::from(0x80u8)]),
                 Instruction::new(OpcodeId::JUMPDEST, None),
                 ProgramCounter(53),
                 GlobalCounter(0),

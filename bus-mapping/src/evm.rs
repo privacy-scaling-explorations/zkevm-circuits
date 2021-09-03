@@ -153,3 +153,22 @@ macro_rules! impl_from_basic_types {
 }
 
 impl_from_basic_types!(u8, u16, u32, u64, u128);
+
+/// Wrapper type over `Vec<EvmWord>` which represents the stack of the Evm.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Stack(pub(crate) Vec<EvmWord>);
+
+impl Stack {
+    /// Returns the stack pointer.
+    pub fn stack_pointer(&self) -> usize {
+        // Stack has 1024 slots.
+        // First allocation slot for us in the stack is 1023.
+        1024 - self.0.len()
+    }
+}
+
+impl From<Vec<EvmWord>> for Stack {
+    fn from(stack: Vec<EvmWord>) -> Self {
+        Stack(stack)
+    }
+}
