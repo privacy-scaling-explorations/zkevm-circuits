@@ -17,6 +17,7 @@ bus-mapping = { path = "../bus-mapping"}
 
 [dev-dependencies]
 criterion = "0.3"
+num = "0.4"
 
 [[bench]]
 name = "binary_value"

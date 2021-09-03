@@ -756,6 +756,8 @@ impl<
                 val,
                 op.rw().is_write(),
                 target,
+                F::zero(),
+                F::zero(),
             )?;
             bus_mappings.push(bus_mapping);
 
@@ -800,6 +802,8 @@ impl<
                 val,
                 op.rw().is_write(),
                 target,
+                F::zero(),
+                F::zero(),
             )?;
             bus_mappings.push(bus_mapping);
 
@@ -834,11 +838,17 @@ impl<
         let mut storage_key_prev = F::zero();
         let mut offset = MEMORY_ROWS_MAX + STACK_ROWS_MAX;
         for (index, op) in ops.iter().enumerate() {
-            let address = F::from_u64(usize::from(*op.address()) as u64);
+            let address = F::from_bytes(&op.address().to_bytes()).unwrap();
             let gc = usize::from(op.gc());
             let v_bytes = op.value().to_bytes();
             let val = F::from_bytes(&v_bytes).unwrap();
-            let storage_key = op.
+            let v_prev_bytes = op.value_prev().to_bytes();
+            let val_prev = F::from_bytes(&v_prev_bytes).unwrap();
+
+            let mut array = [0u8; 32];
+            let bytes = op.storage_key().to_bytes_le();
+            array[..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
+            let storage_key = F::from_bytes(&array).unwrap();
 
             let mut target = 1;
             if index > 0 {
@@ -853,6 +863,8 @@ impl<
                 val,
                 op.rw().is_write(),
                 target,
+                storage_key,
+                val_prev,
             )?;
             bus_mappings.push(bus_mapping);
 
@@ -1038,6 +1050,8 @@ impl<
         value: F,
         flag: bool,
         target: usize,
+        storage_key: F,
+        value_prev: F,
     ) -> Result<BusMapping<F>, Error> {
         let address = {
             let cell = region.assign_advice(
@@ -1082,6 +1096,36 @@ impl<
                 cell,
                 field_elem: Some(value),
                 value: Some(value),
+            }
+        };
+
+        let storage_key = {
+            let cell = region.assign_advice(
+                || "storage key",
+                self.storage_key,
+                offset,
+                || Ok(storage_key),
+            )?;
+
+            Variable::<F, F> {
+                cell,
+                field_elem: Some(storage_key),
+                value: Some(storage_key),
+            }
+        };
+
+        let value_prev = {
+            let cell = region.assign_advice(
+                || "value prev",
+                self.value_prev,
+                offset,
+                || Ok(value_prev),
+            )?;
+
+            Variable::<F, F> {
+                cell,
+                field_elem: Some(value_prev),
+                value: Some(value_prev),
             }
         };
 
@@ -1146,6 +1190,7 @@ mod tests {
         },
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use num::BigUint;
 
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
@@ -1298,6 +1343,31 @@ mod tests {
             EvmWord::from_str("32").unwrap(),
         );
 
+        let storage_op_0 = StorageOp::new(
+            RW::WRITE,
+            GlobalCounter::from(17),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_1 = StorageOp::new(
+            RW::WRITE,
+            GlobalCounter::from(18),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_2 = StorageOp::new(
+            RW::WRITE,
+            GlobalCounter::from(19),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            BigUint::from(0x40u8),
+        );
+
         test_state_circuit!(
             14,
             2000,
@@ -1308,7 +1378,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1, memory_op_2, memory_op_3],
             vec![stack_op_0, stack_op_1],
-            vec![],
+            vec![storage_op_0, storage_op_1, storage_op_2],
             Ok(())
         );
     }
@@ -1436,6 +1506,36 @@ mod tests {
             EvmWord::from_str("13").unwrap(),
         );
 
+        let storage_op_0 = StorageOp::new(
+            RW::READ, // Fails because the first storage op needs to be write.
+            GlobalCounter::from(17),
+            MemoryAddress::from_str("2").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_1 = StorageOp::new(
+            RW::READ, /* Fails because when storage key changes, the op
+                       * needs to be write. */
+            GlobalCounter::from(18),
+            MemoryAddress::from_str("2").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x41u8),
+        );
+
+        let storage_op_2 = StorageOp::new(
+            RW::READ, /* Fails because when address changes, the op needs to
+                       * be write. */
+            GlobalCounter::from(19),
+            MemoryAddress::from_str("3").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+            /* Intentionally different storage key as the last one in the previous ops to
+            have two conditions met. */
+        );
+
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit!(
@@ -1448,8 +1548,7 @@ mod tests {
             1000,
             vec![],
             vec![stack_op_0],
-            // vec![storage_op_0, storage_op_1],
-            vec![],
+            vec![storage_op_0, storage_op_1, storage_op_2],
             Err(vec![
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX,
@@ -1686,18 +1785,54 @@ mod tests {
             EvmWord::from_str("12").unwrap(),
         );
 
-        let storage_op_1 = Op {
-            address: Address(pallas::Base::from_u64(2_u64)),
-            global_counters: vec![Some(ReadWrite::Write(
-                GlobalCounter(296),
-                // global counter goes down, but it doesn't fail because the
-                // address is not the same as in the previous row (while the
-                // storage key is)
-                Value(pallas::Base::from_u64(32)),
-                Some(Value(pallas::Base::from_u64(1))),
-                Some(Value(pallas::Base::from_u64(0))),
-            ))],
-        };
+        let storage_op_0 = StorageOp::new(
+            RW::WRITE,
+            GlobalCounter::from(301),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_1 = StorageOp::new(
+            RW::READ,
+            GlobalCounter::from(302),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_2 = StorageOp::new(
+            RW::READ,
+            GlobalCounter::from(302), /*fails because the address and
+                                       * storage key are the same as in
+                                       * the previous row */
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_3 = StorageOp::new(
+            RW::WRITE,
+            // Global counter goes down, but it doesn't fail because
+            // the storage key is not the same as in the previous row.
+            GlobalCounter::from(297),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            BigUint::from(0x41u8),
+        );
+
+        let storage_op_4 = StorageOp::new(
+            RW::WRITE,
+            // Global counter goes down, but it doesn't fail because the
+            // address is not the same as in the previous row (while the
+            // storage key is).
+            GlobalCounter::from(296),
+            MemoryAddress::from_str("2").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x41u8),
+        );
 
         const MEMORY_ROWS_MAX: usize = 100;
         const STACK_ROWS_MAX: usize = 100;
@@ -1711,7 +1846,13 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1, memory_op_2],
             vec![stack_op_0, stack_op_1, stack_op_2],
-            vec![],
+            vec![
+                storage_op_0,
+                storage_op_1,
+                storage_op_2,
+                storage_op_3,
+                storage_op_4
+            ],
             Err(vec![
                 lookup_fail(2, 2),
                 lookup_fail(3, 2),
@@ -1807,33 +1948,36 @@ mod tests {
         );
     }
 
-    /*
     #[test]
     fn storage() {
-        let storage_op_0 = Op {
-            address: Address(pallas::Base::from_u64(2)),
-            global_counters: vec![
-                Some(ReadWrite::Write(
-                    GlobalCounter(18),
-                    Value(pallas::Base::from_u64(32)),
-                    Some(Value(pallas::Base::from_u64(0))),
-                    Some(Value(pallas::Base::from_u64(0))),
-                )),
-                Some(ReadWrite::Read(
-                    GlobalCounter(19),
-                    Value(pallas::Base::from_u64(33)), /* fails because not
-                                                        * the same value */
-                    Some(Value(pallas::Base::from_u64(0))),
-                    Some(Value(pallas::Base::from_u64(3))), /* this will cause fail in the next row */
-                )),
-                Some(ReadWrite::Write(
-                    GlobalCounter(20),
-                    Value(pallas::Base::from_u64(32)),
-                    Some(Value(pallas::Base::from_u64(0))),
-                    Some(Value(pallas::Base::from_u64(0))), /* fails because not the same as in the previous row */
-                )),
-            ],
-        };
+        let storage_op_0 = StorageOp::new(
+            RW::WRITE,
+            GlobalCounter::from(18),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_1 = StorageOp::new(
+            RW::READ,
+            GlobalCounter::from(19),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("33").unwrap(), /* Fails because it is READ op
+                                               * and not the same
+                                               * value as in the previous
+                                               * row. */
+            EvmWord::from_str("3").unwrap(),
+            BigUint::from(0x40u8),
+        );
+        let storage_op_2 = StorageOp::new(
+            RW::WRITE,
+            GlobalCounter::from(20),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("0").unwrap(), /* Fails because not the same
+                                              * as in the previous row. */
+            BigUint::from(0x40u8),
+        );
 
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
@@ -1847,7 +1991,7 @@ mod tests {
             1000,
             vec![],
             vec![],
-            vec![storage_op_0],
+            vec![storage_op_0, storage_op_1, storage_op_2],
             Err(vec![
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
@@ -1864,7 +2008,6 @@ mod tests {
             ])
         );
     }
-    */
 
     #[test]
     fn trace() {
@@ -1924,8 +2067,10 @@ mod tests {
             2,
             100,
             1023,
+            1000,
             vec![],
             stack_ops,
+            vec![],
             Ok(())
         );
     }
