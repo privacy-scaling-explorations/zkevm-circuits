@@ -232,21 +232,75 @@ mod test {
     fn pop_gadget() {
         try_test_circuit!(
             vec![ExecutionStep {
+                opcode: OpcodeId::PUSH2,
+                case: Case::Success,
+                values: vec![
+                    [
+                        2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    [
+                        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ]
+                ],
+            },
+            ExecutionStep {
                 opcode: OpcodeId::POP,
                 case: Case::Success,
                 values: vec![],
-            }],
+             },
+            ExecutionStep {
+                opcode: OpcodeId::PUSH3,
+                case: Case::Success,
+                values: vec![
+                    [
+                        4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, //
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    [
+                        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, //
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ]
+                ],
+            }
+            ],
             vec![Operation {
                 gc: 1,
                 target: Target::Stack,
                 is_write: true,
                 values: [
                     Base::zero(),
-                    Base::from_u64(1020),
+                    Base::from_u64(1023),
                     Base::from_u64(2 + 2),
                     Base::zero(),
                 ]
-            }],
+               },
+                Operation {
+                gc: 2,
+                target: Target::Stack,
+                is_write: false,
+                values: [
+                    Base::zero(),
+                    Base::from_u64(1022),
+                    Base::from_u64(1 + 2 + 3), 
+                    Base::zero(),
+                ]
+             },
+              Operation {
+                gc: 3,
+                target: Target::Stack,
+                is_write: true,
+                values: [
+                    Base::zero(),
+                    Base::from_u64(1023),
+                    Base::from_u64(4 + 5 + 6),
+                    Base::zero(),
+                ]
+              }
+            ],
             Ok(())
         );
     }
