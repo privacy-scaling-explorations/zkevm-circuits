@@ -12,8 +12,6 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 struct PopSuccessAllocation<F> {
     case_selector: Cell<F>,
-    // word: Word<F>,
-    // selector: Cell<F>
 }
 
 #[derive(Clone, Debug)]
@@ -80,16 +78,17 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         
         let success = {
             // interpreter state transition constraints
+            let one = Expression::Constant(F::from_u64(1));
             let op_execution_state_transition_constraints = vec![
                 op_execution_state_next.global_counter.expr()
                     - (op_execution_state_curr.global_counter.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                        + one.clone()),
                 op_execution_state_next.stack_pointer.expr()
                     - (op_execution_state_curr.stack_pointer.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                        + one.clone()),
                 op_execution_state_next.program_counter.expr()
                     - (op_execution_state_curr.program_counter.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                        + one.clone()),
                 op_execution_state_next.gas_counter.expr()
                     - (op_execution_state_curr.gas_counter.expr()
                         + Expression::Constant(F::from_u64(2))),
@@ -111,7 +110,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                     op_execution_state_transition_constraints,
                 ]
                 .concat(),
-                lookups: vec![] //[byte_range_lookup, bus_mapping_lookups].concat()]
+                lookups: vec![]
             }
         };
 
