@@ -42,7 +42,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         CaseConfig {
             case: Case::Success,
             num_word: 3,
-            num_cell: 5,//carry,swap,sumc,sumc_inv,result
+            num_cell: 5,//cell for carry, swap, sumc, sumc_inv, result
             will_halt: false,
         },
         CaseConfig {
@@ -149,7 +149,6 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             }
             rhs = rhs + carry.expr() * pw_now;
             lt_constraints.push(lhs - rhs);
-            //assert_eq!(lhs - rhs, Expression::Constant(F::zero()));
 
             pw_now = Expression::Constant(F::from_u64(1));
             lhs = carry.expr();
@@ -164,7 +163,6 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             lt_constraints.push(lhs - rhs);
 
             let bus_mapping_lookups = vec![
-                //todo
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 0,
                     value: swap.expr() * b.expr() + no_swap.clone() * a.expr(),
@@ -190,14 +188,14 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 selector: selector.expr(),
                 polys: [
                     common_polys.clone(),
-                    state_transition_constraints,//failed
+                    state_transition_constraints,
                     swap_constraints,
                     lt_constraints,
                     sum_equal_constraints,
                     not_zero_constraints,
                 ]
                 .concat(),
-                lookups: /*vec![], */bus_mapping_lookups,//failed
+                lookups: bus_mapping_lookups,
             }
         };
 
@@ -249,6 +247,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
 
         vec![success, stack_underflow, out_of_gas]
     }
+
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -347,7 +346,6 @@ mod test {
         ($execution_step:expr, $operations:expr, $result:expr) => {{
             let circuit = TestCircuit::<Base>::new($execution_step, $operations);
             let prover = MockProver::<Base>::run(9, &circuit, vec![]).unwrap();
-            //println!("table is now ready!");
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -402,7 +400,7 @@ mod test {
         }
         //passed test with result 1 for LT && GT
         result[0] = 1;
-        println!("passed test");
+        println!("result 1 test");
         for idx in 0..32 {print!("{} ",a[idx]);}
         println!("");
         for idx in 0..32 {print!("{} ",b[idx]);}
@@ -424,7 +422,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -435,7 +433,7 @@ mod test {
                     values: vec![
                         b.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -521,7 +519,7 @@ mod test {
                     values: vec![
                         b.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -532,7 +530,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -611,7 +609,7 @@ mod test {
         );
 
         // passed test with result 0 for LT && GT(equal)
-        println!("equal test");
+        println!("result 0 test with equal input");
         result[0] = 0;
         let (c, carry) = calc_array(a.clone(), a.clone());
         let mut sumc: u64 = 0;
@@ -644,7 +642,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -655,7 +653,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -741,7 +739,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -752,7 +750,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -830,7 +828,7 @@ mod test {
             Ok(())
         );
         // passed test with result 0 for LT && GT(not equal)
-        println!("failed test");
+        println!("result 0 test with not equal input");
         let (c, carry) = calc_array(b.clone(), a.clone());
         let mut sumc: u64 = 0;
         let mut sumc_array = [0 as u8; 32];
@@ -862,7 +860,7 @@ mod test {
                     values: vec![
                         b.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -873,7 +871,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -959,7 +957,7 @@ mod test {
                     values: vec![
                         a.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
@@ -970,7 +968,7 @@ mod test {
                     values: vec![
                         b.clone(),
                         [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ]
                     ],
