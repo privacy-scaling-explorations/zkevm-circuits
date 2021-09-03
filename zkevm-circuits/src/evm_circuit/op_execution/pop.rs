@@ -96,8 +96,6 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
 
             let PopSuccessAllocation {
                 case_selector,
-                // word,
-                // selector,
             } = &self.success;
 
             // TODO: more about pop constraint ?
