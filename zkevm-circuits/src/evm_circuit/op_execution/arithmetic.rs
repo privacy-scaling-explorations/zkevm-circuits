@@ -34,8 +34,8 @@ pub struct AddGadget<F> {
 impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
     // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
     // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
-    // when it's SUB, we annotate stack as [c, b, ...] and [a, ...].
-    // Then we verify if a + b - c is zero.
+    // when it's SUB, we annotate stack as [a, c, ...] and [b, ...].
+    // Then we verify if a + b is equal to c.
     const RESPONSIBLE_OPCODES: &'static [OpcodeId] =
         &[OpcodeId::ADD, OpcodeId::SUB];
 
@@ -135,35 +135,46 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             ];
 
             // add constraints
-            let mut add_constraints = vec![
-                (carry[0].expr() * expr_256.clone() + c.cells[0].expr())
-                    - (a.cells[0].expr() + b.cells[0].expr()),
-            ];
-            for idx in 1..32 {
-                add_constraints.push(
-                    (carry[idx].expr() * expr_256.clone()
-                        + c.cells[idx].expr())
-                        - (a.cells[idx].expr()
-                            + b.cells[idx].expr()
-                            + carry[idx - 1].expr()),
-                )
-            }
+            let add_constraints = {
+                let mut constraints = Vec::with_capacity(32);
+                // 256 * carry_out + c
+                let lhs =
+                    carry[0].expr() * expr_256.clone() + c.cells[0].expr();
+                // a + b (first carry_in is always 0)
+                let rhs = a.cells[0].expr() + b.cells[0].expr();
+                // equality check
+                constraints.push(lhs - rhs);
+
+                for idx in 1..32 {
+                    // 256 * carry_out + c
+                    let lhs = carry[idx].expr() * expr_256.clone()
+                        + c.cells[idx].expr();
+                    // a + b + carry_in
+                    let rhs = a.cells[idx].expr()
+                        + b.cells[idx].expr()
+                        + carry[idx - 1].expr();
+                    // equality check
+                    constraints.push(lhs - rhs)
+                }
+
+                constraints
+            };
 
             #[allow(clippy::suspicious_operation_groupings)]
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 0,
-                    value: swap.expr() * c.expr() + no_swap.clone() * a.expr(),
+                    value: a.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 1,
-                    value: b.expr(),
+                    value: swap.expr() * c.expr() + no_swap.clone() * b.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 1,
-                    value: swap.expr() * a.expr() + no_swap * c.expr(),
+                    value: swap.expr() * b.expr() + no_swap * c.expr(),
                     is_write: true,
                 }),
             ];
@@ -360,12 +371,12 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         [
-                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, //
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ],
                         [
-                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, //
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ],
@@ -412,7 +423,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
+                        Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
                 },
@@ -423,7 +434,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(4 + 5 + 6),
+                        Base::from_u64(1 + 2 + 3),
                         Base::zero(),
                     ]
                 },
@@ -481,12 +492,12 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         [
-                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, //
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ],
                         [
-                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             0, //
                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                         ],
@@ -533,7 +544,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(5 + 7 + 9),
+                        Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
                 },
@@ -544,7 +555,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(4 + 5 + 6),
+                        Base::from_u64(5 + 7 + 9),
                         Base::zero(),
                     ]
                 },
