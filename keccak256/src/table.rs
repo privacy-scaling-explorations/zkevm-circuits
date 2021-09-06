@@ -13,6 +13,9 @@ pub struct BinaryToBase13TableConfig<F> {
     from_binary_config: [Column<Fixed>; 2]
 }
 
+pub struct Base13toBase9TableConfig<F> {
+    from_binary_config: [Column<Fixed>; 2]
+}
 
 impl<F: FieldExt> BinaryToBase13TableConfig<F> {
     pub(crate) fn load(
@@ -80,3 +83,70 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
         })
     }
 }
+
+    impl<F: FieldExt> Base13toBase9TableConfig<F> {
+        pub(crate) fn load(
+            config: Self,
+            layouter: &mut impl Layouter<F>,
+        ) -> Result<(), Error> {
+            from_base13_converter(config, layouter);
+        }
+
+        pub(crate) fn configure(
+            meta: &mut ConstraintSystem<F>,
+            advices: [Column<Advice>; 25],
+        ) -> Self {
+            let from_base13_config = [meta.fixed_column(), meta.fixed_column()];
+
+            for lane in 0..25 {
+                // Lookup for base-13 to base-9 conversion
+                meta.lookup(|meta| {
+                    let word = advices[lane];
+                    let binary_word = meta.query_advice(word, Rotation::cur());
+                    let base13_word = meta.query_advice(word, Rotation::next());
+
+                    let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
+                    let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
+
+                    vec![
+                        (base13_word, key),
+                        (base9_word, value),
+                    ]
+                });
+            }
+            todo!("Add selectors");
+
+        }
+
+        // Fixed table converting base-13 to base-09
+        fn from_base13_converter(
+            config: Self,
+            layouter: &mut impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let [config] = config.from_base13_config;
+
+            layouter.assign_region(|| "from binary", |mut region| {
+                // Iterate over all possible 13-ary values of size 5
+                for (i, coefs) in (0..5).map(|_| 0..12).multi_cartesian_product().enumerate() {
+                    let key = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 13 + x });
+
+                    region.assign_fixed(
+                        || "key",
+                        config[0],
+                        i,
+                        || Ok(key)
+                    )?;
+                
+                    let value = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 9 + x  });
+
+                    region.assign_fixed(
+                        || "value",
+                        config[1],
+                        i,
+                        || Ok(value)
+                    )?;
+                }
+                Ok(())
+            })
+        }
+    }
