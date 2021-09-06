@@ -5,20 +5,14 @@ pub(crate) mod instruction;
 pub(crate) mod opcodes;
 
 use crate::error::Error;
-use core::{convert::TryInto, str::FromStr};
-use lazy_static::lazy_static;
-use num::{BigUint, Num, Zero};
+use core::str::FromStr;
+use num::{BigUint, Num};
 use serde::{Deserialize, Serialize};
 pub use {
     gas::GasCost,
     instruction::Instruction,
     opcodes::{ids::OpcodeId, Opcode},
 };
-
-lazy_static! {
-    /// Ref to zero addr for Memory.
-    pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(BigUint::zero());
-}
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(
@@ -60,26 +54,26 @@ impl From<usize> for GlobalCounter {
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) BigUint);
+pub struct MemoryAddress(pub(crate) usize);
 
 impl MemoryAddress {
     /// Returns the zero address for Memory targets.
-    pub fn zero() -> MemoryAddress {
-        MEM_ADDR_ZERO.clone()
+    pub const fn zero() -> MemoryAddress {
+        MemoryAddress(0usize)
     }
 
     /// Return the little-endian byte representation of the word as a 32-byte
     /// array.
     pub fn to_bytes(&self) -> [u8; 32] {
         let mut array = [0u8; 32];
-        array.copy_from_slice(&self.0.to_bytes_le());
+        array.copy_from_slice(&self.0.to_le_bytes());
 
         array
     }
 }
 
-impl From<MemoryAddress> for BigUint {
-    fn from(addr: MemoryAddress) -> BigUint {
+impl From<MemoryAddress> for usize {
+    fn from(addr: MemoryAddress) -> usize {
         addr.0
     }
 }
@@ -89,8 +83,7 @@ impl FromStr for MemoryAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
-            BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::MemAddressParsing)?,
+            usize::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
         ))
     }
 }
@@ -124,15 +117,7 @@ impl FromStr for StackAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(StackAddress(
-            BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::StackAddressParsing)
-                .map(|biguint| {
-                    biguint
-                        .try_into()
-                        .map_err(|_| Error::StackAddressParsing)
-                        .expect("Map_err should be applied")
-                })
-                .map_err(|_| Error::StackAddressParsing)?,
+            usize::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
         ))
     }
 }
@@ -153,7 +138,7 @@ impl FromStr for EvmWord {
     }
 }
 
-macro_rules! impl_from_basic_types {
+macro_rules! impl_from_big_uint_wrappers {
     ($($t:ty),*) => {
         $(impl From<$t> for EvmWord {
             fn from(item: $t) -> EvmWord {
@@ -163,14 +148,15 @@ macro_rules! impl_from_basic_types {
     };
 }
 
-impl_from_basic_types!(u8, u16, u32, u64, u128, usize);
+impl_from_big_uint_wrappers!(u8, u16, u32, u64, u128, usize);
 
 impl EvmWord {
     /// Return the little-endian byte representation of the word as a 32-byte
     /// array.
     pub fn to_bytes(&self) -> [u8; 32] {
         let mut array = [0u8; 32];
-        array.copy_from_slice(&self.0.to_bytes_le());
+        let bytes = self.0.to_bytes_le();
+        array[..bytes.len() - 1].copy_from_slice(&bytes[0..bytes.len() - 1]);
 
         array
     }
