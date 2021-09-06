@@ -183,7 +183,6 @@ pub(crate) struct ParsedExecutionStep<'a> {
 mod tests {
     use super::*;
     use crate::evm::opcodes::ids::OpcodeId;
-    use num::BigUint;
 
     #[test]
     fn parse_single_step() {
@@ -209,15 +208,15 @@ mod tests {
         let expected_step = {
             let mut mem_map = BTreeMap::new();
             mem_map.insert(
-                MemoryAddress(BigUint::from(0x00u8)),
+                MemoryAddress(0x00usize),
                 EvmWord::from(0u8),
             );
             mem_map.insert(
-                MemoryAddress(BigUint::from(0x20u8)),
+                MemoryAddress(0x20usize),
                 EvmWord::from(0u8),
             );
             mem_map.insert(
-                MemoryAddress(BigUint::from(0x40u8)),
+                MemoryAddress(0x40usize),
                 EvmWord::from(0x80u8),
             );
 

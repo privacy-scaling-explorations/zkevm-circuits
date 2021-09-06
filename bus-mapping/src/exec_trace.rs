@@ -299,7 +299,6 @@ mod trace_tests {
         operation::{StackOp, RW},
     };
     use alloc::collections::BTreeMap;
-    use num::BigUint;
 
     #[test]
     fn exec_trace_parsing() {
@@ -354,11 +353,11 @@ mod trace_tests {
         // memory of the EVM.
         let mut mem_map = BTreeMap::new();
         mem_map
-            .insert(MemoryAddress(BigUint::from(0x00u8)), EvmWord::from(0u8));
+            .insert(MemoryAddress(0x00usize), EvmWord::from(0u8));
         mem_map
-            .insert(MemoryAddress(BigUint::from(0x20u8)), EvmWord::from(0u8));
+            .insert(MemoryAddress(0x20usize), EvmWord::from(0u8));
         mem_map
-            .insert(MemoryAddress(BigUint::from(0x40u8)), EvmWord::from(0u8));
+            .insert(MemoryAddress(0x40usize), EvmWord::from(0u8));
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep::new(

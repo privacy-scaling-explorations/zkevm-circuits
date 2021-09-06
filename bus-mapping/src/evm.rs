@@ -15,7 +15,7 @@ pub use {
 
 lazy_static! {
     /// Ref to zero addr for Memory.
-    pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(BigUint::zero());
+    pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(usize::zero());
 }
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
@@ -57,18 +57,18 @@ impl From<usize> for GlobalCounter {
 }
 
 /// Represents a `MemoryAddress` of the EVM.
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) BigUint);
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct MemoryAddress(pub(crate) usize);
 
 impl MemoryAddress {
     /// Returns the zero address for Memory targets.
     pub fn zero() -> MemoryAddress {
-        MEM_ADDR_ZERO.clone()
+        *MEM_ADDR_ZERO
     }
 }
 
-impl From<MemoryAddress> for BigUint {
-    fn from(addr: MemoryAddress) -> BigUint {
+impl From<MemoryAddress> for usize {
+    fn from(addr: MemoryAddress) -> usize {
         addr.0
     }
 }
@@ -78,7 +78,7 @@ impl FromStr for MemoryAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
-            BigUint::from_str_radix(s, 16)
+            usize::from_str_radix(s, 16)
                 .map_err(|_| Error::EvmWordParsing)?,
         ))
     }
