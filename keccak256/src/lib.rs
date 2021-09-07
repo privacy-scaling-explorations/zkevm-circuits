@@ -108,7 +108,58 @@ impl<F: FieldExt> PiConfig<F> {
 }
 
 pub struct XiIotaConfig<F> {
+    q_enable: Selector,
+    state: [Column<Advice>; 25],
+    round_constant: Column<Advice>,
     _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> XiIotaConfig<F> {
+    pub fn configure(
+        q_enable: Selector,
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+        round_constant: Column<Advice>,
+    ) -> XiIotaConfig<F> {
+        let zero = Expression::Constant(F::from(0));
+        let two = Expression::Constant(F::from(2));
+        let three = Expression::Constant(F::from(3));
+        meta.create_gate("xi and iota", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let round_constant =
+                meta.query_advice(round_constant, Rotation::cur());
+            (0..5)
+                .cartesian_product(0..5)
+                .map(|(x, y)| {
+                    let a =
+                        meta.query_advice(state[5 * x + y], Rotation::prev());
+                    let x2 = (x + 1) % 5;
+                    let b =
+                        meta.query_advice(state[5 * x2 + y], Rotation::prev());
+                    let x3 = (x + 2) % 5;
+                    let c =
+                        meta.query_advice(state[5 * x3 + y], Rotation::prev());
+                    let d = if x == 0 && y == 0 {
+                        round_constant
+                    } else {
+                        zero
+                    };
+                    let new_state =
+                        meta.query_advice(state[5 * x + y], Rotation::cur());
+
+                    q_enable
+                        * (new_state - (two * a + b + three * c + two * d));
+                })
+                .into()
+        });
+
+        XiIotaConfig {
+            q_enable,
+            state,
+            round_constant,
+            _marker: PhantomData,
+        }
+    }
 }
 
 pub struct KeccakConfig<F> {
