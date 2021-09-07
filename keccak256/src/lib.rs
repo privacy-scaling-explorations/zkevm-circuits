@@ -2,15 +2,62 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, SimpleFloorPlanner},
     pasta::Fp,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
+    poly::Rotation,
 };
+use itertools::Itertools;
 use pasta_curves::pallas;
 use std::marker::PhantomData;
 
 pub const KECCAK_NUM_ROUNDS: usize = 24;
 
 pub struct ThetaConfig<F> {
+    state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> ThetaConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+    ) -> ThetaConfig<F> {
+        meta.create_gate("theta", |meta| {
+            let column_sum: [Expression<F>; 5] = (0..5)
+                .map(|x| {
+                    let state_x0 =
+                        meta.query_advice(state[5 * x], Rotation::prev());
+                    let state_x1 =
+                        meta.query_advice(state[5 * x + 1], Rotation::prev());
+                    let state_x2 =
+                        meta.query_advice(state[5 * x + 2], Rotation::prev());
+                    let state_x3 =
+                        meta.query_advice(state[5 * x + 3], Rotation::prev());
+                    let state_x4 =
+                        meta.query_advice(state[5 * x + 4], Rotation::prev());
+                    state_x0 + state_x1 + state_x2 + state_x3 + state_x4;
+                })
+                .into();
+
+            (0..5)
+                .cartesian_product(0..5)
+                .map(|(x, y)| {
+                    let new_state =
+                        meta.query_advice(state[5 * x + y], Rotation::cur());
+                    let old_state =
+                        meta.query_advice(state[5 * x + y], Rotation::prev());
+                    let right = old_state
+                        + column_sum[(x + 4) % 5]
+                        + Expression::Constant(F::from(13))
+                            * column_sum[(x + 1) % 5];
+                })
+                .into()
+        });
+
+        ThetaConfig {
+            state,
+            _marker: PhantomData,
+        }
+    }
 }
 
 pub struct RhoConfig<F> {
