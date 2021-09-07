@@ -56,13 +56,13 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
             case_allocations.try_into().unwrap();
         Self {
             success: PopSuccessAllocation {
-                case_selector: success.selector.clone(),
+                case_selector: success.selector,
                 // no more for pop
             },
-            stack_underflow: stack_underflow.selector.clone(),
+            stack_underflow: stack_underflow.selector,
             out_of_gas: (
                 out_of_gas.selector.clone(),
-                out_of_gas.resumption.unwrap().gas_available.clone(),
+                out_of_gas.resumption.unwrap().gas_available,
             ),
         }
     }
@@ -72,9 +72,9 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         op_execution_state_curr: &OpExecutionState<F>,
         op_execution_state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
-        let pop = Expression::Constant(F::from_u64(80));
+        let pop = Expression::Constant(F::from_u64(OpcodeId::POP.0 as u64));
         let OpExecutionState { opcode, .. } = &op_execution_state_curr;
-        let common_polys = vec![(opcode.expr() - pop.clone())];
+        let common_polys = vec![(opcode.expr() - pop)];
         
         let success = {
             // interpreter state transition constraints
@@ -88,7 +88,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                         + one.clone()),
                 op_execution_state_next.program_counter.expr()
                     - (op_execution_state_curr.program_counter.expr()
-                        + one.clone()),
+                        + one),
                 op_execution_state_next.gas_counter.expr()
                     - (op_execution_state_curr.gas_counter.expr()
                         + Expression::Constant(F::from_u64(2))),
@@ -113,10 +113,8 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         };
 
         let stack_underflow = {
-            let (zero, minus_one) = (
-                Expression::Constant(F::from_u64(1024)),
-                Expression::Constant(F::from_u64(1023)),
-            );
+            let zero = Expression::Constant(F::from_u64(1024));
+            
             let stack_pointer = op_execution_state_curr.stack_pointer.expr();
             Constraint {
                 name: "PopGadget stack underflow",
@@ -124,8 +122,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                 polys: vec![
                     common_polys.clone(),
                      vec![
-                        (stack_pointer.clone() - zero)
-                            * (stack_pointer - minus_one),
+                        (stack_pointer - zero),
                     ],
                 ]
                 .concat(),
@@ -283,7 +280,7 @@ mod test {
                 values: [
                     Base::zero(),
                     Base::from_u64(1022),
-                    Base::from_u64(1 + 2 + 3), 
+                    Base::from_u64(1 + 2 + 2), 
                     Base::zero(),
                 ]
              },
