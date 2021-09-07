@@ -72,7 +72,39 @@ pub struct RhoConfig<F> {
 }
 
 pub struct PiConfig<F> {
+    q_enable: Selector,
+    state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> PiConfig<F> {
+    pub fn configure(
+        q_enable: Selector,
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+    ) -> PiConfig<F> {
+        meta.create_gate("pi", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            (0..5)
+                .cartesian_product(0..5)
+                .map(|(x, y)| {
+                    let new_state =
+                        meta.query_advice(state[5 * x + y], Rotation::cur());
+                    let old_state = meta.query_advice(
+                        state[5 * ((x + 3 * y) % 5) + x],
+                        Rotation::prev(),
+                    );
+                    q_enable * (new_state - old_state);
+                })
+                .into()
+        });
+
+        PiConfig {
+            q_enable,
+            state,
+            _marker: PhantomData,
+        }
+    }
 }
 
 pub struct XiIotaConfig<F> {
