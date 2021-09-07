@@ -27,36 +27,36 @@ impl<F: FieldExt> ThetaConfig<F> {
     ) -> ThetaConfig<F> {
         meta.create_gate("theta", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let column_sum: [Expression<F>; 5] = (0..5)
-                .map(|x| {
-                    let state_x0 =
-                        meta.query_advice(state[5 * x], Rotation::prev());
-                    let state_x1 =
-                        meta.query_advice(state[5 * x + 1], Rotation::prev());
-                    let state_x2 =
-                        meta.query_advice(state[5 * x + 2], Rotation::prev());
-                    let state_x3 =
-                        meta.query_advice(state[5 * x + 3], Rotation::prev());
-                    let state_x4 =
-                        meta.query_advice(state[5 * x + 4], Rotation::prev());
-                    state_x0 + state_x1 + state_x2 + state_x3 + state_x4;
-                })
-                .into();
+            let mut column_sum: Vec<Expression<F>> = Vec::new();
+            for x in 0..5 {
+                let state_x0 =
+                    meta.query_advice(state[5 * x], Rotation::prev());
+                let state_x1 =
+                    meta.query_advice(state[5 * x + 1], Rotation::prev());
+                let state_x2 =
+                    meta.query_advice(state[5 * x + 2], Rotation::prev());
+                let state_x3 =
+                    meta.query_advice(state[5 * x + 3], Rotation::prev());
+                let state_x4 =
+                    meta.query_advice(state[5 * x + 4], Rotation::prev());
+                let sum = state_x0 + state_x1 + state_x2 + state_x3 + state_x4;
+                column_sum.push(sum.clone());
+            }
+            let mut checks: Vec<Expression<F>> = Vec::new();
 
-            (0..5)
-                .cartesian_product(0..5)
-                .map(|(x, y)| {
-                    let new_state =
-                        meta.query_advice(state[5 * x + y], Rotation::cur());
-                    let old_state =
-                        meta.query_advice(state[5 * x + y], Rotation::prev());
-                    let right = old_state
-                        + column_sum[(x + 4) % 5]
-                        + Expression::Constant(F::from(13))
-                            * column_sum[(x + 1) % 5];
-                    q_enable * (new_state - right);
-                })
-                .into()
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                let new_state =
+                    meta.query_advice(state[5 * x + y], Rotation::cur());
+                let old_state =
+                    meta.query_advice(state[5 * x + y], Rotation::prev());
+                let right = old_state
+                    + column_sum[(x + 4) % 5].clone()
+                    + Expression::Constant(F::from(13))
+                        * column_sum[(x + 1) % 5].clone();
+                let check = q_enable.clone() * (new_state - right);
+                checks.push(check.clone());
+            }
+            checks
         });
 
         ThetaConfig {
@@ -85,18 +85,18 @@ impl<F: FieldExt> PiConfig<F> {
     ) -> PiConfig<F> {
         meta.create_gate("pi", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            (0..5)
-                .cartesian_product(0..5)
-                .map(|(x, y)| {
-                    let new_state =
-                        meta.query_advice(state[5 * x + y], Rotation::cur());
-                    let old_state = meta.query_advice(
-                        state[5 * ((x + 3 * y) % 5) + x],
-                        Rotation::prev(),
-                    );
-                    q_enable * (new_state - old_state);
-                })
-                .into()
+            let mut checks: Vec<Expression<F>> = Vec::new();
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                let new_state =
+                    meta.query_advice(state[5 * x + y], Rotation::cur());
+                let old_state = meta.query_advice(
+                    state[5 * ((x + 3 * y) % 5) + x],
+                    Rotation::prev(),
+                );
+                let check = q_enable.clone() * (new_state - old_state);
+                checks.push(check.clone());
+            }
+            checks
         });
 
         PiConfig {
@@ -128,29 +128,30 @@ impl<F: FieldExt> XiIotaConfig<F> {
             let q_enable = meta.query_selector(q_enable);
             let round_constant =
                 meta.query_advice(round_constant, Rotation::cur());
-            (0..5)
-                .cartesian_product(0..5)
-                .map(|(x, y)| {
-                    let a =
-                        meta.query_advice(state[5 * x + y], Rotation::prev());
-                    let x2 = (x + 1) % 5;
-                    let b =
-                        meta.query_advice(state[5 * x2 + y], Rotation::prev());
-                    let x3 = (x + 2) % 5;
-                    let c =
-                        meta.query_advice(state[5 * x3 + y], Rotation::prev());
-                    let d = if x == 0 && y == 0 {
-                        round_constant
-                    } else {
-                        zero
-                    };
-                    let new_state =
-                        meta.query_advice(state[5 * x + y], Rotation::cur());
+            let mut checks: Vec<Expression<F>> = Vec::new();
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                let a = meta.query_advice(state[5 * x + y], Rotation::prev());
+                let x2 = (x + 1) % 5;
+                let b = meta.query_advice(state[5 * x2 + y], Rotation::prev());
+                let x3 = (x + 2) % 5;
+                let c = meta.query_advice(state[5 * x3 + y], Rotation::prev());
+                let d = if x == 0 && y == 0 {
+                    round_constant.clone()
+                } else {
+                    zero.clone()
+                };
+                let new_state =
+                    meta.query_advice(state[5 * x + y], Rotation::cur());
 
-                    q_enable
-                        * (new_state - (two * a + b + three * c + two * d));
-                })
-                .into()
+                let check = q_enable.clone()
+                    * (new_state
+                        - (two.clone() * a
+                            + b
+                            + three.clone() * c
+                            + two.clone() * d));
+                checks.push(check.clone());
+            }
+            checks
         });
 
         XiIotaConfig {
