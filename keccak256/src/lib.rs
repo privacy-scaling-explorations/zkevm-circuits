@@ -2,7 +2,9 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, SimpleFloorPlanner},
     pasta::Fp,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Selector,
+    },
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -12,16 +14,19 @@ use std::marker::PhantomData;
 pub const KECCAK_NUM_ROUNDS: usize = 24;
 
 pub struct ThetaConfig<F> {
+    q_enable: Selector,
     state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> ThetaConfig<F> {
     pub fn configure(
+        q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
     ) -> ThetaConfig<F> {
         meta.create_gate("theta", |meta| {
+            let q_enable = meta.query_selector(q_enable);
             let column_sum: [Expression<F>; 5] = (0..5)
                 .map(|x| {
                     let state_x0 =
@@ -49,11 +54,13 @@ impl<F: FieldExt> ThetaConfig<F> {
                         + column_sum[(x + 4) % 5]
                         + Expression::Constant(F::from(13))
                             * column_sum[(x + 1) % 5];
+                    q_enable * (new_state - right);
                 })
                 .into()
         });
 
         ThetaConfig {
+            q_enable,
             state,
             _marker: PhantomData,
         }
