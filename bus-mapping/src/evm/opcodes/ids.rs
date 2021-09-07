@@ -477,6 +477,7 @@ impl FromStr for OpcodeId {
             "STATICCALL" => OpcodeId::STATICCALL,
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
+            "BASEFEE" => OpcodeId::BASEFEE,
             _ => return Err(Error::OpcodeParsing),
         })
     }
