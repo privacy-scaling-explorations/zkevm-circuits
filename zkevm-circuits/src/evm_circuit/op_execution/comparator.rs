@@ -1,6 +1,6 @@
 use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    Lookup, Word,
+    Lookup, Word
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use bus_mapping::evm::OpcodeId;
@@ -17,11 +17,11 @@ struct LtSuccessAllocation<F> {
     swap: Cell<F>,
     a: Word<F>,
     b: Word<F>,
-    c: Word<F>,
+    result: Word<F>,
+    c: [Cell<F>; 32],
     carry: Cell<F>,
     sumc: Cell<F>,
     sumc_inv: Cell<F>,
-    result: Cell<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         CaseConfig {
             case: Case::Success,
             num_word: 3,
-            num_cell: 5,//cell for carry, swap, sumc, sumc_inv, result
+            num_cell: 35, // 32 c + swap + carry + sumc + sumc_inv
             will_halt: false,
         },
         CaseConfig {
@@ -68,11 +68,11 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 swap: success.cells.pop().unwrap(),
                 a: success.words.pop().unwrap(),
                 b: success.words.pop().unwrap(),
-                c: success.words.pop().unwrap(),
+                result: success.words.pop().unwrap(),
+                c: success.cells.drain(0..32).collect::<Vec<Cell<F>>>().try_into().unwrap(),
                 carry: success.cells.pop().unwrap(),
                 sumc: success.cells.pop().unwrap(),
                 sumc_inv: success.cells.pop().unwrap(),
-                result: success.cells.pop().unwrap(),
             },
             stack_underflow: stack_underflow.selector,
             out_of_gas: (
@@ -95,25 +95,26 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         let OpExecutionState { opcode, .. } = &state_curr;
 
         let common_polys =
-        vec![(opcode.expr() - lt.clone()) * (opcode.expr() - gt.clone())];
+            vec![(opcode.expr() - lt.clone()) * (opcode.expr() - gt.clone())];
+
         let success = {
-            let (one, exp_256) = (
+            let (zero, one, three, val_256) = (
+                Expression::Constant(F::zero()),
                 Expression::Constant(F::one()),
+                Expression::Constant(F::from_u64(3)),
                 Expression::Constant(F::from_u64(1 << 8)),
             );
+
+            // interpreter state transition constraints
             let state_transition_constraints = vec![
                 state_curr.global_counter.expr()
-                    - (state_next.global_counter.expr())
-                        + Expression::Constant(F::from_u64(3)),
+                    - (state_next.global_counter.expr() + three.clone()),
                 state_curr.stack_pointer.expr()
-                    - (state_next.stack_pointer.expr())
-                        + Expression::Constant(F::from_u64(1)),
+                    - (state_next.stack_pointer.expr() + one.clone()),
                 state_curr.program_counter.expr()
-                    - (state_next.program_counter.expr())
-                        + Expression::Constant(F::from_u64(1)),
+                    - (state_next.program_counter.expr() + one.clone()),
                 state_curr.gas_counter.expr()
-                    - (state_next.gas_counter.expr())
-                        + Expression::Constant(F::from_u64(3)),
+                    - (state_next.gas_counter.expr() + three),
             ];
 
             let LtSuccessAllocation {
@@ -121,11 +122,11 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 swap,
                 a,
                 b,
+                result,
                 c,
                 carry,
                 sumc,
                 sumc_inv,
-                result,
             } = &self.success;
 
             let no_swap = one.clone() - swap.expr();
@@ -135,32 +136,59 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 no_swap.clone() * (opcode.expr() - lt),
             ];
 
+            // sumc_expr == sumc_cell
+            // sumc_expr != 0
+            let mut sumc_expr = zero.clone();  // The sum of c limbs
+            for idx in 0..32 {
+                sumc_expr = sumc_expr + c[idx].expr();
+            }
+            let sumc_is_zero_expr = one.clone() - sumc_expr.clone() * sumc_inv.expr();
+            // same as is_zero gadget, currently we cannot use gadget inside OpGadget
+            let sumc_is_zero_constraints = vec![
+                sumc_expr.clone() * sumc_is_zero_expr.clone(),
+                sumc_inv.expr() * sumc_is_zero_expr.clone(),
+            ];
+            let sumc_constraints = vec![
+                sumc_expr - sumc.expr(),
+                sumc_is_zero_expr.clone(),
+            ];
+
             let mut lt_constraints = vec![];
 
-            let mut pw_now = Expression::Constant(F::from_u64(1));
-            let mut lhs = Expression::Constant(F::zero());
-            let mut rhs = Expression::Constant(F::zero());
-            let mut sum_c_expr = Expression::Constant(F::zero());
+            // a[15..0] + c[15..0] = carry * 256^16 + b[15..0]
+            let mut exponent = one.clone();
+            let mut lhs = zero.clone();
+            let mut rhs = zero.clone();
             for idx in 0..16 {
-                lhs = lhs + (a.cells[idx].expr() + c.cells[idx].expr()) * pw_now.clone();
-                rhs = rhs + b.cells[idx].expr() * pw_now.clone();
-                sum_c_expr = sum_c_expr + c.cells[idx].expr();
-                pw_now = pw_now *  exp_256.clone();
+                lhs = lhs + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
+                rhs = rhs + b.cells[idx].expr() * exponent.clone();
+                exponent = exponent * val_256.clone();
             }
-            rhs = rhs + carry.expr() * pw_now;
+            rhs = rhs + carry.expr() * exponent;
             lt_constraints.push(lhs - rhs);
 
-            pw_now = Expression::Constant(F::from_u64(1));
+            // a[31..16] + c[31..16] + carry = b[31..16] + (1 - result) * 256^16 * sumc
+            // - a < b, a + c = b
+            // - a = b, a + c = b, c = 0
+            // - a > b, a + c = b + 2^256
+            exponent = one.clone();
             lhs = carry.expr();
-            rhs = Expression::Constant(F::zero());
+            rhs = zero.clone();
             for idx in 16..32 {
-                lhs = lhs + (a.cells[idx].expr() + c.cells[idx].expr()) * pw_now.clone();
-                rhs = rhs + b.cells[idx].expr() * pw_now.clone();
-                sum_c_expr = sum_c_expr + c.cells[idx].expr();
-                pw_now = pw_now *  exp_256.clone();
+                lhs = lhs + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
+                rhs = rhs + b.cells[idx].expr() * exponent.clone();
+                exponent = exponent * val_256.clone();
             }
-            rhs = rhs + (one.clone() - result.expr()) * pw_now * (sumc.expr() * sumc_inv.expr());
+            rhs = rhs + (one.clone() - result.cells[0].expr()) * exponent * sumc_is_zero_expr;
             lt_constraints.push(lhs - rhs);
+
+            // result[0] == 0/1, result[1..32] == 0
+            let mut result_constraints = vec![
+                result.cells[0].expr() * (one.clone() - result.cells[0].expr()),
+            ];
+            for idx in 1..32 {
+                result_constraints.push(result.cells[idx].expr());
+            }
 
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
@@ -180,9 +208,6 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 }),
             ];
 
-            let sum_equal_constraints = vec![sum_c_expr - sumc.expr()];
-
-            let not_zero_constraints = vec![result.expr() * (one - sumc.expr() * sumc_inv.expr())];
             Constraint {
                 name: "LtGadget success",
                 selector: selector.expr(),
@@ -190,11 +215,11 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                     common_polys.clone(),
                     state_transition_constraints,
                     swap_constraints,
+                    sumc_constraints,
+                    sumc_is_zero_constraints,
                     lt_constraints,
-                    sum_equal_constraints,
-                    not_zero_constraints,
-                ]
-                .concat(),
+                    result_constraints,
+                ].concat(),
                 lookups: bus_mapping_lookups,
             }
         };
@@ -298,23 +323,25 @@ impl<F: FieldExt> LtGadget<F> {
             offset,
             Some(execution_step.values[1]),
         )?;
-        self.success.c.assign(
+        self.success.result.assign(
             region,
             offset,
             Some(execution_step.values[2]),
         )?;
+        self.success.c
+            .iter()
+            .zip(execution_step.values[3].iter())
+            .map(|(alloc, value)| {
+                alloc.assign(region, offset, Some(F::from_u64(*value as u64)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         self.success.carry.assign(
             region,
             offset,
-            Some(F::from_u64(execution_step.values[3][0] as u64)),
+            Some(F::from_u64(execution_step.values[4][0] as u64)),
         )?;
-        let mut sumc :u64 = 0;
-        let mut pw :u64 = 1;
-        for idx in 0..2 {
-            sumc = sumc+ (execution_step.values[4][idx] as u64) * pw;
-            pw = pw * (1 << 8);
-        }
-        let sumc =F::from_u64(sumc);
+        let sumc = F::from_u64(execution_step.values[4][1] as u64);
+        let sumc_inv = sumc.invert().unwrap_or(F::zero());
         self.success.sumc.assign(
             region,
             offset,
@@ -323,16 +350,26 @@ impl<F: FieldExt> LtGadget<F> {
         self.success.sumc_inv.assign(
             region,
             offset,
-            Some(sumc.invert().unwrap_or(F::zero())),
+            Some(sumc_inv),
         )?;
-        self.success.result.assign(
+        /*
+        let mut sumc: u64 = 0;
+        let mut pw: u64 = 1;
+        for idx in 1..3 {
+            sumc = sumc + (execution_step.values[4][idx] as u64) * pw;
+            pw = pw * (1 << 8);
+        }
+        let sumc = F::from_u64(sumc);
+        self.success.sumc.assign(
             region,
             offset,
-            Some(F::from_u64(execution_step.values[5][0] as u64)),
+            Some(sumc),
         )?;
+        */
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod test {
     use super::super::super::{
@@ -350,13 +387,12 @@ mod test {
         }};
     }
     fn calc_array(
-        a: [u8; 32],
-        b: [u8; 32],
-    ) -> ([u8; 32], [u8; 32]){
-        let mut c = [0 as u8; 32];
-        let mut carry = [0 as u8; 32];
-        let mut pre_sub :[i16; 32] = [0 as i16; 32];
-        let mut pre_add :[i16; 32] = [0 as i16; 32];
+        a: [u64; 32],
+        b: [u64; 32],
+    ) -> ([u64; 32], u8){
+        let mut c = [0 as u64; 32];
+        let mut pre_sub: [i16; 32] = [0 as i16; 32];
+        let mut pre_add: [i16; 32] = [0 as i16; 32];
         for idx in 0..32 {
             let a_tmp = a[idx] as i16 + pre_sub[idx];
             if (b[idx] as i16 - a_tmp) < 0 {
@@ -373,31 +409,29 @@ mod test {
             let tmp_calc = a[idx] as i16 + c[idx] as i16 + pre_add[idx];
             pre_add[idx + 1] = (tmp_calc >= (1 << 8)) as i16;
         }
-        carry[0] = pre_add[16] as u8;
+        let carry: u8 = pre_add[16] as u8;
         (c, carry)
     }
     #[test]
     fn lt_gadget(){
-        let a: [u8; 32] = [
+        let a: [u64; 32] = [
             1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let b: [u8; 32] = [
+        let b: [u64; 32] = [
             5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let (c, carry) = calc_array(a.clone(), b.clone());
-        let mut result = [0 as u8; 32];
-        
+        let mut result = [0 as u64; 32];
+        let mut extra = [0 as u64; 32];
+
         let mut sumc: u64 = 0;
-        let mut sumc_array = [0 as u8; 32];
         for idx in 0..32 {
             sumc = sumc + (c[idx] as u64);
         }
-        for idx in 0..32 {
-            sumc_array[idx] = (sumc % (1 << 8)) as u8;
-            sumc = sumc >> 8;
-        }
+        extra[0] = carry as u64;
+        extra[1] = sumc;
         //passed test with result 1 for LT && GT
         result[0] = 1;
         println!("result 1 test");
@@ -405,14 +439,14 @@ mod test {
         println!("");
         for idx in 0..32 {print!("{} ",b[idx]);}
         println!("");
-        for idx in 0..32 {print!("{} ",c[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",carry[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",sumc_array[idx]);}
-        println!("");
         for idx in 0..32 {print!("{} ",result[idx]);}
         println!("");
+        for idx in 0..32 {print!("{} ",c[idx]);}
+        println!("");
+        println!("carry = {}", carry);
+        //for idx in 0..32 {print!("{} ",sumc_array[idx]);}
+        println!("sumc = {}", sumc);
+
         //LT
         try_test_circuit!(
             vec![
@@ -444,10 +478,9 @@ mod test {
                     values: vec![
                         a.clone(),
                         b.clone(),
-                        c.clone(),
-                        carry.clone(),
-                        sumc_array.clone(),
                         result.clone(),
+                        c.clone(),
+                        extra.clone(),
                     ],
                 }
             ],

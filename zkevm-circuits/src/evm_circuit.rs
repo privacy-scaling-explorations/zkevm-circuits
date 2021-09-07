@@ -167,6 +167,7 @@ struct Constraint<F> {
     polys: Vec<Expression<F>>,
     lookups: Vec<Lookup<F>>,
 }
+
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
     // expression for constraint
@@ -309,7 +310,7 @@ enum Case {
 pub(crate) struct ExecutionStep {
     opcode: OpcodeId,
     case: Case,
-    values: Vec<[u8; 32]>,
+    values: Vec<[u64; 32]>,
 }
 
 // TODO: use Operation from bus_mapping
