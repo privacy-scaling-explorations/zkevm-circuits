@@ -88,7 +88,7 @@ impl FromStr for MemoryAddress {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
             BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::EvmWordParsing)?,
+                .map_err(|_| Error::MemAddressParsing)?,
         ))
     }
 }
@@ -123,14 +123,14 @@ impl FromStr for StackAddress {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(StackAddress(
             BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::EvmWordParsing)
+                .map_err(|_| Error::StackAddressParsing)
                 .map(|biguint| {
                     biguint
                         .try_into()
-                        .map_err(|_| Error::EvmWordParsing)
+                        .map_err(|_| Error::StackAddressParsing)
                         .expect("Map_err should be applied")
                 })
-                .map_err(|_| Error::EvmWordParsing)?,
+                .map_err(|_| Error::StackAddressParsing)?,
         ))
     }
 }
