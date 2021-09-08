@@ -131,14 +131,13 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         };
 
         let out_of_gas = {
-            let (one, two, three) = (
+            let (one, two) = (
                 Expression::Constant(F::from_u64(1)),
                 Expression::Constant(F::from_u64(2)),
-                Expression::Constant(F::from_u64(3)),
             );
             let (case_selector, gas_available) = &self.out_of_gas;
             let gas_overdemand = op_execution_state_curr.gas_counter.expr()
-                + three.clone()
+                + two.clone()
                 - gas_available.expr();
             Constraint {
                 name: "PopGadget out of gas",
@@ -147,8 +146,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                     common_polys,
                     vec![
                         (gas_overdemand.clone() - one)
-                            * (gas_overdemand.clone() - two)
-                            * (gas_overdemand - three),
+                            * (gas_overdemand - two)
                     ],
                 ]
                 .concat(),
