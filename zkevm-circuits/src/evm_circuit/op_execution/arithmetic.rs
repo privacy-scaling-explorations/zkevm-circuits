@@ -3,12 +3,9 @@ use super::super::{
     Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use bus_mapping::evm::OpcodeId;
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use crate::util::Expr;
+use bus_mapping::evm::{GasCost, OpcodeId};
+use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
@@ -85,36 +82,24 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
-        let (add, sub) = (
-            Expression::Constant(F::from_u64(1)),
-            Expression::Constant(F::from_u64(3)),
-        );
-
         let OpExecutionState { opcode, .. } = &state_curr;
 
-        let common_polys =
-            vec![(opcode.expr() - add.clone()) * (opcode.expr() - sub.clone())];
+        let common_polys = vec![
+            (opcode.expr() - OpcodeId::ADD.expr())
+                * (opcode.expr() - OpcodeId::SUB.expr()),
+        ];
 
         let success = {
-            let (one, expr_256) = (
-                Expression::Constant(F::one()),
-                Expression::Constant(F::from_u64(1 << 8)),
-            );
-
             // interpreter state transition constraints
             let state_transition_constraints = vec![
                 state_next.global_counter.expr()
-                    - (state_curr.global_counter.expr()
-                        + Expression::Constant(F::from_u64(3))),
+                    - (state_curr.global_counter.expr() + 3.expr()),
                 state_next.program_counter.expr()
-                    - (state_curr.program_counter.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                    - (state_curr.program_counter.expr() + 1.expr()),
                 state_next.stack_pointer.expr()
-                    - (state_curr.stack_pointer.expr()
-                        + Expression::Constant(F::from_u64(1))),
+                    - (state_curr.stack_pointer.expr() + 1.expr()),
                 state_next.gas_counter.expr()
-                    - (state_curr.gas_counter.expr()
-                        + Expression::Constant(F::from_u64(3))),
+                    - (state_curr.gas_counter.expr() + GasCost::FASTEST.expr()),
             ];
 
             let AddSuccessAllocation {
@@ -126,20 +111,19 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
                 carry,
             } = &self.success;
 
-            // swap a and c if it's SUB
-            let no_swap = one - swap.expr();
+            // swap b and c if it's SUB
+            let no_swap = 1.expr() - swap.expr();
             let swap_constraints = vec![
                 swap.expr() * no_swap.clone(),
-                swap.expr() * (opcode.expr() - sub),
-                no_swap.clone() * (opcode.expr() - add),
+                swap.expr() * (opcode.expr() - OpcodeId::SUB.expr()),
+                no_swap.clone() * (opcode.expr() - OpcodeId::ADD.expr()),
             ];
 
             // add constraints
             let add_constraints = {
                 let mut constraints = Vec::with_capacity(32);
                 // 256 * carry_out + c
-                let lhs =
-                    carry[0].expr() * expr_256.clone() + c.cells[0].expr();
+                let lhs = carry[0].expr() * 256.expr() + c.cells[0].expr();
                 // a + b (first carry_in is always 0)
                 let rhs = a.cells[0].expr() + b.cells[0].expr();
                 // equality check
@@ -147,8 +131,8 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
 
                 for idx in 1..32 {
                     // 256 * carry_out + c
-                    let lhs = carry[idx].expr() * expr_256.clone()
-                        + c.cells[idx].expr();
+                    let lhs =
+                        carry[idx].expr() * 256.expr() + c.cells[idx].expr();
                     // a + b + carry_in
                     let rhs = a.cells[idx].expr()
                         + b.cells[idx].expr()
@@ -193,38 +177,30 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
         };
 
         let stack_underflow = {
-            let (zero, minus_one) = (
-                Expression::Constant(F::from_u64(1024)),
-                Expression::Constant(F::from_u64(1023)),
-            );
-            let stack_pointer = state_curr.stack_pointer.expr();
+            let OpExecutionState { stack_pointer, .. } = &state_curr;
             Constraint {
                 name: "AddGadget stack underflow",
                 selector: self.stack_underflow.expr(),
                 polys: vec![
-                    (stack_pointer.clone() - zero)
-                        * (stack_pointer - minus_one),
+                    (stack_pointer.expr() - 1024.expr())
+                        * (stack_pointer.expr() - 1023.expr()),
                 ],
                 lookups: vec![],
             }
         };
 
         let out_of_gas = {
-            let (one, two, three) = (
-                Expression::Constant(F::from_u64(1)),
-                Expression::Constant(F::from_u64(2)),
-                Expression::Constant(F::from_u64(3)),
-            );
             let (selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = state_curr.gas_counter.expr() + three.clone()
+            let gas_overdemand = state_curr.gas_counter.expr()
+                + GasCost::FASTEST.expr()
                 - gas_available.expr();
             Constraint {
                 name: "AddGadget out of gas",
                 selector: selector.expr(),
                 polys: vec![
-                    (gas_overdemand.clone() - one)
-                        * (gas_overdemand.clone() - two)
-                        * (gas_overdemand - three),
+                    (gas_overdemand.clone() - 1.expr())
+                        * (gas_overdemand.clone() - 2.expr())
+                        * (gas_overdemand - 3.expr()),
                 ],
                 lookups: vec![],
             }

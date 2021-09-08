@@ -5,6 +5,7 @@ use super::{
     },
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Lookup, Word,
 };
+use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
 use halo2::{
     arithmetic::FieldExt,
@@ -22,17 +23,15 @@ use push::PushGadget;
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
 ) -> Vec<Expression<F>> {
-    let one = Expression::Constant(F::one());
-
     let mut constraints = Vec::with_capacity(bool_switches.len() + 1);
-    let mut sum_to_one = Expression::Constant(F::zero());
+    let mut sum_to_one = 0.expr();
 
     for switch in bool_switches {
-        constraints.push(switch.expr() * (one.clone() - switch.expr()));
+        constraints.push(switch.expr() * (1.expr() - switch.expr()));
         sum_to_one = sum_to_one + switch.expr();
     }
 
-    constraints.push(one - sum_to_one);
+    constraints.push(1.expr() - sum_to_one);
 
     constraints
 }
@@ -235,7 +234,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         let mut constraints = vec![Constraint {
             name: "op selectors",
-            selector: Expression::Constant(F::one()),
+            selector: 1.expr(),
             polys: bool_switches_constraints(qs_ops),
             lookups: vec![],
         }];
@@ -276,7 +275,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
             meta.create_gate(name, |_| {
                 if polys.is_empty() {
-                    return vec![Expression::Constant(F::zero())];
+                    return vec![0.expr()];
                 }
                 polys
                     .into_iter()
