@@ -29,16 +29,15 @@ impl<F: FieldExt> ThetaConfig<F> {
             let q_enable = meta.query_selector(q_enable);
             let mut column_sum: Vec<Expression<F>> = Vec::new();
             for x in 0..5 {
-                let state_x0 =
-                    meta.query_advice(state[5 * x], Rotation::prev());
+                let state_x0 = meta.query_advice(state[5 * x], Rotation::cur());
                 let state_x1 =
-                    meta.query_advice(state[5 * x + 1], Rotation::prev());
+                    meta.query_advice(state[5 * x + 1], Rotation::cur());
                 let state_x2 =
-                    meta.query_advice(state[5 * x + 2], Rotation::prev());
+                    meta.query_advice(state[5 * x + 2], Rotation::cur());
                 let state_x3 =
-                    meta.query_advice(state[5 * x + 3], Rotation::prev());
+                    meta.query_advice(state[5 * x + 3], Rotation::cur());
                 let state_x4 =
-                    meta.query_advice(state[5 * x + 4], Rotation::prev());
+                    meta.query_advice(state[5 * x + 4], Rotation::cur());
                 let sum = state_x0 + state_x1 + state_x2 + state_x3 + state_x4;
                 column_sum.push(sum.clone());
             }
@@ -46,9 +45,9 @@ impl<F: FieldExt> ThetaConfig<F> {
 
             for (x, y) in (0..5).cartesian_product(0..5) {
                 let new_state =
-                    meta.query_advice(state[5 * x + y], Rotation::cur());
+                    meta.query_advice(state[5 * x + y], Rotation::next());
                 let old_state =
-                    meta.query_advice(state[5 * x + y], Rotation::prev());
+                    meta.query_advice(state[5 * x + y], Rotation::cur());
                 let right = old_state
                     + column_sum[(x + 4) % 5].clone()
                     + Expression::Constant(F::from(13))
@@ -88,10 +87,10 @@ impl<F: FieldExt> PiConfig<F> {
             let mut checks: Vec<Expression<F>> = Vec::new();
             for (x, y) in (0..5).cartesian_product(0..5) {
                 let new_state =
-                    meta.query_advice(state[5 * x + y], Rotation::cur());
+                    meta.query_advice(state[5 * x + y], Rotation::next());
                 let old_state = meta.query_advice(
                     state[5 * ((x + 3 * y) % 5) + x],
-                    Rotation::prev(),
+                    Rotation::cur(),
                 );
                 let check = q_enable.clone() * (new_state - old_state);
                 checks.push(check.clone());
@@ -130,18 +129,18 @@ impl<F: FieldExt> XiIotaConfig<F> {
                 meta.query_advice(round_constant, Rotation::cur());
             let mut checks: Vec<Expression<F>> = Vec::new();
             for (x, y) in (0..5).cartesian_product(0..5) {
-                let a = meta.query_advice(state[5 * x + y], Rotation::prev());
+                let a = meta.query_advice(state[5 * x + y], Rotation::cur());
                 let x2 = (x + 1) % 5;
-                let b = meta.query_advice(state[5 * x2 + y], Rotation::prev());
+                let b = meta.query_advice(state[5 * x2 + y], Rotation::cur());
                 let x3 = (x + 2) % 5;
-                let c = meta.query_advice(state[5 * x3 + y], Rotation::prev());
+                let c = meta.query_advice(state[5 * x3 + y], Rotation::cur());
                 let d = if x == 0 && y == 0 {
                     round_constant.clone()
                 } else {
                     zero.clone()
                 };
                 let new_state =
-                    meta.query_advice(state[5 * x + y], Rotation::cur());
+                    meta.query_advice(state[5 * x + y], Rotation::next());
 
                 let check = q_enable.clone()
                     * (new_state
