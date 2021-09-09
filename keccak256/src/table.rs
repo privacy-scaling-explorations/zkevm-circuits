@@ -179,11 +179,6 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
 
     }
 
-    fn convert_13_base_limb(x: u64) -> u64 {
-        assert!(x < 13);
-        return x&1
-    }
-
     fn special_chunk_converter(
         config: Self,
         layouter: &mut impl Layouter<F>
