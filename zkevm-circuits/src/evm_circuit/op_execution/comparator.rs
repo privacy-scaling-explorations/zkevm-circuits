@@ -1,9 +1,9 @@
 use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    Lookup, Word, utils::biguint_to_u8s
+    FixedLookup, Lookup, Word
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use crate::util::Expr;
+use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
@@ -153,10 +153,11 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             rhs = rhs + carry.expr() * exponent;
             lt_constraints.push(lhs - rhs);
 
-            // a[31..16] + c[31..16] + carry = b[31..16] + (1 - result) * 256^16 * sumc
-            // - a < b, a + c = b
-            // - a = b, a + c = b, c = 0
-            // - a > b, a + c = b + 2^256
+            // a[31..16] + c[31..16] + carry =
+            //     b[31..16] + (1 - result) * 256^16 * (1 - is_zero(sumc))
+            // - a < b, a + c = b, result = 1, is_zero(sumc) = 0
+            // - a = b, a + c = b, result = 0, is_zero(sumc) = 1
+            // - a > b, a + c = b + 2^256, result = 0, is_zero(sumc) = 0
             exponent = 1.expr();
             lhs = carry.expr();
             rhs = 0.expr();
@@ -177,7 +178,14 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 result_constraints.push(result.cells[idx].expr());
             }
 
-            // TODO: check c cells range
+            // Check each cell in c in within 8-bit range
+            let mut c_range_lookups = vec![];
+            for idx in 0..32 {
+                c_range_lookups.push(Lookup::FixedLookup(
+                    FixedLookup::Range256,
+                    [c[idx].expr(), 0.expr(), 0.expr()],
+                ))
+            }
 
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
@@ -208,7 +216,10 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                     lt_constraints,
                     result_constraints,
                 ].concat(),
-                lookups: bus_mapping_lookups,
+                lookups: [
+                    c_range_lookups,
+                    bus_mapping_lookups
+                ].concat()
             }
         };
 
@@ -294,21 +305,21 @@ impl<F: FieldExt> LtGadget<F> {
         self.success.a.assign(
             region,
             offset,
-            Some(biguint_to_u8s(&execution_step.values[0])),
+            Some(execution_step.values[0].to_word()),
         )?;
         self.success.b.assign(
             region,
             offset,
-            Some(biguint_to_u8s(&execution_step.values[1])),
+            Some(execution_step.values[1].to_word()),
         )?;
         self.success.result.assign(
             region,
             offset,
-            Some(biguint_to_u8s(&execution_step.values[2])),
+            Some(execution_step.values[2].to_word()),
         )?;
         self.success.c
             .iter()
-            .zip(biguint_to_u8s(&execution_step.values[3]).iter())
+            .zip(execution_step.values[3].to_word().iter())
             .map(|(alloc, value)| {
                 alloc.assign(region, offset, Some(F::from_u64(*value as u64)))
             })
@@ -338,10 +349,10 @@ impl<F: FieldExt> LtGadget<F> {
 #[cfg(test)]
 mod test {
     use num::BigUint;
+    use crate::util::ToWord;
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
-    use super::super::super::utils::biguint_to_u8s;
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
@@ -358,8 +369,8 @@ mod test {
         a: &BigUint,
         b: &BigUint,
     ) -> (BigUint, BigUint, BigUint){
-        let a8s = biguint_to_u8s(a);
-        let b8s = biguint_to_u8s(b);
+        let a8s = a.to_word();
+        let b8s = b.to_word();
         let mut c8s = [0u8; 32];
         let mut sub_carry: i16 = 0;
         let mut carry: u8 = 0;

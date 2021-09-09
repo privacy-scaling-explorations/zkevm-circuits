@@ -17,7 +17,6 @@ mod op_execution;
 use op_execution::{OpExecutionGadget, OpExecutionState};
 mod param;
 use param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE};
-mod utils;
 
 #[derive(Clone, Debug)]
 pub(crate) enum CallField {
@@ -211,7 +210,7 @@ impl<F: FieldExt> Expr<F> for Cell<F> {
 struct Word<F> {
     // random linear combination expression of cells
     expression: Expression<F>,
-    // inner cells for syntesis
+    // inner cells for synthesis
     cells: [Cell<F>; 32],
 }
 

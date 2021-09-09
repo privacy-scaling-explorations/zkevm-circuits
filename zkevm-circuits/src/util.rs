@@ -1,5 +1,5 @@
 //! Common utility traits and functions.
-
+use num::BigUint;
 use bus_mapping::{
     evm::{GasCost, OpcodeId},
     operation::Target,
@@ -56,3 +56,18 @@ impl_unsigned_expr!(OpcodeId, OpcodeId::as_u8);
 impl_unsigned_expr!(GasCost, GasCost::as_u8);
 
 impl_signed_expr!(i32);
+
+pub(crate) trait ToWord {
+    fn to_word(&self) -> [u8; 32];
+}
+
+impl ToWord for BigUint {
+    #[inline]
+    fn to_word(&self) -> [u8; 32] {
+        let mut ret = [0u8; 32];
+        for (pos, v) in self.to_bytes_le().iter().enumerate() {
+            ret[pos] = *v
+        }
+        ret
+    }
+}

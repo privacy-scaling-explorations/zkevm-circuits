@@ -1,9 +1,9 @@
 use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    FixedLookup, Lookup, Word, utils::biguint_to_u8s
+    FixedLookup, Lookup, Word
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use crate::util::Expr;
+use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
@@ -273,12 +273,12 @@ impl<F: FieldExt> PushGadget<F> {
         self.success.word.assign(
             region,
             offset,
-            Some(biguint_to_u8s(&execution_step.values[0])),
+            Some(execution_step.values[0].to_word()),
         )?;
         self.success
             .selectors
             .iter()
-            .zip(biguint_to_u8s(&execution_step.values[1]).iter())
+            .zip(execution_step.values[1].to_word().iter())
             .map(|(alloc, bit)| {
                 alloc.assign(region, offset, Some(F::from_u64(*bit as u64)))
             })

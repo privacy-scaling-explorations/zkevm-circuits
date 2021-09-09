@@ -3,7 +3,7 @@ use super::super::{
     Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use crate::util::Expr;
+use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
@@ -257,38 +257,36 @@ impl<F: FieldExt> AddGadget<F> {
             offset,
             Some(F::from_u64((execution_step.opcode == OpcodeId::SUB) as u64)),
         )?;
-        /*
         self.success.a.assign(
             region,
             offset,
-            Some(execution_step.values[0]),
+            Some(execution_step.values[0].to_word()),
         )?;
         self.success.b.assign(
             region,
             offset,
-            Some(execution_step.values[1]),
+            Some(execution_step.values[1].to_word()),
         )?;
         self.success.c.assign(
             region,
             offset,
-            Some(execution_step.values[2]),
+            Some(execution_step.values[2].to_word()),
         )?;
         self.success
             .carry
             .iter()
-            .zip(execution_step.values[3].iter())
+            .zip(execution_step.values[3].to_word().iter())
             .map(|(alloc, carry)| {
                 alloc.assign(region, offset, Some(F::from_u64(*carry as u64)))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        */
         Ok(())
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
+    use num::BigUint;
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
@@ -317,58 +315,26 @@ mod test {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        [
-                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        [
-                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::ADD,
                     case: Case::Success,
                     values: vec![
-                        [
-                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x09_07_05u64),
+                        BigUint::from(0u64) // carry
                     ],
                 }
             ],
@@ -438,58 +404,26 @@ mod test {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        [
-                            5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x09_07_05u64),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        [
-                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::SUB,
                     case: Case::Success,
                     values: vec![
-                        [
-                            4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ],
-                        [
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, //
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x09_07_05u64),
+                        BigUint::from(0u64) // carry
                     ],
                 }
             ],
@@ -554,4 +488,3 @@ mod test {
         );
     }
 }
-*/
