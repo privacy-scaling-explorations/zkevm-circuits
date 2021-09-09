@@ -1,6 +1,6 @@
 use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    FixedLookup, Lookup, Word,
+    FixedLookup, Lookup, Word, utils::biguint_to_u8s
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::Expr;
@@ -273,12 +273,12 @@ impl<F: FieldExt> PushGadget<F> {
         self.success.word.assign(
             region,
             offset,
-            Some(execution_step.values[0]),
+            Some(biguint_to_u8s(&execution_step.values[0])),
         )?;
         self.success
             .selectors
             .iter()
-            .zip(execution_step.values[1].iter())
+            .zip(biguint_to_u8s(&execution_step.values[1]).iter())
             .map(|(alloc, bit)| {
                 alloc.assign(region, offset, Some(F::from_u64(*bit as u64)))
             })
@@ -289,6 +289,7 @@ impl<F: FieldExt> PushGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use num::BigUint;
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
@@ -315,14 +316,8 @@ mod test {
                 opcode: OpcodeId::PUSH2,
                 case: Case::Success,
                 values: vec![
-                    [
-                        2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    [
-                        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ]
+                    BigUint::from(0x02_03u64),
+                    BigUint::from(0x01_01u64),
                 ],
             }],
             vec![Operation {
@@ -332,7 +327,7 @@ mod test {
                 values: [
                     Base::zero(),
                     Base::from_u64(1023),
-                    Base::from_u64(2 + 2),
+                    Base::from_u64(2 + 3),
                     Base::zero(),
                 ]
             }],

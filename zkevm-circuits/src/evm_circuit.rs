@@ -1,6 +1,7 @@
 //! The EVM circuit implementation.
 
 use crate::util::Expr;
+use num::BigUint;
 use bus_mapping::{evm::OpcodeId, operation::Target};
 use halo2::{
     arithmetic::FieldExt,
@@ -16,6 +17,7 @@ mod op_execution;
 use op_execution::{OpExecutionGadget, OpExecutionState};
 mod param;
 use param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE};
+mod utils;
 
 #[derive(Clone, Debug)]
 pub(crate) enum CallField {
@@ -310,7 +312,7 @@ enum Case {
 pub(crate) struct ExecutionStep {
     opcode: OpcodeId,
     case: Case,
-    values: Vec<[u64; 32]>,
+    values: Vec<BigUint>,
 }
 
 // TODO: use Operation from bus_mapping
