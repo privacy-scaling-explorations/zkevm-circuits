@@ -257,6 +257,7 @@ impl<F: FieldExt> AddGadget<F> {
             offset,
             Some(F::from_u64((execution_step.opcode == OpcodeId::SUB) as u64)),
         )?;
+        /*
         self.success.a.assign(
             region,
             offset,
@@ -280,10 +281,12 @@ impl<F: FieldExt> AddGadget<F> {
                 alloc.assign(region, offset, Some(F::from_u64(*carry as u64)))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        */
         Ok(())
     }
 }
 
+/*
 #[cfg(test)]
 mod test {
     use super::super::super::{
@@ -551,3 +554,4 @@ mod test {
         );
     }
 }
+*/

@@ -3,13 +3,10 @@ use super::super::{
     Lookup, Word, utils::biguint_to_u8s
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use bus_mapping::evm::OpcodeId;
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::Region,
-    plonk::{Error, Expression},
-};
-use std::convert::TryInto;
+use crate::util::Expr;
+use bus_mapping::evm::{GasCost, OpcodeId};
+use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
 struct LtSuccessAllocation<F> {
@@ -87,34 +84,24 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
-        let (lt, gt) = (
-            Expression::Constant(F::from_u64((OpcodeId::LT).as_u8() as u64)),
-            Expression::Constant(F::from_u64((OpcodeId::GT).as_u8() as u64)),
-        );
-
         let OpExecutionState { opcode, .. } = &state_curr;
 
-        let common_polys =
-            vec![(opcode.expr() - lt.clone()) * (opcode.expr() - gt.clone())];
+        let common_polys = vec![
+            (opcode.expr() - OpcodeId::LT.expr())
+                * (opcode.expr() - OpcodeId::GT.expr())
+        ];
 
         let success = {
-            let (zero, one, three, val_256) = (
-                Expression::Constant(F::zero()),
-                Expression::Constant(F::one()),
-                Expression::Constant(F::from_u64(3)),
-                Expression::Constant(F::from_u64(1 << 8)),
-            );
-
             // interpreter state transition constraints
             let state_transition_constraints = vec![
                 state_next.global_counter.expr()
-                    - (state_curr.global_counter.expr() + three.clone()),
+                    - (state_curr.global_counter.expr() + 3.expr()),
                 state_next.stack_pointer.expr()
-                    - (state_curr.stack_pointer.expr() + one.clone()),
+                    - (state_curr.stack_pointer.expr() + 1.expr()),
                 state_next.program_counter.expr()
-                    - (state_curr.program_counter.expr() + one.clone()),
+                    - (state_curr.program_counter.expr() + 1.expr()),
                 state_next.gas_counter.expr()
-                    - (state_curr.gas_counter.expr() + three),
+                    - (state_curr.gas_counter.expr() + GasCost::FASTEST.expr()),
             ];
 
             let LtSuccessAllocation {
@@ -129,20 +116,20 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 sumc_inv,
             } = &self.success;
 
-            let no_swap = one.clone() - swap.expr();
+            let no_swap = 1.expr() - swap.expr();
             let swap_constraints = vec![
                 swap.expr() * no_swap.clone(),
-                swap.expr() * (opcode.expr() - gt),
-                no_swap.clone() * (opcode.expr() - lt),
+                swap.expr() * (opcode.expr() - OpcodeId::GT.expr()),
+                no_swap.clone() * (opcode.expr() - OpcodeId::LT.expr()),
             ];
 
             // sumc_expr == sumc_cell
-            // sumc_expr != 0
-            let mut sumc_expr = zero.clone();  // The sum of c limbs
+            // result = 1, sumc_expr != 0
+            let mut sumc_expr = 0.expr();  // The sum of c limbs
             for idx in 0..32 {
                 sumc_expr = sumc_expr + c[idx].expr();
             }
-            let sumc_is_zero_expr = one.clone() - sumc_expr.clone() * sumc_inv.expr();
+            let sumc_is_zero_expr = 1.expr() - sumc_expr.clone() * sumc_inv.expr();
             // same as is_zero gadget, currently we cannot use gadget inside OpGadget
             let sumc_is_zero_constraints = vec![
                 sumc_expr.clone() * sumc_is_zero_expr.clone(),
@@ -150,19 +137,18 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             ];
             let sumc_constraints = vec![
                 sumc_expr - sumc.expr(),
-                sumc_is_zero_expr.clone(),
+                result.cells[0].expr() * sumc_is_zero_expr.clone(),
             ];
 
             let mut lt_constraints = vec![];
-
             // a[15..0] + c[15..0] = carry * 256^16 + b[15..0]
-            let mut exponent = one.clone();
-            let mut lhs = zero.clone();
-            let mut rhs = zero.clone();
+            let mut exponent = 1.expr();
+            let mut lhs = 0.expr();
+            let mut rhs = 0.expr();
             for idx in 0..16 {
                 lhs = lhs + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
                 rhs = rhs + b.cells[idx].expr() * exponent.clone();
-                exponent = exponent * val_256.clone();
+                exponent = exponent * 256.expr();
             }
             rhs = rhs + carry.expr() * exponent;
             lt_constraints.push(lhs - rhs);
@@ -171,24 +157,27 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             // - a < b, a + c = b
             // - a = b, a + c = b, c = 0
             // - a > b, a + c = b + 2^256
-            exponent = one.clone();
+            exponent = 1.expr();
             lhs = carry.expr();
-            rhs = zero.clone();
+            rhs = 0.expr();
             for idx in 16..32 {
                 lhs = lhs + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
                 rhs = rhs + b.cells[idx].expr() * exponent.clone();
-                exponent = exponent * val_256.clone();
+                exponent = exponent * 256.expr();
             }
-            rhs = rhs + (one.clone() - result.cells[0].expr()) * exponent * sumc_is_zero_expr;
+            rhs = rhs + (1.expr() - result.cells[0].expr()) * exponent
+                    * (1.expr() - sumc_is_zero_expr);
             lt_constraints.push(lhs - rhs);
 
             // result[0] == 0/1, result[1..32] == 0
             let mut result_constraints = vec![
-                result.cells[0].expr() * (one.clone() - result.cells[0].expr()),
+                result.cells[0].expr() * (1.expr() - result.cells[0].expr()),
             ];
             for idx in 1..32 {
                 result_constraints.push(result.cells[idx].expr());
             }
+
+            // TODO: check c cells range
 
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
@@ -212,7 +201,6 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 name: "LtGadget success",
                 selector: selector.expr(),
                 polys: [
-                    common_polys.clone(),
                     state_transition_constraints,
                     swap_constraints,
                     sumc_constraints,
@@ -225,52 +213,42 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
         };
 
         let stack_underflow = {
-            let (zero, minus_one) = (
-                Expression::Constant(F::from_u64(1024)),
-                Expression::Constant(F::from_u64(1023)),
-            );
             let stack_pointer = state_curr.stack_pointer.expr();
             Constraint {
                 name: "LtGadget stack underflow",
                 selector: self.stack_underflow.expr(),
-                polys: [
-                    common_polys.clone(),
-                    vec![
-                        (stack_pointer.clone() - zero)
-                            * (stack_pointer - minus_one),
-                    ],
-                ]
-                .concat(),
+                polys: vec![
+                    (stack_pointer.clone() - 1024.expr())
+                        * (stack_pointer - 1023.expr()),
+                ],
                 lookups: vec![],
             }
         };
 
         let out_of_gas = {
-            let (one, two, three) = (
-                Expression::Constant(F::from_u64(1)),
-                Expression::Constant(F::from_u64(2)),
-                Expression::Constant(F::from_u64(3)),
-            );
             let (selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = state_curr.gas_counter.expr() + three.clone()
+            let gas_overdemand = state_curr.gas_counter.expr()
+                + GasCost::FASTEST.expr()
                 - gas_available.expr();
             Constraint {
                 name: "LtGadget out of gas",
                 selector: selector.expr(),
-                polys: [
-                    common_polys,
-                    vec![
-                        (gas_overdemand.clone() - one)
-                            * (gas_overdemand.clone() - two)
-                            * (gas_overdemand - three),
-                    ],
-                ]
-                .concat(),
+                polys: vec![
+                    (gas_overdemand.clone() - 1.expr())
+                        * (gas_overdemand.clone() - 2.expr())
+                        * (gas_overdemand - 3.expr()),
+                ],
                 lookups: vec![],
             }
         };
 
-        vec![success, stack_underflow, out_of_gas]
+        array::IntoIter::new([success, stack_underflow, out_of_gas])
+            .map(move |mut constraint| {
+                constraint.polys =
+                    [common_polys.clone(), constraint.polys].concat();
+                constraint
+            })
+            .collect()
     }
 
     fn assign(
@@ -323,7 +301,6 @@ impl<F: FieldExt> LtGadget<F> {
             offset,
             Some(biguint_to_u8s(&execution_step.values[1])),
         )?;
-        println!("result = {:?}", biguint_to_u8s(&execution_step.values[2]));
         self.success.result.assign(
             region,
             offset,
@@ -354,20 +331,6 @@ impl<F: FieldExt> LtGadget<F> {
             offset,
             Some(sumc_inv),
         )?;
-        /*
-        let mut sumc: u64 = 0;
-        let mut pw: u64 = 1;
-        for idx in 1..3 {
-            sumc = sumc + (execution_step.values[4][idx] as u64) * pw;
-            pw = pw * (1 << 8);
-        }
-        let sumc = F::from_u64(sumc);
-        self.success.sumc.assign(
-            region,
-            offset,
-            Some(sumc),
-        )?;
-        */
         Ok(())
     }
 }
@@ -394,23 +357,16 @@ mod test {
     fn subtract(
         a: &BigUint,
         b: &BigUint,
-    ) -> (BigUint, BigUint){
+    ) -> (BigUint, BigUint, BigUint){
         let a8s = biguint_to_u8s(a);
         let b8s = biguint_to_u8s(b);
-        println!("a8s = {:?}", a8s);
-        println!("b8s = {:?}", b8s);
-        let aa = BigUint::from_bytes_le(&a8s);
-        println!("a = {}", a);
-        println!("aa = {}", aa);
         let mut c8s = [0u8; 32];
-        let mut sub_carry: i16 = 0; //[i16; 32] = [0 as i16; 32];
-        //let mut pre_add: [i16; 32] = [0 as i16; 32];
+        let mut sub_carry: i16 = 0;
         let mut carry: u8 = 0;
         for idx in 0..32 {
-            //let a_tmp = a8s[idx] as i16 + pre_sub[idx];
-            let tmp = b8s[idx] as i16 - a8s[idx] as i16 - sub_carry;
+            let tmp = a8s[idx] as i16 - b8s[idx] as i16 - sub_carry;
             if tmp < 0 {
-                c8s[idx] = (tmp + 1 << 8) as u8;
+                c8s[idx] = (tmp + (1 << 8)) as u8;
                 sub_carry = 1;
             }
             else {
@@ -418,58 +374,28 @@ mod test {
                 sub_carry = 0;
             }
         }
+        // compute the carry
         for idx in 0..16 {
-            let tmp = a8s[idx] as i16 + c8s[idx] as i16 + carry as i16;
+            let tmp = b8s[idx] as i16 + c8s[idx] as i16 + carry as i16;
             carry = (tmp >= (1 << 8)) as u8;
         }
-        println!("c8s = {:?}", c8s);
-        let c = BigUint::from_bytes_le(&c8s);
-        (c, BigUint::from(carry))
+        // compute the sum of all limbs in c8s
+        let mut sumc: u64 = 0;
+        for limb in c8s.iter() {
+            sumc += *limb as u64;
+        }
+        (BigUint::from_bytes_le(&c8s), BigUint::from(carry), BigUint::from(sumc))
     }
 
     #[test]
     fn lt_gadget(){
-        println!("{:?}", BigUint::from(0u8).to_bytes_le());
         let a = BigUint::from(0x03_02_01u64);
         let b = BigUint::from(0x09_07_05u64);
-        // let a: [u64; 32] = [
-        //     1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        //     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        // ];
-        // let b: [u64; 32] = [
-        //     5, 7, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        //     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        // ];
-        let (c, carry) = subtract(&a, &b);
         let mut result = [0u8; 32];
-        //let mut extra = [0 as u64; 32];
 
-        let mut sumc_val: u64 = 0;
-        for limb in biguint_to_u8s(&c) {
-            sumc_val += limb as u64;
-        }
-        let sumc = BigUint::from(sumc_val);
-        // extra[0] = carry as u64;
-        // extra[1] = sumc;
-        //passed test with result 1 for LT && GT
+        // LT: a < b, result = 1
+        let (c, carry, sumc) = subtract(&b, &a);
         result[0] = 1;
-        // println!("result 1 test");
-        // for idx in 0..32 {print!("{} ",a[idx]);}
-        // println!("");
-        // for idx in 0..32 {print!("{} ",b[idx]);}
-        // println!("");
-        // for idx in 0..32 {print!("{} ",result[idx]);}
-        // println!("");
-        // for idx in 0..32 {print!("{} ",c[idx]);}
-        // println!("");
-        println!("a = {:?}", a.to_bytes_be());
-        println!("b = {:?}", b.to_bytes_be());
-        println!("c = {:?}", c.to_bytes_be());
-        println!("carry = {}", carry);
-        //for idx in 0..32 {print!("{} ",sumc_array[idx]);}
-        println!("sumc = {}", sumc);
-
-        //LT
         try_test_circuit!(
             vec![
                 ExecutionStep {
@@ -496,9 +422,8 @@ mod test {
                         b.clone(),
                         BigUint::from_bytes_le(&result),
                         c.clone(),
-                        carry,
-                        sumc
-                        //extra.clone(),
+                        carry.clone(),
+                        sumc.clone()
                     ],
                 }
             ],
@@ -561,19 +486,18 @@ mod test {
             ],
             Ok(())
         );
-        /*
-        // GT
+
+        // LT: a = a, result = 0
+        let (c, carry, sumc) = subtract(&a, &a);
+        result[0] = 0;
         try_test_circuit!(
             vec![
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        b.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        a.clone(),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
@@ -581,10 +505,195 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::LT,
+                    case: Case::Success,
+                    values: vec![
+                        a.clone(),
+                        a.clone(),
+                        BigUint::from_bytes_le(&result),
+                        c.clone(),
+                        carry.clone(),
+                        sumc.clone(),
+                    ],
+                }
+            ],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(0),
+                        Base::zero(),
+                    ]
+                }
+            ],
+            Ok(())
+        );
+
+        // LT: b > a, result = 0
+        let (c, carry, sumc) = subtract(&a, &b);
+        result[0] = 0;
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        b.clone(),
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        a.clone(),
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::LT,
+                    case: Case::Success,
+                    values: vec![
+                        b.clone(),
+                        a.clone(),
+                        BigUint::from_bytes_le(&result),
+                        c.clone(),
+                        carry.clone(),
+                        sumc.clone(),
+                    ],
+                }
+            ],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(5 + 7 + 9),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(0),
+                        Base::zero(),
+                    ]
+                }
+            ],
+            Ok(())
+        );
+
+        // GT: b > a, result = 1
+        let (c, carry, sumc) = subtract(&b, &a);
+        result[0] = 1;
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        b.clone(),
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        a.clone(),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
@@ -593,10 +702,10 @@ mod test {
                     values: vec![
                         a.clone(),
                         b.clone(),
+                        BigUint::from_bytes_le(&result),
                         c.clone(),
                         carry.clone(),
-                        sumc_array.clone(),
-                        result.clone(),
+                        sumc.clone(),
                     ],
                 }
             ],
@@ -660,32 +769,9 @@ mod test {
             Ok(())
         );
 
-        // passed test with result 0 for LT && GT(equal)
-        println!("result 0 test with equal input");
+        // GT: a = a, result = 0
+        let (c, carry, sumc) = subtract(&a, &a);
         result[0] = 0;
-        let (c, carry) = calc_array(a.clone(), a.clone());
-        let mut sumc: u64 = 0;
-        let mut sumc_array = [0 as u8; 32];
-        for idx in 0..32 {
-            sumc = sumc + (c[idx] as u64);
-        }
-        for idx in 0..32 {
-            sumc_array[idx] = (sumc % (1 << 8)) as u8;
-            sumc = sumc >> 8;
-        }
-        for idx in 0..32 {print!("{} ",a[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",a[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",c[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",carry[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",sumc_array[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",result[idx]);}
-        println!("");
-        //LT
         try_test_circuit!(
             vec![
                 ExecutionStep {
@@ -693,10 +779,7 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
@@ -704,107 +787,7 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
-                    ],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::LT,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        a.clone(),
-                        c.clone(),
-                        carry.clone(),
-                        sumc_array.clone(),
-                        result.clone(),
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
-        // GT
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
-                    ],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
@@ -813,10 +796,10 @@ mod test {
                     values: vec![
                         a.clone(),
                         a.clone(),
+                        BigUint::from_bytes_le(&result),
                         c.clone(),
                         carry.clone(),
-                        sumc_array.clone(),
-                        result.clone(),
+                        sumc.clone(),
                     ],
                 }
             ],
@@ -879,128 +862,10 @@ mod test {
             ],
             Ok(())
         );
-        // passed test with result 0 for LT && GT(not equal)
-        println!("result 0 test with not equal input");
-        let (c, carry) = calc_array(b.clone(), a.clone());
-        let mut sumc: u64 = 0;
-        let mut sumc_array = [0 as u8; 32];
-        for idx in 0..32 {
-            sumc = sumc + (c[idx] as u64);
-        }
-        for idx in 0..32 {
-            sumc_array[idx] = (sumc % (1 << 8)) as u8;
-            sumc = sumc >> 8;
-        }
-        for idx in 0..32 {print!("{} ",a[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",a[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",c[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",carry[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",sumc_array[idx]);}
-        println!("");
-        for idx in 0..32 {print!("{} ",result[idx]);}
-        println!("");
-        //LT
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
-                    ],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
-                    ],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::LT,
-                    case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        a.clone(),
-                        c.clone(),
-                        carry.clone(),
-                        sumc_array.clone(),
-                        result.clone(),
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
-        // GT
+
+        // GT: a < b, result = 0
+        let (c, carry, sumc) = subtract(&a, &b);
+        result[0] = 0;
         try_test_circuit!(
             vec![
                 ExecutionStep {
@@ -1008,10 +873,7 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         a.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
@@ -1019,10 +881,7 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         b.clone(),
-                        [
-                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        ]
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
@@ -1031,10 +890,10 @@ mod test {
                     values: vec![
                         b.clone(),
                         a.clone(),
+                        BigUint::from_bytes_le(&result),
                         c.clone(),
                         carry.clone(),
-                        sumc_array.clone(),
-                        result.clone(),
+                        sumc.clone(),
                     ],
                 }
             ],
@@ -1097,6 +956,5 @@ mod test {
             ],
             Ok(())
         );
-        */
     }
 }
