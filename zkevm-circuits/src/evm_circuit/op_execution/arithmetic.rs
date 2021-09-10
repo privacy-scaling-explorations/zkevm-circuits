@@ -286,12 +286,12 @@ impl<F: FieldExt> AddGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use num::BigUint;
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use num::BigUint;
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {

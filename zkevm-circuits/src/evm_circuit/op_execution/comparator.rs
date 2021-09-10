@@ -1,6 +1,6 @@
 use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    FixedLookup, Lookup, Word
+    FixedLookup, Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::{Expr, ToWord};
@@ -25,13 +25,10 @@ struct LtSuccessAllocation<F> {
 pub struct LtGadget<F> {
     success: LtSuccessAllocation<F>,
     stack_underflow: Cell<F>,
-    out_of_gas: (
-        Cell<F>,
-        Cell<F>,
-    ),
+    out_of_gas: (Cell<F>, Cell<F>),
 }
 
-impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
+impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
     const RESPONSIBLE_OPCODES: &'static [OpcodeId] =
         &[OpcodeId::LT, OpcodeId::GT];
 
@@ -66,7 +63,12 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 a: success.words.pop().unwrap(),
                 b: success.words.pop().unwrap(),
                 result: success.words.pop().unwrap(),
-                c: success.cells.drain(0..32).collect::<Vec<Cell<F>>>().try_into().unwrap(),
+                c: success
+                    .cells
+                    .drain(0..32)
+                    .collect::<Vec<Cell<F>>>()
+                    .try_into()
+                    .unwrap(),
                 carry: success.cells.pop().unwrap(),
                 sumc: success.cells.pop().unwrap(),
                 sumc_inv: success.cells.pop().unwrap(),
@@ -88,7 +90,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
 
         let common_polys = vec![
             (opcode.expr() - OpcodeId::LT.expr())
-                * (opcode.expr() - OpcodeId::GT.expr())
+                * (opcode.expr() - OpcodeId::GT.expr()),
         ];
 
         let success = {
@@ -125,11 +127,12 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
 
             // sumc_expr == sumc_cell
             // result = 1, sumc_expr != 0
-            let mut sumc_expr = 0.expr();  // The sum of c limbs
-            for idx in 0..32 {
-                sumc_expr = sumc_expr + c[idx].expr();
+            let mut sumc_expr = 0.expr(); // The sum of c limbs
+            for byte in c.iter() {
+                sumc_expr = sumc_expr + byte.expr();
             }
-            let sumc_is_zero_expr = 1.expr() - sumc_expr.clone() * sumc_inv.expr();
+            let sumc_is_zero_expr =
+                1.expr() - sumc_expr.clone() * sumc_inv.expr();
             // same as is_zero gadget, currently we cannot use gadget inside OpGadget
             let sumc_is_zero_constraints = vec![
                 sumc_expr.clone() * sumc_is_zero_expr.clone(),
@@ -146,7 +149,8 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             let mut lhs = 0.expr();
             let mut rhs = 0.expr();
             for idx in 0..16 {
-                lhs = lhs + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
+                lhs = lhs
+                    + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
                 rhs = rhs + b.cells[idx].expr() * exponent.clone();
                 exponent = exponent * 256.expr();
             }
@@ -162,11 +166,14 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
             lhs = carry.expr();
             rhs = 0.expr();
             for idx in 16..32 {
-                lhs = lhs + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
+                lhs = lhs
+                    + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
                 rhs = rhs + b.cells[idx].expr() * exponent.clone();
                 exponent = exponent * 256.expr();
             }
-            rhs = rhs + (1.expr() - result.cells[0].expr()) * exponent
+            rhs = rhs
+                + (1.expr() - result.cells[0].expr())
+                    * exponent
                     * (1.expr() - sumc_is_zero_expr);
             lt_constraints.push(lhs - rhs);
 
@@ -180,10 +187,10 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
 
             // Check each cell in c in within 8-bit range
             let mut c_range_lookups = vec![];
-            for idx in 0..32 {
+            for cell in c.iter() {
                 c_range_lookups.push(Lookup::FixedLookup(
                     FixedLookup::Range256,
-                    [c[idx].expr(), 0.expr(), 0.expr()],
+                    [cell.expr(), 0.expr(), 0.expr()],
                 ))
             }
 
@@ -195,7 +202,7 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 1,
-                    value: swap.expr() * a.expr() + no_swap.clone() * b.expr(),
+                    value: swap.expr() * a.expr() + no_swap * b.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
@@ -215,11 +222,9 @@ impl<F:FieldExt> OpGadget<F> for LtGadget<F> {
                     sumc_is_zero_constraints,
                     lt_constraints,
                     result_constraints,
-                ].concat(),
-                lookups: [
-                    c_range_lookups,
-                    bus_mapping_lookups
-                ].concat()
+                ]
+                .concat(),
+                lookups: [c_range_lookups, bus_mapping_lookups].concat(),
             }
         };
 
@@ -317,7 +322,8 @@ impl<F: FieldExt> LtGadget<F> {
             offset,
             Some(execution_step.values[2].to_word()),
         )?;
-        self.success.c
+        self.success
+            .c
             .iter()
             .zip(execution_step.values[3].to_word().iter())
             .map(|(alloc, value)| {
@@ -327,48 +333,46 @@ impl<F: FieldExt> LtGadget<F> {
         self.success.carry.assign(
             region,
             offset,
-            Some(F::from_u64(execution_step.values[4].to_bytes_le()[0] as u64)),
+            Some(F::from_u64(
+                execution_step.values[4].to_bytes_le()[0] as u64,
+            )),
         )?;
         let sumc_digits = execution_step.values[5].to_u64_digits();
-        let sumc = F::from_u64(if sumc_digits.is_empty() { 0u64 } else { sumc_digits[0] });
+        let sumc = F::from_u64(if sumc_digits.is_empty() {
+            0u64
+        } else {
+            sumc_digits[0]
+        });
         let sumc_inv = sumc.invert().unwrap_or(F::zero());
-        self.success.sumc.assign(
-            region,
-            offset,
-            Some(sumc),
-        )?;
-        self.success.sumc_inv.assign(
-            region,
-            offset,
-            Some(sumc_inv),
-        )?;
+        self.success.sumc.assign(region, offset, Some(sumc))?;
+        self.success
+            .sumc_inv
+            .assign(region, offset, Some(sumc_inv))?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use num::BigUint;
-    use crate::util::ToWord;
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
+    use crate::util::ToWord;
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use num::BigUint;
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {
         ($execution_step:expr, $operations:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Base>::new($execution_step, $operations);
+            let circuit =
+                TestCircuit::<Base>::new($execution_step, $operations);
             let prover = MockProver::<Base>::run(9, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
 
-    fn subtract(
-        a: &BigUint,
-        b: &BigUint,
-    ) -> (BigUint, BigUint, BigUint){
+    fn subtract(a: &BigUint, b: &BigUint) -> (BigUint, BigUint, BigUint) {
         let a8s = a.to_word();
         let b8s = b.to_word();
         let mut c8s = [0u8; 32];
@@ -379,8 +383,7 @@ mod test {
             if tmp < 0 {
                 c8s[idx] = (tmp + (1 << 8)) as u8;
                 sub_carry = 1;
-            }
-            else {
+            } else {
                 c8s[idx] = tmp as u8;
                 sub_carry = 0;
             }
@@ -395,11 +398,15 @@ mod test {
         for limb in c8s.iter() {
             sumc += *limb as u64;
         }
-        (BigUint::from_bytes_le(&c8s), BigUint::from(carry), BigUint::from(sumc))
+        (
+            BigUint::from_bytes_le(&c8s),
+            BigUint::from(carry),
+            BigUint::from(sumc),
+        )
     }
 
     #[test]
-    fn lt_gadget(){
+    fn lt_gadget() {
         let a = BigUint::from(0x03_02_01u64);
         let b = BigUint::from(0x09_07_05u64);
         let mut result = [0u8; 32];
@@ -412,18 +419,12 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::LT,
@@ -432,9 +433,9 @@ mod test {
                         a.clone(),
                         b.clone(),
                         BigUint::from_bytes_le(&result),
-                        c.clone(),
-                        carry.clone(),
-                        sumc.clone()
+                        c,
+                        carry,
+                        sumc,
                     ],
                 }
             ],
@@ -506,18 +507,12 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::LT,
@@ -526,9 +521,9 @@ mod test {
                         a.clone(),
                         a.clone(),
                         BigUint::from_bytes_le(&result),
-                        c.clone(),
-                        carry.clone(),
-                        sumc.clone(),
+                        c,
+                        carry,
+                        sumc,
                     ],
                 }
             ],
@@ -600,18 +595,12 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::LT,
@@ -620,9 +609,9 @@ mod test {
                         b.clone(),
                         a.clone(),
                         BigUint::from_bytes_le(&result),
-                        c.clone(),
-                        carry.clone(),
-                        sumc.clone(),
+                        c,
+                        carry,
+                        sumc,
                     ],
                 }
             ],
@@ -694,18 +683,12 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::GT,
@@ -714,9 +697,9 @@ mod test {
                         a.clone(),
                         b.clone(),
                         BigUint::from_bytes_le(&result),
-                        c.clone(),
-                        carry.clone(),
-                        sumc.clone(),
+                        c,
+                        carry,
+                        sumc,
                     ],
                 }
             ],
@@ -788,18 +771,12 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::GT,
@@ -808,9 +785,9 @@ mod test {
                         a.clone(),
                         a.clone(),
                         BigUint::from_bytes_le(&result),
-                        c.clone(),
-                        carry.clone(),
-                        sumc.clone(),
+                        c,
+                        carry,
+                        sumc,
                     ],
                 }
             ],
@@ -882,29 +859,23 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::GT,
                     case: Case::Success,
                     values: vec![
-                        b.clone(),
-                        a.clone(),
+                        b,
+                        a,
                         BigUint::from_bytes_le(&result),
-                        c.clone(),
-                        carry.clone(),
-                        sumc.clone(),
+                        c,
+                        carry,
+                        sumc,
                     ],
                 }
             ],

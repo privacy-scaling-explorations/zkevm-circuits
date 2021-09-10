@@ -15,12 +15,12 @@ use halo2::{
 use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
-mod push;
 mod comparator;
+mod push;
 
 use arithmetic::AddGadget;
-use push::PushGadget;
 use comparator::LtGadget;
+use push::PushGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],

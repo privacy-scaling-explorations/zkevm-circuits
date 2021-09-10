@@ -1,6 +1,6 @@
 use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    FixedLookup, Lookup, Word
+    FixedLookup, Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::{Expr, ToWord};
@@ -289,12 +289,12 @@ impl<F: FieldExt> PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use num::BigUint;
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use num::BigUint;
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {

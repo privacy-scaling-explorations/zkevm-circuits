@@ -1,7 +1,6 @@
 //! The EVM circuit implementation.
 
 use crate::util::Expr;
-use num::BigUint;
 use bus_mapping::{evm::OpcodeId, operation::Target};
 use halo2::{
     arithmetic::FieldExt,
@@ -11,6 +10,7 @@ use halo2::{
     },
     poly::Rotation,
 };
+use num::BigUint;
 use std::{convert::TryInto, iter};
 
 mod op_execution;
