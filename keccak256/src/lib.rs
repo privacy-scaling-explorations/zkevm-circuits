@@ -21,6 +21,101 @@ pub const ROT_TABLE: [[usize; 5]; 5] = [
     [27, 20, 39, 8, 14],
 ];
 
+pub struct RunningSumConfig<F> {
+    q_enable: Selector,
+    base_13_coef_col: Column<Advice>,
+    base_13_slice_col: Column<Advice>,
+    base_9_coef_col: Column<Advice>,
+    base_9_slice_col: Column<Advice>,
+    block_count_col: Column<Advice>,
+    base_13_acc_col: Column<Advice>,
+    base_9_acc_col: Column<Advice>,
+    block_count_acc_col: Column<Advice>,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> RunningSumConfig<F> {
+    pub fn configure(
+        q_enable: Selector,
+        meta: &mut ConstraintSystem<F>,
+        base_13_coef_col: Column<Advice>,
+        base_13_slice_col: Column<Advice>,
+        base_9_coef_col: Column<Advice>,
+        base_9_slice_col: Column<Advice>,
+        block_count_col: Column<Advice>,
+        base_13_acc_col: Column<Advice>,
+        base_9_acc_col: Column<Advice>,
+        block_count_acc_col: Column<Advice>,
+        chunk_idx: u64,
+        step: u32,
+    ) -> RunningSumConfig<F> {
+        // TODO: lookup check, block count summing check
+        meta.create_gate("running sum", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let base_13_coef =
+                meta.query_advice(base_13_coef_col, Rotation::cur());
+            let base_13_coef_next =
+                meta.query_advice(base_13_coef_col, Rotation::next());
+            let base_13_slice =
+                meta.query_advice(base_13_slice_col, Rotation::cur());
+            let base_9_coef =
+                meta.query_advice(base_9_coef_col, Rotation::cur());
+            let base_9_coef_next =
+                meta.query_advice(base_9_coef_col, Rotation::next());
+            let base_9_slice =
+                meta.query_advice(base_9_slice_col, Rotation::cur());
+            let block_count =
+                meta.query_advice(block_count_col, Rotation::cur());
+            let base_13_acc =
+                meta.query_advice(base_13_acc_col, Rotation::cur());
+            let base_13_acc_next =
+                meta.query_advice(base_13_acc_col, Rotation::next());
+            let base_9_acc = meta.query_advice(base_9_acc_col, Rotation::cur());
+            let base_9_acc_next =
+                meta.query_advice(base_9_acc_col, Rotation::next());
+            let block_count_acc =
+                meta.query_advice(block_count_acc_col, Rotation::cur());
+            let block_count_acc_next =
+                meta.query_advice(block_count_acc_col, Rotation::next());
+
+            let coef_step_13 =
+                Expression::Constant(F::from(u64::pow(13, step)));
+            let coef_step_9 = Expression::Constant(F::from(u64::pow(9, step)));
+
+            let expr_next_13_coef =
+                base_13_coef_next - coef_step_13 * base_13_coef;
+            let expr_next_9_coef =
+                base_9_coef_next - coef_step_9 * base_13_coef;
+            let expr_next_13_acc =
+                (base_13_acc_next - base_13_acc) - base_13_coef * base_13_slice;
+            let expr_next_9_acc =
+                (base_9_acc_next - base_9_acc) - base_9_coef * base_9_slice;
+            let expr_next_block_count_acc =
+                block_count_acc_next - block_count_acc - block_count;
+            // TODO: is this the correct way to check?
+            vec![
+                q_enable * expr_next_13_coef,
+                q_enable * expr_next_9_coef,
+                q_enable * expr_next_13_acc,
+                q_enable * expr_next_9_acc,
+                q_enable * expr_next_block_count_acc,
+            ]
+        });
+        RunningSumConfig {
+            q_enable,
+            base_13_coef_col,
+            base_13_slice_col,
+            base_9_coef_col,
+            base_9_slice_col,
+            block_count_col,
+            base_13_acc_col,
+            base_9_acc_col,
+            block_count_acc_col,
+            _marker: PhantomData,
+        }
+    }
+}
+
 pub struct ThetaConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
