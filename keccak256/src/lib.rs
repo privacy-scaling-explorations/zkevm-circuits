@@ -13,6 +13,14 @@ use std::marker::PhantomData;
 
 pub const KECCAK_NUM_ROUNDS: usize = 24;
 
+pub const ROT_TABLE: [[usize; 5]; 5] = [
+    [0, 36, 3, 41, 18],
+    [1, 44, 10, 45, 2],
+    [62, 6, 43, 15, 61],
+    [28, 55, 25, 21, 56],
+    [27, 20, 39, 8, 14],
+];
+
 pub struct ThetaConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
@@ -70,6 +78,16 @@ pub struct RhoConfig<F> {
     _marker: PhantomData<F>,
 }
 
+impl<F: FieldExt> RhoConfig<F> {
+    pub fn configure(
+        q_enable: Selector,
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+    ) {
+        meta.create_gate("rho", |meta| {});
+    }
+}
+
 pub struct PiConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
@@ -86,12 +104,13 @@ impl<F: FieldExt> PiConfig<F> {
             let q_enable = meta.query_selector(q_enable);
             let mut checks: Vec<Expression<F>> = Vec::new();
             for (x, y) in (0..5).cartesian_product(0..5) {
-                let new_state =
-                    meta.query_advice(state[5 * x + y], Rotation::next());
                 let old_state = meta.query_advice(
                     state[5 * ((x + 3 * y) % 5) + x],
                     Rotation::cur(),
                 );
+                let new_state =
+                    meta.query_advice(state[5 * x + y], Rotation::next());
+
                 let check = q_enable.clone() * (new_state - old_state);
                 checks.push(check.clone());
             }
