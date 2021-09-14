@@ -194,6 +194,7 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
                 ))
             }
 
+            #[allow(clippy::suspicious_operation_groupings)]
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: 0,
