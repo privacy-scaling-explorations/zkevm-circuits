@@ -55,9 +55,9 @@ impl CaseConfig {
             }
     }
 
-    // allocate indexes of cells for words, cells and unused. It assumes input
+    // allocate indices of cells for words, cells and unused. It assumes input
     // free_cells are in order of rotation and then column index.
-    fn allocation_idxs<F: FieldExt>(
+    fn allocate_indices<F: FieldExt>(
         &self,
         num_case: usize,
         free_cells: &[Cell<F>],
@@ -247,6 +247,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     r,
                     &state_curr,
                     &state_next,
+                    &qs_byte_lookups[..],
                     qs_ops,
                     qs_op_idx,
                     free_cells,
@@ -306,6 +307,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         r: F,
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
+        qs_byte_lookups: &[Cell<F>],
         qs_ops: &[Cell<F>],
         qs_op_idx: usize,
         free_cells: &[Cell<F>],
@@ -351,7 +353,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 }
 
                 let (word_ranges, cell_idxs, unused_idxs) =
-                    case_config.allocation_idxs(num_case, free_cells);
+                    case_config.allocate_indices(num_case, free_cells);
 
                 let words = word_ranges
                     .into_iter()
@@ -379,14 +381,26 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     preset.free_cells.push((*idx, F::zero()));
                 }
 
-                assert!(
-                    preset_map
-                        .insert((qs_op_idx, case_config.case), preset)
-                        .is_none(),
-                    "duplicated case configured"
-                );
-
                 let qs_case = &qs_cases[q_case_idx];
+                constraints.push(Constraint {
+                    name: "case qs_byte_lookups",
+                    selector: qs_op.expr() * qs_case.expr(),
+                    polys: preset
+                        .qs_byte_lookups
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, value)| {
+                            if value.is_zero() {
+                                // constraint qs_byte_lookup to 0 by default
+                                qs_byte_lookups[idx].expr()
+                            } else {
+                                // constraint qs_byte_lookup to 1 to enable byte lookup
+                                1.expr() - qs_byte_lookups[idx].expr()
+                            }
+                        })
+                        .collect(),
+                    lookups: vec![],
+                });
                 constraints.push(Constraint {
                     name: "case unused",
                     selector: qs_op.expr() * qs_case.expr(),
@@ -396,6 +410,13 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                         .collect(),
                     lookups: vec![],
                 });
+
+                assert!(
+                    preset_map
+                        .insert((qs_op_idx, case_config.case), preset)
+                        .is_none(),
+                    "duplicated case configured"
+                );
 
                 CaseAllocation {
                     selector: qs_case.clone(),
