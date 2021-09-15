@@ -121,22 +121,26 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
 
             // add constraints
             let add_constraints = {
-                let mut constraints = Vec::with_capacity(32);
-                // 256 * carry_out + c
-                let lhs = carry[0].expr() * 256.expr() + c.cells[0].expr();
-                // a + b (first carry_in is always 0)
-                let rhs = a.cells[0].expr() + b.cells[0].expr();
-                // equality check
-                constraints.push(lhs - rhs);
+                let mut constraints = Vec::with_capacity(64);
 
-                for idx in 1..32 {
+                for idx in 0..32 {
                     // 256 * carry_out + c
                     let lhs =
                         carry[idx].expr() * 256.expr() + c.cells[idx].expr();
                     // a + b + carry_in
                     let rhs = a.cells[idx].expr()
                         + b.cells[idx].expr()
-                        + carry[idx - 1].expr();
+                        + if idx == 0 {
+                            // first carry_in is always 0
+                            0.expr()
+                        } else {
+                            carry[idx - 1].expr()
+                        };
+
+                    // carry range check
+                    constraints.push(
+                        carry[idx].expr() * (1.expr() - carry[idx].expr()),
+                    );
                     // equality check
                     constraints.push(lhs - rhs)
                 }
