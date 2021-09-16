@@ -1,6 +1,6 @@
 use super::{
     param::{
-        CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE,
+        CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECUTION_STATE,
         NUM_CELL_OP_GADGET_SELECTOR, NUM_CELL_RESUMPTION,
     },
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Lookup, Word,
@@ -153,7 +153,7 @@ pub(crate) struct OpExecutionState<F> {
 
 impl<F: FieldExt> OpExecutionState<F> {
     pub(crate) fn new(cells: &[Cell<F>]) -> Self {
-        assert_eq!(cells.len(), NUM_CELL_OP_EXECTION_STATE);
+        assert_eq!(cells.len(), NUM_CELL_OP_EXECUTION_STATE);
 
         Self {
             is_executing: cells[0].clone(),

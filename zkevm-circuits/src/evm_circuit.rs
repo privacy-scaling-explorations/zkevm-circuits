@@ -16,7 +16,7 @@ use std::{convert::TryInto, iter};
 mod op_execution;
 use op_execution::{OpExecutionGadget, OpExecutionState};
 mod param;
-use param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECTION_STATE};
+use param::{CIRCUIT_HEIGHT, CIRCUIT_WIDTH, NUM_CELL_OP_EXECUTION_STATE};
 
 #[derive(Clone, Debug)]
 pub(crate) enum CallField {
@@ -46,7 +46,7 @@ pub(crate) enum CallField {
     // Value in wei of call.
     Value,
     // If call succeeds or not in the future.
-    IsPersistant,
+    IsPersistent,
     // If call is within a static call.
     IsStatic,
     // If call is `CREATE*`. We lookup op from calldata when is create,
@@ -173,8 +173,8 @@ struct Constraint<F> {
 pub(crate) struct Cell<F> {
     // expression for constraint
     expression: Expression<F>,
-    // relative position to selector for synthesis
     column: Column<Advice>,
+    // relative position to selector for synthesis
     rotation: usize,
 }
 
@@ -460,7 +460,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             vec![0.expr()]
         });
 
-        let num_cells_next_asseccible = NUM_CELL_OP_EXECTION_STATE;
+        let num_cells_next_asseccible = NUM_CELL_OP_EXECUTION_STATE;
 
         let cells_next =
             &mut cells_curr[..num_cells_next_asseccible].to_vec()[..];
@@ -477,11 +477,11 @@ impl<F: FieldExt> EvmCircuit<F> {
         });
 
         let op_execution_state_curr =
-            OpExecutionState::new(&cells_curr[..NUM_CELL_OP_EXECTION_STATE]);
+            OpExecutionState::new(&cells_curr[..NUM_CELL_OP_EXECUTION_STATE]);
         let op_execution_state_next =
-            OpExecutionState::new(&cells_next[..NUM_CELL_OP_EXECTION_STATE]);
+            OpExecutionState::new(&cells_next[..NUM_CELL_OP_EXECUTION_STATE]);
         let op_execution_free_cells =
-            cells_curr[NUM_CELL_OP_EXECTION_STATE..].to_vec();
+            cells_curr[NUM_CELL_OP_EXECUTION_STATE..].to_vec();
 
         let mut qs_op_execution = 0.expr();
         meta.create_gate(
