@@ -158,35 +158,13 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
                 selectors.iter().fold(0.expr(), |sum, s| sum + s.expr());
             push_constraints.push(selectors_sum - num_pushed);
 
-            let bus_mapping_lookups = [
-                // TODO: add 32 Bytecode lookups when supported
-                // selectors
-                //     .iter()
-                //     .zip(word.cells.iter())
-                //     .enumerate()
-                //     .map(|(idx, (selector, cell))| {
-                //         let OpExecutionState {
-                //             program_counter, ..
-                //         } = &state_curr;
-                //         Lookup::BusMappingLookup(BusMappingLookup::Bytecode {
-                //             hash: selector.expr() * hash,
-                //             index: selector.expr()
-                //                 * (program_counter.expr()
-                //                     + one.clone()
-                //                     + Expression::Constant(F::from_u64(
-                //                         idx as u64,
-                //                     ))),
-                //             value: cell.expr(),
-                //         })
-                //     })
-                //     .collect::<Vec<_>>(),
-                vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
+            let bus_mapping_lookups =
+                [vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: -1,
                     value: word.expr(),
                     is_write: true,
-                })],
-            ]
-            .concat();
+                })]]
+                .concat();
 
             Constraint {
                 name: "PushGadget success",
