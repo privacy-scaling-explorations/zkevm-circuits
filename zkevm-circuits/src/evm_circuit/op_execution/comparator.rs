@@ -137,12 +137,9 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
                 no_swap.clone() * (opcode.expr() - OpcodeId::LT.expr()),
             ];
 
-            // sumc_expr == sumc_cell
-            // result = 1 <=> sumc_expr != 0
-            let mut sumc_expr = 0.expr(); // The sum of c limbs
-            for byte in c.iter() {
-                sumc_expr = sumc_expr + byte.expr();
-            }
+            // The sum of c limbs
+            let sumc_expr =
+                c.iter().fold(0.expr(), |acc, byte| acc + byte.expr());
             let sumc_is_zero_expr =
                 1.expr() - sumc_expr.clone() * sumc_inv.expr();
             // same as is_zero gadget, currently we cannot use gadget inside OpGadget
@@ -150,6 +147,7 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
                 sumc_expr.clone() * sumc_is_zero_expr.clone(),
                 sumc_inv.expr() * sumc_is_zero_expr.clone(),
             ];
+            // sumc_expr == sumc_cell
             // `result * (1 - sumc * sumc_inv) = 0`. This means `result = 1 <=> sumc_expr != 0`
             let sumc_constraints = vec![
                 sumc_expr - sumc.expr(),
@@ -174,10 +172,12 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
             lt_constraints.push(lhs - rhs);
 
             // a[31..16] + c[31..16] + carry =
-            //     b[31..16] + (1 - result) * 256^16 * (1 - is_zero(sumc))
-            // a < b, a + c = b, result = 1, is_zero(sumc) = 0
-            // a = b, a + c = b, result = 0, is_zero(sumc) = 1
-            // a > b, a + c = b + 2^256, result = 0, is_zero(sumc) = 0
+            //     b[31..16] + (1 - result) * 256^16 * (1 - sumc_is_zero)
+            // a < b, a + c = b, result = 1, sumc_is_zero = 0
+            // a = b, a + c = b, result = 0, sumc_is_zero = 1
+            // a > b, a + c = b + 2^256, result = 0, sumc_is_zero = 0
+            // Note that, when result = 1, sumc != 0 is guaranteed by `sumc_constraints`,
+            // and so sumc_is_zero must be 0.
             exponent = 1.expr();
             lhs = carry.expr();
             rhs = 0.expr();
