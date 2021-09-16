@@ -437,14 +437,6 @@ impl<F: FieldExt> EvmCircuit<F> {
             vec![0.expr()]
         });
 
-        // TODO: Enable this when switch to kzg branch and remove the failure
-        //       VerifyFailure::ConstraintPoison
-        // meta.create_gate("Query byte lookup as a synthetic selector", |meta| {
-        //     let expr = meta.query_advice(qs_byte_lookup, Rotation::cur());
-
-        //     vec![expr.clone() * (Expression::Constant(F::one()) - expr)]
-        // });
-
         let mut cells_curr = Vec::with_capacity(CIRCUIT_WIDTH * CIRCUIT_HEIGHT);
         meta.create_gate("Query cells for current step", |meta| {
             for h in 0..CIRCUIT_HEIGHT as i32 {
