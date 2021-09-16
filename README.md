@@ -1,3 +1,3 @@
 # Circuits for zkEVM
 
-WIP spec: https://hackmd.io/Hy_nqH4yTOmjjS9nbOArgw
+WIP spec: https://github.com/appliedzkp/zkevm-specs
