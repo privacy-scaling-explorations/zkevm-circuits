@@ -1,13 +1,13 @@
 //use crate::evm_circuit::{FixedLookup, Lookup};
-use super::super::{Case, Cell, Constraint, ExecutionStep};
-use super::{
-    CaseAllocation, CaseConfig, OpExecutionState, CoreStateInstance,
-    OpGadget
+use super::super::{
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
 };
-use bus_mapping::evm::OpcodeId;
+use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
+use crate::util::Expr;
 
 #[derive(Clone, Debug)]
 struct PopSuccessAllocation<F> {
@@ -72,26 +72,24 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         op_execution_state_curr: &OpExecutionState<F>,
         op_execution_state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
-        let pop = Expression::Constant(F::from_u64(OpcodeId::POP.0 as u64));
         let OpExecutionState { opcode, .. } = &op_execution_state_curr;
-        let common_polys = vec![(opcode.expr() - pop)];
+        let common_polys = vec![opcode.expr() - OpcodeId::POP.expr()];
         
         let success = {
             // interpreter state transition constraints
-            let one = Expression::Constant(F::from_u64(1));
             let op_execution_state_transition_constraints = vec![
                 op_execution_state_next.global_counter.expr()
                     - (op_execution_state_curr.global_counter.expr()
-                        + one.clone()),
+                        + 1.expr()),
                 op_execution_state_next.stack_pointer.expr()
                     - (op_execution_state_curr.stack_pointer.expr()
-                        + one.clone()),
+                        + 1.expr()),
                 op_execution_state_next.program_counter.expr()
                     - (op_execution_state_curr.program_counter.expr()
-                        + one),
+                        + 1.expr()),
                 op_execution_state_next.gas_counter.expr()
                     - (op_execution_state_curr.gas_counter.expr()
-                        + Expression::Constant(F::from_u64(2))),
+                        + GasCost::QUICK.expr()),
             ];
 
             let PopSuccessAllocation {
@@ -113,7 +111,6 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         };
 
         let stack_underflow = {
-            let zero = Expression::Constant(F::from_u64(1024));
             
             let stack_pointer = op_execution_state_curr.stack_pointer.expr();
             Constraint {
@@ -122,7 +119,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                 polys: vec![
                     common_polys.clone(),
                      vec![
-                        (stack_pointer - zero),
+                        (stack_pointer - 1024.expr()),
                     ],
                 ]
                 .concat(),
@@ -131,13 +128,10 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         };
 
         let out_of_gas = {
-            let (one, two) = (
-                Expression::Constant(F::from_u64(1)),
-                Expression::Constant(F::from_u64(2)),
-            );
+            
             let (case_selector, gas_available) = &self.out_of_gas;
             let gas_overdemand = op_execution_state_curr.gas_counter.expr()
-                + two.clone()
+                + GasCost::QUICK.expr()
                 - gas_available.expr();
             Constraint {
                 name: "PopGadget out of gas",
@@ -145,8 +139,8 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                 polys: [
                     common_polys,
                     vec![
-                        (gas_overdemand.clone() - one)
-                            * (gas_overdemand - two)
+                        (gas_overdemand.clone() - 1.expr())
+                            * (gas_overdemand - 2.expr())
                     ],
                 ]
                 .concat(),
