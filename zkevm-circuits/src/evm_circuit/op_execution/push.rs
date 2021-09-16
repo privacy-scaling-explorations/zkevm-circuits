@@ -3,7 +3,7 @@ use super::super::{
     FixedLookup, Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use crate::util::Expr;
+use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
@@ -273,12 +273,12 @@ impl<F: FieldExt> PushGadget<F> {
         self.success.word.assign(
             region,
             offset,
-            Some(execution_step.values[0]),
+            Some(execution_step.values[0].to_word()),
         )?;
         self.success
             .selectors
             .iter()
-            .zip(execution_step.values[1].iter())
+            .zip(execution_step.values[1].to_word().iter())
             .map(|(alloc, bit)| {
                 alloc.assign(region, offset, Some(F::from_u64(*bit as u64)))
             })
@@ -294,6 +294,7 @@ mod test {
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use num::BigUint;
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {
@@ -315,14 +316,8 @@ mod test {
                 opcode: OpcodeId::PUSH2,
                 case: Case::Success,
                 values: vec![
-                    [
-                        2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    [
-                        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ]
+                    BigUint::from(0x02_03u64),
+                    BigUint::from(0x01_01u64),
                 ],
             }],
             vec![Operation {
@@ -332,7 +327,7 @@ mod test {
                 values: [
                     Base::zero(),
                     Base::from_u64(1023),
-                    Base::from_u64(2 + 2),
+                    Base::from_u64(2 + 3),
                     Base::zero(),
                 ]
             }],

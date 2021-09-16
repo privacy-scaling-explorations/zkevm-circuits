@@ -15,9 +15,11 @@ use halo2::{
 use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
+mod comparator;
 mod push;
 mod pop;
 use arithmetic::AddGadget;
+use comparator::LtGadget;
 use push::PushGadget;
 use pop::PopGadget;
 
@@ -210,6 +212,7 @@ pub(crate) struct OpExecutionGadget<F> {
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
     pop_gadget: PopGadget<F>,
+    lt_gadget: LtGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -266,6 +269,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(add_gadget);
         construct_op_gadget!(push_gadget);
         construct_op_gadget!(pop_gadget);
+        construct_op_gadget!(lt_gadget);
         let _ = qs_op_idx;
 
 
@@ -305,6 +309,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             add_gadget,
             push_gadget,
             pop_gadget,
+            lt_gadget,
         }
     }
 
@@ -543,6 +548,13 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 OpcodeId(0x50) => self.pop_gadget.assign(
+                  region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+
+                OpcodeId::LT | OpcodeId::GT => self.lt_gadget.assign(
                     region,
                     offset,
                     core_state,

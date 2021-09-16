@@ -1,10 +1,10 @@
 //! Common utility traits and functions.
-
 use bus_mapping::{
     evm::{GasCost, OpcodeId},
     operation::Target,
 };
 use halo2::{arithmetic::FieldExt, plonk::Expression};
+use num::BigUint;
 
 pub(crate) trait Expr<F: FieldExt> {
     fn expr(&self) -> Expression<F>;
@@ -56,3 +56,19 @@ impl_unsigned_expr!(OpcodeId, OpcodeId::as_u8);
 impl_unsigned_expr!(GasCost, GasCost::as_u8);
 
 impl_signed_expr!(i32);
+
+pub(crate) trait ToWord {
+    /// Convert the value into 32 8-bit bytes in little endian
+    fn to_word(&self) -> [u8; 32];
+}
+
+impl ToWord for BigUint {
+    #[inline]
+    fn to_word(&self) -> [u8; 32] {
+        let mut ret = [0u8; 32];
+        for (pos, v) in self.to_bytes_le().iter().enumerate() {
+            ret[pos] = *v
+        }
+        ret
+    }
+}
