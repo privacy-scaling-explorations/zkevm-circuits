@@ -11,13 +11,22 @@ use std::{array, convert::TryInto};
 #[derive(Clone, Debug)]
 struct LtSuccessAllocation<F> {
     selector: Cell<F>,
+    // A 0/1 value. The gadget always checks if `a < b`. When the swap value is 0,
+    // the gadget performs opcode LT and treats top 2 stack values as `a, b`.
+    // Otherwise, the gadget performs opcode GT, and the top 2 stack values are
+    // interpreted as `b, a`.
     swap: Cell<F>,
     a: Word<F>,
     b: Word<F>,
+    // A 0/1 value of opcode output.
     result: Word<F>,
+    // Satisfy `a + c = b` and allow overflow at 256 bit
     c: [Cell<F>; 32],
+    // The carry of the addition check `a + c = b` in 128 bit chunks.
     carry: Cell<F>,
+    // The sum of all limbs in `c`.
     sumc: Cell<F>,
+    // The inverse of `sumc`.
     sumc_inv: Cell<F>,
 }
 
@@ -118,6 +127,9 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
                 sumc_inv,
             } = &self.success;
 
+            // swap = 0/1
+            // swap = 0 <=> opcode = LT
+            // swap = 1 <=> opcode = GT
             let no_swap = 1.expr() - swap.expr();
             let swap_constraints = vec![
                 swap.expr() * no_swap.clone(),
@@ -126,7 +138,7 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
             ];
 
             // sumc_expr == sumc_cell
-            // result = 1, sumc_expr != 0
+            // result = 1 <=> sumc_expr != 0
             let mut sumc_expr = 0.expr(); // The sum of c limbs
             for byte in c.iter() {
                 sumc_expr = sumc_expr + byte.expr();
@@ -138,16 +150,20 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
                 sumc_expr.clone() * sumc_is_zero_expr.clone(),
                 sumc_inv.expr() * sumc_is_zero_expr.clone(),
             ];
+            // `result * (1 - sumc * sumc_inv) = 0`. This means `result = 1 <=> sumc_expr != 0`
             let sumc_constraints = vec![
                 sumc_expr - sumc.expr(),
                 result.cells[0].expr() * sumc_is_zero_expr.clone(),
             ];
 
-            let mut lt_constraints = vec![];
+            // carry = 0/1
+            let mut lt_constraints =
+                vec![carry.expr() * (1.expr() - carry.expr())];
             // a[15..0] + c[15..0] = carry * 256^16 + b[15..0]
             let mut exponent = 1.expr();
             let mut lhs = 0.expr();
             let mut rhs = 0.expr();
+            #[allow(clippy::needless_range_loop)]
             for idx in 0..16 {
                 lhs = lhs
                     + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
@@ -159,12 +175,13 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
 
             // a[31..16] + c[31..16] + carry =
             //     b[31..16] + (1 - result) * 256^16 * (1 - is_zero(sumc))
-            // - a < b, a + c = b, result = 1, is_zero(sumc) = 0
-            // - a = b, a + c = b, result = 0, is_zero(sumc) = 1
-            // - a > b, a + c = b + 2^256, result = 0, is_zero(sumc) = 0
+            // a < b, a + c = b, result = 1, is_zero(sumc) = 0
+            // a = b, a + c = b, result = 0, is_zero(sumc) = 1
+            // a > b, a + c = b + 2^256, result = 0, is_zero(sumc) = 0
             exponent = 1.expr();
             lhs = carry.expr();
             rhs = 0.expr();
+            #[allow(clippy::needless_range_loop)]
             for idx in 16..32 {
                 lhs = lhs
                     + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
@@ -177,22 +194,30 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
                     * (1.expr() - sumc_is_zero_expr);
             lt_constraints.push(lhs - rhs);
 
-            // result[0] == 0/1, result[1..32] == 0
-            let mut result_constraints = vec![
-                result.cells[0].expr() * (1.expr() - result.cells[0].expr()),
-            ];
-            for idx in 1..32 {
-                result_constraints.push(result.cells[idx].expr());
-            }
+            // result[0] = 0/1, result[1..32] = 0
+            let result_constraints = result
+                .cells
+                .iter()
+                .enumerate()
+                .map(|(idx, cell)| {
+                    if idx == 0 {
+                        cell.expr() * (1.expr() - cell.expr())
+                    } else {
+                        cell.expr()
+                    }
+                })
+                .collect();
 
             // Check each cell in c in within 8-bit range
-            let mut c_range_lookups = vec![];
-            for cell in c.iter() {
-                c_range_lookups.push(Lookup::FixedLookup(
-                    FixedLookup::Range256,
-                    [cell.expr(), 0.expr(), 0.expr()],
-                ))
-            }
+            let c_range_lookups = c
+                .iter()
+                .map(|cell| {
+                    Lookup::FixedLookup(
+                        FixedLookup::Range256,
+                        [cell.expr(), 0.expr(), 0.expr()],
+                    )
+                })
+                .collect();
 
             #[allow(clippy::suspicious_operation_groupings)]
             let bus_mapping_lookups = vec![
