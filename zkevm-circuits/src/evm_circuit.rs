@@ -10,6 +10,7 @@ use halo2::{
     },
     poly::Rotation,
 };
+use num::BigUint;
 use std::{convert::TryInto, iter};
 
 mod op_execution;
@@ -167,6 +168,7 @@ struct Constraint<F> {
     polys: Vec<Expression<F>>,
     lookups: Vec<Lookup<F>>,
 }
+
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
     // expression for constraint
@@ -208,7 +210,7 @@ impl<F: FieldExt> Expr<F> for Cell<F> {
 struct Word<F> {
     // random linear combination expression of cells
     expression: Expression<F>,
-    // inner cells for syntesis
+    // inner cells for synthesis
     cells: [Cell<F>; 32],
 }
 
@@ -309,7 +311,7 @@ enum Case {
 pub(crate) struct ExecutionStep {
     opcode: OpcodeId,
     case: Case,
-    values: Vec<[u8; 32]>,
+    values: Vec<BigUint>,
 }
 
 // TODO: use Operation from bus_mapping

@@ -15,9 +15,11 @@ use halo2::{
 use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
+mod comparator;
 mod push;
 
 use arithmetic::AddGadget;
+use comparator::LtGadget;
 use push::PushGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
@@ -207,6 +209,7 @@ pub(crate) struct OpExecutionGadget<F> {
     preset_map: HashMap<(usize, Case), Preset<F>>,
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
+    lt_gadget: LtGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -262,6 +265,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         construct_op_gadget!(add_gadget);
         construct_op_gadget!(push_gadget);
+        construct_op_gadget!(lt_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -299,6 +303,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             resumption,
             add_gadget,
             push_gadget,
+            lt_gadget,
         }
     }
 
@@ -531,6 +536,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 )?,
                 // PUSH1, ..., PUSH32
                 OpcodeId(0x60..=0x7f) => self.push_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                OpcodeId::LT | OpcodeId::GT => self.lt_gadget.assign(
                     region,
                     offset,
                     core_state,
