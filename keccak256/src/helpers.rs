@@ -33,3 +33,14 @@ fn rotate_and_convert(base13_input: u64, rot: u64) -> u64 {
 
     acc
 }
+
+pub fn get_step_size(chunk_idx: usize, rot: usize) -> usize {
+    let max_offset = 64 - rot;
+    if (chunk_idx < max_offset) && (chunk_idx + 4 > max_offset) {
+        return max_offset - chunk_idx;
+    }
+    if (chunk_idx < 64) && (chunk_idx > 60) {
+        return 64 - chunk_idx;
+    }
+    return 4;
+}

@@ -10,6 +10,8 @@ use halo2::{
 use itertools::Itertools;
 use pasta_curves::pallas;
 use std::marker::PhantomData;
+pub mod helpers;
+use helpers::*;
 
 pub const KECCAK_NUM_ROUNDS: usize = 24;
 
@@ -199,7 +201,38 @@ impl<F: FieldExt> RhoConfig<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
     ) {
-        meta.create_gate("rho", |meta| {});
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            let chunk_idx = 1;
+            let rot = ROT_TABLE[x][y];
+            let step = get_step_size(chunk_idx, rot);
+
+            let base_13_cols = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+            let base_9_cols = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+            let block_count_cols = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+
+            let q_running_sum = meta.selector();
+            let config = RunningSumConfig::configure(
+                q_running_sum,
+                meta,
+                base_13_cols,
+                base_9_cols,
+                block_count_cols,
+                chunk_idx as u64,
+                step as u32,
+            );
+        }
     }
 }
 
