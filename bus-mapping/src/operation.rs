@@ -43,6 +43,8 @@ impl RW {
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum Target {
+    /// Dummy target to pad meaningful targets
+    Noop,
     /// Means the target of the operation is the Memory.
     Memory,
     /// Means the target of the operation is the Stack.

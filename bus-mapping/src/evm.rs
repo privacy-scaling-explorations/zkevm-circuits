@@ -1,5 +1,6 @@
 //! Evm types needed for parsing instruction sets as well
 
+pub(crate) mod gas;
 pub(crate) mod instruction;
 pub(crate) mod opcodes;
 
@@ -9,6 +10,7 @@ use lazy_static::lazy_static;
 use num::{BigUint, Num, Zero};
 use serde::{Deserialize, Serialize};
 pub use {
+    gas::GasCost,
     instruction::Instruction,
     opcodes::{ids::OpcodeId, Opcode},
 };
