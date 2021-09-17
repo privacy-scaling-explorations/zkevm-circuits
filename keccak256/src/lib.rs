@@ -23,14 +23,12 @@ pub const ROT_TABLE: [[usize; 5]; 5] = [
 
 pub struct RunningSumConfig<F> {
     q_enable: Selector,
-    base_13_coef_col: Column<Advice>,
-    base_13_slice_col: Column<Advice>,
-    base_9_coef_col: Column<Advice>,
-    base_9_slice_col: Column<Advice>,
-    block_count_col: Column<Advice>,
-    base_13_acc_col: Column<Advice>,
-    base_9_acc_col: Column<Advice>,
-    block_count_acc_col: Column<Advice>,
+    // coef, slice, acc
+    base_13_cols: [Column<Advice>; 3],
+    // coef, slice, acc
+    base_9_cols: [Column<Advice>; 3],
+    // block count, step 1 acc, step 2 acc, step 3 acc
+    block_count_cols: [Column<Advice>; 3],
     _marker: PhantomData<F>,
 }
 
@@ -38,79 +36,101 @@ impl<F: FieldExt> RunningSumConfig<F> {
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
-        base_13_coef_col: Column<Advice>,
-        base_13_slice_col: Column<Advice>,
-        base_9_coef_col: Column<Advice>,
-        base_9_slice_col: Column<Advice>,
-        block_count_col: Column<Advice>,
-        base_13_acc_col: Column<Advice>,
-        base_9_acc_col: Column<Advice>,
-        block_count_acc_col: Column<Advice>,
+        base_13_cols: [Column<Advice>; 3],
+        base_9_cols: [Column<Advice>; 3],
+        block_count_cols: [Column<Advice>; 3],
         chunk_idx: u64,
         step: u32,
     ) -> RunningSumConfig<F> {
         // TODO: lookup check, block count summing check
         meta.create_gate("running sum", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let base_13_coef =
-                meta.query_advice(base_13_coef_col, Rotation::cur());
-            let base_13_coef_next =
-                meta.query_advice(base_13_coef_col, Rotation::next());
-            let base_13_slice =
-                meta.query_advice(base_13_slice_col, Rotation::cur());
-            let base_9_coef =
-                meta.query_advice(base_9_coef_col, Rotation::cur());
-            let base_9_coef_next =
-                meta.query_advice(base_9_coef_col, Rotation::next());
-            let base_9_slice =
-                meta.query_advice(base_9_slice_col, Rotation::cur());
+            // coef is correctly computed
+            // acc is correctly accumulated
+
+            // slice 13 to slice 9 mapping is correctly looked up
+            // block count is correctly looked up
+            // block count, step 2 acc, step 3 acc are correctly
+            // validated
+
+            // what about the last row?
+
+            let coef_13 = meta.query_advice(base_13_cols[0], Rotation::cur());
+            let coef_13_next =
+                meta.query_advice(base_13_cols[0], Rotation::next());
+            let slice_13 = meta.query_advice(base_13_cols[1], Rotation::cur());
+            let coef_9 = meta.query_advice(base_9_cols[0], Rotation::cur());
+            let coef_9_next =
+                meta.query_advice(base_9_cols[0], Rotation::next());
+            let slice_9 = meta.query_advice(base_9_cols[1], Rotation::cur());
             let block_count =
-                meta.query_advice(block_count_col, Rotation::cur());
-            let base_13_acc =
-                meta.query_advice(base_13_acc_col, Rotation::cur());
-            let base_13_acc_next =
-                meta.query_advice(base_13_acc_col, Rotation::next());
-            let base_9_acc = meta.query_advice(base_9_acc_col, Rotation::cur());
-            let base_9_acc_next =
-                meta.query_advice(base_9_acc_col, Rotation::next());
+                meta.query_advice(block_count_cols[0], Rotation::cur());
+            let acc_13 = meta.query_advice(base_13_cols[2], Rotation::cur());
+            let acc_13_next =
+                meta.query_advice(base_13_cols[2], Rotation::next());
+            let acc_9 = meta.query_advice(base_9_cols[2], Rotation::cur());
+            let acc_9_next =
+                meta.query_advice(base_9_cols[2], Rotation::next());
             let block_count_acc =
-                meta.query_advice(block_count_acc_col, Rotation::cur());
+                meta.query_advice(block_count_cols[1], Rotation::cur());
             let block_count_acc_next =
-                meta.query_advice(block_count_acc_col, Rotation::next());
+                meta.query_advice(block_count_cols[1], Rotation::next());
 
             let coef_step_13 =
                 Expression::Constant(F::from(u64::pow(13, step)));
             let coef_step_9 = Expression::Constant(F::from(u64::pow(9, step)));
 
-            let expr_next_13_coef =
-                base_13_coef_next - coef_step_13 * base_13_coef;
-            let expr_next_9_coef =
-                base_9_coef_next - coef_step_9 * base_13_coef;
-            let expr_next_13_acc =
-                (base_13_acc_next - base_13_acc) - base_13_coef * base_13_slice;
-            let expr_next_9_acc =
-                (base_9_acc_next - base_9_acc) - base_9_coef * base_9_slice;
+            // next coef correctness
+            let expr_next_13_coef = coef_13_next - coef_step_13 * coef_13;
+            let expr_next_9_coef = coef_9_next - coef_step_9 * coef_9;
+            // next acc correctness
+            let expr_next_13_acc = (acc_13_next - acc_13) - coef_13 * slice_13;
+            let expr_next_9_acc = (acc_9_next - acc_9) - coef_9 * slice_9;
+            let step2_acc =
+                meta.query_advice(block_count_cols[1], Rotation::cur());
+            let step2_acc_next =
+                meta.query_advice(block_count_cols[1], Rotation::next());
+            let step3_acc =
+                meta.query_advice(block_count_cols[2], Rotation::cur());
+            let step3_acc_next =
+                meta.query_advice(block_count_cols[2], Rotation::next());
+
             let expr_next_block_count_acc =
                 block_count_acc_next - block_count_acc - block_count;
-            // TODO: is this the correct way to check?
-            vec![
+            // TODO: lookup correctness
+            let mut checks = vec![
                 q_enable * expr_next_13_coef,
                 q_enable * expr_next_9_coef,
                 q_enable * expr_next_13_acc,
                 q_enable * expr_next_9_acc,
                 q_enable * expr_next_block_count_acc,
-            ]
+            ];
+            // block_count acc correctness
+            if step == 1 {
+                checks.push(q_enable * block_count);
+                checks.push(q_enable * (step2_acc_next - step2_acc));
+                checks.push(q_enable * (step3_acc_next - step3_acc));
+            } else if step == 2 {
+                checks.push(
+                    q_enable * (step2_acc_next - step2_acc - block_count),
+                );
+                checks.push(q_enable * (step3_acc_next - step3_acc));
+            } else if step == 3 {
+                checks.push(q_enable * (step2_acc_next - step2_acc));
+                checks.push(
+                    q_enable * (step3_acc_next - step3_acc - block_count),
+                );
+            } else {
+                unreachable!("step < 4");
+            }
+
+            checks
         });
         RunningSumConfig {
             q_enable,
-            base_13_coef_col,
-            base_13_slice_col,
-            base_9_coef_col,
-            base_9_slice_col,
-            block_count_col,
-            base_13_acc_col,
-            base_9_acc_col,
-            block_count_acc_col,
+            base_13_cols,
+            base_9_cols,
+            block_count_cols,
             _marker: PhantomData,
         }
     }
