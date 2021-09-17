@@ -4,7 +4,7 @@ use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
 use super::utils::{and, select, sum, StateTransition};
 use super::{
-    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::evm_circuit::FixedLookup;
 use crate::impl_op_gadget;

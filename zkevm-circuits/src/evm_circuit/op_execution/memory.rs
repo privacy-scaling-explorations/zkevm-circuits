@@ -6,7 +6,7 @@ use super::utils::memory_gadgets::{
 };
 use super::utils::{select, StateTransition, StateTransitionExpressions};
 use super::{
-    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::evm_circuit::param::{
     MAX_GAS_SIZE_IN_BYTES, MAX_MEMORY_SIZE_IN_BYTES, STACK_START_IDX,

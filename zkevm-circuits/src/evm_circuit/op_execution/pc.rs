@@ -4,7 +4,7 @@ use super::super::{
 use super::utils::common_cases::{OutOfGasCase, StackOverflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::{from_bytes, sum, StateTransition};
-use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use super::{utils, CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};

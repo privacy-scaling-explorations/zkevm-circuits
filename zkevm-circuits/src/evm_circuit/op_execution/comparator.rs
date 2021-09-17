@@ -5,7 +5,7 @@ use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{ComparisonGadget, IsEqualGadget};
 use super::utils::{from_bytes, select, StateTransition};
-use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use super::{utils, CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};

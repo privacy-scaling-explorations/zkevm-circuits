@@ -346,11 +346,11 @@ macro_rules! impl_op_gadget {
                         )*
                     ];
                     // Add common expressions to all cases
-                    let cb = super::utils::[<require_opcode_in_ $shared>](
+                    let cb = utils::[<require_opcode_in_ $shared>](
                         state_curr.opcode.expr(),
                         vec![$(OpcodeId::$op),*],
                     );
-                    super::utils::batch_add_expressions(
+                    utils::batch_add_expressions(
                         cases,
                         cb.expressions,
                         cb.lookups,

@@ -1,4 +1,5 @@
 /// Gas cost enum.
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct GasCost(pub u8);
 
 impl GasCost {

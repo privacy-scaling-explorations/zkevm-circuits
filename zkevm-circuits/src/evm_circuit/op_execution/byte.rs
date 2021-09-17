@@ -4,7 +4,7 @@ use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
 use super::utils::{sum, StateTransition};
 use super::{
-    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};

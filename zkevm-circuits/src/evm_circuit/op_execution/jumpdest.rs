@@ -3,7 +3,7 @@ use super::utils::common_cases::OutOfGasCase;
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::StateTransition;
 use super::{
-    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::Expr;
