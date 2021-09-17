@@ -203,6 +203,7 @@ mod test {
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use pasta_curves::pallas::Base;
+    use num::BigUint;
 
         macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
@@ -222,14 +223,8 @@ mod test {
                 opcode: OpcodeId::PUSH2,
                 case: Case::Success,
                 values: vec![
-                    [
-                        2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    [
-                        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ]
+                    BigUint::from(0x02_02u64),
+                    BigUint::from(0x01_01u64),
                 ],
             },
             ExecutionStep {
@@ -241,16 +236,8 @@ mod test {
                 opcode: OpcodeId::PUSH3,
                 case: Case::Success,
                 values: vec![
-                    [
-                        4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    [
-                        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, //
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    ]
+                    BigUint::from(0x04_050_6u64),
+                    BigUint::from(0x01_01_01u64),
                 ],
             }
             ],
