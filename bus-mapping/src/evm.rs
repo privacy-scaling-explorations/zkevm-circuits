@@ -1,17 +1,17 @@
 //! Evm types needed for parsing instruction sets as well
 
-pub(crate) mod gas;
-pub(crate) mod instruction;
+pub mod memory;
 pub(crate) mod opcodes;
+pub mod stack;
 
-use crate::error::Error;
+use crate::{error::Error, Gas};
 use core::str::FromStr;
 use num::{BigUint, Num};
 use serde::{Deserialize, Serialize};
 pub use {
-    gas::GasCost,
-    instruction::Instruction,
+    memory::{Memory, MemoryAddress},
     opcodes::{ids::OpcodeId, Opcode},
+    stack::{Stack, StackAddress},
 };
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
@@ -52,76 +52,6 @@ impl From<usize> for GlobalCounter {
     }
 }
 
-/// Represents a `MemoryAddress` of the EVM.
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) usize);
-
-impl MemoryAddress {
-    /// Returns the zero address for Memory targets.
-    pub const fn zero() -> MemoryAddress {
-        MemoryAddress(0usize)
-    }
-
-    /// Return the little-endian byte representation of the word as a 32-byte
-    /// array.
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut array = [0u8; 32];
-        array.copy_from_slice(&self.0.to_le_bytes());
-
-        array
-    }
-}
-
-impl From<MemoryAddress> for usize {
-    fn from(addr: MemoryAddress) -> usize {
-        addr.0
-    }
-}
-
-impl FromStr for MemoryAddress {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(MemoryAddress(
-            usize::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
-        ))
-    }
-}
-
-/// Represents a `StackAddress` of the EVM.
-/// The address range goes `TOP -> DOWN (1024, 0]`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct StackAddress(pub(crate) usize);
-
-impl StackAddress {
-    /// Generates a new StackAddress given a `usize`.
-    pub const fn new(addr: usize) -> StackAddress {
-        StackAddress(addr)
-    }
-}
-
-impl From<StackAddress> for usize {
-    fn from(addr: StackAddress) -> usize {
-        addr.0
-    }
-}
-
-impl From<usize> for StackAddress {
-    fn from(addr: usize) -> StackAddress {
-        StackAddress(addr)
-    }
-}
-
-impl FromStr for StackAddress {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(StackAddress(
-            usize::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
-        ))
-    }
-}
-
 // XXX: Consider to move this to [u8;32] soon
 /// Representation of an EVM word which is basically a 32-byte word.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -138,17 +68,10 @@ impl FromStr for EvmWord {
     }
 }
 
-macro_rules! impl_from_big_uint_wrappers {
-    ($($t:ty),*) => {
-        $(impl From<$t> for EvmWord {
-            fn from(item: $t) -> EvmWord {
-                EvmWord(BigUint::from(item))
-            }
-        })*
-    };
-}
-
-impl_from_big_uint_wrappers!(u8, u16, u32, u64, u128, usize);
+impl_from_big_uint_wrappers!(
+    EvmWord = EvmWord,
+    (u8, u16, u32, u64, u128, usize)
+);
 
 impl EvmWord {
     /// Return the little-endian byte representation of the word as a 32-byte
@@ -164,5 +87,30 @@ impl EvmWord {
     /// Returns the underlying representation of the `EvmWord` as a [`BigUint`].
     pub fn as_big_uint(&self) -> &BigUint {
         &self.0
+    }
+}
+
+/// Defines the gas consumed by an [`ExecutionStep`](crate::exec_trace::ExecutionStep)
+/// as well as the gas left to operate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct GasInfo {
+    pub(crate) gas: Gas,
+    pub(crate) gas_cost: Gas,
+}
+
+impl GasInfo {
+    /// Generates a new `GasInfo` instance from it's fields.
+    pub fn new(gas: Gas, gas_cost: Gas) -> GasInfo {
+        GasInfo { gas, gas_cost }
+    }
+
+    /// Returns the gas left marked by a GasInfo instance.
+    pub fn gas_left(&self) -> Gas {
+        self.gas
+    }
+
+    /// Returns the gas consumed by an [`Instruction`] execution.
+    pub fn gas_consumed(&self) -> Gas {
+        self.gas_cost
     }
 }
