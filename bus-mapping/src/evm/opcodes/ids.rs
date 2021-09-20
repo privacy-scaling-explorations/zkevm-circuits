@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,
@@ -308,6 +308,26 @@ pub enum OpcodeId {
     STATICCALL,
     /// `SELFDESTRUCT`
     SELFDESTRUCT,
+}
+
+impl OpcodeId {
+    /// Returns `true` if the `OpcodeId` is a `PUSHn`.
+    pub fn is_push(&self) -> bool {
+        self.as_u8() >= Self::PUSH1.as_u8()
+            && self.as_u8() <= Self::PUSH32.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `DUPn`.
+    pub fn is_dup(&self) -> bool {
+        self.as_u8() >= Self::DUP1.as_u8()
+            && self.as_u8() <= Self::DUP16.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `SWAPn`.
+    pub fn is_swap(&self) -> bool {
+        self.as_u8() >= Self::SWAP1.as_u8()
+            && self.as_u8() <= Self::SWAP16.as_u8()
+    }
 }
 
 impl OpcodeId {

@@ -1,6 +1,6 @@
 //! Doc this
 
-use crate::evm::{EvmWord, GasInfo, ProgramCounter};
+use crate::evm::{EvmWord, GasCost, GasInfo, ProgramCounter};
 use crate::ExecutionStep;
 use crate::Gas;
 use crate::{error::Error, evm::OpcodeId};
@@ -49,7 +49,7 @@ pub(crate) struct ParsedExecutionStep<'a> {
     pub(crate) op: &'a str,
     pub(crate) gas: Gas,
     #[serde(alias = "gasCost")]
-    pub(crate) gas_cost: Gas,
+    pub(crate) gas_cost: GasCost,
     pub(crate) depth: u8,
     pub(crate) stack: Vec<&'a str>,
     pub(crate) memory: Vec<&'a str>,
@@ -96,10 +96,7 @@ mod tests {
                 memory: Memory(mem_map),
                 stack: Stack(vec![]),
                 instruction: OpcodeId::JUMPDEST,
-                gas_info: GasInfo {
-                    gas: 82,
-                    gas_cost: 3,
-                },
+                gas_info: GasInfo::new(82, GasCost::from(3u8)),
                 depth: 1,
                 pc: ProgramCounter(5),
                 gc: GlobalCounter(0),

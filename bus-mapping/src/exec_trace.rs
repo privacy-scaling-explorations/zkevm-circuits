@@ -303,8 +303,8 @@ mod trace_tests {
     use crate::evm::{Memory, Stack};
     use crate::{
         evm::{
-            opcodes::ids::OpcodeId, GasInfo, GlobalCounter, MemoryAddress,
-            ProgramCounter, StackAddress,
+            opcodes::ids::OpcodeId, GasCost, GasInfo, GlobalCounter,
+            MemoryAddress, ProgramCounter, StackAddress,
         },
         exec_trace::ExecutionStep,
         operation::{StackOp, RW},
@@ -393,7 +393,7 @@ mod trace_tests {
             instruction: OpcodeId::PUSH1,
             gas_info: GasInfo {
                 gas: 82,
-                gas_cost: 3,
+                gas_cost: GasCost::from(3u8),
             },
             depth: 1u8,
             pc: ProgramCounter::from(5),
@@ -418,7 +418,7 @@ mod trace_tests {
             instruction: OpcodeId::MLOAD,
             gas_info: GasInfo {
                 gas: 79,
-                gas_cost: 3,
+                gas_cost: GasCost::from(3u8),
             },
             depth: 1u8,
             pc: ProgramCounter::from(7),
@@ -463,7 +463,7 @@ mod trace_tests {
             instruction: OpcodeId::STOP,
             gas_info: GasInfo {
                 gas: 76,
-                gas_cost: 0,
+                gas_cost: GasCost::from(0u8),
             },
             depth: 1u8,
             pc: ProgramCounter::from(8),

@@ -95,12 +95,12 @@ impl EvmWord {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct GasInfo {
     pub(crate) gas: Gas,
-    pub(crate) gas_cost: Gas,
+    pub(crate) gas_cost: GasCost,
 }
 
 impl GasInfo {
     /// Generates a new `GasInfo` instance from it's fields.
-    pub fn new(gas: Gas, gas_cost: Gas) -> GasInfo {
+    pub fn new(gas: Gas, gas_cost: GasCost) -> GasInfo {
         GasInfo { gas, gas_cost }
     }
 
@@ -110,7 +110,48 @@ impl GasInfo {
     }
 
     /// Returns the gas consumed by an [`Instruction`] execution.
-    pub fn gas_consumed(&self) -> Gas {
+    pub fn gas_consumed(&self) -> GasCost {
         self.gas_cost
+    }
+}
+
+/// Gas Cost structure which is integrated inside [`GasInfo`].
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
+)]
+pub struct GasCost(u8);
+
+impl GasCost {
+    /// Constant cost for quick step
+    pub const QUICK: Self = Self(2);
+    /// Constant cost for fastest step
+    pub const FASTEST: Self = Self(3);
+    /// Constant cost for fast step
+    pub const FAST: Self = Self(5);
+    /// Constant cost for mid step
+    pub const MID: Self = Self(8);
+    /// Constant cost for slow step
+    pub const SLOW: Self = Self(10);
+    /// Constant cost for ext step
+    pub const EXT: Self = Self(20);
+}
+
+impl GasCost {
+    /// Returns the `GasCost` as a `u8`.
+    #[inline]
+    pub const fn as_u8(&self) -> u8 {
+        self.0
+    }
+
+    /// Returns the `GasCost` as a `usize`.
+    #[inline]
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl From<u8> for GasCost {
+    fn from(cost: u8) -> Self {
+        GasCost(cost)
     }
 }
