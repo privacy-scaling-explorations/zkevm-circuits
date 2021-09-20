@@ -1,9 +1,9 @@
 // Doc this
 
 use super::OperationRef;
-use crate::evm::memory::Memory;
-use crate::evm::stack::Stack;
-use crate::evm::{EvmWord, GasInfo, GlobalCounter, ProgramCounter};
+use crate::evm::{
+    EvmWord, GasInfo, GlobalCounter, Memory, ProgramCounter, Stack,
+};
 use crate::{
     error::Error,
     evm::{opcodes::Opcode, OpcodeId},
@@ -12,9 +12,9 @@ use crate::{
 
 /// Represents a single step of an [`ExecutionTrace`](super::ExecutionTrace). It
 /// contains all of the information relative to this step:
-/// - Memory view at current execution step.`
-/// - Stack view at current execution step.
-/// - EVM [`Instruction`] executed in this step.
+/// - [`Memory`] view at current execution step.
+/// - [`Stack`] view at current execution step.
+/// - EVM [`Opcode`](self::OpcodeId) executed in this step.
 /// - [`ProgramCounter`] relative to this step.
 /// - [`GlobalCounter`] assigned to this step by the program.
 /// - Bus Mapping instances containing references to all of the
@@ -92,7 +92,7 @@ impl ExecutionStep {
         self.gc
     }
 
-    /// Sets the global counter of the [`Instruction`] execution to the one sent
+    /// Sets the global counter of the instruction execution to the one sent
     /// in the params.
     pub(crate) fn set_gc(&mut self, gc: impl Into<GlobalCounter>) {
         self.gc = gc.into()
@@ -111,10 +111,11 @@ impl ExecutionStep {
     }
 
     /// Given a mutable reference to an [`OperationContainer`], generate all of
-    /// it's [`Instruction`]-related Memory, Stack and Storage ops, and register
-    /// them in the container. This function will not only add the ops to
-    /// the [`OperationContainer`] but also get it's [`OperationRef`]s and add
-    /// them to the bus-mapping instance of the step.
+    /// it's associated Memory, Stack and Storage operations, and register
+    /// them in the container.
+    ///
+    /// This function will not only add the ops to the [`OperationContainer`] but also get it's
+    /// [`OperationRef`]s and add them to the bus-mapping instance of the step.
     ///
     /// ## Returns the #operations added by the
     /// [`OpcodeId`](crate::evm::OpcodeId) into the container.
@@ -123,8 +124,7 @@ impl ExecutionStep {
         container: &mut OperationContainer,
         next_steps: &[ExecutionStep],
     ) -> Result<usize, Error> {
-        // XXX: Not very tidy. Need to figure out a better architecture at some point
-        let instruction = self.instruction().clone();
+        let instruction = *self.instruction();
         instruction.gen_associated_ops(self, container, next_steps)
     }
 }

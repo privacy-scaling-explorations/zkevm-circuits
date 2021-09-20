@@ -10,8 +10,10 @@ use core::ops::Deref;
 /// Number of ops that MLOAD adds to the container & busmapping
 const MLOAD_OP_NUM: usize = 3;
 
-/// Structure used to implement [`Opcode`] trait over it corresponding to the
-/// `MLOAD` [`Instruction`](crate::evm::instruction::Instruction).
+/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
+/// [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD) `OpcodeId`.
+/// This is responsible of generating all of the associated [`StackOp`]s and [`MemoryOp`]s and place them
+/// inside the trace's [`OperationContainer`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Mload;
 
@@ -31,7 +33,7 @@ impl Opcode for Mload {
             .deref()
             .last()
             .cloned()
-            .ok_or_else(|| Error::InvalidStackPointer)?;
+            .ok_or(Error::InvalidStackPointer)?;
         let stack_position = exec_step.stack().last_filled();
 
         // Manage first stack read at latest stack position
@@ -39,7 +41,7 @@ impl Opcode for Mload {
             RW::READ,
             GlobalCounter::from(exec_step.gc().0 + 1),
             stack_position,
-            stack_value_read.clone(),
+            stack_value_read,
         );
 
         exec_step
@@ -54,7 +56,7 @@ impl Opcode for Mload {
             .deref()
             .last()
             .cloned()
-            .ok_or_else(|| Error::InvalidMemoryPointer)?;
+            .ok_or(Error::InvalidMemoryPointer)?;
 
         // Read operation at memory address: stack_read.value
         let mem_read = MemoryOp::new(

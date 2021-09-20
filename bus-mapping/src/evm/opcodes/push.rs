@@ -11,8 +11,10 @@ use crate::{
 /// Number of ops that PUSH1 adds to the container & busmapping
 const PUSH1_OP_NUM: usize = 1;
 
-/// Structure used to implement [`Opcode`] trait over it corresponding to the
-/// `PUSH1 X` [`Instruction`](crate::evm::instruction::Instruction).
+/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
+/// [`OpcodeId::PUSH1`](crate::evm::OpcodeId::PUSH1) `OpcodeId`.
+/// This is responsible of generating all of the associated [`StackOp`]s and place them
+/// inside the trace's [`OperationContainer`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Push1;
 
@@ -35,7 +37,7 @@ impl Opcode for Push1 {
                 .deref()
                 .last()
                 .cloned()
-                .ok_or_else(|| Error::InvalidStackPointer)?,
+                .ok_or(Error::InvalidStackPointer)?,
         );
 
         exec_step

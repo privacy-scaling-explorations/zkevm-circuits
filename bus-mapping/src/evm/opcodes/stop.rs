@@ -4,8 +4,11 @@ use crate::{exec_trace::ExecutionStep, operation::OperationContainer, Error};
 /// Number of ops that STOP adds to the container & busmapping
 const STOP_OP_NUM: usize = 0;
 
-/// Structure used to implement [`Opcode`] trait over it corresponding to the
-/// `STOP` [`Instruction`](crate::evm::instruction::Instruction).
+/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
+/// [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP) `OpcodeId`.
+/// This is responsible of generating all of the associated operations and place them
+/// inside the trace's [`OperationContainer`].
+/// In the case of STOP, it simply does not add anything.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Stop;
 

@@ -16,7 +16,7 @@ impl MemoryAddress {
 
     /// Return the little-endian byte representation of the word as a 32-byte
     /// array.
-    pub fn to_bytes(&self) -> [u8; 32] {
+    pub fn to_bytes(self) -> [u8; 32] {
         let mut array = [0u8; 32];
         array.copy_from_slice(&self.0.to_le_bytes());
 
@@ -34,7 +34,8 @@ impl FromStr for MemoryAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
-            usize::from_str_radix(s, 16).map_err(|_| Error::EvmWordParsing)?,
+            usize::from_str_radix(s, 16)
+                .map_err(|_| Error::MemAddressParsing)?,
         ))
     }
 }
@@ -77,10 +78,10 @@ impl Memory {
     }
 
     /// Returns the last memory region written at this execution step height.
-    pub fn memory_addr(&self) -> MemoryAddress {
+    pub fn size(&self) -> MemoryAddress {
         self.0
             .last()
             .map(|(addr, _)| *addr)
-            .unwrap_or_else(|| MemoryAddress::zero())
+            .unwrap_or_else(MemoryAddress::zero)
     }
 }

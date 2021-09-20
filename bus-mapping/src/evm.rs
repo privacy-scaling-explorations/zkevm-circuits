@@ -105,12 +105,12 @@ impl GasInfo {
     }
 
     /// Returns the gas left marked by a GasInfo instance.
-    pub fn gas_left(&self) -> Gas {
+    pub fn gas(&self) -> Gas {
         self.gas
     }
 
-    /// Returns the gas consumed by an [`Instruction`] execution.
-    pub fn gas_consumed(&self) -> GasCost {
+    /// Returns the gas consumed by an [`OpcodeId`] execution.
+    pub fn gas_cost(&self) -> GasCost {
         self.gas_cost
     }
 }
@@ -119,7 +119,7 @@ impl GasInfo {
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
-pub struct GasCost(u8);
+pub struct GasCost(u64);
 
 impl GasCost {
     /// Constant cost for quick step
@@ -137,9 +137,9 @@ impl GasCost {
 }
 
 impl GasCost {
-    /// Returns the `GasCost` as a `u8`.
+    /// Returns the `GasCost` as a `u64`.
     #[inline]
-    pub const fn as_u8(&self) -> u8 {
+    pub const fn as_u64(&self) -> u64 {
         self.0
     }
 
@@ -152,6 +152,12 @@ impl GasCost {
 
 impl From<u8> for GasCost {
     fn from(cost: u8) -> Self {
+        GasCost(cost as u64)
+    }
+}
+
+impl From<u64> for GasCost {
+    fn from(cost: u64) -> Self {
         GasCost(cost)
     }
 }

@@ -87,13 +87,14 @@ mod tests {
         .expect("Error on conversion");
 
         let expected_step = {
-            let mut mem_map = vec![];
-            mem_map.push((MemoryAddress::from(0x00), EvmWord::from(0u8)));
-            mem_map.push((MemoryAddress::from(0x20), EvmWord::from(0u8)));
-            mem_map.push((MemoryAddress::from(0x40), EvmWord::from(0x80u8)));
+            let mem_map = Memory(vec![
+                (MemoryAddress::from(0x00), EvmWord::from(0u8)),
+                (MemoryAddress::from(0x20), EvmWord::from(0u8)),
+                (MemoryAddress::from(0x40), EvmWord::from(0x80u8)),
+            ]);
 
             ExecutionStep {
-                memory: Memory(mem_map),
+                memory: mem_map,
                 stack: Stack(vec![]),
                 instruction: OpcodeId::JUMPDEST,
                 gas_info: GasInfo::new(82, GasCost::from(3u8)),

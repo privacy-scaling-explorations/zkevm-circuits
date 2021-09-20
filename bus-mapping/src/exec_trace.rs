@@ -107,16 +107,15 @@ impl<F: FieldExt> BlockConstants<F> {
 /// format for now).
 ///
 /// 2. Generate and provide an iterator over all of the
-/// [`Instruction`](crate::evm::Instruction)s of the trace and apply its
-/// respective constraints into a provided a mutable reference to a
-/// [`ConstraintSystyem`](halo2::plonk::ConstraintSystem).
+/// [`ExecutionStep`]s giving an easy way to witness all of the data of each
+/// step when building the Circuits for the EVM Proof.
 ///
 /// 3. Generate and provide an ordered list of all of the
-/// [`StackOp`](crate::operation::StackOp)s,
-/// [`MemoryOp`](crate::operation::MemoryOp)s and
+/// [`StackOp`]s,
+/// [`MemoryOp`]s and
 /// [`StorageOp`](crate::operation::StorageOp)s that each
-/// [`Instruction`](crate::evm::Instruction) that derive from the trace so that
-/// the State Proof witnesses are already obtained on a structured manner and
+/// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecutionTrace` step so that
+/// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionTrace<F: FieldExt> {
@@ -200,12 +199,12 @@ impl<F: FieldExt> ExecutionTrace<F> {
     }
 
     /// Traverses the trace step by step, and for each [`ExecutionStep`]:
-    /// to each step [`Instruction`].
     /// 1.  Sets the correct [`GlobalCounter`](crate::evm::GlobalCounter).
-    /// 2.  Generates the corresponding [`Operation`]s and stores them inside the
-    /// [`OperationContainer`] instance stored inside of the trace + adds the
-    /// [`OperationRef`]s obtained from the container addition into each
-    /// [`ExecutionStep`] bus-mapping instances.
+    /// 2.  Generates the corresponding [`Operation`]s  associated to the
+    /// [`OpcodeId`](crate::evm::OpcodeId) executed in the step and stores them inside the
+    /// [`OperationContainer`] instance stored inside of the trace.
+    /// It also adds the [`OperationRef`]s obtained from the container
+    /// addition into each [`ExecutionStep`] bus-mapping instances.
     fn build(mut self) -> Result<Self, Error> {
         // Set a counter to add the correct global counters.
         let mut gc = 0usize;
@@ -379,12 +378,11 @@ mod trace_tests {
 
         // The memory is the same in both steps as none of them touches the
         // memory of the EVM.
-        let mut mem_map = Vec::new();
-        mem_map.push((MemoryAddress(usize::from(0x00u8)), EvmWord::from(0u8)));
-        mem_map.push((MemoryAddress(usize::from(0x20u8)), EvmWord::from(0u8)));
-        mem_map
-            .push((MemoryAddress(usize::from(0x40u8)), EvmWord::from(0x80u8)));
-        let mem_map = Memory(mem_map);
+        let mem_map = Memory(vec![
+            (MemoryAddress(usize::from(0x00u8)), EvmWord::from(0u8)),
+            (MemoryAddress(usize::from(0x20u8)), EvmWord::from(0u8)),
+            (MemoryAddress(usize::from(0x40u8)), EvmWord::from(0x80u8)),
+        ]);
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep {
@@ -458,7 +456,7 @@ mod trace_tests {
 
         // Generate Step3 corresponding to STOP
         let step_3 = ExecutionStep {
-            memory: mem_map.clone(),
+            memory: mem_map,
             stack: Stack(vec![EvmWord::from(0x80u8)]),
             instruction: OpcodeId::STOP,
             gas_info: GasInfo {
