@@ -107,11 +107,11 @@ impl<F: FieldExt> BlockConstants<F> {
 /// format for now).
 ///
 /// 2. Generate and provide an iterator over all of the
-/// [`Instruction`](crate::evm::Instruction)s of the trace and apply it's
+/// [`Instruction`](crate::evm::Instruction)s of the trace and apply its
 /// respective constraints into a provided a mutable reference to a
 /// [`ConstraintSystyem`](halo2::plonk::ConstraintSystem).
 ///
-/// 3. Generate and provide and ordered list of all of the
+/// 3. Generate and provide an ordered list of all of the
 /// [`StackOp`](crate::operation::StackOp)s,
 /// [`MemoryOp`](crate::operation::MemoryOp)s and
 /// [`StorageOp`](crate::operation::StorageOp)s that each
@@ -270,6 +270,7 @@ impl From<(Target, usize)> for OperationRef {
             Target::Memory => Self(Target::Memory, op_ref_data.1),
             Target::Stack => Self(Target::Stack, op_ref_data.1),
             Target::Storage => Self(Target::Storage, op_ref_data.1),
+            _ => unreachable!(),
         }
     }
 }

@@ -4,7 +4,7 @@ use itertools::Itertools;
 use std::convert::TryInto;
 
 /// The `OperationContainer` is meant to store all of the [`Operation`]s that an
-/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace) performs during it's
+/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace) performs during its
 /// execution.
 ///
 /// Once an operation is inserted into the container, it returns an
