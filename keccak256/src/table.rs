@@ -86,31 +86,31 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         from_base13_converter(config, layouter);
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        advices: [Column<Advice>; 25],
-    ) -> Self {
-        let from_base13_config = [meta.fixed_column(), meta.fixed_column()];
+    // pub(crate) fn configure(
+    //     meta: &mut ConstraintSystem<F>,
+    //     advices: [Column<Advice>; 25],
+    // ) -> Self {
+    //     let from_base13_config = [meta.fixed_column(), meta.fixed_column()];
 
-        for lane in 0..25 {
-            // Lookup for base-13 to base-9 conversion
-            meta.lookup(|meta| {
-                let word = advices[lane];
-                let base13_word = meta.query_advice(word, Rotation::cur());
-                let base9_word = meta.query_advice(word, Rotation::next());
+    //     for lane in 0..25 {
+    //         // Lookup for base-13 to base-9 conversion
+    //         meta.lookup(|meta| {
+    //             let word = advices[lane];
+    //             let base13_word = meta.query_advice(word, Rotation::cur());
+    //             let base9_word = meta.query_advice(word, Rotation::next());
 
-                let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
-                let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
+    //             let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
+    //             let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
 
-                vec![
-                    (base13_word, key),
-                    (base9_word, value),
-                ]
-            });
-        }
-        todo!("Add selectors");
+    //             vec![
+    //                 (base13_word, key),
+    //                 (base9_word, value),
+    //             ]
+    //         });
+    //     }
+    //     todo!("Add selectors");
 
-    }
+    // }
 
     // Fixed table converting base-13 to base-09
     fn from_base13_converter(

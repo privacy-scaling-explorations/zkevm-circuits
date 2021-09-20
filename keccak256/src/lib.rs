@@ -13,6 +13,8 @@ use std::marker::PhantomData;
 pub mod helpers;
 use helpers::*;
 
+use crate::table::Base13toBase9TableConfig;
+
 pub const KECCAK_NUM_ROUNDS: usize = 24;
 
 pub const ROT_TABLE: [[usize; 5]; 5] = [
@@ -29,8 +31,9 @@ pub struct RunningSumConfig<F> {
     base_13_cols: [Column<Advice>; 3],
     // coef, slice, acc
     base_9_cols: [Column<Advice>; 3],
-    // block count, step 1 acc, step 2 acc, step 3 acc
+    // block count, step 2 acc, step 3 acc
     block_count_cols: [Column<Advice>; 3],
+    base_13_to_base_9_lookup: Base13toBase9TableConfig,
     _marker: PhantomData<F>,
 }
 
@@ -44,6 +47,46 @@ impl<F: FieldExt> RunningSumConfig<F> {
         chunk_idx: u64,
         step: u32,
     ) -> RunningSumConfig<F> {
+        // Create base table config
+        let from_base13_config = [meta.fixed_column(), meta.fixed_column(), meta.fixed_column()];
+
+        // Lookup for base-13 to base-9 conversion
+        meta.lookup(|meta| {
+            let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
+            let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
+            let value2 = meta.query_fixed(from_base13_config[2], Rotation::cur());
+
+            let slice_13 = meta.query_advice(base_13_cols[1], Rotation::cur());
+            let slice_9 = meta.query_advice(base_9_cols[1], Rotation::cur());
+            let block_count =
+                meta.query_advice(block_count_cols[0], Rotation::cur());
+
+            vec![
+                (slice_13, key),
+                (slice_9, value),
+                (block_count, value2),
+            ]
+        });
+
+
+        4 chunks slice_13  0   1
+        3 chunks slice_13      1
+
+        // 17 word(64 bit)
+        // i1, i2, i3, i4, output
+
+        // absorb i1       squeeze o1 == output?
+        // absorb i2       squeeze o2 == output?
+        // absorb i3       squeeze o3 == output?
+        // absorb i4       squeeze o4 == output  --> reset state
+    
+
+        // ? = non-zero
+        // [?, ?, ?, ?] -> block_count = 0
+        // [0, ?, ?, ?] -> block_count = 1
+        // [0, 0, ?, ?] -> block_count = 2
+        // [0, 0, 0, ?] -> block_count = 3
+    
         // TODO: lookup check, block count summing check
         meta.create_gate("running sum", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -82,12 +125,26 @@ impl<F: FieldExt> RunningSumConfig<F> {
                 Expression::Constant(F::from(u64::pow(13, step)));
             let coef_step_9 = Expression::Constant(F::from(u64::pow(9, step)));
 
+            // [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 64] 
+            // state = 13**1 * slice_0 + 13**5 * slice_1 +  13**9 * slice_2 ... 13**64 
+            // acc1 =                    13**5 * slice_1 +  13**9 * slice_2 ... 13**64 
+            // acc2 =                                       13**9 * slice_2 ... 13**64 
+
+            // coef0 = 13**1
+            // coef_step0 = 13**4
+            // coef1 = 13**4 * 13**1 = 13**5
+            // coef2 = 13**4 * 13**5 = 13**9
+
+            // acc should be decresing
+
             // next coef correctness
+            // e.g. coef_step_13 = 13 ** 4?
+            // 
             let expr_next_13_coef = coef_13_next - coef_step_13 * coef_13;
             let expr_next_9_coef = coef_9_next - coef_step_9 * coef_9;
             // next acc correctness
-            let expr_next_13_acc = (acc_13_next - acc_13) - coef_13 * slice_13;
-            let expr_next_9_acc = (acc_9_next - acc_9) - coef_9 * slice_9;
+            let expr_next_13_acc = (acc_13 - acc_13_next) - coef_13 * slice_13;
+            let expr_next_9_acc = (acc_9 - acc_9_next) - coef_9 * slice_9;
             let step2_acc =
                 meta.query_advice(block_count_cols[1], Rotation::cur());
             let step2_acc_next =
@@ -223,16 +280,22 @@ impl<F: FieldExt> RhoConfig<F> {
             ];
 
             let q_running_sum = meta.selector();
-            let config = RunningSumConfig::configure(
-                q_running_sum,
-                meta,
-                base_13_cols,
-                base_9_cols,
-                block_count_cols,
-                chunk_idx as u64,
-                step as u32,
-            );
+            for ( each [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61, 64] ){
+                let config = RunningSumConfig::configure(
+                    q_is_final,
+                    q_running_sum,
+                    meta,
+                    base_13_cols,
+                    base_9_cols,
+                    block_count_cols,
+                    chunk_idx as u64,
+                    step as u32,
+                );
+            }
+            
         }
+
+        // TODO: block_count check
     }
 }
 
