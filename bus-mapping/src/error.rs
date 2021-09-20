@@ -10,6 +10,8 @@ pub enum Error {
     OpcodeParsing,
     /// Error while parsing a `MemoryAddress`.
     MemAddressParsing,
+    /// Error while parsing a `StackAddress`.
+    StackAddressParsing,
     /// Error while parsing an `EvmWord`.
     EvmWordParsing,
     /// Error while trying to convert to an incorrect `OpcodeId`.

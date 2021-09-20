@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct OpcodeId(pub u8);
 
 // Core opcodes.
@@ -477,6 +477,7 @@ impl FromStr for OpcodeId {
             "STATICCALL" => OpcodeId::STATICCALL,
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
+            "BASEFEE" => OpcodeId::BASEFEE,
             _ => return Err(Error::OpcodeParsing),
         })
     }

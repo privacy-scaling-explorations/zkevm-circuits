@@ -1,5 +1,6 @@
 //! Evm types needed for parsing instruction sets as well
 
+pub(crate) mod gas;
 pub(crate) mod instruction;
 pub(crate) mod opcodes;
 
@@ -9,6 +10,7 @@ use lazy_static::lazy_static;
 use num::{BigUint, Num, Zero};
 use serde::{Deserialize, Serialize};
 pub use {
+    gas::GasCost,
     instruction::Instruction,
     opcodes::{ids::OpcodeId, Opcode},
 };
@@ -89,7 +91,7 @@ impl FromStr for MemoryAddress {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
             BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::EvmWordParsing)?,
+                .map_err(|_| Error::MemAddressParsing)?,
         ))
     }
 }
@@ -124,14 +126,14 @@ impl FromStr for StackAddress {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(StackAddress(
             BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::EvmWordParsing)
+                .map_err(|_| Error::StackAddressParsing)
                 .map(|biguint| {
                     biguint
                         .try_into()
-                        .map_err(|_| Error::EvmWordParsing)
+                        .map_err(|_| Error::StackAddressParsing)
                         .expect("Map_err should be applied")
                 })
-                .map_err(|_| Error::EvmWordParsing)?,
+                .map_err(|_| Error::StackAddressParsing)?,
         ))
     }
 }

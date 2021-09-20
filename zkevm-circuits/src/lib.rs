@@ -12,6 +12,7 @@
 pub mod evm_circuit;
 pub mod gadget;
 pub mod state_circuit;
+pub mod util;
 
 #[cfg(test)]
 mod test_vectors;
