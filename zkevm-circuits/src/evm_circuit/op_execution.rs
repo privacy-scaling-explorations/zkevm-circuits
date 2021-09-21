@@ -527,21 +527,21 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 self.free_cells[*idx].assign(region, offset, Some(*value))?;
             }
 
-            match execution_step.opcode {
-                OpcodeId::ADD | OpcodeId::SUB => self.add_gadget.assign(
-                    region,
-                    offset,
-                    core_state,
-                    execution_step,
-                )?,
+            match (execution_step.opcode.is_push(), execution_step.opcode) {
                 // PUSH1, ..., PUSH32
-                OpcodeId(0x60..=0x7f) => self.push_gadget.assign(
+                (true, _) => self.push_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                OpcodeId::LT | OpcodeId::GT => self.lt_gadget.assign(
+                (_, OpcodeId::ADD | OpcodeId::SUB) => self.add_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::LT | OpcodeId::GT) => self.lt_gadget.assign(
                     region,
                     offset,
                     core_state,

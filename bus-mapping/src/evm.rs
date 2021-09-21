@@ -1,24 +1,18 @@
 //! Evm types needed for parsing instruction sets as well
 
-pub(crate) mod gas;
-pub(crate) mod instruction;
+pub mod memory;
 pub(crate) mod opcodes;
+pub mod stack;
 
-use crate::error::Error;
-use core::{convert::TryInto, str::FromStr};
-use lazy_static::lazy_static;
-use num::{BigUint, Num, Zero};
+use crate::{error::Error, Gas};
+use core::str::FromStr;
+use num::{BigUint, Num};
 use serde::{Deserialize, Serialize};
 pub use {
-    gas::GasCost,
-    instruction::Instruction,
+    memory::{Memory, MemoryAddress},
     opcodes::{ids::OpcodeId, Opcode},
+    stack::{Stack, StackAddress},
 };
-
-lazy_static! {
-    /// Ref to zero addr for Memory.
-    pub(crate) static ref MEM_ADDR_ZERO: MemoryAddress = MemoryAddress(BigUint::zero());
-}
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(
@@ -58,85 +52,6 @@ impl From<usize> for GlobalCounter {
     }
 }
 
-/// Represents a `MemoryAddress` of the EVM.
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) BigUint);
-
-impl MemoryAddress {
-    /// Returns the zero address for Memory targets.
-    pub fn zero() -> MemoryAddress {
-        MEM_ADDR_ZERO.clone()
-    }
-
-    /// Return the little-endian byte representation of the word as a 32-byte
-    /// array.
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut array = [0u8; 32];
-        array.copy_from_slice(&self.0.to_bytes_le());
-
-        array
-    }
-}
-
-impl From<MemoryAddress> for BigUint {
-    fn from(addr: MemoryAddress) -> BigUint {
-        addr.0
-    }
-}
-
-impl FromStr for MemoryAddress {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(MemoryAddress(
-            BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::MemAddressParsing)?,
-        ))
-    }
-}
-
-/// Represents a `StackAddress` of the EVM.
-/// The address range goes `TOP -> DOWN (1024, 0]`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct StackAddress(pub(crate) usize);
-
-impl StackAddress {
-    /// Generates a new StackAddress given a `usize`.
-    pub const fn new(addr: usize) -> StackAddress {
-        StackAddress(addr)
-    }
-}
-
-impl From<StackAddress> for usize {
-    fn from(addr: StackAddress) -> usize {
-        addr.0
-    }
-}
-
-impl From<usize> for StackAddress {
-    fn from(addr: usize) -> StackAddress {
-        StackAddress(addr)
-    }
-}
-
-impl FromStr for StackAddress {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(StackAddress(
-            BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::StackAddressParsing)
-                .map(|biguint| {
-                    biguint
-                        .try_into()
-                        .map_err(|_| Error::StackAddressParsing)
-                        .expect("Map_err should be applied")
-                })
-                .map_err(|_| Error::StackAddressParsing)?,
-        ))
-    }
-}
-
 // XXX: Consider to move this to [u8;32] soon
 /// Representation of an EVM word which is basically a 32-byte word.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -153,24 +68,18 @@ impl FromStr for EvmWord {
     }
 }
 
-macro_rules! impl_from_basic_types {
-    ($($t:ty),*) => {
-        $(impl From<$t> for EvmWord {
-            fn from(item: $t) -> EvmWord {
-                EvmWord(BigUint::from(item))
-            }
-        })*
-    };
-}
-
-impl_from_basic_types!(u8, u16, u32, u64, u128, usize);
+impl_from_big_uint_wrappers!(
+    EvmWord = EvmWord,
+    (u8, u16, u32, u64, u128, usize)
+);
 
 impl EvmWord {
     /// Return the little-endian byte representation of the word as a 32-byte
     /// array.
     pub fn to_bytes(&self) -> [u8; 32] {
         let mut array = [0u8; 32];
-        array.copy_from_slice(&self.0.to_bytes_le());
+        let bytes = self.0.to_bytes_le();
+        array[..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
 
         array
     }
@@ -178,5 +87,77 @@ impl EvmWord {
     /// Returns the underlying representation of the `EvmWord` as a [`BigUint`].
     pub fn as_big_uint(&self) -> &BigUint {
         &self.0
+    }
+}
+
+/// Defines the gas consumed by an [`ExecutionStep`](crate::exec_trace::ExecutionStep)
+/// as well as the gas left to operate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct GasInfo {
+    pub(crate) gas: Gas,
+    pub(crate) gas_cost: GasCost,
+}
+
+impl GasInfo {
+    /// Generates a new `GasInfo` instance from it's fields.
+    pub fn new(gas: Gas, gas_cost: GasCost) -> GasInfo {
+        GasInfo { gas, gas_cost }
+    }
+
+    /// Returns the gas left marked by a GasInfo instance.
+    pub fn gas(&self) -> Gas {
+        self.gas
+    }
+
+    /// Returns the gas consumed by an [`OpcodeId`] execution.
+    pub fn gas_cost(&self) -> GasCost {
+        self.gas_cost
+    }
+}
+
+/// Gas Cost structure which is integrated inside [`GasInfo`].
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
+)]
+pub struct GasCost(u64);
+
+impl GasCost {
+    /// Constant cost for quick step
+    pub const QUICK: Self = Self(2);
+    /// Constant cost for fastest step
+    pub const FASTEST: Self = Self(3);
+    /// Constant cost for fast step
+    pub const FAST: Self = Self(5);
+    /// Constant cost for mid step
+    pub const MID: Self = Self(8);
+    /// Constant cost for slow step
+    pub const SLOW: Self = Self(10);
+    /// Constant cost for ext step
+    pub const EXT: Self = Self(20);
+}
+
+impl GasCost {
+    /// Returns the `GasCost` as a `u64`.
+    #[inline]
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    /// Returns the `GasCost` as a `usize`.
+    #[inline]
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl From<u8> for GasCost {
+    fn from(cost: u8) -> Self {
+        GasCost(cost as u64)
+    }
+}
+
+impl From<u64> for GasCost {
+    fn from(cost: u64) -> Self {
+        GasCost(cost)
     }
 }

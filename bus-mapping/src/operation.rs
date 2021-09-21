@@ -395,7 +395,6 @@ impl Operation {
 #[cfg(test)]
 mod operation_tests {
     use super::*;
-    use num::BigUint;
 
     #[test]
     fn unchecked_op_transmutations_are_safe() {
@@ -411,7 +410,7 @@ mod operation_tests {
         let memory_op = MemoryOp::new(
             RW::WRITE,
             GlobalCounter(1usize),
-            MemoryAddress(BigUint::from(0x40u8)),
+            MemoryAddress(usize::from(0x40u8)),
             EvmWord::from(0x40u8),
         );
 

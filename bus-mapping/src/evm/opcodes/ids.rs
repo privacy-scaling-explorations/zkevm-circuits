@@ -4,329 +4,480 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct OpcodeId(pub u8);
-
-// Core opcodes.
-impl OpcodeId {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub enum OpcodeId {
     /// `STOP`
-    pub const STOP: OpcodeId = OpcodeId(0x00);
+    STOP,
     /// `ADD`
-    pub const ADD: OpcodeId = OpcodeId(0x01);
+    ADD,
     /// `MUL`
-    pub const MUL: OpcodeId = OpcodeId(0x02);
+    MUL,
     /// `SUB`
-    pub const SUB: OpcodeId = OpcodeId(0x03);
+    SUB,
     /// `DIV`
-    pub const DIV: OpcodeId = OpcodeId(0x04);
+    DIV,
     /// `SDIV`
-    pub const SDIV: OpcodeId = OpcodeId(0x05);
+    SDIV,
     /// `MOD`
-    pub const MOD: OpcodeId = OpcodeId(0x06);
+    MOD,
     /// `SMOD`
-    pub const SMOD: OpcodeId = OpcodeId(0x07);
+    SMOD,
     /// `ADDMOD`
-    pub const ADDMOD: OpcodeId = OpcodeId(0x08);
+    ADDMOD,
     /// `MULMOD`
-    pub const MULMOD: OpcodeId = OpcodeId(0x09);
+    MULMOD,
     /// `EXP`
-    pub const EXP: OpcodeId = OpcodeId(0x0a);
+    EXP,
     /// `SIGNEXTEND`
-    pub const SIGNEXTEND: OpcodeId = OpcodeId(0x0b);
-
+    SIGNEXTEND,
     /// `LT`
-    pub const LT: OpcodeId = OpcodeId(0x10);
+    LT,
     /// `GT`
-    pub const GT: OpcodeId = OpcodeId(0x11);
+    GT,
     /// `SLT`
-    pub const SLT: OpcodeId = OpcodeId(0x12);
+    SLT,
     /// `SGT`
-    pub const SGT: OpcodeId = OpcodeId(0x13);
+    SGT,
     /// `EQ`
-    pub const EQ: OpcodeId = OpcodeId(0x14);
+    EQ,
     /// `ISZERO`
-    pub const ISZERO: OpcodeId = OpcodeId(0x15);
+    ISZERO,
     /// `AND`
-    pub const AND: OpcodeId = OpcodeId(0x16);
+    AND,
     /// `OR`
-    pub const OR: OpcodeId = OpcodeId(0x17);
+    OR,
     /// `XOR`
-    pub const XOR: OpcodeId = OpcodeId(0x18);
+    XOR,
     /// `NOT`
-    pub const NOT: OpcodeId = OpcodeId(0x19);
+    NOT,
     /// `BYTE`
-    pub const BYTE: OpcodeId = OpcodeId(0x1a);
+    BYTE,
 
     /// `CALLDATALOAD`
-    pub const CALLDATALOAD: OpcodeId = OpcodeId(0x35);
+    CALLDATALOAD,
     /// `CALLDATASIZE`
-    pub const CALLDATASIZE: OpcodeId = OpcodeId(0x36);
+    CALLDATASIZE,
     /// `CALLDATACOPY`
-    pub const CALLDATACOPY: OpcodeId = OpcodeId(0x37);
+    CALLDATACOPY,
     /// `CODESIZE`
-    pub const CODESIZE: OpcodeId = OpcodeId(0x38);
+    CODESIZE,
     /// `CODECOPY`
-    pub const CODECOPY: OpcodeId = OpcodeId(0x39);
+    CODECOPY,
 
     /// `SHL`
-    pub const SHL: OpcodeId = OpcodeId(0x1b);
+    SHL,
     /// `SHR`
-    pub const SHR: OpcodeId = OpcodeId(0x1c);
+    SHR,
     /// `SAR`
-    pub const SAR: OpcodeId = OpcodeId(0x1d);
+    SAR,
 
     /// `POP`
-    pub const POP: OpcodeId = OpcodeId(0x50);
+    POP,
     /// `MLOAD`
-    pub const MLOAD: OpcodeId = OpcodeId(0x51);
+    MLOAD,
     /// `MSTORE`
-    pub const MSTORE: OpcodeId = OpcodeId(0x52);
+    MSTORE,
     /// `MSTORE8`
-    pub const MSTORE8: OpcodeId = OpcodeId(0x53);
+    MSTORE8,
     /// `JUMP`
-    pub const JUMP: OpcodeId = OpcodeId(0x56);
+    JUMP,
     /// `JUMPI`
-    pub const JUMPI: OpcodeId = OpcodeId(0x57);
+    JUMPI,
     /// `PC`
-    pub const PC: OpcodeId = OpcodeId(0x58);
+    PC,
     /// `MSIZE`
-    pub const MSIZE: OpcodeId = OpcodeId(0x59);
+    MSIZE,
     /// `JUMPDEST`
-    pub const JUMPDEST: OpcodeId = OpcodeId(0x5b);
+    JUMPDEST,
 
     // PUSHn
     /// `PUSH1`
-    pub const PUSH1: OpcodeId = OpcodeId(0x60);
+    PUSH1,
     /// `PUSH2`
-    pub const PUSH2: OpcodeId = OpcodeId(0x61);
+    PUSH2,
     /// `PUSH3`
-    pub const PUSH3: OpcodeId = OpcodeId(0x62);
+    PUSH3,
     /// `PUSH4`
-    pub const PUSH4: OpcodeId = OpcodeId(0x63);
+    PUSH4,
     /// `PUSH5`
-    pub const PUSH5: OpcodeId = OpcodeId(0x64);
+    PUSH5,
     /// `PUSH6`
-    pub const PUSH6: OpcodeId = OpcodeId(0x65);
+    PUSH6,
     /// `PUSH7`
-    pub const PUSH7: OpcodeId = OpcodeId(0x66);
+    PUSH7,
     /// `PUSH8`
-    pub const PUSH8: OpcodeId = OpcodeId(0x67);
+    PUSH8,
     /// `PUSH9`
-    pub const PUSH9: OpcodeId = OpcodeId(0x68);
+    PUSH9,
     /// `PUSH10`
-    pub const PUSH10: OpcodeId = OpcodeId(0x69);
+    PUSH10,
     /// `PUSH11`
-    pub const PUSH11: OpcodeId = OpcodeId(0x6a);
+    PUSH11,
     /// `PUSH12`
-    pub const PUSH12: OpcodeId = OpcodeId(0x6b);
+    PUSH12,
     /// `PUSH13`
-    pub const PUSH13: OpcodeId = OpcodeId(0x6c);
+    PUSH13,
     /// `PUSH14`
-    pub const PUSH14: OpcodeId = OpcodeId(0x6d);
+    PUSH14,
     /// `PUSH15`
-    pub const PUSH15: OpcodeId = OpcodeId(0x6e);
+    PUSH15,
     /// `PUSH16`
-    pub const PUSH16: OpcodeId = OpcodeId(0x6f);
+    PUSH16,
     /// `PUSH17`
-    pub const PUSH17: OpcodeId = OpcodeId(0x70);
+    PUSH17,
     /// `PUSH18`
-    pub const PUSH18: OpcodeId = OpcodeId(0x71);
+    PUSH18,
     /// `PUSH19`
-    pub const PUSH19: OpcodeId = OpcodeId(0x72);
+    PUSH19,
     /// `PUSH20`
-    pub const PUSH20: OpcodeId = OpcodeId(0x73);
+    PUSH20,
     /// `PUSH21`
-    pub const PUSH21: OpcodeId = OpcodeId(0x74);
+    PUSH21,
     /// `PUSH22`
-    pub const PUSH22: OpcodeId = OpcodeId(0x75);
+    PUSH22,
     /// `PUSH23`
-    pub const PUSH23: OpcodeId = OpcodeId(0x76);
+    PUSH23,
     /// `PUSH24`
-    pub const PUSH24: OpcodeId = OpcodeId(0x77);
+    PUSH24,
     /// `PUSH25`
-    pub const PUSH25: OpcodeId = OpcodeId(0x78);
+    PUSH25,
     /// `PUSH26`
-    pub const PUSH26: OpcodeId = OpcodeId(0x79);
+    PUSH26,
     /// `PUSH27`
-    pub const PUSH27: OpcodeId = OpcodeId(0x7a);
+    PUSH27,
     /// `PUSH28`
-    pub const PUSH28: OpcodeId = OpcodeId(0x7b);
+    PUSH28,
     /// `PUSH29`
-    pub const PUSH29: OpcodeId = OpcodeId(0x7c);
+    PUSH29,
     /// `PUSH30`
-    pub const PUSH30: OpcodeId = OpcodeId(0x7d);
+    PUSH30,
     /// `PUSH31`
-    pub const PUSH31: OpcodeId = OpcodeId(0x7e);
+    PUSH31,
     /// `PUSH32`
-    pub const PUSH32: OpcodeId = OpcodeId(0x7f);
+    PUSH32,
 
     // DUPn
     /// `DUP1`
-    pub const DUP1: OpcodeId = OpcodeId(0x80);
+    DUP1,
     /// `DUP2`
-    pub const DUP2: OpcodeId = OpcodeId(0x81);
+    DUP2,
     /// `DUP3`
-    pub const DUP3: OpcodeId = OpcodeId(0x82);
+    DUP3,
     /// `DUP4`
-    pub const DUP4: OpcodeId = OpcodeId(0x83);
+    DUP4,
     /// `DUP5`
-    pub const DUP5: OpcodeId = OpcodeId(0x84);
+    DUP5,
     /// `DUP6`
-    pub const DUP6: OpcodeId = OpcodeId(0x85);
+    DUP6,
     /// `DUP7`
-    pub const DUP7: OpcodeId = OpcodeId(0x86);
+    DUP7,
     /// `DUP8`
-    pub const DUP8: OpcodeId = OpcodeId(0x87);
+    DUP8,
     /// `DUP9`
-    pub const DUP9: OpcodeId = OpcodeId(0x88);
+    DUP9,
     /// `DUP10`
-    pub const DUP10: OpcodeId = OpcodeId(0x89);
+    DUP10,
     /// `DUP11`
-    pub const DUP11: OpcodeId = OpcodeId(0x8a);
+    DUP11,
     /// `DUP12`
-    pub const DUP12: OpcodeId = OpcodeId(0x8b);
+    DUP12,
     /// `DUP13`
-    pub const DUP13: OpcodeId = OpcodeId(0x8c);
+    DUP13,
     /// `DUP14`
-    pub const DUP14: OpcodeId = OpcodeId(0x8d);
+    DUP14,
     /// `DUP15`
-    pub const DUP15: OpcodeId = OpcodeId(0x8e);
+    DUP15,
     /// `DUP16`
-    pub const DUP16: OpcodeId = OpcodeId(0x8f);
+    DUP16,
 
     // SWAPn
     /// `SWAP1`
-    pub const SWAP1: OpcodeId = OpcodeId(0x90);
+    SWAP1,
     /// `SWAP2`
-    pub const SWAP2: OpcodeId = OpcodeId(0x91);
+    SWAP2,
     /// `SWAP3`
-    pub const SWAP3: OpcodeId = OpcodeId(0x92);
+    SWAP3,
     /// `SWAP4`
-    pub const SWAP4: OpcodeId = OpcodeId(0x93);
+    SWAP4,
     /// `SWAP5`
-    pub const SWAP5: OpcodeId = OpcodeId(0x94);
+    SWAP5,
     /// `SWAP6`
-    pub const SWAP6: OpcodeId = OpcodeId(0x95);
+    SWAP6,
     /// `SWAP7`
-    pub const SWAP7: OpcodeId = OpcodeId(0x96);
+    SWAP7,
     /// `SWAP8`
-    pub const SWAP8: OpcodeId = OpcodeId(0x97);
+    SWAP8,
     /// `SWAP9`
-    pub const SWAP9: OpcodeId = OpcodeId(0x98);
+    SWAP9,
     /// `SWAP10`
-    pub const SWAP10: OpcodeId = OpcodeId(0x99);
+    SWAP10,
     /// `SWAP11`
-    pub const SWAP11: OpcodeId = OpcodeId(0x9a);
+    SWAP11,
     /// `SWAP12`
-    pub const SWAP12: OpcodeId = OpcodeId(0x9b);
+    SWAP12,
     /// `SWAP13`
-    pub const SWAP13: OpcodeId = OpcodeId(0x9c);
+    SWAP13,
     /// `SWAP14`
-    pub const SWAP14: OpcodeId = OpcodeId(0x9d);
+    SWAP14,
     /// `SWAP15`
-    pub const SWAP15: OpcodeId = OpcodeId(0x9e);
+    SWAP15,
     /// `SWAP16`
-    pub const SWAP16: OpcodeId = OpcodeId(0x9f);
+    SWAP16,
 
     /// `RETURN`
-    pub const RETURN: OpcodeId = OpcodeId(0xf3);
+    RETURN,
     /// `REVERT`
-    pub const REVERT: OpcodeId = OpcodeId(0xfd);
+    REVERT,
 
     /// `INVALID`
-    pub const INVALID: OpcodeId = OpcodeId(0xfe);
-}
+    INVALID,
 
-// External opcodes
-impl OpcodeId {
+    // External opcodes
     /// `SHA3`
-    pub const SHA3: OpcodeId = OpcodeId(0x20);
+    SHA3,
     /// `ADDRESS`
-    pub const ADDRESS: OpcodeId = OpcodeId(0x30);
+    ADDRESS,
     /// `BALANCE`
-    pub const BALANCE: OpcodeId = OpcodeId(0x31);
+    BALANCE,
     /// `ORIGIN`
-    pub const ORIGIN: OpcodeId = OpcodeId(0x32);
+    ORIGIN,
     /// `CALLER`
-    pub const CALLER: OpcodeId = OpcodeId(0x33);
+    CALLER,
     /// `CALLVALUE`
-    pub const CALLVALUE: OpcodeId = OpcodeId(0x34);
+    CALLVALUE,
     /// `GASPRICE`
-    pub const GASPRICE: OpcodeId = OpcodeId(0x3a);
+    GASPRICE,
     /// `EXTCODESIZE`
-    pub const EXTCODESIZE: OpcodeId = OpcodeId(0x3b);
+    EXTCODESIZE,
     /// `EXTCODECOPY`
-    pub const EXTCODECOPY: OpcodeId = OpcodeId(0x3c);
+    EXTCODECOPY,
     /// `EXTCODEHASH`
-    pub const EXTCODEHASH: OpcodeId = OpcodeId(0x3f);
+    EXTCODEHASH,
     /// `RETURNDATASIZE`
-    pub const RETURNDATASIZE: OpcodeId = OpcodeId(0x3d);
+    RETURNDATASIZE,
     /// `RETURNDATACOPY`
-    pub const RETURNDATACOPY: OpcodeId = OpcodeId(0x3e);
+    RETURNDATACOPY,
     /// `BLOCKHASH`
-    pub const BLOCKHASH: OpcodeId = OpcodeId(0x40);
+    BLOCKHASH,
     /// `COINBASE`
-    pub const COINBASE: OpcodeId = OpcodeId(0x41);
+    COINBASE,
     /// `TIMESTAMP`
-    pub const TIMESTAMP: OpcodeId = OpcodeId(0x42);
+    TIMESTAMP,
     /// `NUMBER`
-    pub const NUMBER: OpcodeId = OpcodeId(0x43);
+    NUMBER,
     /// `DIFFICULTY`
-    pub const DIFFICULTY: OpcodeId = OpcodeId(0x44);
+    DIFFICULTY,
     /// `GASLIMIT`
-    pub const GASLIMIT: OpcodeId = OpcodeId(0x45);
+    GASLIMIT,
     /// `CHAINID`
-    pub const CHAINID: OpcodeId = OpcodeId(0x46);
+    CHAINID,
     /// `SELFBALANCE`
-    pub const SELFBALANCE: OpcodeId = OpcodeId(0x47);
+    SELFBALANCE,
     /// `BASEFEE`
-    pub const BASEFEE: OpcodeId = OpcodeId(0x48);
+    BASEFEE,
     /// `SLOAD`
-    pub const SLOAD: OpcodeId = OpcodeId(0x54);
+    SLOAD,
     /// `SSTORE`
-    pub const SSTORE: OpcodeId = OpcodeId(0x55);
+    SSTORE,
     /// `GAS`
-    pub const GAS: OpcodeId = OpcodeId(0x5a);
+    GAS,
 
     // LOGn
     /// `LOG0`
-    pub const LOG0: OpcodeId = OpcodeId(0xa0);
+    LOG0,
     /// `LOG1`
-    pub const LOG1: OpcodeId = OpcodeId(0xa1);
+    LOG1,
     /// `LOG2`
-    pub const LOG2: OpcodeId = OpcodeId(0xa2);
+    LOG2,
     /// `LOG3`
-    pub const LOG3: OpcodeId = OpcodeId(0xa3);
+    LOG3,
     /// `LOG4`
-    pub const LOG4: OpcodeId = OpcodeId(0xa4);
+    LOG4,
 
     /// `CREATE`
-    pub const CREATE: OpcodeId = OpcodeId(0xf0);
+    CREATE,
     /// `CREATE2`
-    pub const CREATE2: OpcodeId = OpcodeId(0xf5);
+    CREATE2,
     /// `CALL`
-    pub const CALL: OpcodeId = OpcodeId(0xf1);
+    CALL,
     /// `CALLCODE`
-    pub const CALLCODE: OpcodeId = OpcodeId(0xf2);
+    CALLCODE,
     /// `DELEGATECALL`
-    pub const DELEGATECALL: OpcodeId = OpcodeId(0xf4);
+    DELEGATECALL,
     /// `STATICCALL`
-    pub const STATICCALL: OpcodeId = OpcodeId(0xfa);
+    STATICCALL,
     /// `SELFDESTRUCT`
-    pub const SELFDESTRUCT: OpcodeId = OpcodeId(0xff);
+    SELFDESTRUCT,
+}
+
+impl OpcodeId {
+    /// Returns `true` if the `OpcodeId` is a `PUSHn`.
+    pub fn is_push(&self) -> bool {
+        self.as_u8() >= Self::PUSH1.as_u8()
+            && self.as_u8() <= Self::PUSH32.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `DUPn`.
+    pub fn is_dup(&self) -> bool {
+        self.as_u8() >= Self::DUP1.as_u8()
+            && self.as_u8() <= Self::DUP16.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `SWAPn`.
+    pub fn is_swap(&self) -> bool {
+        self.as_u8() >= Self::SWAP1.as_u8()
+            && self.as_u8() <= Self::SWAP16.as_u8()
+    }
 }
 
 impl OpcodeId {
     /// Returns the `OpcodeId` as a `u8`.
-    #[inline]
     pub const fn as_u8(&self) -> u8 {
-        self.0
-    }
-
-    /// Returns the `OpcodeId` as a `usize`.
-    #[inline]
-    pub const fn as_usize(&self) -> usize {
-        self.0 as usize
+        match self {
+            OpcodeId::STOP => 0x00u8,
+            OpcodeId::ADD => 0x01u8,
+            OpcodeId::MUL => 0x02u8,
+            OpcodeId::SUB => 0x03u8,
+            OpcodeId::DIV => 0x04u8,
+            OpcodeId::SDIV => 0x05u8,
+            OpcodeId::MOD => 0x06u8,
+            OpcodeId::SMOD => 0x07u8,
+            OpcodeId::ADDMOD => 0x08u8,
+            OpcodeId::MULMOD => 0x09u8,
+            OpcodeId::EXP => 0x0au8,
+            OpcodeId::SIGNEXTEND => 0x0bu8,
+            OpcodeId::LT => 0x10u8,
+            OpcodeId::GT => 0x11u8,
+            OpcodeId::SLT => 0x12u8,
+            OpcodeId::SGT => 0x13u8,
+            OpcodeId::EQ => 0x14u8,
+            OpcodeId::ISZERO => 0x15u8,
+            OpcodeId::AND => 0x16u8,
+            OpcodeId::OR => 0x17u8,
+            OpcodeId::XOR => 0x18u8,
+            OpcodeId::NOT => 0x19u8,
+            OpcodeId::BYTE => 0x1au8,
+            OpcodeId::CALLDATALOAD => 0x35u8,
+            OpcodeId::CALLDATASIZE => 0x36u8,
+            OpcodeId::CALLDATACOPY => 0x37u8,
+            OpcodeId::CODESIZE => 0x38u8,
+            OpcodeId::CODECOPY => 0x39u8,
+            OpcodeId::SHL => 0x1bu8,
+            OpcodeId::SHR => 0x1cu8,
+            OpcodeId::SAR => 0x1du8,
+            OpcodeId::POP => 0x50u8,
+            OpcodeId::MLOAD => 0x51u8,
+            OpcodeId::MSTORE => 0x52u8,
+            OpcodeId::MSTORE8 => 0x53u8,
+            OpcodeId::JUMP => 0x56u8,
+            OpcodeId::JUMPI => 0x57u8,
+            OpcodeId::PC => 0x58u8,
+            OpcodeId::MSIZE => 0x59u8,
+            OpcodeId::JUMPDEST => 0x5bu8,
+            OpcodeId::PUSH1 => 0x60u8,
+            OpcodeId::PUSH2 => 0x61u8,
+            OpcodeId::PUSH3 => 0x62u8,
+            OpcodeId::PUSH4 => 0x63u8,
+            OpcodeId::PUSH5 => 0x64u8,
+            OpcodeId::PUSH6 => 0x65u8,
+            OpcodeId::PUSH7 => 0x66u8,
+            OpcodeId::PUSH8 => 0x67u8,
+            OpcodeId::PUSH9 => 0x68u8,
+            OpcodeId::PUSH10 => 0x69u8,
+            OpcodeId::PUSH11 => 0x6au8,
+            OpcodeId::PUSH12 => 0x6bu8,
+            OpcodeId::PUSH13 => 0x6cu8,
+            OpcodeId::PUSH14 => 0x6du8,
+            OpcodeId::PUSH15 => 0x6eu8,
+            OpcodeId::PUSH16 => 0x6fu8,
+            OpcodeId::PUSH17 => 0x70u8,
+            OpcodeId::PUSH18 => 0x71u8,
+            OpcodeId::PUSH19 => 0x72u8,
+            OpcodeId::PUSH20 => 0x73u8,
+            OpcodeId::PUSH21 => 0x74u8,
+            OpcodeId::PUSH22 => 0x75u8,
+            OpcodeId::PUSH23 => 0x76u8,
+            OpcodeId::PUSH24 => 0x77u8,
+            OpcodeId::PUSH25 => 0x78u8,
+            OpcodeId::PUSH26 => 0x79u8,
+            OpcodeId::PUSH27 => 0x7au8,
+            OpcodeId::PUSH28 => 0x7bu8,
+            OpcodeId::PUSH29 => 0x7cu8,
+            OpcodeId::PUSH30 => 0x7du8,
+            OpcodeId::PUSH31 => 0x7eu8,
+            OpcodeId::PUSH32 => 0x7fu8,
+            OpcodeId::DUP1 => 0x80u8,
+            OpcodeId::DUP2 => 0x81u8,
+            OpcodeId::DUP3 => 0x82u8,
+            OpcodeId::DUP4 => 0x83u8,
+            OpcodeId::DUP5 => 0x84u8,
+            OpcodeId::DUP6 => 0x85u8,
+            OpcodeId::DUP7 => 0x86u8,
+            OpcodeId::DUP8 => 0x87u8,
+            OpcodeId::DUP9 => 0x88u8,
+            OpcodeId::DUP10 => 0x89u8,
+            OpcodeId::DUP11 => 0x8au8,
+            OpcodeId::DUP12 => 0x8bu8,
+            OpcodeId::DUP13 => 0x8cu8,
+            OpcodeId::DUP14 => 0x8du8,
+            OpcodeId::DUP15 => 0x8eu8,
+            OpcodeId::DUP16 => 0x8fu8,
+            OpcodeId::SWAP1 => 0x90u8,
+            OpcodeId::SWAP2 => 0x91u8,
+            OpcodeId::SWAP3 => 0x92u8,
+            OpcodeId::SWAP4 => 0x93u8,
+            OpcodeId::SWAP5 => 0x94u8,
+            OpcodeId::SWAP6 => 0x95u8,
+            OpcodeId::SWAP7 => 0x96u8,
+            OpcodeId::SWAP8 => 0x97u8,
+            OpcodeId::SWAP9 => 0x98u8,
+            OpcodeId::SWAP10 => 0x99u8,
+            OpcodeId::SWAP11 => 0x9au8,
+            OpcodeId::SWAP12 => 0x9bu8,
+            OpcodeId::SWAP13 => 0x9cu8,
+            OpcodeId::SWAP14 => 0x9du8,
+            OpcodeId::SWAP15 => 0x9eu8,
+            OpcodeId::SWAP16 => 0x9fu8,
+            OpcodeId::RETURN => 0xf3u8,
+            OpcodeId::REVERT => 0xfdu8,
+            OpcodeId::INVALID => 0xfeu8,
+            OpcodeId::SHA3 => 0x20u8,
+            OpcodeId::ADDRESS => 0x30u8,
+            OpcodeId::BALANCE => 0x31u8,
+            OpcodeId::ORIGIN => 0x32u8,
+            OpcodeId::CALLER => 0x33u8,
+            OpcodeId::CALLVALUE => 0x34u8,
+            OpcodeId::GASPRICE => 0x3au8,
+            OpcodeId::EXTCODESIZE => 0x3bu8,
+            OpcodeId::EXTCODECOPY => 0x3cu8,
+            OpcodeId::EXTCODEHASH => 0x3fu8,
+            OpcodeId::RETURNDATASIZE => 0x3du8,
+            OpcodeId::RETURNDATACOPY => 0x3eu8,
+            OpcodeId::BLOCKHASH => 0x40u8,
+            OpcodeId::COINBASE => 0x41u8,
+            OpcodeId::TIMESTAMP => 0x42u8,
+            OpcodeId::NUMBER => 0x43u8,
+            OpcodeId::DIFFICULTY => 0x44u8,
+            OpcodeId::GASLIMIT => 0x45u8,
+            OpcodeId::CHAINID => 0x46u8,
+            OpcodeId::SELFBALANCE => 0x47u8,
+            OpcodeId::BASEFEE => 0x48u8,
+            OpcodeId::SLOAD => 0x54u8,
+            OpcodeId::SSTORE => 0x55u8,
+            OpcodeId::GAS => 0x5au8,
+            OpcodeId::LOG0 => 0xa0u8,
+            OpcodeId::LOG1 => 0xa1u8,
+            OpcodeId::LOG2 => 0xa2u8,
+            OpcodeId::LOG3 => 0xa3u8,
+            OpcodeId::LOG4 => 0xa4u8,
+            OpcodeId::CREATE => 0xf0u8,
+            OpcodeId::CREATE2 => 0xf5u8,
+            OpcodeId::CALL => 0xf1u8,
+            OpcodeId::CALLCODE => 0xf2u8,
+            OpcodeId::DELEGATECALL => 0xf4u8,
+            OpcodeId::STATICCALL => 0xfau8,
+            OpcodeId::SELFDESTRUCT => 0xffu8,
+        }
     }
 }
 

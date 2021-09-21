@@ -18,6 +18,10 @@ pub enum Error {
     InvalidOpConversion,
     /// Serde de/serialization error.
     SerdeError,
+    /// Error while trying to access an invalid/empty Stack location.
+    InvalidStackPointer,
+    /// Error while trying to access an invalid/empty Memory location.
+    InvalidMemoryPointer,
 }
 
 impl Display for Error {

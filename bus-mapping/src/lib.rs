@@ -52,30 +52,48 @@
 //! let input_trace = r#"
 //! [
 //!     {
-//!         "memory": {
-//!             "0": "0000000000000000000000000000000000000000000000000000000000000000",
-//!             "20": "0000000000000000000000000000000000000000000000000000000000000000",
-//!             "40": "0000000000000000000000000000000000000000000000000000000000000000"
-//!         },
+//!         "pc": 5,
+//!         "op": "PUSH1",
+//!         "gas": 82,
+//!         "gasCost": 3,
+//!         "depth": 1,
+//!         "stack": [],
+//!         "memory": [
+//!           "0000000000000000000000000000000000000000000000000000000000000000",
+//!           "0000000000000000000000000000000000000000000000000000000000000000",
+//!           "0000000000000000000000000000000000000000000000000000000000000080"
+//!         ]
+//!       },
+//!       {
+//!         "pc": 7,
+//!         "op": "MLOAD",
+//!         "gas": 79,
+//!         "gasCost": 3,
+//!         "depth": 1,
 //!         "stack": [
-//!             "40"
+//!           "40"
 //!         ],
-//!         "opcode": "PUSH1 40",
-//!         "pc": 0
-//!     },
-//!     {
-//!         "memory": {
-//!             "00": "0000000000000000000000000000000000000000000000000000000000000000",
-//!             "20": "0000000000000000000000000000000000000000000000000000000000000000",
-//!             "40": "0000000000000000000000000000000000000000000000000000000000000000"
-//!         },
+//!         "memory": [
+//!           "0000000000000000000000000000000000000000000000000000000000000000",
+//!           "0000000000000000000000000000000000000000000000000000000000000000",
+//!           "0000000000000000000000000000000000000000000000000000000000000080"
+//!         ]
+//!       },
+//!       {
+//!         "pc": 8,
+//!         "op": "STOP",
+//!         "gas": 76,
+//!         "gasCost": 0,
+//!         "depth": 1,
 //!         "stack": [
-//!             "40",
-//!             "80"
+//!           "80"
 //!         ],
-//!         "opcode": "PUSH1 80",
-//!         "pc": 1
-//!     }
+//!         "memory": [
+//!           "0000000000000000000000000000000000000000000000000000000000000000",
+//!           "0000000000000000000000000000000000000000000000000000000000000000",
+//!           "0000000000000000000000000000000000000000000000000000000000000080"
+//!         ]
+//!       }
 //! ]
 //! "#;
 //!
@@ -154,8 +172,8 @@
 //! Where as you see, we group by `memory_address` and then order by
 //! `global_counter`.
 //!
-//! Aside from that, we also can iterate over the `ExecutionTrace` itself over
-//! each Evm Instruction in order to add constrains for each Opcode is executed.
+//! - Iterate over the `ExecutionTrace` itself over
+//! each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
 //! This is also automatically done via the
 //! [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
 //!  
@@ -167,6 +185,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
+// We want to have UPPERCASE idents sometimes.
+#![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
@@ -177,9 +197,11 @@
 extern crate alloc;
 mod error;
 #[macro_use]
+pub(crate) mod macros;
 pub mod evm;
 pub mod exec_trace;
 pub mod operation;
-
 pub use error::Error;
 pub use exec_trace::{BlockConstants, ExecutionStep, ExecutionTrace};
+/// Gas is exported as a type alias for u64
+pub type Gas = u64;
