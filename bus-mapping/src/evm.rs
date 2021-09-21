@@ -79,7 +79,7 @@ impl EvmWord {
     pub fn to_bytes(&self) -> [u8; 32] {
         let mut array = [0u8; 32];
         let bytes = self.0.to_bytes_le();
-        array[..bytes.len() - 1].copy_from_slice(&bytes[0..bytes.len() - 1]);
+        array[..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
 
         array
     }
