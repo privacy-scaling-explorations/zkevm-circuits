@@ -240,20 +240,17 @@ impl<
 
         let q_storage_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::from_u64(2));
-            let three = Expression::Constant(F::from_u64(3));
             q_target.clone()
-                * (q_target.clone() - one)
-                * (q_target.clone() - two)
-                * (q_target - three)
+                * (q_target.clone() - one.clone())
+                * (q_target.clone() - two.clone())
+                * (q_target - three.clone())
         };
 
         let q_storage_not_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_storage_not_first(meta);
             // q_storage_not_first is 24 when target is 4, we use 1/24 to
             // normalize the value
-            let inv = F::from_u64(24_u64).invert().unwrap_or(F::zero());
+            let inv = F::from_u64(24_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -481,12 +478,10 @@ impl<
             meta,
             |meta| {
                 let padding = meta.query_advice(padding, Rotation::cur());
-                let one = Expression::Constant(F::one());
-                let is_not_padding = one - padding;
+                let is_not_padding = one.clone() - padding;
 
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
-                let one = Expression::Constant(F::one());
-                let q_not_first = q_target.clone() * (q_target - one);
+                let q_not_first = q_target.clone() * (q_target - one.clone());
 
                 q_not_first * is_not_padding
             },
@@ -503,20 +498,16 @@ impl<
         meta.create_gate("First storage row operation", |meta| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
-            let one = Expression::Constant(F::one());
-            let two = Expression::Constant(F::from_u64(2));
-            let three = Expression::Constant(F::from_u64(3));
-            let four = Expression::Constant(F::from_u64(4));
             let q_storage_first = q_target_cur.clone()
                 * (two.clone() - q_target_cur.clone())
                 * (three.clone() - q_target_cur.clone())
-                * (four - q_target_cur)
+                * (four.clone() - q_target_cur)
                 * (q_target_next.clone() - one.clone())
-                * (q_target_next.clone() - two)
-                * (q_target_next - three);
+                * (q_target_next.clone() - two.clone())
+                * (q_target_next - three.clone());
 
             let flag = meta.query_advice(flag, Rotation::cur());
-            let q_read = one - flag;
+            let q_read = one.clone() - flag;
 
             vec![
                 q_storage_first * q_read, /* first storage op has to be
@@ -544,8 +535,6 @@ impl<
             let value_prev_cur = meta.query_advice(value_prev, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
 
-            let one = Expression::Constant(F::one());
-
             // flag == 0 or 1
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
@@ -555,7 +544,7 @@ impl<
             let q_read = one.clone() - flag.clone();
 
             let padding = meta.query_advice(padding, Rotation::cur());
-            let is_not_padding = one - padding;
+            let is_not_padding = one.clone() - padding;
 
             vec![
                 q_storage_not_first.clone() * address_diff * q_read.clone(), // when address changes, the flag is 1 (write)
@@ -588,7 +577,6 @@ impl<
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
-            let one = Expression::Constant(F::one());
             let padding = meta.query_advice(padding, Rotation::cur());
             let is_not_padding = one.clone() - padding;
             let q_storage_not_first = q_storage_not_first_norm(meta);
@@ -598,7 +586,7 @@ impl<
                     * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one), // - 1 because it needs to be strictly monotone
+                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
                 global_counter_table,
             )]
         });
