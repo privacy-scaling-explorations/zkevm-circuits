@@ -1,12 +1,25 @@
 //! Doc this
 use super::EvmWord;
 use crate::Error;
-use core::ops::{Deref, DerefMut};
+use core::convert::{TryFrom, TryInto};
+use core::ops::{Index, IndexMut};
 use core::str::FromStr;
 
 /// Represents a `MemoryAddress` of the EVM.
+///
+/// All `From` basic implementations assume that
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemoryAddress(pub(crate) usize);
+
+impl TryFrom<EvmWord> for MemoryAddress {
+    type Error = Error;
+
+    fn try_from(word: EvmWord) -> Result<Self, Self::Error> {
+        let addr: usize =
+            word.0.try_into().map_err(|_| Error::MemAddressParsing)?;
+        Ok(MemoryAddress(addr))
+    }
+}
 
 impl MemoryAddress {
     /// Returns the zero address for Memory targets.
@@ -43,19 +56,20 @@ impl FromStr for MemoryAddress {
 /// Represents a snapshot of the EVM memory state at a certain
 /// execution step height.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Memory(pub(crate) Vec<(MemoryAddress, EvmWord)>);
+pub struct Memory(pub(crate) Vec<EvmWord>);
 
-impl Deref for Memory {
-    type Target = Vec<(MemoryAddress, EvmWord)>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Index<MemoryAddress> for Memory {
+    type Output = EvmWord;
+    fn index(&self, index: MemoryAddress) -> &Self::Output {
+        // MemoryAddress is in base 16. Therefore since the vec is not, we need to shift the addr.
+        &self.0[index.0 >> 5]
     }
 }
 
-impl DerefMut for Memory {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl IndexMut<MemoryAddress> for Memory {
+    fn index_mut(&mut self, index: MemoryAddress) -> &mut Self::Output {
+        // MemoryAddress is in base 16. Therefore since the vec is not, we need to shift the addr.
+        &mut self.0[index.0 >> 5]
     }
 }
 
@@ -67,21 +81,11 @@ impl Memory {
 
     /// Generate an new instance of EVM memory given a `Vec<EvmWord>`.
     pub fn new(words: Vec<EvmWord>) -> Memory {
-        Memory(
-            words
-                .iter()
-                .cloned()
-                .enumerate()
-                .map(|(addr, word)| (MemoryAddress::from(addr * 32), word))
-                .collect(),
-        )
+        Memory(words)
     }
 
-    /// Returns the last memory region written at this execution step height.
-    pub fn size(&self) -> MemoryAddress {
-        self.0
-            .last()
-            .map(|(addr, _)| *addr)
-            .unwrap_or_else(MemoryAddress::zero)
+    /// Returns the last memory address written at this execution step height.
+    pub fn last_addr(&self) -> MemoryAddress {
+        (self.0.len() << 4).into()
     }
 }

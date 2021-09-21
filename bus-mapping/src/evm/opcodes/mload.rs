@@ -1,11 +1,11 @@
 use super::Opcode;
 use crate::{
-    evm::GlobalCounter,
+    evm::{GlobalCounter, MemoryAddress},
     exec_trace::ExecutionStep,
     operation::{container::OperationContainer, MemoryOp, StackOp, RW},
     Error,
 };
-use core::ops::Deref;
+use core::{convert::TryInto, ops::Deref};
 
 /// Number of ops that MLOAD adds to the container & busmapping
 const MLOAD_OP_NUM: usize = 3;
@@ -41,7 +41,7 @@ impl Opcode for Mload {
             RW::READ,
             GlobalCounter::from(exec_step.gc().0 + 1),
             stack_position,
-            stack_value_read,
+            stack_value_read.clone(),
         );
 
         exec_step
@@ -51,19 +51,15 @@ impl Opcode for Mload {
         //
         // First mem read
         //
-        let last_mem_item = exec_step
-            .memory()
-            .deref()
-            .last()
-            .cloned()
-            .ok_or(Error::InvalidMemoryPointer)?;
+        let mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
+        let mem_read_value = next_steps[0].memory()[mem_read_addr].clone();
 
         // Read operation at memory address: stack_read.value
         let mem_read = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(exec_step.gc().0 + 2),
-            last_mem_item.0,
-            last_mem_item.1.clone(),
+            mem_read_addr,
+            mem_read_value.clone(),
         );
 
         exec_step
@@ -77,7 +73,7 @@ impl Opcode for Mload {
             RW::WRITE,
             GlobalCounter::from(exec_step.gc().0 + 3),
             stack_position,
-            last_mem_item.1,
+            mem_read_value,
         );
         exec_step
             .bus_mapping_instance_mut()

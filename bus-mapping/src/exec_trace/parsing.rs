@@ -58,9 +58,7 @@ pub(crate) struct ParsedExecutionStep<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::{
-        opcodes::ids::OpcodeId, GlobalCounter, Memory, MemoryAddress, Stack,
-    };
+    use crate::evm::{opcodes::ids::OpcodeId, GlobalCounter, Memory, Stack};
 
     #[test]
     fn parse_single_step() {
@@ -88,9 +86,9 @@ mod tests {
 
         let expected_step = {
             let mem_map = Memory(vec![
-                (MemoryAddress::from(0x00), EvmWord::from(0u8)),
-                (MemoryAddress::from(0x20), EvmWord::from(0u8)),
-                (MemoryAddress::from(0x40), EvmWord::from(0x80u8)),
+                EvmWord::from(0u8),
+                EvmWord::from(0u8),
+                EvmWord::from(0x80u8),
             ]);
 
             ExecutionStep {

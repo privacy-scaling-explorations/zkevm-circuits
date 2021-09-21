@@ -303,7 +303,7 @@ mod trace_tests {
     use crate::{
         evm::{
             opcodes::ids::OpcodeId, GasCost, GasInfo, GlobalCounter,
-            MemoryAddress, ProgramCounter, StackAddress,
+            ProgramCounter, StackAddress,
         },
         exec_trace::ExecutionStep,
         operation::{StackOp, RW},
@@ -379,9 +379,9 @@ mod trace_tests {
         // The memory is the same in both steps as none of them touches the
         // memory of the EVM.
         let mem_map = Memory(vec![
-            (MemoryAddress(usize::from(0x00u8)), EvmWord::from(0u8)),
-            (MemoryAddress(usize::from(0x20u8)), EvmWord::from(0u8)),
-            (MemoryAddress(usize::from(0x40u8)), EvmWord::from(0x80u8)),
+            EvmWord::from(0u8),
+            EvmWord::from(0u8),
+            EvmWord::from(0x80u8),
         ]);
 
         // Generate Step1 corresponding to PUSH1 40
