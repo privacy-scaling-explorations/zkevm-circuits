@@ -86,17 +86,14 @@ static ROTATION_CONSTANTS: [[u32; 5]; 5] = [
 ];
 
 fn mod_u64(a: &BigUint, b: u64) -> u64 {
-    match (a % b).iter_u64_digits().take(1).next() {
-        Some(x) => x,
-        None => 0,
-    }
+    (a % b).iter_u64_digits().take(1).next().unwrap_or(0)
 }
 
 fn convert_b2_to_b13(a: u64) -> Lane13 {
     let mut lane13: BigUint = Zero::zero();
     for i in 0..64 {
-        let bit = a >> i;
-        lane13 += bit * B13.pow(i);
+        let bit = (a >> i) & 1;
+        lane13 += bit * BigUint::from(B13).pow(i);
     }
     lane13
 }
@@ -121,7 +118,7 @@ fn convert_b9_coef(x: u64) -> u64 {
 }
 
 fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
-    let mut base = BigUint::from(B9).pow(rot.into());
+    let mut base = BigUint::from(B9).pow(rot);
     let mut special_chunk = Zero::zero();
     let mut raw = x;
     let mut acc: Lane9 = Zero::zero();
@@ -138,10 +135,8 @@ fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
         if i == 64 - rot {
             base = One::one();
         }
-
-        acc +=
-            convert_b13_coef(special_chunk) * BigUint::from(B9).pow(rot.into());
     }
+    acc += convert_b13_coef(special_chunk) * BigUint::from(B9).pow(rot);
     acc
 }
 
@@ -187,7 +182,7 @@ impl KeccakFArith {
         let mut out_b9 = StateBigInt::default();
         for x in 0..5 {
             for y in 0..5 {
-                in_b13[(x, y)] = convert_b2_to_b9(a[x][y]);
+                in_b13[(x, y)] = convert_b2_to_b13(a[x][y]);
             }
         }
 
@@ -213,8 +208,7 @@ impl KeccakFArith {
 
         let s3 = KeccakFArith::pi(&s2);
         let s4 = KeccakFArith::xi(&s3);
-        let s5 = KeccakFArith::iota(&s4, rc);
-        s5
+        KeccakFArith::iota(&s4, rc)
     }
 
     fn theta(a: &StateBigInt) -> StateBigInt {
@@ -261,13 +255,11 @@ impl KeccakFArith {
 
     fn xi(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
-        let two = BigUint::from(2 as u8);
-        let three = BigUint::from(3 as u8);
         for x in 0..5 {
             for y in 0..5 {
-                out[(x, y)] = two.clone() * a[(x, y)].clone()
+                out[(x, y)] = a[(x, y)].clone() * 2u64
                     + a[((x + 1) % 5, y)].clone()
-                    + three.clone() * a[((x + 2) % 5, y)].clone();
+                    + a[((x + 2) % 5, y)].clone() * 3u64;
             }
         }
         out
@@ -275,7 +267,7 @@ impl KeccakFArith {
 
     fn iota(a: &StateBigInt, rc: u64) -> StateBigInt {
         let mut out = a.clone();
-        out[(0, 0)] += BigUint::from(2 as u8) * convert_b2_to_b9(rc);
+        out[(0, 0)] += convert_b2_to_b9(rc) * 2u64;
         out
     }
 }
@@ -303,13 +295,8 @@ impl Keccak {
         if padding_total == 1 {
             padding = vec![0x81];
         } else {
-            padding = vec![];
-            padding.push(0x01);
-
-            for _ in 0..(padding_total - 2) {
-                padding.push(0x00);
-            }
-
+            padding = vec![0x01];
+            padding.resize(padding_total - 1, 0x00);
             padding.push(0x80);
         }
 
@@ -332,8 +319,8 @@ struct Sponge {
 impl Sponge {
     pub fn new(rate: usize, capacity: usize) -> Sponge {
         Sponge {
-            rate: rate,
-            capacity: capacity,
+            rate,
+            capacity,
             keccak_f: KeccakFArith::new(),
         }
     }
@@ -404,6 +391,23 @@ fn keccak256(msg: &[u8]) -> Vec<u8> {
     let mut keccak = Keccak::new();
     keccak.update(msg);
     keccak.digest()
+}
+
+#[test]
+fn test_helpers() {
+    assert_eq!(convert_b2_to_b13(0b101u64), BigUint::from(170u64));
+    assert_eq!(convert_b2_to_b9(0b10u64), BigUint::from(9u64));
+    assert_eq!(convert_b2_to_b9(0b101u64), BigUint::from(82u64));
+    assert_eq!(
+        convert_b13_lane_to_b9(BigUint::from(170u64), 0),
+        BigUint::from(82u64)
+    );
+    assert_eq!(convert_b9_lane_to_b13(BigUint::from(82u64)), Zero::zero());
+    assert_eq!(convert_b9_lane_to_b2(BigUint::from(82u64)), 0);
+    assert_eq!(
+        convert_b9_lane_to_b2(BigUint::from(9u64).pow(63) * 2u64),
+        1u64 << 63
+    );
 }
 
 #[test]

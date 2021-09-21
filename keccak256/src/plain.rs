@@ -60,13 +60,8 @@ impl Keccak {
         if padding_total == 1 {
             padding = vec![0x81];
         } else {
-            padding = vec![];
-            padding.push(0x01);
-
-            for _ in 0..(padding_total - 2) {
-                padding.push(0x00);
-            }
-
+            padding = vec![0x01];
+            padding.resize(padding_total - 1, 0x00);
             padding.push(0x80);
         }
 
@@ -98,8 +93,7 @@ impl KeccakF {
         let s2 = KeccakF::rho(s1);
         let s3 = KeccakF::pi(s2);
         let s4 = KeccakF::xi(s3);
-        let s5 = KeccakF::iota(s4, rc);
-        s5
+        KeccakF::iota(s4, rc)
     }
 
     fn theta(a: State) -> State {
@@ -166,8 +160,8 @@ struct Sponge {
 impl Sponge {
     pub fn new(rate: usize, capacity: usize) -> Sponge {
         Sponge {
-            rate: rate,
-            capacity: capacity,
+            rate,
+            capacity,
             keccak_f: KeccakF::new(),
         }
     }
