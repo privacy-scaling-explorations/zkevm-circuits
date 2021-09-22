@@ -53,7 +53,7 @@ impl_unsigned_expr!(u64);
 impl_unsigned_expr!(usize);
 impl_unsigned_expr!(Target);
 impl_unsigned_expr!(OpcodeId, OpcodeId::as_u8);
-impl_unsigned_expr!(GasCost, GasCost::as_u8);
+impl_unsigned_expr!(GasCost, GasCost::as_u64);
 
 impl_signed_expr!(i32);
 

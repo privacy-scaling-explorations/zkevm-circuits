@@ -1,12 +1,16 @@
 //! Definition of each opcode of the EVM.
 pub mod ids;
+mod mload;
 mod push;
+mod stop;
 use self::push::Push1;
 use crate::{
-    exec_trace::ExecutionStep, operation::container::OperationContainer,
+    exec_trace::ExecutionStep, operation::container::OperationContainer, Error,
 };
 use core::fmt::Debug;
 use ids::OpcodeId;
+use mload::Mload;
+use stop::Stop;
 
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for an
@@ -21,7 +25,8 @@ pub trait Opcode: Debug {
         &self,
         exec_step: &mut ExecutionStep,
         container: &mut OperationContainer,
-    ) -> usize;
+        next_steps: &[ExecutionStep],
+    ) -> Result<usize, Error>;
 }
 
 // This is implemented for OpcodeId so that we can downcast the responsabilities
@@ -34,10 +39,17 @@ impl Opcode for OpcodeId {
         &self,
         exec_step: &mut ExecutionStep,
         container: &mut OperationContainer,
-    ) -> usize {
+        next_steps: &[ExecutionStep],
+    ) -> Result<usize, Error> {
         match *self {
             OpcodeId::PUSH1 => {
-                Push1 {}.gen_associated_ops(exec_step, container)
+                Push1 {}.gen_associated_ops(exec_step, container, next_steps)
+            }
+            OpcodeId::MLOAD => {
+                Mload {}.gen_associated_ops(exec_step, container, next_steps)
+            }
+            OpcodeId::STOP => {
+                Stop {}.gen_associated_ops(exec_step, container, next_steps)
             }
             _ => unimplemented!(),
         }
