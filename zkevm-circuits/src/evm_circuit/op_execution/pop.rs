@@ -8,11 +8,6 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 use crate::util::Expr;
 
-// #[derive(Clone, Debug)]
-// struct PopSuccessAllocation<F> {
-//     case_selector: Cell<F>,
-// }
-
 #[derive(Clone, Debug)]
 pub struct PopGadget<F> {
     success: Cell<F>,
@@ -206,8 +201,6 @@ mod test {
             assert_eq!(prover.verify(), $result);
         }};
     }
-
-    // TODO: add failure cases
 
     #[test]
     fn pop_gadget() {
