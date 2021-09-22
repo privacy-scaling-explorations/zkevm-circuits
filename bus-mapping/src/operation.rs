@@ -6,11 +6,12 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
+pub use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
 use crate::error::Error;
 pub use container::OperationContainer;
 use core::cmp::Ordering;
 use core::fmt::Debug;
+use num::BigUint;
 use std::convert::TryFrom;
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
@@ -230,8 +231,94 @@ impl TryFrom<Operation> for StackOp {
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
 /// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
 /// the [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StorageOp; // Update with https://hackmd.io/kON1GVL6QOC6t5tf_OTuKA with Han's review
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageOp {
+    rw: RW,
+    gc: GlobalCounter,
+    addr: MemoryAddress,
+    value: EvmWord,
+    value_prev: EvmWord,
+    storage_key: BigUint,
+}
+
+impl StorageOp {
+    /// Create a new instance of a `StorageOp` from it's components.
+    pub const fn new(
+        rw: RW,
+        gc: GlobalCounter,
+        addr: MemoryAddress, // todo: use some other struct?
+        value: EvmWord,
+        value_prev: EvmWord,
+        storage_key: BigUint,
+    ) -> StorageOp {
+        StorageOp {
+            rw,
+            gc,
+            addr,
+            value,
+            value_prev,
+            storage_key,
+        }
+    }
+
+    /// Returns the internal [`RW`] which says whether the operation corresponds
+    /// to a Read or a Write into storage.
+    pub const fn rw(&self) -> RW {
+        self.rw
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::Storage
+    }
+
+    /// Returns the [`GlobalCounter`] associated to this Operation.
+    pub const fn gc(&self) -> GlobalCounter {
+        self.gc
+    }
+
+    /// Returns the [`MemoryAddress`] associated to this Operation.
+    pub const fn address(&self) -> &MemoryAddress {
+        &self.addr
+    }
+
+    /// Returns the [`EvmWord`] read or written by this operation.
+    pub const fn value(&self) -> &EvmWord {
+        &self.value
+    }
+
+    /// Returns the [`EvmWord`] read or written by previous operation.
+    pub const fn value_prev(&self) -> &EvmWord {
+        &self.value_prev
+    }
+
+    /// Returns the [`BigUint`] storage key used by this operation.
+    pub const fn storage_key(&self) -> &BigUint {
+        &self.storage_key
+    }
+}
+
+impl PartialOrd for StorageOp {
+    fn partial_cmp(&self, other: &StorageOp) -> Option<Ordering> {
+        match self.address().partial_cmp(other.address()) {
+            None => None,
+            Some(ord) => match ord {
+                std::cmp::Ordering::Equal => self.gc().partial_cmp(&other.gc()),
+                _ => Some(ord),
+            },
+        }
+    }
+}
+
+impl Ord for StorageOp {
+    fn cmp(&self, other: &StorageOp) -> Ordering {
+        match self.address().cmp(other.address()) {
+            Ordering::Equal => self.gc().cmp(&other.gc()),
+            Ordering::Less => Ordering::Less,
+            Ordering::Greater => Ordering::Greater,
+        }
+    }
+}
 
 impl TryFrom<Operation> for StorageOp {
     type Error = Error;

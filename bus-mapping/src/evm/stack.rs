@@ -22,6 +22,12 @@ impl_from_usize_wrappers!(
     (u8, u16, u32, usize, i32, i64)
 );
 
+impl From<StackAddress> for usize {
+    fn from(addr: StackAddress) -> usize {
+        addr.0
+    }
+}
+
 impl FromStr for StackAddress {
     type Err = Error;
 

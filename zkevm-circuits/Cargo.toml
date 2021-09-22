@@ -14,4 +14,12 @@ bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"
 digest = "0.7.6"
-bus-mapping = { path = "../bus-mapping" }
+bus-mapping = { path = "../bus-mapping"}
+
+[dev-dependencies]
+criterion = "0.3"
+num = "0.4"
+
+[[bench]]
+name = "binary_value"
+harness = false
