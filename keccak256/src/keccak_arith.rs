@@ -170,6 +170,22 @@ fn convert_b9_lane_to_b2(x: Lane9) -> u64 {
     acc
 }
 
+fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
+    let mut base: u64 = 1;
+    let mut raw = x;
+    let mut acc: u64 = 0;
+
+    for i in 0..64 {
+        let remainder: u64 = mod_u64(&raw, B9);
+        acc += remainder * base;
+        raw /= B9;
+        if i < 63 {
+            base *= 2;
+        }
+    }
+    acc
+}
+
 struct KeccakFArith {}
 
 impl KeccakFArith {
@@ -408,6 +424,67 @@ fn test_helpers() {
         convert_b9_lane_to_b2(BigUint::from(9u64).pow(63) * 2u64),
         1u64 << 63
     );
+}
+
+#[test]
+fn test_theta_rho() {
+    use super::plain::KeccakF;
+    let input1: State = [
+        [1, 0, 0, 0, 0],
+        [0, 0, 0, 9223372036854775808, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+    ];
+    let input2: State = [
+        [4398046511105, 8, 2, 268436480, 2305844108725321728],
+        [
+            17592186044416,
+            52776560230400,
+            544,
+            68719493120,
+            2199023255552,
+        ],
+        [
+            4398046543872,
+            1152921504606846984,
+            262144,
+            1024,
+            1099511627780,
+        ],
+        [0, 52776558133248, 514, 268451840, 2305845208236949504],
+        [17592186077184, 1152921504608944128, 262176, 68719476736, 4],
+    ];
+    for a in [input1, input2] {
+        let mut in_b13 = StateBigInt::default();
+        for x in 0..5 {
+            for y in 0..5 {
+                in_b13[(x, y)] = convert_b2_to_b13(a[x][y]);
+            }
+        }
+        let s1 = KeccakF::theta(a);
+        let s1_arith = KeccakFArith::theta(&in_b13);
+        for x in 0..5 {
+            for y in 0..5 {
+                assert_eq!(
+                    s1[x][y],
+                    convert_b9_lane_to_b2_normal(convert_b13_lane_to_b9(
+                        s1_arith[(x, y)].clone(),
+                        0
+                    ))
+                );
+            }
+        }
+        let s2 = KeccakF::rho(s1);
+        let s2_arith = KeccakFArith::rho(&s1_arith);
+        for x in 0..5 {
+            for y in 0..5 {
+                let expected =
+                    convert_b9_lane_to_b2_normal(s2_arith[(x, y)].clone());
+                assert_eq!(s2[x][y], expected);
+            }
+        }
+    }
 }
 
 #[test]

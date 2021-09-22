@@ -75,7 +75,7 @@ impl Keccak {
     }
 }
 
-struct KeccakF {}
+pub struct KeccakF {}
 
 impl KeccakF {
     pub fn new() -> KeccakF {
@@ -96,7 +96,7 @@ impl KeccakF {
         KeccakF::iota(s4, rc)
     }
 
-    fn theta(a: State) -> State {
+    pub fn theta(a: State) -> State {
         let mut c: [u64; 5] = [0; 5];
         let mut out: State = [[0; 5]; 5];
 
@@ -113,7 +113,7 @@ impl KeccakF {
         out
     }
 
-    fn rho(a: State) -> State {
+    pub fn rho(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
         for x in 0..5 {
             for y in 0..5 {
@@ -123,7 +123,7 @@ impl KeccakF {
         out
     }
 
-    fn pi(a: State) -> State {
+    pub fn pi(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
 
         for x in 0..5 {
@@ -134,7 +134,7 @@ impl KeccakF {
         out
     }
 
-    fn xi(a: State) -> State {
+    pub fn xi(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
         for x in 0..5 {
             for y in 0..5 {
@@ -144,7 +144,7 @@ impl KeccakF {
         out
     }
 
-    fn iota(a: State, rc: u64) -> State {
+    pub fn iota(a: State, rc: u64) -> State {
         let mut out = a;
         out[0][0] ^= rc;
         out
