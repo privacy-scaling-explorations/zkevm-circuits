@@ -533,6 +533,8 @@ impl<
 
             let value_cur = meta.query_advice(value, Rotation::cur());
             let value_prev_cur = meta.query_advice(value_prev, Rotation::cur());
+            let value_prev_prev =
+                meta.query_advice(value_prev, Rotation::prev());
             let flag = meta.query_advice(flag, Rotation::cur());
 
             // flag == 0 or 1
@@ -551,18 +553,24 @@ impl<
                 q_storage_not_first.clone() * storage_key_diff * q_read.clone(), // when storage_key_diff changes, the flag is 1 (write)
                 q_storage_not_first.clone() * bool_check_flag, // flag is either 0 or 1
                 q_storage_not_first.clone()
-                    * q_read
+                    * q_read.clone()
                     * (value_cur - value_previous.clone()), // when reading, the value is the same as at the previous op
                 // Note that this last constraint needs to hold only when address and storage key don't change,
                 // but we don't need to check this as the first operation at new address and
                 // new storage key always has to be write - that means q_read is 1 only when
                 // the address and storage key doesn't change.
-                is_not_padding
-                    * q_storage_not_first
+                is_not_padding.clone()
                     * flag
+                    * q_storage_not_first.clone()
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (value_prev_cur - value_previous), // when writing, value_prev_cur = value_previous
+                    * (value_prev_cur.clone() - value_previous),
+                is_not_padding
+                    * q_read
+                    * q_storage_not_first
+                    * address_diff_is_zero.clone().is_zero_expression
+                    * storage_key_diff_is_zero.clone().is_zero_expression
+                    * (value_prev_cur - value_prev_prev),
             ]
         });
 
@@ -1953,7 +1961,7 @@ mod tests {
                                                * and not the same
                                                * value as in the previous
                                                * row. */
-            EvmWord::from_str("3").unwrap(),
+            EvmWord::from_str("0").unwrap(),
             BigUint::from(0x40u8),
         );
         let storage_op_2 = StorageOp::new(
@@ -1962,7 +1970,16 @@ mod tests {
             MemoryAddress::from_str("1").unwrap(),
             EvmWord::from_str("32").unwrap(),
             EvmWord::from_str("0").unwrap(), /* Fails because not the same
-                                              * as in the previous row. */
+                                              * as value in the previous row - note: this is WRITE. */
+            BigUint::from(0x40u8),
+        );
+        let storage_op_3 = StorageOp::new(
+            RW::READ,
+            GlobalCounter::from(21),
+            MemoryAddress::from_str("1").unwrap(),
+            EvmWord::from_str("32").unwrap(),
+            EvmWord::from_str("1").unwrap(), /* Fails because not the same
+                                              * as value_prev in the previous row - note: this is READ. */
             BigUint::from(0x40u8),
         );
 
@@ -1978,7 +1995,7 @@ mod tests {
             1000,
             vec![],
             vec![],
-            vec![storage_op_0, storage_op_1, storage_op_2],
+            vec![storage_op_0, storage_op_1, storage_op_2, storage_op_3],
             Err(vec![
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
@@ -1991,6 +2008,12 @@ mod tests {
                     7,
                     "Storage operation",
                     4
+                ),
+                constraint_not_satisfied(
+                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 3,
+                    7,
+                    "Storage operation",
+                    5
                 ),
             ])
         );
