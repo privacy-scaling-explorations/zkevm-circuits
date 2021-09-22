@@ -1,4 +1,3 @@
-//use crate::evm_circuit::{FixedLookup, Lookup};
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
 };
@@ -9,14 +8,14 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 use crate::util::Expr;
 
-#[derive(Clone, Debug)]
-struct PopSuccessAllocation<F> {
-    case_selector: Cell<F>,
-}
+// #[derive(Clone, Debug)]
+// struct PopSuccessAllocation<F> {
+//     case_selector: Cell<F>,
+// }
 
 #[derive(Clone, Debug)]
 pub struct PopGadget<F> {
-    success: PopSuccessAllocation<F>,
+    success: Cell<F>,
     stack_underflow: Cell<F>, // case selector
     out_of_gas: (
         Cell<F>, // case selector
@@ -33,7 +32,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
     const CASE_CONFIGS: &'static [CaseConfig] = &[
         CaseConfig {
             case: Case::Success,
-            num_word: 0,// no operand required for pop 
+            num_word: 0, // no operand required for pop 
             num_cell: 0, 
             will_halt: false,
         },
@@ -55,10 +54,8 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         let [ success, stack_underflow, out_of_gas]: [CaseAllocation<F>; 3] =
             case_allocations.try_into().unwrap();
         Self {
-            success: PopSuccessAllocation {
-                case_selector: success.selector,
-                // no more for pop
-            },
+            success: success.selector,
+
             stack_underflow: stack_underflow.selector,
             out_of_gas: (
                 out_of_gas.selector.clone(),
@@ -92,11 +89,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                         + GasCost::QUICK.expr()),
             ];
 
-            let PopSuccessAllocation {
-                case_selector,
-            } = &self.success;
-
-            // TODO: more about pop constraint ?
+            let case_selector = &self.success;
 
             Constraint {
                 name: "PopGadget success",
@@ -165,7 +158,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                 op_execution_state,
                 execution_step,
             ),
-            Case::StackOverflow => {
+            Case::StackUnderflow => {
                 unimplemented!()
             }
             Case::OutOfGas => {
@@ -190,7 +183,7 @@ impl<F: FieldExt> PopGadget<F> {
         op_execution_state.gas_counter += 2;  // pop consume 2 gas point
        // no word assignments 
         
-        self.success.case_selector.assign(
+        self.success.assign(
             region, offset, Some(F::from_u64(1))
             ).unwrap();
          Ok(())
