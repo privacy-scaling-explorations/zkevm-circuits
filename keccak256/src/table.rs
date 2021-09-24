@@ -21,27 +21,28 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        advices: [Column<Advice>; 25],
+        q_enable: Selector,
+        binary_slice: Column<Advice>,
+        base13_slice:Column<Advice>
     ) -> Self {
         let from_binary_config = [meta.fixed_column(), meta.fixed_column()];
 
-        for lane in 0..25 {
-            // Lookup for binary to base-13 conversion
-            meta.lookup(|meta| {
-                let word = advices[lane];
-                let binary_word = meta.query_advice(word, Rotation::cur());
-                let base13_word = meta.query_advice(word, Rotation::next());
+        // Lookup for binary to base-13 conversion
+        meta.lookup(|meta| {
+            let binary_slice = meta.query_advice(binary_slice, Rotation::cur());
+            let base13_slice = meta.query_advice(base13_slice, Rotation::next());
 
-                let key = meta.query_fixed(from_binary_config[0], Rotation::cur());
-                let value = meta.query_fixed(from_binary_config[1], Rotation::cur());
+            let key = meta.query_fixed(from_binary_config[0], Rotation::cur());
+            let value = meta.query_fixed(from_binary_config[1], Rotation::cur());
 
-                vec![
-                    (binary_word, key),
-                    (base13_word, value),
-                ]
-            });
+            vec![
+                (binary_slice, key),
+                (base13_slice, value),
+            ]
+        });
+        Self{
+            from_binary_config
         }
-        todo!("Add selectors");
 
     }
 
@@ -78,6 +79,11 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
     }
 }
 
+pub struct BinaryToBase13TableConfig<F> {
+    from_base13_config: [Column<Fixed>; 3]
+}
+
+
 impl<F: FieldExt> Base13toBase9TableConfig<F> {
     pub(crate) fn load(
         config: Self,
@@ -86,31 +92,34 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         from_base13_converter(config, layouter);
     }
 
-    // pub(crate) fn configure(
-    //     meta: &mut ConstraintSystem<F>,
-    //     advices: [Column<Advice>; 25],
-    // ) -> Self {
-    //     let from_base13_config = [meta.fixed_column(), meta.fixed_column()];
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: Selector,
+        base13_slice: Column<Advice>,
+        base9_slice:Column<Advice>,
+        block_count: Column<Advice>
+    ) -> Self {
+        let from_base13_config = [meta.fixed_column(), meta.fixed_column(),  meta.fixed_column()];
 
-    //     for lane in 0..25 {
-    //         // Lookup for base-13 to base-9 conversion
-    //         meta.lookup(|meta| {
-    //             let word = advices[lane];
-    //             let base13_word = meta.query_advice(word, Rotation::cur());
-    //             let base9_word = meta.query_advice(word, Rotation::next());
+        meta.lookup(|meta| {
+            let base13_slice = meta.query_advice(base13_slice, Rotation::cur());
+            let base9_slice = meta.query_advice(base9_slice, Rotation::cur());
+            let block_count = meta.query_advice(block_count, Rotation::cur());
 
-    //             let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
-    //             let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
+            let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
+            let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
+            let value2 = meta.query_fixed(from_base13_config[2], Rotation::cur());
 
-    //             vec![
-    //                 (base13_word, key),
-    //                 (base9_word, value),
-    //             ]
-    //         });
-    //     }
-    //     todo!("Add selectors");
-
-    // }
+            vec![
+                (base9_slice, key),
+                (base13_slice, value),
+                (block_count, value2)
+            ]
+        });
+        Self{
+            from_base13_config
+        }
+    }
 
     // Fixed table converting base-13 to base-09
     fn from_base13_converter(
