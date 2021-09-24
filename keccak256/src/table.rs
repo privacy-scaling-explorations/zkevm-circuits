@@ -6,44 +6,61 @@ tables:
 - 9 to binary and 9 to 13 conversion
 */
 
-pub struct BinaryToBase13TableConfig<F> {
-    from_binary_config: [Column<Fixed>; 2]
-}
+use super::helpers::*;
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::Layouter,
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+    poly::Rotation,
+};
+use std::marker::PhantomData;
 
+use itertools::Itertools;
+
+pub struct BinaryToBase13TableConfig<F> {
+    from_binary_config: [Column<Fixed>; 2],
+    q_lookup: Selector,
+    _marker: PhantomData<F>,
+}
 
 impl<F: FieldExt> BinaryToBase13TableConfig<F> {
     pub(crate) fn load(
         config: Self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        from_binary_converter(config, layouter);
+        Self::from_binary_converter(config, layouter)
     }
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
+        q_lookup: Selector,
         binary_slice: Column<Advice>,
-        base13_slice:Column<Advice>
+        base13_slice: Column<Advice>,
     ) -> Self {
         let from_binary_config = [meta.fixed_column(), meta.fixed_column()];
+        let config = Self {
+            from_binary_config,
+            q_lookup,
+            _marker: PhantomData,
+        };
 
         // Lookup for binary to base-13 conversion
         meta.lookup(|meta| {
+            let q_lookup = meta.query_selector(config.q_lookup);
             let binary_slice = meta.query_advice(binary_slice, Rotation::cur());
-            let base13_slice = meta.query_advice(base13_slice, Rotation::next());
+            let base13_slice =
+                meta.query_advice(base13_slice, Rotation::next());
 
             let key = meta.query_fixed(from_binary_config[0], Rotation::cur());
-            let value = meta.query_fixed(from_binary_config[1], Rotation::cur());
+            let value =
+                meta.query_fixed(from_binary_config[1], Rotation::cur());
 
             vec![
-                (binary_slice, key),
-                (base13_slice, value),
+                (q_lookup.clone() * binary_slice, key),
+                (q_lookup.clone() * base13_slice, value),
             ]
         });
-        Self{
-            from_binary_config
-        }
-
+        config
     }
 
     // Fixed table converting binary to base-13
@@ -51,74 +68,87 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
         config: Self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        let [config] = config.from_binary_config;
+        let [binary_col, base13_col] = config.from_binary_config;
 
-        layouter.assign_region(|| "from binary", |mut region| {
-            // Iterate over all possible 16-bit values
-            for (i, coefs) in (0..16).map(|_| 0..1).multi_cartesian_product().enumerate() {
-                let key = coefs.iter().fold(F:from_u64(0), |acc, x| {  acc * 2 + x });
+        layouter.assign_region(
+            || "from binary",
+            |mut region| {
+                // Iterate over all possible 16-bit values
+                for (i, coefs) in
+                    (0..16).map(|_| 0..1).multi_cartesian_product().enumerate()
+                {
+                    let key = coefs.iter().fold(F::zero(), |acc, x| {
+                        acc * F::from_u64(2) + F::from_u64(*x)
+                    });
 
-                region.assign_fixed(
-                    || "key",
-                    config[0],
-                    i,
-                    || Ok(key)
-                )?;
-            
-                let value = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 13 + x  });
+                    region.assign_fixed(|| "key", binary_col, i, || Ok(key))?;
 
-                region.assign_fixed(
-                    || "value",
-                    config[1],
-                    i,
-                    || Ok(value)
-                )?;
-            }
-            Ok(())
-        })
+                    let value = coefs.iter().fold(F::from_u64(0), |acc, x| {
+                        acc * F::from_u64(13) + F::from_u64(*x)
+                    });
+
+                    region.assign_fixed(
+                        || "value",
+                        base13_col,
+                        i,
+                        || Ok(value),
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
-pub struct BinaryToBase13TableConfig<F> {
-    from_base13_config: [Column<Fixed>; 3]
+pub struct Base13toBase9TableConfig<F> {
+    cols: [Column<Fixed>; 3],
+    q_lookup: Selector,
+    _marker: PhantomData<F>,
 }
-
 
 impl<F: FieldExt> Base13toBase9TableConfig<F> {
     pub(crate) fn load(
         config: Self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        from_base13_converter(config, layouter);
+        Self::from_base13_converter(config, layouter)
     }
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
+        q_lookup: Selector,
         base13_slice: Column<Advice>,
-        base9_slice:Column<Advice>,
-        block_count: Column<Advice>
+        base9_slice: Column<Advice>,
+        block_count: Column<Advice>,
     ) -> Self {
-        let from_base13_config = [meta.fixed_column(), meta.fixed_column(),  meta.fixed_column()];
+        let cols = [
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+        ];
+        let config = Self {
+            cols,
+            q_lookup,
+            _marker: PhantomData,
+        };
 
         meta.lookup(|meta| {
+            let q_lookup = meta.query_selector(q_lookup);
             let base13_slice = meta.query_advice(base13_slice, Rotation::cur());
             let base9_slice = meta.query_advice(base9_slice, Rotation::cur());
             let block_count = meta.query_advice(block_count, Rotation::cur());
 
-            let key = meta.query_fixed(from_base13_config[0], Rotation::cur());
-            let value = meta.query_fixed(from_base13_config[1], Rotation::cur());
-            let value2 = meta.query_fixed(from_base13_config[2], Rotation::cur());
+            let key = meta.query_fixed(cols[0], Rotation::cur());
+            let value = meta.query_fixed(cols[1], Rotation::cur());
+            let value2 = meta.query_fixed(cols[2], Rotation::cur());
 
             vec![
-                (base9_slice, key),
-                (base13_slice, value),
-                (block_count, value2)
+                (q_lookup.clone() * base9_slice, key),
+                (q_lookup.clone() * base13_slice, value),
+                (q_lookup.clone() * block_count, value2),
             ]
         });
-        Self{
-            from_base13_config
-        }
+        config
     }
 
     // Fixed table converting base-13 to base-09
@@ -126,47 +156,59 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         config: Self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        let [config] = config.from_base13_config;
+        let [base13_col, base9_col, block_count_col] =
+            config.cols;
 
-        layouter.assign_region(|| "from base13", |mut region| {
-            // Iterate over all possible 13-ary values of size 4
-            for (i, coefs) in (0..4).map(|_| 0..13).multi_cartesian_product().enumerate() {
-                let key = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 13 + x });
+        layouter.assign_region(
+            || "from base13",
+            |mut region| {
+                // Iterate over all possible 13-ary values of size 4
+                for (i, coefs) in
+                    (0..4).map(|_| 0..13).multi_cartesian_product().enumerate()
+                {
+                    let key = coefs.iter().fold(F::zero(), |acc, x| {
+                        acc * F::from_u64(13) + F::from_u64(*x)
+                    });
 
-                region.assign_fixed(
-                    || "key",
-                    config[0],
-                    i,
-                    || Ok(key)
-                )?;
-            
-                let value = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 9 + x  });
+                    region.assign_fixed(|| "key", base13_col, i, || Ok(key))?;
 
-                region.assign_fixed(
-                    || "value",
-                    config[1],
-                    i,
-                    || Ok(value)
-                )?;
-            }
-            Ok(())
-        })
+                    let value = coefs.iter().fold(F::zero(), |acc, x| {
+                        acc * F::from_u64(9) + F::from_u64(*x)
+                    });
+
+                    region.assign_fixed(
+                        || "value",
+                        base9_col,
+                        i,
+                        || Ok(value),
+                    )?;
+                    todo!("handle block_count");
+                }
+                Ok(())
+            },
+        )
     }
+}
+
+pub struct SpecialChunkTableConfig<F> {
+    from_special_chunk_config: [Column<Fixed>; 2],
+    _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> SpecialChunkTableConfig<F> {
     pub(crate) fn load(
         config: Self,
         layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error>{
-        from_special_chunk_converter(config,layouter)
+    ) -> Result<(), Error> {
+        Self::special_chunk_converter(config, layouter)
     }
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; 25],
     ) -> Self {
-        let from_special_chunk_config = [meta.fixed_column(), meta.fixed_column()];
+        let from_special_chunk_config =
+            [meta.fixed_column(), meta.fixed_column()];
 
         for lane in 0..25 {
             // Lookup for special chunk conversion
@@ -175,55 +217,66 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
                 let last_limb_key = meta.query_advice(word, Rotation::cur());
                 let last_limb_value = meta.query_advice(word, Rotation::next());
 
-                let key = meta.query_fixed(from_special_chunk_config[0], Rotation::cur());
-                let value = meta.query_fixed(from_special_chunk_config[1], Rotation::cur());
+                let key = meta
+                    .query_fixed(from_special_chunk_config[0], Rotation::cur());
+                let value = meta
+                    .query_fixed(from_special_chunk_config[1], Rotation::cur());
 
-                vec![
-                    (last_limb_key, key),
-                    (last_limb_value, value),
-                ]
+                vec![(last_limb_key, key), (last_limb_value, value)]
             });
         }
-        todo!("Add selectors");
-
+        Self {
+            from_special_chunk_config,
+            _marker: PhantomData,
+        }
     }
 
     fn special_chunk_converter(
         config: Self,
-        layouter: &mut impl Layouter<F>
+        layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        let [config] = config.from_special_chunk_config;
+        let [key_col, value_col] = config.from_special_chunk_config;
 
-        layouter.assign_region(|| "for special chunks", |mut region| {
-            // Iterate over all possible values less than 13 for both low and high
-            for i in 0..13{
-                for j in 0..(13-i){
-                    let low = i;
-                    let high = j;
+        layouter.assign_region(
+            || "for special chunks",
+            |mut region| {
+                // Iterate over all possible values less than 13 for both low
+                // and high
+                for i in 0..13 {
+                    for j in 0..(13 - i) {
+                        let low = i;
+                        let high = j;
 
-                    let key = low + high * 13**64;
+                        let key = F::from_u64(low)
+                            + F::from_u64(high)
+                                * F::from_u64(13).pow(&[64, 0, 0, 0]);
 
-                    region.assign_fixed(
-                        || "key",
-                        config[0],
-                        i,
-                        || Ok(key)
-                    )?;
+                        region.assign_fixed(
+                            || "key",
+                            key_col,
+                            i as usize,
+                            || Ok(key),
+                        )?;
 
-                    let value = convert_13_base_limb(low + high)
+                        let value = convert_13_base_limb(low + high);
 
-                    region.assign_fixed(
-                        || "value",
-                        config[1],
-                        i,
-                        || Ok(value)
-                    )?;
+                        region.assign_fixed(
+                            || "value",
+                            value_col,
+                            i as usize,
+                            || Ok(F::from_u64(value)),
+                        )?;
+                    }
                 }
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
     }
-    }
+}
+pub struct Base9toBase13BinaryTableConfig<F> {
+    cols: [Column<Fixed>; 3],
+    q_lookup: Selector,
+    _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> Base9toBase13BinaryTableConfig<F> {
@@ -231,36 +284,43 @@ impl<F: FieldExt> Base9toBase13BinaryTableConfig<F> {
         config: Self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        from_base9_converter(config, layouter);
+        Self::from_base9_converter(config, layouter)
     }
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        advices: [Column<Advice>; 25],
+        q_lookup: Selector,
+        advices: [Column<Advice>; 3],
     ) -> Self {
-        let from_base9_config = [meta.fixed_column(), meta.fixed_column()];
+        let cols = [
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+        ];
+        let config = Self {
+            cols,
+            q_lookup,
+            _marker: PhantomData,
+        };
 
-        for lane in 0..25 {
-            // Lookup for base-9 to base-13/binary conversion
-            meta.lookup(|meta| {
-                let word = advices[lane];
-                let base9_word = meta.query_advice(word, Rotation::cur());
-                let base13_word = meta.query_advice(word, Rotation::next());
-                let binary_word = meta.query_advice(word, Rotation::next());
+        // Lookup for base-9 to base-13/binary conversion
+        meta.lookup(|meta| {
+            let q_lookup = meta.query_selector(q_lookup);
+            let base9_word = meta.query_advice(advices[0], Rotation::cur());
+            let base13_word = meta.query_advice(advices[1], Rotation::next());
+            let binary_word = meta.query_advice(advices[2], Rotation::next());
 
-                let key = meta.query_fixed(from_base9_config[0], Rotation::cur());
-                let value0 = meta.query_fixed(from_base9_config[1], Rotation::cur());
-                let value1 = meta.query_fixed(from_base9_config[2], Rotation::cur());
+            let key = meta.query_fixed(cols[0], Rotation::cur());
+            let value0 = meta.query_fixed(cols[1], Rotation::cur());
+            let value1 = meta.query_fixed(cols[2], Rotation::cur());
 
-                vec![
-                    (base9_word, key),
-                    (base13_word, value0),
-                    (binary_word, value1),
-                ]
-            });
-        }
-        todo!("Add selectors");
-
+            vec![
+                (q_lookup.clone() * base9_word, key),
+                (q_lookup.clone() * base13_word, value0),
+                (q_lookup.clone() * binary_word, value1),
+            ]
+        });
+        config
     }
 
     // Fixed table converting base-9 to base-13/binary
@@ -268,41 +328,45 @@ impl<F: FieldExt> Base9toBase13BinaryTableConfig<F> {
         config: Self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        let [config] = config.from_base9_config;
+        let [base9_col, base_13_col, binary_col] = config.cols;
 
-        layouter.assign_region(|| "from base 9", |mut region| {
-            // Iterate over all possible 9-ary values of size 4
-            for (i, coefs) in (0..4).map(|_| 0..9).multi_cartesian_product().enumerate() {
-                let key = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 9 + x });
+        layouter.assign_region(
+            || "from base 9",
+            |mut region| {
+                // Iterate over all possible 9-ary values of size 4
+                for (i, coefs) in
+                    (0..4).map(|_| 0..9).multi_cartesian_product().enumerate()
+                {
+                    let key = coefs.iter().fold(F::zero(), |acc, x| {
+                        acc * F::from_u64(9) + F::from_u64(*x)
+                    });
 
-                region.assign_fixed(
-                    || "key",
-                    config[0],
-                    i,
-                    || Ok(key)
-                )?;
-            
-                let value0 = coefs.iter().fold(zero_fr.clone(), |acc, x| {  acc * 13 + x  });
+                    region.assign_fixed(|| "key", base9_col, i, || Ok(key))?;
 
-                region.assign_fixed(
-                    || "value0",
-                    config[1],
-                    i,
-                    || Ok(value0)
-                )?;
+                    let value0 = coefs.iter().fold(F::zero(), |acc, x| {
+                        acc * F::from_u64(13) + F::from_u64(*x)
+                    });
 
-                let value1 = coefs.iter().fold(F:from_u64(0), |acc, x| {  acc * 2 + x  });
+                    region.assign_fixed(
+                        || "value0",
+                        base_13_col,
+                        i,
+                        || Ok(value0),
+                    )?;
 
-                region.assign_fixed(
-                    || "value1",
-                    config[2],
-                    i,
-                    || Ok(value1)
-                )?;
-            }
-            Ok(())
-        })
+                    let value1 = coefs.iter().fold(F::zero(), |acc, x| {
+                        acc * F::from_u64(2) + F::from_u64(*x)
+                    });
+
+                    region.assign_fixed(
+                        || "value1",
+                        binary_col,
+                        i,
+                        || Ok(value1),
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 }
-
-todo!("Add test cases");

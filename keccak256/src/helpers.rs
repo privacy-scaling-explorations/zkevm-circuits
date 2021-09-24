@@ -1,36 +1,43 @@
-fn convert_13_base_limb(x: u64) -> u64 {
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
+
+pub fn convert_13_base_limb(x: u64) -> u64 {
     assert!(x < 13);
     x & 1
 }
 
 fn convert_9_base_limb(x: u64) -> u64 {
     assert!(x < 9);
-    bit_table = [0, 0, 1, 1, 0, 0, 1, 1, 0];
-    return bit_table[n];
+    let bit_table: [u64; 9] = [0, 0, 1, 1, 0, 0, 1, 1, 0];
+    bit_table[x as usize]
 }
 
-fn rotate_and_convert(base13_input: u64, rot: u64) -> u64 {
-    base = 9 * *rot;
-    special_chunk = 0;
-    raw = base13_input;
-    acc = 0;
+fn mod_u64(a: &BigUint, b: u64) -> u64 {
+    (a % b).iter_u64_digits().take(1).next().unwrap_or(0)
+}
+
+fn rotate_and_convert(base13_input: &BigUint, rot: u32) -> BigUint {
+    let nine = BigUint::from(9u64);
+    let thirteen = BigUint::from(13u64);
+    let mut base = nine.pow(rot);
+    let mut special_chunk = Zero::zero();
+    let mut raw = base13_input.clone();
+    let mut acc: BigUint = Zero::zero();
 
     for i in 0..65 {
-        remainder = raw % 13;
+        let remainder: u64 = mod_u64(&raw, 13);
         if i == 0 || i == 64 {
             special_chunk += remainder;
         } else {
-            acc += convert_13_base_limb(remainder) * base;
+            acc += convert_13_base_limb(remainder) * base.clone();
         }
-        raw /= 13;
-        base *= 9;
+        raw /= thirteen.clone();
+        base *= nine.clone();
         if i == 64 - rot {
-            base = 1;
+            base = One::one();
         }
-
-        acc += convert_13_base_limb(special_chunk) * 9 * *rot;
     }
-
+    acc += convert_13_base_limb(special_chunk) * nine.pow(rot);
     acc
 }
 
