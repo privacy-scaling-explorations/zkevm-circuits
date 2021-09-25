@@ -62,22 +62,22 @@ pub struct MemoryOp {
     rw: RW,
     gc: GlobalCounter,
     addr: MemoryAddress,
-    value: EvmWord,
+    value: Vec<u8>,
 }
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub const fn new(
+    pub fn new<T: Into<Vec<u8>>>(
         rw: RW,
         gc: GlobalCounter,
         addr: MemoryAddress,
-        value: EvmWord,
+        value: T,
     ) -> MemoryOp {
         MemoryOp {
             rw,
             gc,
             addr,
-            value,
+            value: value.into(),
         }
     }
 
@@ -102,8 +102,8 @@ impl MemoryOp {
         &self.addr
     }
 
-    /// Returns the [`EvmWord`] read or written by this operation.
-    pub const fn value(&self) -> &EvmWord {
+    /// Returns the bytes read or written by this operation.
+    pub fn value(&self) -> &[u8] {
         &self.value
     }
 }

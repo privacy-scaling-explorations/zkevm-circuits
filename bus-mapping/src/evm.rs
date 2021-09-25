@@ -68,6 +68,18 @@ impl FromStr for EvmWord {
     }
 }
 
+impl From<EvmWord> for [u8; 32] {
+    fn from(word: EvmWord) -> Self {
+        word.to_bytes()
+    }
+}
+
+impl From<EvmWord> for Vec<u8> {
+    fn from(word: EvmWord) -> Self {
+        word.to_bytes().to_vec()
+    }
+}
+
 impl_from_big_uint_wrappers!(
     EvmWord = EvmWord,
     (u8, u16, u32, u64, u128, usize)
@@ -82,6 +94,11 @@ impl EvmWord {
         array[..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
 
         array
+    }
+
+    /// Generate an `EvmWord` from a slice of bytes.
+    pub fn from_bytes<T: AsRef<[u8]>>(bytes: T) -> Self {
+        EvmWord(BigUint::from_bytes_le(bytes.as_ref()))
     }
 
     /// Returns the underlying representation of the `EvmWord` as a [`BigUint`].
