@@ -14,11 +14,12 @@ impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
         parsed_step: &ParsedExecutionStep<'a>,
     ) -> Result<Self, Self::Error> {
         // Memory part
-        let mut mem_map = Vec::new();
-        parsed_step.memory.iter().try_for_each(|word| {
-            mem_map.push(EvmWord::from_str(word)?);
-            Ok(())
-        })?;
+        let mem_map = parsed_step
+            .memory
+            .iter()
+            .map(|word| EvmWord::from_str(word))
+            .collect::<Result<Vec<EvmWord>, Error>>()?;
+        let mem_map = mem_map.iter().flat_map(|word| word.to_bytes()).collect();
 
         // Stack part
         let mut stack = vec![];
@@ -85,11 +86,15 @@ mod tests {
         .expect("Error on conversion");
 
         let expected_step = {
-            let mem_map = Memory(vec![
-                EvmWord::from(0u8),
-                EvmWord::from(0u8),
-                EvmWord::from(0x80u8),
-            ]);
+            let mem_map = Memory(
+                EvmWord::from(0u8)
+                    .to_bytes()
+                    .iter()
+                    .chain(&EvmWord::from(0u8).to_bytes())
+                    .chain(&EvmWord::from(0x80u8).to_bytes())
+                    .copied()
+                    .collect(),
+            );
 
             ExecutionStep {
                 memory: mem_map,
