@@ -52,7 +52,7 @@ impl Opcode for Mload {
         // First mem read
         //
         let mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        let mem_read_value = next_steps[0].memory()[mem_read_addr].clone();
+        let mem_read_value = next_steps[0].memory().read_word(mem_read_addr);
 
         // Read operation at memory address: stack_read.value
         let mem_read = MemoryOp::new(
