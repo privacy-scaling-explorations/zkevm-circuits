@@ -19,3 +19,119 @@ macro_rules! impl_from_usize_wrappers {
         })*
     };
 }
+
+// ----------------------------------- //
+//            Ops traits               //
+// ----------------------------------- //
+
+/// Define borrow and non-borrow variants of `Add`.
+/// Requires the impl of Add<&RHS> for &LHS
+macro_rules! define_add_variants {
+    (LHS = $lhs:ty, RHS = $rhs:ty, Output = $out:ty) => {
+        impl<'b> core::ops::Add<&'b $rhs> for $lhs {
+            type Output = $out;
+            fn add(self, rhs: &'b $rhs) -> $out {
+                &self + rhs
+            }
+        }
+
+        impl<'a> core::ops::Add<$rhs> for &'a $lhs {
+            type Output = $out;
+            fn add(self, rhs: $rhs) -> $out {
+                self + &rhs
+            }
+        }
+
+        impl core::ops::Add<$rhs> for $lhs {
+            type Output = $out;
+            fn add(self, rhs: $rhs) -> $out {
+                &self + &rhs
+            }
+        }
+    };
+}
+
+/// Define non-borrow variants of `AddAssign`.
+macro_rules! define_add_assign_variants {
+    (LHS = $lhs:ty, RHS = $rhs:ty) => {
+        impl core::ops::AddAssign<$rhs> for $lhs {
+            fn add_assign(&mut self, rhs: $rhs) {
+                *self += &rhs;
+            }
+        }
+    };
+}
+
+/// Define borrow and non-borrow variants of `Sub`.
+macro_rules! define_sub_variants {
+    (LHS = $lhs:ty, RHS = $rhs:ty, Output = $out:ty) => {
+        impl<'b> core::ops::Sub<&'b $rhs> for $lhs {
+            type Output = $out;
+            fn sub(self, rhs: &'b $rhs) -> $out {
+                &self - rhs
+            }
+        }
+
+        impl<'a> core::ops::Sub<$rhs> for &'a $lhs {
+            type Output = $out;
+            fn sub(self, rhs: $rhs) -> $out {
+                self - &rhs
+            }
+        }
+
+        impl core::ops::Sub<$rhs> for $lhs {
+            type Output = $out;
+            fn sub(self, rhs: $rhs) -> $out {
+                &self - &rhs
+            }
+        }
+    };
+}
+
+/// Define non-borrow variants of `SubAssign`.
+macro_rules! define_sub_assign_variants {
+    (LHS = $lhs:ty, RHS = $rhs:ty) => {
+        impl core::ops::SubAssign<$rhs> for $lhs {
+            fn sub_assign(&mut self, rhs: $rhs) {
+                *self -= &rhs;
+            }
+        }
+    };
+}
+
+/// Define borrow and non-borrow variants of `Mul`.
+macro_rules! define_mul_variants {
+    (LHS = $lhs:ty, RHS = $rhs:ty, Output = $out:ty) => {
+        impl<'b> core::ops::Mul<&'b $rhs> for $lhs {
+            type Output = $out;
+            fn mul(self, rhs: &'b $rhs) -> $out {
+                &self * rhs
+            }
+        }
+
+        impl<'a> core::ops::Mul<$rhs> for &'a $lhs {
+            type Output = $out;
+            fn mul(self, rhs: $rhs) -> $out {
+                self * &rhs
+            }
+        }
+
+        impl core::ops::Mul<$rhs> for $lhs {
+            type Output = $out;
+            fn mul(self, rhs: $rhs) -> $out {
+                &self * &rhs
+            }
+        }
+    };
+}
+
+/// Define non-borrow variants of `MulAssign`.
+macro_rules! define_mul_assign_variants {
+    (LHS = $lhs:ty, RHS = $rhs:ty) => {
+        impl core::ops::MulAssign<$rhs> for $lhs {
+            fn mul_assign(&mut self, rhs: $rhs) {
+                *self *= &rhs;
+            }
+        }
+    };
+}
