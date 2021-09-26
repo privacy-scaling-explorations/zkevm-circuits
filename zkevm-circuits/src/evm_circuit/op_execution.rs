@@ -17,10 +17,12 @@ use std::{collections::HashMap, ops::Range};
 mod arithmetic;
 mod comparator;
 mod push;
+mod swap;
 
 use arithmetic::AddGadget;
 use comparator::LtGadget;
 use push::PushGadget;
+use crate::evm_circuit::op_execution::swap::SwapGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -210,6 +212,22 @@ pub(crate) struct OpExecutionGadget<F> {
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
     lt_gadget: LtGadget<F>,
+    swap1_gadget: SwapGadget<F, 0x90u8>,
+    swap2_gadget: SwapGadget<F, 0x91u8>,
+    swap3_gadget: SwapGadget<F, 0x92u8>,
+    swap4_gadget: SwapGadget<F, 0x93u8>,
+    swap5_gadget: SwapGadget<F, 0x94u8>,
+    swap6_gadget: SwapGadget<F, 0x95u8>,
+    swap7_gadget: SwapGadget<F, 0x96u8>,
+    swap8_gadget: SwapGadget<F, 0x97u8>,
+    swap9_gadget: SwapGadget<F, 0x98u8>,
+    swap10_gadget: SwapGadget<F, 0x99u8>,
+    swap11_gadget: SwapGadget<F, 0x9au8>,
+    swap12_gadget: SwapGadget<F, 0x9bu8>,
+    swap13_gadget: SwapGadget<F, 0x9cu8>,
+    swap14_gadget: SwapGadget<F, 0x9du8>,
+    swap15_gadget: SwapGadget<F, 0x9eu8>,
+    swap16_gadget: SwapGadget<F, 0x9fu8>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -266,6 +284,22 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(add_gadget);
         construct_op_gadget!(push_gadget);
         construct_op_gadget!(lt_gadget);
+        construct_op_gadget!(swap1_gadget);
+        construct_op_gadget!(swap2_gadget);
+        construct_op_gadget!(swap3_gadget);
+        construct_op_gadget!(swap4_gadget);
+        construct_op_gadget!(swap5_gadget);
+        construct_op_gadget!(swap6_gadget);
+        construct_op_gadget!(swap7_gadget);
+        construct_op_gadget!(swap8_gadget);
+        construct_op_gadget!(swap9_gadget);
+        construct_op_gadget!(swap10_gadget);
+        construct_op_gadget!(swap11_gadget);
+        construct_op_gadget!(swap12_gadget);
+        construct_op_gadget!(swap13_gadget);
+        construct_op_gadget!(swap14_gadget);
+        construct_op_gadget!(swap15_gadget);
+        construct_op_gadget!(swap16_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -304,6 +338,22 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             add_gadget,
             push_gadget,
             lt_gadget,
+            swap1_gadget,
+            swap2_gadget,
+            swap3_gadget,
+            swap4_gadget,
+            swap5_gadget,
+            swap6_gadget,
+            swap7_gadget,
+            swap8_gadget,
+            swap9_gadget,
+            swap10_gadget,
+            swap11_gadget,
+            swap12_gadget,
+            swap13_gadget,
+            swap14_gadget,
+            swap15_gadget,
+            swap16_gadget,
         }
     }
 
@@ -542,6 +592,103 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, OpcodeId::LT | OpcodeId::GT) => self.lt_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                // SWAP1, ..., SWAP16
+                (_, OpcodeId::SWAP1) => self.swap1_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+	            (_, OpcodeId::SWAP2) => self.swap2_gadget.assign(
+		            region,
+		            offset,
+		            core_state,
+		            execution_step,
+	            )?,
+                (_, OpcodeId::SWAP3) => self.swap3_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP4) => self.swap4_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP5) => self.swap5_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP6) => self.swap6_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP7) => self.swap7_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP8) => self.swap8_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP9) => self.swap9_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP10) => self.swap10_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP11) => self.swap11_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP12) => self.swap12_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP13) => self.swap13_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP14) => self.swap14_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP15) => self.swap15_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::SWAP16) => self.swap16_gadget.assign(
                     region,
                     offset,
                     core_state,
