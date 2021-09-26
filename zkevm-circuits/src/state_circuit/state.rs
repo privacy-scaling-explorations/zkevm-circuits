@@ -723,8 +723,10 @@ impl<
         for (index, op) in ops.iter().enumerate() {
             let address = F::from_bytes(&op.address().to_bytes()).unwrap();
             let gc = usize::from(op.gc());
-            let v_bytes = op.value().to_bytes();
-            let val = F::from_bytes(&v_bytes).unwrap();
+            let v_bytes = op.value();
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(v_bytes);
+            let val = F::from_bytes(&bytes).unwrap();
 
             let mut target = 1;
             if index > 0 {
