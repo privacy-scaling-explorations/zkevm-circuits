@@ -1,7 +1,6 @@
 //! Doc this
 use crate::evm::EvmWord;
 use crate::Error;
-use core::ops::{Deref, DerefMut};
 use core::str::FromStr;
 
 /// Represents a `StackAddress` of the EVM.
@@ -36,7 +35,7 @@ impl FromStr for StackAddress {
             .map_err(|_| Error::StackAddressParsing)?;
         // Stack only has 1023 slots avaliable.
         if value >= 1024 {
-            return Err(Error::StackAddressParsing);
+            return Err(Error::InvalidStackPointer);
         };
         Ok(StackAddress(value))
     }
@@ -47,6 +46,12 @@ impl FromStr for StackAddress {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stack(pub(crate) Vec<EvmWord>);
 
+impl<T: Into<Vec<EvmWord>>> From<T> for Stack {
+    fn from(words: T) -> Self {
+        Stack(words.into())
+    }
+}
+
 impl Stack {
     /// Generate an empty instance of EVM stack.
     pub const fn empty() -> Stack {
@@ -54,11 +59,21 @@ impl Stack {
     }
 
     /// Generate an new instance of EVM stack given a `Vec<EvmWord>`.
-    pub const fn new(item: Vec<EvmWord>) -> Stack {
-        Stack(item)
+    pub const fn new() -> Stack {
+        Stack(vec![])
     }
 
-    /// Returns the first free `StackAddress` avaliable/free.
+    /// Generates a `Stack` instance from the given slice.
+    pub fn from_slice(words: &[EvmWord]) -> Self {
+        Stack(words.into())
+    }
+
+    /// Generates a `Stack` instance from the given vec.
+    pub const fn from_vec(words: Vec<EvmWord>) -> Self {
+        Stack(words)
+    }
+
+    /// Returns the first avaliable/free `StackAddress`.
     pub fn stack_pointer(&self) -> StackAddress {
         // Stack has 1024 slots.
         // First allocation slot for us in the stack is 1023.
@@ -69,18 +84,9 @@ impl Stack {
     pub fn last_filled(&self) -> StackAddress {
         StackAddress::from(1024 - self.0.len())
     }
-}
 
-impl Deref for Stack {
-    type Target = Vec<EvmWord>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Stack {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    /// Returns the last [`EvmWord`] allocated in the `Stack`.
+    pub fn last(&self) -> Option<&EvmWord> {
+        self.0.last()
     }
 }

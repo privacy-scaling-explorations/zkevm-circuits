@@ -46,7 +46,7 @@ impl ExecutionStep {
     ) -> Self {
         ExecutionStep {
             memory: Memory::from(memory),
-            stack: Stack::new(stack),
+            stack: Stack::from_vec(stack),
             instruction,
             gas_info,
             depth,
