@@ -36,7 +36,7 @@ impl ExecutionStep {
     /// Generate a new `ExecutionStep` from it's fields but with an empty
     /// bus-mapping instance vec.
     pub fn new(
-        memory: Vec<EvmWord>,
+        memory: Vec<u8>,
         stack: Vec<EvmWord>,
         instruction: OpcodeId,
         gas_info: GasInfo,
@@ -45,7 +45,7 @@ impl ExecutionStep {
         gc: GlobalCounter,
     ) -> Self {
         ExecutionStep {
-            memory: Memory::new(memory),
+            memory: Memory::from(memory),
             stack: Stack::new(stack),
             instruction,
             gas_info,

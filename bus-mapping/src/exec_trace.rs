@@ -378,11 +378,15 @@ mod trace_tests {
 
         // The memory is the same in both steps as none of them touches the
         // memory of the EVM.
-        let mem_map = Memory(vec![
-            EvmWord::from(0u8),
-            EvmWord::from(0u8),
-            EvmWord::from(0x80u8),
-        ]);
+        let mem_map = Memory(
+            EvmWord::from(0u8)
+                .to_bytes()
+                .iter()
+                .chain(&EvmWord::from(0u8).to_bytes())
+                .chain(&EvmWord::from(0x80u8).to_bytes())
+                .copied()
+                .collect(),
+        );
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep {
