@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 type State = [[u64; 5]; 5];
 
 const PERMUTATION: usize = 24;
@@ -77,14 +79,16 @@ impl Keccak {
 
 pub struct KeccakF {}
 
-impl KeccakF {
-    pub fn new() -> KeccakF {
+impl Default for KeccakF {
+    fn default() -> Self {
         KeccakF {}
     }
+}
 
+impl KeccakF {
     pub fn permutations(&self, a: &mut State) {
-        for i in 0..PERMUTATION {
-            *a = KeccakF::round_b(*a, ROUND_CONSTANTS[i]);
+        for rc in ROUND_CONSTANTS.iter().take(PERMUTATION) {
+            *a = KeccakF::round_b(*a, *rc);
         }
     }
 
@@ -104,21 +108,17 @@ impl KeccakF {
             c[x] = a[x][0] ^ a[x][1] ^ a[x][2] ^ a[x][3] ^ a[x][4];
         }
 
-        for x in 0..5 {
-            for y in 0..5 {
-                out[x][y] =
-                    a[x][y] ^ c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1);
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[x][y] =
+                a[x][y] ^ c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1);
         }
         out
     }
 
     pub fn rho(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
-        for x in 0..5 {
-            for y in 0..5 {
-                out[x][y] = a[x][y].rotate_left(ROTATION_CONSTANTS[x][y]);
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[x][y] = a[x][y].rotate_left(ROTATION_CONSTANTS[x][y]);
         }
         out
     }
@@ -126,20 +126,16 @@ impl KeccakF {
     pub fn pi(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
 
-        for x in 0..5 {
-            for y in 0..5 {
-                out[y][(2 * x + 3 * y) % 5] = a[x][y];
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[y][(2 * x + 3 * y) % 5] = a[x][y];
         }
         out
     }
 
     pub fn xi(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
-        for x in 0..5 {
-            for y in 0..5 {
-                out[x][y] = a[x][y] ^ (!a[(x + 1) % 5][y] & a[(x + 2) % 5][y]);
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[x][y] = a[x][y] ^ (!a[(x + 1) % 5][y] & a[(x + 2) % 5][y]);
         }
         out
     }
@@ -162,7 +158,7 @@ impl Sponge {
         Sponge {
             rate,
             capacity,
-            keccak_f: KeccakF::new(),
+            keccak_f: KeccakF::default(),
         }
     }
 
@@ -201,9 +197,9 @@ impl Sponge {
         let elems_total: usize = output_len / 8;
         let mut counter: usize = 0;
 
-        'outer: for i in 0..5 {
-            for j in 0..5 {
-                output.append(&mut state[j][i].to_le_bytes().to_vec());
+        'outer: for y in 0..5 {
+            for sheet in state.iter().take(5) {
+                output.append(&mut sheet[y].to_le_bytes().to_vec());
                 if counter == elems_total {
                     break 'outer;
                 }

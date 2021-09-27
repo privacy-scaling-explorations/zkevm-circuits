@@ -1,9 +1,21 @@
+use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::ops::{Index, IndexMut};
 
 const B13: u64 = 13;
 const B9: u64 = 9;
+
+/// Base 9 coef mapper scalers
+/// f_logic(x1, x2, x3, x4) = x1 ^ (!x2 & x3) ^ x4
+/// f_arith(x1, x2, x3, x4) = 2*x1 + x2 + 3*x3 + 2*x4
+/// where x1, x2, x3, x4 are binary.
+/// We have the property that `0 <= f_arith(...) < 9` and
+/// the map from `f_arith(...)` to `f_logic(...)` is injective.
+const A1: u64 = 2u64;
+const A2: u64 = 1u64;
+const A3: u64 = 3u64;
+const A4: u64 = 2u64;
 
 type Lane13 = BigUint;
 type Lane9 = BigUint;
@@ -193,38 +205,36 @@ impl KeccakFArith {
         KeccakFArith {}
     }
 
-    pub fn permutations(&self, a: &mut State) {
-        let mut in_b13 = StateBigInt::default();
-        let mut out_b9 = StateBigInt::default();
-        for x in 0..5 {
-            for y in 0..5 {
-                in_b13[(x, y)] = convert_b2_to_b13(a[x][y]);
-            }
-        }
+    pub fn permute_and_absorb(
+        &self,
+        a: &mut StateBigInt,
+        next_inputs: &State,
+        has_next: bool,
+    ) {
+        for rc in ROUND_CONSTANTS.iter().take(PERMUTATION - 1) {
+            let s1 = KeccakFArith::theta(a);
+            let s2 = KeccakFArith::rho(&s1);
 
-        for i in 0..PERMUTATION {
-            out_b9 = KeccakFArith::round_b(in_b13.clone(), ROUND_CONSTANTS[i]);
-            for x in 0..5 {
-                for y in 0..5 {
-                    in_b13[(x, y)] =
-                        convert_b9_lane_to_b13(out_b9[(x, y)].clone());
-                }
+            let s3 = KeccakFArith::pi(&s2);
+            let s4 = KeccakFArith::xi(&s3);
+            let s5 = KeccakFArith::iota_b9(&s4, *rc);
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                a[(x, y)] = convert_b9_lane_to_b13(s5[(x, y)].clone());
             }
         }
-        for x in 0..5 {
-            for y in 0..5 {
-                a[x][y] = convert_b9_lane_to_b2(out_b9[(x, y)].clone());
-            }
-        }
-    }
-
-    fn round_b(a: StateBigInt, rc: u64) -> StateBigInt {
-        let s1 = KeccakFArith::theta(&a);
+        let s1 = KeccakFArith::theta(a);
         let s2 = KeccakFArith::rho(&s1);
-
         let s3 = KeccakFArith::pi(&s2);
         let s4 = KeccakFArith::xi(&s3);
-        KeccakFArith::iota(&s4, rc)
+        if has_next {
+            let s5 = KeccakFArith::absorb(&s4, next_inputs);
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                a[(x, y)] = convert_b9_lane_to_b13(s5[(x, y)].clone());
+            }
+            *a = KeccakFArith::iota_b13(&s5, ROUND_CONSTANTS[PERMUTATION - 1]);
+        } else {
+            *a = KeccakFArith::iota_b9(&s4, ROUND_CONSTANTS[PERMUTATION - 1]);
+        }
     }
 
     fn theta(a: &StateBigInt) -> StateBigInt {
@@ -237,53 +247,59 @@ impl KeccakFArith {
             );
         }
 
-        for x in 0..5 {
-            for y in 0..5 {
-                out[(x, y)] =
-                    &a[(x, y)] + &c[(x + 4) % 5] + &c[(x + 1) % 5] * B13;
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[(x, y)] = &a[(x, y)] + &c[(x + 4) % 5] + &c[(x + 1) % 5] * B13;
         }
         out
     }
 
     fn rho(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
-        for x in 0..5 {
-            for y in 0..5 {
-                out[(x, y)] = convert_b13_lane_to_b9(
-                    a[(x, y)].clone(),
-                    ROTATION_CONSTANTS[x][y],
-                );
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[(x, y)] = convert_b13_lane_to_b9(
+                a[(x, y)].clone(),
+                ROTATION_CONSTANTS[x][y],
+            );
         }
         out
     }
 
     fn pi(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
-        for x in 0..5 {
-            for y in 0..5 {
-                out[(y, (2 * x + 3 * y) % 5)] = a[(x, y)].clone();
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[(y, (2 * x + 3 * y) % 5)] = a[(x, y)].clone();
         }
         out
     }
 
     fn xi(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
-        for x in 0..5 {
-            for y in 0..5 {
-                out[(x, y)] = a[(x, y)].clone() * 2u64
-                    + a[((x + 1) % 5, y)].clone()
-                    + a[((x + 2) % 5, y)].clone() * 3u64;
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[(x, y)] = a[(x, y)].clone() * A1
+                + a[((x + 1) % 5, y)].clone() * A2
+                + a[((x + 2) % 5, y)].clone() * A3;
         }
         out
     }
 
-    fn iota(a: &StateBigInt, rc: u64) -> StateBigInt {
+    fn absorb(a: &StateBigInt, next_input: &State) -> StateBigInt {
+        let mut out = StateBigInt::default();
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[(x, y)] =
+                a[(x, y)].clone() + convert_b2_to_b9(next_input[x][y]) * A4
+        }
+        out
+    }
+
+    fn iota_b9(a: &StateBigInt, rc: u64) -> StateBigInt {
         let mut out = a.clone();
-        out[(0, 0)] += convert_b2_to_b9(rc) * 2u64;
+        out[(0, 0)] += convert_b2_to_b9(rc) * A4;
+        out
+    }
+
+    fn iota_b13(a: &StateBigInt, rc: u64) -> StateBigInt {
+        let mut out = a.clone();
+        out[(0, 0)] += convert_b2_to_b13(rc);
         out
     }
 }
@@ -341,7 +357,7 @@ impl Sponge {
         }
     }
 
-    pub fn absorb(&self, mut state: &mut State, message: &[u8]) {
+    pub fn absorb(&self, state: &mut State, message: &[u8]) {
         assert!(
             message.len() % self.rate == 0,
             "Message is not divisible entirely by bytes rate"
@@ -351,13 +367,14 @@ impl Sponge {
 
         let words: Vec<u64> = Sponge::bits_to_u64_words_le(message);
 
+        let mut state_bit_int = StateBigInt::default();
         for chunk_i in 0..chunks_total {
             let chunk_offset: usize = chunk_i * (self.rate / 8);
             let mut x = 0;
             let mut y = 0;
+            let mut next_inputs = State::default();
             for i in 0..(self.rate / 8) {
-                let word = words[chunk_offset + i];
-                state[x][y] ^= word;
+                next_inputs[x][y] = words[chunk_offset + i];
                 if x < 5 - 1 {
                     x += 1;
                 } else {
@@ -365,7 +382,29 @@ impl Sponge {
                     x = 0;
                 }
             }
-            self.keccak_f.permutations(&mut state);
+            if chunk_i == 0 {
+                for (x, y) in (0..5).cartesian_product(0..5) {
+                    state_bit_int[(x, y)] =
+                        convert_b2_to_b13(next_inputs[x][y]);
+                }
+            }
+            if chunk_i == (chunks_total - 1) {
+                self.keccak_f.permute_and_absorb(
+                    &mut state_bit_int,
+                    &State::default(),
+                    false,
+                );
+                for (x, y) in (0..5).cartesian_product(0..5) {
+                    state[x][y] =
+                        convert_b9_lane_to_b2(state_bit_int[(x, y)].clone())
+                }
+                return;
+            }
+            self.keccak_f.permute_and_absorb(
+                &mut state_bit_int,
+                &next_inputs,
+                true,
+            );
         }
     }
 
@@ -376,9 +415,9 @@ impl Sponge {
         let elems_total: usize = output_len / 8;
         let mut counter: usize = 0;
 
-        'outer: for i in 0..5 {
-            for j in 0..5 {
-                output.append(&mut state[j][i].to_le_bytes().to_vec());
+        'outer: for y in 0..5 {
+            for sheet in state.iter().take(5) {
+                output.append(&mut sheet[y].to_le_bytes().to_vec());
                 if counter == elems_total {
                     break 'outer;
                 }
@@ -457,32 +496,26 @@ fn test_theta_rho() {
     ];
     for a in [input1, input2] {
         let mut in_b13 = StateBigInt::default();
-        for x in 0..5 {
-            for y in 0..5 {
-                in_b13[(x, y)] = convert_b2_to_b13(a[x][y]);
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            in_b13[(x, y)] = convert_b2_to_b13(a[x][y]);
         }
         let s1 = KeccakF::theta(a);
         let s1_arith = KeccakFArith::theta(&in_b13);
-        for x in 0..5 {
-            for y in 0..5 {
-                assert_eq!(
-                    s1[x][y],
-                    convert_b9_lane_to_b2_normal(convert_b13_lane_to_b9(
-                        s1_arith[(x, y)].clone(),
-                        0
-                    ))
-                );
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            assert_eq!(
+                s1[x][y],
+                convert_b9_lane_to_b2_normal(convert_b13_lane_to_b9(
+                    s1_arith[(x, y)].clone(),
+                    0
+                ))
+            );
         }
         let s2 = KeccakF::rho(s1);
         let s2_arith = KeccakFArith::rho(&s1_arith);
-        for x in 0..5 {
-            for y in 0..5 {
-                let expected =
-                    convert_b9_lane_to_b2_normal(s2_arith[(x, y)].clone());
-                assert_eq!(s2[x][y], expected);
-            }
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            let expected =
+                convert_b9_lane_to_b2_normal(s2_arith[(x, y)].clone());
+            assert_eq!(s2[x][y], expected);
         }
     }
 }
