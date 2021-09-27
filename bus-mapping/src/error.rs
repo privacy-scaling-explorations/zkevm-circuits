@@ -22,6 +22,8 @@ pub enum Error {
     InvalidStackPointer,
     /// Error while trying to access an invalid/empty Memory location.
     InvalidMemoryPointer,
+    /// Error when an EvmWord is too big to be converted into a `MemoryAddress`.
+    WordToMemAddr,
 }
 
 impl Display for Error {
