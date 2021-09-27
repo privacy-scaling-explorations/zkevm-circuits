@@ -41,7 +41,7 @@ impl Opcode for Mload {
             RW::READ,
             GlobalCounter::from(exec_step.gc().0 + 1),
             stack_position,
-            stack_value_read.clone(),
+            stack_value_read,
         );
 
         exec_step
@@ -52,14 +52,14 @@ impl Opcode for Mload {
         // First mem read
         //
         let mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        let mem_read_value = next_steps[0].memory().read_word(mem_read_addr);
+        let mem_read_value = next_steps[0].memory().read_word(mem_read_addr)?;
 
         // Read operation at memory address: stack_read.value
         let mem_read = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(exec_step.gc().0 + 2),
             mem_read_addr,
-            mem_read_value.clone(),
+            mem_read_value,
         );
 
         exec_step
