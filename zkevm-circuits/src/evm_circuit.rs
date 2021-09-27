@@ -760,7 +760,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || Ok(F::from_u64(idx as u64)),
                     )?;
                     for (idx, column) in
-                    self.fixed_table[2..].iter().enumerate()
+                        self.fixed_table[2..].iter().enumerate()
                     {
                         region.assign_fixed(
                             || format!("Range16: padding {}", idx),

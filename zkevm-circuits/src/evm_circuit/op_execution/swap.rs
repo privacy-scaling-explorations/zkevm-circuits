@@ -1,6 +1,6 @@
 use super::super::{
-	BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-	FixedLookup, Lookup, Word,
+    BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
+    FixedLookup, Lookup, Word,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::{Expr, ToWord};
@@ -10,8 +10,8 @@ use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
 struct SwapSuccessAllocation<F> {
-	case_selector: Cell<F>,
-	words: [Word<F>; 4],
+    case_selector: Cell<F>,
+    words: [Word<F>; 4],
 }
 
 #[derive(Clone, Debug)]
@@ -244,15 +244,15 @@ impl<F: FieldExt> SwapGadget<> {
 
 #[cfg(test)]
 mod test {
-	use super::super::super::{
-		test::TestCircuit, Case, ExecutionStep, Operation,
-	};
-	use bus_mapping::{evm::OpcodeId, operation::Target};
-	use halo2::{arithmetic::FieldExt, dev::MockProver};
-	use pasta_curves::pallas::Base;
-	use num::BigUint;
-	
-	macro_rules! try_test_circuit {
+    use super::super::super::{
+        test::TestCircuit, Case, ExecutionStep, Operation,
+    };
+    use bus_mapping::{evm::OpcodeId, operation::Target};
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use num::BigUint;
+    use pasta_curves::pallas::Base;
+
+    macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
@@ -260,234 +260,239 @@ mod test {
             assert_eq!(prover.verify(), $result);
         }};
     }
-	
-	// TODO: add failure cases
-	#[test]
-	fn swap2_gadget() {
-		// SWAP2
-		try_test_circuit!(
-			vec![
-				ExecutionStep {
-					opcode: OpcodeId::PUSH3,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x03_02_01u64),
-						BigUint::from(0x01_01_01u64)
-					],
-				},
-				ExecutionStep{
-					opcode: OpcodeId::PUSH2,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x05_04u64),
-						BigUint::from(0x01_01u64)
-					],
-				},
-				ExecutionStep{
-					opcode: OpcodeId::PUSH1,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x06u64),
-						BigUint::from(0x01u64)
-					],
-				},
-				ExecutionStep {
-					opcode: OpcodeId::SWAP2,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x03_02_01u64),
-						BigUint::from(0x06u64),
-						BigUint::from(0x06u64),
-						BigUint::from(0x03_02_01u64),
-					],
-				},
-			],
-			vec![
-				Operation { // push3
-					gc: 1,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1023),
-						Base::from_u64(1+2+3),
-						Base::zero(),
-					],
-				},
-				Operation { // push2
-					gc: 2,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1022),
-						Base::from_u64(4+5),
-						Base::zero(),
-					]
-				},
-				Operation { // push1
-					gc: 3,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1021),
-						Base::from_u64(6),
-						Base::zero(),
-					]
-				},
-				// swap1 1021 <=> 1022
-				Operation {
-					gc: 4,
-					target: Target::Stack,
-					is_write: false,
-					values: [
-						Base::zero(),
-						Base::from_u64(1023),
-						Base::from_u64(1+2+3),
-						Base::zero(),
-					]
-				},
-				Operation {
-					gc: 5,
-					target: Target::Stack,
-					is_write: false,
-					values: [
-						Base::zero(),
-						Base::from_u64(1021),
-						Base::from_u64(6),
-						Base::zero(),
-					]
-				},
-				Operation {
-					gc: 6,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1023),
-						Base::from_u64(6),
-						Base::zero(),
-					]
-				},
-				Operation {
-					gc: 7,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1021),
-						Base::from_u64(1+2+3),
-						Base::zero(),
-					]
-				}
-			],
-		Ok(())
-		);
-	}
-	
-	#[test]
-	fn swap1_gadget() {
-		// SWAP1
-		try_test_circuit!(
-			vec![
-				ExecutionStep {
-					opcode: OpcodeId::PUSH3,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x03_02_01u64),
-						BigUint::from(0x01_01_01u64)
-					],
-				},
-				ExecutionStep{
-					opcode: OpcodeId::PUSH2,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x05_04u64),
-						BigUint::from(0x01_01u64)
-					],
-				},
-				ExecutionStep {
-					opcode: OpcodeId::SWAP1,
-					case: Case::Success,
-					values: vec![
-						BigUint::from(0x03_02_01u64),
-						BigUint::from(0x05_04u64),
-						BigUint::from(0x05_04u64),
-						BigUint::from(0x03_02_01u64),
-					],
-				},
-			],
-			vec![
-				Operation { // push3
-					gc: 1,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1023),
-						Base::from_u64(1+2+3),
-						Base::zero(),
-					],
-				},
-				Operation { // push2
-					gc: 2,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1022),
-						Base::from_u64(4+5),
-						Base::zero(),
-					]
-				},
-				// swap1 1023 <=> 1022
-				Operation {
-					gc: 3,
-					target: Target::Stack,
-					is_write: false,
-					values: [
-						Base::zero(),
-						Base::from_u64(1023),
-						Base::from_u64(1+2+3),
-						Base::zero(),
-					]
-				},
-				Operation {
-					gc: 4,
-					target: Target::Stack,
-					is_write: false,
-					values: [
-						Base::zero(),
-						Base::from_u64(1022),
-						Base::from_u64(4+5),
-						Base::zero(),
-					]
-				},
-				Operation {
-					gc: 5,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1023),
-						Base::from_u64(4+5),
-						Base::zero(),
-					]
-				},
-				Operation {
-					gc: 6,
-					target: Target::Stack,
-					is_write: true,
-					values: [
-						Base::zero(),
-						Base::from_u64(1022),
-						Base::from_u64(1+2+3),
-						Base::zero(),
-					]
-				}
-			],
-		Ok(())
-		);
-	}
+
+    // TODO: add failure cases
+    #[test]
+    fn swap2_gadget() {
+        // SWAP2
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH2,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x05_04u64),
+                        BigUint::from(0x01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH1,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x06u64),
+                        BigUint::from(0x01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::SWAP2,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x06u64),
+                        BigUint::from(0x06u64),
+                        BigUint::from(0x03_02_01u64),
+                    ],
+                },
+            ],
+            vec![
+                Operation {
+                    // push3
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ],
+                },
+                Operation {
+                    // push2
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(4 + 5),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    // push1
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1021),
+                        Base::from_u64(6),
+                        Base::zero(),
+                    ]
+                },
+                // swap1 1021 <=> 1022
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1021),
+                        Base::from_u64(6),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 6,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(6),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 7,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1021),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                }
+            ],
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn swap1_gadget() {
+        // SWAP1
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH2,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x05_04u64),
+                        BigUint::from(0x01_01u64)
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::SWAP1,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x05_04u64),
+                        BigUint::from(0x05_04u64),
+                        BigUint::from(0x03_02_01u64),
+                    ],
+                },
+            ],
+            vec![
+                Operation {
+                    // push3
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ],
+                },
+                Operation {
+                    // push2
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(4 + 5),
+                        Base::zero(),
+                    ]
+                },
+                // swap1 1023 <=> 1022
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(4 + 5),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(4 + 5),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 6,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        Base::from_u64(1 + 2 + 3),
+                        Base::zero(),
+                    ]
+                }
+            ],
+            Ok(())
+        );
+    }
 }

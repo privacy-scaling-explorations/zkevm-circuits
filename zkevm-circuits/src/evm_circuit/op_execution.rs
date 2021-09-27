@@ -24,6 +24,7 @@ mod signextend;
 mod swap;
 mod utils;
 
+use crate::evm_circuit::op_execution::swap::SwapGadget;
 use arithmetic::AddGadget;
 use byte::ByteGadget;
 use comparator::LtGadget;
