@@ -209,8 +209,8 @@ mod test {
                 opcode: OpcodeId::PUSH2,
                 case: Case::Success,
                 values: vec![
-                    BigUint::from(0x02_02u64),
-                    BigUint::from(0x01_01u64),
+                     BigUint::from(0x02_03u64),
+                     BigUint::from(0x01_01u64),
                 ],
             },
             ExecutionStep {
@@ -222,8 +222,8 @@ mod test {
                 opcode: OpcodeId::PUSH3,
                 case: Case::Success,
                 values: vec![
-                    BigUint::from(0x04_050_6u64),
-                    BigUint::from(0x01_01_01u64),
+                  BigUint::from(0x06_05_04u64),
+                  BigUint::from(0x01_01_01u64)
                 ],
             }
             ],
@@ -234,7 +234,7 @@ mod test {
                 values: [
                     Base::zero(),
                     Base::from_u64(1023),
-                    Base::from_u64(2 + 2),
+                    Base::from_u64(2 + 3),
                     Base::zero(),
                 ]
                },
@@ -244,8 +244,8 @@ mod test {
                 is_write: false,
                 values: [
                     Base::zero(),
-                    Base::from_u64(1022),
-                    Base::from_u64(1 + 2 + 2), 
+                    Base::from_u64(1023),
+                    Base::from_u64(2 + 3), 
                     Base::zero(),
                 ]
              },
