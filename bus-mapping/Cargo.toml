@@ -10,7 +10,6 @@ ff = "0.10"
 pasta_curves = "0.1"
 itertools = "0.10"
 serde = {version = "1.0.127", features = ["derive"] }
-num = "0.4"
-halo2 = "0.0"
 lazy_static = "1.4"
 serde_json = "1.0.66"
+hex = "0.4"
