@@ -66,7 +66,7 @@ impl TryFrom<EvmWord> for MemoryAddress {
     fn try_from(word: EvmWord) -> Result<Self, Self::Error> {
         let (should_be_zeroes, usize_bytes) =
             word.inner().split_at(32 - core::mem::size_of::<usize>());
-        if should_be_zeroes == [0] {
+        if should_be_zeroes != [0u8; 32 - core::mem::size_of::<usize>()] {
             return Err(Error::WordToMemAddr);
         }
         let mut arr = [0u8; core::mem::size_of::<usize>()];
