@@ -1,6 +1,6 @@
 //! Collection of utility macros used within this crate.
 
-macro_rules! impl_from_emv_word_wrappers {
+macro_rules! impl_from_evm_word_wrappers {
     ($($implementor:ty),*) => {
         $(impl From<$implementor> for EvmWord {
             fn from(item: $implementor) -> EvmWord {

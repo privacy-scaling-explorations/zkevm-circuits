@@ -1,7 +1,8 @@
-# bus-mapping
+# ZKEVM Bus-Mapping
 
-![GitHub branch checks state](https://img.shields.io/github/checks-status/appliedzkp/zkevm-circuits/main?style=for-the-badge)
-Bus-Mapping is a crate designed to parse EVM execution traces and manipulate
+![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/appliedzkp/zkevm-circuits/CI%20checks/main?style=for-the-badge)
+
+`Bus-Mapping` is a crate designed to parse EVM execution traces and manipulate
 all of the data they provide in order to obtain structured witness inputs
 for the EVM Proof and the State Proof.
 
@@ -49,35 +50,52 @@ all of the Memory, Stack and Storage ops performed by the provided trace.
 ```rust
 use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
 use pasta_curves::arithmetic::FieldExt;
-use num::BigUint;
 
 let input_trace = r#"
 [
     {
-        "memory": {
-            "0": "0000000000000000000000000000000000000000000000000000000000000000",
-            "20": "0000000000000000000000000000000000000000000000000000000000000000",
-            "40": "0000000000000000000000000000000000000000000000000000000000000000"
-        },
+        "pc": 5,
+        "op": "PUSH1",
+        "gas": 82,
+        "gasCost": 3,
+        "depth": 1,
+        "stack": [],
+        "memory": [
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000080"
+        ]
+      },
+      {
+        "pc": 7,
+        "op": "MLOAD",
+        "gas": 79,
+        "gasCost": 3,
+        "depth": 1,
         "stack": [
-            "40"
+          "40"
         ],
-        "opcode": "PUSH1 40",
-        "pc": 0
-    },
-    {
-        "memory": {
-            "00": "0000000000000000000000000000000000000000000000000000000000000000",
-            "20": "0000000000000000000000000000000000000000000000000000000000000000",
-            "40": "0000000000000000000000000000000000000000000000000000000000000000"
-        },
+        "memory": [
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000080"
+        ]
+      },
+      {
+        "pc": 8,
+        "op": "STOP",
+        "gas": 76,
+        "gasCost": 0,
+        "depth": 1,
         "stack": [
-            "40",
-            "80"
+          "80"
         ],
-        "opcode": "PUSH1 80",
-        "pc": 1
-    }
+        "memory": [
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000080"
+        ]
+      }
 ]
 "#;
 
@@ -156,8 +174,8 @@ On that way, we would get something like this for the Memory ops:
 Where as you see, we group by `memory_address` and then order by
 `global_counter`.
 
-Aside from that, we also can iterate over the `ExecutionTrace` itself over
-each Evm Instruction in order to add constrains for each Opcode is executed.
+- Iterate over the `ExecutionTrace` itself over
+each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
 This is also automatically done via the
 [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
 

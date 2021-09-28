@@ -66,7 +66,7 @@ impl TryFrom<EvmWord> for MemoryAddress {
     fn try_from(word: EvmWord) -> Result<Self, Self::Error> {
         let (should_be_zeroes, usize_bytes) =
             word.inner().split_at(32 - core::mem::size_of::<usize>());
-        if should_be_zeroes == &[0] {
+        if should_be_zeroes == [0] {
             return Err(Error::WordToMemAddr);
         }
         let mut arr = [0u8; core::mem::size_of::<usize>()];
@@ -220,9 +220,7 @@ impl Memory {
         }
 
         // Now we know that the indexing will not panic.
-        EvmWord::from_be_bytes(
-            &self[addr..addr + MemoryAddress::from(32)].as_ref(),
-        )
+        EvmWord::from_be_bytes(&self[addr..addr + MemoryAddress::from(32)])
     }
 }
 

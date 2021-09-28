@@ -11,7 +11,6 @@ use crate::error::Error;
 pub use container::OperationContainer;
 use core::cmp::Ordering;
 use core::fmt::Debug;
-use num::BigUint;
 use std::convert::TryFrom;
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
@@ -238,7 +237,7 @@ pub struct StorageOp {
     addr: MemoryAddress,
     value: EvmWord,
     value_prev: EvmWord,
-    storage_key: BigUint,
+    storage_key: EvmWord,
 }
 
 impl StorageOp {
@@ -249,7 +248,7 @@ impl StorageOp {
         addr: MemoryAddress, // todo: use some other struct?
         value: EvmWord,
         value_prev: EvmWord,
-        storage_key: BigUint,
+        storage_key: EvmWord,
     ) -> StorageOp {
         StorageOp {
             rw,
@@ -292,8 +291,8 @@ impl StorageOp {
         &self.value_prev
     }
 
-    /// Returns the [`BigUint`] storage key used by this operation.
-    pub const fn storage_key(&self) -> &BigUint {
+    /// Returns the underlying value representation.
+    pub const fn storage_key(&self) -> &EvmWord {
         &self.storage_key
     }
 }

@@ -60,7 +60,7 @@ impl FromStr for EvmWord {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let decoding = hex::decode(s).map_err(|_| Error::EvmWordParsing)?;
-        Ok(EvmWord::from_be_bytes(&decoding)?)
+        EvmWord::from_be_bytes(&decoding)
     }
 }
 
@@ -70,7 +70,7 @@ impl From<EvmWord> for Vec<u8> {
     }
 }
 
-impl_from_emv_word_wrappers!(u8, u16, u32, u64, u128, usize);
+impl_from_evm_word_wrappers!(u8, u16, u32, u64, u128, usize);
 
 impl EvmWord {
     /// Return the big-endian byte representation of the word as a 32-byte
@@ -101,14 +101,14 @@ impl EvmWord {
     }
 
     /// Returns an `EvmWord` as a 32-byte array in little endian representation.
-    pub fn to_le_bytes(&self) -> [u8; 32] {
+    pub fn to_le_bytes(self) -> [u8; 32] {
         let mut bytes = self.0;
         bytes.reverse();
         bytes
     }
 
     /// Returns an `EvmWord` as a 32-byte array in big endian representation.
-    pub fn to_be_bytes(&self) -> [u8; 32] {
+    pub fn to_be_bytes(self) -> [u8; 32] {
         *self.inner()
     }
 }
