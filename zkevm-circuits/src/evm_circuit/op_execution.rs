@@ -19,13 +19,14 @@ mod byte;
 mod comparator;
 mod pop;
 mod push;
-mod utils;
+mod dup;
 
 use arithmetic::AddGadget;
 use byte::ByteGadget;
 use comparator::LtGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use dup::DupGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -274,7 +275,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(push_gadget);
         construct_op_gadget!(lt_gadget);
         construct_op_gadget!(pop_gadget);
-        construct_op_gadget!(byte_gadget);
+        construct_op_gadget!(dup_gadget);
+       
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -565,11 +567,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, OpcodeId::BYTE) => self.byte_gadget.assign(
-                    region,
+                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
+                
                 _ => unimplemented!(),
             }
         }
