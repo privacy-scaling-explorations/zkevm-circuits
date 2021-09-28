@@ -380,10 +380,10 @@ mod trace_tests {
         // memory of the EVM.
         let mem_map = Memory(
             EvmWord::from(0u8)
-                .to_bytes()
+                .inner()
                 .iter()
-                .chain(&EvmWord::from(0u8).to_bytes())
-                .chain(&EvmWord::from(0x80u8).to_bytes())
+                .chain(EvmWord::from(0u8).inner())
+                .chain(EvmWord::from(0x80u8).inner())
                 .copied()
                 .collect(),
         );

@@ -19,7 +19,11 @@ impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
             .iter()
             .map(|word| EvmWord::from_str(word))
             .collect::<Result<Vec<EvmWord>, Error>>()?;
-        let mem_map = mem_map.iter().flat_map(|word| word.to_bytes()).collect();
+        let mem_map = mem_map
+            .iter()
+            .flat_map(|word| word.inner())
+            .copied()
+            .collect();
 
         // Stack part
         let mut stack = vec![];
@@ -70,7 +74,9 @@ mod tests {
             "gas": 82,
             "gasCost": 3,
             "depth": 1,
-            "stack": [],
+            "stack": [
+                "40"
+            ],
             "memory": [
               "0000000000000000000000000000000000000000000000000000000000000000",
               "0000000000000000000000000000000000000000000000000000000000000000",
@@ -88,17 +94,17 @@ mod tests {
         let expected_step = {
             let mem_map = Memory(
                 EvmWord::from(0u8)
-                    .to_bytes()
+                    .inner()
                     .iter()
-                    .chain(&EvmWord::from(0u8).to_bytes())
-                    .chain(&EvmWord::from(0x80u8).to_bytes())
+                    .chain(EvmWord::from(0u8).inner())
+                    .chain(EvmWord::from(0x80u8).inner())
                     .copied()
                     .collect(),
             );
 
             ExecutionStep {
                 memory: mem_map,
-                stack: Stack(vec![]),
+                stack: Stack(vec![EvmWord::from(0x40u8)]),
                 instruction: OpcodeId::JUMPDEST,
                 gas_info: GasInfo::new(82, GasCost::from(3u8)),
                 depth: 1,

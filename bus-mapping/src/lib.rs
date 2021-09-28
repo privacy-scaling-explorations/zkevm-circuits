@@ -1,4 +1,4 @@
-//! ![GitHub branch checks state](https://img.shields.io/github/checks-status/appliedzkp/zkevm-circuits/main?style=for-the-badge)
+//! ![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/appliedzkp/zkevm-circuits/CI%20checks/main?style=for-the-badge)
 //! Bus-Mapping is a crate designed to parse EVM execution traces and manipulate
 //! all of the data they provide in order to obtain structured witness inputs
 //! for the EVM Proof and the State Proof.
@@ -47,7 +47,6 @@
 //! ```rust
 //! use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
 //! use pasta_curves::arithmetic::FieldExt;
-//! use num::BigUint;
 //!
 //! let input_trace = r#"
 //! [

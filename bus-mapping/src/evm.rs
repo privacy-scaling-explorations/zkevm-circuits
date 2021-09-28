@@ -6,7 +6,6 @@ pub mod stack;
 
 use crate::{error::Error, Gas};
 use core::str::FromStr;
-use num::{BigUint, Num};
 use serde::{Deserialize, Serialize};
 pub use {
     memory::{Memory, MemoryAddress},
@@ -52,58 +51,65 @@ impl From<usize> for GlobalCounter {
     }
 }
 
-// XXX: Consider to move this to [u8;32] soon
 /// Representation of an EVM word which is basically a 32-byte word.
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct EvmWord(pub(crate) BigUint);
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct EvmWord(pub(crate) [u8; 32]);
 
 impl FromStr for EvmWord {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(EvmWord(
-            BigUint::from_str_radix(s, 16)
-                .map_err(|_| Error::EvmWordParsing)?,
-        ))
-    }
-}
-
-impl From<EvmWord> for [u8; 32] {
-    fn from(word: EvmWord) -> Self {
-        word.to_bytes()
+        let decoding = hex::decode(s).map_err(|_| Error::EvmWordParsing)?;
+        EvmWord::from_be_bytes(&decoding)
     }
 }
 
 impl From<EvmWord> for Vec<u8> {
     fn from(word: EvmWord) -> Self {
-        word.to_bytes().to_vec()
+        word.inner().to_vec()
     }
 }
 
-impl_from_big_uint_wrappers!(
-    EvmWord = EvmWord,
-    (u8, u16, u32, u64, u128, usize)
-);
+impl_from_evm_word_wrappers!(u8, u16, u32, u64, u128, usize);
 
 impl EvmWord {
-    /// Return the little-endian byte representation of the word as a 32-byte
+    /// Return the big-endian byte representation of the word as a 32-byte
     /// array.
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut array = [0u8; 32];
-        let bytes = self.0.to_bytes_le();
-        array[..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
-
-        array
-    }
-
-    /// Generate an `EvmWord` from a slice of bytes.
-    pub fn from_bytes<T: AsRef<[u8]>>(bytes: T) -> Self {
-        EvmWord(BigUint::from_bytes_le(bytes.as_ref()))
-    }
-
-    /// Returns the underlying representation of the `EvmWord` as a [`BigUint`].
-    pub fn as_big_uint(&self) -> &BigUint {
+    pub const fn inner(&self) -> &[u8; 32] {
         &self.0
+    }
+
+    /// Generate an `EvmWord` from a slice of bytes in big-endian representation.
+    pub fn from_be_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
+        if bytes.as_ref().len() > 32 {
+            return Err(Error::EvmWordParsing);
+        }
+        let mut inner = [0u8; 32];
+        inner[32 - bytes.as_ref().len()..].copy_from_slice(&bytes.as_ref());
+        Ok(EvmWord(inner))
+    }
+
+    /// Generate an `EvmWord` from a slice of bytes in little-endian representation.
+    pub fn from_le_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
+        if bytes.as_ref().len() > 32 {
+            return Err(Error::EvmWordParsing);
+        }
+        let mut inner = [0u8; 32];
+        inner[..bytes.as_ref().len()].copy_from_slice(&bytes.as_ref());
+        inner.reverse();
+        Ok(EvmWord(inner))
+    }
+
+    /// Returns an `EvmWord` as a 32-byte array in little endian representation.
+    pub fn to_le_bytes(self) -> [u8; 32] {
+        let mut bytes = self.0;
+        bytes.reverse();
+        bytes
+    }
+
+    /// Returns an `EvmWord` as a 32-byte array in big endian representation.
+    pub fn to_be_bytes(self) -> [u8; 32] {
+        *self.inner()
     }
 }
 
@@ -176,5 +182,49 @@ impl From<u8> for GasCost {
 impl From<u64> for GasCost {
     fn from(cost: u64) -> Self {
         GasCost(cost)
+    }
+}
+
+#[cfg(test)]
+mod evm_tests {
+    use super::*;
+
+    #[test]
+    fn evmword_bytes_serialization_trip() -> Result<(), Error> {
+        let first_usize = 64536usize;
+        // Parsing on both ways works.
+        assert_eq!(
+            EvmWord::from_le_bytes(&first_usize.to_le_bytes())?,
+            EvmWord::from_be_bytes(&first_usize.to_be_bytes())?
+        );
+        let addr = EvmWord::from_le_bytes(&first_usize.to_le_bytes())?;
+        assert_eq!(addr, EvmWord::from(first_usize));
+
+        // Little endian export
+        let le_obtained_usize = addr.to_le_bytes();
+        let mut le_array = [0u8; 8];
+        le_array.copy_from_slice(&le_obtained_usize[0..8]);
+
+        // Big endian export
+        let mut be_array = [0u8; 8];
+        let be_obtained_usize = addr.to_be_bytes();
+        be_array.copy_from_slice(&be_obtained_usize[24..32]);
+
+        assert_eq!(first_usize, usize::from_le_bytes(le_array));
+        assert_eq!(first_usize, usize::from_be_bytes(be_array));
+
+        Ok(())
+    }
+
+    #[test]
+    fn evmword_from_str() -> Result<(), Error> {
+        let word_str =
+            "000000000000000000000000000000000000000000000000000c849c24f39248";
+
+        let word_from_u128 = EvmWord::from(3523505890234952u128);
+        let word_from_str = EvmWord::from_str(&word_str)?;
+
+        assert_eq!(word_from_u128, word_from_str);
+        Ok(())
     }
 }

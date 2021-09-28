@@ -1,10 +1,13 @@
 //! Collection of utility macros used within this crate.
 
-macro_rules! impl_from_big_uint_wrappers {
-    ($implemented:ty = $alias:expr, ($($implementor:ty),*)) => {
-        $(impl From<$implementor> for $implemented {
-            fn from(item: $implementor) -> $implemented {
-                $alias(BigUint::from(item))
+macro_rules! impl_from_evm_word_wrappers {
+    ($($implementor:ty),*) => {
+        $(impl From<$implementor> for EvmWord {
+            fn from(item: $implementor) -> EvmWord {
+                let mut bytes = [0u8;32];
+                let item_bytes = item.to_be_bytes();
+                bytes[32-item_bytes.len()..].copy_from_slice(&item_bytes[..]);
+                EvmWord(bytes)
             }
         })*
     };
@@ -132,6 +135,99 @@ macro_rules! define_mul_assign_variants {
             fn mul_assign(&mut self, rhs: $rhs) {
                 *self *= &rhs;
             }
+        }
+    };
+}
+
+/// Define Range indexing ops for the given type converting the ranges internally.
+macro_rules! define_range_index_variants {
+    (IN_RANGE = $inner_range:ty, OUT_RANGE = $out_range:ty, STRUCT_CONTAINER = $struc:ty, INDEX_OUTPUT = $output:ty) => {
+        impl core::ops::Index<core::ops::Range<$out_range>> for $struc {
+            type Output = $output;
+
+            #[inline]
+            fn index(
+                &self,
+                index: core::ops::Range<$out_range>,
+            ) -> &Self::Output {
+                &self.0[..][convert_range(index)]
+            }
+        }
+
+        impl core::ops::Index<core::ops::RangeFull> for $struc {
+            type Output = $output;
+
+            #[inline]
+            fn index(&self, _index: core::ops::RangeFull) -> &Self::Output {
+                &self.0[..]
+            }
+        }
+
+        impl core::ops::Index<core::ops::RangeTo<$out_range>> for $struc {
+            type Output = $output;
+
+            #[inline]
+            fn index(
+                &self,
+                index: core::ops::RangeTo<$out_range>,
+            ) -> &Self::Output {
+                &self.0[..][convert_range_to(index)]
+            }
+        }
+
+        impl core::ops::Index<core::ops::RangeFrom<$out_range>> for $struc {
+            type Output = $output;
+
+            #[inline]
+            fn index(
+                &self,
+                index: core::ops::RangeFrom<$out_range>,
+            ) -> &Self::Output {
+                &self.0[..][convert_range_from(index)]
+            }
+        }
+
+        impl core::ops::Index<core::ops::RangeToInclusive<$out_range>>
+            for $struc
+        {
+            type Output = $output;
+
+            #[inline]
+            fn index(
+                &self,
+                index: core::ops::RangeToInclusive<$out_range>,
+            ) -> &Self::Output {
+                &self.0[..][convert_range_to_inclusive(index)]
+            }
+        }
+
+        fn convert_range(
+            range: core::ops::Range<$out_range>,
+        ) -> core::ops::Range<$inner_range> {
+            core::ops::Range {
+                start: range.start.0,
+                end: range.end.0,
+            }
+        }
+
+        fn convert_range_from(
+            range: core::ops::RangeFrom<$out_range>,
+        ) -> core::ops::RangeFrom<$inner_range> {
+            core::ops::RangeFrom {
+                start: range.start.0,
+            }
+        }
+
+        fn convert_range_to(
+            range: core::ops::RangeTo<$out_range>,
+        ) -> core::ops::RangeTo<$inner_range> {
+            core::ops::RangeTo { end: range.end.0 }
+        }
+
+        fn convert_range_to_inclusive(
+            range: core::ops::RangeToInclusive<$out_range>,
+        ) -> core::ops::RangeToInclusive<$inner_range> {
+            core::ops::RangeToInclusive { end: range.end.0 }
         }
     };
 }

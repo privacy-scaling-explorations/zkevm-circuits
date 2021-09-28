@@ -1,16 +1,13 @@
 //! Doc this
 use super::EvmWord;
 use crate::Error;
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryFrom;
 use core::ops::{
-    Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, RangeFrom,
-    RangeFull, RangeTo, RangeToInclusive, Sub, SubAssign,
+    Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign,
 };
 use core::str::FromStr;
 
 /// Represents a `MemoryAddress` of the EVM.
-///
-/// All `From` basic implementations assume that
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemoryAddress(pub(crate) usize);
 
@@ -22,7 +19,7 @@ impl MemoryAddress {
 
     /// Return the little-endian byte representation of the word as a 32-byte
     /// array.
-    pub fn to_bytes(self) -> [u8; 32] {
+    pub fn to_le_bytes(self) -> [u8; 32] {
         let mut array = [0u8; 32];
         let bytes = self.0.to_le_bytes();
         array[..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
@@ -30,12 +27,36 @@ impl MemoryAddress {
         array
     }
 
-    /// Generate a MemoryAddress from the provided set of bytes.
-    pub fn from_bytes<T: AsRef<[u8]>>(bytes: T) -> Self {
+    /// Return the big-endian byte representation of the word as a 32-byte
+    /// array.
+    pub fn to_be_bytes(self) -> [u8; 32] {
+        let mut array = [0u8; 32];
+        let bytes = self.0.to_be_bytes();
+        array[32 - bytes.len()..].copy_from_slice(&bytes[0..bytes.len()]);
+
+        array
+    }
+
+    /// Generate a MemoryAddress from the provided set of little-endian bytes.
+    pub fn from_le_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
+        if bytes.as_ref().len() > core::mem::size_of::<usize>() {
+            return Err(Error::InvalidMemoryPointer);
+        }
         let mut array = [0u8; core::mem::size_of::<usize>()];
         array[..]
             .copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
-        MemoryAddress::from(usize::from_le_bytes(array))
+        Ok(MemoryAddress::from(usize::from_le_bytes(array)))
+    }
+
+    /// Generate a MemoryAddress from the provided set of big-endian bytes.
+    pub fn from_be_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
+        if bytes.as_ref().len() > core::mem::size_of::<usize>() {
+            return Err(Error::InvalidMemoryPointer);
+        }
+        let mut array = [0u8; core::mem::size_of::<usize>()];
+        array[..]
+            .copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
+        Ok(MemoryAddress::from(usize::from_be_bytes(array)))
     }
 }
 
@@ -43,9 +64,14 @@ impl TryFrom<EvmWord> for MemoryAddress {
     type Error = Error;
 
     fn try_from(word: EvmWord) -> Result<Self, Self::Error> {
-        let addr: usize =
-            word.0.try_into().map_err(|_| Error::MemAddressParsing)?;
-        Ok(MemoryAddress(addr))
+        let (should_be_zeroes, usize_bytes) =
+            word.inner().split_at(32 - core::mem::size_of::<usize>());
+        if should_be_zeroes != [0u8; 32 - core::mem::size_of::<usize>()] {
+            return Err(Error::WordToMemAddr);
+        }
+        let mut arr = [0u8; core::mem::size_of::<usize>()];
+        arr.copy_from_slice(usize_bytes);
+        Ok(MemoryAddress(usize::from_be_bytes(arr)))
     }
 }
 
@@ -157,73 +183,12 @@ impl IndexMut<MemoryAddress> for Memory {
     }
 }
 
-impl Index<Range<MemoryAddress>> for Memory {
-    type Output = [u8];
-
-    #[inline]
-    fn index(&self, index: Range<MemoryAddress>) -> &Self::Output {
-        &self.0[..][convert_range(index)]
-    }
-}
-
-impl Index<RangeFull> for Memory {
-    type Output = [u8];
-
-    #[inline]
-    fn index(&self, _index: RangeFull) -> &Self::Output {
-        &self.0[..]
-    }
-}
-
-impl Index<RangeTo<MemoryAddress>> for Memory {
-    type Output = [u8];
-
-    #[inline]
-    fn index(&self, index: RangeTo<MemoryAddress>) -> &Self::Output {
-        &self.0[..][convert_range_to(index)]
-    }
-}
-
-impl Index<RangeFrom<MemoryAddress>> for Memory {
-    type Output = [u8];
-
-    #[inline]
-    fn index(&self, index: RangeFrom<MemoryAddress>) -> &Self::Output {
-        &self.0[..][convert_range_from(index)]
-    }
-}
-
-impl Index<RangeToInclusive<MemoryAddress>> for Memory {
-    type Output = [u8];
-
-    #[inline]
-    fn index(&self, index: RangeToInclusive<MemoryAddress>) -> &Self::Output {
-        &self.0[..][convert_range_to_inclusive(index)]
-    }
-}
-
-fn convert_range(range: Range<MemoryAddress>) -> Range<usize> {
-    Range {
-        start: range.start.0,
-        end: range.end.0,
-    }
-}
-
-fn convert_range_from(range: RangeFrom<MemoryAddress>) -> RangeFrom<usize> {
-    RangeFrom {
-        start: range.start.0,
-    }
-}
-
-fn convert_range_to(range: RangeTo<MemoryAddress>) -> RangeTo<usize> {
-    RangeTo { end: range.end.0 }
-}
-
-fn convert_range_to_inclusive(
-    range: RangeToInclusive<MemoryAddress>,
-) -> RangeToInclusive<usize> {
-    RangeToInclusive { end: range.end.0 }
-}
+define_range_index_variants!(
+    IN_RANGE = usize,
+    OUT_RANGE = MemoryAddress,
+    STRUCT_CONTAINER = Memory,
+    INDEX_OUTPUT = [u8]
+);
 
 impl Memory {
     /// Generate an empty instance of EVM memory.
@@ -248,9 +213,81 @@ impl Memory {
 
     /// Reads an entire [`EvmWord`] which starts at the provided [`MemoryAddress`] `addr` and
     /// finnishes at `addr + 32`.
-    pub fn read_word(&self, addr: MemoryAddress) -> EvmWord {
-        EvmWord::from_bytes(
-            &self[addr..addr + MemoryAddress::from(32)].as_ref(),
-        )
+    pub fn read_word(&self, addr: MemoryAddress) -> Result<EvmWord, Error> {
+        // Ensure that the stack is big enough to have values in the range `[addr, addr+32)`.
+        if self.0.len() < addr.0 + 32 {
+            return Err(Error::InvalidMemoryPointer);
+        }
+
+        // Now we know that the indexing will not panic.
+        EvmWord::from_be_bytes(&self[addr..addr + MemoryAddress::from(32)])
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use std::convert::TryInto;
+
+    use super::*;
+
+    #[test]
+    fn evmword_mem_addr_conversion() -> Result<(), Error> {
+        let first_usize = 64536usize;
+        let word = EvmWord::from(first_usize);
+        let addr = MemoryAddress::from(first_usize);
+        let obtained_addr: MemoryAddress = word.try_into()?;
+
+        assert_eq!(addr, obtained_addr);
+        Ok(())
+    }
+
+    #[test]
+    fn mem_addr_bytes_serialization_trip() -> Result<(), Error> {
+        let first_usize = 64536usize;
+        // Parsing on both ways works.
+        assert_eq!(
+            MemoryAddress::from_le_bytes(&first_usize.to_le_bytes())?,
+            MemoryAddress::from_be_bytes(&first_usize.to_be_bytes())?
+        );
+        let addr = MemoryAddress::from_le_bytes(&first_usize.to_le_bytes())?;
+        assert_eq!(addr, MemoryAddress::from(first_usize));
+
+        // Little endian export
+        let le_obtained_usize = addr.to_le_bytes();
+        let mut le_array = [0u8; 8];
+        le_array.copy_from_slice(&le_obtained_usize[0..8]);
+
+        // Big endian export
+        let mut be_array = [0u8; 8];
+        let be_obtained_usize = addr.to_be_bytes();
+        be_array.copy_from_slice(&be_obtained_usize[24..32]);
+
+        assert_eq!(first_usize, usize::from_le_bytes(le_array));
+        assert_eq!(first_usize, usize::from_be_bytes(be_array));
+
+        Ok(())
+    }
+
+    #[test]
+    fn push_and_read_works() -> Result<(), Error> {
+        let mem_map = Memory(
+            EvmWord::from(0u8)
+                .inner()
+                .iter()
+                .chain(EvmWord::from(0u8).inner())
+                .chain(EvmWord::from(0x80u8).inner())
+                .copied()
+                .collect(),
+        );
+
+        // At this point at position [0x40, 0x80) we've allocated the `0x80` value.
+
+        // If we read a word at addr `0x40` we should get `0x80`.
+        assert_eq!(
+            mem_map.read_word(MemoryAddress::from(0x40))?,
+            EvmWord::from(0x80u8)
+        );
+
+        Ok(())
     }
 }
