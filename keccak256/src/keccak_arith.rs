@@ -107,7 +107,7 @@ fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
         }
         raw /= B13;
         base *= B9;
-        if i == 64 - rot {
+        if i == 63 - rot {
             base = One::one();
         }
     }
@@ -409,6 +409,21 @@ fn keccak256(msg: &[u8]) -> Vec<u8> {
     let mut keccak = Keccak::new();
     keccak.update(msg);
     keccak.digest()
+}
+
+#[cfg(test)]
+fn inspect(x: BigUint, name: &str, base: u64) {
+    let mut raw = x.clone();
+    let mut info: Vec<(u32, u64)> = vec![];
+
+    for i in 0..65 {
+        let remainder: u64 = mod_u64(&raw, base);
+        raw /= base;
+        if remainder != 0 {
+            info.push((i, remainder));
+        }
+    }
+    println!("inspect {} {} info {:?}", name, x, info);
 }
 
 #[test]
