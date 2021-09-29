@@ -33,7 +33,7 @@ impl KeccakFArith {
         }
     }
 
-    fn theta(a: &StateBigInt) -> StateBigInt {
+    pub fn theta(a: &StateBigInt) -> StateBigInt {
         let mut c: Vec<Lane13> = Vec::with_capacity(5);
         let mut out = StateBigInt::default();
 
