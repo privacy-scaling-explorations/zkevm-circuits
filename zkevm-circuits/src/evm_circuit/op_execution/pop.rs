@@ -1,12 +1,10 @@
-use super::super::{
-    Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-};
+use super::super::{Case, Cell, Constraint, CoreStateInstance, ExecutionStep};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use crate::util::Expr;
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
-use crate::util::Expr;
 
 #[derive(Clone, Debug)]
 pub struct PopGadget<F> {
@@ -20,15 +18,14 @@ pub struct PopGadget<F> {
 
 impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
     const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[
-        OpcodeId::POP // 0x50 of op id
+        OpcodeId::POP, // 0x50 of op id
     ];
-
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
         CaseConfig {
             case: Case::Success,
-            num_word: 0, // no operand required for pop 
-            num_cell: 0, 
+            num_word: 0, // no operand required for pop
+            num_cell: 0,
             will_halt: false,
         },
         CaseConfig {
@@ -46,7 +43,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
     ];
 
     fn construct(case_allocations: Vec<CaseAllocation<F>>) -> Self {
-        let [ success, stack_underflow, out_of_gas]: [CaseAllocation<F>; 3] =
+        let [success, stack_underflow, out_of_gas]: [CaseAllocation<F>; 3] =
             case_allocations.try_into().unwrap();
         Self {
             success: success.selector,
@@ -66,7 +63,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
     ) -> Vec<Constraint<F>> {
         let OpExecutionState { opcode, .. } = &op_execution_state_curr;
         let common_polys = vec![opcode.expr() - OpcodeId::POP.expr()];
-        
+
         let success = {
             // interpreter state transition constraints
             let op_execution_state_transition_constraints = vec![
@@ -74,8 +71,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                     - (op_execution_state_curr.global_counter.expr()
                         + 1.expr()),
                 op_execution_state_next.stack_pointer.expr()
-                    - (op_execution_state_curr.stack_pointer.expr()
-                        + 1.expr()),
+                    - (op_execution_state_curr.stack_pointer.expr() + 1.expr()),
                 op_execution_state_next.program_counter.expr()
                     - (op_execution_state_curr.program_counter.expr()
                         + 1.expr()),
@@ -94,21 +90,18 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                     op_execution_state_transition_constraints,
                 ]
                 .concat(),
-                lookups: vec![]
+                lookups: vec![],
             }
         };
 
         let stack_underflow = {
-            
             let stack_pointer = op_execution_state_curr.stack_pointer.expr();
             Constraint {
                 name: "PopGadget stack underflow",
                 selector: self.stack_underflow.expr(),
                 polys: vec![
                     common_polys.clone(),
-                     vec![
-                        (stack_pointer - 1024.expr()),
-                    ],
+                    vec![(stack_pointer - 1024.expr())],
                 ]
                 .concat(),
                 lookups: vec![],
@@ -116,7 +109,6 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
         };
 
         let out_of_gas = {
-            
             let (case_selector, gas_available) = &self.out_of_gas;
             let gas_overdemand = op_execution_state_curr.gas_counter.expr()
                 + GasCost::QUICK.expr()
@@ -128,7 +120,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
                     common_polys,
                     vec![
                         (gas_overdemand.clone() - 1.expr())
-                            * (gas_overdemand - 2.expr())
+                            * (gas_overdemand - 2.expr()),
                     ],
                 ]
                 .concat(),
@@ -136,7 +128,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
             }
         };
 
-        vec![success,stack_underflow, out_of_gas]
+        vec![success, stack_underflow, out_of_gas]
     }
 
     fn assign(
@@ -175,25 +167,27 @@ impl<F: FieldExt> PopGadget<F> {
         op_execution_state.global_counter += 1;
         op_execution_state.program_counter += 1;
         op_execution_state.stack_pointer += 1;
-        op_execution_state.gas_counter += 2;  // pop consume 2 gas point
-       // no word assignments 
-        
-        self.success.assign(
-            region, offset, Some(F::from_u64(1))
-            ).unwrap();
-         Ok(())
+        op_execution_state.gas_counter += 2; // pop consume 2 gas point
+                                             // no word assignments
+
+        self.success
+            .assign(region, offset, Some(F::from_u64(1)))
+            .unwrap();
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::super::super::{test::TestCircuit, Case, ExecutionStep, Operation};
+    use super::super::super::{
+        test::TestCircuit, Case, ExecutionStep, Operation,
+    };
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
-    use pasta_curves::pallas::Base;
     use num::BigUint;
+    use pasta_curves::pallas::Base;
 
-        macro_rules! try_test_circuit {
+    macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
@@ -205,61 +199,63 @@ mod test {
     #[test]
     fn pop_gadget() {
         try_test_circuit!(
-            vec![ExecutionStep {
-                opcode: OpcodeId::PUSH2,
-                case: Case::Success,
-                values: vec![
-                     BigUint::from(0x02_03u64),
-                     BigUint::from(0x01_01u64),
-                ],
-            },
-            ExecutionStep {
-                opcode: OpcodeId::POP,
-                case: Case::Success,
-                values: vec![],
-             },
-            ExecutionStep {
-                opcode: OpcodeId::PUSH3,
-                case: Case::Success,
-                values: vec![
-                  BigUint::from(0x06_05_04u64),
-                  BigUint::from(0x01_01_01u64)
-                ],
-            }
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH2,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x02_03u64),
+                        BigUint::from(0x01_01u64),
+                    ],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::POP,
+                    case: Case::Success,
+                    values: vec![],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x01_01_01u64)
+                    ],
+                }
             ],
-            vec![Operation {
-                gc: 1,
-                target: Target::Stack,
-                is_write: true,
-                values: [
-                    Base::zero(),
-                    Base::from_u64(1023),
-                    Base::from_u64(2 + 3),
-                    Base::zero(),
-                ]
-               },
+            vec![
                 Operation {
-                gc: 2,
-                target: Target::Stack,
-                is_write: false,
-                values: [
-                    Base::zero(),
-                    Base::from_u64(1023),
-                    Base::from_u64(2 + 3), 
-                    Base::zero(),
-                ]
-             },
-              Operation {
-                gc: 3,
-                target: Target::Stack,
-                is_write: true,
-                values: [
-                    Base::zero(),
-                    Base::from_u64(1023),
-                    Base::from_u64(4 + 5 + 6),
-                    Base::zero(),
-                ]
-              }
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(2 + 3),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(4 + 5 + 6),
+                        Base::zero(),
+                    ]
+                }
             ],
             Ok(())
         );

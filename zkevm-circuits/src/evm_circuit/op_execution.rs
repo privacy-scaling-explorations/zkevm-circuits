@@ -16,13 +16,13 @@ use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
 mod comparator;
-mod push;
 mod pop;
+mod push;
 
 use arithmetic::AddGadget;
 use comparator::LtGadget;
-use push::PushGadget;
 use pop::PopGadget;
+use push::PushGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
