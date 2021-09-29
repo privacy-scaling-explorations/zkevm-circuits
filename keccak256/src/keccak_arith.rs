@@ -1,3 +1,4 @@
+use crate::common::*;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -19,7 +20,6 @@ const A4: u64 = 2u64;
 
 type Lane13 = BigUint;
 type Lane9 = BigUint;
-type State = [[u64; 5]; 5];
 
 struct StateBigInt {
     xy: Vec<BigUint>,
@@ -59,43 +59,6 @@ impl Clone for StateBigInt {
         StateBigInt { xy }
     }
 }
-
-const PERMUTATION: usize = 24;
-
-static ROUND_CONSTANTS: [u64; PERMUTATION] = [
-    0x0000000000000001,
-    0x0000000000008082,
-    0x800000000000808A,
-    0x8000000080008000,
-    0x000000000000808B,
-    0x0000000080000001,
-    0x8000000080008081,
-    0x8000000000008009,
-    0x000000000000008A,
-    0x0000000000000088,
-    0x0000000080008009,
-    0x000000008000000A,
-    0x000000008000808B,
-    0x800000000000008B,
-    0x8000000000008089,
-    0x8000000000008003,
-    0x8000000000008002,
-    0x8000000000000080,
-    0x000000000000800A,
-    0x800000008000000A,
-    0x8000000080008081,
-    0x8000000000008080,
-    0x0000000080000001,
-    0x8000000080008008,
-];
-
-static ROTATION_CONSTANTS: [[u32; 5]; 5] = [
-    [0, 36, 3, 41, 18],
-    [1, 44, 10, 45, 2],
-    [62, 6, 43, 15, 61],
-    [28, 55, 25, 21, 56],
-    [27, 20, 39, 8, 14],
-];
 
 fn mod_u64(a: &BigUint, b: u64) -> u64 {
     (a % b).iter_u64_digits().take(1).next().unwrap_or(0)
