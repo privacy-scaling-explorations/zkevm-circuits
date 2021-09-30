@@ -26,10 +26,10 @@ Example state table:
 |    2     |    1    |       2        |  12   |   0  |    0    |             |            |
 |    2     |         |                |       |      |    1    |             |            |   // padding
 |    2     |         |                |       |      |    1    |             |            |   // padding
-|    1     |    0    |       3        |  4    |   1  |    0    |             |            |   // first stack op at the new address has to be write
+|    1     |    0    |       3        |  4    |   1  |    0    |             |            |
 |    3     |    0    |       17       |  32   |   1  |    0    |             |            |
 |    3     |    0    |       89       |  32   |   0  |    0    |             |            |
-|    3     |    1    |       48       |  32   |   1  |    0    |             |            |   // first stack op at the new address has to be write
+|    3     |    1    |       48       |  32   |   1  |    0    |             |            |
 |    3     |    1    |       49       |  32   |   0  |    0    |             |            |
 |    3     |         |                |       |      |    1    |             |            |   // padding
 |    1     |    1    |       55       |  32   |   1  |    0    |      5      |     0      |   // first storage op at the new address has to be write
@@ -370,24 +370,10 @@ impl<
             ]
         });
 
-        meta.create_gate("First stack row operation", |meta| {
-            let q_stack_first = q_stack_first(meta);
-            let flag = meta.query_advice(flag, Rotation::cur());
-
-            vec![
-                q_stack_first * (one.clone() - flag), /* first stack op has to be
-                                                       * write (flag = 1) */
-            ]
-        });
+        // We don't require first stack op to be write as this is enforced by evm circuit.
 
         meta.create_gate("Stack operation", |meta| {
             let q_stack_not_first = q_stack_not_first(meta);
-            let address_diff = {
-                let address_prev = meta.query_advice(address, Rotation::prev());
-                let address_cur = meta.query_advice(address, Rotation::cur());
-                address_cur - address_prev
-            };
-
             let value_cur = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
 
@@ -398,9 +384,9 @@ impl<
             // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag;
+            // when addresses changes, we don't require the operation is write as this is enforced by evm circuit
 
             vec![
-                q_stack_not_first.clone() * address_diff * q_read.clone(), // when address changes, the flag is 1 (write)
                 q_stack_not_first.clone() * bool_check_flag, // flag is either 0 or 1
                 q_stack_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
             ]
@@ -1475,9 +1461,9 @@ mod tests {
                 constraint_not_satisfied(2, 2, "Memory operation + padding", 4),
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + 1,
-                    4,
+                    3,
                     "Stack operation",
-                    2
+                    1
                 )
             ])
         );
@@ -1486,8 +1472,7 @@ mod tests {
     #[test]
     fn first_write() {
         let stack_op_0 = StackOp::new(
-            RW::READ, /* This fails because the first stack op when address
-                       * changes should be write. */
+            RW::READ,
             GlobalCounter::from(28),
             StackAddress::from(0),
             EvmWord::from(13u8),
@@ -1538,32 +1523,26 @@ mod tests {
             vec![storage_op_0, storage_op_1, storage_op_2],
             Err(vec![
                 constraint_not_satisfied(
-                    MEMORY_ROWS_MAX,
-                    3,
-                    "First stack row operation",
-                    0
-                ),
-                constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX,
-                    6,
+                    5,
                     "First storage row operation",
                     0
                 ),
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
-                    7,
+                    6,
                     "Storage operation",
                     1
                 ),
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    7,
+                    6,
                     "Storage operation",
                     0
                 ),
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    7,
+                    6,
                     "Storage operation",
                     1
                 ),
@@ -1961,19 +1940,19 @@ mod tests {
             Err(vec![
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
-                    7,
+                    6,
                     "Storage operation",
                     3
                 ),
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    7,
+                    6,
                     "Storage operation",
                     4
                 ),
                 constraint_not_satisfied(
                     MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 3,
-                    7,
+                    6,
                     "Storage operation",
                     5
                 ),
