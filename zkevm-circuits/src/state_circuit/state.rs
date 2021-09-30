@@ -723,11 +723,7 @@ impl<
         for (index, op) in ops.iter().enumerate() {
             let address = F::from_bytes(&op.address().to_le_bytes()).unwrap();
             let gc = usize::from(op.gc());
-            let mut v_bytes = op.value().to_vec();
-            v_bytes.reverse();
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(&v_bytes);
-            let val = F::from_bytes(&bytes).unwrap();
+            let val = F::from(op.value() as u64);
 
             let mut target = 1;
             if index > 0 {
@@ -1301,26 +1297,26 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(12),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(24),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
             GlobalCounter::from(17),
             MemoryAddress::from(1),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_3 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(87),
             MemoryAddress::from(1),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let stack_op_0 = StackOp::new(
@@ -1382,26 +1378,26 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(12),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(24),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
             GlobalCounter::from(17),
             MemoryAddress::from(1),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_3 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(87),
             MemoryAddress::from(1),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let stack_op_0 = StackOp::new(
@@ -1439,15 +1435,14 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(12),
             MemoryAddress::from(0),
-            EvmWord::from(31u8),
+            31u8,
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(24),
             MemoryAddress::from(0),
-            EvmWord::from(32u8), /* This should fail as it not
-                                  * the same value as in
-                                  * previous write op */
+            32u8,
+            // This should fail as it not the same value as in previous write op
         );
 
         let stack_op_0 = StackOp::new(
@@ -1460,9 +1455,8 @@ mod tests {
             RW::READ,
             GlobalCounter::from(28),
             StackAddress::from(0),
-            EvmWord::from(13u8), /* This should fail as it not
-                                  * the same value as in the
-                                  * previous write op */
+            EvmWord::from(13u8),
+            // This should fail as it not the same value as in previous write op
         );
 
         const MEMORY_ROWS_MAX: usize = 7;
@@ -1583,32 +1577,32 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(12),
             MemoryAddress::from(MEMORY_ADDRESS_MAX),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(GLOBAL_COUNTER_MAX),
             MemoryAddress::from(MEMORY_ADDRESS_MAX),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
             GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
             MemoryAddress::from(MEMORY_ADDRESS_MAX),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let memory_op_3 = MemoryOp::new(
             RW::WRITE,
             GlobalCounter::from(12),
             MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_4 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(24),
             MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let stack_op_0 = StackOp::new(
@@ -1684,8 +1678,8 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(12),
             MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-            // this address is not in the allowed range
-            EvmWord::from(32u8),
+            // This address is not in the allowed range
+            32u8,
         );
 
         let stack_op_0 = StackOp::new(
@@ -1737,21 +1731,21 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(1352),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_1 = MemoryOp::new(
             RW::READ,
             GlobalCounter::from(1255),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
 
+        // fails because it needs to be strictly monotone
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
-            GlobalCounter::from(1255), /* fails because it needs to be
-                                        * strictly monotone */
+            GlobalCounter::from(1255),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
 
         let stack_op_0 = StackOp::new(
@@ -1857,21 +1851,21 @@ mod tests {
             RW::WRITE,
             GlobalCounter::from(1352),
             MemoryAddress::from(0),
-            EvmWord::from(32u8),
+            32u8,
         );
         let memory_op_1 = MemoryOp::new(
             RW::WRITE,
             GlobalCounter::from(1255),
             MemoryAddress::from(1),
-            EvmWord::from(32u8),
+            32u8,
         );
+
+        // fails because it's not monotone
         let memory_op_2 = MemoryOp::new(
             RW::WRITE,
             GlobalCounter::from(1255),
-            MemoryAddress::from(0), /* fails because the
-                                     * address is not
-                                     * monotone */
-            EvmWord::from(32u8),
+            MemoryAddress::from(0),
+            32u8,
         );
 
         let stack_op_0 = StackOp::new(
@@ -1908,31 +1902,6 @@ mod tests {
             vec![stack_op_0, stack_op_1, stack_op_2],
             vec![],
             Err(vec![lookup_fail(4, 0), lookup_fail(MEMORY_ROWS_MAX + 2, 0)])
-        );
-    }
-
-    #[test]
-    fn memory_values() {
-        let memory_op_0 = MemoryOp::new(
-            RW::WRITE,
-            GlobalCounter::from(1352),
-            MemoryAddress::from(0),
-            EvmWord::from(256u16),
-        );
-
-        const MEMORY_ROWS_MAX: usize = 100;
-        test_state_circuit!(
-            15,
-            10000,
-            MEMORY_ROWS_MAX,
-            10000,
-            100,
-            1023,
-            1000,
-            vec![memory_op_0],
-            vec![],
-            vec![],
-            Err(vec![lookup_fail(1, 6),])
         );
     }
 

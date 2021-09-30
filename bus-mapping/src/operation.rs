@@ -61,22 +61,22 @@ pub struct MemoryOp {
     rw: RW,
     gc: GlobalCounter,
     addr: MemoryAddress,
-    value: Vec<u8>,
+    value: u8,
 }
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new<T: Into<Vec<u8>>>(
+    pub fn new(
         rw: RW,
         gc: GlobalCounter,
         addr: MemoryAddress,
-        value: T,
+        value: u8,
     ) -> MemoryOp {
         MemoryOp {
             rw,
             gc,
             addr,
-            value: value.into(),
+            value,
         }
     }
 
@@ -102,8 +102,8 @@ impl MemoryOp {
     }
 
     /// Returns the bytes read or written by this operation.
-    pub fn value(&self) -> &[u8] {
-        &self.value
+    pub fn value(&self) -> u8 {
+        self.value
     }
 }
 
@@ -497,7 +497,7 @@ mod operation_tests {
             RW::WRITE,
             GlobalCounter(1usize),
             MemoryAddress(usize::from(0x40u8)),
-            EvmWord::from(0x40u8),
+            0x40u8,
         );
 
         let memory_op_as_operation = Operation::from(memory_op.clone());

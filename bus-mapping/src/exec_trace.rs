@@ -26,6 +26,21 @@ pub struct BlockConstants<F: FieldExt> {
     base_fee: F,
 }
 
+impl<F: FieldExt> Default for BlockConstants<F> {
+    fn default() -> Self {
+        BlockConstants {
+            hash: EvmWord([0u8; 32]),
+            coinbase: F::default(),
+            timestamp: F::default(),
+            number: F::default(),
+            difficulty: F::default(),
+            gas_limit: F::default(),
+            chain_id: F::default(),
+            base_fee: F::default(),
+        }
+    }
+}
+
 impl<F: FieldExt> BlockConstants<F> {
     #[allow(clippy::too_many_arguments)]
     /// Generates a new `BlockConstants` instance from it's fields.
@@ -119,9 +134,9 @@ impl<F: FieldExt> BlockConstants<F> {
 /// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionTrace<F: FieldExt> {
-    steps: Vec<ExecutionStep>,
-    block_ctants: BlockConstants<F>,
-    container: OperationContainer,
+    pub(crate) steps: Vec<ExecutionStep>,
+    pub(crate) block_ctants: BlockConstants<F>,
+    pub(crate) container: OperationContainer,
 }
 
 impl<F: FieldExt> Index<usize> for ExecutionTrace<F> {
@@ -293,199 +308,5 @@ impl OperationRef {
     /// Return the [`Target`] op type of the `OperationRef`.
     pub const fn target(&self) -> Target {
         self.0
-    }
-}
-
-#[cfg(test)]
-mod trace_tests {
-    use super::*;
-    use crate::evm::{Memory, Stack};
-    use crate::{
-        evm::{
-            opcodes::ids::OpcodeId, GasCost, GasInfo, GlobalCounter,
-            ProgramCounter, StackAddress,
-        },
-        exec_trace::ExecutionStep,
-        operation::{StackOp, RW},
-    };
-
-    #[test]
-    fn exec_trace_parsing() {
-        let input_trace = r#"
-        [
-            {
-                "pc": 5,
-                "op": "PUSH1",
-                "gas": 82,
-                "gasCost": 3,
-                "depth": 1,
-                "stack": [],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              },
-              {
-                "pc": 7,
-                "op": "MLOAD",
-                "gas": 79,
-                "gasCost": 3,
-                "depth": 1,
-                "stack": [
-                  "40"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              },
-              {
-                "pc": 8,
-                "op": "STOP",
-                "gas": 76,
-                "gasCost": 0,
-                "depth": 1,
-                "stack": [
-                  "80"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              }
-        ]
-        "#;
-
-        let block_ctants = BlockConstants::new(
-            EvmWord::from(0u8),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-        );
-
-        // Generate the expected ExecutionTrace corresponding to the JSON
-        // provided above.
-
-        // Container is shared across ExecutionSteps
-        let mut container = OperationContainer::new();
-
-        // The memory is the same in both steps as none of them touches the
-        // memory of the EVM.
-        let mem_map = Memory(
-            EvmWord::from(0u8)
-                .inner()
-                .iter()
-                .chain(EvmWord::from(0u8).inner())
-                .chain(EvmWord::from(0x80u8).inner())
-                .copied()
-                .collect(),
-        );
-
-        // Generate Step1 corresponding to PUSH1 40
-        let mut step_1 = ExecutionStep {
-            memory: mem_map.clone(),
-            stack: Stack::empty(),
-            instruction: OpcodeId::PUSH1,
-            gas_info: GasInfo {
-                gas: 82,
-                gas_cost: GasCost::from(3u8),
-            },
-            depth: 1u8,
-            pc: ProgramCounter::from(5),
-            gc: GlobalCounter::from(0),
-            bus_mapping_instance: vec![],
-        };
-
-        // Add StackOp associated to the 0x40 pushed to the Stack
-        step_1
-            .bus_mapping_instance_mut()
-            .push(container.insert(StackOp::new(
-                RW::WRITE,
-                GlobalCounter(1usize),
-                StackAddress::from(1023),
-                EvmWord::from(0x40u8),
-            )));
-
-        // Generate Step2 corresponding to MLOAD
-        let mut step_2 = ExecutionStep {
-            memory: mem_map.clone(),
-            stack: Stack(vec![EvmWord::from(0x40u8)]),
-            instruction: OpcodeId::MLOAD,
-            gas_info: GasInfo {
-                gas: 79,
-                gas_cost: GasCost::from(3u8),
-            },
-            depth: 1u8,
-            pc: ProgramCounter::from(7),
-            gc: GlobalCounter::from(2),
-            bus_mapping_instance: vec![],
-        };
-
-        // Add StackOp associated to the read of `offset`
-        step_2
-            .bus_mapping_instance_mut()
-            .push(container.insert(StackOp::new(
-                RW::READ,
-                GlobalCounter(3usize),
-                StackAddress::from(1023),
-                EvmWord::from(0x40u8),
-            )));
-
-        // Add MemoryOp associated to the read of an `EvmWord` at position `offset - offset+32`
-        step_2.bus_mapping_instance_mut().push(container.insert(
-            MemoryOp::new(
-                RW::READ,
-                GlobalCounter(4usize),
-                0x40.into(),
-                EvmWord::from(0x80u8),
-            ),
-        ));
-
-        // Add StackOp associated to the write of the previous memory read value at the position where offset was.
-        step_2
-            .bus_mapping_instance_mut()
-            .push(container.insert(StackOp::new(
-                RW::WRITE,
-                GlobalCounter(5usize),
-                StackAddress::from(1023),
-                EvmWord::from(0x80u8),
-            )));
-
-        // Generate Step3 corresponding to STOP
-        let step_3 = ExecutionStep {
-            memory: mem_map,
-            stack: Stack(vec![EvmWord::from(0x80u8)]),
-            instruction: OpcodeId::STOP,
-            gas_info: GasInfo {
-                gas: 76,
-                gas_cost: GasCost::from(0u8),
-            },
-            depth: 1u8,
-            pc: ProgramCounter::from(8),
-            gc: GlobalCounter::from(6),
-            bus_mapping_instance: vec![],
-        };
-
-        let expected_exec_trace = ExecutionTrace {
-            steps: vec![step_1, step_2, step_3],
-            block_ctants: block_ctants.clone(),
-            container,
-        };
-
-        // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
-            input_trace.as_bytes(),
-            block_ctants,
-        )
-        .expect("Error on trace generation");
-
-        assert_eq!(obtained_exec_trace, expected_exec_trace)
     }
 }

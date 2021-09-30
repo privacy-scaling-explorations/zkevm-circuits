@@ -47,3 +47,106 @@ impl Opcode for Push1 {
         Ok(PUSH1_OP_NUM)
     }
 }
+
+#[cfg(test)]
+mod push_tests {
+    use super::*;
+    use crate::{
+        evm::{
+            EvmWord, GasCost, GasInfo, Memory, OpcodeId, ProgramCounter, Stack,
+            StackAddress,
+        },
+        BlockConstants, ExecutionTrace,
+    };
+    use pasta_curves::pallas::Scalar;
+
+    #[test]
+    fn push1_opcode_impl() -> Result<(), Error> {
+        let trace = r#"
+        [
+            {
+            "pc": 7,
+            "op": "PUSH1",
+            "gas": 79,
+            "gasCost": 3,
+            "depth": 1,
+            "stack": [],
+            "memory": [
+                "0000000000000000000000000000000000000000000000000000000000000000",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+            },
+              {
+                "pc": 8,
+                "op": "STOP",
+                "gas": 76,
+                "gasCost": 0,
+                "depth": 1,
+                "stack": [
+                  "80"
+                ],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000"
+                ]
+              }
+        ]
+        "#;
+
+        // Obtained trace computation
+        let obtained_exec_trace = ExecutionTrace::<Scalar>::from_trace_bytes(
+            trace.as_bytes(),
+            BlockConstants::default(),
+        )?;
+
+        let mut container = OperationContainer::new();
+        let mut gc = 0usize;
+
+        // The memory is the same in both steps as none of them edits the
+        // memory of the EVM.
+        let mem_map = Memory(
+            EvmWord::from(0u8)
+                .inner()
+                .iter()
+                .chain(EvmWord::from(0u8).inner())
+                .chain(EvmWord::from(0u8).inner())
+                .copied()
+                .collect(),
+        );
+
+        // Generate Step1 corresponding to PUSH1 80
+        let mut step_1 = ExecutionStep {
+            memory: mem_map,
+            stack: Stack::empty(),
+            instruction: OpcodeId::PUSH1,
+            gas_info: GasInfo {
+                gas: 79,
+                gas_cost: GasCost::from(3u8),
+            },
+            depth: 1u8,
+            pc: ProgramCounter::from(7),
+            gc: gc.into(),
+            bus_mapping_instance: vec![],
+        };
+
+        // Add StackOp associated to the 0x80 push at the latest Stack pos.
+        gc += 1;
+        step_1
+            .bus_mapping_instance_mut()
+            .push(container.insert(StackOp::new(
+                RW::WRITE,
+                gc.into(),
+                StackAddress::from(1023),
+                EvmWord::from(0x80u8),
+            )));
+
+        assert_eq!(
+            obtained_exec_trace[0].bus_mapping_instance(),
+            step_1.bus_mapping_instance()
+        );
+
+        Ok(())
+    }
+}
