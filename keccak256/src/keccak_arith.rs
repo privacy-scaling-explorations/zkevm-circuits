@@ -177,7 +177,6 @@ impl KeccakFArith {
         for rc in ROUND_CONSTANTS.iter().take(PERMUTATION - 1) {
             let s1 = KeccakFArith::theta(a);
             let s2 = KeccakFArith::rho(&s1);
-
             let s3 = KeccakFArith::pi(&s2);
             let s4 = KeccakFArith::xi(&s3);
             let s5 = KeccakFArith::iota_b9(&s4, *rc);
@@ -194,7 +193,7 @@ impl KeccakFArith {
             for (x, y) in (0..5).cartesian_product(0..5) {
                 a[(x, y)] = convert_b9_lane_to_b13(s5[(x, y)].clone());
             }
-            *a = KeccakFArith::iota_b13(&s5, ROUND_CONSTANTS[PERMUTATION - 1]);
+            *a = KeccakFArith::iota_b13(&a, ROUND_CONSTANTS[PERMUTATION - 1]);
         } else {
             *a = KeccakFArith::iota_b9(&s4, ROUND_CONSTANTS[PERMUTATION - 1]);
         }
@@ -350,24 +349,21 @@ impl Sponge {
                     state_bit_int[(x, y)] =
                         convert_b2_to_b13(next_inputs[x][y]);
                 }
-            }
-            if chunk_i == (chunks_total - 1) {
-                self.keccak_f.permute_and_absorb(
-                    &mut state_bit_int,
-                    &State::default(),
-                    false,
-                );
-                for (x, y) in (0..5).cartesian_product(0..5) {
-                    state[x][y] =
-                        convert_b9_lane_to_b2(state_bit_int[(x, y)].clone())
-                }
-                return;
+                continue;
             }
             self.keccak_f.permute_and_absorb(
                 &mut state_bit_int,
                 &next_inputs,
                 true,
             );
+        }
+        self.keccak_f.permute_and_absorb(
+            &mut state_bit_int,
+            &State::default(),
+            false,
+        );
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            state[x][y] = convert_b9_lane_to_b2(state_bit_int[(x, y)].clone())
         }
     }
 
