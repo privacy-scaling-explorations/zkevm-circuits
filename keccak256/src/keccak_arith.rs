@@ -34,6 +34,19 @@ impl Default for StateBigInt {
     }
 }
 
+impl StateBigInt {
+    fn from_state_big_int<F>(a: &StateBigInt, lane_transform: F) -> Self
+    where
+        F: Fn(BigUint) -> BigUint,
+    {
+        let mut out = StateBigInt::default();
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            out[(x, y)] = lane_transform(a[(x, y)].clone());
+        }
+        out
+    }
+}
+
 impl Index<(usize, usize)> for StateBigInt {
     type Output = BigUint;
     fn index(&self, xy: (usize, usize)) -> &Self::Output {
@@ -115,50 +128,46 @@ fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     acc
 }
 
-fn convert_b9_lane_to_b13(x: Lane9) -> Lane13 {
-    let mut base: Lane13 = One::one();
-    let mut raw = x;
-    let mut acc: Lane13 = Zero::zero();
+fn convert_lane<F>(
+    lane: BigUint,
+    from_base: u64,
+    to_base: u64,
+    coef_transform: F,
+) -> BigUint
+where
+    F: Fn(u64) -> u64,
+{
+    let mut base: BigUint = One::one();
+    let mut raw = lane;
+    let mut acc: BigUint = Zero::zero();
 
     for _ in 0..64 {
         let remainder: u64 = mod_u64(&raw, B9);
-        acc += convert_b9_coef(remainder) * base.clone();
-        raw /= B9;
-        base *= B13;
+        acc += coef_transform(remainder) * base.clone();
+        raw /= from_base;
+        base *= to_base;
     }
     acc
+}
+
+fn convert_b9_lane_to_b13(x: Lane9) -> Lane13 {
+    convert_lane(x, B9, B13, convert_b9_coef)
 }
 
 fn convert_b9_lane_to_b2(x: Lane9) -> u64 {
-    let mut base: u64 = 1;
-    let mut raw = x;
-    let mut acc: u64 = 0;
-
-    for i in 0..64 {
-        let remainder: u64 = mod_u64(&raw, B9);
-        acc += convert_b9_coef(remainder) * base;
-        raw /= B9;
-        if i < 63 {
-            base *= 2;
-        }
-    }
-    acc
+    convert_lane(x, B9, 2, convert_b9_coef)
+        .iter_u64_digits()
+        .take(1)
+        .next()
+        .unwrap_or(0)
 }
 
 fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
-    let mut base: u64 = 1;
-    let mut raw = x;
-    let mut acc: u64 = 0;
-
-    for i in 0..64 {
-        let remainder: u64 = mod_u64(&raw, B9);
-        acc += remainder * base;
-        raw /= B9;
-        if i < 63 {
-            base *= 2;
-        }
-    }
-    acc
+    convert_lane(x, B9, 2, |y| y)
+        .iter_u64_digits()
+        .take(1)
+        .next()
+        .unwrap_or(0)
 }
 
 struct KeccakFArith {}
@@ -180,9 +189,7 @@ impl KeccakFArith {
             let s3 = KeccakFArith::pi(&s2);
             let s4 = KeccakFArith::xi(&s3);
             let s5 = KeccakFArith::iota_b9(&s4, *rc);
-            for (x, y) in (0..5).cartesian_product(0..5) {
-                a[(x, y)] = convert_b9_lane_to_b13(s5[(x, y)].clone());
-            }
+            *a = StateBigInt::from_state_big_int(&s5, convert_b9_lane_to_b13);
         }
         let s1 = KeccakFArith::theta(a);
         let s2 = KeccakFArith::rho(&s1);
@@ -190,10 +197,8 @@ impl KeccakFArith {
         let s4 = KeccakFArith::xi(&s3);
         if has_next {
             let s5 = KeccakFArith::absorb(&s4, next_inputs);
-            for (x, y) in (0..5).cartesian_product(0..5) {
-                a[(x, y)] = convert_b9_lane_to_b13(s5[(x, y)].clone());
-            }
-            *a = KeccakFArith::iota_b13(&a, ROUND_CONSTANTS[PERMUTATION - 1]);
+            *a = StateBigInt::from_state_big_int(&s5, convert_b9_lane_to_b13);
+            *a = KeccakFArith::iota_b13(a, ROUND_CONSTANTS[PERMUTATION - 1]);
         } else {
             *a = KeccakFArith::iota_b9(&s4, ROUND_CONSTANTS[PERMUTATION - 1]);
         }
