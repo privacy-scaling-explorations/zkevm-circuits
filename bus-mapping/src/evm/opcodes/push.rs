@@ -61,7 +61,7 @@ mod push_tests {
     use pasta_curves::pallas::Scalar;
 
     #[test]
-    fn oush1_opcode_impl() -> Result<(), Error> {
+    fn push1_opcode_impl() -> Result<(), Error> {
         let trace = r#"
         [
             {
