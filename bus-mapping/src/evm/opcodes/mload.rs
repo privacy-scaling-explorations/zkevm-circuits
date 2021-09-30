@@ -164,7 +164,7 @@ mod mload_tests {
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep {
-            memory: mem_map.clone(),
+            memory: mem_map,
             stack: Stack::empty(),
             instruction: OpcodeId::MLOAD,
             gas_info: GasInfo {
