@@ -134,9 +134,9 @@ impl<F: FieldExt> BlockConstants<F> {
 /// ready to be added into the State circuit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionTrace<F: FieldExt> {
-    steps: Vec<ExecutionStep>,
-    block_ctants: BlockConstants<F>,
-    container: OperationContainer,
+    pub(crate) steps: Vec<ExecutionStep>,
+    pub(crate) block_ctants: BlockConstants<F>,
+    pub(crate) container: OperationContainer,
 }
 
 impl<F: FieldExt> Index<usize> for ExecutionTrace<F> {

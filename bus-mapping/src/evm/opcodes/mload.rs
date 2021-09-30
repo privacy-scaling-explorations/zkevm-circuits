@@ -8,7 +8,7 @@ use crate::{
 use core::convert::TryInto;
 
 /// Number of ops that MLOAD adds to the container & busmapping
-const MLOAD_OP_NUM: usize = 3;
+const MLOAD_OP_NUM: usize = 34;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
 /// [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD) `OpcodeId`.
@@ -78,9 +78,10 @@ impl Opcode for Mload {
         //
         // First stack write
         //
+        gc_idx += 1;
         let stack_write = StackOp::new(
             RW::WRITE,
-            GlobalCounter::from(exec_step.gc().0 + 3),
+            gc_idx.into(),
             stack_position,
             mem_read_value,
         );
@@ -164,8 +165,8 @@ mod mload_tests {
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep {
-            memory: mem_map,
-            stack: Stack::empty(),
+            memory: mem_map.clone(),
+            stack: Stack(vec![EvmWord::from(0x40u8)]),
             instruction: OpcodeId::MLOAD,
             gas_info: GasInfo {
                 gas: 79,
@@ -212,10 +213,42 @@ mod mload_tests {
                 EvmWord::from(0x80u8),
             )));
 
+        gc += 1;
+        // Generate Step1 corresponding to PUSH1 40
+        let step_2 = ExecutionStep {
+            memory: mem_map,
+            stack: Stack(vec![EvmWord::from(0x80u8)]),
+            instruction: OpcodeId::STOP,
+            gas_info: GasInfo {
+                gas: 76,
+                gas_cost: GasCost::from(0u8),
+            },
+            depth: 1u8,
+            pc: ProgramCounter::from(8),
+            gc: gc.into(),
+            bus_mapping_instance: vec![],
+        };
+
+        // Compare first step bus mapping instance
         assert_eq!(
-            obtained_exec_trace[0].bus_mapping_instance(),
-            step_1.bus_mapping_instance()
+            obtained_exec_trace[0].bus_mapping_instance,
+            step_1.bus_mapping_instance
         );
+
+        // Compare first step entirely
+        assert_eq!(obtained_exec_trace[0], step_1);
+
+        // Compare second step bus mapping instance
+        assert_eq!(
+            obtained_exec_trace[1].bus_mapping_instance,
+            step_2.bus_mapping_instance
+        );
+
+        // Compare second step entirely
+        assert_eq!(obtained_exec_trace[1], step_2);
+
+        // Compare containers
+        assert_eq!(obtained_exec_trace.container, container);
 
         Ok(())
     }

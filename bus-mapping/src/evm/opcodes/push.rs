@@ -49,7 +49,7 @@ impl Opcode for Push1 {
 }
 
 #[cfg(test)]
-mod mload_tests {
+mod push_tests {
     use super::*;
     use crate::{
         evm::{
@@ -61,7 +61,7 @@ mod mload_tests {
     use pasta_curves::pallas::Scalar;
 
     #[test]
-    fn mload_opcode_impl() -> Result<(), Error> {
+    fn oush1_opcode_impl() -> Result<(), Error> {
         let trace = r#"
         [
             {
