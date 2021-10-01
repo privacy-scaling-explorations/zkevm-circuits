@@ -36,7 +36,7 @@ impl<F: FieldExt> OutOfGasCase<F> {
                 .unwrap()
                 .gas_available
                 .clone(),
-            gas_used: gas_used,
+            gas_used,
         }
     }
 
@@ -89,7 +89,7 @@ impl<F: FieldExt> StackUnderflowCase<F> {
     ) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            num_popped: num_popped,
+            num_popped,
         }
     }
 

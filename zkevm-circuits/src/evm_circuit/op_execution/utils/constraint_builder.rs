@@ -24,7 +24,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             expressions: vec![],
             lookups: vec![],
             stack_offset: 0,
-            call_id: call_id,
+            call_id,
         }
     }
 
@@ -89,8 +89,8 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     fn stack_lookup(&mut self, value: Expression<F>, is_write: bool) {
         self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
             index_offset: self.stack_offset,
-            value: value,
-            is_write: is_write,
+            value,
+            is_write,
         }));
     }
 
@@ -125,7 +125,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
                     index: address.clone()
                         + Expression::Constant(F::from_u64(idx as u64)),
                     value: bytes[bytes.len() - 1 - idx].clone(),
-                    is_write: is_write,
+                    is_write,
                 },
             ));
         }
@@ -153,8 +153,8 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         name: &'static str,
     ) -> Constraint<F> {
         Constraint {
-            name: name,
-            selector: selector,
+            name,
+            selector,
             polys: self.expressions.clone(),
             lookups: self.lookups.clone(),
         }
