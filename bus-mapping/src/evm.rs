@@ -79,23 +79,25 @@ impl EvmWord {
         &self.0
     }
 
-    /// Generate an `EvmWord` from a slice of bytes in big-endian representation.
+    /// Generate an `EvmWord` from a slice of bytes in big-endian
+    /// representation.
     pub fn from_be_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
         if bytes.as_ref().len() > 32 {
             return Err(Error::EvmWordParsing);
         }
         let mut inner = [0u8; 32];
-        inner[32 - bytes.as_ref().len()..].copy_from_slice(&bytes.as_ref());
+        inner[32 - bytes.as_ref().len()..].copy_from_slice(bytes.as_ref());
         Ok(EvmWord(inner))
     }
 
-    /// Generate an `EvmWord` from a slice of bytes in little-endian representation.
+    /// Generate an `EvmWord` from a slice of bytes in little-endian
+    /// representation.
     pub fn from_le_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
         if bytes.as_ref().len() > 32 {
             return Err(Error::EvmWordParsing);
         }
         let mut inner = [0u8; 32];
-        inner[..bytes.as_ref().len()].copy_from_slice(&bytes.as_ref());
+        inner[..bytes.as_ref().len()].copy_from_slice(bytes.as_ref());
         inner.reverse();
         Ok(EvmWord(inner))
     }
@@ -113,8 +115,9 @@ impl EvmWord {
     }
 }
 
-/// Defines the gas consumed by an [`ExecutionStep`](crate::exec_trace::ExecutionStep)
-/// as well as the gas left to operate.
+/// Defines the gas consumed by an
+/// [`ExecutionStep`](crate::exec_trace::ExecutionStep) as well as the gas left
+/// to operate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct GasInfo {
     pub(crate) gas: Gas,
@@ -222,7 +225,7 @@ mod evm_tests {
             "000000000000000000000000000000000000000000000000000c849c24f39248";
 
         let word_from_u128 = EvmWord::from(3523505890234952u128);
-        let word_from_str = EvmWord::from_str(&word_str)?;
+        let word_from_str = EvmWord::from_str(word_str)?;
 
         assert_eq!(word_from_u128, word_from_str);
         Ok(())
