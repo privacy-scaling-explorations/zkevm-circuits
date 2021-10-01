@@ -473,7 +473,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     assert!(
                         matches!(constraint.selector, Expression::Advice{ .. }),
                         "constraint selector of case should be a queried advice"
-					);
+                    );
 
                     constraint.selector =
                         qs_op.expr() * constraint.selector.clone();
