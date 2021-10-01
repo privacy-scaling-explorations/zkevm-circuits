@@ -6,7 +6,7 @@ use super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Lookup, Word,
 };
 use crate::util::Expr;
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -38,6 +38,29 @@ fn bool_switches_constraints<F: FieldExt>(
     constraints.push(1.expr() - sum_to_one);
 
     constraints
+}
+
+fn out_of_gas_constraint<F: FieldExt>(
+    gas_overdemand: Expression<F>,
+    gas_cost: GasCost,
+) -> Expression<F> {
+    match gas_cost {
+        GasCost::QUICK | GasCost::FASTEST | GasCost::FAST => (0..gas_cost
+            .as_u64())
+            .fold(1.expr(), |acc, i| acc * (gas_overdemand.clone() - i.expr())),
+        // TODO: for higher gas cost, we should use lookup as the poly degree
+        // might be too high.
+        _ => unimplemented!(),
+    }
+}
+
+fn stack_underflow_constraint<F: FieldExt>(
+    stack_pointer: Expression<F>,
+    num_pop: u8,
+) -> Expression<F> {
+    (0..num_pop).fold(1.expr(), |acc, i| {
+        acc * (stack_pointer.clone() - (1024u64 - i as u64).expr())
+    })
 }
 
 #[derive(Debug)]

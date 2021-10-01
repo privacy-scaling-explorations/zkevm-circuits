@@ -2,7 +2,10 @@ use super::super::{
     BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
     FixedLookup, Lookup, Word,
 };
-use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use super::{
+    out_of_gas_constraint, stack_underflow_constraint, CaseAllocation,
+    CaseConfig, OpExecutionState, OpGadget,
+};
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
@@ -255,14 +258,14 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
         };
 
         let stack_underflow = {
-            let stack_pointer = state_curr.stack_pointer.expr();
+            let stack_pointer = &state_curr.stack_pointer;
             Constraint {
                 name: "LtGadget stack underflow",
                 selector: self.stack_underflow.expr(),
-                polys: vec![
-                    (stack_pointer.clone() - 1024.expr())
-                        * (stack_pointer - 1023.expr()),
-                ],
+                polys: vec![stack_underflow_constraint(
+                    stack_pointer.expr(),
+                    2,
+                )],
                 lookups: vec![],
             }
         };
@@ -275,11 +278,10 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
             Constraint {
                 name: "LtGadget out of gas",
                 selector: selector.expr(),
-                polys: vec![
-                    (gas_overdemand.clone() - 1.expr())
-                        * (gas_overdemand.clone() - 2.expr())
-                        * (gas_overdemand - 3.expr()),
-                ],
+                polys: vec![out_of_gas_constraint(
+                    gas_overdemand,
+                    GasCost::FASTEST,
+                )],
                 lookups: vec![],
             }
         };

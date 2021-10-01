@@ -1,10 +1,13 @@
 use super::super::{Case, Cell, Constraint, CoreStateInstance, ExecutionStep};
-use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use super::{
+    out_of_gas_constraint, CaseAllocation, CaseConfig, OpExecutionState,
+    OpGadget,
+};
 use crate::util::Expr;
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
-use std::convert::TryInto;
+use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
 pub struct PopGadget<F> {
@@ -85,11 +88,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
             Constraint {
                 name: "PopGadget success",
                 selector: case_selector.expr(),
-                polys: [
-                    common_polys.clone(),
-                    op_execution_state_transition_constraints,
-                ]
-                .concat(),
+                polys: op_execution_state_transition_constraints,
                 lookups: vec![],
             }
         };
@@ -99,11 +98,7 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
             Constraint {
                 name: "PopGadget stack underflow",
                 selector: self.stack_underflow.expr(),
-                polys: vec![
-                    common_polys.clone(),
-                    vec![(stack_pointer - 1024.expr())],
-                ]
-                .concat(),
+                polys: vec![(stack_pointer - 1024.expr())],
                 lookups: vec![],
             }
         };
@@ -116,19 +111,21 @@ impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
             Constraint {
                 name: "PopGadget out of gas",
                 selector: case_selector.expr(),
-                polys: [
-                    common_polys,
-                    vec![
-                        (gas_overdemand.clone() - 1.expr())
-                            * (gas_overdemand - 2.expr()),
-                    ],
-                ]
-                .concat(),
+                polys: vec![out_of_gas_constraint(
+                    gas_overdemand,
+                    GasCost::QUICK,
+                )],
                 lookups: vec![],
             }
         };
 
-        vec![success, stack_underflow, out_of_gas]
+        array::IntoIter::new([success, stack_underflow, out_of_gas])
+            .map(move |mut constraint| {
+                constraint.polys =
+                    [common_polys.clone(), constraint.polys].concat();
+                constraint
+            })
+            .collect()
     }
 
     fn assign(
