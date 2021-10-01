@@ -9,16 +9,12 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
-struct PcSuccessAllocation<F> {
-    selector: Cell<F>,
-    pc: Word<F>,
-}
-
-#[derive(Clone, Debug)]
 pub struct PcGadget<F> {
-    success: PcSuccessAllocation<F>,
-    stack_overflow: Cell<F>,
-    // case selector
+    success: (
+        Cell<F>, // case selector
+        Word<F>, // pc
+    ),
+    stack_overflow: Cell<F>, // case selector
     out_of_gas: (
         Cell<F>, // case selector
         Cell<F>, // gas available
@@ -53,10 +49,7 @@ impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
         let [mut success, stack_overflow, out_of_gas]: [CaseAllocation<F>; 3] =
             case_allocations.try_into().unwrap();
         Self {
-            success: PcSuccessAllocation {
-                selector: success.selector,
-                pc: success.words.pop().unwrap(),
-            },
+            success: (success.selector, success.words.pop().unwrap()),
             stack_overflow: stack_overflow.selector,
             out_of_gas: (
                 out_of_gas.selector,
@@ -75,7 +68,7 @@ impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
         let common_polys = vec![opcode.expr() - OpcodeId::PC.expr()];
 
         let success = {
-            let PcSuccessAllocation { selector, pc } = &self.success;
+            let (selector, pc) = &self.success;
 
             // interpreter state transition constraints
             let state_transition_constraint = vec![
@@ -89,6 +82,18 @@ impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
                     - (state_curr.gas_counter.expr() + GasCost::QUICK.expr()),
             ];
 
+            // Because pc is Uint64, only need to compute lower 8 bytes
+            // pc[7..0] = state.program_counter
+            // pc[32] + .. + pc[8] = 0
+            let pc_constraints = {
+                let pc_expr = (0..8).rev().fold(0.expr(), |acc, i| {
+                    acc * 256.expr() + pc.cells[i].expr()
+                });
+                let rest_sum =
+                    (8..32).fold(0.expr(), |acc, i| acc + pc.cells[i].expr());
+                vec![pc_expr - state_curr.program_counter.expr(), rest_sum]
+            };
+
             let bus_mapping_lookups =
                 [vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
                     index_offset: -1,
@@ -100,7 +105,7 @@ impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
             Constraint {
                 name: "PcGadget success",
                 selector: selector.expr(),
-                polys: state_transition_constraint,
+                polys: [state_transition_constraint, pc_constraints].concat(),
                 lookups: bus_mapping_lookups,
             }
         };
@@ -170,12 +175,13 @@ impl<F: FieldExt> PcGadget<F> {
         core_state: &mut CoreStateInstance,
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
+        println!("{}", core_state.program_counter);
         core_state.global_counter += 1;
         core_state.program_counter += 1;
         core_state.stack_pointer += 1;
         core_state.gas_counter += GasCost::QUICK.as_usize();
 
-        self.success.pc.assign(
+        self.success.1.assign(
             region,
             offset,
             Some(execution_step.values[0].to_word()),
@@ -205,21 +211,21 @@ mod test {
 
     #[test]
     fn pc_gadget() {
-        let data = BigUint::from(0x03_02_01u64);
-        let selector = BigUint::from(0x01_01_01u64);
-        let pc = (data.to_bytes_be().len() + 1) as u64;
         // PC
         try_test_circuit!(
             vec![
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![data, selector,],
+                    values: vec![
+                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x01_01_01u64),
+                    ],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PC,
                     case: Case::Success,
-                    values: vec![BigUint::from(pc),],
+                    values: vec![BigUint::from(4u64)],
                 },
             ],
             vec![
@@ -241,7 +247,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(pc),
+                        Base::from_u64(4),
                         Base::zero(),
                     ]
                 },
