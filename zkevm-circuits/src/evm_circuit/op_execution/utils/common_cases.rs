@@ -25,7 +25,7 @@ impl<F: FieldExt> OutOfGasCase<F> {
     };
 
     pub(crate) fn construct(
-        alloc: &CaseAllocation<F>,
+        alloc: &mut CaseAllocation<F>,
         gas_used: usize,
     ) -> Self {
         Self {
@@ -84,7 +84,7 @@ impl<F: FieldExt> StackUnderflowCase<F> {
     };
 
     pub(crate) fn construct(
-        alloc: &CaseAllocation<F>,
+        alloc: &mut CaseAllocation<F>,
         num_popped: usize,
     ) -> Self {
         Self {

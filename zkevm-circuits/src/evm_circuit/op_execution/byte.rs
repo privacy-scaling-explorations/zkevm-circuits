@@ -107,12 +107,15 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         cb.stack_push(self.result.expr());
 
         // State transitions
-        let mut state_transitions = utils::StateTransitions::default();
-        state_transitions.gc_delta = Some(GC_DELTA.expr());
-        state_transitions.sp_delta = Some(SP_DELTA.expr());
-        state_transitions.pc_delta = Some(PC_DELTA.expr());
-        state_transitions.gas_delta = Some(GAS.expr());
-        state_transitions.constraints(&mut cb, state_curr, state_next);
+        #[allow(clippy::needless_update)]
+        utils::StateTransitions {
+            gc_delta: Some(GC_DELTA.expr()),
+            sp_delta: Some(SP_DELTA.expr()),
+            pc_delta: Some(PC_DELTA.expr()),
+            gas_delta: Some(GAS.expr()),
+            ..Default::default()
+        }
+        .constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)

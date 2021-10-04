@@ -34,25 +34,25 @@ impl<F: FieldExt> StateTransitions<F> {
         cb.add_expression(
             state_next.global_counter.expr()
                 - (state_curr.global_counter.expr()
-                    + self.gc_delta.clone().unwrap_or(0.expr())),
+                    + self.gc_delta.clone().unwrap_or_else(|| 0.expr())),
         );
         // Stack Pointer
         cb.add_expression(
             state_next.stack_pointer.expr()
                 - (state_curr.stack_pointer.expr()
-                    + self.sp_delta.clone().unwrap_or(0.expr())),
+                    + self.sp_delta.clone().unwrap_or_else(|| 0.expr())),
         );
         // Program Counter
         cb.add_expression(
             state_next.program_counter.expr()
                 - (state_curr.program_counter.expr()
-                    + self.pc_delta.clone().unwrap_or(0.expr())),
+                    + self.pc_delta.clone().unwrap_or_else(|| 0.expr())),
         );
         // Gas Counter
         cb.add_expression(
             state_next.gas_counter.expr()
                 - (state_curr.gas_counter.expr()
-                    + self.gas_delta.clone().unwrap_or(0.expr())),
+                    + self.gas_delta.clone().unwrap_or_else(|| 0.expr())),
         );
     }
 }
