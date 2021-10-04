@@ -1,0 +1,15 @@
+categories:
+  - title: 'Changes in the zkevm-circuits'
+    label: 'zkevm-circuits'
+  - title: 'Changes in the bus-mapping'
+    label: 'bus-mapping'
+  - title: 'Changes in Opcodes'
+    label: 'opcode'
+  - title: 'Changes in Keccak'
+    label: 'keccak'
+version-resolver:
+  default: minor
+prerelease: true
+template: |
+  ## What’s Changed
+  $CHANGES
