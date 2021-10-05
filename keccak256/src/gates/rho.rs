@@ -1,63 +1,75 @@
-use crate::arith_helpers::convert_b13_lane_to_b9;
-use crate::common::ROTATION_CONSTANTS;
 use crate::gates::gate_helpers::Lane;
+use crate::gates::running_sum::{
+    BlockCountFinalConfig, LaneRotateConversionConfig,
+};
 
 use halo2::{
-    circuit::Region,
-    plonk::{Advice, Column, Error},
+    circuit::{Cell, Layouter, Region},
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::Itertools;
-use num_bigint::BigUint;
 use pasta_curves::arithmetic::FieldExt;
 use std::convert::TryInto;
-use std::marker::PhantomData;
 
 pub struct RhoConfig<F> {
     state: [Column<Advice>; 25],
-    _marker: PhantomData<F>,
+    state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
+    final_block_count_config: BlockCountFinalConfig<F>,
 }
 
 impl<F: FieldExt> RhoConfig<F> {
-    pub fn configure(state: [Column<Advice>; 25]) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+    ) -> Self {
+        let state_rotate_convert_configs = (0..5)
+            .cartesian_product(0..5)
+            .map(|(x, y)| LaneRotateConversionConfig::configure(meta, (x, y)))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let final_block_count_config = BlockCountFinalConfig::configure(meta);
         Self {
             state,
-            _marker: PhantomData,
+            state_rotate_convert_configs,
+            final_block_count_config,
         }
     }
     pub fn assign_region(
         &self,
+        layouter: &mut impl Layouter<F>,
         region: &mut Region<'_, F>,
         offset: usize,
         previous_state: [Lane<F>; 25],
     ) -> Result<[Lane<F>; 25], Error> {
         let mut next_state: Vec<Lane<F>> = vec![];
+        let mut block_count_cells: Vec<(Cell, Cell)> = vec![];
+        for (idx, lane) in previous_state.iter().enumerate() {
+            let lane_config = self.state_rotate_convert_configs[idx];
 
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            let idx = 5 * x + y;
-            let lane_base_13 = &previous_state[idx];
-            let lane_base_13_big_uint =
-                BigUint::from_bytes_le(&lane_base_13.value.to_bytes());
-            let lane_base_9_big_uint = convert_b13_lane_to_b9(
-                lane_base_13_big_uint,
-                ROTATION_CONSTANTS[x][y],
-            );
-            let lane_base_9 = Option::from(F::from_bytes(
-                lane_base_9_big_uint.to_bytes_le()[..=32]
-                    .try_into()
-                    .unwrap(),
-            ))
-            .ok_or(Error::SynthesisError)?;
+            // copy constain enforced inside assign_region
+            let (lane_next_row, cols) = lane_config.assign_region(
+                &mut layouter.namespace(|| format!("lane {}", idx)),
+                lane,
+            )?;
+            region.constrain_equal(lane.cell, lane_next_row.cell);
             let cell = region.assign_advice(
                 || "lane next row",
                 self.state[idx],
-                offset,
-                || Ok(lane_base_9),
+                offset + 1,
+                || Ok(lane_next_row.value),
             )?;
             next_state.push(Lane {
                 cell,
-                value: lane_base_9,
+                value: lane_next_row.value,
             });
+            block_count_cells.push(cols);
         }
+        self.final_block_count_config.assign_region(
+            &mut layouter.namespace(|| "Final block count check"),
+            block_count_cells.try_into().unwrap(),
+        );
+
         Ok(next_state.try_into().unwrap())
     }
 }
