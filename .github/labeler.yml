@@ -1,9 +1,9 @@
 # Add 'zkevm-circuits' label to any change to files within the zkevm-circuits dir EXCEPT for the evm_circuit sub-folder
 zkevm-circuits:
-  - any: ['zkevm-circuits/**/*', '!zkevm-circuits/evm_circuit/**/*']
+  - any: ['zkevm-circuits/src/**/*', '!zkevm-circuits/src/evm_circuit/**/*']
 # Add 'opcodes' to any changes within 'evm_circuit' folder or any subfolders
 opcode:
-  - zkevm-circuits/evm_circuit/**/*
+  - zkevm-circuits/src/evm_circuit/**/*
 bus-mapping:
   - bus-mapping/**/*
 keccak:
