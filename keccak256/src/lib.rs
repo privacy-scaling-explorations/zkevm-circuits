@@ -1,4 +1,6 @@
-#[allow(dead_code)]
-fn main() {
-    println!("Hello, world!");
-}
+pub mod arith_helpers;
+pub mod common;
+// We build arith module to get test cases for the circuit
+pub mod keccak_arith;
+// We build plain module for the purpose of reviewing the circuit
+pub mod plain;
