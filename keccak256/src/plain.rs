@@ -1,22 +1,24 @@
 use crate::common::*;
 use itertools::Itertools;
 
-struct Keccak {
+pub struct Keccak {
     state: State,
     sponge: Sponge,
 }
 
-impl Keccak {
-    pub fn new() -> Keccak {
+impl Default for Keccak {
+    fn default() -> Self {
         let security_level = (1088, 512);
 
-        Keccak {
+        Self {
             state: [[0; 5]; 5],
             // rate & capacity in bytes
             sponge: Sponge::new(security_level.0 / 8, security_level.1 / 8),
         }
     }
+}
 
+impl Keccak {
     pub fn update(&mut self, input: &[u8]) {
         let padding_total = self.sponge.rate - (input.len() % self.sponge.rate);
         let mut padding: Vec<u8>;
@@ -109,7 +111,7 @@ impl KeccakF {
     }
 }
 
-struct Sponge {
+pub struct Sponge {
     rate: usize,
     capacity: usize,
     keccak_f: KeccakF,
@@ -187,7 +189,7 @@ impl Sponge {
 }
 #[cfg(test)]
 fn keccak256(msg: &[u8]) -> Vec<u8> {
-    let mut keccak = Keccak::new();
+    let mut keccak = Keccak::default();
     keccak.update(msg);
     keccak.digest()
 }

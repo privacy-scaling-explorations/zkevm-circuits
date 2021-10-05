@@ -168,3 +168,19 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .next()
         .unwrap_or(0)
 }
+
+/// This function allows us to inpect coefficients of big-numbers in different
+/// bases.
+pub fn inspect(x: BigUint, name: &str, base: u64) {
+    let mut raw = x.clone();
+    let mut info: Vec<(u32, u64)> = vec![];
+
+    for i in 0..65 {
+        let remainder: u64 = mod_u64(&raw, base);
+        raw /= base;
+        if remainder != 0 {
+            info.push((i, remainder));
+        }
+    }
+    println!("inspect {} {} info {:?}", name, x, info);
+}

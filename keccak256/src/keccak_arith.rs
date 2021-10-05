@@ -251,20 +251,6 @@ mod tests {
         keccak.digest()
     }
 
-    fn inspect(x: BigUint, name: &str, base: u64) {
-        let mut raw = x.clone();
-        let mut info: Vec<(u32, u64)> = vec![];
-
-        for i in 0..65 {
-            let remainder: u64 = mod_u64(&raw, base);
-            raw /= base;
-            if remainder != 0 {
-                info.push((i, remainder));
-            }
-        }
-        println!("inspect {} {} info {:?}", name, x, info);
-    }
-
     #[test]
     fn test_helpers() {
         assert_eq!(convert_b2_to_b13(0b101u64), BigUint::from(170u64));
