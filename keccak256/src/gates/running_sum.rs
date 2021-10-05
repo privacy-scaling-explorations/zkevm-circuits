@@ -1,3 +1,11 @@
+use crate::gates::tables::*;
+use halo2::{
+    plonk::{Advice, Column, ConstraintSystem, Expression, Selector},
+    poly::Rotation,
+};
+use pasta_curves::arithmetic::FieldExt;
+use std::marker::PhantomData;
+
 pub struct RunningSumConfig<F> {
     q_enable: Selector,
     // coef, slice, acc
@@ -46,6 +54,15 @@ impl<F: FieldExt> RunningSumConfig<F> {
             // validated
 
             // what about the last row?
+            let base_13_exprs: Vec<Expression<F>> = base_13_cols
+                .iter()
+                .map(|col| meta.query_advice(*col, Rotation::cur()))
+                .collect::<Vec<Expression<F>>>();
+
+            let base_9_exprs: Vec<Expression<F>> = base_9_cols
+                .iter()
+                .map(|col| meta.query_advice(*col, Rotation::cur()))
+                .collect::<Vec<Expression<F>>>();
 
             let coef_13 = meta.query_advice(base_13_cols[0], Rotation::cur());
             let coef_13_next =
