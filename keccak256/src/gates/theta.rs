@@ -1,7 +1,6 @@
 use crate::arith_helpers::*;
-use halo2::circuit::Layouter;
 use halo2::{
-    circuit::Region,
+    circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -89,17 +88,14 @@ mod tests {
     use super::*;
     use crate::common::*;
     use crate::keccak_arith::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{
-        circuit::SimpleFloorPlanner,
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::Circuit,
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
     use num_bigint::BigUint;
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pasta_curves::{arithmetic::FieldExt, pallas};
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
