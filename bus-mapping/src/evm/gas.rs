@@ -2,6 +2,8 @@
 pub struct GasCost(pub u8);
 
 impl GasCost {
+    /// Constant cost for free step
+    pub const ZERO: Self = Self(0);
     /// Constant cost for quick step
     pub const QUICK: Self = Self(2);
     /// Constant cost for fastest step

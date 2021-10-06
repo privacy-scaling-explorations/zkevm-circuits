@@ -97,71 +97,64 @@ impl Opcode for Mload {
 mod mload_tests {
     use super::*;
     use crate::{
+        bytecode,
         evm::{
-            EvmWord, GasCost, GasInfo, Memory, OpcodeId, ProgramCounter, Stack,
+            EvmWord, GasCost, GasInfo, OpcodeId, ProgramCounter, Stack,
             StackAddress, Storage,
         },
-        BlockConstants, ExecutionTrace,
+        external_tracer, BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
 
+    macro_rules! gas_info {
+        ($gas:ident, $gas_cost: ident) => {{
+            #[allow(unused_assignments)]
+            GasInfo {
+                gas: {
+                    let temp = $gas;
+                    $gas -= GasCost::$gas_cost.as_usize() as u64;
+                    temp
+                },
+                gas_cost: GasCost::$gas_cost,
+            }
+        }};
+    }
+
     #[test]
     fn mload_opcode_impl() -> Result<(), Error> {
-        let trace = r#"
-        [
-            {
-            "pc": 7,
-            "op": "MLOAD",
-            "gas": 79,
-            "gasCost": 3,
-            "depth": 1,
-            "stack": [
-                "40"
-            ],
-            "memory": [
-                "0000000000000000000000000000000000000000000000000000000000000000",
-                "0000000000000000000000000000000000000000000000000000000000000000",
-                "0000000000000000000000000000000000000000000000000000000000000080"
-            ]
-            },
-              {
-                "pc": 8,
-                "op": "STOP",
-                "gas": 76,
-                "gasCost": 0,
-                "depth": 1,
-                "stack": [
-                  "80"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              }
-        ]
-        "#;
+        let code = bytecode! {
+            // Setup state
+            PUSH1(0x80u64)
+            PUSH1(0x40u64)
+            MSTORE
+
+            PUSH1(0x40u64)
+            // Start byte code tested
+            [start]
+            MLOAD
+        };
+
+        let block_ctants = BlockConstants::default();
+
+        // Get the execution steps from the external tracer
+        let obtained_steps = &external_tracer::trace(&block_ctants, &code)
+            [code.get_pos("start")..];
 
         // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::from_trace_bytes(
-            trace.as_bytes(),
-            BlockConstants::default(),
+        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
+            obtained_steps.to_vec(),
+            block_ctants.clone(),
         )?;
 
         let mut container = OperationContainer::new();
         let mut gc = 0usize;
 
+        // Start from the same gas limit for the simulation
+        let mut gas = obtained_steps[0].gas_info().gas;
+
         // The memory is the same in both steps as none of them edits the
         // memory of the EVM.
-        let mem_map = Memory(
-            EvmWord::from(0u8)
-                .inner()
-                .iter()
-                .chain(EvmWord::from(0u8).inner())
-                .chain(EvmWord::from(0x80u8).inner())
-                .copied()
-                .collect(),
-        );
+        let mem_map = obtained_steps[0].memory.clone();
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep {
@@ -169,10 +162,7 @@ mod mload_tests {
             stack: Stack(vec![EvmWord::from(0x40u8)]),
             storage: Storage::empty(),
             instruction: OpcodeId::MLOAD,
-            gas_info: GasInfo {
-                gas: 79,
-                gas_cost: GasCost::from(3u8),
-            },
+            gas_info: gas_info!(gas, FASTEST),
             depth: 1u8,
             pc: ProgramCounter::from(7),
             gc: gc.into(),
@@ -221,10 +211,7 @@ mod mload_tests {
             stack: Stack(vec![EvmWord::from(0x80u8)]),
             storage: Storage::empty(),
             instruction: OpcodeId::STOP,
-            gas_info: GasInfo {
-                gas: 76,
-                gas_cost: GasCost::from(0u8),
-            },
+            gas_info: gas_info!(gas, ZERO),
             depth: 1u8,
             pc: ProgramCounter::from(8),
             gc: gc.into(),

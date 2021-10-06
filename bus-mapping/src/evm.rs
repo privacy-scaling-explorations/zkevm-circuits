@@ -10,6 +10,7 @@ use crate::{
     Gas,
 };
 use core::str::FromStr;
+use num::BigUint;
 use serde::{Deserialize, Serialize};
 pub use {
     memory::{Memory, MemoryAddress},
@@ -85,6 +86,15 @@ impl From<EvmWord> for Vec<u8> {
 
 impl_from_evm_word_wrappers!(u8, u16, u32, u64, u128, usize);
 
+impl Serialize for EvmWord {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string(16))
+    }
+}
+
 impl EvmWord {
     /// Return the length of this type in bytes.
     pub const fn len() -> usize {
@@ -134,6 +144,11 @@ impl EvmWord {
     /// Returns an `EvmWord` as a 32-byte array in big endian representation.
     pub fn to_be_bytes(self) -> [u8; 32] {
         *self.inner()
+    }
+
+    /// Returns an `EvmWord` as a string representation with the given radix.
+    pub fn to_string(self, radix: u32) -> String {
+        BigUint::from_bytes_le(&self.to_le_bytes()).to_str_radix(radix)
     }
 }
 
@@ -219,6 +234,8 @@ impl GasInfo {
 pub struct GasCost(u64);
 
 impl GasCost {
+    /// Constant cost for free step
+    pub const ZERO: Self = Self(0);
     /// Constant cost for quick step
     pub const QUICK: Self = Self(2);
     /// Constant cost for fastest step
