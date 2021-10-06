@@ -12,19 +12,19 @@ impl<F: FieldExt> PiConfig<F> {
     ) -> PiConfig<F> {
         meta.create_gate("pi", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let mut checks: Vec<Expression<F>> = Vec::new();
-            for (x, y) in (0..5).cartesian_product(0..5) {
-                let old_state = meta.query_advice(
-                    state[5 * ((x + 3 * y) % 5) + x],
-                    Rotation::cur(),
-                );
-                let new_state =
-                    meta.query_advice(state[5 * x + y], Rotation::next());
+            (0..5)
+                .cartesian_product(0..5)
+                .map(|(x, y)| {
+                    let lane = meta.query_advice(
+                        state[5 * ((x + 3 * y) % 5) + x],
+                        Rotation::cur(),
+                    );
+                    let new_lane =
+                        meta.query_advice(state[5 * x + y], Rotation::next());
 
-                let check = q_enable.clone() * (new_state - old_state);
-                checks.push(check.clone());
-            }
-            checks
+                    q_enable.clone() * (new_lane - lane)
+                })
+                .collect::<Vec<Expression<F>>>()
         });
 
         PiConfig {
