@@ -79,22 +79,22 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         // If they are equal (at most once) we add the byte value to the sum, else we add 0.
         // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
         // At the end this sum needs to equal `result[0]`.
-        let mut select_sum = 0.expr();
+        let mut selected_byte = 0.expr();
         for idx in 0..32 {
             // Check if this byte is selected looking only at the LSB of the index word
-            let byte_selected = self.is_byte_selected[idx].constraints(
+            let is_selected = self.is_byte_selected[idx].constraints(
                 &mut cb,
                 self.index.cells[0].expr(),
                 (31 - idx).expr(),
             );
 
             // Add the byte to the sum when this byte is selected
-            select_sum = select_sum
-                + (byte_selected
+            selected_byte = selected_byte
+                + (is_selected
                     * msb_sum_zero.clone()
                     * self.value.cells[idx].expr());
         }
-        cb.require_equal(self.result.cells[0].expr(), select_sum);
+        cb.require_equal(self.result.cells[0].expr(), selected_byte);
 
         // All bytes of result, except for the LSB, always need to be 0.
         for idx in 1..32 {
@@ -107,13 +107,11 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         cb.stack_push(self.result.expr());
 
         // State transitions
-        #[allow(clippy::needless_update)]
         utils::StateTransitions {
             gc_delta: Some(GC_DELTA.expr()),
             sp_delta: Some(SP_DELTA.expr()),
             pc_delta: Some(PC_DELTA.expr()),
             gas_delta: Some(GAS.expr()),
-            ..Default::default()
         }
         .constraints(&mut cb, state_curr, state_next);
 
@@ -169,6 +167,7 @@ mod test {
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use num::BigUint;
     use pasta_curves::pallas::Base;
 
     macro_rules! try_test_circuit {
@@ -180,171 +179,114 @@ mod test {
         }};
     }
 
+    fn compress(value: BigUint) -> Base {
+        value
+            .to_bytes_le()
+            .iter()
+            .fold(Base::zero(), |acc, val| acc + Base::from_u64(*val as u64))
+    }
+
+    fn check_byte_gadget(value: BigUint, index: BigUint, result: BigUint) {
+        let all_ones = BigUint::from_bytes_le(&[1u8; 32]);
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH32,
+                    case: Case::Success,
+                    values: vec![value.clone(), all_ones.clone()],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH32,
+                    case: Case::Success,
+                    values: vec![index.clone(), all_ones],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::BYTE,
+                    case: Case::Success,
+                    values: vec![index.clone(), value.clone(), result.clone()],
+                }
+            ],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        compress(value.clone()),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        compress(index.clone()),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        compress(index.clone()),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        compress(value.clone()),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        compress(result.clone()),
+                        Base::zero(),
+                    ]
+                },
+            ],
+            Ok(())
+        );
+    }
+
     #[test]
     fn byte_gadget() {
         // Select byte 29 (MSB is at 0)
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![0x030201u64.into(), 0x010101u64.into()],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH1,
-                    case: Case::Success,
-                    values: vec![29u64.into(), 0x01u64.into()],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::BYTE,
-                    case: Case::Success,
-                    values: vec![
-                        29u64.into(),
-                        0x030201u64.into(),
-                        0x03u64.into(),
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(29),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(29),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(3),
-                        Base::zero(),
-                    ]
-                },
-            ],
-            Ok(())
-        );
+        check_byte_gadget(0x030201u64.into(), 29u64.into(), 0x03u64.into());
         // Select byte 256
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![0x030201u64.into(), 0x010101u64.into()],
+        check_byte_gadget(0x030201u64.into(), 256u64.into(), 0u64.into());
+
+        // More extensive tests (which takes a long time to run, so disabled by default)
+        /*let test_value =
+            BigUint::from_bytes_be(&(1u8..33u8).collect::<Vec<u8>>()[..]);
+        for idx in 0u64..33 {
+            check_byte_gadget(
+                test_value.clone(),
+                idx.into(),
+                if idx < 32 {
+                    (idx + 1).into()
+                } else {
+                    0u64.into()
                 },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
-                    case: Case::Success,
-                    values: vec![0x0100u64.into(), 0x0101u64.into()],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::BYTE,
-                    case: Case::Success,
-                    values: vec![
-                        0x0100u64.into(),
-                        0x030201u64.into(),
-                        0u64.into(),
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                },
-            ],
-            Ok(())
-        );
+            );
+        }*/
     }
 }

@@ -6,7 +6,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 
 use super::constraint_builder::ConstraintBuilder;
 
-// a == 0
+// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
 pub struct IsZeroGadget<F> {
     pub(crate) inverse: Cell<F>,
@@ -28,9 +28,9 @@ impl<F: FieldExt> IsZeroGadget<F> {
         value: Expression<F>,
     ) -> Expression<F> {
         let is_zero = 1.expr() - (value.clone() * self.inverse.expr());
-        // when `a != 0` check `a_inv = a.invert()`: a * (1 - a * a_inv)
+        // when `value != 0` check `inverse = a.invert()`: value * (1 - value * inverse)
         cb.add_expression(value * is_zero.clone());
-        // when `a == 0` check `a_inv = 0`: `a_inv ⋅ (1 - a * a_inv)`
+        // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value * inverse)`
         cb.add_expression(self.inverse.expr() * is_zero.clone());
 
         is_zero
@@ -48,7 +48,7 @@ impl<F: FieldExt> IsZeroGadget<F> {
     }
 }
 
-// a == b
+// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
 pub struct IsEqualGadget<F> {
     pub(crate) is_zero: IsZeroGadget<F>,
