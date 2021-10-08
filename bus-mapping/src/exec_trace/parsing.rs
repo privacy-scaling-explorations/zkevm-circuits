@@ -3,9 +3,13 @@
 use crate::evm::{EvmWord, GasCost, GasInfo, ProgramCounter};
 use crate::ExecutionStep;
 use crate::Gas;
-use crate::{error::Error, evm::OpcodeId};
+use crate::{
+    error::{Error, EvmWordParsingError},
+    evm::OpcodeId,
+};
 use core::{convert::TryFrom, str::FromStr};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
     type Error = Error;
@@ -14,27 +18,40 @@ impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
         parsed_step: &ParsedExecutionStep<'a>,
     ) -> Result<Self, Self::Error> {
         // Memory part
-        let mem_map = parsed_step
+        let mem_map: Vec<u8> = parsed_step
             .memory
+            .as_ref()
+            .unwrap_or(&Vec::new())
             .iter()
             .map(|word| EvmWord::from_str(word))
-            .collect::<Result<Vec<EvmWord>, Error>>()?;
-        let mem_map = mem_map
+            .collect::<Result<Vec<_>, EvmWordParsingError>>()?
             .iter()
             .flat_map(|word| word.inner())
             .copied()
             .collect();
 
         // Stack part
-        let mut stack = vec![];
-        parsed_step.stack.iter().try_for_each(|word| {
-            stack.push(EvmWord::from_str(word)?);
-            Ok(())
-        })?;
+        let stack: Vec<EvmWord> = parsed_step
+            .stack
+            .iter()
+            .map(|word| EvmWord::from_str(word))
+            .collect::<Result<_, _>>()?;
+
+        // Storage part
+        let storage: HashMap<EvmWord, EvmWord> = parsed_step
+            .storage
+            .as_ref()
+            .unwrap_or(&HashMap::new())
+            .iter()
+            .map(|(key, value)| -> Result<_, EvmWordParsingError> {
+                Ok((EvmWord::from_str(key)?, EvmWord::from_str(value)?))
+            })
+            .collect::<Result<HashMap<EvmWord, EvmWord>, _>>()?;
 
         Ok(ExecutionStep::new(
             mem_map,
             stack,
+            storage,
             // Avoid setting values now. This will be done at the end.
             OpcodeId::from_str(parsed_step.op)?,
             GasInfo::new(parsed_step.gas, parsed_step.gas_cost),
@@ -57,13 +74,16 @@ pub(crate) struct ParsedExecutionStep<'a> {
     pub(crate) gas_cost: GasCost,
     pub(crate) depth: u8,
     pub(crate) stack: Vec<&'a str>,
-    pub(crate) memory: Vec<&'a str>,
+    pub(crate) memory: Option<Vec<&'a str>>,
+    pub(crate) storage: Option<HashMap<&'a str, &'a str>>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::{opcodes::ids::OpcodeId, GlobalCounter, Memory, Stack};
+    use crate::evm::{
+        opcodes::ids::OpcodeId, GlobalCounter, Memory, Stack, Storage,
+    };
 
     #[test]
     fn parse_single_step() {
@@ -105,6 +125,7 @@ mod tests {
             ExecutionStep {
                 memory: mem_map,
                 stack: Stack(vec![EvmWord::from(0x40u8)]),
+                storage: Storage::empty(),
                 instruction: OpcodeId::JUMPDEST,
                 gas_info: GasInfo::new(82, GasCost::from(3u8)),
                 depth: 1,

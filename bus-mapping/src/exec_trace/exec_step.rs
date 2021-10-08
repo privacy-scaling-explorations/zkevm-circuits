@@ -2,13 +2,14 @@
 
 use super::OperationRef;
 use crate::evm::{
-    EvmWord, GasInfo, GlobalCounter, Memory, ProgramCounter, Stack,
+    EvmWord, GasInfo, GlobalCounter, Memory, ProgramCounter, Stack, Storage,
 };
 use crate::{
     error::Error,
     evm::{opcodes::Opcode, OpcodeId},
     operation::container::OperationContainer,
 };
+use std::collections::HashMap;
 
 /// Represents a single step of an [`ExecutionTrace`](super::ExecutionTrace). It
 /// contains all of the information relative to this step:
@@ -23,6 +24,7 @@ use crate::{
 pub struct ExecutionStep {
     pub(crate) memory: Memory,
     pub(crate) stack: Stack,
+    pub(crate) storage: Storage,
     pub(crate) instruction: OpcodeId,
     pub(crate) gas_info: GasInfo,
     pub(crate) depth: u8,
@@ -35,9 +37,11 @@ pub struct ExecutionStep {
 impl ExecutionStep {
     /// Generate a new `ExecutionStep` from it's fields but with an empty
     /// bus-mapping instance vec.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         memory: Vec<u8>,
         stack: Vec<EvmWord>,
+        storage: HashMap<EvmWord, EvmWord>,
         instruction: OpcodeId,
         gas_info: GasInfo,
         depth: u8,
@@ -47,6 +51,7 @@ impl ExecutionStep {
         ExecutionStep {
             memory: Memory::from(memory),
             stack: Stack::from_vec(stack),
+            storage: Storage::from(storage),
             instruction,
             gas_info,
             depth,
@@ -64,6 +69,11 @@ impl ExecutionStep {
     /// Returns the Stack view of this `ExecutionStep`.
     pub const fn stack(&self) -> &Stack {
         &self.stack
+    }
+
+    /// Returns the Storage view of this `ExecutionStep`.
+    pub const fn storage(&self) -> &Storage {
+        &self.storage
     }
 
     /// Returns the [`OpcodeId`] executed at this step.

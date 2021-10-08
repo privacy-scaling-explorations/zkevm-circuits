@@ -2,6 +2,7 @@
 pub mod ids;
 mod mload;
 mod push;
+mod sload;
 mod stop;
 use self::push::Push1;
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
 use core::fmt::Debug;
 use ids::OpcodeId;
 use mload::Mload;
+use sload::Sload;
 use stop::Stop;
 
 /// Generic opcode trait which defines the logic of the
@@ -47,6 +49,9 @@ impl Opcode for OpcodeId {
             }
             OpcodeId::MLOAD => {
                 Mload {}.gen_associated_ops(exec_step, container, next_steps)
+            }
+            OpcodeId::SLOAD => {
+                Sload {}.gen_associated_ops(exec_step, container, next_steps)
             }
             OpcodeId::STOP => {
                 Stop {}.gen_associated_ops(exec_step, container, next_steps)

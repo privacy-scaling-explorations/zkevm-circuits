@@ -220,7 +220,9 @@ impl Memory {
         }
 
         // Now we know that the indexing will not panic.
-        EvmWord::from_be_bytes(&self[addr..addr + MemoryAddress::from(32)])
+        Ok(EvmWord::from_be_bytes(
+            &self[addr..addr + MemoryAddress::from(32)],
+        )?)
     }
 }
 

@@ -54,7 +54,7 @@ mod push_tests {
     use crate::{
         evm::{
             EvmWord, GasCost, GasInfo, Memory, OpcodeId, ProgramCounter, Stack,
-            StackAddress,
+            StackAddress, Storage,
         },
         BlockConstants, ExecutionTrace,
     };
@@ -120,6 +120,7 @@ mod push_tests {
         let mut step_1 = ExecutionStep {
             memory: mem_map,
             stack: Stack::empty(),
+            storage: Storage::empty(),
             instruction: OpcodeId::PUSH1,
             gas_info: GasInfo {
                 gas: 79,
