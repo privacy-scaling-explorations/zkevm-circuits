@@ -88,6 +88,60 @@ pub(crate) mod sum {
     }
 }
 
+pub(crate) mod and {
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    // Inputs need to be boolean
+    pub(crate) fn expr<F: FieldExt>(
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> Expression<F> {
+        (lhs) * (rhs)
+    }
+
+    pub(crate) fn value<F: FieldExt>(lhs: F, rhs: F) -> F {
+        lhs * rhs
+    }
+}
+
+pub(crate) mod or {
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    // Inputs need to be boolean
+    pub(crate) fn expr<F: FieldExt>(
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> Expression<F> {
+        ((lhs.clone()) + (rhs.clone())) * ((lhs) * (rhs))
+    }
+
+    pub(crate) fn value<F: FieldExt>(lhs: F, rhs: F) -> F {
+        (lhs + rhs) * (lhs * rhs)
+    }
+}
+
+pub(crate) mod select {
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    // selector needs to be boolean
+    pub(crate) fn expr<F: FieldExt>(
+        selector: Expression<F>,
+        when_true: Expression<F>,
+        when_false: Expression<F>,
+    ) -> Expression<F> {
+        selector.clone() * when_true + (1.expr() - selector) * when_false
+    }
+
+    pub(crate) fn value<F: FieldExt>(
+        selector: F,
+        when_true: F,
+        when_false: F,
+    ) -> F {
+        selector * when_true + (F::one() - selector) * when_false
+    }
+}
+
 /// Counts the number of repetitions
 #[macro_export]
 macro_rules! count {

@@ -148,6 +148,7 @@ pub(crate) enum FixedLookup {
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
+    SignByte,
 }
 
 impl<F: FieldExt> Expr<F> for FixedLookup {
@@ -760,10 +761,43 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || Ok(F::from_u64(idx as u64)),
                     )?;
                     for (idx, column) in
-                        self.fixed_table[2..].iter().enumerate()
+                    self.fixed_table[2..].iter().enumerate()
+                {
+                    region.assign_fixed(
+                        || format!("Range16: padding {}", idx),
+                        *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                // SignByte
+                for idx in 0..256 {
+                    region.assign_fixed(
+                        || "SignByte: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::SignByte as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "SignByte: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "SignByte: sign",
+                        self.fixed_table[2],
+                        offset,
+                        || Ok(F::from_u64((idx >> 7) * 0xFF as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[3..].iter().enumerate()
                     {
                         region.assign_fixed(
-                            || format!("Range16: padding {}", idx),
+                            || format!("SignByte: padding {}", idx),
                             *column,
                             offset,
                             || Ok(F::zero()),
