@@ -273,9 +273,12 @@ mod test {
         check_byte_gadget(0x030201u64.into(), 29u64.into(), 0x03u64.into());
         // Select byte 256
         check_byte_gadget(0x030201u64.into(), 256u64.into(), 0u64.into());
+    }
 
-        // More extensive tests (which takes a long time to run, so disabled by default)
-        /*let test_value =
+    #[test]
+    #[ignore]
+    fn byte_gadget_exhaustive() {
+        let test_value =
             BigUint::from_bytes_be(&(1u8..33u8).collect::<Vec<u8>>()[..]);
         for idx in 0u64..33 {
             check_byte_gadget(
@@ -287,6 +290,6 @@ mod test {
                     0u64.into()
                 },
             );
-        }*/
+        }
     }
 }
