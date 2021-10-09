@@ -3,7 +3,9 @@ use crate::util::Expr;
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 // Default max degree allowed in all expressions passing through the ConstraintBuilder.
-const DEFAULT_MAX_DEGREE: usize = 8;
+const DEFAULT_MAX_DEGREE: usize = 2usize.pow(3) + 1;
+// Degree added for expressions used in lookups.
+const LOOKUP_DEGREE: usize = 3;
 
 #[derive(Clone, Debug)]
 pub struct ConstraintBuilder<F> {
@@ -65,7 +67,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             256 => FixedLookup::Range256,
             _ => unimplemented!(),
         };
-        self.validate_expression(&value);
+        self.validate_lookup_expression(&value);
         self.add_lookup(Lookup::FixedLookup(
             table,
             [value, 0.expr(), 0.expr()],
@@ -97,7 +99,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     }
 
     fn stack_lookup(&mut self, value: Expression<F>, is_write: bool) {
-        self.validate_expression(&value);
+        self.validate_lookup_expression(&value);
         self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
             index_offset: self.stack_offset,
             value,
@@ -129,10 +131,10 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         bytes: Vec<Expression<F>>,
         is_write: bool,
     ) {
-        self.validate_expression(&self.call_id.clone().unwrap());
-        self.validate_expression(&address);
+        self.validate_lookup_expression(&self.call_id.clone().unwrap());
+        self.validate_lookup_expression(&address);
         for idx in 0..bytes.len() {
-            self.validate_expression(&bytes[idx]);
+            self.validate_lookup_expression(&bytes[idx]);
             self.add_lookup(Lookup::BusMappingLookup(
                 BusMappingLookup::Memory {
                     call_id: self.call_id.clone().unwrap(),
@@ -148,10 +150,22 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     // Validation
 
     pub(crate) fn validate_expression(&self, expression: &Expression<F>) {
+        self.validate_degree(expression.degree());
+    }
+
+    pub(crate) fn validate_lookup_expression(
+        &self,
+        expression: &Expression<F>,
+    ) {
+        self.validate_degree(expression.degree() + LOOKUP_DEGREE);
+    }
+
+    pub(crate) fn validate_degree(&self, degree: usize) {
         assert!(
-            expression.degree() <= self.max_degree,
-            "Expression degree too large: {}",
-            expression.degree()
+            degree <= self.max_degree,
+            "Expression degree too high: {} > {}",
+            degree,
+            self.max_degree,
         );
     }
 
