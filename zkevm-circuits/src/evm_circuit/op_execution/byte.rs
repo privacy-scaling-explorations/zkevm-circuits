@@ -236,7 +236,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        compress(index.clone()),
+                        compress(index),
                         Base::zero(),
                     ]
                 },
@@ -247,7 +247,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        compress(value.clone()),
+                        compress(value),
                         Base::zero(),
                     ]
                 },
@@ -258,7 +258,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        compress(result.clone()),
+                        compress(result),
                         Base::zero(),
                     ]
                 },
