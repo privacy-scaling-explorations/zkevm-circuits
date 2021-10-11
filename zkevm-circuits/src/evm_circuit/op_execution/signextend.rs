@@ -39,16 +39,18 @@ struct SignextendSuccessCase<F> {
     result: Word<F>,
     sign_byte: Cell<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
-    is_byte_selected: [IsEqualGadget<F>; 32],
+    is_byte_selected: [IsEqualGadget<F>; 31],
+    selectors: [Cell<F>; 31],
 }
 
 impl<F: FieldExt> SignextendSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
         num_word: 3, // value + index + result
-        num_cell: 1
-            + IsZeroGadget::<F>::NUM_CELLS
-            + IsEqualGadget::<F>::NUM_CELLS * 32, // 1x is_msb_sum_zero + 32x is_byte_selected
+        num_cell: 1                               // sign_byte
+            + IsZeroGadget::<F>::NUM_CELLS        // is_msb_sum_zero
+            + IsEqualGadget::<F>::NUM_CELLS * 31  // is_byte_selected
+            + 31, // selectors
         will_halt: false,
     };
 
@@ -61,6 +63,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             sign_byte: alloc.cells.pop().unwrap(),
             is_msb_sum_zero: IsZeroGadget::construct(alloc),
             is_byte_selected: array_init(|_| IsEqualGadget::construct(alloc)),
+            selectors: array_init(|_| alloc.cells.pop().unwrap()),
         }
     }
 
@@ -79,14 +82,16 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             .is_msb_sum_zero
             .constraints(&mut cb, utils::sum::expr(&self.index.cells[1..32]));
 
-        // Now we just need to check that `result[0]` is the sum of all copied bytes.
+        // Now we need to find the byte we have to inspect to see how we need to do the extending.
         // We go byte by byte and check if `idx == index[0]`.
         // If they are equal (at most once) we add the byte value to the sum, else we add 0.
         // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
         // At the end this sum needs to equal `result[0]`.
-        let mut selected = vec![];
+        // We also generate the selectors, which we'll use to decide if we need to
+        // replace bytes because the the sign extending.
+        // We don't have to check the MSB, if that byte is selected no changes need to be done either.
         let mut selected_byte = 0.expr();
-        for idx in 0..32 {
+        for idx in 0..31 {
             // Check if this byte is selected looking only at the LSB of the index word
             let is_byte_selected = utils::and::expr(
                 self.is_byte_selected[idx].constraints(
@@ -96,11 +101,24 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
                 ),
                 msb_sum_zero.clone(),
             );
-            selected.push(is_byte_selected.clone());
 
             // Add the byte to the sum when this byte is selected
             selected_byte = selected_byte
-                + (is_byte_selected * self.value.cells[idx].expr());
+                + (is_byte_selected.clone() * self.value.cells[idx].expr());
+
+            // Cells are used here to store intermediate results, otherwise these sums
+            // are very long expressions.
+            // Once a byte was selected, all following bytes need to be replaced as well,
+            // so a selector is the sum of the current and all previous `is_byte_selected`.
+            cb.require_equal(
+                is_byte_selected.clone()
+                    + (if idx > 0 {
+                        self.selectors[idx - 1].expr()
+                    } else {
+                        0.expr()
+                    }),
+                self.selectors[idx].expr(),
+            );
         }
 
         // Use the sign of the selected byte to find the byte we'll use to extend the result.
@@ -116,17 +134,15 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             self.value.cells[0].expr(),
         );
         // All other bytes could change
-        let mut do_extend = 0.expr();
+        // The resulting byte is either the original value or the sign byte.
         for idx in 1..32 {
-            do_extend = do_extend + selected[idx - 1].clone();
-            let expected_byte_value = utils::select::expr(
-                do_extend.clone(),
-                self.sign_byte.expr().clone(),
-                self.value.cells[idx].expr(),
-            );
             cb.require_equal(
                 self.result.cells[idx].expr(),
-                expected_byte_value,
+                utils::select::expr(
+                    self.selectors[idx - 1].expr(),
+                    self.sign_byte.expr().clone(),
+                    self.value.cells[idx].expr(),
+                ),
             );
         }
 
@@ -136,13 +152,11 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         cb.stack_push(self.result.expr());
 
         // State transitions
-        #[allow(clippy::needless_update)]
         utils::StateTransitions {
             gc_delta: Some(GC_DELTA.expr()),
             sp_delta: Some(SP_DELTA.expr()),
             pc_delta: Some(PC_DELTA.expr()),
             gas_delta: Some(GAS.expr()),
-            ..Default::default()
         }
         .constraints(&mut cb, state_curr, state_next);
 
@@ -164,21 +178,37 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         self.result
             .assign(region, offset, Some(step.values[2].to_word()))?;
 
-        self.is_msb_sum_zero.assign(
+        let msb_sum_zero = self.is_msb_sum_zero.assign(
             region,
             offset,
             utils::sum::value(&step.values[0].to_word()[1..32]),
         )?;
 
-        for i in 0..32 {
-            self.is_byte_selected[i].assign(
-                region,
-                offset,
-                F::from_u64(step.values[0].to_word()[0] as u64),
-                F::from_u64(i as u64),
-            )?;
+        // Generated selectors
+        let mut selected = [F::zero(); 32];
+        for i in 0..31 {
+            selected[i] = utils::and::value(
+                F::from_u64(self.is_byte_selected[i].assign(
+                    region,
+                    offset,
+                    F::from_u64(step.values[0].to_word()[0] as u64),
+                    F::from_u64(i as u64),
+                )? as u64),
+                F::from_u64(msb_sum_zero as u64),
+            );
         }
 
+        // Generate selectors
+        let mut previous_selector_value: F = 0.into();
+        for i in 1..32 {
+            let selector_value = selected[i - 1] + previous_selector_value;
+            self.selectors[i - 1]
+                .assign(region, offset, Some(selector_value))
+                .unwrap();
+            previous_selector_value = selector_value;
+        }
+
+        // Sign byte lookup
         let mut sign = 0u64;
         if step.values[0] < BigUint::from(32u64) {
             let n = step.values[0].to_u32().unwrap();
@@ -188,6 +218,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             .assign(region, offset, Some(F::from_u64(sign * 0xFF)))
             .unwrap();
 
+        // State transitions
         state.global_counter += GC_DELTA;
         state.program_counter += PC_DELTA;
         state.stack_pointer += SP_DELTA;
@@ -219,42 +250,35 @@ mod test {
         }};
     }
 
-    fn compress(bytes: [u8; 32]) -> Base {
-        bytes
+    fn compress(value: BigUint) -> Base {
+        value
+            .to_bytes_le()
             .iter()
             .fold(Base::zero(), |acc, val| acc + Base::from_u64(*val as u64))
     }
 
-    #[test]
-    fn signextend_gadget() {
-        // Extend byte 3 (LSB is at 0)
-        let value = 0xF00201u64;
-        let index = 2u64;
-        let result = [
-            0x01, 0x02, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-        ];
+    fn check_signextend_gadget(
+        value: BigUint,
+        index: BigUint,
+        result: BigUint,
+    ) {
+        let all_ones = BigUint::from_bytes_le(&[1u8; 32]);
         try_test_circuit!(
             vec![
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
+                    opcode: OpcodeId::PUSH32,
                     case: Case::Success,
-                    values: vec![value.into(), 0x010101u64.into()],
+                    values: vec![value.clone(), all_ones.clone()],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH1,
+                    opcode: OpcodeId::PUSH32,
                     case: Case::Success,
-                    values: vec![index.into(), 0x01u64.into()],
+                    values: vec![index.clone(), all_ones],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::SIGNEXTEND,
                     case: Case::Success,
-                    values: vec![
-                        index.into(),
-                        value.into(),
-                        BigUint::from_bytes_le(&result),
-                    ],
+                    values: vec![index.clone(), value.clone(), result.clone()],
                 }
             ],
             vec![
@@ -265,7 +289,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(0x01 + 0x02 + 0xF0),
+                        compress(value.clone()),
                         Base::zero(),
                     ]
                 },
@@ -276,7 +300,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(index),
+                        compress(index.clone()),
                         Base::zero(),
                     ]
                 },
@@ -287,7 +311,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(index),
+                        compress(index),
                         Base::zero(),
                     ]
                 },
@@ -298,7 +322,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(0x01 + 0x02 + 0xF0),
+                        compress(value),
                         Base::zero(),
                     ]
                 },
@@ -316,87 +340,61 @@ mod test {
             ],
             Ok(())
         );
-        // Select byte 256
-        /*try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![0x030201u64.into(), 0x010101u64.into()],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
-                    case: Case::Success,
-                    values: vec![0x0100u64.into(), 0x0101u64.into()],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::BYTE,
-                    case: Case::Success,
-                    values: vec![
-                        0x0100u64.into(),
-                        0x030201u64.into(),
-                        0u64.into(),
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                },
-            ],
-            Ok(())
-        );*/
+    }
+
+    #[test]
+    fn signextend_gadget() {
+        // Extend byte 2 (negative)
+        check_signextend_gadget(
+            0xF00201u64.into(),
+            2u64.into(),
+            BigUint::from_bytes_le(&[
+                0x01, 0x02, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0xFF, 0xFF,
+            ]),
+        );
+        // Extend byte 0 (positive)
+        check_signextend_gadget(0xFF01u64.into(), 0u64.into(), 0x01u64.into());
+        // Extend byte 258
+        check_signextend_gadget(
+            0xF00201u64.into(),
+            258u64.into(),
+            0xF00201u64.into(),
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn signextend_gadget_exhaustive() {
+        let pos_value: [u8; 32] = [0b01111111u8; 32];
+        let neg_value: [u8; 32] = [0b10000000u8; 32];
+
+        let pos_extend = 0u8;
+        let neg_extend = 0xFFu8;
+
+        for (value, byte_extend) in
+            vec![(pos_value, pos_extend), (neg_value, neg_extend)].iter()
+        {
+            for idx in 0..33 {
+                println!("{}", idx);
+                check_signextend_gadget(
+                    BigUint::from_bytes_le(value),
+                    (idx as u64).into(),
+                    BigUint::from_bytes_le(
+                        &(0..32)
+                            .map(|i| {
+                                if i > idx {
+                                    byte_extend.clone()
+                                } else {
+                                    value[i].clone()
+                                }
+                            })
+                            .collect::<Vec<u8>>(),
+                    ),
+                );
+            }
+        }
     }
 }
