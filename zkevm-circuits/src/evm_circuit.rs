@@ -142,6 +142,7 @@ pub(crate) enum FixedLookup {
     // Noop provides [0, 0, 0, 0] row
     Noop,
     // meaningful tags start with 1
+    Range1024,
     Range256,
     Range32,
     Range16,
@@ -764,6 +765,33 @@ impl<F: FieldExt> EvmCircuit<F> {
                     {
                         region.assign_fixed(
                             || format!("Range16: padding {}", idx),
+                            *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                // Range32
+                for idx in 0..1024 {
+                    region.assign_fixed(
+                        || "Range1024: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::Range1024 as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "Range1024: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[2..].iter().enumerate()
+                    {
+                        region.assign_fixed(
+                            || format!("Range1024: padding {}", idx),
                             *column,
                             offset,
                             || Ok(F::zero()),

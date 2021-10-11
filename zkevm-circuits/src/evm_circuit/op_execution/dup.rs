@@ -15,21 +15,20 @@ struct DupSuccessAllocation<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct DupGadget<F, const POSITION: usize> {
+pub struct DupGadget<F, const DUPX: usize> {
     success: DupSuccessAllocation<F>,
     stack_overflow: Cell<F>, // case selector
+    stack_underflow: Cell<F>,
     out_of_gas: (
         Cell<F>, // case selector
         Cell<F>, // gas available
     ),
 }
 
-impl<F: FieldExt, const POSITION: usize> OpGadget<F>
-    for DupGadget<F, POSITION>
-{
+impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
     const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[
-        //OpcodeId::from(POSITION as u8),
-        from_u8(POSITION as u8),
+        //OpcodeId::from(DUPX as u8),
+        from_u8(DUPX as u8),
     ];
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
@@ -46,6 +45,12 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
             will_halt: true,
         },
         CaseConfig {
+            case: Case::StackUnderflow,
+            num_word: 0,
+            num_cell: 0,
+            will_halt: true,
+        },
+        CaseConfig {
             case: Case::OutOfGas,
             num_word: 0,
             num_cell: 0,
@@ -54,7 +59,7 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
     ];
 
     fn construct(case_allocations: Vec<CaseAllocation<F>>) -> Self {
-        let [mut success, stack_overflow, out_of_gas]: [CaseAllocation<F>; 3] =
+        let [mut success, stack_overflow, stack_underflow, out_of_gas]: [CaseAllocation<F>; 4] =
             case_allocations.try_into().unwrap();
         Self {
             success: DupSuccessAllocation {
@@ -62,6 +67,7 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
                 word: success.words.pop().unwrap(),
             },
             stack_overflow: stack_overflow.selector,
+            stack_underflow: stack_underflow.selector,
             out_of_gas: (
                 out_of_gas.selector,
                 out_of_gas.resumption.unwrap().gas_available,
@@ -76,15 +82,17 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
     ) -> Vec<Constraint<F>> {
         let OpExecutionState { opcode, .. } = &state_curr;
 
+        // use position to represents 'x' value of 'dupx'
+        let position = opcode.expr() - OpcodeId::DUP1.expr() + 1.expr();
         // lookup in range 16 for dup
         let common_lookups = vec![
             Lookup::FixedLookup(
                 FixedLookup::Range16,
-                [opcode.expr() - OpcodeId::DUP1.expr(), 0.expr(), 0.expr()],
+                [position.clone() - 1.expr(), 0.expr(), 0.expr()],
             ),
             Lookup::FixedLookup(
                 FixedLookup::Range16,
-                [POSITION.expr() - OpcodeId::DUP1.expr(), 0.expr(), 0.expr()],
+                [DUPX.expr() - OpcodeId::DUP1.expr(), 0.expr(), 0.expr()],
             ),
         ];
 
@@ -110,8 +118,7 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
             let bus_mapping_lookups = [
                 // TODO: add 32 Bytecode lookups when supported
                 vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: (POSITION
-                        - usize::from(OpcodeId::DUP1.as_u8()))
+                    index_offset: (DUPX - usize::from(OpcodeId::DUP1.as_u8()))
                         as i32,
                     value: word.expr(),
                     is_write: false,
@@ -142,6 +149,23 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
             }
         };
 
+        let stack_pointer = state_curr.stack_pointer.expr();
+        let diff = 1024.expr() - stack_pointer - position;
+
+        // diff's maxium is 1023 when stack_pointer = 0 and position = 1,
+        // the minimum is 0 when stack_pointer + position = 1024 , i.e. stack_point = 1020, DUPX = 4
+        let stack_underflow = {
+            Constraint {
+                name: "DupGadget stack underflow",
+                selector: self.stack_underflow.expr(),
+                polys: vec![],
+                lookups: vec![Lookup::FixedLookup(
+                    FixedLookup::Range1024,
+                    [diff, 0.expr(), 0.expr()],
+                )],
+            }
+        };
+
         let out_of_gas = {
             let (one, two, three) = (1.expr(), 2.expr(), 3.expr());
             let (case_selector, gas_available) = &self.out_of_gas;
@@ -160,13 +184,18 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
             }
         };
 
-        array::IntoIter::new([success, stack_overflow, out_of_gas])
-            .map(move |mut constraint| {
-                constraint.lookups =
-                    [common_lookups.clone(), constraint.lookups].concat();
-                constraint
-            })
-            .collect()
+        array::IntoIter::new([
+            success,
+            stack_overflow,
+            stack_underflow,
+            out_of_gas,
+        ])
+        .map(move |mut constraint| {
+            constraint.lookups =
+                [common_lookups.clone(), constraint.lookups].concat();
+            constraint
+        })
+        .collect()
     }
 
     fn assign(
@@ -191,7 +220,7 @@ impl<F: FieldExt, const POSITION: usize> OpGadget<F>
     }
 }
 
-impl<F: FieldExt, const POSITION: usize> DupGadget<F, POSITION> {
+impl<F: FieldExt, const DUPX: usize> DupGadget<F, DUPX> {
     fn assign_success(
         &self,
         region: &mut Region<'_, F>,
@@ -251,7 +280,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
