@@ -15,11 +15,14 @@ use halo2::{
 use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
+mod byte;
 mod comparator;
 mod pop;
 mod push;
+mod utils;
 
 use arithmetic::AddGadget;
+use byte::ByteGadget;
 use comparator::LtGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -40,9 +43,9 @@ fn bool_switches_constraints<F: FieldExt>(
     constraints
 }
 
-#[derive(Debug)]
-struct CaseConfig {
-    case: Case,
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CaseConfig {
+    pub(crate) case: Case,
     num_word: usize,
     num_cell: usize,
     will_halt: bool,
@@ -118,7 +121,7 @@ impl CaseConfig {
 }
 
 #[derive(Debug)]
-struct CaseAllocation<F> {
+pub(crate) struct CaseAllocation<F> {
     selector: Cell<F>,
     words: Vec<Word<F>>,
     cells: Vec<Cell<F>>,
@@ -212,6 +215,7 @@ pub(crate) struct OpExecutionGadget<F> {
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
     lt_gadget: LtGadget<F>,
+    byte_gadget: ByteGadget<F>,
     pop_gadget: PopGadget<F>,
 }
 
@@ -270,6 +274,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(push_gadget);
         construct_op_gadget!(lt_gadget);
         construct_op_gadget!(pop_gadget);
+        construct_op_gadget!(byte_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -309,6 +314,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             push_gadget,
             lt_gadget,
             pop_gadget,
+            byte_gadget,
         }
     }
 
@@ -553,6 +559,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, OpcodeId::POP) => self.pop_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::BYTE) => self.byte_gadget.assign(
                     region,
                     offset,
                     core_state,
