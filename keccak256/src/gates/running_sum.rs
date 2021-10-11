@@ -1,12 +1,81 @@
+use crate::arith_helpers::*;
 use crate::gates::tables::*;
 use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
+use std::iter;
 use std::marker::PhantomData;
 
+/// | coef | slice | accumulator |
+/// |------|-------|-------------|
+/// | 5    | 10**2 |       30500 | (step = 2)
+/// | 3    | 10**4 |       30000 |
 pub struct RunningSumConfig<F> {
+    q_enable: Selector,
+    is_final: Selector,
+    coef: Column<Advice>,
+    slice: Column<Advice>,
+    accumulator: Column<Advice>,
+    step: u32,
+    base: u64,
+    _marker: PhantomData<F>,
+}
+impl<F: FieldExt> RunningSumConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: Selector,
+        is_final: Selector,
+        coef: Column<Advice>,
+        slice: Column<Advice>,
+        accumulator: Column<Advice>,
+        step: u32,
+        base: u64,
+    ) -> Self {
+        let config = Self {
+            q_enable,
+            is_final,
+            coef,
+            slice,
+            accumulator,
+            step,
+            base,
+            _marker: PhantomData,
+        };
+        meta.create_gate("mul", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let is_final = meta.query_selector(is_final);
+            let coef = meta.query_advice(coef, Rotation::cur());
+            let slice = meta.query_advice(config.slice, Rotation::cur());
+            let acc = meta.query_advice(accumulator, Rotation::cur());
+            let next_slice = meta.query_advice(config.slice, Rotation::next());
+            let next_acc = meta.query_advice(accumulator, Rotation::next());
+            let slice_multiplier =
+                Expression::Constant(F::from(u64::pow(base, step)));
+            iter::empty()
+                .chain(Some((
+                    "(not final) check next acc",
+                    (is_final.clone() - Expression::Constant(F::one()))
+                        * (next_acc
+                            - (acc.clone() - coef.clone() * slice.clone())),
+                )))
+                .chain(Some((
+                    "(final) check acc",
+                    is_final * (acc - coef * slice.clone()),
+                )))
+                .chain(Some((
+                    "next slice",
+                    next_slice - slice * slice_multiplier,
+                )))
+                .map(|(name, poly)| (name, q_enable.clone() * poly))
+                .collect::<Vec<_>>()
+        });
+        config
+    }
+}
+
+pub struct RotateConversionConfig<F> {
     q_enable: Selector,
     // coef, slice, acc
     base_13_cols: [Column<Advice>; 3],
@@ -15,10 +84,11 @@ pub struct RunningSumConfig<F> {
     // block count, step 2 acc, step 3 acc
     block_count_cols: [Column<Advice>; 3],
     base_13_to_base_9_lookup: Base13toBase9TableConfig<F>,
-    _marker: PhantomData<F>,
+    b13_rs_config: RunningSumConfig<F>,
+    b9_rs_config: RunningSumConfig<F>,
 }
 
-impl<F: FieldExt> RunningSumConfig<F> {
+impl<F: FieldExt> RotateConversionConfig<F> {
     pub fn configure(
         q_enable: Selector,
         is_final: Selector,
@@ -27,13 +97,35 @@ impl<F: FieldExt> RunningSumConfig<F> {
         base_9_cols: [Column<Advice>; 3],
         block_count_cols: [Column<Advice>; 3],
         step: u32,
-    ) -> RunningSumConfig<F> {
+    ) -> Self {
         let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
             meta,
             q_enable,
             base_13_cols[1],
             base_9_cols[1],
             block_count_cols[0],
+        );
+
+        let b13_rs_config = RunningSumConfig::configure(
+            meta,
+            q_enable,
+            is_final,
+            base_13_cols[0],
+            base_13_cols[1],
+            base_13_cols[2],
+            step,
+            B13,
+        );
+
+        let b9_rs_config = RunningSumConfig::configure(
+            meta,
+            q_enable,
+            is_final,
+            base_9_cols[0],
+            base_9_cols[1],
+            base_9_cols[2],
+            step,
+            B9,
         );
 
         // ? = non-zero
@@ -54,48 +146,14 @@ impl<F: FieldExt> RunningSumConfig<F> {
             // validated
 
             // what about the last row?
-            let base_13_exprs: Vec<Expression<F>> = base_13_cols
-                .iter()
-                .map(|col| meta.query_advice(*col, Rotation::cur()))
-                .collect::<Vec<Expression<F>>>();
-
-            let base_9_exprs: Vec<Expression<F>> = base_9_cols
-                .iter()
-                .map(|col| meta.query_advice(*col, Rotation::cur()))
-                .collect::<Vec<Expression<F>>>();
-
-            let coef_13 = meta.query_advice(base_13_cols[0], Rotation::cur());
-            let coef_13_next =
-                meta.query_advice(base_13_cols[0], Rotation::next());
-            let slice_13 = meta.query_advice(base_13_cols[1], Rotation::cur());
-            let coef_9 = meta.query_advice(base_9_cols[0], Rotation::cur());
-            let coef_9_next =
-                meta.query_advice(base_9_cols[0], Rotation::next());
-            let slice_9 = meta.query_advice(base_9_cols[1], Rotation::cur());
             let block_count =
                 meta.query_advice(block_count_cols[0], Rotation::cur());
-            let acc_13 = meta.query_advice(base_13_cols[2], Rotation::cur());
-            let acc_13_next =
-                meta.query_advice(base_13_cols[2], Rotation::next());
-            let acc_9 = meta.query_advice(base_9_cols[2], Rotation::cur());
-            let acc_9_next =
-                meta.query_advice(base_9_cols[2], Rotation::next());
             let block_count_acc =
                 meta.query_advice(block_count_cols[1], Rotation::cur());
             let block_count_acc_next =
                 meta.query_advice(block_count_cols[1], Rotation::next());
 
-            let coef_step_13 =
-                Expression::Constant(F::from(u64::pow(13, step)));
-            let coef_step_9 = Expression::Constant(F::from(u64::pow(9, step)));
-
-            let expr_next_13_coef =
-                coef_13_next - coef_step_13 * coef_13.clone();
-            let expr_next_9_coef = coef_9_next - coef_step_9 * coef_9.clone();
             // next acc correctness
-            let expr_next_13_acc =
-                (acc_13 - acc_13_next.clone()) - coef_13 * slice_13;
-            let expr_next_9_acc = (acc_9 - acc_9_next) - coef_9 * slice_9;
             let step2_acc =
                 meta.query_advice(block_count_cols[1], Rotation::cur());
             let step2_acc_next =
@@ -108,14 +166,7 @@ impl<F: FieldExt> RunningSumConfig<F> {
             let expr_next_block_count_acc =
                 block_count_acc_next - block_count_acc - block_count.clone();
 
-            let mut checks = vec![
-                q_enable.clone() * expr_next_13_coef,
-                q_enable.clone() * expr_next_9_coef,
-                q_enable.clone() * expr_next_13_acc,
-                q_enable.clone() * expr_next_9_acc,
-                q_enable.clone() * expr_next_block_count_acc,
-                q_enable.clone() * is_final * acc_13_next,
-            ];
+            let mut checks = vec![q_enable.clone() * expr_next_block_count_acc];
             // block_count acc correctness
             if step == 1 {
                 checks.push(q_enable.clone() * block_count);
@@ -139,13 +190,14 @@ impl<F: FieldExt> RunningSumConfig<F> {
             checks
         });
 
-        RunningSumConfig {
+        Self {
             q_enable,
             base_13_cols,
             base_9_cols,
             block_count_cols,
             base_13_to_base_9_lookup,
-            _marker: PhantomData,
+            b13_rs_config,
+            b9_rs_config,
         }
     }
 }
