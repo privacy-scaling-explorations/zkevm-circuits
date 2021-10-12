@@ -4,6 +4,7 @@ members = [
     "bus-mapping",
     "keccak256",
     "geth-utils",
+    "mpt"
 ]
 
 [patch.crates-io]
