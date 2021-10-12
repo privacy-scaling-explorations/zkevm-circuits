@@ -21,7 +21,7 @@ const GAS: GasCost = GasCost::FASTEST;
 const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
-    [BYTE],
+    [BYTE]
     ByteGadget {
         ByteSuccessCase(),
         StackUnderflowCase(NUM_POPPED),

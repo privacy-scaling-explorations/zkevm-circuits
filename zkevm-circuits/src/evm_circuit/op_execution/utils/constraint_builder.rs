@@ -67,11 +67,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             256 => FixedLookup::Range256,
             _ => unimplemented!(),
         };
-        self.validate_lookup_expression(&value);
-        self.add_lookup(Lookup::FixedLookup(
-            table,
-            [value, 0.expr(), 0.expr()],
-        ));
+        self.add_fixed_lookup(table, [value, 0.expr(), 0.expr()]);
     }
 
     pub(crate) fn require_in_set(
@@ -180,6 +176,17 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         for expression in expressions {
             self.add_expression(expression);
         }
+    }
+
+    pub(crate) fn add_fixed_lookup(
+        &mut self,
+        table: FixedLookup,
+        expressions: [Expression<F>; 3],
+    ) {
+        for expression in expressions.iter() {
+            self.validate_lookup_expression(expression);
+        }
+        self.add_lookup(Lookup::FixedLookup(table, expressions));
     }
 
     fn add_lookup(&mut self, lookup: Lookup<F>) {

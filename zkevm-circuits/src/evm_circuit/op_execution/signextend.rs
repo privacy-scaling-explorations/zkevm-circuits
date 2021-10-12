@@ -6,7 +6,7 @@ use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
-use crate::evm_circuit::{FixedLookup, Lookup};
+use crate::evm_circuit::FixedLookup;
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use array_init::array_init;
@@ -23,7 +23,7 @@ const GAS: GasCost = GasCost::FAST;
 const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
-    [SIGNEXTEND],
+    [SIGNEXTEND]
     SignextendGadget {
         SignextendSuccessCase(),
         StackUnderflowCase(NUM_POPPED),
@@ -75,74 +75,78 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
+        // Generate selectors.
         // If any of the non-LSB bytes of the index word are non-zero we never need to do any changes.
         // So just sum all the non-LSB byte values here and then check if it's non-zero
-        // so we can use that as an additional condition when to change byte values.
-        let msb_sum_zero = self
+        // so we can use that as an additional condition to enable the selector.
+        let is_msb_sum_zero = self
             .is_msb_sum_zero
             .constraints(&mut cb, utils::sum::expr(&self.index.cells[1..32]));
-
-        // Now we need to find the byte we have to inspect to see how we need to do the extending.
+        // We need to find the byte we have to get the sign from so we can correctly extend.
         // We go byte by byte and check if `idx == index[0]`.
         // If they are equal (at most once) we add the byte value to the sum, else we add 0.
-        // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
-        // At the end this sum needs to equal `result[0]`.
         // We also generate the selectors, which we'll use to decide if we need to
-        // replace bytes because the the sign extending.
-        // We don't have to check the MSB, if that byte is selected no changes need to be done either.
+        // replace bytes with the sign byte.
+        // There is no need to check the MSB, even if the MSB is selected no bytes need to be changed.
         let mut selected_byte = 0.expr();
         for idx in 0..31 {
-            // Check if this byte is selected looking only at the LSB of the index word
-            let is_byte_selected = utils::and::expr(
+            // Check if this byte is selected
+            // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
+            let is_selected = utils::and::expr(vec![
                 self.is_byte_selected[idx].constraints(
                     &mut cb,
                     self.index.cells[0].expr(),
                     idx.expr(),
                 ),
-                msb_sum_zero.clone(),
-            );
+                is_msb_sum_zero.clone(),
+            ]);
 
-            // Add the byte to the sum when this byte is selected
+            // Add the byte to the sum when this byte is selected0
             selected_byte = selected_byte
-                + (is_byte_selected.clone() * self.value.cells[idx].expr());
+                + (is_selected.clone() * self.value.cells[idx].expr());
 
+            // Verify the selector.
             // Cells are used here to store intermediate results, otherwise these sums
             // are very long expressions.
-            // Once a byte was selected, all following bytes need to be replaced as well,
-            // so a selector is the sum of the current and all previous `is_byte_selected`.
+            // The selector for a byte position is enabled when its value needs to change to the sign byte.
+            // Once a byte was selected, all following bytes need to be replaced,
+            // so a selector is the sum of the current and all previous `is_selected` values.
             cb.require_equal(
-                is_byte_selected.clone()
-                    + (if idx > 0 {
+                is_selected.clone()
+                    + if idx > 0 {
                         self.selectors[idx - 1].expr()
                     } else {
                         0.expr()
-                    }),
+                    },
                 self.selectors[idx].expr(),
             );
         }
 
+        // Lookup the sign byte.
         // Use the sign of the selected byte to find the byte we'll use to extend the result.
         // If no byte was selected the sign byte won't be used so its value doesn't matter.
-        cb.add_lookup(Lookup::FixedLookup(
+        cb.add_fixed_lookup(
             FixedLookup::SignByte,
             [selected_byte, self.sign_byte.expr(), 0.expr()],
-        ));
-
-        // The LSB always remains the same
-        cb.require_equal(
-            self.result.cells[0].expr(),
-            self.value.cells[0].expr(),
         );
-        // All other bytes could change
-        // The resulting byte is either the original value or the sign byte.
-        for idx in 1..32 {
+
+        // Verify the result.
+        // The LSB always remains the same, all other bytes with their selector enabled
+        // need to be changed to the sign byte.
+        // When a byte was selected all the **following** bytes need to be replaced
+        // (hence the `selectors[idx - 1]`).
+        for idx in 0..32 {
             cb.require_equal(
                 self.result.cells[idx].expr(),
-                utils::select::expr(
-                    self.selectors[idx - 1].expr(),
-                    self.sign_byte.expr().clone(),
-                    self.value.cells[idx].expr(),
-                ),
+                if idx == 0 {
+                    self.value.cells[idx].expr()
+                } else {
+                    utils::select::expr(
+                        self.selectors[idx - 1].expr(),
+                        self.sign_byte.expr().clone(),
+                        self.value.cells[idx].expr(),
+                    )
+                },
             );
         }
 
@@ -171,6 +175,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
+        // Inputs and output
         self.index
             .assign(region, offset, Some(step.values[0].to_word()))?;
         self.value
@@ -178,31 +183,25 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         self.result
             .assign(region, offset, Some(step.values[2].to_word()))?;
 
+        // Generate selectors
         let msb_sum_zero = self.is_msb_sum_zero.assign(
             region,
             offset,
             utils::sum::value(&step.values[0].to_word()[1..32]),
         )?;
-
-        // Generated selectors
-        let mut selected = [F::zero(); 32];
+        let mut previous_selector_value: F = 0.into();
         for i in 0..31 {
-            selected[i] = utils::and::value(
-                F::from_u64(self.is_byte_selected[i].assign(
+            let selected = utils::and::value(vec![
+                self.is_byte_selected[i].assign(
                     region,
                     offset,
                     F::from_u64(step.values[0].to_word()[0] as u64),
                     F::from_u64(i as u64),
-                )? as u64),
-                F::from_u64(msb_sum_zero as u64),
-            );
-        }
-
-        // Generate selectors
-        let mut previous_selector_value: F = 0.into();
-        for i in 1..32 {
-            let selector_value = selected[i - 1] + previous_selector_value;
-            self.selectors[i - 1]
+                )?,
+                msb_sum_zero,
+            ]);
+            let selector_value = selected + previous_selector_value;
+            self.selectors[i]
                 .assign(region, offset, Some(selector_value))
                 .unwrap();
             previous_selector_value = selector_value;
@@ -224,9 +223,11 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         state.stack_pointer += SP_DELTA;
         state.gas_counter += GAS.as_usize();
 
+        // Case selector
         self.case_selector
             .assign(region, offset, Some(F::from_u64(1)))
             .unwrap();
+
         Ok(())
     }
 }
@@ -384,13 +385,15 @@ mod test {
                     (idx as u64).into(),
                     BigUint::from_bytes_le(
                         &(0..32)
-                            .map(|i| {
-                                if i > idx {
-                                    byte_extend.clone()
-                                } else {
-                                    value[i].clone()
-                                }
-                            })
+                            .map(
+                                |i| {
+                                    if i > idx {
+                                        *byte_extend
+                                    } else {
+                                        value[i]
+                                    }
+                                },
+                            )
                             .collect::<Vec<u8>>(),
                     ),
                 );

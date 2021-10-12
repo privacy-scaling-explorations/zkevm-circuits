@@ -791,7 +791,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "SignByte: sign",
                         self.fixed_table[2],
                         offset,
-                        || Ok(F::from_u64((idx >> 7) * 0xFF as u64)),
+                        || Ok(F::from_u64((idx >> 7) * 0xFFu64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[3..].iter().enumerate()
