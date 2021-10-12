@@ -75,14 +75,14 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // Generate selectors.
+        // Generate the selectors.
         // If any of the non-LSB bytes of the index word are non-zero we never need to do any changes.
         // So just sum all the non-LSB byte values here and then check if it's non-zero
         // so we can use that as an additional condition to enable the selector.
         let is_msb_sum_zero = self
             .is_msb_sum_zero
             .constraints(&mut cb, utils::sum::expr(&self.index.cells[1..32]));
-        // We need to find the byte we have to get the sign from so we can correctly extend.
+        // We need to find the byte we have to get the sign from so we can extend correctly.
         // We go byte by byte and check if `idx == index[0]`.
         // If they are equal (at most once) we add the byte value to the sum, else we add 0.
         // We also generate the selectors, which we'll use to decide if we need to
@@ -101,7 +101,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
                 is_msb_sum_zero.clone(),
             ]);
 
-            // Add the byte to the sum when this byte is selected0
+            // Add the byte to the sum when this byte is selected
             selected_byte = selected_byte
                 + (is_selected.clone() * self.value.cells[idx].expr());
 
@@ -109,7 +109,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             // Cells are used here to store intermediate results, otherwise these sums
             // are very long expressions.
             // The selector for a byte position is enabled when its value needs to change to the sign byte.
-            // Once a byte was selected, all following bytes need to be replaced,
+            // Once a byte was selected, all following bytes need to be replaced as well,
             // so a selector is the sum of the current and all previous `is_selected` values.
             cb.require_equal(
                 is_selected.clone()
@@ -123,8 +123,8 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         }
 
         // Lookup the sign byte.
-        // Use the sign of the selected byte to find the byte we'll use to extend the result.
-        // If no byte was selected the sign byte won't be used so its value doesn't matter.
+        // This will use the most significant bit of the selected byte to return the sign byte,
+        // which is a byte with all its bits set to the sign of the selected byte.
         cb.add_fixed_lookup(
             FixedLookup::SignByte,
             [selected_byte, self.sign_byte.expr(), 0.expr()],
@@ -183,7 +183,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         self.result
             .assign(region, offset, Some(step.values[2].to_word()))?;
 
-        // Generate selectors
+        // Generate the selectors
         let msb_sum_zero = self.is_msb_sum_zero.assign(
             region,
             offset,
@@ -207,11 +207,11 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             previous_selector_value = selector_value;
         }
 
-        // Sign byte lookup
+        // Set the sign byte
         let mut sign = 0u64;
-        if step.values[0] < BigUint::from(32u64) {
-            let n = step.values[0].to_u32().unwrap();
-            sign = (step.values[1].to_word()[n as usize] >> 7) as u64;
+        if step.values[0] < BigUint::from(31u64) {
+            let index = step.values[0].to_u32().unwrap() as usize;
+            sign = (step.values[1].to_word()[index] >> 7) as u64;
         }
         self.sign_byte
             .assign(region, offset, Some(F::from_u64(sign * 0xFF)))
@@ -379,7 +379,6 @@ mod test {
             vec![(pos_value, pos_extend), (neg_value, neg_extend)].iter()
         {
             for idx in 0..33 {
-                println!("{}", idx);
                 check_signextend_gadget(
                     BigUint::from_bytes_le(value),
                     (idx as u64).into(),

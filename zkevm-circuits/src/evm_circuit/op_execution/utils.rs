@@ -72,7 +72,7 @@ pub(crate) fn batch_add_expressions<F: FieldExt>(
         .collect()
 }
 
-/// Returns the sum of the specified Cells
+/// Returns the sum of the passed in cells
 pub(crate) mod sum {
     use super::super::Cell;
     use crate::util::Expr;
