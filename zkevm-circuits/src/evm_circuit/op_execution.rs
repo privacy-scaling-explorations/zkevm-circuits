@@ -20,6 +20,7 @@ mod comparator;
 mod dup;
 mod pop;
 mod push;
+mod utils;
 
 use arithmetic::AddGadget;
 use byte::ByteGadget;
@@ -576,7 +577,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, _, OpcodeId::BYTE) => self.byte_gadget.assign(
-                     region,
+                    region,
                     offset,
                     core_state,
                     execution_step,

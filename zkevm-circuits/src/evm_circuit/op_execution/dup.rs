@@ -302,8 +302,6 @@ mod test {
         }};
     }
 
-    // TODO: add failure cases
-
     #[test]
     fn dup2_gadget() {
         try_test_circuit!(
