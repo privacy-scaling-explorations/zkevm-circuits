@@ -68,7 +68,7 @@ impl KeccakFArith {
         out
     }
 
-    fn xi(a: &StateBigInt) -> StateBigInt {
+    pub fn xi(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[(x, y)] = a[(x, y)].clone() * A1
