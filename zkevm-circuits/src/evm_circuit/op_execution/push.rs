@@ -160,7 +160,7 @@ impl<F: FieldExt> OpGadget<F> for PushGadget<F> {
 
             let bus_mapping_lookups =
                 [vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: -1,
+                    index_offset: (-1).expr(),
                     value: word.expr(),
                     is_write: true,
                 })]]

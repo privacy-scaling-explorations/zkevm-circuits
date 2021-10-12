@@ -88,7 +88,7 @@ pub(crate) enum BusMappingLookup<F> {
         // specified.
         // Stack index is always deterministic respect to stack pointer, so an
         // index offset is enough.
-        index_offset: i32,
+        index_offset: Expression<F>,
         value: Expression<F>,
     },
     Memory {
@@ -572,7 +572,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                             } => [
                                 is_write.expr(),
                                 call_id.expr(),
-                                stack_pointer.expr() + index_offset.expr(),
+                                stack_pointer.expr() + index_offset,
                                 value,
                                 0.expr(),
                             ],
@@ -773,7 +773,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     offset += 1;
                 }
 
-                // Range32
+                // Range1024
                 for idx in 0..1024 {
                     region.assign_fixed(
                         || "Range1024: tag",

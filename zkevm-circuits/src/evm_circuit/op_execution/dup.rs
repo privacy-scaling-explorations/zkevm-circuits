@@ -12,10 +12,12 @@ use std::{array, convert::TryInto};
 struct DupSuccessAllocation<F> {
     case_selector: Cell<F>,
     word: Word<F>, // target word to dup （witness）
+    selectors: [Cell<F>; 16], /* whether its DUP1, ..., or DUP16 ([1, 1,
+                    * 0, ..., 0] means DUP2) */
 }
 
 #[derive(Clone, Debug)]
-pub struct DupGadget<F, const DUPX: usize> {
+pub struct DupGadget<F> {
     success: DupSuccessAllocation<F>,
     stack_overflow: Cell<F>, // case selector
     stack_underflow: Cell<F>,
@@ -25,17 +27,31 @@ pub struct DupGadget<F, const DUPX: usize> {
     ),
 }
 
-impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
+impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
     const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[
-        //OpcodeId::from(DUPX as u8),
-        from_u8(DUPX as u8),
+        OpcodeId::DUP1,
+        OpcodeId::DUP2,
+        OpcodeId::DUP3,
+        OpcodeId::DUP4,
+        OpcodeId::DUP5,
+        OpcodeId::DUP6,
+        OpcodeId::DUP7,
+        OpcodeId::DUP8,
+        OpcodeId::DUP9,
+        OpcodeId::DUP10,
+        OpcodeId::DUP11,
+        OpcodeId::DUP12,
+        OpcodeId::DUP13,
+        OpcodeId::DUP14,
+        OpcodeId::DUP15,
+        OpcodeId::DUP16,
     ];
 
     const CASE_CONFIGS: &'static [CaseConfig] = &[
         CaseConfig {
             case: Case::Success,
             num_word: 1,
-            num_cell: 0,
+            num_cell: 16, // for DUP selectors
             will_halt: false,
         },
         CaseConfig {
@@ -65,6 +81,7 @@ impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
             success: DupSuccessAllocation {
                 case_selector: success.selector.clone(),
                 word: success.words.pop().unwrap(),
+                selectors: success.cells.try_into().unwrap(),
             },
             stack_overflow: stack_overflow.selector,
             stack_underflow: stack_underflow.selector,
@@ -81,20 +98,13 @@ impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
         state_next: &OpExecutionState<F>,
     ) -> Vec<Constraint<F>> {
         let OpExecutionState { opcode, .. } = &state_curr;
-
-        // use position to represents 'x' value of 'dupx'
-        let position = opcode.expr() - OpcodeId::DUP1.expr() + 1.expr();
+        // use num_duplicated to represents 'x' value of 'dupx'
+        let num_duplicated = opcode.expr() - OpcodeId::DUP1.expr() + 1.expr();
         // lookup in range 16 for dup
-        let common_lookups = vec![
-            Lookup::FixedLookup(
-                FixedLookup::Range16,
-                [position.clone() - 1.expr(), 0.expr(), 0.expr()],
-            ),
-            Lookup::FixedLookup(
-                FixedLookup::Range16,
-                [DUPX.expr() - OpcodeId::DUP1.expr(), 0.expr(), 0.expr()],
-            ),
-        ];
+        let common_lookups = vec![Lookup::FixedLookup(
+            FixedLookup::Range16,
+            [opcode.expr() - OpcodeId::DUP1.expr(), 0.expr(), 0.expr()],
+        )];
 
         let success = {
             // interpreter state transition constraints
@@ -113,18 +123,37 @@ impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
             let DupSuccessAllocation {
                 case_selector,
                 word,
+                selectors,
             } = &self.success;
+
+            let mut dup_constraints = vec![];
+            for idx in 0..16 {
+                // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
+                // 0, 0, 0]
+                if idx > 0 {
+                    let diff =
+                        selectors[idx - 1].expr() - selectors[idx].expr();
+                    dup_constraints.push(diff.clone() * (1.expr() - diff));
+                }
+                // selectors needs to be 0 or 1
+                dup_constraints.push(
+                    selectors[idx].expr() * (1.expr() - selectors[idx].expr()),
+                );
+            }
+
+            let selectors_sum =
+                selectors.iter().fold(0.expr(), |sum, s| sum + s.expr());
+            dup_constraints.push(selectors_sum - num_duplicated.clone());
 
             let bus_mapping_lookups = [
                 // TODO: add 32 Bytecode lookups when supported
                 vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: (DUPX - usize::from(OpcodeId::DUP1.as_u8()))
-                        as i32,
+                    index_offset: num_duplicated.clone() - 1.expr(),
                     value: word.expr(),
                     is_write: false,
                 })],
                 vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: -1, // fixed as push decreases the stack pointer
+                    index_offset: (-1).expr(), // fixed as DUP decreases the stack pointer
                     value: word.expr(),
                     is_write: true,
                 })],
@@ -134,7 +163,7 @@ impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
             Constraint {
                 name: "DupGadget success",
                 selector: case_selector.expr(),
-                polys: [state_transition_constraints].concat(),
+                polys: [state_transition_constraints, dup_constraints].concat(),
                 lookups: bus_mapping_lookups, //vec![]
             }
         };
@@ -150,7 +179,7 @@ impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
         };
 
         let stack_pointer = state_curr.stack_pointer.expr();
-        let diff = 1024.expr() - stack_pointer - position;
+        let diff = 1024.expr() - stack_pointer - num_duplicated;
 
         // diff's maxium is 1023 when stack_pointer = 0 and position = 1,
         // the minimum is 0 when stack_pointer + position = 1024 , i.e. stack_point = 1020, DUPX = 4
@@ -220,7 +249,7 @@ impl<F: FieldExt, const DUPX: usize> OpGadget<F> for DupGadget<F, DUPX> {
     }
 }
 
-impl<F: FieldExt, const DUPX: usize> DupGadget<F, DUPX> {
+impl<F: FieldExt> DupGadget<F> {
     fn assign_success(
         &self,
         region: &mut Region<'_, F>,
@@ -228,7 +257,7 @@ impl<F: FieldExt, const DUPX: usize> DupGadget<F, DUPX> {
         core_state: &mut CoreStateInstance,
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
-        core_state.global_counter += 2; // read + push operation
+        core_state.global_counter += 2; // read + write operation
         core_state.program_counter += 1;
         core_state.stack_pointer -= 1;
         core_state.gas_counter += 3;
@@ -238,33 +267,21 @@ impl<F: FieldExt, const DUPX: usize> DupGadget<F, DUPX> {
             offset,
             Some(execution_step.values[0].to_word()),
         )?;
+        self.success
+            .selectors
+            .iter()
+            .zip(execution_step.values[1].to_word().iter())
+            .map(|(alloc, bit)| {
+                alloc.assign(region, offset, Some(F::from_u64(*bit as u64)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(())
     }
 }
 
 // if imp From<u8> for OpcodeId, it not const function and can not be called within
 // const RESPONSIBLE_OPCODES statement
-const fn from_u8(opcode: u8) -> OpcodeId {
-    match opcode {
-        0x80u8 => OpcodeId::DUP1,
-        0x81u8 => OpcodeId::DUP2,
-        0x82u8 => OpcodeId::DUP3,
-        0x83u8 => OpcodeId::DUP4,
-        0x84u8 => OpcodeId::DUP5,
-        0x85u8 => OpcodeId::DUP6,
-        0x86u8 => OpcodeId::DUP7,
-        0x87u8 => OpcodeId::DUP8,
-        0x88u8 => OpcodeId::DUP9,
-        0x89u8 => OpcodeId::DUP10,
-        0x8au8 => OpcodeId::DUP11,
-        0x8bu8 => OpcodeId::DUP12,
-        0x8cu8 => OpcodeId::DUP13,
-        0x8du8 => OpcodeId::DUP14,
-        0x8eu8 => OpcodeId::DUP15,
-        0x8fu8 => OpcodeId::DUP16,
-        _ => OpcodeId::STOP,
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -310,7 +327,10 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::DUP2, // dup2 for testing
                     case: Case::Success,
-                    values: vec![BigUint::from(0x04_05_06u64),],
+                    values: vec![
+                        BigUint::from(0x04_05_06u64),
+                        BigUint::from(0x01_01u64),
+                    ],
                 },
             ],
             vec![
@@ -386,7 +406,10 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::DUP1, // dup2 for testing
                     case: Case::Success,
-                    values: vec![BigUint::from(0x03u64),],
+                    values: vec![
+                        BigUint::from(0x03u64),
+                        BigUint::from(0x01u64),
+                    ],
                 },
             ],
             vec![

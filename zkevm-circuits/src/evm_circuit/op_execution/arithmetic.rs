@@ -151,17 +151,17 @@ impl<F: FieldExt> OpGadget<F> for AddGadget<F> {
             #[allow(clippy::suspicious_operation_groupings)]
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 0,
+                    index_offset: 0.expr(),
                     value: a.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1,
+                    index_offset: 1.expr(),
                     value: swap.expr() * c.expr() + no_swap.clone() * b.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1,
+                    index_offset: 1.expr(),
                     value: swap.expr() * b.expr() + no_swap * c.expr(),
                     is_write: true,
                 }),

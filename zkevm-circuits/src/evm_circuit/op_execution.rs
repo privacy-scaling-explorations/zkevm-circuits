@@ -218,6 +218,7 @@ pub(crate) struct OpExecutionGadget<F> {
     lt_gadget: LtGadget<F>,
     byte_gadget: ByteGadget<F>,
     pop_gadget: PopGadget<F>,
+    dup_gadget: DupGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -275,8 +276,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(push_gadget);
         construct_op_gadget!(lt_gadget);
         construct_op_gadget!(pop_gadget);
+        construct_op_gadget!(byte_gadget);
         construct_op_gadget!(dup_gadget);
-       
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -317,6 +318,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             lt_gadget,
             pop_gadget,
             byte_gadget,
+            dup_gadget,
         }
     }
 
@@ -540,33 +542,40 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 self.free_cells[*idx].assign(region, offset, Some(*value))?;
             }
 
-            match (execution_step.opcode.is_push(), execution_step.opcode) {
+            match (
+                execution_step.opcode.is_push(),
+                execution_step.opcode.is_dup(),
+                execution_step.opcode,
+            ) {
                 // PUSH1, ..., PUSH32
-                (true, _) => self.push_gadget.assign(
+                (true, false, _) => self.push_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, OpcodeId::ADD | OpcodeId::SUB) => self.add_gadget.assign(
+                (false, true, _) => self.dup_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, OpcodeId::LT | OpcodeId::GT) => self.lt_gadget.assign(
+                (_, _, OpcodeId::ADD | OpcodeId::SUB) => self
+                    .add_gadget
+                    .assign(region, offset, core_state, execution_step)?,
+                (_, _, OpcodeId::LT | OpcodeId::GT) => self.lt_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, OpcodeId::POP) => self.pop_gadget.assign(
+                (_, _, OpcodeId::POP) => self.pop_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, OpcodeId::BYTE) => self.byte_gadget.assign(
+                (_, _, OpcodeId::BYTE) => self.byte_gadget.assign(
                      region,
                     offset,
                     core_state,
