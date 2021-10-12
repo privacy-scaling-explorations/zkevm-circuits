@@ -6,6 +6,7 @@ members = [
     "geth-utils",
     "integration-tests",
     "circuit-benchmarks"
+    "mpt"
 ]
 
 [patch.crates-io]
