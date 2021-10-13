@@ -10,8 +10,8 @@ use crate::{
     Gas,
 };
 use core::str::FromStr;
-use num::BigUint;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
     opcodes::{ids::OpcodeId, Opcode},
@@ -78,6 +78,12 @@ impl FromStr for EvmWord {
     }
 }
 
+impl fmt::Display for EvmWord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
+
 impl From<EvmWord> for Vec<u8> {
     fn from(word: EvmWord) -> Self {
         word.inner().to_vec()
@@ -91,7 +97,7 @@ impl Serialize for EvmWord {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string(16))
+        serializer.serialize_str(&self.to_hex())
     }
 }
 
@@ -146,9 +152,9 @@ impl EvmWord {
         *self.inner()
     }
 
-    /// Returns an `EvmWord` as a string representation with the given radix.
-    pub fn to_string(self, radix: u32) -> String {
-        BigUint::from_bytes_le(&self.to_le_bytes()).to_str_radix(radix)
+    /// Returns an `EvmWord` as a hex string representation.
+    pub fn to_hex(self) -> String {
+        hex::encode(self.to_be_bytes())
     }
 }
 

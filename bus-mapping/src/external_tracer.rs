@@ -29,11 +29,13 @@ impl<F: FieldExt> Default for Transaction<F> {
     }
 }
 
-/// Definition of all of the data related to a contract.
+/// Definition of all of the data related to an account.
 #[derive(Debug, Clone, Serialize)]
-pub struct Contract<F: FieldExt> {
+pub struct Account<F: FieldExt> {
     #[serde(serialize_with = "serialize_field_ext")]
     address: F,
+    #[serde(serialize_with = "serialize_field_ext")]
+    balance: F,
     code: String,
 }
 
@@ -42,7 +44,7 @@ pub struct Contract<F: FieldExt> {
 struct GethConfig<F: FieldExt> {
     block_constants: BlockConstants<F>,
     transaction: Transaction<F>,
-    contracts: Vec<Contract<F>>,
+    accounts: Vec<Account<F>>,
 }
 
 /// Creates a trace for the specified config
@@ -50,17 +52,18 @@ pub fn trace<F: FieldExt>(
     block_constants: &BlockConstants<F>,
     code: &Bytecode,
 ) -> Vec<ExecutionStep> {
+    // Some default values for now
     let transaction = Transaction::default();
-
-    let contract = Contract {
+    let account = Account {
         address: transaction.target,
+        balance: F::from_u64(555u64),
         code: hex::encode(code.to_bytes()),
     };
 
     let geth_config = GethConfig {
         block_constants: block_constants.clone(),
         transaction,
-        contracts: vec![contract],
+        accounts: vec![account],
     };
 
     // Get the trace

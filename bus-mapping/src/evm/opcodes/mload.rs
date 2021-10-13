@@ -207,7 +207,6 @@ mod mload_tests {
             obtained_exec_trace[0].bus_mapping_instance,
             step_1.bus_mapping_instance
         );
-
         // Compare first step entirely
         assert_eq!(obtained_exec_trace[0], step_1);
 
@@ -216,7 +215,6 @@ mod mload_tests {
             obtained_exec_trace[1].bus_mapping_instance,
             step_2.bus_mapping_instance
         );
-
         // Compare second step entirely
         assert_eq!(obtained_exec_trace[1], step_2);
 

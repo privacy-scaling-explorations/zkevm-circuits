@@ -1,7 +1,8 @@
-package main
+package gethutil
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -61,20 +62,25 @@ func FormatLogs(logs []vm.StructLog) []StructLogRes {
 	return formatted
 }
 
-type Contract struct {
+type Account struct {
 	Address  common.Address
+	Balance  *big.Int
 	Bytecode []byte
 }
 
-func TraceTx(toAddress common.Address, calldata []byte, config *runtime.Config, contracts []Contract) ([]StructLogRes, error) {
+func TraceTx(toAddress *common.Address, calldata []byte, config *runtime.Config, accounts []Account) ([]StructLogRes, error) {
 	// Overwrite state
 	newState, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize new state")
 	}
-	for _, contract := range contracts {
-		newState.SetCode(contract.Address, contract.Bytecode)
+	for _, account := range accounts {
+		if account.Balance != nil {
+			newState.SetBalance(account.Address, account.Balance)
+		}
+		newState.SetCode(account.Address, account.Bytecode)
 	}
+	newState.Finalise(true)
 	config.State = newState
 
 	// Overwrite config with tracer
@@ -82,7 +88,11 @@ func TraceTx(toAddress common.Address, calldata []byte, config *runtime.Config, 
 	config.EVMConfig.Debug = true
 	config.EVMConfig.Tracer = tracer
 
-	_, _, err = runtime.Call(toAddress, nil, config)
+	if toAddress == nil {
+		_, _, _, err = runtime.Create(calldata, config)
+	} else {
+		_, _, err = runtime.Call(*toAddress, nil, config)
+	}
 
 	return FormatLogs(tracer.StructLogs()), err
 }

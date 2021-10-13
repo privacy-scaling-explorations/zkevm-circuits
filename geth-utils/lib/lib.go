@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"main/gethutil"
 	"math/big"
 	"os"
 
@@ -22,7 +23,7 @@ func CreateTrace(config string) *C.char {
 		fmt.Fprintf(os.Stderr, "failed to load trace config, err: %v\n", err)
 	}
 
-	logs, err := TraceTx(gethConfig.target, nil, &gethConfig.config, gethConfig.contracts)
+	logs, err := gethutil.TraceTx(&gethConfig.target, nil, &gethConfig.config, gethConfig.contracts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "trace stopped unexpectedly, err: %v\n", err)
 	}
@@ -37,7 +38,7 @@ func CreateTrace(config string) *C.char {
 
 type GethConfig struct {
 	config    runtime.Config
-	contracts []Contract
+	contracts []gethutil.Account
 	target    common.Address
 }
 
@@ -58,15 +59,16 @@ type Transaction struct {
 	Target   string `json:"target"`
 }
 
-type ContractData struct {
+type AccountData struct {
 	Address string `json:"address"`
+	Balance string `json:"balance"`
 	Code    string `json:"code"`
 }
 
 type JsonConfig struct {
 	Block       BlockConstants `json:"block_constants"`
 	Transaction Transaction    `json:"transaction"`
-	Contracts   []ContractData `json:"contracts"`
+	Accounts    []AccountData  `json:"accounts"`
 }
 
 func (this *GethConfig) UnmarshalJSON(b []byte) error {
@@ -97,13 +99,14 @@ func (this *GethConfig) UnmarshalJSON(b []byte) error {
 		EVMConfig: vm.Config{},
 	}
 
-	for _, contract := range jConfig.Contracts {
+	for _, contract := range jConfig.Accounts {
 		address := AddressFromString(contract.Address, 16)
+		balance := NewBigIntFromString(contract.Balance, 16)
 		code, err := hex.DecodeString(contract.Code)
 		if err != nil {
 			return err
 		}
-		this.contracts = append(this.contracts, Contract{Address: address, Bytecode: code})
+		this.contracts = append(this.contracts, gethutil.Account{Address: address, Balance: balance, Bytecode: code})
 	}
 
 	this.target = AddressFromString(jConfig.Transaction.Target, 16)

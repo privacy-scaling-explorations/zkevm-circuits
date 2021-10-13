@@ -1,7 +1,6 @@
 //! EVM byte code generator
 
-use crate::evm::OpcodeId;
-use num::BigUint;
+use crate::{evm::OpcodeId, operation::EvmWord};
 use std::collections::HashMap;
 
 /// EVM Bytecode
@@ -44,15 +43,13 @@ impl Bytecode {
     }
 
     /// Push
-    pub fn push(&mut self, n: usize, value: BigUint) -> &mut Self {
+    pub fn push(&mut self, n: usize, value: EvmWord) -> &mut Self {
         assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
         self.write_op_internal(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8));
 
-        let mut bytes = value.to_bytes_le();
-        // Pad to 32 bytes
-        bytes.resize(32, 0u8);
+        let bytes = value.to_le_bytes();
         // Write the bytes MSB to LSB
         for i in 0..n {
             self.write(bytes[n - 1 - i]);
@@ -101,13 +98,13 @@ impl Bytecode {
     #[allow(clippy::too_many_arguments)]
     pub fn call(
         &mut self,
-        gas: BigUint,
-        address: BigUint,
-        value: BigUint,
-        mem_in: BigUint,
-        mem_in_size: BigUint,
-        mem_out: BigUint,
-        mem_out_size: BigUint,
+        gas: EvmWord,
+        address: EvmWord,
+        value: EvmWord,
+        mem_in: EvmWord,
+        mem_in_size: EvmWord,
+        mem_out: EvmWord,
+        mem_out_size: EvmWord,
     ) {
         self.append(&mut crate::bytecode! {
             PUSH32(mem_out_size)
@@ -157,7 +154,7 @@ macro_rules! bytecode_internal {
         $code.add_marker(stringify!($marker).to_string());
         crate::bytecode_internal!($code, $($rest)*);
     }};
-    // Calls
+    // Function calls
     ($code:ident, .$function:ident ($($args:expr),*) $($rest:tt)*) => {{
         $code.$function($($args.into(),)*);
         crate::bytecode_internal!($code, $($rest)*);
