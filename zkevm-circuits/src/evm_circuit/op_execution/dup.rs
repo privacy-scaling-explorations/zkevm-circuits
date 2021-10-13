@@ -12,8 +12,6 @@ use std::{array, convert::TryInto};
 struct DupSuccessAllocation<F> {
     case_selector: Cell<F>,
     word: Word<F>, // target word to dup （witness）
-    selectors: [Cell<F>; 16], /* whether its DUP1, ..., or DUP16 ([1, 1,
-                    * 0, ..., 0] means DUP2) */
 }
 
 #[derive(Clone, Debug)]
@@ -81,7 +79,7 @@ impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
             success: DupSuccessAllocation {
                 case_selector: success.selector.clone(),
                 word: success.words.pop().unwrap(),
-                selectors: success.cells.try_into().unwrap(),
+                //selectors: success.cells.try_into().unwrap(),
             },
             stack_overflow: stack_overflow.selector,
             stack_underflow: stack_underflow.selector,
@@ -123,27 +121,7 @@ impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
             let DupSuccessAllocation {
                 case_selector,
                 word,
-                selectors,
             } = &self.success;
-
-            let mut dup_constraints = vec![];
-            for idx in 0..16 {
-                // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
-                // 0, 0, 0]
-                if idx > 0 {
-                    let diff =
-                        selectors[idx - 1].expr() - selectors[idx].expr();
-                    dup_constraints.push(diff.clone() * (1.expr() - diff));
-                }
-                // selectors needs to be 0 or 1
-                dup_constraints.push(
-                    selectors[idx].expr() * (1.expr() - selectors[idx].expr()),
-                );
-            }
-
-            let selectors_sum =
-                selectors.iter().fold(0.expr(), |sum, s| sum + s.expr());
-            dup_constraints.push(selectors_sum - num_duplicated.clone());
 
             let bus_mapping_lookups = [
                 // TODO: add 32 Bytecode lookups when supported
@@ -163,7 +141,7 @@ impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
             Constraint {
                 name: "DupGadget success",
                 selector: case_selector.expr(),
-                polys: [state_transition_constraints, dup_constraints].concat(),
+                polys: [state_transition_constraints].concat(),
                 lookups: bus_mapping_lookups, //vec![]
             }
         };
@@ -269,14 +247,6 @@ impl<F: FieldExt> DupGadget<F> {
             offset,
             Some(execution_step.values[0].to_word()),
         )?;
-        self.success
-            .selectors
-            .iter()
-            .zip(execution_step.values[1].to_word().iter())
-            .map(|(alloc, bit)| {
-                alloc.assign(region, offset, Some(F::from_u64(*bit as u64)))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
     }
@@ -299,7 +269,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -327,10 +297,7 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::DUP2, // dup2 for testing
                     case: Case::Success,
-                    values: vec![
-                        BigUint::from(0x04_05_06u64),
-                        BigUint::from(0x01_01u64),
-                    ],
+                    values: vec![BigUint::from(0x04_05_06u64)],
                 },
             ],
             vec![
@@ -404,12 +371,9 @@ mod test {
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::DUP1, // dup2 for testing
+                    opcode: OpcodeId::DUP1, // dup1 for testing
                     case: Case::Success,
-                    values: vec![
-                        BigUint::from(0x03u64),
-                        BigUint::from(0x01u64),
-                    ],
+                    values: vec![BigUint::from(0x03u64)],
                 },
             ],
             vec![
