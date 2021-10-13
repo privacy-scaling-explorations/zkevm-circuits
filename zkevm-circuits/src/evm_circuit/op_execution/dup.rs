@@ -179,17 +179,16 @@ impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
         };
 
         let stack_pointer = state_curr.stack_pointer.expr();
-        let diff = 1024.expr() - stack_pointer - num_duplicated;
-
-        // diff's maxium is 1023 when stack_pointer = 0 and position = 1,
-        // the minimum is 0 when stack_pointer + position = 1024 , i.e. stack_point = 1020, DUPX = 4
+        let diff = num_duplicated + stack_pointer - 1025.expr();
+        // diff's maxium is 15 when stack_pointer = 1024 and num_duplicated = 16,
+        // the minimum is 0 when num_duplicated + stack_pointer = 1025 , i.e. stack_point = 1020, num_duplicated = 5
         let stack_underflow = {
             Constraint {
                 name: "DupGadget stack underflow",
                 selector: self.stack_underflow.expr(),
                 polys: vec![],
                 lookups: vec![Lookup::FixedLookup(
-                    FixedLookup::Range1024,
+                    FixedLookup::Range16,
                     [diff, 0.expr(), 0.expr()],
                 )],
             }
@@ -239,6 +238,9 @@ impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
                 self.assign_success(region, offset, core_state, execution_step)
             }
             Case::StackOverflow => {
+                unimplemented!()
+            }
+            Case::StackUnderflow => {
                 unimplemented!()
             }
             Case::OutOfGas => {
