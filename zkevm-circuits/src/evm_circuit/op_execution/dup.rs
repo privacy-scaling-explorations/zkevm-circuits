@@ -79,7 +79,6 @@ impl<F: FieldExt> OpGadget<F> for DupGadget<F> {
             success: DupSuccessAllocation {
                 case_selector: success.selector.clone(),
                 word: success.words.pop().unwrap(),
-                //selectors: success.cells.try_into().unwrap(),
             },
             stack_overflow: stack_overflow.selector,
             stack_underflow: stack_underflow.selector,
@@ -251,9 +250,6 @@ impl<F: FieldExt> DupGadget<F> {
         Ok(())
     }
 }
-
-// if imp From<u8> for OpcodeId, it not const function and can not be called within
-// const RESPONSIBLE_OPCODES statement
 
 #[cfg(test)]
 mod test {
