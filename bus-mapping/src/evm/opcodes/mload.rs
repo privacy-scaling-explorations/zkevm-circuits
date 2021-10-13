@@ -106,32 +106,16 @@ mod mload_tests {
     };
     use pasta_curves::pallas::Scalar;
 
-    macro_rules! gas_info {
-        ($gas:ident, $gas_cost: ident) => {{
-            #[allow(unused_assignments)]
-            GasInfo {
-                gas: {
-                    let temp = $gas;
-                    $gas -= GasCost::$gas_cost.as_usize() as u64;
-                    temp
-                },
-                gas_cost: GasCost::$gas_cost,
-            }
-        }};
-    }
-
     #[test]
     fn mload_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
-            // Setup state
-            PUSH1(0x80u64)
-            PUSH1(0x40u64)
-            MSTORE
+            .setup_state()
 
             PUSH1(0x40u64)
             // Start byte code tested
-            [start]
+            #[start]
             MLOAD
+            STOP
         };
 
         let block_ctants = BlockConstants::default();
@@ -143,7 +127,7 @@ mod mload_tests {
         // Obtained trace computation
         let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
             obtained_steps.to_vec(),
-            block_ctants.clone(),
+            block_ctants,
         )?;
 
         let mut container = OperationContainer::new();

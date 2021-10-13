@@ -87,13 +87,46 @@ impl Bytecode {
             .get(&marker.to_string())
             .unwrap_or_else(|| panic!("marker '{}' not found", marker))
     }
+
+    /// Setup state
+    pub fn setup_state(&mut self) {
+        self.append(&mut crate::bytecode! {
+            PUSH1(0x80u64)
+            PUSH1(0x40u64)
+            MSTORE
+        });
+    }
+
+    /// Call a contract
+    #[allow(clippy::too_many_arguments)]
+    pub fn call(
+        &mut self,
+        gas: BigUint,
+        address: BigUint,
+        value: BigUint,
+        mem_in: BigUint,
+        mem_in_size: BigUint,
+        mem_out: BigUint,
+        mem_out_size: BigUint,
+    ) {
+        self.append(&mut crate::bytecode! {
+            PUSH32(mem_out_size)
+            PUSH32(mem_out)
+            PUSH32(mem_in_size)
+            PUSH32(mem_in)
+            PUSH32(value)
+            PUSH32(address)
+            PUSH32(gas)
+            CALL
+        });
+    }
 }
 
 /// EVM code macro
 #[macro_export]
 macro_rules! bytecode {
     ($($args:tt)*) => {{
-        let mut code = bytecode::Bytecode::default();
+        let mut code = crate::bytecode::Bytecode::default();
         $crate::bytecode_internal!(code, $($args)*);
         code
     }};
@@ -120,8 +153,13 @@ macro_rules! bytecode_internal {
         crate::bytecode_internal!($code, $($rest)*);
     }};
     // Marker
-    ($code:ident, [$marker:tt] $($rest:tt)*) => {{
+    ($code:ident, #[$marker:tt] $($rest:tt)*) => {{
         $code.add_marker(stringify!($marker).to_string());
+        crate::bytecode_internal!($code, $($rest)*);
+    }};
+    // Calls
+    ($code:ident, .$function:ident ($($args:expr),*) $($rest:tt)*) => {{
+        $code.$function($($args.into(),)*);
         crate::bytecode_internal!($code, $($rest)*);
     }};
 }

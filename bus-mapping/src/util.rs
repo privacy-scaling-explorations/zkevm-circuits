@@ -1,7 +1,8 @@
 //! Common utility traits and functions.
 
-use num::BigUint;
+use crate::operation::EvmWord;
 use pasta_curves::arithmetic::FieldExt;
+use serde::Serialize;
 
 /// Serializes a field element
 pub fn serialize_field_ext<S, F>(
@@ -12,6 +13,7 @@ where
     S: serde::Serializer,
     F: FieldExt,
 {
-    serializer
-        .serialize_str(&BigUint::from_bytes_le(&v.to_bytes()).to_str_radix(16))
+    EvmWord::from_le_bytes(&v.to_bytes())
+        .unwrap()
+        .serialize(serializer)
 }
