@@ -1,148 +1,87 @@
 use super::super::{
-    BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    Lookup, Word,
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
+use super::utils;
+use super::utils::common_cases::{OutOfGasCase, StackOverflowCase};
+use super::utils::constraint_builder::ConstraintBuilder;
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
-use std::{array, convert::TryInto};
+use std::convert::TryInto;
+
+const GC_DELTA: usize = 1;
+const PC_DELTA: usize = 1;
+const SP_DELTA: i32 = -1;
+const GAS: GasCost = GasCost::QUICK;
+const NUM_PUSHED: usize = 1;
+
+impl_op_gadget!(
+    [PC],
+    PcGadget {
+        PcSuccessCase(),
+        StackOverflowCase(NUM_PUSHED),
+        OutOfGasCase(GAS.as_usize()),
+    }
+);
 
 #[derive(Clone, Debug)]
-pub struct PcGadget<F> {
-    success: (
-        Cell<F>, // case selector
-        Word<F>, // pc
-    ),
-    stack_overflow: Cell<F>, // case selector
-    out_of_gas: (
-        Cell<F>, // case selector
-        Cell<F>, // gas available
-    ),
+struct PcSuccessCase<F> {
+    case_selector: Cell<F>,
+    pc: Word<F>,
 }
 
-impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
+impl<F: FieldExt> PcSuccessCase<F> {
     const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[OpcodeId::PC];
 
-    const CASE_CONFIGS: &'static [CaseConfig] = &[
-        CaseConfig {
-            case: Case::Success,
-            num_word: 1, // pc
-            num_cell: 0,
-            will_halt: false,
-        },
-        CaseConfig {
-            case: Case::StackUnderflow,
-            num_word: 0,
-            num_cell: 0,
-            will_halt: true,
-        },
-        CaseConfig {
-            case: Case::OutOfGas,
-            num_word: 0,
-            num_cell: 0,
-            will_halt: true,
-        },
-    ];
+    pub const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
+        case: Case::Success,
+        num_word: 1, // pc
+        num_cell: 0,
+        will_halt: false,
+    };
 
-    fn construct(case_allocations: Vec<CaseAllocation<F>>) -> Self {
-        let [mut success, stack_overflow, out_of_gas]: [CaseAllocation<F>; 3] =
-            case_allocations.try_into().unwrap();
+    pub fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
-            success: (success.selector, success.words.pop().unwrap()),
-            stack_overflow: stack_overflow.selector,
-            out_of_gas: (
-                out_of_gas.selector,
-                out_of_gas.resumption.unwrap().gas_available,
-            ),
+            case_selector: alloc.selector.clone(),
+            pc: alloc.words.pop().unwrap(),
         }
     }
 
-    fn constraints(
+    pub fn constraint(
         &self,
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
-    ) -> Vec<Constraint<F>> {
-        let OpExecutionState { opcode, .. } = &state_curr;
+        name: &'static str,
+    ) -> Constraint<F> {
+        let mut cb = ConstraintBuilder::default();
 
-        let common_polys = vec![opcode.expr() - OpcodeId::PC.expr()];
+        // pc[7..0] = state.program_counter
+        // pc[32] + .. + pc[8] = 0
+        // Because pc is Uint64, we only need to consider lower 8 bytes
+        let pc_expr = (0..8).rev().fold(0.expr(), |acc, i| {
+            acc * 256.expr() + self.pc.cells[i].expr()
+        });
+        let rest_sum =
+            (8..32).fold(0.expr(), |acc, i| acc + self.pc.cells[i].expr());
 
-        let success = {
-            let (selector, pc) = &self.success;
+        cb.require_equal(pc_expr, state_curr.program_counter.expr());
+        cb.require_zero(rest_sum);
 
-            // interpreter state transition constraints
-            let state_transition_constraint = vec![
-                state_next.global_counter.expr()
-                    - (state_curr.global_counter.expr() + 1.expr()),
-                state_next.program_counter.expr()
-                    - (state_curr.program_counter.expr() + 1.expr()),
-                state_next.stack_pointer.expr()
-                    - (state_curr.stack_pointer.expr() + 1.expr()),
-                state_next.gas_counter.expr()
-                    - (state_curr.gas_counter.expr() + GasCost::QUICK.expr()),
-            ];
+        // Push the result on the stack
+        cb.stack_push(self.pc.expr());
 
-            // Because pc is Uint64, only need to compute lower 8 bytes
-            // pc[7..0] = state.program_counter
-            // pc[32] + .. + pc[8] = 0
-            let pc_constraints = {
-                let pc_expr = (0..8).rev().fold(0.expr(), |acc, i| {
-                    acc * 256.expr() + pc.cells[i].expr()
-                });
-                let rest_sum =
-                    (8..32).fold(0.expr(), |acc, i| acc + pc.cells[i].expr());
-                vec![pc_expr - state_curr.program_counter.expr(), rest_sum]
-            };
+        utils::StateTransitions {
+            gc_delta: Some(GC_DELTA.expr()),
+            sp_delta: Some(SP_DELTA.expr()),
+            pc_delta: Some(PC_DELTA.expr()),
+            gas_delta: Some(GAS.expr()),
+        }
+        .constraints(&mut cb, state_curr, state_next);
 
-            let bus_mapping_lookups =
-                [vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: -1,
-                    value: pc.expr(),
-                    is_write: true,
-                })]]
-                .concat();
-
-            Constraint {
-                name: "PcGadget success",
-                selector: selector.expr(),
-                polys: [state_transition_constraint, pc_constraints].concat(),
-                lookups: bus_mapping_lookups,
-            }
-        };
-
-        let stack_overflow = {
-            let stack_pointer = state_curr.stack_pointer.expr();
-            Constraint {
-                name: "PcGadget stack overflow",
-                selector: self.stack_overflow.expr(),
-                polys: vec![stack_pointer],
-                lookups: vec![],
-            }
-        };
-
-        let out_of_gas = {
-            let (case_selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = state_curr.gas_counter.expr()
-                + GasCost::QUICK.expr()
-                - gas_available.expr();
-            Constraint {
-                name: "PcGadget out of gas",
-                selector: case_selector.expr(),
-                polys: vec![
-                    (gas_overdemand.clone() - 1.expr())
-                        * (gas_overdemand - 2.expr()),
-                ],
-                lookups: vec![],
-            }
-        };
-
-        array::IntoIter::new([success, stack_overflow, out_of_gas])
-            .map(move |mut constraint| {
-                constraint.polys =
-                    [common_polys.clone(), constraint.polys].concat();
-                constraint
-            })
-            .collect()
+        // Generate the constraint
+        cb.constraint(self.case_selector.expr(), name)
     }
 
     fn assign(
@@ -152,40 +91,17 @@ impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
         core_state: &mut CoreStateInstance,
         execution_step: &ExecutionStep,
     ) -> Result<(), Error> {
-        match execution_step.case {
-            Case::Success => {
-                self.assign_success(region, offset, core_state, execution_step)
-            }
-            Case::StackOverflow => {
-                unimplemented!()
-            }
-            Case::OutOfGas => {
-                unimplemented!()
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<F: FieldExt> PcGadget<F> {
-    fn assign_success(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        core_state: &mut CoreStateInstance,
-        execution_step: &ExecutionStep,
-    ) -> Result<(), Error> {
-        println!("{}", core_state.program_counter);
         core_state.global_counter += 1;
         core_state.program_counter += 1;
-        core_state.stack_pointer += 1;
+        core_state.stack_pointer -= 1;
         core_state.gas_counter += GasCost::QUICK.as_usize();
 
-        self.success.1.assign(
+        self.pc.assign(
             region,
             offset,
             Some(execution_step.values[0].to_word()),
         )?;
+
         Ok(())
     }
 }

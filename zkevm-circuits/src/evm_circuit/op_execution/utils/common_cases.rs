@@ -59,12 +59,14 @@ impl<F: FieldExt> OutOfGasCase<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        _state: &mut CoreStateInstance,
+        state: &mut CoreStateInstance,
         _step: &ExecutionStep,
     ) -> Result<(), Error> {
-        self.case_selector
-            .assign(region, offset, Some(F::from_u64(0)))
-            .unwrap();
+        self.gas_available.assign(
+            region,
+            offset,
+            Some(F::from_u64(state.gas_counter as u64)),
+        )?;
         Ok(())
     }
 }
@@ -109,14 +111,58 @@ impl<F: FieldExt> StackUnderflowCase<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
+        _region: &mut Region<'_, F>,
+        _offset: usize,
         _state: &mut CoreStateInstance,
         _step: &ExecutionStep,
     ) -> Result<(), Error> {
-        self.case_selector
-            .assign(region, offset, Some(F::from_u64(0)))
-            .unwrap();
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct StackOverflowCase<F> {
+    case_selector: Cell<F>,
+    num_pushed: usize,
+}
+
+impl<F: FieldExt> StackOverflowCase<F> {
+    pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
+        case: Case::StackOverflow,
+        num_word: 0,
+        num_cell: 0,
+        will_halt: true,
+    };
+
+    pub(crate) fn construct(
+        alloc: &mut CaseAllocation<F>,
+        num_pushed: usize,
+    ) -> Self {
+        Self {
+            case_selector: alloc.selector.clone(),
+            num_pushed,
+        }
+    }
+
+    pub(crate) fn constraint(
+        &self,
+        state_curr: &OpExecutionState<F>,
+        _state_next: &OpExecutionState<F>,
+        name: &'static str,
+    ) -> Constraint<F> {
+        let set = (0..self.num_pushed).map(|i| i.expr()).collect();
+        let mut cb = ConstraintBuilder::default();
+        cb.require_in_set(state_curr.stack_pointer.expr(), set);
+        cb.constraint(self.case_selector.expr(), name)
+    }
+
+    pub(crate) fn assign(
+        &self,
+        _region: &mut Region<'_, F>,
+        _offset: usize,
+        _state: &mut CoreStateInstance,
+        _step: &ExecutionStep,
+    ) -> Result<(), Error> {
         Ok(())
     }
 }
