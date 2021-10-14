@@ -1,6 +1,7 @@
 //! Collection of utility macros used within this crate.
 
 /// Helper to create GasInfos
+/// The `gas` parameter will be modified inside this macro.
 #[macro_export]
 macro_rules! gas_info {
     ($gas:ident, $gas_cost: ident) => {{

@@ -72,7 +72,7 @@ mod push_tests {
         let block_ctants = BlockConstants::default();
 
         // Get the execution steps from the external tracer
-        let obtained_steps = &external_tracer::trace(&block_ctants, &code)
+        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
             [code.get_pos("start")..];
 
         // Obtained trace computation

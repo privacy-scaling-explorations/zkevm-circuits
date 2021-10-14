@@ -1,6 +1,6 @@
 //! This module generates traces by connecting to an external tracer
-
 use crate::util::serialize_field_ext;
+use crate::Error;
 use crate::{
     bytecode::Bytecode, BlockConstants, ExecutionStep, ExecutionTrace,
 };
@@ -51,7 +51,7 @@ struct GethConfig<F: FieldExt> {
 pub fn trace<F: FieldExt>(
     block_constants: &BlockConstants<F>,
     code: &Bytecode,
-) -> Vec<ExecutionStep> {
+) -> Result<Vec<ExecutionStep>, Error> {
     // Some default values for now
     let transaction = Transaction::default();
     let account = Account {
@@ -69,16 +69,8 @@ pub fn trace<F: FieldExt>(
     // Get the trace
     let trace =
         geth_utils::trace(&serde_json::to_string(&geth_config).unwrap())
-            .expect("failed to generate the trace");
+            .map_err(|_| Error::TracingError)?;
 
     // Generate the execution steps
-    ExecutionTrace::<F>::load_execution_steps(trace.as_bytes()).unwrap_or_else(
-        |error| {
-            panic!(
-                "Failed to generate the execution steps for trace, error '{}':\n{}",
-                error,
-                trace
-            )
-        },
-    )
+    ExecutionTrace::<F>::load_trace(trace.as_bytes())
 }

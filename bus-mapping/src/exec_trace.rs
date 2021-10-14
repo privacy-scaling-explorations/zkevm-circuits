@@ -165,7 +165,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// Given an EVM trace in JSON format according to the specs and format
     /// shown in [zkevm-test-vectors crate](https://github.com/appliedzkp/zkevm-testing-vectors),
     /// generate the execution steps.
-    pub fn load_execution_steps<T: AsRef<[u8]>>(
+    pub fn load_trace<T: AsRef<[u8]>>(
         bytes: T,
     ) -> Result<Vec<ExecutionStep>, Error> {
         serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
@@ -183,7 +183,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
         bytes: T,
         block_ctants: BlockConstants<F>,
     ) -> Result<ExecutionTrace<F>, Error> {
-        let trace_loaded = Self::load_execution_steps(bytes)?;
+        let trace_loaded = Self::load_trace(bytes)?;
         ExecutionTrace::<F>::new(trace_loaded, block_ctants)
     }
 

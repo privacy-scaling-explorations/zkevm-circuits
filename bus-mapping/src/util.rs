@@ -2,7 +2,7 @@
 
 use crate::operation::EvmWord;
 use pasta_curves::arithmetic::FieldExt;
-use serde::Serialize;
+use serde::{ser, Serialize};
 
 /// Serializes a field element
 pub fn serialize_field_ext<S, F>(
@@ -14,6 +14,8 @@ where
     F: FieldExt,
 {
     EvmWord::from_le_bytes(&v.to_bytes())
-        .unwrap()
+        .map_err(|err| {
+            ser::Error::custom(format!("invalid EvmWord '{:?}': {:?}", v, err))
+        })?
         .serialize(serializer)
 }

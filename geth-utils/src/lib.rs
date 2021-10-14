@@ -6,36 +6,32 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 extern "C" {
-    fn CreateTrace(config: GoString) -> *const c_char;
+    fn CreateTrace(str: *const c_char) -> *const c_char;
+    fn FreeString(str: *const c_char);
 }
-
-/// A Go string.
-#[repr(C)]
-struct GoString {
-    a: *const c_char,
-    b: i64,
-}
-
 /// Creates the trace
 pub fn trace(config: &str) -> Result<String, Error> {
+    // Create a string we can pass into Go
     let c_config = CString::new(config).expect("invalid config");
-    let go_config = to_go_string(&c_config);
-    let result = unsafe { CreateTrace(go_config) };
-    let c_str = unsafe { CStr::from_ptr(result) };
-    let string = c_str
-        .to_str()
-        .expect("Error translating EVM trace from library");
-    match string.is_empty() || string.starts_with("Error") {
-        true => Err(Error::TracingError),
-        false => Ok(string.to_string()),
-    }
-}
 
-fn to_go_string(data: &CString) -> GoString {
-    let ptr = data.as_ptr();
-    GoString {
-        a: ptr,
-        b: data.as_bytes().len() as i64,
+    // Generate the trace externally
+    let result = unsafe { CreateTrace(c_config.as_ptr()) };
+
+    // Convert the returned string to something we can use in Rust again.
+    // Also make sure the returned data is copied to rust managed memory.
+    let c_result = unsafe { CStr::from_ptr(result) };
+    let result = c_result
+        .to_str()
+        .expect("Error translating EVM trace from library")
+        .to_string();
+
+    // We can now free the returned string (memory managed by Go)
+    unsafe { FreeString(c_result.as_ptr()) };
+
+    // Return the trace
+    match result.is_empty() || result.starts_with("Error") {
+        true => Err(Error::TracingError),
+        false => Ok(result),
     }
 }
 

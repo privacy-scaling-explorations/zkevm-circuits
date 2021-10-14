@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
-	"github.com/pkg/errors"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.StructLogRes
@@ -72,7 +71,7 @@ func TraceTx(toAddress *common.Address, calldata []byte, config *runtime.Config,
 	// Overwrite state
 	newState, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize new state")
+		return nil, fmt.Errorf("failed to initialize new state: %w", err)
 	}
 	for _, account := range accounts {
 		if account.Balance != nil {

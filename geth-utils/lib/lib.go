@@ -1,5 +1,8 @@
 package main
 
+/*
+   #include <stdlib.h>
+*/
 import "C"
 import (
 	"encoding/hex"
@@ -8,6 +11,7 @@ import (
 	"main/gethutil"
 	"math/big"
 	"os"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -16,9 +20,9 @@ import (
 )
 
 //export CreateTrace
-func CreateTrace(config string) *C.char {
+func CreateTrace(config *C.char) *C.char {
 	var gethConfig GethConfig
-	err := json.Unmarshal([]byte(config), &gethConfig)
+	err := json.Unmarshal([]byte(C.GoString(config)), &gethConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load trace config, err: %v\n", err)
 	}
@@ -34,6 +38,11 @@ func CreateTrace(config string) *C.char {
 	}
 
 	return C.CString(string(bytes))
+}
+
+//export FreeString
+func FreeString(str *C.char) {
+	C.free(unsafe.Pointer(str))
 }
 
 type GethConfig struct {
