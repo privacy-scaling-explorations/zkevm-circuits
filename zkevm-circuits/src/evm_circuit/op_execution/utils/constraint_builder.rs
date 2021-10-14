@@ -97,7 +97,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     fn stack_lookup(&mut self, value: Expression<F>, is_write: bool) {
         self.validate_lookup_expression(&value);
         self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
-            index_offset: self.stack_offset.expr(),
+            index_offset: self.stack_offset.clone(),
             value,
             is_write,
         }));

@@ -568,7 +568,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
 
-                (false, true, false, _) => self.dup_gadget.assign(   
+                (false, true, false, _) => self.dup_gadget.assign(
                     region,
                     offset,
                     core_state,
@@ -584,13 +584,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 (_, _, _, OpcodeId::ADD | OpcodeId::SUB) => self
                     .add_gadget
                     .assign(region, offset, core_state, execution_step)?,
-                (_, _, _,OpcodeId::LT | OpcodeId::GT) => self.lt_gadget.assign(
-                    region,
-                    offset,
-                    core_state,
-                    execution_step,
-                )?,
-                (_, _,  _, OpcodeId::POP) => self.pop_gadget.assign(
+                (_, _, _, OpcodeId::LT | OpcodeId::GT) => self
+                    .lt_gadget
+                    .assign(region, offset, core_state, execution_step)?,
+                (_, _, _, OpcodeId::POP) => self.pop_gadget.assign(
                     region,
                     offset,
                     core_state,
