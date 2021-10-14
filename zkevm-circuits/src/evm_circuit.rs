@@ -88,7 +88,7 @@ pub(crate) enum BusMappingLookup<F> {
         // specified.
         // Stack index is always deterministic respect to stack pointer, so an
         // index offset is enough.
-        index_offset: i32,
+        index_offset: Expression<F>,
         value: Expression<F>,
     },
     Memory {
@@ -144,6 +144,7 @@ pub(crate) enum FixedLookup {
     // meaningful tags start with 1
     Range256,
     Range32,
+    Range16,
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
@@ -570,7 +571,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                             } => [
                                 is_write.expr(),
                                 call_id.expr(),
-                                stack_pointer.expr() + index_offset.expr(),
+                                stack_pointer.expr() + index_offset,
                                 value,
                                 0.expr(),
                             ],
@@ -736,6 +737,33 @@ impl<F: FieldExt> EvmCircuit<F> {
                     {
                         region.assign_fixed(
                             || format!("Range32: padding {}", idx),
+                            *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                // Range16
+                for idx in 0..16 {
+                    region.assign_fixed(
+                        || "Range16: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::Range16 as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "Range16: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[2..].iter().enumerate()
+                    {
+                        region.assign_fixed(
+                            || format!("Range16: padding {}", idx),
                             *column,
                             offset,
                             || Ok(F::zero()),

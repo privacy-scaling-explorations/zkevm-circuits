@@ -222,17 +222,17 @@ impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
             #[allow(clippy::suspicious_operation_groupings)]
             let bus_mapping_lookups = vec![
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 0,
+                    index_offset: 0.expr(),
                     value: swap.expr() * b.expr() + no_swap.clone() * a.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1,
+                    index_offset: 1.expr(),
                     value: swap.expr() * a.expr() + no_swap * b.expr(),
                     is_write: false,
                 }),
                 Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1,
+                    index_offset: 1.expr(),
                     value: result.expr(),
                     is_write: true,
                 }),
@@ -393,7 +393,7 @@ mod test {
         ($execution_step:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_step, $operations);
-            let prover = MockProver::<Base>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
