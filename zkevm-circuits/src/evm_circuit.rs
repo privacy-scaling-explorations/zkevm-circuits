@@ -745,6 +745,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     }
                     offset += 1;
                 }
+                
                 // Range16
                 for idx in 0..16 {
                     region.assign_fixed(
