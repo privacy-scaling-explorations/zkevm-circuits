@@ -6,7 +6,9 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{EvmWord, GlobalCounter, MemoryAddress, StackAddress};
+pub use super::evm::{
+    EthAddress, EvmWord, GlobalCounter, MemoryAddress, StackAddress,
+};
 use crate::error::Error;
 pub use container::OperationContainer;
 use core::cmp::Ordering;
@@ -234,10 +236,10 @@ impl TryFrom<Operation> for StackOp {
 pub struct StorageOp {
     rw: RW,
     gc: GlobalCounter,
-    addr: MemoryAddress,
+    address: EthAddress,
+    key: EvmWord,
     value: EvmWord,
     value_prev: EvmWord,
-    storage_key: EvmWord,
 }
 
 impl StorageOp {
@@ -245,18 +247,18 @@ impl StorageOp {
     pub const fn new(
         rw: RW,
         gc: GlobalCounter,
-        addr: MemoryAddress, // todo: use some other struct?
+        address: EthAddress,
+        key: EvmWord,
         value: EvmWord,
         value_prev: EvmWord,
-        storage_key: EvmWord,
     ) -> StorageOp {
         StorageOp {
             rw,
             gc,
-            addr,
+            address,
+            key,
             value,
             value_prev,
-            storage_key,
         }
     }
 
@@ -276,9 +278,14 @@ impl StorageOp {
         self.gc
     }
 
-    /// Returns the [`MemoryAddress`] associated to this Operation.
-    pub const fn address(&self) -> &MemoryAddress {
-        &self.addr
+    /// Returns the [`EthAddress`] corresponding to this storage operation.
+    pub const fn address(&self) -> &EthAddress {
+        &self.address
+    }
+
+    /// Returns the [`EvmWord`] used as key for this operation.
+    pub const fn key(&self) -> &EvmWord {
+        &self.key
     }
 
     /// Returns the [`EvmWord`] read or written by this operation.
@@ -286,35 +293,26 @@ impl StorageOp {
         &self.value
     }
 
-    /// Returns the [`EvmWord`] read or written by previous operation.
+    /// Returns the [`EvmWord`] at key found previous to this operation.
     pub const fn value_prev(&self) -> &EvmWord {
         &self.value_prev
-    }
-
-    /// Returns the underlying value representation.
-    pub const fn storage_key(&self) -> &EvmWord {
-        &self.storage_key
     }
 }
 
 impl PartialOrd for StorageOp {
     fn partial_cmp(&self, other: &StorageOp) -> Option<Ordering> {
-        match self.address().partial_cmp(other.address()) {
-            None => None,
-            Some(ord) => match ord {
-                std::cmp::Ordering::Equal => self.gc().partial_cmp(&other.gc()),
-                _ => Some(ord),
-            },
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for StorageOp {
     fn cmp(&self, other: &StorageOp) -> Ordering {
-        match self.address().cmp(other.address()) {
-            Ordering::Equal => self.gc().cmp(&other.gc()),
-            Ordering::Less => Ordering::Less,
-            Ordering::Greater => Ordering::Greater,
+        match self.address().cmp(&other.address()) {
+            Ordering::Equal => match self.key().cmp(&other.key()) {
+                Ordering::Equal => self.gc().cmp(&other.gc()),
+                ord => ord,
+            },
+            ord => ord,
         }
     }
 }
@@ -448,9 +446,7 @@ impl Operation {
     /// inside of the enum into a [`StackOp`].
     pub fn into_stack_unchecked(self) -> StackOp {
         match self {
-            Operation::Stack(stack_op) => unsafe {
-                std::mem::transmute(stack_op)
-            },
+            Operation::Stack(stack_op) => stack_op,
             _ => panic!("Broken Invariant"),
         }
     }
@@ -459,9 +455,7 @@ impl Operation {
     /// inside of the enum into a [`MemoryOp`].
     pub fn into_memory_unchecked(self) -> MemoryOp {
         match self {
-            Operation::Memory(memory_op) => unsafe {
-                std::mem::transmute(memory_op)
-            },
+            Operation::Memory(memory_op) => memory_op,
             _ => panic!("Broken Invariant"),
         }
     }
@@ -470,9 +464,7 @@ impl Operation {
     /// inside of the enum into a [`StorageOp`].
     pub fn into_storage_unchecked(self) -> StorageOp {
         match self {
-            Operation::Storage(storage_op) => unsafe {
-                std::mem::transmute(storage_op)
-            },
+            Operation::Storage(storage_op) => storage_op,
             _ => panic!("Broken Invariant"),
         }
     }

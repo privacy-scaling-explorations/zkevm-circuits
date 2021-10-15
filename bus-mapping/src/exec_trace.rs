@@ -163,7 +163,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     ) -> Result<ExecutionTrace<F>, Error> {
         let trace_loaded =
             serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
-                .map_err(|_| Error::SerdeError)?
+                .map_err(Error::SerdeError)?
                 .iter()
                 .map(ExecutionStep::try_from)
                 .collect::<Result<Vec<ExecutionStep>, Error>>()?;
@@ -228,8 +228,10 @@ impl<F: FieldExt> ExecutionTrace<F> {
         let cloned_steps = self.steps().clone();
 
         // Generate operations and update the GlobalCounter of each step.
-        self.steps_mut().iter_mut().enumerate().try_for_each(
-            |(idx, exec_step)| {
+        self.steps_mut()
+            .iter_mut()
+            .enumerate()
+            .try_for_each::<_, Result<_, Error>>(|(idx, exec_step)| {
                 // Set correct global counter
                 exec_step.set_gc(gc);
                 // Add the `OpcodeId` associated ops and increment the gc counting
@@ -242,8 +244,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
                 // correct index
                 gc += 1;
                 Ok(())
-            },
-        )?;
+            })?;
         // Replace the empty original container with the new one we just filled.
         self.container = new_container;
         Ok(self)

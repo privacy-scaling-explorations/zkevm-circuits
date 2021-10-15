@@ -99,7 +99,7 @@ mod mload_tests {
     use crate::{
         evm::{
             EvmWord, GasCost, GasInfo, Memory, OpcodeId, ProgramCounter, Stack,
-            StackAddress,
+            StackAddress, Storage,
         },
         BlockConstants, ExecutionTrace,
     };
@@ -167,6 +167,7 @@ mod mload_tests {
         let mut step_1 = ExecutionStep {
             memory: mem_map.clone(),
             stack: Stack(vec![EvmWord::from(0x40u8)]),
+            storage: Storage::empty(),
             instruction: OpcodeId::MLOAD,
             gas_info: GasInfo {
                 gas: 79,
@@ -218,6 +219,7 @@ mod mload_tests {
         let step_2 = ExecutionStep {
             memory: mem_map,
             stack: Stack(vec![EvmWord::from(0x80u8)]),
+            storage: Storage::empty(),
             instruction: OpcodeId::STOP,
             gas_info: GasInfo {
                 gas: 76,

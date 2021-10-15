@@ -3,14 +3,19 @@
 pub mod memory;
 pub(crate) mod opcodes;
 pub mod stack;
+pub mod storage;
 
-use crate::{error::Error, Gas};
+use crate::{
+    error::{EthAddressParsingError, EvmWordParsingError},
+    Gas,
+};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 pub use {
     memory::{Memory, MemoryAddress},
     opcodes::{ids::OpcodeId, Opcode},
     stack::{Stack, StackAddress},
+    storage::Storage,
 };
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
@@ -52,14 +57,22 @@ impl From<usize> for GlobalCounter {
 }
 
 /// Representation of an EVM word which is basically a 32-byte word.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct EvmWord(pub(crate) [u8; 32]);
 
 impl FromStr for EvmWord {
-    type Err = Error;
+    type Err = EvmWordParsingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let decoding = hex::decode(s).map_err(|_| Error::EvmWordParsing)?;
+        const MAX_LEN: usize = 32 * 2; // Word is 256 bits, so that's 32 bytes, * 2 for hex
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        if s.len() > MAX_LEN {
+            return Err(EvmWordParsingError::TooLong);
+        }
+        // Copy s to a fixed-length buffer to make it even-length.
+        let mut buf = [b'0'; MAX_LEN];
+        buf[MAX_LEN - s.len()..].copy_from_slice(s.as_bytes());
+        let decoding = hex::decode(&buf).map_err(EvmWordParsingError::Hex)?;
         EvmWord::from_be_bytes(&decoding)
     }
 }
@@ -73,6 +86,11 @@ impl From<EvmWord> for Vec<u8> {
 impl_from_evm_word_wrappers!(u8, u16, u32, u64, u128, usize);
 
 impl EvmWord {
+    /// Return the length of this type in bytes.
+    pub const fn len() -> usize {
+        32 // Word is 256 bits, so that's 32 bytes
+    }
+
     /// Return the big-endian byte representation of the word as a 32-byte
     /// array.
     pub const fn inner(&self) -> &[u8; 32] {
@@ -81,9 +99,11 @@ impl EvmWord {
 
     /// Generate an `EvmWord` from a slice of bytes in big-endian
     /// representation.
-    pub fn from_be_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
+    pub fn from_be_bytes<T: AsRef<[u8]>>(
+        bytes: T,
+    ) -> Result<Self, EvmWordParsingError> {
         if bytes.as_ref().len() > 32 {
-            return Err(Error::EvmWordParsing);
+            return Err(EvmWordParsingError::TooLong);
         }
         let mut inner = [0u8; 32];
         inner[32 - bytes.as_ref().len()..].copy_from_slice(bytes.as_ref());
@@ -92,9 +112,11 @@ impl EvmWord {
 
     /// Generate an `EvmWord` from a slice of bytes in little-endian
     /// representation.
-    pub fn from_le_bytes<T: AsRef<[u8]>>(bytes: T) -> Result<Self, Error> {
+    pub fn from_le_bytes<T: AsRef<[u8]>>(
+        bytes: T,
+    ) -> Result<Self, EvmWordParsingError> {
         if bytes.as_ref().len() > 32 {
-            return Err(Error::EvmWordParsing);
+            return Err(EvmWordParsingError::TooLong);
         }
         let mut inner = [0u8; 32];
         inner[..bytes.as_ref().len()].copy_from_slice(bytes.as_ref());
@@ -112,6 +134,55 @@ impl EvmWord {
     /// Returns an `EvmWord` as a 32-byte array in big endian representation.
     pub fn to_be_bytes(self) -> [u8; 32] {
         *self.inner()
+    }
+}
+
+/// Representation of an Ethereum Address which is basically a 20-byte array.
+#[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
+pub struct EthAddress(pub(crate) [u8; 20]);
+
+impl FromStr for EthAddress {
+    type Err = EthAddressParsingError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        if s.len() != Self::len() * 2 {
+            return Err(EthAddressParsingError::BadLength);
+        }
+        let decoding = hex::decode(s).map_err(EthAddressParsingError::Hex)?;
+        Self::from_bytes(&decoding)
+    }
+}
+
+impl EthAddress {
+    /// Return the length of this type in bytes.
+    pub const fn len() -> usize {
+        20 // Address is 160 bits, so that's 20 bytes
+    }
+
+    /// Return the big-endian byte representation of the Ethereum Address as a 02-byte
+    /// array.
+    pub const fn inner(&self) -> &[u8; 20] {
+        &self.0
+    }
+
+    /// Generate an `EthAddress` from a slice of bytes.
+    pub fn from_bytes<T: AsRef<[u8]>>(
+        bytes: T,
+    ) -> Result<Self, EthAddressParsingError> {
+        if bytes.as_ref().len() != Self::len() {
+            return Err(EthAddressParsingError::BadLength);
+        }
+        let mut inner = [0u8; Self::len()];
+        inner.copy_from_slice(bytes.as_ref());
+        Ok(EthAddress(inner))
+    }
+
+    /// Return an `EvmWord` representation of the `EthAddress`.
+    pub fn to_word(&self) -> EvmWord {
+        let mut inner = [0u8; 32];
+        inner[32 - Self::len()..].copy_from_slice(self.inner().as_ref());
+        EvmWord(inner)
     }
 }
 
@@ -191,6 +262,7 @@ impl From<u64> for GasCost {
 #[cfg(test)]
 mod evm_tests {
     use super::*;
+    use crate::Error;
 
     #[test]
     fn evmword_bytes_serialization_trip() -> Result<(), Error> {
@@ -229,5 +301,54 @@ mod evm_tests {
 
         assert_eq!(word_from_u128, word_from_str);
         Ok(())
+    }
+
+    #[test]
+    fn ethaddress() {
+        // Test from_str
+        assert_eq!(
+            EthAddress::from_str("0x9a0C63EBb78B35D7c209aFbD299B056098b5439b")
+                .unwrap(),
+            EthAddress([
+                154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41, 155,
+                5, 96, 152, 181, 67, 155
+            ])
+        );
+        assert_eq!(
+            EthAddress::from_str("9a0C63EBb78B35D7c209aFbD299B056098b5439b")
+                .unwrap(),
+            EthAddress([
+                154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41, 155,
+                5, 96, 152, 181, 67, 155
+            ])
+        );
+
+        // Test from_str Errors
+        assert_eq!(
+            &format!(
+                "{:?}",
+                EthAddress::from_str(
+                    "0x9a0C63EBb78B35D7c209aFbD299B056098b543"
+                )
+            ),
+            "Err(BadLength)",
+        );
+        assert_eq!(
+            &format!(
+                "{:?}",
+                EthAddress::from_str(
+                    "0x9a0C63EBb78B35D7c209aFbD299B056098b543XY"
+                )
+            ),
+            "Err(Hex(InvalidHexCharacter { c: 'X', index: 38 }))",
+        );
+
+        // Test to_word
+        assert_eq!(
+            EthAddress::from_str("0x0000000000000000000000000000000000000001")
+                .unwrap()
+                .to_word(),
+            EvmWord::from(1u32),
+        )
     }
 }
