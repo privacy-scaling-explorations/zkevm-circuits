@@ -78,7 +78,7 @@ impl KeccakFArith {
         out
     }
 
-    fn absorb(a: &StateBigInt, next_input: &State) -> StateBigInt {
+    pub fn absorb(a: &StateBigInt, next_input: &State) -> StateBigInt {
         let mut out = StateBigInt::default();
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[(x, y)] =

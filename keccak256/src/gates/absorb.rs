@@ -1,45 +1,60 @@
 use halo2::circuit::Layouter;
-use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
+use itertools::Itertools;
 use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-pub struct IotaB13Config<F> {
+pub struct AbsorbConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
-    round_ctant_b13: Column<Advice>,
-    round_constants: Column<Instance>,
+    next_input: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> IotaB13Config<F> {
+impl<F: FieldExt> AbsorbConfig<F> {
     // We assume state is recieved in base-9.
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        round_ctant_b13: Column<Advice>,
-        round_constants: Column<Instance>,
-    ) -> IotaB13Config<F> {
-        meta.create_gate("iota_b13", |meta| {
-            // def iota_b13(state: List[List[int], round_constant_base13: int):
-            // state[0][0] += round_constant_base13
-            // return state
-            let state_00 = meta.query_advice(state[0], Rotation::cur())
-                + meta.query_advice(round_ctant_b13, Rotation::cur());
-            let next_lane = meta.query_advice(state[0], Rotation::next());
-            vec![meta.query_selector(q_enable) * (state_00 - next_lane)]
+        next_input: [Column<Advice>; 25],
+    ) -> AbsorbConfig<F> {
+        // def absorb(state: List[List[int], next_input: List[List[int]):
+        //     for x in range(5):
+        //         for y in range(5):
+        //             # state[x][y] has 2*a + b + 3*c already, now add 2*d to make it 2*a + b + 3*c + 2*d
+        //             # coefficient in 0~8
+        //             state[x][y] += 2 * next_input[x][y]
+        //     return state
+        meta.create_gate("absorb", |meta| {
+            (0..5)
+                .cartesian_product(0..5usize)
+                .map(|(x, y)| {
+                    let val = meta
+                        .query_advice(state[5 * x + y], Rotation::cur())
+                        + (Expression::Constant(F::from(2))
+                            * meta.query_advice(
+                                next_input[5 * x + y],
+                                Rotation::cur(),
+                            ));
+
+                    let next_lane =
+                        meta.query_advice(state[5 * x + y], Rotation::next());
+
+                    meta.query_selector(q_enable) * (val - next_lane)
+                })
+                .collect::<Vec<_>>()
         });
-        IotaB13Config {
+
+        AbsorbConfig {
             q_enable,
             state,
-            round_ctant_b13,
-            round_constants,
+            next_input,
             _marker: PhantomData,
         }
     }
@@ -64,21 +79,21 @@ impl<F: FieldExt> IotaB13Config<F> {
         Ok(state)
     }
 
-    pub fn assign_round_ctant_b13(
+    pub fn assign_next_input(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        round_ctant: usize,
-    ) -> Result<(), Error> {
-        region.assign_advice_from_instance(
-            || format!("assign round_ctant_b13 {}", 0),
-            self.round_constants,
-            round_ctant,
-            self.round_ctant_b13,
-            offset,
-        )?;
-
-        Ok(())
+        next_input: [F; 25],
+    ) -> Result<[F; 25], Error> {
+        for (idx, lane) in next_input.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign next_input {}", idx),
+                self.next_input[idx],
+                offset,
+                || Ok(*lane),
+            )?;
+        }
+        Ok(next_input)
     }
 }
 
@@ -99,17 +114,16 @@ mod tests {
     use std::marker::PhantomData;
 
     #[test]
-    fn test_iota_b13_gate() {
+    fn test_absorb_gate() {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
+            next_input: [F; 25],
             out_state: [F; 25],
-            // This usize is indeed pointing the exact row of the ROUND_CTANTS_B13 we want to use.
-            round_ctant_b13: usize,
             _marker: PhantomData<F>,
         }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
-            type Config = IotaB13Config<F>;
+            type Config = AbsorbConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -124,17 +138,14 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let round_ctant_b13 = meta.advice_column();
-                let round_ctants = meta.instance_column();
-                meta.enable_equality(round_ctant_b13.into());
-                meta.enable_equality(round_ctants.into());
-                IotaB13Config::configure(
-                    q_enable,
-                    meta,
-                    state,
-                    round_ctant_b13,
-                    round_ctants,
-                )
+
+                let next_input: [Column<Advice>; 25] = (0..25)
+                    .map(|_| meta.advice_column())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap();
+
+                AbsorbConfig::configure(q_enable, meta, state, next_input)
             }
 
             fn synthesize(
@@ -145,7 +156,7 @@ mod tests {
                 config.load(&mut layouter)?;
 
                 layouter.assign_region(
-                    || "assign input & output state + constant in same region",
+                    || "assign input state",
                     |mut region| {
                         let offset = 0;
                         config.q_enable.enable(&mut region, offset)?;
@@ -154,14 +165,13 @@ mod tests {
                             offset,
                             self.in_state,
                         )?;
-                        let offset = 1;
-                        config.assign_state(
+                        config.assign_next_input(
                             &mut region,
                             offset,
-                            self.out_state,
+                            self.next_input,
                         )?;
-                        let offset = 0;
-                        config.assign_round_ctant_b13(&mut region, offset, 0)
+                        let offset = 1;
+                        config.assign_state(&mut region, offset, self.out_state)
                     },
                 )?;
 
@@ -189,33 +199,43 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
+
+        let next_input: State = [
+            [2, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ];
+
         let mut in_biguint = StateBigInt::default();
+        let mut next_biguint = StateBigInt::default();
+
         let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut in_next_input: [pallas::Base; 25] = [pallas::Base::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
+            in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
+            next_biguint[(x, y)] = convert_b2_to_b9(next_input[x][y]);
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_next_input[5 * x + y] =
+                big_uint_to_pallas(&next_biguint[(x, y)]);
         }
-        let s1_arith = KeccakFArith::iota_b13(&in_biguint, ROUND_CONSTANTS[0]);
+        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
         let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
         }
         let circuit = MyCircuit::<pallas::Base> {
             in_state,
+            next_input: in_next_input,
             out_state,
-            round_ctant_b13: 0,
             _marker: PhantomData,
         };
 
-        let constants = ROUND_CONSTANTS
-            .iter()
-            .map(|num| big_uint_to_pallas(&convert_b2_to_b13(*num)))
-            .collect();
         // Test without public inputs
         let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![constants])
-                .unwrap();
+            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }
