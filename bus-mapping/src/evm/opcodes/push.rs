@@ -54,7 +54,7 @@ mod push_tests {
     use crate::{
         bytecode,
         evm::{
-            EvmWord, GasCost, GasInfo, Memory, OpcodeId, ProgramCounter, Stack,
+            EvmWord, GasCost, GasInfo, OpcodeId, ProgramCounter, Stack,
             StackAddress, Storage,
         },
         external_tracer, BlockConstants, ExecutionTrace,
@@ -82,9 +82,10 @@ mod push_tests {
         )?;
 
         let mut container = OperationContainer::new();
-        let mut gc = 0usize;
+        let mut gc = GlobalCounter(0);
 
-        // Start from the same gas limit for the simulation
+        // Start from the same pc and gas limit
+        let mut pc = obtained_steps[0].pc();
         let mut gas = obtained_steps[0].gas_info().gas;
 
         // The memory is the same in both steps as none of them edits the
@@ -99,18 +100,17 @@ mod push_tests {
             instruction: OpcodeId::PUSH1,
             gas_info: gas_info!(gas, FASTEST),
             depth: 1u8,
-            pc: ProgramCounter::from(0),
-            gc: gc.into(),
+            pc: advance_pc!(pc),
+            gc: advance_gc!(gc),
             bus_mapping_instance: vec![],
         };
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        gc += 1;
         step_1
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::WRITE,
-                gc.into(),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x80u8),
             )));

@@ -4,7 +4,7 @@ pub(crate) mod exec_step;
 pub(crate) mod parsing;
 use crate::evm::EvmWord;
 use crate::operation::{container::OperationContainer, Operation};
-use crate::operation::{MemoryOp, StackOp, StorageOp, Target};
+use crate::operation::{EthAddress, MemoryOp, StackOp, StorageOp, Target};
 use crate::util::serialize_field_ext;
 use crate::Error;
 use core::ops::{Index, IndexMut};
@@ -13,14 +13,14 @@ pub(crate) use parsing::ParsedExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
 use serde::Serialize;
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 /// Definition of all of the constants related to an Ethereum block and
 /// therefore, related with an [`ExecutionTrace`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BlockConstants<F: FieldExt> {
     hash: EvmWord, // Until we know how to deal with it
-    #[serde(serialize_with = "serialize_field_ext")]
-    coinbase: F,
+    coinbase: EthAddress,
     #[serde(serialize_with = "serialize_field_ext")]
     timestamp: F,
     #[serde(serialize_with = "serialize_field_ext")]
@@ -39,7 +39,10 @@ impl<F: FieldExt> Default for BlockConstants<F> {
     fn default() -> Self {
         BlockConstants {
             hash: EvmWord([0u8; 32]),
-            coinbase: F::from_u64(0xc014ba5eu64),
+            coinbase: EthAddress::from_str(
+                "0x00000000000000000000000000000000c014ba5e",
+            )
+            .unwrap(),
             timestamp: F::from_u64(1633398551u64),
             number: F::from_u64(123456u64),
             difficulty: F::from_u64(0x200000u64),
@@ -55,7 +58,7 @@ impl<F: FieldExt> BlockConstants<F> {
     /// Generates a new `BlockConstants` instance from it's fields.
     pub fn new(
         hash: EvmWord,
-        coinbase: F,
+        coinbase: EthAddress,
         timestamp: F,
         number: F,
         difficulty: F,
@@ -82,7 +85,7 @@ impl<F: FieldExt> BlockConstants<F> {
 
     #[inline]
     /// Return the coinbase of a block.
-    pub fn coinbase(&self) -> &F {
+    pub fn coinbase(&self) -> &EthAddress {
         &self.coinbase
     }
 
@@ -169,7 +172,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
         bytes: T,
     ) -> Result<Vec<ExecutionStep>, Error> {
         serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
-            .map_err(|_| Error::SerdeError)?
+            .map_err(Error::SerdeError)?
             .iter()
             .map(ExecutionStep::try_from)
             .collect::<Result<Vec<ExecutionStep>, Error>>()

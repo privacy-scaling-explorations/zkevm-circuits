@@ -45,7 +45,7 @@
 //! all of the Memory, Stack and Storage ops performed by the provided trace.
 //!
 //! ```rust
-//! use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
+//! use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::{EvmWord, EthAddress}};
 //! use pasta_curves::arithmetic::FieldExt;
 //!
 //! let input_trace = r#"
@@ -98,7 +98,7 @@
 //!
 //! let block_ctants = BlockConstants::new(
 //!     EvmWord::from(0u8),
-//!     pasta_curves::Fp::zero(),
+//!     EthAddress::zero(),
 //!     pasta_curves::Fp::zero(),
 //!     pasta_curves::Fp::zero(),
 //!     pasta_curves::Fp::zero(),

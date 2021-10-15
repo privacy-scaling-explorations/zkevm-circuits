@@ -159,7 +159,7 @@ impl EvmWord {
 }
 
 /// Representation of an Ethereum Address which is basically a 20-byte array.
-#[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord)]
 pub struct EthAddress(pub(crate) [u8; 20]);
 
 impl FromStr for EthAddress {
@@ -175,6 +175,15 @@ impl FromStr for EthAddress {
     }
 }
 
+impl Serialize for EthAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_word().to_hex())
+    }
+}
+
 impl EthAddress {
     /// Return the length of this type in bytes.
     pub const fn len() -> usize {
@@ -185,6 +194,11 @@ impl EthAddress {
     /// array.
     pub const fn inner(&self) -> &[u8; 20] {
         &self.0
+    }
+
+    /// Returns the zero address.
+    pub fn zero() -> Self {
+        Self::from_str("0x0000000000000000000000000000000000000000").unwrap()
     }
 
     /// Generate an `EthAddress` from a slice of bytes.
@@ -200,7 +214,7 @@ impl EthAddress {
     }
 
     /// Return an `EvmWord` representation of the `EthAddress`.
-    pub fn to_word(&self) -> EvmWord {
+    pub fn to_word(self) -> EvmWord {
         let mut inner = [0u8; 32];
         inner[32 - Self::len()..].copy_from_slice(self.inner().as_ref());
         EvmWord(inner)
@@ -254,6 +268,12 @@ impl GasCost {
     pub const SLOW: Self = Self(10);
     /// Constant cost for ext step
     pub const EXT: Self = Self(20);
+    /// Constant cost for a cold SLOAD
+    pub const COLD_SLOAD_COST: Self = Self(2100);
+    /// Constant cost for a cold account access
+    pub const COLD_ACCOUNT_ACCESS_COST: Self = Self(2600);
+    /// Constant cost for a warm storage read
+    pub const WARM_STORAGE_READ_COST: Self = Self(100);
 }
 
 impl GasCost {

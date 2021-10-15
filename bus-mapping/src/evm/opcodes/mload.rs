@@ -112,7 +112,6 @@ mod mload_tests {
             .setup_state()
 
             PUSH1(0x40u64)
-            // Start byte code tested
             #[start]
             MLOAD
             STOP
@@ -131,9 +130,10 @@ mod mload_tests {
         )?;
 
         let mut container = OperationContainer::new();
-        let mut gc = 0usize;
+        let mut gc = GlobalCounter(0);
 
-        // Start from the same gas limit for the simulation
+        // Start from the same pc and gas limit
+        let mut pc = obtained_steps[0].pc();
         let mut gas = obtained_steps[0].gas_info().gas;
 
         // The memory is the same in both steps as none of them edits the
@@ -148,18 +148,17 @@ mod mload_tests {
             instruction: OpcodeId::MLOAD,
             gas_info: gas_info!(gas, FASTEST),
             depth: 1u8,
-            pc: ProgramCounter::from(7),
-            gc: gc.into(),
+            pc: advance_pc!(pc),
+            gc: advance_gc!(gc),
             bus_mapping_instance: vec![],
         };
 
         // Add StackOp associated to the 0x40 read from the latest Stack pos.
-        gc += 1;
         step_1
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::READ,
-                gc.into(),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x40u8),
             )));
@@ -171,24 +170,21 @@ mod mload_tests {
             .enumerate()
             .map(|(idx, byte)| (idx + 0x40, byte))
             .for_each(|(idx, byte)| {
-                gc += 1;
                 step_1.bus_mapping_instance_mut().push(container.insert(
-                    MemoryOp::new(RW::READ, gc.into(), idx.into(), *byte),
+                    MemoryOp::new(RW::READ, advance_gc!(gc), idx.into(), *byte),
                 ));
             });
 
         // Add the last Stack write
-        gc += 1;
         step_1
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::WRITE,
-                gc.into(),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x80u8),
             )));
 
-        gc += 1;
         // Generate Step1 corresponding to PUSH1 40
         let step_2 = ExecutionStep {
             memory: mem_map,
@@ -197,8 +193,8 @@ mod mload_tests {
             instruction: OpcodeId::STOP,
             gas_info: gas_info!(gas, ZERO),
             depth: 1u8,
-            pc: ProgramCounter::from(8),
-            gc: gc.into(),
+            pc: advance_pc!(pc),
+            gc: advance_gc!(gc),
             bus_mapping_instance: vec![],
         };
 

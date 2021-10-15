@@ -86,12 +86,13 @@ impl Bytecode {
     }
 
     /// Setup state
-    pub fn setup_state(&mut self) {
+    pub fn setup_state(&mut self) -> &mut Self {
         self.append(&mut crate::bytecode! {
             PUSH1(0x80u64)
             PUSH1(0x40u64)
             MSTORE
         });
+        self
     }
 
     /// Call a contract
@@ -105,7 +106,7 @@ impl Bytecode {
         mem_in_size: EvmWord,
         mem_out: EvmWord,
         mem_out_size: EvmWord,
-    ) {
+    ) -> &mut Self {
         self.append(&mut crate::bytecode! {
             PUSH32(mem_out_size)
             PUSH32(mem_out)
@@ -116,6 +117,7 @@ impl Bytecode {
             PUSH32(gas)
             CALL
         });
+        self
     }
 }
 

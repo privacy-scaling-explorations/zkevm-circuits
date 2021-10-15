@@ -76,11 +76,12 @@ impl Opcode for Sload {
 mod sload_tests {
     use super::*;
     use crate::{
+        bytecode,
         evm::{
             EvmWord, GasCost, GasInfo, GlobalCounter, Memory, OpcodeId,
             ProgramCounter, Stack, StackAddress, Storage,
         },
-        BlockConstants, ExecutionTrace,
+        external_tracer, BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
     use std::collections::HashMap;
@@ -88,42 +89,37 @@ mod sload_tests {
 
     #[test]
     fn sload_opcode_impl() -> Result<(), Error> {
-        let trace = r#"
-        [
-          {
-            "pc": 163,
-            "op": "SLOAD",
-            "gas": 5217,
-            "gasCost": 2100,
-            "depth": 1,
-            "stack": [
-              "0x0"
-            ],
-            "storage": {
-              "0000000000000000000000000000000000000000000000000000000000000000": "000000000000000000000000000000000000000000000000000000000000006f"
-            }
-          },
-          {
-            "pc": 97,
-            "op": "STOP",
-            "gas": 0,
-            "gasCost": 0,
-            "depth": 1,
-            "stack": [
-              "0x6f"
-            ]
-          }
-        ]
-        "#;
+        let code = bytecode! {
+            // Write 0x6f to storage slot 0
+            PUSH1(0x6fu64)
+            PUSH1(0x00u64)
+            SSTORE
+
+            // Load storage slot 0
+            PUSH1(0x00u64)
+            #[start]
+            SLOAD
+            STOP
+        };
+
+        let block_ctants = BlockConstants::default();
+
+        // Get the execution steps from the external tracer
+        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
+            [code.get_pos("start")..];
 
         // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::from_trace_bytes(
-            trace.as_bytes(),
-            BlockConstants::default(),
-        )
-        .unwrap();
+        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
+            obtained_steps.to_vec(),
+            block_ctants,
+        )?;
 
         let mut container = OperationContainer::new();
+        let mut gc = GlobalCounter(0);
+
+        // Start from the same pc and gas limit
+        let mut pc = obtained_steps[0].pc();
+        let mut gas = obtained_steps[0].gas_info().gas;
 
         // Generate Step1 corresponding to SLOAD
         let mut step_1 = ExecutionStep {
@@ -134,13 +130,10 @@ mod sload_tests {
                 EvmWord::from(0x6fu32),
             )])),
             instruction: OpcodeId::SLOAD,
-            gas_info: GasInfo {
-                gas: 5217,
-                gas_cost: GasCost::from(2100u64),
-            },
+            gas_info: gas_info!(gas, WARM_STORAGE_READ_COST),
             depth: 1u8,
-            pc: ProgramCounter::from(163),
-            gc: GlobalCounter(0),
+            pc: advance_pc!(pc),
+            gc: advance_gc!(gc),
             bus_mapping_instance: vec![],
         };
 
@@ -149,7 +142,7 @@ mod sload_tests {
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::READ,
-                GlobalCounter(1),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x0u32),
             )));
@@ -157,7 +150,7 @@ mod sload_tests {
         step_1.bus_mapping_instance_mut().push(container.insert(
             StorageOp::new(
                 RW::READ,
-                GlobalCounter(2),
+                advance_gc!(gc),
                 EthAddress([0u8; 20]), // TODO: Fill with the correct value
                 EvmWord::from(0x0u32),
                 EvmWord::from(0x6fu32),
@@ -169,7 +162,7 @@ mod sload_tests {
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::WRITE,
-                GlobalCounter(3),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x6fu32),
             )));

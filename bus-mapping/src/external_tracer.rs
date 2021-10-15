@@ -1,4 +1,5 @@
 //! This module generates traces by connecting to an external tracer
+use crate::operation::EthAddress;
 use crate::util::serialize_field_ext;
 use crate::Error;
 use crate::{
@@ -7,24 +8,26 @@ use crate::{
 use geth_utils;
 use pasta_curves::arithmetic::FieldExt;
 use serde::Serialize;
+use std::str::FromStr;
 
 /// Definition of all of the constants related to an Ethereum transaction.
 #[derive(Debug, Clone, Serialize)]
 pub struct Transaction<F: FieldExt> {
-    #[serde(serialize_with = "serialize_field_ext")]
-    origin: F,
+    origin: EthAddress,
     #[serde(serialize_with = "serialize_field_ext")]
     gas_limit: F,
-    #[serde(serialize_with = "serialize_field_ext")]
-    target: F,
+    target: EthAddress,
 }
 
 impl<F: FieldExt> Default for Transaction<F> {
     fn default() -> Self {
         Transaction {
-            origin: F::from_u64(0xc014ba5eu64),
+            origin: EthAddress::from_str(
+                "0x00000000000000000000000000000000c014ba5e",
+            )
+            .unwrap(),
             gas_limit: F::from_u64(1_000_000u64),
-            target: F::from_u64(0xc0416ac1u64),
+            target: EthAddress::zero(),
         }
     }
 }
@@ -32,8 +35,7 @@ impl<F: FieldExt> Default for Transaction<F> {
 /// Definition of all of the data related to an account.
 #[derive(Debug, Clone, Serialize)]
 pub struct Account<F: FieldExt> {
-    #[serde(serialize_with = "serialize_field_ext")]
-    address: F,
+    address: EthAddress,
     #[serde(serialize_with = "serialize_field_ext")]
     balance: F,
     code: String,
