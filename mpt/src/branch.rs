@@ -13,10 +13,12 @@ use crate::param::WITNESS_ROW_WIDTH;
 #[derive(Clone, Debug)]
 pub struct BranchConfig<F> {
     q_enable: Selector,
-    s_meta1: Column<Advice>,
-    s_meta2: Column<Advice>,
-    c_meta1: Column<Advice>,
-    c_meta2: Column<Advice>,
+    node_index: Column<Advice>,
+    key: Column<Advice>,
+    s_rlp1: Column<Advice>,
+    s_rlp2: Column<Advice>,
+    c_rlp1: Column<Advice>,
+    c_rlp2: Column<Advice>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     c_advices: [Column<Advice>; HASH_WIDTH],
     _marker: PhantomData<F>,
@@ -26,28 +28,60 @@ impl<F: FieldExt> BranchConfig<F> {
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
-        s_meta1: Column<Advice>,
-        s_meta2: Column<Advice>,
+        node_index: Column<Advice>,
+        key: Column<Advice>,
+        s_rlp1: Column<Advice>,
+        s_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        c_meta1: Column<Advice>,
-        c_meta2: Column<Advice>,
+        c_rlp1: Column<Advice>,
+        c_rlp2: Column<Advice>,
         c_advices: [Column<Advice>; HASH_WIDTH],
     ) -> BranchConfig<F> {
         meta.create_gate("branch", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
-            let s_meta1 = meta.query_advice(s_meta1, Rotation::cur());
+            let mut constraints = vec![];
+            let node_index = meta.query_advice(key, Rotation::cur());
+            let key = meta.query_advice(key, Rotation::cur());
 
-            vec![q_enable * s_meta1]
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            constraints.push(
+                q_enable.clone()
+                    * (s_rlp1 - c_rlp1)
+                    * (node_index.clone() - key.clone()),
+            );
+            constraints.push(
+                q_enable.clone()
+                    * (s_rlp2 - c_rlp2)
+                    * (node_index.clone() - key.clone()),
+            );
+
+            for (ind, col) in s_advices.iter().enumerate() {
+                let s = meta.query_advice(*col, Rotation::cur());
+                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                constraints.push(
+                    q_enable.clone()
+                        * (s - c)
+                        * (node_index.clone() - key.clone()),
+                );
+            }
+
+            constraints
         });
 
         BranchConfig {
             q_enable,
-            s_meta1,
-            s_meta2,
+            node_index,
+            key,
+            s_rlp1,
+            s_rlp2,
             s_advices,
-            c_meta1,
-            c_meta2,
+            c_rlp1,
+            c_rlp2,
             c_advices,
             _marker: PhantomData,
         }
@@ -88,16 +122,19 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.selector();
 
-                let s_meta1 = meta.advice_column();
-                let s_meta2 = meta.advice_column();
+                let node_index = meta.advice_column();
+                let key = meta.advice_column();
+
+                let s_rlp1 = meta.advice_column();
+                let s_rlp2 = meta.advice_column();
                 let s_advices = (0..HASH_WIDTH)
                     .map(|_| meta.advice_column())
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
 
-                let c_meta1 = meta.advice_column();
-                let c_meta2 = meta.advice_column();
+                let c_rlp1 = meta.advice_column();
+                let c_rlp2 = meta.advice_column();
                 let c_advices = (0..HASH_WIDTH)
                     .map(|_| meta.advice_column())
                     .collect::<Vec<_>>()
@@ -105,8 +142,8 @@ mod tests {
                     .unwrap();
 
                 BranchConfig::configure(
-                    q_enable, meta, s_meta1, s_meta2, s_advices, c_meta1,
-                    c_meta2, c_advices,
+                    q_enable, meta, node_index, key, s_rlp1, s_rlp2, s_advices,
+                    c_rlp1, c_rlp2, c_advices,
                 )
             }
 
@@ -123,19 +160,36 @@ mod tests {
                         let mut offset = 0;
                         config.q_enable.enable(&mut region, offset)?;
 
-                        for row in self.witness.iter() {
+                        for (ind, row) in self.witness.iter().enumerate() {
+                            if ind == 0 {
+                                continue;
+                            }
                             config.q_enable.enable(&mut region, offset)?;
 
                             region.assign_advice(
-                                || format!("assign s_meta1"),
-                                config.s_meta1,
+                                || format!("assign node_index"),
+                                config.node_index,
+                                offset,
+                                || Ok(F::from_u64((ind - 1) as u64)),
+                            )?;
+
+                            region.assign_advice(
+                                || format!("assign key"),
+                                config.key,
+                                offset,
+                                || Ok(F::from_u64(self.witness[0][4] as u64)),
+                            )?;
+
+                            region.assign_advice(
+                                || format!("assign s_rlp1"),
+                                config.s_rlp1,
                                 offset,
                                 || Ok(F::from_u64(row[0] as u64)),
                             )?;
 
                             region.assign_advice(
-                                || format!("assign s_meta2"),
-                                config.s_meta2,
+                                || format!("assign s_rlp2"),
+                                config.s_rlp2,
                                 offset,
                                 || Ok(F::from_u64(row[1] as u64)),
                             )?;
@@ -154,8 +208,8 @@ mod tests {
                             }
 
                             region.assign_advice(
-                                || format!("assign c_meta1"),
-                                config.c_meta1,
+                                || format!("assign c_rlp1"),
+                                config.c_rlp1,
                                 offset,
                                 || {
                                     Ok(F::from_u64(
@@ -164,8 +218,8 @@ mod tests {
                                 },
                             )?;
                             region.assign_advice(
-                                || format!("assign c_meta2"),
-                                config.c_meta2,
+                                || format!("assign c_rlp2"),
+                                config.c_rlp2,
                                 offset,
                                 || {
                                     Ok(F::from_u64(
@@ -200,7 +254,9 @@ mod tests {
             }
         }
 
+        // for debugging:
         let file = std::fs::File::open("mpt/tests/test.json");
+        // let file = std::fs::File::open("tests/test.json");
         let reader = std::io::BufReader::new(file.unwrap());
         let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
 
