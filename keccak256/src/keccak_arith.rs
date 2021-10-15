@@ -87,7 +87,7 @@ impl KeccakFArith {
         out
     }
 
-    fn iota_b9(a: &StateBigInt, rc: u64) -> StateBigInt {
+    pub fn iota_b9(a: &StateBigInt, rc: u64) -> StateBigInt {
         let mut out = a.clone();
         out[(0, 0)] += convert_b2_to_b9(rc) * A4;
         out
