@@ -27,18 +27,16 @@ impl<F: FieldExt> RunningSumConfig<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
         is_final: Selector,
-        coef: Column<Advice>,
-        slice: Column<Advice>,
-        accumulator: Column<Advice>,
+        cols: [Column<Advice>; 3],
         step: u32,
         base: u64,
     ) -> Self {
         let config = Self {
             q_enable,
             is_final,
-            coef,
-            slice,
-            accumulator,
+            coef: cols[0],
+            slice: cols[1],
+            accumulator: cols[2],
             step,
             base,
             _marker: PhantomData,
@@ -46,11 +44,12 @@ impl<F: FieldExt> RunningSumConfig<F> {
         meta.create_gate("mul", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let is_final = meta.query_selector(is_final);
-            let coef = meta.query_advice(coef, Rotation::cur());
+            let coef = meta.query_advice(config.coef, Rotation::cur());
             let slice = meta.query_advice(config.slice, Rotation::cur());
-            let acc = meta.query_advice(accumulator, Rotation::cur());
+            let acc = meta.query_advice(config.accumulator, Rotation::cur());
             let next_slice = meta.query_advice(config.slice, Rotation::next());
-            let next_acc = meta.query_advice(accumulator, Rotation::next());
+            let next_acc =
+                meta.query_advice(config.accumulator, Rotation::next());
             let slice_multiplier =
                 Expression::Constant(F::from(u64::pow(base, step)));
             iter::empty()
@@ -218,9 +217,7 @@ impl<F: FieldExt> RotateConversionConfig<F> {
             meta,
             q_enable,
             is_final,
-            base_13_cols[0],
-            base_13_cols[1],
-            base_13_cols[2],
+            base_13_cols,
             step,
             B13,
         );
@@ -229,9 +226,7 @@ impl<F: FieldExt> RotateConversionConfig<F> {
             meta,
             q_enable,
             is_final,
-            base_9_cols[0],
-            base_9_cols[1],
-            base_9_cols[2],
+            base_9_cols,
             step,
             B9,
         );
