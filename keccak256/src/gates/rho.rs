@@ -1,5 +1,7 @@
 use crate::common::*;
-use crate::gates::running_sum::RotateConversionConfig;
+use crate::gates::running_sum::{
+    BlockCountFinalConfig, RotateConversionConfig,
+};
 
 use halo2::plonk::{Advice, Column, ConstraintSystem, Selector};
 use itertools::Itertools;
@@ -34,6 +36,11 @@ impl<F: FieldExt> RhoConfig<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
     ) {
+        let block_count_cols = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
         for (x, y) in (0..5).cartesian_product(0..5) {
             let base_13_cols = [
                 meta.advice_column(),
@@ -45,13 +52,8 @@ impl<F: FieldExt> RhoConfig<F> {
                 meta.advice_column(),
                 meta.advice_column(),
             ];
-            let block_count_cols = [
-                meta.advice_column(),
-                meta.advice_column(),
-                meta.advice_column(),
-            ];
 
-            let q_is_final = meta.selector();
+            let q_is_running_sum_final = meta.selector();
             let q_running_sum = meta.selector();
 
             let mut chunk_idx = 1;
@@ -59,7 +61,7 @@ impl<F: FieldExt> RhoConfig<F> {
                 let step = get_step_size(chunk_idx, ROTATION_CONSTANTS[x][y]);
                 let config = RotateConversionConfig::configure(
                     q_running_sum,
-                    q_is_final,
+                    q_is_running_sum_final,
                     meta,
                     base_13_cols,
                     base_9_cols,
@@ -69,7 +71,11 @@ impl<F: FieldExt> RhoConfig<F> {
                 chunk_idx += step;
             }
         }
-
-        // TODO: block_count check
+        let q_block_count_final = meta.selector();
+        let final_block_count_config = BlockCountFinalConfig::configure(
+            meta,
+            q_block_count_final,
+            block_count_cols,
+        );
     }
 }
