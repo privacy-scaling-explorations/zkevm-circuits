@@ -181,7 +181,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
     }
 }
 
-pub struct RotateConversionConfig<F> {
+pub struct ChunkRotateConversionConfig<F> {
     q_enable: Selector,
     // coef, slice, acc
     base_13_cols: [Column<Advice>; 3],
@@ -195,7 +195,7 @@ pub struct RotateConversionConfig<F> {
     block_count_acc_config: BlockCountAccConfig<F>,
 }
 
-impl<F: FieldExt> RotateConversionConfig<F> {
+impl<F: FieldExt> ChunkRotateConversionConfig<F> {
     pub fn configure(
         q_enable: Selector,
         is_final: Selector,
@@ -247,6 +247,81 @@ impl<F: FieldExt> RotateConversionConfig<F> {
             b13_rs_config,
             b9_rs_config,
             block_count_acc_config,
+        }
+    }
+}
+
+/// Determine how many chunks in a step.
+/// Usually it's a step of 4 chunks, but the number of chunks could be less near the rotation position and the end of the lane.
+/// Those are the special chunks we need to take care of.
+fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
+    const BASE_NUM_OF_CHUNKS: u32 = 4;
+    const LANE_SIZE: u32 = 64;
+    // near the rotation position of the lane
+    if chunk_idx < rotation && rotation < chunk_idx + BASE_NUM_OF_CHUNKS {
+        return rotation - chunk_idx;
+    }
+    // near the end of the lane
+    if chunk_idx < LANE_SIZE && LANE_SIZE < chunk_idx + BASE_NUM_OF_CHUNKS {
+        return LANE_SIZE - chunk_idx;
+    }
+    BASE_NUM_OF_CHUNKS
+}
+
+pub struct LaneRotateConversionConfig<F> {
+    q_enable: Selector,
+    base_13_cols: [Column<Advice>; 3],
+    base_9_cols: [Column<Advice>; 3],
+    chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
+    block_count_cols: [Column<Advice>; 3],
+}
+
+impl<F: FieldExt> LaneRotateConversionConfig<F> {
+    pub fn configure(
+        q_enable: Selector,
+        meta: &mut ConstraintSystem<F>,
+        block_count_cols: [Column<Advice>; 3],
+        keccak_rotation: u32,
+    ) -> Self {
+        let base_13_cols = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+        let base_9_cols = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+
+        let q_is_running_sum_final = meta.selector();
+        let q_running_sum = meta.selector();
+
+        let mut chunk_idx = 1;
+        let mut chunk_rotate_convert_configs = vec![];
+
+        while chunk_idx < 64 {
+            let step = get_step_size(chunk_idx, keccak_rotation);
+            let config = ChunkRotateConversionConfig::configure(
+                q_running_sum,
+                q_is_running_sum_final,
+                meta,
+                base_13_cols,
+                base_9_cols,
+                block_count_cols,
+                step,
+            );
+            chunk_idx += step;
+            chunk_rotate_convert_configs.push(config);
+        }
+        // TODO: special chunks
+
+        Self {
+            q_enable,
+            base_13_cols,
+            base_9_cols,
+            chunk_rotate_convert_configs,
+            block_count_cols,
         }
     }
 }

@@ -1,81 +1,73 @@
 use crate::common::*;
 use crate::gates::running_sum::{
-    BlockCountFinalConfig, RotateConversionConfig,
+    BlockCountFinalConfig, LaneRotateConversionConfig,
 };
 
-use halo2::plonk::{Advice, Column, ConstraintSystem, Selector};
+use halo2::{
+    circuit::Region,
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+};
 use itertools::Itertools;
 use pasta_curves::arithmetic::FieldExt;
-use std::marker::PhantomData;
-
-/// Determine how many chunks in a step.
-/// Usually it's a step of 4 chunks, but the number of chunks could be less near the rotation position and the end of the lane.
-/// Those are the special chunks we need to take care of.
-fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
-    const BASE_NUM_OF_CHUNKS: u32 = 4;
-    const LANE_SIZE: u32 = 64;
-    // near the rotation position of the lane
-    if chunk_idx < rotation && rotation < chunk_idx + BASE_NUM_OF_CHUNKS {
-        return rotation - chunk_idx;
-    }
-    // near the end of the lane
-    if chunk_idx < LANE_SIZE && LANE_SIZE < chunk_idx + BASE_NUM_OF_CHUNKS {
-        return LANE_SIZE - chunk_idx;
-    }
-    BASE_NUM_OF_CHUNKS
-}
 
 pub struct RhoConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
-    _marker: PhantomData<F>,
+    state_rotate_convert_configs: Vec<LaneRotateConversionConfig<F>>,
+    final_block_count_config: BlockCountFinalConfig<F>,
 }
 
 impl<F: FieldExt> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        q_enable: Selector,
         state: [Column<Advice>; 25],
-    ) {
+    ) -> Self {
         let block_count_cols = [
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
         ];
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            let base_13_cols = [
-                meta.advice_column(),
-                meta.advice_column(),
-                meta.advice_column(),
-            ];
-            let base_9_cols = [
-                meta.advice_column(),
-                meta.advice_column(),
-                meta.advice_column(),
-            ];
-
-            let q_is_running_sum_final = meta.selector();
-            let q_running_sum = meta.selector();
-
-            let mut chunk_idx = 1;
-            while chunk_idx < 64 {
-                let step = get_step_size(chunk_idx, ROTATION_CONSTANTS[x][y]);
-                let config = RotateConversionConfig::configure(
-                    q_running_sum,
-                    q_is_running_sum_final,
+        let state_rotate_convert_configs = (0..5)
+            .cartesian_product(0..5)
+            .map(|(x, y)| {
+                LaneRotateConversionConfig::configure(
+                    q_enable,
                     meta,
-                    base_13_cols,
-                    base_9_cols,
                     block_count_cols,
-                    step,
-                );
-                chunk_idx += step;
-            }
-        }
+                    ROTATION_CONSTANTS[x][y],
+                )
+            })
+            .collect();
         let q_block_count_final = meta.selector();
         let final_block_count_config = BlockCountFinalConfig::configure(
             meta,
             q_block_count_final,
             block_count_cols,
         );
+        Self {
+            q_enable,
+            state,
+            state_rotate_convert_configs,
+            final_block_count_config,
+        }
+    }
+    pub fn assign_region(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        state: [F; 25],
+    ) -> Result<[F; 25], Error> {
+        self.q_enable.enable(region, offset)?;
+
+        for (idx, lane) in state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset,
+                || Ok(*lane),
+            )?;
+        }
+        Ok(state)
     }
 }
