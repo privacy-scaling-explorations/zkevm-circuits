@@ -75,6 +75,113 @@ impl<F: FieldExt> RunningSumConfig<F> {
     }
 }
 
+pub struct BlockCountAccConfig<F> {
+    q_enable: Selector,
+    // block count, step 2 acc, step 3 acc
+    block_count_cols: [Column<Advice>; 3],
+    step: u32,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> BlockCountAccConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: Selector,
+        block_count_cols: [Column<Advice>; 3],
+        step: u32,
+    ) -> Self {
+        meta.create_gate("accumulate block count", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let block_count =
+                meta.query_advice(block_count_cols[0], Rotation::cur());
+            let delta_step2 = meta
+                .query_advice(block_count_cols[1], Rotation::next())
+                - meta.query_advice(block_count_cols[1], Rotation::cur());
+            let delta_step3 = meta
+                .query_advice(block_count_cols[2], Rotation::next())
+                - meta.query_advice(block_count_cols[2], Rotation::cur());
+
+            match step {
+                1 => vec![
+                    ("block_count = 0", block_count),
+                    ("delta_step2 = 0", delta_step2),
+                    ("delta_step3 = 0", delta_step3),
+                ],
+                2 => vec![
+                    ("delta_step2 = block_count", delta_step2 - block_count),
+                    ("delta_step3 = 0", delta_step3),
+                ],
+                3 => vec![
+                    ("delta_step2 = 0", delta_step2),
+                    ("delta_step3 = block_count", delta_step3 - block_count),
+                ],
+                _ => {
+                    unreachable!("expect step < 4");
+                }
+            }
+            .iter()
+            .map(|(name, poly)| (*name, q_enable.clone() * poly.clone()))
+            .collect::<Vec<_>>()
+        });
+
+        Self {
+            q_enable,
+            block_count_cols,
+            step,
+            _marker: PhantomData,
+        }
+    }
+}
+
+pub struct BlockCountFinalConfig<F> {
+    q_enable: Selector,
+    block_count_cols: [Column<Advice>; 3],
+    _marker: PhantomData<F>,
+}
+impl<F: FieldExt> BlockCountFinalConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: Selector,
+        block_count_cols: [Column<Advice>; 3],
+    ) -> Self {
+        meta.create_gate("block count final check", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let step2_acc =
+                meta.query_advice(block_count_cols[1], Rotation::cur());
+            let step3_acc =
+                meta.query_advice(block_count_cols[2], Rotation::cur());
+            iter::empty()
+                .chain(Some((
+                    "step2_acc <=12",
+                    (0..=12)
+                        .map(|x| {
+                            step2_acc.clone() - Expression::Constant(F::from(x))
+                        })
+                        .reduce(|a, b| a * b),
+                )))
+                .chain(Some((
+                    "step3_acc <= 13 * 13",
+                    (0..=13 * 13)
+                        .map(|x| {
+                            step3_acc.clone() - Expression::Constant(F::from(x))
+                        })
+                        .reduce(|a, b| a * b),
+                )))
+                .map(|(name, poly)| match poly {
+                    Some(poly) => (name, q_enable.clone() * poly),
+                    None => (name, Expression::Constant(F::zero())),
+                })
+                .collect::<Vec<_>>()
+        });
+
+        Self {
+            q_enable,
+            block_count_cols,
+            _marker: PhantomData,
+        }
+    }
+}
+
 pub struct RotateConversionConfig<F> {
     q_enable: Selector,
     // coef, slice, acc
@@ -86,6 +193,7 @@ pub struct RotateConversionConfig<F> {
     base_13_to_base_9_lookup: Base13toBase9TableConfig<F>,
     b13_rs_config: RunningSumConfig<F>,
     b9_rs_config: RunningSumConfig<F>,
+    block_count_acc_config: BlockCountAccConfig<F>,
 }
 
 impl<F: FieldExt> RotateConversionConfig<F> {
@@ -128,67 +236,12 @@ impl<F: FieldExt> RotateConversionConfig<F> {
             B9,
         );
 
-        // ? = non-zero
-        // [?, ?, ?, ?] -> block_count = 0
-        // [0, ?, ?, ?] -> block_count = 1
-        // [0, 0, ?, ?] -> block_count = 2
-        // [0, 0, 0, ?] -> block_count = 3
-        // TODO: lookup check, block count summing check
-        meta.create_gate("running sum", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let is_final = meta.query_selector(is_final);
-            // coef is correctly computed
-            // acc is correctly accumulated
-
-            // slice 13 to slice 9 mapping is correctly looked up
-            // block count is correctly looked up
-            // block count, step 2 acc, step 3 acc are correctly
-            // validated
-
-            // what about the last row?
-            let block_count =
-                meta.query_advice(block_count_cols[0], Rotation::cur());
-            let block_count_acc =
-                meta.query_advice(block_count_cols[1], Rotation::cur());
-            let block_count_acc_next =
-                meta.query_advice(block_count_cols[1], Rotation::next());
-
-            // next acc correctness
-            let step2_acc =
-                meta.query_advice(block_count_cols[1], Rotation::cur());
-            let step2_acc_next =
-                meta.query_advice(block_count_cols[1], Rotation::next());
-            let step3_acc =
-                meta.query_advice(block_count_cols[2], Rotation::cur());
-            let step3_acc_next =
-                meta.query_advice(block_count_cols[2], Rotation::next());
-
-            let expr_next_block_count_acc =
-                block_count_acc_next - block_count_acc - block_count.clone();
-
-            let mut checks = vec![q_enable.clone() * expr_next_block_count_acc];
-            // block_count acc correctness
-            if step == 1 {
-                checks.push(q_enable.clone() * block_count);
-                checks.push(q_enable.clone() * (step2_acc_next - step2_acc));
-                checks.push(q_enable * (step3_acc_next - step3_acc));
-            } else if step == 2 {
-                checks.push(
-                    q_enable.clone()
-                        * (step2_acc_next - step2_acc - block_count),
-                );
-                checks.push(q_enable * (step3_acc_next - step3_acc));
-            } else if step == 3 {
-                checks.push(q_enable.clone() * (step2_acc_next - step2_acc));
-                checks.push(
-                    q_enable * (step3_acc_next - step3_acc - block_count),
-                );
-            } else {
-                unreachable!("step < 4");
-            }
-
-            checks
-        });
+        let block_count_acc_config = BlockCountAccConfig::configure(
+            meta,
+            q_enable,
+            block_count_cols,
+            step,
+        );
 
         Self {
             q_enable,
@@ -198,6 +251,7 @@ impl<F: FieldExt> RotateConversionConfig<F> {
             base_13_to_base_9_lookup,
             b13_rs_config,
             b9_rs_config,
+            block_count_acc_config,
         }
     }
 }
