@@ -1,7 +1,9 @@
 use crate::arith_helpers::*;
+use crate::common::ROTATION_CONSTANTS;
 use crate::gates::tables::*;
 use halo2::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, Selector},
+    circuit::{Cell, Region},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -249,6 +251,10 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             block_count_acc_config,
         }
     }
+
+    pub fn assign_region(&self, offset: usize) -> usize {
+        offset
+    }
 }
 
 /// Determine how many chunks in a step.
@@ -274,6 +280,7 @@ pub struct LaneRotateConversionConfig<F> {
     base_9_cols: [Column<Advice>; 3],
     chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
     block_count_cols: [Column<Advice>; 3],
+    lane_xy: (usize, usize),
 }
 
 impl<F: FieldExt> LaneRotateConversionConfig<F> {
@@ -281,7 +288,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
         block_count_cols: [Column<Advice>; 3],
-        keccak_rotation: u32,
+        lane_xy: (usize, usize),
     ) -> Self {
         let base_13_cols = [
             meta.advice_column(),
@@ -301,7 +308,10 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let mut chunk_rotate_convert_configs = vec![];
 
         while chunk_idx < 64 {
-            let step = get_step_size(chunk_idx, keccak_rotation);
+            let step = get_step_size(
+                chunk_idx,
+                ROTATION_CONSTANTS[lane_xy.0][lane_xy.1],
+            );
             let config = ChunkRotateConversionConfig::configure(
                 q_running_sum,
                 q_is_running_sum_final,
@@ -322,6 +332,39 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             base_9_cols,
             chunk_rotate_convert_configs,
             block_count_cols,
+            lane_xy,
         }
+    }
+    pub fn assign_region(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        lane_base_13: &Cell,
+        lane_base_13_value: F,
+        lane_base_9: &Cell,
+        lane_base_9_value: F,
+    ) -> Result<usize, Error> {
+        let cell = region.assign_advice(
+            || format!("assign lane_{:?} === base_13_col", self.lane_xy),
+            self.base_13_cols[0],
+            offset,
+            || Ok(lane_base_13_value),
+        )?;
+        region.constrain_equal(*lane_base_13, cell)?;
+
+        let cell = region.assign_advice(
+            || format!("assign lane_{:?} === base_9_col", self.lane_xy),
+            self.base_9_cols[0],
+            offset,
+            || Ok(lane_base_9_value),
+        )?;
+        region.constrain_equal(*lane_base_9, cell)?;
+
+        let mut offset = offset;
+
+        for config in self.chunk_rotate_convert_configs.iter() {
+            offset = config.assign_region(offset);
+        }
+        Ok(offset)
     }
 }

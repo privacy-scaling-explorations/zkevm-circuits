@@ -1,10 +1,11 @@
-use crate::common::*;
+use crate::arith_helpers::convert_b13_lane_to_b9;
+use crate::common::ROTATION_CONSTANTS;
 use crate::gates::running_sum::{
     BlockCountFinalConfig, LaneRotateConversionConfig,
 };
 
 use halo2::{
-    circuit::Region,
+    circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 };
 use itertools::Itertools;
@@ -35,7 +36,7 @@ impl<F: FieldExt> RhoConfig<F> {
                     q_enable,
                     meta,
                     block_count_cols,
-                    ROTATION_CONSTANTS[x][y],
+                    (x, y),
                 )
             })
             .collect();
@@ -57,16 +58,30 @@ impl<F: FieldExt> RhoConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        next_state: [&Cell; 25],
     ) -> Result<[F; 25], Error> {
         self.q_enable.enable(region, offset)?;
 
-        for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            let idx = 5 * x + y;
+            let lane_base_13 = state[idx];
+            let cell = region.assign_advice(
+                || format!("assign lane {:?}", (x, y)),
                 self.state[idx],
                 offset,
-                || Ok(*lane),
+                || Ok(lane_base_13),
             )?;
+            let lane_config = &self.state_rotate_convert_configs[idx];
+            let lane_base_9 =
+                convert_b13_lane_to_b9(lane_base_13, ROTATION_CONSTANTS[x][y]);
+            let next_offset = lane_config.assign_region(
+                region,
+                offset,
+                &cell,
+                lane_base_13,
+                next_state[idx],
+                lane_base_9,
+            );
         }
         Ok(state)
     }
