@@ -223,11 +223,6 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         state.stack_pointer += SP_DELTA;
         state.gas_counter += GAS.as_usize();
 
-        // Case selector
-        self.case_selector
-            .assign(region, offset, Some(F::from_u64(1)))
-            .unwrap();
-
         Ok(())
     }
 }
