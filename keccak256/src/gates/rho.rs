@@ -3,6 +3,7 @@ use crate::common::ROTATION_CONSTANTS;
 use crate::gates::running_sum::{
     BlockCountFinalConfig, LaneRotateConversionConfig,
 };
+use num_bigint::BigUint;
 
 use halo2::{
     circuit::{Cell, Region},
@@ -10,6 +11,7 @@ use halo2::{
 };
 use itertools::Itertools;
 use pasta_curves::arithmetic::FieldExt;
+use std::convert::TryInto;
 
 pub struct RhoConfig<F> {
     q_enable: Selector,
@@ -72,8 +74,18 @@ impl<F: FieldExt> RhoConfig<F> {
                 || Ok(lane_base_13),
             )?;
             let lane_config = &self.state_rotate_convert_configs[idx];
-            let lane_base_9 =
-                convert_b13_lane_to_b9(lane_base_13, ROTATION_CONSTANTS[x][y]);
+            let lane_base_13_big_uint =
+                BigUint::from_bytes_le(&lane_base_13.to_bytes());
+            let lane_base_9_big_uint = convert_b13_lane_to_b9(
+                lane_base_13_big_uint,
+                ROTATION_CONSTANTS[x][y],
+            );
+            let lane_base_9 = Option::from(F::from_bytes(
+                lane_base_9_big_uint.to_bytes_le()[..=32]
+                    .try_into()
+                    .unwrap(),
+            ))
+            .ok_or(Error::SynthesisError)?;
             let next_offset = lane_config.assign_region(
                 region,
                 offset,
