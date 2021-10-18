@@ -66,6 +66,67 @@ impl<F: FieldExt> RunningSumConfig<F> {
     }
 }
 
+pub struct SpecialChunkConfig<F> {
+    q_enable: Selector,
+    high_value: Column<Advice>,
+    low_value: Column<Advice>,
+    keccak_rotation: u32,
+    base_9_last_accumulator: Column<Advice>,
+    special_chunk_table_config: SpecialChunkTableConfig<F>,
+}
+
+impl<F: FieldExt> SpecialChunkConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        q_enable: Selector,
+        base_13_last_accumulator: Column<Advice>,
+        base_9_last_accumulator: Column<Advice>,
+        keccak_rotation: u32,
+    ) -> Self {
+        let high_value = meta.advice_column();
+        let low_value = meta.advice_column();
+        meta.create_gate("validate base_9_last_accumulator", |meta| {
+            let base_9_last_accumulator =
+                meta.query_advice(base_9_last_accumulator, Rotation::cur());
+            let base_13_last_accumulator =
+                meta.query_advice(base_13_last_accumulator, Rotation::cur());
+            let high_value = meta.query_advice(high_value, Rotation::cur());
+            let low_value = meta.query_advice(low_value, Rotation::cur());
+            let base_9_slice = high_value.clone() + low_value.clone();
+            let base_9_coef = Expression::Constant(F::from_u64(B9).pow(&[
+                keccak_rotation as u64,
+                0,
+                0,
+                0,
+            ]));
+            let pow_of_13 =
+                Expression::Constant(F::from_u64(B13).pow(&[64u64, 0, 0, 0]));
+
+            vec![
+                (
+                    "base_9_acc === (high_value + low_value) * 9**rotation",
+                    base_9_last_accumulator - base_9_slice * base_9_coef,
+                ),
+                (
+                    "base_13_acc === high_value * 13**64 + low_value",
+                    base_13_last_accumulator - high_value * pow_of_13
+                        + low_value,
+                ),
+            ]
+        });
+        let special_chunk_table_config =
+            SpecialChunkTableConfig::configure(meta, high_value, low_value);
+        Self {
+            q_enable,
+            high_value,
+            low_value,
+            keccak_rotation,
+            base_9_last_accumulator,
+            special_chunk_table_config,
+        }
+    }
+}
+
 pub struct BlockCountAccConfig<F> {
     q_enable: Selector,
     // block count, step 2 acc, step 3 acc
@@ -240,8 +301,9 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 }
 
 /// Determine how many chunks in a step.
-/// Usually it's a step of 4 chunks, but the number of chunks could be less near the rotation position and the end of the lane.
-/// Those are the special chunks we need to take care of.
+/// Usually it's a step of 4 chunks, but the number of chunks could be less near
+/// the rotation position and the end of the lane. Those are the special chunks
+/// we need to take care of.
 fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
     const BASE_NUM_OF_CHUNKS: u32 = 4;
     const LANE_SIZE: u32 = 64;
@@ -258,9 +320,11 @@ fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
 
 pub struct LaneRotateConversionConfig<F> {
     q_enable: Selector,
+    q_is_special: Selector,
     base_13_cols: [Column<Advice>; 3],
     base_9_cols: [Column<Advice>; 3],
     chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
+    special_chunk_config: SpecialChunkConfig<F>,
     block_count_cols: [Column<Advice>; 3],
     lane_xy: (usize, usize),
 }
@@ -283,19 +347,16 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             meta.advice_column(),
         ];
 
-        let q_is_running_sum_final = meta.selector();
-        let q_running_sum = meta.selector();
+        let q_is_special = meta.selector();
 
         let mut chunk_idx = 1;
         let mut chunk_rotate_convert_configs = vec![];
+        let rotation = ROTATION_CONSTANTS[lane_xy.0][lane_xy.1];
 
         while chunk_idx < 64 {
-            let step = get_step_size(
-                chunk_idx,
-                ROTATION_CONSTANTS[lane_xy.0][lane_xy.1],
-            );
+            let step = get_step_size(chunk_idx, rotation);
             let config = ChunkRotateConversionConfig::configure(
-                q_running_sum,
+                q_enable,
                 meta,
                 base_13_cols,
                 base_9_cols,
@@ -305,13 +366,21 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             chunk_idx += step;
             chunk_rotate_convert_configs.push(config);
         }
-        // TODO: special chunks
+        let special_chunk_config = SpecialChunkConfig::configure(
+            meta,
+            q_is_special,
+            base_13_cols[2],
+            base_9_cols[2],
+            rotation,
+        );
 
         Self {
             q_enable,
+            q_is_special,
             base_13_cols,
             base_9_cols,
             chunk_rotate_convert_configs,
+            special_chunk_config,
             block_count_cols,
             lane_xy,
         }
