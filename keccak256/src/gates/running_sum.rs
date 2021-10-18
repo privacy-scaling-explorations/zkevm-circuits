@@ -16,7 +16,6 @@ use std::marker::PhantomData;
 /// | 3    | 10**4 |       30000 |
 pub struct RunningSumConfig<F> {
     q_enable: Selector,
-    is_final: Selector,
     coef: Column<Advice>,
     slice: Column<Advice>,
     accumulator: Column<Advice>,
@@ -28,14 +27,12 @@ impl<F: FieldExt> RunningSumConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
-        is_final: Selector,
         cols: [Column<Advice>; 3],
         step: u32,
         base: u64,
     ) -> Self {
         let config = Self {
             q_enable,
-            is_final,
             coef: cols[0],
             slice: cols[1],
             accumulator: cols[2],
@@ -45,7 +42,6 @@ impl<F: FieldExt> RunningSumConfig<F> {
         };
         meta.create_gate("mul", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let is_final = meta.query_selector(is_final);
             let coef = meta.query_advice(config.coef, Rotation::cur());
             let slice = meta.query_advice(config.slice, Rotation::cur());
             let acc = meta.query_advice(config.accumulator, Rotation::cur());
@@ -56,17 +52,11 @@ impl<F: FieldExt> RunningSumConfig<F> {
                 Expression::Constant(F::from(u64::pow(base, step)));
             iter::empty()
                 .chain(Some((
-                    "(not final) check next acc",
-                    (is_final.clone() - Expression::Constant(F::one()))
-                        * (next_acc
-                            - (acc.clone() - coef.clone() * slice.clone())),
+                    "next_acc === acc - coef * slice",
+                    (next_acc - (acc.clone() - coef.clone() * slice.clone())),
                 )))
                 .chain(Some((
-                    "(final) check acc",
-                    is_final * (acc - coef * slice.clone()),
-                )))
-                .chain(Some((
-                    "next slice",
+                    "next_slice === slice * slice_multiplier",
                     next_slice - slice * slice_multiplier,
                 )))
                 .map(|(name, poly)| (name, q_enable.clone() * poly))
@@ -200,7 +190,6 @@ pub struct ChunkRotateConversionConfig<F> {
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
     pub fn configure(
         q_enable: Selector,
-        is_final: Selector,
         meta: &mut ConstraintSystem<F>,
         base_13_cols: [Column<Advice>; 3],
         base_9_cols: [Column<Advice>; 3],
@@ -218,20 +207,13 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         let b13_rs_config = RunningSumConfig::configure(
             meta,
             q_enable,
-            is_final,
             base_13_cols,
             step,
             B13,
         );
 
-        let b9_rs_config = RunningSumConfig::configure(
-            meta,
-            q_enable,
-            is_final,
-            base_9_cols,
-            step,
-            B9,
-        );
+        let b9_rs_config =
+            RunningSumConfig::configure(meta, q_enable, base_9_cols, step, B9);
 
         let block_count_acc_config = BlockCountAccConfig::configure(
             meta,
@@ -314,7 +296,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             );
             let config = ChunkRotateConversionConfig::configure(
                 q_running_sum,
-                q_is_running_sum_final,
                 meta,
                 base_13_cols,
                 base_9_cols,
