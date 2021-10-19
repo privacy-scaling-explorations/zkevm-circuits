@@ -3,4 +3,5 @@
 pub const HASH_WIDTH: usize = 32;
 pub const WITNESS_ROW_WIDTH: usize = 68;
 pub const LAYOUT_OFFSET: usize = 2;
-pub const KECCAK_WIDTH: usize = 2;
+pub const KECCAK_INPUT_WIDTH: usize = 17;
+pub const KECCAK_OUTPUT_WIDTH: usize = 4;
