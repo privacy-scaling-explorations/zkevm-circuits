@@ -1,4 +1,3 @@
-use halo2::circuit::Layouter;
 use halo2::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -65,9 +64,6 @@ impl<F: FieldExt> XiConfig<F> {
             state,
             _marker: PhantomData,
         }
-    }
-    pub fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        Ok(())
     }
 
     pub fn assign_state(
@@ -137,8 +133,6 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                config.load(&mut layouter)?;
-
                 layouter.assign_region(
                     || "assign input state",
                     |mut region| {

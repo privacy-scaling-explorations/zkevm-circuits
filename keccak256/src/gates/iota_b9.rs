@@ -1,4 +1,3 @@
-use halo2::circuit::Layouter;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
@@ -46,9 +45,6 @@ impl<F: FieldExt> IotaB9Config<F> {
             round_constants,
             _marker: PhantomData,
         }
-    }
-    pub fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        Ok(())
     }
 
     pub fn assign_state(
@@ -153,8 +149,6 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                config.load(&mut layouter)?;
-
                 layouter.assign_region(
                     || "assign input & output state + constant in same region",
                     |mut region| {
