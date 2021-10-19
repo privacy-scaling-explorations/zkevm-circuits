@@ -16,7 +16,7 @@ use std::convert::TryInto;
 pub struct RhoConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
-    state_rotate_convert_configs: Vec<LaneRotateConversionConfig<F>>,
+    state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
     final_block_count_config: BlockCountFinalConfig<F>,
 }
 
@@ -37,11 +37,12 @@ impl<F: FieldExt> RhoConfig<F> {
                 LaneRotateConversionConfig::configure(
                     q_enable,
                     meta,
+                    // NB: reused across all LaneRotateConversionConfigs
                     block_count_cols,
                     (x, y),
                 )
             })
-            .collect();
+            .collect::<Vec<_>>().try_into().unwrap();
         let q_block_count_final = meta.selector();
         let final_block_count_config = BlockCountFinalConfig::configure(
             meta,

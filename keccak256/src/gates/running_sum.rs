@@ -14,6 +14,8 @@ use std::marker::PhantomData;
 /// |------|-------|-------------|
 /// | 5    | 10**2 |       30500 | (step = 2)
 /// | 3    | 10**4 |       30000 |
+#[derive(Debug)]
+// TODO: make STEP and BASE const generics, make `slice` a fixed column.
 pub struct RunningSumConfig<F> {
     q_enable: Selector,
     coef: Column<Advice>,
@@ -66,11 +68,13 @@ impl<F: FieldExt> RunningSumConfig<F> {
     }
 }
 
+#[derive(Debug)]
 pub struct SpecialChunkConfig<F> {
     q_enable: Selector,
     high_value: Column<Advice>,
     low_value: Column<Advice>,
     keccak_rotation: u32,
+    base_13_last_accumulator: Column<Advice>,
     base_9_last_accumulator: Column<Advice>,
     special_chunk_table_config: SpecialChunkTableConfig<F>,
 }
@@ -121,12 +125,14 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             high_value,
             low_value,
             keccak_rotation,
+            base_13_last_accumulator,
             base_9_last_accumulator,
             special_chunk_table_config,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct BlockCountAccConfig<F> {
     q_enable: Selector,
     // block count, step 2 acc, step 3 acc
@@ -234,6 +240,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
     }
 }
 
+#[derive(Debug)]
 pub struct ChunkRotateConversionConfig<F> {
     q_enable: Selector,
     // coef, slice, acc
@@ -295,8 +302,14 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         }
     }
 
-    pub fn assign_region(&self, offset: usize) -> usize {
-        offset
+    pub fn assign_region(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> usize {
+        self.b13_rs_config.assign_region();
+        self.b9_rs_config.assign_region();
+        self.block_count_acc_config.assign_region();
     }
 }
 
@@ -318,6 +331,7 @@ fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
     BASE_NUM_OF_CHUNKS
 }
 
+#[derive(Debug)]
 pub struct LaneRotateConversionConfig<F> {
     q_enable: Selector,
     q_is_special: Selector,
