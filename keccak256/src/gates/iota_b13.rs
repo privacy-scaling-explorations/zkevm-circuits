@@ -155,7 +155,11 @@ mod tests {
                             self.out_state,
                         )?;
                         let offset = 0;
-                        config.assign_round_ctant_b13(&mut region, offset, 0)
+                        config.assign_round_ctant_b13(
+                            &mut region,
+                            offset,
+                            self.round_ctant_b13,
+                        )
                     },
                 )?;
 
