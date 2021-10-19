@@ -1,8 +1,9 @@
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
+use crate::gates::gate_helpers::Lane;
 use crate::gates::tables::*;
 use halo2::{
-    circuit::{Cell, Region},
+    circuit::{Cell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -197,11 +198,7 @@ pub struct BlockCountFinalConfig<F> {
     _marker: PhantomData<F>,
 }
 impl<F: FieldExt> BlockCountFinalConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        block_count_cols: [Column<Advice>; 3],
-    ) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         meta.create_gate("block count final check", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let step2_acc =
@@ -237,6 +234,12 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
             block_count_cols,
             _marker: PhantomData,
         }
+    }
+    pub fn assign_region(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block_count_cells: [(Cell, Cell); 25],
+    ) {
     }
 }
 
@@ -345,9 +348,7 @@ pub struct LaneRotateConversionConfig<F> {
 
 impl<F: FieldExt> LaneRotateConversionConfig<F> {
     pub fn configure(
-        q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
-        block_count_cols: [Column<Advice>; 3],
         lane_xy: (usize, usize),
     ) -> Self {
         let base_13_cols = [
@@ -401,13 +402,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     }
     pub fn assign_region(
         &self,
-        region: &mut Region<F>,
-        offset: usize,
-        lane_base_13: &Cell,
-        lane_base_13_value: F,
-        lane_base_9: &Cell,
-        lane_base_9_value: F,
-    ) -> Result<usize, Error> {
+        layouter: &mut impl Layouter<F>,
+        lane_base_13: &Lane<F>,
+    ) -> Result<(Lane<F>, (Cell, Cell)), Error> {
         let cell = region.assign_advice(
             || format!("assign lane_{:?} === base_13_col", self.lane_xy),
             self.base_13_cols[0],
