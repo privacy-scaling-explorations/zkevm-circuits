@@ -100,6 +100,11 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
     }
 }
 
+fn block_counting_function(n: usize) -> u64 {
+    let table = [0, 0, 1, 13, 170];
+    return table[n];
+}
+
 pub struct Base13toBase9TableConfig<F> {
     cols: [Column<Fixed>; 3],
     q_lookup: Selector,
@@ -181,7 +186,18 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         i,
                         || Ok(value),
                     )?;
-                    todo!("handle block_count");
+                    // could be 0, 1, 2, 3, 4
+                    let non_zero_chunk_count =
+                        coefs.iter().filter(|x| **x != 0).count();
+                    // could be 0, 0, 1, 13, 170
+                    let block_count =
+                        block_counting_function(non_zero_chunk_count);
+                    region.assign_fixed(
+                        || "block_count",
+                        block_count_col,
+                        i,
+                        || Ok(F::from_u64(block_count)),
+                    )?;
                 }
                 Ok(())
             },
