@@ -143,7 +143,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
                 } else {
                     utils::select::expr(
                         self.selectors[idx - 1].expr(),
-                        self.sign_byte.expr().clone(),
+                        self.sign_byte.expr(),
                         self.value.cells[idx].expr(),
                     )
                 },
