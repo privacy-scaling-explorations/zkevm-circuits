@@ -256,6 +256,7 @@ pub struct ChunkRotateConversionConfig<F> {
     b13_rs_config: RunningSumConfig<F>,
     b9_rs_config: RunningSumConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
+    step: u32,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
@@ -302,6 +303,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             b13_rs_config,
             b9_rs_config,
             block_count_acc_config,
+            step,
         }
     }
 
@@ -309,7 +311,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-    ) -> usize {
+    ) -> Result<(Cell, Cell), Error> {
         self.b13_rs_config.assign_region();
         self.b9_rs_config.assign_region();
         self.block_count_acc_config.assign_region();
@@ -344,6 +346,7 @@ pub struct LaneRotateConversionConfig<F> {
     special_chunk_config: SpecialChunkConfig<F>,
     block_count_cols: [Column<Advice>; 3],
     lane_xy: (usize, usize),
+    rotation: u32,
 }
 
 impl<F: FieldExt> LaneRotateConversionConfig<F> {
@@ -351,17 +354,10 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         lane_xy: (usize, usize),
     ) -> Self {
-        let base_13_cols = [
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ];
-        let base_9_cols = [
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ];
-
+        let base_13_cols = [meta.advice_column(); 3];
+        let base_9_cols = [meta.advice_column(); 3];
+        let block_count_cols = [meta.advice_column(); 3];
+        let q_enable = meta.selector();
         let q_is_special = meta.selector();
 
         let mut chunk_idx = 1;
@@ -398,6 +394,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             special_chunk_config,
             block_count_cols,
             lane_xy,
+            rotation,
         }
     }
     pub fn assign_region(
@@ -405,27 +402,28 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         layouter: &mut impl Layouter<F>,
         lane_base_13: &Lane<F>,
     ) -> Result<(Lane<F>, (Cell, Cell)), Error> {
-        let cell = region.assign_advice(
-            || format!("assign lane_{:?} === base_13_col", self.lane_xy),
-            self.base_13_cols[0],
-            offset,
-            || Ok(lane_base_13_value),
+        layouter.assign_region(
+            || format!("lane {:?}", self.lane_xy),
+            |mut region| {
+                let offset = 0;
+                let cell = region.assign_advice(
+                    || "base_13_col",
+                    self.base_13_cols[0],
+                    offset,
+                    || Ok(lane_base_13.value),
+                )?;
+                region.constrain_equal(lane_base_13.cell, cell)?;
+
+                let mut chunk_idx = 1;
+                let mut offset = offset + 1;
+                for config in self.chunk_rotate_convert_configs.iter() {
+                    let cells = config.assign_region(&mut region, offset)?;
+                    offset += config.step as usize;
+                }
+                let lane = self.special_chunk_config.assign_region(&mut region, offset);
+                Ok(region)
+            },
         )?;
-        region.constrain_equal(*lane_base_13, cell)?;
-
-        let cell = region.assign_advice(
-            || format!("assign lane_{:?} === base_9_col", self.lane_xy),
-            self.base_9_cols[0],
-            offset,
-            || Ok(lane_base_9_value),
-        )?;
-        region.constrain_equal(*lane_base_9, cell)?;
-
-        let mut offset = offset;
-
-        for config in self.chunk_rotate_convert_configs.iter() {
-            offset = config.assign_region(offset);
-        }
-        Ok(offset)
+        Ok(lane, cells)
     }
 }
