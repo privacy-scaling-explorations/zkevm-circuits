@@ -68,7 +68,7 @@ impl KeccakFArith {
         out
     }
 
-    fn xi(a: &StateBigInt) -> StateBigInt {
+    pub fn xi(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[(x, y)] = a[(x, y)].clone() * A1
@@ -78,7 +78,7 @@ impl KeccakFArith {
         out
     }
 
-    fn absorb(a: &StateBigInt, next_input: &State) -> StateBigInt {
+    pub fn absorb(a: &StateBigInt, next_input: &State) -> StateBigInt {
         let mut out = StateBigInt::default();
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[(x, y)] =
@@ -87,13 +87,13 @@ impl KeccakFArith {
         out
     }
 
-    fn iota_b9(a: &StateBigInt, rc: u64) -> StateBigInt {
+    pub fn iota_b9(a: &StateBigInt, rc: u64) -> StateBigInt {
         let mut out = a.clone();
         out[(0, 0)] += convert_b2_to_b9(rc) * A4;
         out
     }
 
-    fn iota_b13(a: &StateBigInt, rc: u64) -> StateBigInt {
+    pub fn iota_b13(a: &StateBigInt, rc: u64) -> StateBigInt {
         let mut out = a.clone();
         out[(0, 0)] += convert_b2_to_b13(rc);
         out
