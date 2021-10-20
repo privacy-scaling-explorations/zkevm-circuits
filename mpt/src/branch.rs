@@ -84,6 +84,7 @@ impl<F: FieldExt> BranchConfig<F> {
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
             let not_leaf = one.clone() - is_leaf;
+
             constraints.push(q_enable.clone() * bool_check_is_leaf);
             constraints.push(
                 q_enable.clone()
@@ -103,7 +104,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
                 constraints.push(
                     q_enable.clone()
-                        * not_leaf.clone()
+                        // * not_leaf.clone()
                         * (s - c)
                         * (node_index.clone() - key.clone()),
                 );
@@ -136,8 +137,6 @@ impl<F: FieldExt> BranchConfig<F> {
         is_leaf: bool,
         offset: usize,
     ) -> Result<(), Error> {
-        let foo = is_leaf as u64;
-        println!("{}", foo);
         region.assign_advice(
             || format!("assign is_leaf"),
             self.is_leaf,
@@ -182,23 +181,45 @@ impl<F: FieldExt> BranchConfig<F> {
         )?;
 
         for (idx, c) in self.c_advices.iter().enumerate() {
-            if WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx == row.len() {
+            let val;
+            if WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx >= row.len() {
                 // leaf might not need all columns
-                println!("{}", idx);
-                println!("{}", idx);
-                break;
+                val = 0;
+            } else {
+                val = row[WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx];
             }
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
                 self.c_advices[idx],
                 offset,
-                || {
-                    Ok(F::from_u64(
-                        row[WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx] as u64,
-                    ))
-                },
+                || Ok(F::from_u64(val as u64)),
             )?;
         }
+        Ok(())
+    }
+
+    fn assign_leaf(
+        &self,
+        region: &mut Region<'_, F>,
+        row: &Vec<u8>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("assign node_index"),
+            self.node_index,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign key"),
+            self.key,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        self.assign_row(region, row, true, offset)?;
+
         Ok(())
     }
 
@@ -253,7 +274,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         }
                         if ind == 17 {
                             self.q_enable.enable(&mut region, offset)?;
-                            self.assign_row(&mut region, row, true, offset)?;
+                            self.assign_leaf(&mut region, row, offset)?;
                             offset += 1
                         }
                     }
