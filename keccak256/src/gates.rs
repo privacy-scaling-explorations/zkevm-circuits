@@ -1,5 +1,5 @@
-mod absorb;
-mod iota_b13;
-mod iota_b9;
-mod theta;
-mod xi;
+pub mod absorb;
+pub mod iota_b13;
+pub mod iota_b9;
+pub mod theta;
+pub mod xi;

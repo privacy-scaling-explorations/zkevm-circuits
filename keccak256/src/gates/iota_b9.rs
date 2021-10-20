@@ -68,7 +68,7 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// for the round constants in base-9.
     /// What we do is assign an advide column to them using copy constraints and that requires to
     /// enable `meta.enable_equality()` when actually defining the chip.
-    pub(crate) fn assign_round_ctant_b9(
+    pub fn assign_round_ctant_b9(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
