@@ -72,6 +72,7 @@ pub(crate) fn batch_add_expressions<F: FieldExt>(
         .collect()
 }
 
+/// Returns the sum of the passed in cells
 pub(crate) mod sum {
     use super::super::Cell;
     use crate::util::Expr;
@@ -88,6 +89,48 @@ pub(crate) mod sum {
     }
 }
 
+/// Returns `1` when `expr[0] && expr[1] && ... == 1`, and returns `0` otherwise.
+/// Inputs need to be boolean
+pub(crate) mod and {
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt>(
+        inputs: Vec<Expression<F>>,
+    ) -> Expression<F> {
+        inputs
+            .iter()
+            .fold(1.expr(), |acc, input| acc * input.clone())
+    }
+
+    pub(crate) fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+        inputs.iter().fold(F::one(), |acc, input| acc * input)
+    }
+}
+
+/// Returns `when_true` when `selector == 1`, and returns `when_false` when `selector == 0`.
+/// `selector` needs to be boolean.
+pub(crate) mod select {
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt>(
+        selector: Expression<F>,
+        when_true: Expression<F>,
+        when_false: Expression<F>,
+    ) -> Expression<F> {
+        selector.clone() * when_true + (1.expr() - selector) * when_false
+    }
+
+    pub(crate) fn value<F: FieldExt>(
+        selector: F,
+        when_true: F,
+        when_false: F,
+    ) -> F {
+        selector * when_true + (F::one() - selector) * when_false
+    }
+}
+
 /// Counts the number of repetitions
 #[macro_export]
 macro_rules! count {
@@ -98,7 +141,7 @@ macro_rules! count {
 /// Common OpGadget implementer
 #[macro_export]
 macro_rules! impl_op_gadget {
-    ([$($op:ident),*], $name:ident { $($case:ident ($($args:expr),*) ),* $(,)? }) => {
+    ([$($op:ident),*] $name:ident { $($case:ident ($($args:expr),*) ),* $(,)? }) => {
 
         paste::paste! {
             #[derive(Clone, Debug)]

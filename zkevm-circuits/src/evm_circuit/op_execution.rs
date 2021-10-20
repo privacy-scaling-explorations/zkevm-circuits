@@ -20,6 +20,7 @@ mod comparator;
 mod dup;
 mod pop;
 mod push;
+mod signextend;
 mod utils;
 
 use arithmetic::AddGadget;
@@ -28,6 +29,7 @@ use comparator::LtGadget;
 use dup::DupGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use signextend::SignextendGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -220,6 +222,7 @@ pub(crate) struct OpExecutionGadget<F> {
     byte_gadget: ByteGadget<F>,
     pop_gadget: PopGadget<F>,
     dup_gadget: DupGadget<F>,
+    signextend_gadget: SignextendGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -279,6 +282,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(pop_gadget);
         construct_op_gadget!(byte_gadget);
         construct_op_gadget!(dup_gadget);
+        construct_op_gadget!(signextend_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -320,6 +324,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             pop_gadget,
             byte_gadget,
             dup_gadget,
+            signextend_gadget,
         }
     }
 
@@ -582,7 +587,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-
+                (_, _, OpcodeId::SIGNEXTEND) => self.signextend_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
                 _ => unimplemented!(),
             }
         }

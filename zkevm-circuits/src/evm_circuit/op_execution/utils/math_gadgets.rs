@@ -41,10 +41,10 @@ impl<F: FieldExt> IsZeroGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: F,
-    ) -> Result<bool, Error> {
+    ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::zero());
         self.inverse.assign(region, offset, Some(inverse))?;
-        Ok(value.is_zero())
+        Ok(if value.is_zero() { F::one() } else { F::zero() })
     }
 }
 
@@ -79,7 +79,7 @@ impl<F: FieldExt> IsEqualGadget<F> {
         offset: usize,
         lhs: F,
         rhs: F,
-    ) -> Result<bool, Error> {
+    ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
     }
 }
