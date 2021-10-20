@@ -14,7 +14,8 @@ use crate::param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
 #[derive(Clone, Debug)]
 pub struct BranchConfig<F> {
     q_enable: Selector,
-    is_leaf: Column<Advice>,
+    is_branch_child: Column<Advice>,
+    is_compact_leaf: Column<Advice>,
     node_index: Column<Advice>,
     key: Column<Advice>,
     s_rlp1: Column<Advice>,
@@ -23,6 +24,8 @@ pub struct BranchConfig<F> {
     c_rlp2: Column<Advice>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     c_advices: [Column<Advice>; HASH_WIDTH],
+    s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+    c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     keccak_input_table: [Column<Advice>; KECCAK_INPUT_WIDTH],
     keccak_output_table: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     _marker: PhantomData<F>,
@@ -32,7 +35,8 @@ impl<F: FieldExt> BranchConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
 
-        let is_leaf = meta.advice_column();
+        let is_compact_leaf = meta.advice_column();
+        let is_branch_child = meta.advice_column();
         let node_index = meta.advice_column();
         let key = meta.advice_column();
 
@@ -64,16 +68,34 @@ impl<F: FieldExt> BranchConfig<F> {
             .try_into()
             .unwrap();
 
+        let s_keccak = (0..KECCAK_OUTPUT_WIDTH)
+            .map(|_| meta.advice_column())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let c_keccak = (0..KECCAK_OUTPUT_WIDTH)
+            .map(|_| meta.advice_column())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
         let one = Expression::Constant(F::one());
 
         meta.create_gate("branch", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
             let mut constraints = vec![];
-            let is_leaf = meta.query_advice(is_leaf, Rotation::cur());
+            let is_compact_leaf =
+                meta.query_advice(is_compact_leaf, Rotation::cur());
+            let is_branch_child =
+                meta.query_advice(is_branch_child, Rotation::cur());
 
-            let bool_check_is_leaf =
-                is_leaf.clone() * (one.clone() - is_leaf.clone());
+            let bool_check_is_compact_leaf = is_compact_leaf.clone()
+                * (one.clone() - is_compact_leaf.clone());
+            let bool_check_is_branch_child = is_branch_child.clone()
+                * (one.clone() - is_branch_child.clone());
+
             let node_index = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
 
@@ -83,18 +105,51 @@ impl<F: FieldExt> BranchConfig<F> {
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
-            let not_leaf = one.clone() - is_leaf;
+            /*
+            TODO for leaf:
+            Let's say we have a leaf n where
+                n.Key = [10,6,3,5,7,0,1,2,12,1,10,3,10,14,0,10,1,7,13,3,0,4,12,9,9,2,0,3,1,0,3,8,2,13,9,6,8,14,11,12,12,4,11,1,7,7,1,15,4,1,12,6,11,3,0,4,2,0,5,11,5,7,0,16]
+                n.Val = [2].
+            Before put in a proof, a leaf is hashed:
+            https://github.com/ethereum/go-ethereum/blob/master/trie/proof.go#L78
+            But before being hashed, Key is put in compact form:
+            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L110
+            Key becomes:
+                [58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112]
+            Then the node is RLP encoded:
+            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L157
+            RLP:
+                [226,160,58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112,2]
+            Finally, the RLP is hashed:
+                [32,34,39,131,73,65,47,37,211,142,206,231,172,16,11,203,33,107,30,7,213,226,2,174,55,216,4,117,220,10,186,68]
 
-            constraints.push(q_enable.clone() * bool_check_is_leaf);
+            In a proof (witness), we have [226, 160, ...] in columns s_rlp1, s_rlp2, ...
+            Constraint 1: We need to compute a hash of this value and compare it with [32, 34, ...] which should be
+                one of the branch children. lookup ...
+                Constraint 1.1: s_keccak, c_keccak the same for all 16 children
+                Constraint 1.2: for key = ind: s_keccak = converted s_advice and c_keccak = converted c_advice
+                Constraint 1.3: we add additional row for a leaf prepared for keccak (17 words),
+                  we do a lookup on this 17 words in s_keccak / c_keccak
+            Constraint 2: We need to convert it back to non-compact format to get the remaining key.
+                We need to verify the key until now (in nodes above) concatenated with the remaining key
+                gives us the key where the storage change is happening.
+            */
+
+            constraints.push(q_enable.clone() * bool_check_is_compact_leaf);
+            constraints.push(q_enable.clone() * bool_check_is_branch_child);
+            // TODO: is_compact_leaf + is_branch_child = 1
+            // TODO: might be similar structure as in evm circuit - having branch child, compact leaf ...
+            // as opcodes
+            // TODO: node_index is increasing by 1 for is_branch_child
             constraints.push(
                 q_enable.clone()
-                    * not_leaf.clone()
+                    * is_branch_child.clone()
                     * (s_rlp1 - c_rlp1)
                     * (node_index.clone() - key.clone()),
             );
             constraints.push(
                 q_enable.clone()
-                    * not_leaf.clone()
+                    * is_branch_child.clone()
                     * (s_rlp2 - c_rlp2)
                     * (node_index.clone() - key.clone()),
             );
@@ -104,7 +159,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
                 constraints.push(
                     q_enable.clone()
-                        // * not_leaf.clone()
+                        * is_branch_child.clone()
                         * (s - c)
                         * (node_index.clone() - key.clone()),
                 );
@@ -115,15 +170,18 @@ impl<F: FieldExt> BranchConfig<F> {
 
         BranchConfig {
             q_enable,
-            is_leaf,
+            is_branch_child,
+            is_compact_leaf,
             node_index,
             key,
             s_rlp1,
             s_rlp2,
-            s_advices,
             c_rlp1,
             c_rlp2,
+            s_advices,
             c_advices,
+            s_keccak,
+            c_keccak,
             keccak_input_table,
             keccak_output_table,
             _marker: PhantomData,
@@ -134,14 +192,22 @@ impl<F: FieldExt> BranchConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         row: &Vec<u8>,
-        is_leaf: bool,
+        is_branch_child: bool,
+        is_compact_leaf: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
-            || format!("assign is_leaf"),
-            self.is_leaf,
+            || format!("assign is_branch_child"),
+            self.is_branch_child,
             offset,
-            || Ok(F::from_u64(is_leaf as u64)),
+            || Ok(F::from_u64(is_branch_child as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign is_compact_leaf"),
+            self.is_compact_leaf,
+            offset,
+            || Ok(F::from_u64(is_compact_leaf as u64)),
         )?;
 
         region.assign_advice(
@@ -218,7 +284,7 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::zero()),
         )?;
 
-        self.assign_row(region, row, true, offset)?;
+        self.assign_row(region, row, false, true, offset)?;
 
         Ok(())
     }
@@ -245,7 +311,7 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::from_u64(key as u64)),
         )?;
 
-        self.assign_row(region, row, false, offset)?;
+        self.assign_row(region, row, true, false, offset)?;
 
         Ok(())
     }
@@ -257,12 +323,17 @@ impl<F: FieldExt> BranchConfig<F> {
     ) {
         layouter
             .assign_region(
-                || "assign input state",
+                || "assign MPT proof",
                 |mut region| {
                     let mut offset = 0;
+
+                    // TODO: if row type == branch, traverse to key = ind, convert hash
+                    // into 4-words format, assign s_keccak and c_keccak
+
                     for (ind, row) in witness.iter().enumerate() {
                         if ind > 0 && ind < 17 {
                             self.q_enable.enable(&mut region, offset)?;
+
                             self.assign_branch_row(
                                 &mut region,
                                 ind,
@@ -387,7 +458,6 @@ mod tests {
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
     use std::marker::PhantomData;
-    use std::{convert::TryInto, env};
 
     #[test]
     fn test_branch() {
@@ -434,7 +504,6 @@ mod tests {
             witness: w,
         };
 
-        // Test without public inputs
         let prover =
             MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
 
