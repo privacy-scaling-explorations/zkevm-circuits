@@ -97,71 +97,48 @@ impl Opcode for Mload {
 mod mload_tests {
     use super::*;
     use crate::{
+        bytecode,
         evm::{
-            EvmWord, GasCost, GasInfo, Memory, OpcodeId, ProgramCounter, Stack,
+            EvmWord, GasCost, GasInfo, OpcodeId, ProgramCounter, Stack,
             StackAddress, Storage,
         },
-        BlockConstants, ExecutionTrace,
+        external_tracer, BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
 
     #[test]
     fn mload_opcode_impl() -> Result<(), Error> {
-        let trace = r#"
-        [
-            {
-            "pc": 7,
-            "op": "MLOAD",
-            "gas": 79,
-            "gasCost": 3,
-            "depth": 1,
-            "stack": [
-                "40"
-            ],
-            "memory": [
-                "0000000000000000000000000000000000000000000000000000000000000000",
-                "0000000000000000000000000000000000000000000000000000000000000000",
-                "0000000000000000000000000000000000000000000000000000000000000080"
-            ]
-            },
-              {
-                "pc": 8,
-                "op": "STOP",
-                "gas": 76,
-                "gasCost": 0,
-                "depth": 1,
-                "stack": [
-                  "80"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              }
-        ]
-        "#;
+        let code = bytecode! {
+            .setup_state()
+
+            PUSH1(0x40u64)
+            #[start]
+            MLOAD
+            STOP
+        };
+
+        let block_ctants = BlockConstants::default();
+
+        // Get the execution steps from the external tracer
+        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
+            [code.get_pos("start")..];
 
         // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::from_trace_bytes(
-            trace.as_bytes(),
-            BlockConstants::default(),
+        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
+            obtained_steps.to_vec(),
+            block_ctants,
         )?;
 
         let mut container = OperationContainer::new();
-        let mut gc = 0usize;
+        let mut gc = GlobalCounter(0);
+
+        // Start from the same pc and gas limit
+        let mut pc = obtained_steps[0].pc();
+        let mut gas = obtained_steps[0].gas_info().gas;
 
         // The memory is the same in both steps as none of them edits the
         // memory of the EVM.
-        let mem_map = Memory(
-            EvmWord::from(0u8)
-                .inner()
-                .iter()
-                .chain(EvmWord::from(0u8).inner())
-                .chain(EvmWord::from(0x80u8).inner())
-                .copied()
-                .collect(),
-        );
+        let mem_map = obtained_steps[0].memory.clone();
 
         // Generate Step1 corresponding to PUSH1 40
         let mut step_1 = ExecutionStep {
@@ -169,23 +146,19 @@ mod mload_tests {
             stack: Stack(vec![EvmWord::from(0x40u8)]),
             storage: Storage::empty(),
             instruction: OpcodeId::MLOAD,
-            gas_info: GasInfo {
-                gas: 79,
-                gas_cost: GasCost::from(3u8),
-            },
+            gas_info: gas_info!(gas, FASTEST),
             depth: 1u8,
-            pc: ProgramCounter::from(7),
-            gc: gc.into(),
+            pc: advance_pc!(pc),
+            gc: advance_gc!(gc),
             bus_mapping_instance: vec![],
         };
 
         // Add StackOp associated to the 0x40 read from the latest Stack pos.
-        gc += 1;
         step_1
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::READ,
-                gc.into(),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x40u8),
             )));
@@ -197,37 +170,31 @@ mod mload_tests {
             .enumerate()
             .map(|(idx, byte)| (idx + 0x40, byte))
             .for_each(|(idx, byte)| {
-                gc += 1;
                 step_1.bus_mapping_instance_mut().push(container.insert(
-                    MemoryOp::new(RW::READ, gc.into(), idx.into(), *byte),
+                    MemoryOp::new(RW::READ, advance_gc!(gc), idx.into(), *byte),
                 ));
             });
 
         // Add the last Stack write
-        gc += 1;
         step_1
             .bus_mapping_instance_mut()
             .push(container.insert(StackOp::new(
                 RW::WRITE,
-                gc.into(),
+                advance_gc!(gc),
                 StackAddress::from(1023),
                 EvmWord::from(0x80u8),
             )));
 
-        gc += 1;
         // Generate Step1 corresponding to PUSH1 40
         let step_2 = ExecutionStep {
             memory: mem_map,
             stack: Stack(vec![EvmWord::from(0x80u8)]),
             storage: Storage::empty(),
             instruction: OpcodeId::STOP,
-            gas_info: GasInfo {
-                gas: 76,
-                gas_cost: GasCost::from(0u8),
-            },
+            gas_info: gas_info!(gas, ZERO),
             depth: 1u8,
-            pc: ProgramCounter::from(8),
-            gc: gc.into(),
+            pc: advance_pc!(pc),
+            gc: advance_gc!(gc),
             bus_mapping_instance: vec![],
         };
 
@@ -236,7 +203,6 @@ mod mload_tests {
             obtained_exec_trace[0].bus_mapping_instance,
             step_1.bus_mapping_instance
         );
-
         // Compare first step entirely
         assert_eq!(obtained_exec_trace[0], step_1);
 
@@ -245,7 +211,6 @@ mod mload_tests {
             obtained_exec_trace[1].bus_mapping_instance,
             step_2.bus_mapping_instance
         );
-
         // Compare second step entirely
         assert_eq!(obtained_exec_trace[1], step_2);
 

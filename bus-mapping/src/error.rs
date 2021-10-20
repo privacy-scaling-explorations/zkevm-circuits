@@ -36,6 +36,8 @@ pub enum Error {
     InvalidStorageKey,
     /// Error when an EvmWord is too big to be converted into a `MemoryAddress`.
     WordToMemAddr,
+    /// Error while generating a trace.
+    TracingError,
 }
 
 impl Display for Error {

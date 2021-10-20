@@ -2031,7 +2031,7 @@ mod tests {
 
         let block_ctants = BlockConstants::new(
             EvmWord::from(0u8),
-            pasta_curves::Fp::zero(),
+            EthAddress::zero(),
             pasta_curves::Fp::zero(),
             pasta_curves::Fp::zero(),
             pasta_curves::Fp::zero(),

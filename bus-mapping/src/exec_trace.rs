@@ -4,25 +4,34 @@ pub(crate) mod exec_step;
 pub(crate) mod parsing;
 use crate::evm::EvmWord;
 use crate::operation::{container::OperationContainer, Operation};
-use crate::operation::{MemoryOp, StackOp, StorageOp, Target};
+use crate::operation::{EthAddress, MemoryOp, StackOp, StorageOp, Target};
+use crate::util::serialize_field_ext;
 use crate::Error;
 use core::ops::{Index, IndexMut};
 pub use exec_step::ExecutionStep;
 pub(crate) use parsing::ParsedExecutionStep;
 use pasta_curves::arithmetic::FieldExt;
+use serde::Serialize;
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 /// Definition of all of the constants related to an Ethereum block and
 /// therefore, related with an [`ExecutionTrace`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BlockConstants<F: FieldExt> {
     hash: EvmWord, // Until we know how to deal with it
-    coinbase: F,
+    coinbase: EthAddress,
+    #[serde(serialize_with = "serialize_field_ext")]
     timestamp: F,
+    #[serde(serialize_with = "serialize_field_ext")]
     number: F,
+    #[serde(serialize_with = "serialize_field_ext")]
     difficulty: F,
+    #[serde(serialize_with = "serialize_field_ext")]
     gas_limit: F,
+    #[serde(serialize_with = "serialize_field_ext")]
     chain_id: F,
+    #[serde(serialize_with = "serialize_field_ext")]
     base_fee: F,
 }
 
@@ -30,13 +39,16 @@ impl<F: FieldExt> Default for BlockConstants<F> {
     fn default() -> Self {
         BlockConstants {
             hash: EvmWord([0u8; 32]),
-            coinbase: F::default(),
-            timestamp: F::default(),
-            number: F::default(),
-            difficulty: F::default(),
-            gas_limit: F::default(),
-            chain_id: F::default(),
-            base_fee: F::default(),
+            coinbase: EthAddress::from_str(
+                "0x00000000000000000000000000000000c014ba5e",
+            )
+            .unwrap(),
+            timestamp: F::from_u64(1633398551u64),
+            number: F::from_u64(123456u64),
+            difficulty: F::from_u64(0x200000u64),
+            gas_limit: F::from_u64(15_000_000u64),
+            chain_id: F::one(),
+            base_fee: F::from_u64(97u64),
         }
     }
 }
@@ -46,7 +58,7 @@ impl<F: FieldExt> BlockConstants<F> {
     /// Generates a new `BlockConstants` instance from it's fields.
     pub fn new(
         hash: EvmWord,
-        coinbase: F,
+        coinbase: EthAddress,
         timestamp: F,
         number: F,
         difficulty: F,
@@ -73,7 +85,7 @@ impl<F: FieldExt> BlockConstants<F> {
 
     #[inline]
     /// Return the coinbase of a block.
-    pub fn coinbase(&self) -> &F {
+    pub fn coinbase(&self) -> &EthAddress {
         &self.coinbase
     }
 
@@ -154,6 +166,19 @@ impl<F: FieldExt> IndexMut<usize> for ExecutionTrace<F> {
 
 impl<F: FieldExt> ExecutionTrace<F> {
     /// Given an EVM trace in JSON format according to the specs and format
+    /// shown in [zkevm-test-vectors crate](https://github.com/appliedzkp/zkevm-testing-vectors),
+    /// generate the execution steps.
+    pub fn load_trace<T: AsRef<[u8]>>(
+        bytes: T,
+    ) -> Result<Vec<ExecutionStep>, Error> {
+        serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
+            .map_err(Error::SerdeError)?
+            .iter()
+            .map(ExecutionStep::try_from)
+            .collect::<Result<Vec<ExecutionStep>, Error>>()
+    }
+
+    /// Given an EVM trace in JSON format according to the specs and format
     /// shown in [zkevm-test-vectors crate](https://github.com/appliedzkp/zkevm-testing-vectors), generate an `ExecutionTrace`
     /// and generate all of the [`Operation`]s associated to each one of it's
     /// [`ExecutionStep`]s filling them bus-mapping instances.
@@ -161,13 +186,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
         bytes: T,
         block_ctants: BlockConstants<F>,
     ) -> Result<ExecutionTrace<F>, Error> {
-        let trace_loaded =
-            serde_json::from_slice::<Vec<ParsedExecutionStep>>(bytes.as_ref())
-                .map_err(Error::SerdeError)?
-                .iter()
-                .map(ExecutionStep::try_from)
-                .collect::<Result<Vec<ExecutionStep>, Error>>()?;
-
+        let trace_loaded = Self::load_trace(bytes)?;
         ExecutionTrace::<F>::new(trace_loaded, block_ctants)
     }
 
