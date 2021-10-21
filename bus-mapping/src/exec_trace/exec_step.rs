@@ -7,7 +7,7 @@ use crate::evm::{
 use crate::{
     error::Error,
     evm::{opcodes::Opcode, OpcodeId},
-    operation::container::OperationContainer,
+    exec_trace::Context,
 };
 use std::collections::HashMap;
 
@@ -26,6 +26,7 @@ pub struct ExecutionStep {
     pub(crate) stack: Stack,
     pub(crate) storage: Storage,
     pub(crate) instruction: OpcodeId,
+    // TODO: Split into gas, gas_cost
     pub(crate) gas_info: GasInfo,
     pub(crate) depth: u8,
     pub(crate) pc: ProgramCounter,
@@ -131,10 +132,10 @@ impl ExecutionStep {
     /// [`OpcodeId`](crate::evm::OpcodeId) into the container.
     pub(crate) fn gen_associated_ops(
         &mut self,
-        container: &mut OperationContainer,
+        ctx: &mut Context,
         next_steps: &[ExecutionStep],
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         let instruction = *self.instruction();
-        instruction.gen_associated_ops(self, container, next_steps)
+        instruction.gen_associated_ops(ctx, self, next_steps)
     }
 }

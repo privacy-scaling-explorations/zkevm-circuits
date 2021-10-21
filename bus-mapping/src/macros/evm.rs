@@ -16,31 +16,3 @@ macro_rules! gas_info {
         }
     }};
 }
-
-/// Helper to track pc
-/// The `pc` parameter will be modified inside this macro.
-#[macro_export]
-macro_rules! advance_pc {
-    ($pc:ident) => {{
-        #[allow(unused_assignments)]
-        {
-            let temp = $pc;
-            $pc = ProgramCounter::from($pc.0 + 1);
-            temp
-        }
-    }};
-}
-
-/// Helper to track gc
-/// The `gc` parameter will be modified inside this macro.
-#[macro_export]
-macro_rules! advance_gc {
-    ($gc:ident) => {{
-        #[allow(unused_assignments)]
-        {
-            let temp = $gc;
-            $gc = GlobalCounter::from($gc.0 + 1);
-            temp
-        }
-    }};
-}

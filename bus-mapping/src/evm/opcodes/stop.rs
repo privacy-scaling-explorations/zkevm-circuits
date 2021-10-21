@@ -1,8 +1,8 @@
 use super::Opcode;
-use crate::{exec_trace::ExecutionStep, operation::OperationContainer, Error};
-
-/// Number of ops that STOP adds to the container & busmapping
-const STOP_OP_NUM: usize = 0;
+use crate::{
+    exec_trace::{Context, ExecutionStep},
+    Error,
+};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
 /// [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP) `OpcodeId`.
@@ -16,11 +16,11 @@ impl Opcode for Stop {
     #[allow(unused_variables)]
     fn gen_associated_ops(
         &self,
+        ctx: &mut Context,
         exec_step: &mut ExecutionStep,
-        container: &mut OperationContainer,
         next_steps: &[ExecutionStep],
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         // Stop does not generate any operations
-        Ok(STOP_OP_NUM)
+        Ok(())
     }
 }
