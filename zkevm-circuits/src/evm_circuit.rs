@@ -144,6 +144,7 @@ pub(crate) enum FixedLookup {
     // meaningful tags start with 1
     Range256,
     Range32,
+    Range17,
     Range16,
     BitwiseAnd,
     BitwiseOr,
@@ -738,6 +739,33 @@ impl<F: FieldExt> EvmCircuit<F> {
                     {
                         region.assign_fixed(
                             || format!("Range32: padding {}", idx),
+                            *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                // Range17
+                for idx in 0..17 {
+                    region.assign_fixed(
+                        || "Range17: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::Range17 as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "Range17: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[2..].iter().enumerate()
+                    {
+                        region.assign_fixed(
+                            || format!("Range17: padding {}", idx),
                             *column,
                             offset,
                             || Ok(F::zero()),

@@ -21,6 +21,7 @@ mod dup;
 mod pop;
 mod push;
 mod signextend;
+mod swap;
 mod utils;
 
 use arithmetic::AddGadget;
@@ -30,6 +31,7 @@ use dup::DupGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use signextend::SignextendGadget;
+use swap::SwapGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -223,6 +225,7 @@ pub(crate) struct OpExecutionGadget<F> {
     pop_gadget: PopGadget<F>,
     dup_gadget: DupGadget<F>,
     signextend_gadget: SignextendGadget<F>,
+    swap_gadget: SwapGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -283,6 +286,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(byte_gadget);
         construct_op_gadget!(dup_gadget);
         construct_op_gadget!(signextend_gadget);
+        construct_op_gadget!(swap_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -325,6 +329,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             byte_gadget,
             dup_gadget,
             signextend_gadget,
+            swap_gadget,
         }
     }
 
@@ -551,48 +556,51 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             match (
                 execution_step.opcode.is_push(),
                 execution_step.opcode.is_dup(),
+                execution_step.opcode.is_swap(),
                 execution_step.opcode,
             ) {
                 // PUSH1, ..., PUSH32
-                (true, false, _) => self.push_gadget.assign(
+                (true, false, false, _) => self.push_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (false, true, _) => self.dup_gadget.assign(
+
+                (false, true, false, _) => self.dup_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, _, OpcodeId::ADD | OpcodeId::SUB) => self
+
+                (false, false, true, _) => self.swap_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, _, OpcodeId::ADD | OpcodeId::SUB) => self
                     .add_gadget
                     .assign(region, offset, core_state, execution_step)?,
-                (_, _, OpcodeId::LT | OpcodeId::GT) => self.lt_gadget.assign(
+                (_, _, _, OpcodeId::LT | OpcodeId::GT) => self
+                    .lt_gadget
+                    .assign(region, offset, core_state, execution_step)?,
+                (_, _, _, OpcodeId::POP) => self.pop_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, _, OpcodeId::POP) => self.pop_gadget.assign(
+                (_, _, _, OpcodeId::BYTE) => self.byte_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-                (_, _, OpcodeId::BYTE) => self.byte_gadget.assign(
-                    region,
-                    offset,
-                    core_state,
-                    execution_step,
-                )?,
-                (_, _, OpcodeId::SIGNEXTEND) => self.signextend_gadget.assign(
-                    region,
-                    offset,
-                    core_state,
-                    execution_step,
-                )?,
+                (_, _, _, OpcodeId::SIGNEXTEND) => self
+                    .signextend_gadget
+                    .assign(region, offset, core_state, execution_step)?,
                 _ => unimplemented!(),
             }
         }
