@@ -105,6 +105,8 @@ impl<F: FieldExt> OpGadget<F> for SwapGadget<F> {
                     - (state_curr.global_counter.expr() + 4.expr()),
                 state_next.program_counter.expr()
                     - (state_curr.program_counter.expr() + 1.expr()),
+                state_next.stack_pointer.expr()
+                    - state_curr.stack_pointer.expr(),
                 state_next.gas_counter.expr()
                     - (state_curr.gas_counter.expr() + GasCost::FASTEST.expr()),
             ];
@@ -150,16 +152,16 @@ impl<F: FieldExt> OpGadget<F> for SwapGadget<F> {
             }
         };
 
-        // stack_underflow condition: 0 <= num_swaped +  stack_pointer - 1025 < 16
+        // stack_underflow condition: 0 <= num_swaped +  stack_pointer - 1024 <= 16
         let stack_pointer = state_curr.stack_pointer.expr();
-        let diff = num_swaped + stack_pointer - 1025.expr();
+        let diff = num_swaped + stack_pointer - 1024.expr();
         let stack_underflow = {
             Constraint {
                 name: "SwapGadget stack underflow",
                 selector: self.stack_underflow.expr(),
                 polys: vec![],
                 lookups: vec![Lookup::FixedLookup(
-                    FixedLookup::Range16,
+                    FixedLookup::Range17,
                     [diff, 0.expr(), 0.expr()],
                 )],
             }
