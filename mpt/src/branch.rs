@@ -9,11 +9,14 @@ use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::LAYOUT_OFFSET;
 use crate::param::WITNESS_ROW_WIDTH;
-use crate::param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
+use crate::param::{
+    C_START, HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_START,
+};
 
 #[derive(Clone, Debug)]
 pub struct BranchConfig<F> {
     q_enable: Selector,
+    is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_compact_leaf: Column<Advice>,
     node_index: Column<Advice>,
@@ -26,8 +29,7 @@ pub struct BranchConfig<F> {
     c_advices: [Column<Advice>; HASH_WIDTH],
     s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-    keccak_input_table: [Column<Advice>; KECCAK_INPUT_WIDTH],
-    keccak_output_table: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+    keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     _marker: PhantomData<F>,
 }
 
@@ -37,6 +39,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
         let is_compact_leaf = meta.advice_column();
         let is_branch_child = meta.advice_column();
+        let is_branch_init = meta.advice_column();
         let node_index = meta.advice_column();
         let key = meta.advice_column();
 
@@ -56,13 +59,7 @@ impl<F: FieldExt> BranchConfig<F> {
             .try_into()
             .unwrap();
 
-        let keccak_input_table = (0..KECCAK_INPUT_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let keccak_output_table = (0..KECCAK_OUTPUT_WIDTH)
+        let keccak_table = (0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH)
             .map(|_| meta.advice_column())
             .collect::<Vec<_>>()
             .try_into()
@@ -90,11 +87,15 @@ impl<F: FieldExt> BranchConfig<F> {
                 meta.query_advice(is_compact_leaf, Rotation::cur());
             let is_branch_child =
                 meta.query_advice(is_branch_child, Rotation::cur());
+            let is_branch_init =
+                meta.query_advice(is_branch_init, Rotation::cur());
 
-            let bool_check_is_compact_leaf = is_compact_leaf.clone()
-                * (one.clone() - is_compact_leaf.clone());
+            let bool_check_is_branch_init =
+                is_branch_init.clone() * (one.clone() - is_branch_init.clone());
             let bool_check_is_branch_child = is_branch_child.clone()
                 * (one.clone() - is_branch_child.clone());
+            let bool_check_is_compact_leaf = is_compact_leaf.clone()
+                * (one.clone() - is_compact_leaf.clone());
 
             let node_index = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
@@ -135,12 +136,16 @@ impl<F: FieldExt> BranchConfig<F> {
                 gives us the key where the storage change is happening.
             */
 
-            constraints.push(q_enable.clone() * bool_check_is_compact_leaf);
+            constraints.push(q_enable.clone() * bool_check_is_branch_init);
             constraints.push(q_enable.clone() * bool_check_is_branch_child);
-            // TODO: is_compact_leaf + is_branch_child = 1
+            constraints.push(q_enable.clone() * bool_check_is_compact_leaf);
             // TODO: might be similar structure as in evm circuit - having branch child, compact leaf ...
-            // as opcodes
+            // modularized the same way as opcodes are
+
+            // TODO: is_compact_leaf + is_branch_child + is_branch_init = 1
             // TODO: node_index is increasing by 1 for is_branch_child
+            // TODO: constraints for order of is_branch_init, is_branch_child, ...
+            // TODO: constraints for branch init
             constraints.push(
                 q_enable.clone()
                     * is_branch_child.clone()
@@ -170,6 +175,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
         BranchConfig {
             q_enable,
+            is_branch_init,
             is_branch_child,
             is_compact_leaf,
             node_index,
@@ -182,8 +188,7 @@ impl<F: FieldExt> BranchConfig<F> {
             c_advices,
             s_keccak,
             c_keccak,
-            keccak_input_table,
-            keccak_output_table,
+            keccak_table,
             _marker: PhantomData,
         }
     }
@@ -192,10 +197,18 @@ impl<F: FieldExt> BranchConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         row: &Vec<u8>,
+        is_branch_init: bool,
         is_branch_child: bool,
         is_compact_leaf: bool,
         offset: usize,
     ) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("assign is_branch_init"),
+            self.is_branch_init,
+            offset,
+            || Ok(F::from_u64(is_branch_init as u64)),
+        )?;
+
         region.assign_advice(
             || format!("assign is_branch_child"),
             self.is_branch_child,
@@ -284,7 +297,32 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::zero()),
         )?;
 
-        self.assign_row(region, row, false, true, offset)?;
+        self.assign_row(region, row, false, false, true, offset)?;
+
+        Ok(())
+    }
+
+    fn assign_branch_init(
+        &self,
+        region: &mut Region<'_, F>,
+        row: &Vec<u8>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("assign node_index"),
+            self.node_index,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign key"),
+            self.key,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        self.assign_row(region, row, true, false, false, offset)?;
 
         Ok(())
     }
@@ -295,6 +333,8 @@ impl<F: FieldExt> BranchConfig<F> {
         ind: usize,
         key: u8,
         row: &Vec<u8>,
+        s_words: &Vec<u64>,
+        c_words: &Vec<u64>,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -311,7 +351,24 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::from_u64(key as u64)),
         )?;
 
-        self.assign_row(region, row, true, false, offset)?;
+        for (ind, column) in self.s_keccak.iter().enumerate() {
+            region.assign_advice(
+                || "Keccak s",
+                *column,
+                offset,
+                || Ok(F::from_u64(s_words[ind])),
+            )?;
+        }
+        for (ind, column) in self.c_keccak.iter().enumerate() {
+            region.assign_advice(
+                || "Keccak c",
+                *column,
+                offset,
+                || Ok(F::from_u64(c_words[ind])),
+            )?;
+        }
+
+        self.assign_row(region, row, false, true, false, offset)?;
 
         Ok(())
     }
@@ -330,22 +387,53 @@ impl<F: FieldExt> BranchConfig<F> {
                     // TODO: if row type == branch, traverse to key = ind, convert hash
                     // into 4-words format, assign s_keccak and c_keccak
 
+                    let mut key = 0;
+                    let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
+                    let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
                     for (ind, row) in witness.iter().enumerate() {
-                        if ind > 0 && ind < 17 {
-                            self.q_enable.enable(&mut region, offset)?;
+                        if row[row.len() - 1] == 0 {
+                            // branch init
+                            key = row[4];
 
-                            self.assign_branch_row(
+                            // Get the child that is being changed and convert it to words to enable lookups:
+                            let s_hash = witness[ind + 1 + key as usize]
+                                [S_START..S_START + HASH_WIDTH]
+                                .to_vec();
+                            let c_hash = witness[ind + 1 + key as usize]
+                                [C_START..C_START + HASH_WIDTH]
+                                .to_vec();
+                            println!("{:?}", s_hash);
+                            s_words = self.into_words(&s_hash);
+                            c_words = self.into_words(&c_hash);
+
+                            self.q_enable.enable(&mut region, offset)?;
+                            self.assign_branch_init(
                                 &mut region,
-                                ind,
-                                witness[0][4],
-                                row,
+                                &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
                             offset += 1
-                        }
-                        if ind == 17 {
+                        } else if row[row.len() - 1] == 1 {
+                            // branch child
                             self.q_enable.enable(&mut region, offset)?;
-                            self.assign_leaf(&mut region, row, offset)?;
+                            self.assign_branch_row(
+                                &mut region,
+                                ind,
+                                key,
+                                &row[0..row.len() - 1].to_vec(),
+                                &s_words,
+                                &c_words,
+                                offset,
+                            )?;
+                            offset += 1
+                        } else if row[row.len() - 1] == 2 {
+                            // compact leaf
+                            self.q_enable.enable(&mut region, offset)?;
+                            self.assign_leaf(
+                                &mut region,
+                                &row[0..row.len() - 1].to_vec(),
+                                offset,
+                            )?;
                             offset += 1
                         }
                     }
@@ -359,7 +447,7 @@ impl<F: FieldExt> BranchConfig<F> {
     pub fn load(
         &self,
         _layouter: &mut impl Layouter<F>,
-        to_be_hashed: Vec<&Vec<u8>>,
+        to_be_hashed: Vec<Vec<u8>>,
     ) -> Result<(), Error> {
         self.load_keccak_table(_layouter, to_be_hashed);
 
@@ -400,7 +488,7 @@ impl<F: FieldExt> BranchConfig<F> {
     fn load_keccak_table(
         &self,
         layouter: &mut impl Layouter<F>,
-        to_be_hashed: Vec<&Vec<u8>>,
+        to_be_hashed: Vec<Vec<u8>>,
     ) -> Result<(), Error> {
         fn compute_keccak(msg: &[u8]) -> Vec<u8> {
             let mut keccak = Keccak::default();
@@ -418,25 +506,20 @@ impl<F: FieldExt> BranchConfig<F> {
                     let padded = self.pad(t);
                     let keccak_input = self.into_words(&padded);
                     let keccak_output = self.into_words(&hash);
+                    println!("{:?}", keccak_output);
 
-                    for (ind, column) in
-                        self.keccak_input_table.iter().enumerate()
-                    {
+                    for (ind, column) in self.keccak_table.iter().enumerate() {
+                        let val: u64;
+                        if ind < KECCAK_INPUT_WIDTH {
+                            val = keccak_input[ind];
+                        } else {
+                            val = keccak_output[ind - KECCAK_INPUT_WIDTH];
+                        }
                         region.assign_advice(
-                            || "Keccak input table",
+                            || "Keccak table",
                             *column,
                             offset,
-                            || Ok(F::from_u64(keccak_input[ind] as u64)),
-                        )?;
-                    }
-                    for (ind, column) in
-                        self.keccak_output_table.iter().enumerate()
-                    {
-                        region.assign_advice(
-                            || "Keccak output table",
-                            *column,
-                            offset,
-                            || Ok(F::from_u64(keccak_output[ind] as u64)),
+                            || Ok(F::from_u64(val)),
                         )?;
                     }
                     offset += 1;
@@ -451,11 +534,15 @@ impl<F: FieldExt> BranchConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use halo2::pasta::{Eq, EqAffine, Fp};
+    use halo2::plonk::{keygen_pk, keygen_vk};
+    use halo2::poly::{commitment::Params, Rotation};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
+
     use pasta_curves::{arithmetic::FieldExt, pallas};
     use std::marker::PhantomData;
 
@@ -485,7 +572,15 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 let mut to_be_hashed = vec![];
-                to_be_hashed.push(&self.witness[17]);
+
+                for row in self.witness.iter() {
+                    if row[row.len() - 1] == 2 {
+                        // compact leaf
+                        println!("{:?}", row);
+                        to_be_hashed.push(row[0..row.len() - 1].to_vec());
+                    }
+                }
+
                 config.load(&mut layouter, to_be_hashed)?;
                 config.assign(layouter, &self.witness);
 
