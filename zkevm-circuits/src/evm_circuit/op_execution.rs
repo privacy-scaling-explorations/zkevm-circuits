@@ -24,7 +24,6 @@ mod signextend;
 mod swap;
 mod utils;
 
-use crate::evm_circuit::op_execution::swap::SwapGadget;
 use arithmetic::AddGadget;
 use byte::ByteGadget;
 use comparator::LtGadget;
@@ -226,7 +225,7 @@ pub(crate) struct OpExecutionGadget<F> {
     pop_gadget: PopGadget<F>,
     dup_gadget: DupGadget<F>,
     signextend_gadget: SignextendGadget<F>,
-    swap_gadget: SwapGadget<F>
+    swap_gadget: SwapGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -599,12 +598,9 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-                (_, _, _, OpcodeId::SIGNEXTEND) => self.signextend_gadget.assign(
-                    region,
-                    offset,
-                    core_state,
-                    execution_step,
-                )?,
+                (_, _, _, OpcodeId::SIGNEXTEND) => self
+                    .signextend_gadget
+                    .assign(region, offset, core_state, execution_step)?,
                 _ => unimplemented!(),
             }
         }

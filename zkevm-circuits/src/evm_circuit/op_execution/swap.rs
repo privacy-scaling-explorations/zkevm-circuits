@@ -17,8 +17,7 @@ struct SwapSuccessAllocation<F> {
 #[derive(Clone, Debug)]
 pub struct SwapGadget<F> {
     success: SwapSuccessAllocation<F>,
-    stack_underflow: Cell<F>,
-    // case selector
+    stack_underflow: Cell<F>, // case selector
     out_of_gas: (
         Cell<F>, // case selector
         Cell<F>, // gas available
