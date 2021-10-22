@@ -298,7 +298,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(F::from_u64(row[WITNESS_ROW_WIDTH / 2 + 1] as u64)),
         )?;
 
-        for (idx, c) in self.c_advices.iter().enumerate() {
+        for (idx, _c) in self.c_advices.iter().enumerate() {
             let val;
             if WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx >= row.len() {
                 // leaf might not need all columns
@@ -356,9 +356,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let padded = self.pad(row);
         let keccak_input = self.into_words(&padded);
         let keccak_output = self.into_words(&hash);
-        println!("{}", "======");
-        println!("{:?}", keccak_input);
-        println!("{:?}", keccak_output);
 
         let row: Vec<u8> = vec![0; WITNESS_ROW_WIDTH];
         self.assign_row(region, &row, false, false, false, true, offset + 1)?;
@@ -582,8 +579,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     let padded = self.pad(t);
                     let keccak_input = self.into_words(&padded);
                     let keccak_output = self.into_words(&hash);
-                    println!("{:?}", keccak_input);
-                    println!("{:?}", keccak_output);
 
                     for (ind, column) in self.keccak_table.iter().enumerate() {
                         let val: u64;
@@ -611,9 +606,7 @@ impl<F: FieldExt> MPTConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::pasta::{Eq, EqAffine, Fp};
-    use halo2::plonk::{keygen_pk, keygen_vk};
-    use halo2::poly::{commitment::Params, Rotation};
+
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
@@ -624,7 +617,7 @@ mod tests {
     use std::marker::PhantomData;
 
     #[test]
-    fn test_branch() {
+    fn test_mpt() {
         #[derive(Default)]
         struct MyCircuit<F> {
             _marker: PhantomData<F>,
