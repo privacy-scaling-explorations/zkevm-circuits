@@ -18,6 +18,7 @@ mod arithmetic;
 mod byte;
 mod comparator;
 mod dup;
+mod pc;
 mod pop;
 mod push;
 mod signextend;
@@ -28,6 +29,7 @@ use arithmetic::AddGadget;
 use byte::ByteGadget;
 use comparator::LtGadget;
 use dup::DupGadget;
+use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use signextend::SignextendGadget;
@@ -224,6 +226,7 @@ pub(crate) struct OpExecutionGadget<F> {
     byte_gadget: ByteGadget<F>,
     pop_gadget: PopGadget<F>,
     dup_gadget: DupGadget<F>,
+    pc_gadget: PcGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     swap_gadget: SwapGadget<F>,
 }
@@ -285,6 +288,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(pop_gadget);
         construct_op_gadget!(byte_gadget);
         construct_op_gadget!(dup_gadget);
+        construct_op_gadget!(pc_gadget);
         construct_op_gadget!(signextend_gadget);
         construct_op_gadget!(swap_gadget);
         let _ = qs_op_idx;
@@ -328,6 +332,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             pop_gadget,
             byte_gadget,
             dup_gadget,
+            pc_gadget,
             signextend_gadget,
             swap_gadget,
         }
@@ -593,6 +598,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, _, _, OpcodeId::BYTE) => self.byte_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, _, OpcodeId::PC) => self.pc_gadget.assign(
                     region,
                     offset,
                     core_state,
