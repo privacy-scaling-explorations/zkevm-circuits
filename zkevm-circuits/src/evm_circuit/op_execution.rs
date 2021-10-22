@@ -437,15 +437,6 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                         .collect(),
                     lookups: vec![],
                 });
-                constraints.push(Constraint {
-                    name: "case unused",
-                    selector: qs_op.expr() * qs_case.expr(),
-                    polys: unused_idxs
-                        .into_iter()
-                        .map(|idx| free_cells[idx].expr())
-                        .collect(),
-                    lookups: vec![],
-                });
 
                 assert!(
                     preset_map
