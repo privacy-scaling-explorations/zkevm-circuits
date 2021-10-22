@@ -1,6 +1,7 @@
 //! EVM byte code generator
 
-use crate::{evm::OpcodeId, operation::EvmWord};
+use crate::eth_types::Word;
+use crate::evm::OpcodeId;
 use std::collections::HashMap;
 
 /// EVM Bytecode
@@ -43,13 +44,14 @@ impl Bytecode {
     }
 
     /// Push
-    pub fn push(&mut self, n: usize, value: EvmWord) -> &mut Self {
+    pub fn push(&mut self, n: usize, value: Word) -> &mut Self {
         assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
         self.write_op_internal(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8));
 
-        let bytes = value.to_le_bytes();
+        let mut bytes = [0u8; 32];
+        value.to_little_endian(&mut bytes);
         // Write the bytes MSB to LSB
         for i in 0..n {
             self.write(bytes[n - 1 - i]);
@@ -99,13 +101,13 @@ impl Bytecode {
     #[allow(clippy::too_many_arguments)]
     pub fn call(
         &mut self,
-        gas: EvmWord,
-        address: EvmWord,
-        value: EvmWord,
-        mem_in: EvmWord,
-        mem_in_size: EvmWord,
-        mem_out: EvmWord,
-        mem_out_size: EvmWord,
+        gas: Word,
+        address: Word,
+        value: Word,
+        mem_in: Word,
+        mem_in_size: Word,
+        mem_out: Word,
+        mem_out_size: Word,
     ) -> &mut Self {
         self.append(&mut crate::bytecode! {
             PUSH32(mem_out_size)

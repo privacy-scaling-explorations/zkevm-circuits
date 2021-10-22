@@ -6,9 +6,8 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{
-    EthAddress, EvmWord, GlobalCounter, MemoryAddress, StackAddress,
-};
+pub use super::evm::{GlobalCounter, MemoryAddress, StackAddress};
+use crate::eth_types::{Address, Word};
 pub use container::OperationContainer;
 use core::cmp::Ordering;
 use core::fmt::Debug;
@@ -57,7 +56,7 @@ pub trait Op: Eq + Ord {
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
 /// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
-/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MemoryOp {
     rw: RW,
@@ -113,17 +112,17 @@ impl Ord for MemoryOp {
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
 /// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
-/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StackOp {
     rw: RW,
     addr: StackAddress,
-    value: EvmWord,
+    value: Word,
 }
 
 impl StackOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub const fn new(rw: RW, addr: StackAddress, value: EvmWord) -> StackOp {
+    pub const fn new(rw: RW, addr: StackAddress, value: Word) -> StackOp {
         StackOp { rw, addr, value }
     }
 
@@ -143,8 +142,8 @@ impl StackOp {
         &self.addr
     }
 
-    /// Returns the [`EvmWord`] read or written by this operation.
-    pub const fn value(&self) -> &EvmWord {
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
         &self.value
     }
 }
@@ -169,24 +168,24 @@ impl Ord for StackOp {
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
 /// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
-/// the [`ExecutionTrace`](crate::exec_trace::ExecutionTrace).
+/// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageOp {
     rw: RW,
-    address: EthAddress,
-    key: EvmWord,
-    value: EvmWord,
-    value_prev: EvmWord,
+    address: Address,
+    key: Word,
+    value: Word,
+    value_prev: Word,
 }
 
 impl StorageOp {
     /// Create a new instance of a `StorageOp` from it's components.
     pub const fn new(
         rw: RW,
-        address: EthAddress,
-        key: EvmWord,
-        value: EvmWord,
-        value_prev: EvmWord,
+        address: Address,
+        key: Word,
+        value: Word,
+        value_prev: Word,
     ) -> StorageOp {
         StorageOp {
             rw,
@@ -208,23 +207,23 @@ impl StorageOp {
         Target::Storage
     }
 
-    /// Returns the [`EthAddress`] corresponding to this storage operation.
-    pub const fn address(&self) -> &EthAddress {
+    /// Returns the [`Address`] corresponding to this storage operation.
+    pub const fn address(&self) -> &Address {
         &self.address
     }
 
-    /// Returns the [`EvmWord`] used as key for this operation.
-    pub const fn key(&self) -> &EvmWord {
+    /// Returns the [`Word`] used as key for this operation.
+    pub const fn key(&self) -> &Word {
         &self.key
     }
 
-    /// Returns the [`EvmWord`] read or written by this operation.
-    pub const fn value(&self) -> &EvmWord {
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
         &self.value
     }
 
-    /// Returns the [`EvmWord`] at key found previous to this operation.
-    pub const fn value_prev(&self) -> &EvmWord {
+    /// Returns the [`Word`] at key found previous to this operation.
+    pub const fn value_prev(&self) -> &Word {
         &self.value_prev
     }
 }
@@ -369,23 +368,16 @@ mod operation_tests {
 
     #[test]
     fn unchecked_op_transmutations_are_safe() {
-        let stack_op = StackOp::new(
-            RW::WRITE,
-            StackAddress::from(1024),
-            EvmWord::from(0x40u8),
-        );
+        let stack_op =
+            StackOp::new(RW::WRITE, StackAddress::from(1024), Word::from(0x40));
 
         let stack_op_as_operation =
-            Operation::new(GlobalCounter(1usize), stack_op.clone());
+            Operation::new(GlobalCounter(1), stack_op.clone());
 
-        let memory_op = MemoryOp::new(
-            RW::WRITE,
-            MemoryAddress(usize::from(0x40u8)),
-            0x40u8,
-        );
+        let memory_op = MemoryOp::new(RW::WRITE, MemoryAddress(0x40), 0x40);
 
         let memory_op_as_operation =
-            Operation::new(GlobalCounter(1usize), memory_op.clone());
+            Operation::new(GlobalCounter(1), memory_op.clone());
 
         assert_eq!(stack_op, stack_op_as_operation.op);
         assert_eq!(memory_op, memory_op_as_operation.op)

@@ -1,6 +1,7 @@
 use super::Opcode;
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::eth_types::GethExecStep;
 use crate::{
-    exec_trace::{ExecutionStep, TraceContext},
     operation::{StackOp, RW},
     Error,
 };
@@ -10,61 +11,47 @@ pub(crate) struct Add;
 
 impl Opcode for Add {
     fn gen_associated_ops(
-        &self,
-        ctx: &mut TraceContext,
-        exec_step: &mut ExecutionStep,
-        next_steps: &[ExecutionStep],
+        state: &mut CircuitInputStateRef,
+        steps: &[GethExecStep],
     ) -> Result<(), Error> {
+        let step = &steps[0];
         //
         // First stack read
         //
-        let stack_last_value_read = exec_step
-            .stack()
-            .last()
-            .cloned()
-            .ok_or(Error::InvalidStackPointer)?;
-        let stack_last_position = exec_step.stack().last_filled();
+        let stack_last_value_read = step.stack.last()?;
+        let stack_last_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        ctx.push_op(
-            exec_step,
-            StackOp::new(RW::READ, stack_last_position, stack_last_value_read),
-        );
+        state.push_op(StackOp::new(
+            RW::READ,
+            stack_last_position,
+            stack_last_value_read,
+        ));
 
         //
         // Second stack read
         //
-        let stack_second_last_value_read = exec_step
-            .stack()
-            .nth_last(1)
-            .cloned()
-            .ok_or(Error::InvalidStackPointer)?;
-        let stack_second_last_position = exec_step.stack().nth_last_filled(1);
+        let stack_second_last_value_read = step.stack.nth_last(1)?;
+        let stack_second_last_position = step.stack.nth_last_filled(1);
 
         // Manage second stack read at second latest stack position
-        ctx.push_op(
-            exec_step,
-            StackOp::new(
-                RW::READ,
-                stack_second_last_position,
-                stack_second_last_value_read,
-            ),
-        );
+        state.push_op(StackOp::new(
+            RW::READ,
+            stack_second_last_position,
+            stack_second_last_value_read,
+        ));
 
         //
         // First plus second stack value write
         //
-        let added_value = next_steps[0]
-            .stack()
-            .last()
-            .cloned()
-            .ok_or(Error::InvalidStackPointer)?;
+        let added_value = steps[1].stack.last()?;
 
         // Manage second stack read at second latest stack position
-        ctx.push_op(
-            exec_step,
-            StackOp::new(RW::WRITE, stack_second_last_position, added_value),
-        );
+        state.push_op(StackOp::new(
+            RW::WRITE,
+            stack_second_last_position,
+            added_value,
+        ));
 
         Ok(())
     }
@@ -75,35 +62,13 @@ mod add_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{
-            EvmWord, GasCost, GlobalCounter, Memory, OpcodeId, OpcodeId::ADD,
-            Stack, StackAddress, Storage,
+        circuit_input_builder::{
+            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
         },
-        external_tracer,
-        operation::RW::{READ, WRITE},
-        BlockConstants, ExecutionTrace,
+        eth_types::Word,
+        evm::StackAddress,
+        mock,
     };
-    use pasta_curves::pallas::Scalar;
-
-    fn step_setup(
-        stack: Stack,
-        instruction: OpcodeId,
-        obtained_steps: ExecutionStep,
-        gc: GlobalCounter,
-    ) -> ExecutionStep {
-        ExecutionStep {
-            memory: Memory::empty(),
-            stack,
-            storage: Storage::empty(),
-            instruction,
-            gas: obtained_steps.gas(),
-            gas_cost: GasCost::FASTEST,
-            depth: 1u8,
-            pc: obtained_steps.pc(),
-            gc,
-            bus_mapping_instance: vec![],
-        }
-    }
 
     #[test]
     fn add_opcode_impl() -> Result<(), Error> {
@@ -115,65 +80,69 @@ mod add_tests {
             STOP
         };
 
-        let block_ctants = BlockConstants::default();
-
         // Get the execution steps from the external tracer
-        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
-            [code.get_pos("start")..];
+        let block =
+            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
-            obtained_steps.to_vec(),
-            block_ctants,
-        )?;
-
-        let mut ctx = TraceContext::new();
-        let last_stack_pointer = StackAddress::from(1022);
-        let second_last_stack_pointer = StackAddress::from(1023);
-        let stack_value_a = EvmWord::from(0x80u8);
-        let stack_value_b = EvmWord::from(0x80u8);
-        let sum = EvmWord([
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-        ]);
-
-        // Generate Step1 corresponding to ADD
-        let mut step_1 = step_setup(
-            Stack(vec![stack_value_a, stack_value_b]),
-            ADD,
-            obtained_steps[0].clone(),
-            ctx.gc,
+        let mut builder = CircuitInputBuilder::new(
+            block.eth_block.clone(),
+            block.block_ctants.clone(),
         );
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+
+        let mut test_builder = CircuitInputBuilder::new(
+            block.eth_block,
+            block.block_ctants.clone(),
+        );
+        let mut tx = Transaction::new(&block.eth_tx);
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
+
+        // Generate step corresponding to ADD
+        let mut step = ExecStep::new(
+            &block.geth_trace.struct_logs[0],
+            test_builder.block_ctx.gc,
+        );
+        let mut state_ref =
+            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+
+        let last_stack_pointer = StackAddress(1022);
+        let second_last_stack_pointer = StackAddress(1023);
+        let stack_value_a = Word::from(0x80);
+        let stack_value_b = Word::from(0x80);
+        let sum = Word::from(0x100);
 
         // Manage first stack read at latest stack position
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(READ, last_stack_pointer, stack_value_a),
-        );
+        state_ref.push_op(StackOp::new(
+            RW::READ,
+            last_stack_pointer,
+            stack_value_a,
+        ));
 
         // Manage second stack read at second latest stack position
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(READ, second_last_stack_pointer, stack_value_b),
-        );
+        state_ref.push_op(StackOp::new(
+            RW::READ,
+            second_last_stack_pointer,
+            stack_value_b,
+        ));
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(WRITE, second_last_stack_pointer, sum),
-        );
+        state_ref.push_op(StackOp::new(
+            RW::WRITE,
+            second_last_stack_pointer,
+            sum,
+        ));
 
-        // Compare each step bus mapping instance
+        tx.steps_mut().push(step);
+        test_builder.block.txs_mut().push(tx);
+
+        // Compare first step bus mapping instance
         assert_eq!(
-            obtained_exec_trace[0].bus_mapping_instance(),
-            step_1.bus_mapping_instance()
+            builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
         );
-
-        // Compare each step entirely
-        assert_eq!(obtained_exec_trace[0], step_1);
 
         // Compare containers
-        assert_eq!(obtained_exec_trace.ctx.container, ctx.container);
+        assert_eq!(builder.block.container, test_builder.block.container);
 
         Ok(())
     }

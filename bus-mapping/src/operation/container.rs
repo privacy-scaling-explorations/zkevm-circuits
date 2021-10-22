@@ -3,13 +3,13 @@ use crate::exec_trace::OperationRef;
 use itertools::Itertools;
 
 /// The `OperationContainer` is meant to store all of the [`Operation`]s that an
-/// [`ExecutionTrace`](crate::exec_trace::ExecutionTrace) performs during its
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep) performs during its
 /// execution.
 ///
 /// Once an operation is inserted into the container, it returns an
 /// [`OperationRef`] which holds an index to the operation just inserted.
 /// These references are stored inside of the bus-mapping instances of each
-/// [`ExecutionStep`](crate::exec_trace::ExecutionStep).
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 ///
 /// Finally, the container also provides the capability of retrieving all of the
 /// `Stack`, `Memory` or `Storage` operations ordered according to the criterias
@@ -85,9 +85,8 @@ mod container_test {
     use super::*;
 
     use crate::{
-        evm::{
-            EthAddress, EvmWord, GlobalCounter, MemoryAddress, StackAddress,
-        },
+        eth_types::{Address, Word},
+        evm::{GlobalCounter, MemoryAddress, StackAddress},
         operation::RW,
     };
 
@@ -97,14 +96,7 @@ mod container_test {
         let mut operation_container = OperationContainer::default();
         let stack_operation = Operation::new(
             global_counter.inc_pre(),
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023),
-                EvmWord([
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-                ]),
-            ),
+            StackOp::new(RW::WRITE, StackAddress(1023), Word::from(0x100)),
         );
         let memory_operation = Operation::new(
             global_counter.inc_pre(),
@@ -114,13 +106,10 @@ mod container_test {
             global_counter.inc_pre(),
             StorageOp::new(
                 RW::WRITE,
-                EthAddress::zero(),
-                EvmWord::default(),
-                EvmWord([
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-                ]),
-                EvmWord::default(),
+                Address::zero(),
+                Word::default(),
+                Word::from(0x1),
+                Word::default(),
             ),
         );
         let stack_ref = operation_container.insert(stack_operation.clone());
