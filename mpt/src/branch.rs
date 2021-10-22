@@ -19,6 +19,7 @@ pub struct BranchConfig<F> {
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_compact_leaf: Column<Advice>,
+    is_keccak_leaf: Column<Advice>,
     node_index: Column<Advice>,
     key: Column<Advice>,
     s_rlp1: Column<Advice>,
@@ -37,9 +38,10 @@ impl<F: FieldExt> BranchConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
 
-        let is_compact_leaf = meta.advice_column();
-        let is_branch_child = meta.advice_column();
         let is_branch_init = meta.advice_column();
+        let is_branch_child = meta.advice_column();
+        let is_compact_leaf = meta.advice_column();
+        let is_keccak_leaf = meta.advice_column();
         let node_index = meta.advice_column();
         let key = meta.advice_column();
 
@@ -59,7 +61,9 @@ impl<F: FieldExt> BranchConfig<F> {
             .try_into()
             .unwrap();
 
-        let keccak_table = (0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH)
+        let keccak_table: [Column<Advice>;
+            KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0..KECCAK_INPUT_WIDTH
+            + KECCAK_OUTPUT_WIDTH)
             .map(|_| meta.advice_column())
             .collect::<Vec<_>>()
             .try_into()
@@ -83,12 +87,14 @@ impl<F: FieldExt> BranchConfig<F> {
             let q_enable = meta.query_selector(q_enable);
 
             let mut constraints = vec![];
-            let is_compact_leaf =
-                meta.query_advice(is_compact_leaf, Rotation::cur());
-            let is_branch_child =
-                meta.query_advice(is_branch_child, Rotation::cur());
             let is_branch_init =
                 meta.query_advice(is_branch_init, Rotation::cur());
+            let is_branch_child =
+                meta.query_advice(is_branch_child, Rotation::cur());
+            let is_compact_leaf =
+                meta.query_advice(is_compact_leaf, Rotation::cur());
+            let is_keccak_leaf =
+                meta.query_advice(is_keccak_leaf, Rotation::cur());
 
             let bool_check_is_branch_init =
                 is_branch_init.clone() * (one.clone() - is_branch_init.clone());
@@ -96,6 +102,8 @@ impl<F: FieldExt> BranchConfig<F> {
                 * (one.clone() - is_branch_child.clone());
             let bool_check_is_compact_leaf = is_compact_leaf.clone()
                 * (one.clone() - is_compact_leaf.clone());
+            let bool_check_is_keccak_leaf =
+                is_keccak_leaf.clone() * (one.clone() - is_keccak_leaf.clone());
 
             let node_index = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
@@ -142,7 +150,7 @@ impl<F: FieldExt> BranchConfig<F> {
             // TODO: might be similar structure as in evm circuit - having branch child, compact leaf ...
             // modularized the same way as opcodes are
 
-            // TODO: is_compact_leaf + is_branch_child + is_branch_init = 1
+            // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
             // TODO: node_index is increasing by 1 for is_branch_child
             // TODO: constraints for order of is_branch_init, is_branch_child, ...
             // TODO: constraints for branch init
@@ -173,11 +181,34 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
+        // TODO: check transition from compact to keccak leaf
+
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let is_keccak_leaf =
+                meta.query_advice(is_keccak_leaf, Rotation::cur());
+            // TODO: check branch/leaf selectors sum and booleanity
+
+            let mut constraints = vec![];
+            for i in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
+                let k = meta.query_advice(s_advices[i], Rotation::cur());
+                let keccak_table_i =
+                    meta.query_advice(keccak_table[i], Rotation::cur());
+                constraints.push((
+                    q_enable.clone() * is_keccak_leaf.clone() * k,
+                    keccak_table_i,
+                ))
+            }
+
+            constraints
+        });
+
         BranchConfig {
             q_enable,
             is_branch_init,
             is_branch_child,
             is_compact_leaf,
+            is_keccak_leaf,
             node_index,
             key,
             s_rlp1,
@@ -200,6 +231,7 @@ impl<F: FieldExt> BranchConfig<F> {
         is_branch_init: bool,
         is_branch_child: bool,
         is_compact_leaf: bool,
+        is_keccak_leaf: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -221,6 +253,12 @@ impl<F: FieldExt> BranchConfig<F> {
             self.is_compact_leaf,
             offset,
             || Ok(F::from_u64(is_compact_leaf as u64)),
+        )?;
+        region.assign_advice(
+            || format!("assign is_keccak_leaf"),
+            self.is_keccak_leaf,
+            offset,
+            || Ok(F::from_u64(is_keccak_leaf as u64)),
         )?;
 
         region.assign_advice(
@@ -297,7 +335,48 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::zero()),
         )?;
 
-        self.assign_row(region, row, false, false, true, offset)?;
+        self.assign_row(region, row, false, false, true, false, offset)?;
+
+        self.q_enable.enable(region, offset + 1)?;
+        region.assign_advice(
+            || format!("assign node_index"),
+            self.node_index,
+            offset + 1,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign key"),
+            self.key,
+            offset + 1,
+            || Ok(F::zero()),
+        )?;
+        let hash = self.compute_keccak(row);
+        let padded = self.pad(row);
+        let keccak_input = self.into_words(&padded);
+        let keccak_output = self.into_words(&hash);
+        println!("{}", "======");
+        println!("{:?}", keccak_input);
+        println!("{:?}", keccak_output);
+
+        let row: Vec<u8> = vec![0; WITNESS_ROW_WIDTH];
+        self.assign_row(region, &row, false, false, false, true, offset + 1)?;
+
+        // Reassign the proper values now (0s assinged assign_row to set all columns).
+        for ind in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
+            let val: u64;
+            if ind < KECCAK_INPUT_WIDTH {
+                val = keccak_input[ind];
+            } else {
+                val = keccak_output[ind - KECCAK_INPUT_WIDTH];
+            }
+            region.assign_advice(
+                || format!("assign s_advice {}", ind),
+                self.s_advices[ind],
+                offset + 1,
+                || Ok(F::from_u64(val)),
+            )?;
+        }
 
         Ok(())
     }
@@ -322,7 +401,7 @@ impl<F: FieldExt> BranchConfig<F> {
             || Ok(F::zero()),
         )?;
 
-        self.assign_row(region, row, true, false, false, offset)?;
+        self.assign_row(region, row, true, false, false, false, offset)?;
 
         Ok(())
     }
@@ -368,7 +447,7 @@ impl<F: FieldExt> BranchConfig<F> {
             )?;
         }
 
-        self.assign_row(region, row, false, true, false, offset)?;
+        self.assign_row(region, row, false, true, false, false, offset)?;
 
         Ok(())
     }
@@ -383,9 +462,6 @@ impl<F: FieldExt> BranchConfig<F> {
                 || "assign MPT proof",
                 |mut region| {
                     let mut offset = 0;
-
-                    // TODO: if row type == branch, traverse to key = ind, convert hash
-                    // into 4-words format, assign s_keccak and c_keccak
 
                     let mut key = 0;
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
@@ -402,7 +478,6 @@ impl<F: FieldExt> BranchConfig<F> {
                             let c_hash = witness[ind + 1 + key as usize]
                                 [C_START..C_START + HASH_WIDTH]
                                 .to_vec();
-                            println!("{:?}", s_hash);
                             s_words = self.into_words(&s_hash);
                             c_words = self.into_words(&c_hash);
 
@@ -412,7 +487,7 @@ impl<F: FieldExt> BranchConfig<F> {
                                 &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
-                            offset += 1
+                            offset += 1;
                         } else if row[row.len() - 1] == 1 {
                             // branch child
                             self.q_enable.enable(&mut region, offset)?;
@@ -425,7 +500,7 @@ impl<F: FieldExt> BranchConfig<F> {
                                 &c_words,
                                 offset,
                             )?;
-                            offset += 1
+                            offset += 1;
                         } else if row[row.len() - 1] == 2 {
                             // compact leaf
                             self.q_enable.enable(&mut region, offset)?;
@@ -434,7 +509,7 @@ impl<F: FieldExt> BranchConfig<F> {
                                 &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
-                            offset += 1
+                            offset += 2; // two rows added for a leaf
                         }
                     }
 
@@ -485,27 +560,28 @@ impl<F: FieldExt> BranchConfig<F> {
         words
     }
 
+    fn compute_keccak(&self, msg: &[u8]) -> Vec<u8> {
+        let mut keccak = Keccak::default();
+        keccak.update(msg);
+        keccak.digest()
+    }
+
     fn load_keccak_table(
         &self,
         layouter: &mut impl Layouter<F>,
         to_be_hashed: Vec<Vec<u8>>,
     ) -> Result<(), Error> {
-        fn compute_keccak(msg: &[u8]) -> Vec<u8> {
-            let mut keccak = Keccak::default();
-            keccak.update(msg);
-            keccak.digest()
-        }
-
         layouter.assign_region(
             || "keccak table",
             |mut region| {
                 let mut offset = 0;
 
                 for t in to_be_hashed.iter() {
-                    let hash = compute_keccak(t);
+                    let hash = self.compute_keccak(t);
                     let padded = self.pad(t);
                     let keccak_input = self.into_words(&padded);
                     let keccak_output = self.into_words(&hash);
+                    println!("{:?}", keccak_input);
                     println!("{:?}", keccak_output);
 
                     for (ind, column) in self.keccak_table.iter().enumerate() {
@@ -576,7 +652,6 @@ mod tests {
                 for row in self.witness.iter() {
                     if row[row.len() - 1] == 2 {
                         // compact leaf
-                        println!("{:?}", row);
                         to_be_hashed.push(row[0..row.len() - 1].to_vec());
                     }
                 }
