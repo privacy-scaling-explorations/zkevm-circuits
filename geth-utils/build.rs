@@ -8,7 +8,11 @@ fn main() {
     gobuild::Build::new().file("./lib/lib.go").compile(lib_name);
 
     // Files the lib depends on that should recompile the lib
-    let dep_files = vec!["./gethutil/trace.go"];
+    let dep_files = vec![
+        "./gethutil/asm.go",
+        "./gethutil/trace.go",
+        "./gethutil/util.go",
+    ];
     for file in dep_files {
         println!("cargo:rerun-if-changed={}", file);
     }
