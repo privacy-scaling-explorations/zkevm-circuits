@@ -18,7 +18,7 @@ const GAS: GasCost = GasCost::QUICK;
 const NUM_PUSHED: usize = 1;
 
 impl_op_gadget!(
-    [PC],
+    [PC]
     PcGadget {
         PcSuccessCase(),
         StackOverflowCase(NUM_PUSHED),
