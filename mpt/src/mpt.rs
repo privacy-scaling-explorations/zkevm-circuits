@@ -665,8 +665,8 @@ mod tests {
         }
 
         // for debugging:
-        let file = std::fs::File::open("mpt/tests/test.json");
-        // let file = std::fs::File::open("tests/test.json");
+        // let file = std::fs::File::open("mpt/tests/test.json");
+        let file = std::fs::File::open("tests/test.json");
         let reader = std::io::BufReader::new(file.unwrap());
         let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
 
