@@ -14,7 +14,7 @@ use crate::param::{
 };
 
 #[derive(Clone, Debug)]
-pub struct BranchConfig<F> {
+pub struct MPTConfig<F> {
     q_enable: Selector,
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
@@ -34,7 +34,7 @@ pub struct BranchConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchConfig<F> {
+impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
 
@@ -147,6 +147,7 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints.push(q_enable.clone() * bool_check_is_branch_init);
             constraints.push(q_enable.clone() * bool_check_is_branch_child);
             constraints.push(q_enable.clone() * bool_check_is_compact_leaf);
+            constraints.push(q_enable.clone() * bool_check_is_keccak_leaf);
             // TODO: might be similar structure as in evm circuit - having branch child, compact leaf ...
             // modularized the same way as opcodes are
 
@@ -203,7 +204,7 @@ impl<F: FieldExt> BranchConfig<F> {
             constraints
         });
 
-        BranchConfig {
+        MPTConfig {
             q_enable,
             is_branch_init,
             is_branch_child,
@@ -631,7 +632,7 @@ mod tests {
         }
 
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
-            type Config = BranchConfig<F>;
+            type Config = MPTConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -639,7 +640,7 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                BranchConfig::configure(meta)
+                MPTConfig::configure(meta)
             }
 
             fn synthesize(
