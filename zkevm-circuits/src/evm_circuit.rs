@@ -61,7 +61,7 @@ pub(crate) enum CallStateField {
     // Stack pointer.
     StackPointer,
     // Memory size.
-    MemeorySize,
+    MemorySize,
     // Gas counter.
     GasCounter,
     // State trie write counter.
@@ -83,7 +83,7 @@ pub(crate) enum BusMappingLookup<F> {
         value: Expression<F>,
     },
     Stack {
-        is_write: bool,
+        is_write: Expression<F>,
         // One can only access its own stack, so id is no needed to be
         // specified.
         // Stack index is always deterministic respect to stack pointer, so an
@@ -92,7 +92,7 @@ pub(crate) enum BusMappingLookup<F> {
         value: Expression<F>,
     },
     Memory {
-        is_write: bool,
+        is_write: Expression<F>,
         // Some ops like CALLDATALOAD can peek caller's memeory as calldata, so
         // we allow it to specify the call id.
         call_id: Expression<F>,
@@ -142,10 +142,11 @@ pub(crate) enum FixedLookup {
     // Noop provides [0, 0, 0, 0] row
     Noop,
     // meaningful tags start with 1
-    Range256,
-    Range32,
-    Range17,
     Range16,
+    Range17,
+    Range32,
+    Range256,
+    Range512,
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
@@ -210,7 +211,7 @@ impl<F: FieldExt> Expr<F> for Cell<F> {
 
 // TODO: Integrate with evm_word
 #[derive(Clone, Debug)]
-struct Word<F> {
+pub(crate) struct Word<F> {
     // random linear combination expression of cells
     expression: Expression<F>,
     // inner cells for synthesis
@@ -262,7 +263,8 @@ pub(crate) struct CoreStateInstance {
     call_id: usize,
     program_counter: usize,
     stack_pointer: usize,
-    gas_counter: usize,
+    gas_counter: u64,
+    memory_size: u64,
 }
 
 impl CoreStateInstance {
@@ -274,6 +276,7 @@ impl CoreStateInstance {
             program_counter: 0,
             stack_pointer: 1024,
             gas_counter: 0,
+            memory_size: 0,
         }
     }
 }
@@ -571,7 +574,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 index_offset,
                                 value,
                             } => [
-                                is_write.expr(),
+                                is_write,
                                 call_id.expr(),
                                 stack_pointer.expr() + index_offset,
                                 value,
@@ -582,13 +585,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 call_id,
                                 index,
                                 value,
-                            } => [
-                                is_write.expr(),
-                                call_id,
-                                index,
-                                value,
-                                0.expr(),
-                            ],
+                            } => [is_write, call_id, index, value, 0.expr()],
                             BusMappingLookup::AccountStorage {
                                 is_write,
                                 address,
@@ -793,6 +790,33 @@ impl<F: FieldExt> EvmCircuit<F> {
                     {
                         region.assign_fixed(
                             || format!("Range16: padding {}", idx),
+                            *column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                // Range512
+                for idx in 0..512 {
+                    region.assign_fixed(
+                        || "Range512: tag",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from_u64(FixedLookup::Range512 as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "Range512: value",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from_u64(idx as u64)),
+                    )?;
+                    for (idx, column) in
+                        self.fixed_table[2..].iter().enumerate()
+                    {
+                        region.assign_fixed(
+                            || format!("Range512: padding {}", idx),
                             *column,
                             offset,
                             || Ok(F::zero()),

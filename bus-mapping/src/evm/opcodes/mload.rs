@@ -38,12 +38,21 @@ impl Opcode for Mload {
             StackOp::new(RW::READ, stack_position, stack_value_read),
         );
 
-        //
-        // First mem read -> 32 MemoryOp generated.
-        //
+        // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
         let mem_read_value = next_steps[0].memory().read_word(mem_read_addr)?;
 
+        //
+        // First stack write
+        //
+        ctx.push_op(
+            exec_step,
+            StackOp::new(RW::WRITE, stack_position, mem_read_value),
+        );
+
+        //
+        // First mem read -> 32 MemoryOp generated.
+        //
         mem_read_value.inner().iter().for_each(|value_byte| {
             ctx.push_op(
                 exec_step,
@@ -53,14 +62,6 @@ impl Opcode for Mload {
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
         });
-
-        //
-        // First stack write
-        //
-        ctx.push_op(
-            exec_step,
-            StackOp::new(RW::WRITE, stack_position, mem_read_value),
-        );
 
         Ok(())
     }
@@ -132,6 +133,16 @@ mod mload_tests {
             ),
         );
 
+        // Add the last Stack write
+        ctx.push_op(
+            &mut step_1,
+            StackOp::new(
+                RW::WRITE,
+                StackAddress::from(1023),
+                EvmWord::from(0x80u8),
+            ),
+        );
+
         // Add the 32 MemoryOp generated from the Memory read at addr 0x40<->0x80 for each byte.
         EvmWord::from(0x80u8)
             .inner()
@@ -144,16 +155,6 @@ mod mload_tests {
                     MemoryOp::new(RW::READ, idx.into(), *byte),
                 );
             });
-
-        // Add the last Stack write
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023),
-                EvmWord::from(0x80u8),
-            ),
-        );
 
         // Generate Step1 corresponding to PUSH1 40
         let step_2 = ExecutionStep {

@@ -19,6 +19,7 @@ mod byte;
 mod comparator;
 mod dup;
 mod jumpdest;
+mod memory;
 mod pc;
 mod pop;
 mod push;
@@ -31,6 +32,7 @@ use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use jumpdest::JumpdestGadget;
+use memory::MemoryGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -164,6 +166,7 @@ pub(crate) struct OpExecutionState<F> {
     pub stack_pointer: Cell<F>,
     gas_counter: Cell<F>,
     opcode: Cell<F>,
+    memory_size: Cell<F>,
 }
 
 impl<F: FieldExt> OpExecutionState<F> {
@@ -178,6 +181,7 @@ impl<F: FieldExt> OpExecutionState<F> {
             stack_pointer: cells[4].clone(),
             gas_counter: cells[5].clone(),
             opcode: cells[6].clone(),
+            memory_size: cells[7].clone(),
         }
     }
 }
@@ -232,6 +236,7 @@ pub(crate) struct OpExecutionGadget<F> {
     signextend_gadget: SignextendGadget<F>,
     swap_gadget: SwapGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
+    memory_gadget: MemoryGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -295,6 +300,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(signextend_gadget);
         construct_op_gadget!(swap_gadget);
         construct_op_gadget!(jumpdest_gadget);
+        construct_op_gadget!(memory_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -340,6 +346,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             signextend_gadget,
             swap_gadget,
             jumpdest_gadget,
+            memory_gadget,
         }
     }
 
@@ -518,6 +525,11 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             offset,
             Some(F::from_u64(core_state.gas_counter as u64)),
         )?;
+        self.state_curr.memory_size.assign(
+            region,
+            offset,
+            Some(F::from_u64(core_state.memory_size as u64)),
+        )?;
 
         if let Some(execution_step) = execution_step {
             self.state_curr.opcode.assign(
@@ -615,7 +627,9 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-
+                (_, _, _, OpcodeId::MLOAD | OpcodeId::MSTORE) => self
+                    .memory_gadget
+                    .assign(region, offset, core_state, execution_step)?,
                 _ => unimplemented!(),
             }
         }

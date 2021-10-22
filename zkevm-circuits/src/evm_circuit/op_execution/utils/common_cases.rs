@@ -3,18 +3,17 @@ use super::super::{
     ExecutionStep, OpExecutionState,
 };
 use super::constraint_builder::ConstraintBuilder;
+use crate::evm_circuit::param::STACK_START_IDX;
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 
-pub const STACK_START_IDX: usize = 1024;
-
 #[derive(Clone, Debug)]
 pub(crate) struct OutOfGasCase<F> {
     case_selector: Cell<F>,
     gas_available: Cell<F>,
-    gas_used: usize,
+    gas_used: u64,
 }
 
 impl<F: FieldExt> OutOfGasCase<F> {
@@ -27,7 +26,7 @@ impl<F: FieldExt> OutOfGasCase<F> {
 
     pub(crate) fn construct(
         alloc: &mut CaseAllocation<F>,
-        gas_used: usize,
+        gas_used: u64,
     ) -> Self {
         Self {
             case_selector: alloc.selector.clone(),

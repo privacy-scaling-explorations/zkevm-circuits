@@ -17,7 +17,8 @@ static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(4), // 2 stack reads + 2 stack writes
     pc_delta: Some(1),
     sp_delta: Some(0),
-    gas_delta: Some(GasCost::FASTEST.as_usize()),
+    gas_delta: Some(GasCost::FASTEST.as_u64()),
+    next_memory_size: None,
 };
 
 impl_op_gadget!(
@@ -64,17 +65,17 @@ impl<F: FieldExt> SwapSuccessCase<F> {
 
         // The stack index we have to peek, deduced from the 'x' value of 'swapx'
         // The offset starts at 1 for SWAP1
-        let swap_offset =
+        let offset =
             state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 
-        // Peek the value at `swap_offset`
-        cb.stack_lookup(swap_offset.clone(), self.values[0].expr(), false);
+        // Peek the value at `offset`
+        cb.stack_lookup(offset.clone(), self.values[0].expr(), false.expr());
         // Peek the value at the top of the stack
-        cb.stack_lookup(0.expr(), self.values[1].expr(), false);
+        cb.stack_lookup(0.expr(), self.values[1].expr(), false.expr());
         // Write the value previously at the top of the stack to `swap_offset`
-        cb.stack_lookup(swap_offset, self.values[1].expr(), true);
-        // Write the value previously at `swap_offset` to the top of the stack
-        cb.stack_lookup(0.expr(), self.values[0].expr(), true);
+        cb.stack_lookup(offset, self.values[1].expr(), true.expr());
+        // Write the value previously at `offset` to the top of the stack
+        cb.stack_lookup(0.expr(), self.values[0].expr(), true.expr());
 
         // State transitions
         STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
@@ -120,7 +121,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
