@@ -17,7 +17,7 @@ pub const NUM_CELL_RESUMPTION: usize = 2;
 pub const MAX_BYTES_FIELD: usize = 31;
 
 pub const STACK_START_IDX: usize = 1024;
-pub const MAX_SIZE_GAS_IN_BYTES: usize = 8;
+pub const MAX_GAS_SIZE_IN_BYTES: usize = 8;
 // Number of bytes that will be used of the address word.
 // If any of the other more signficant bytes are used it will
 // always result in an out-of-gas error.

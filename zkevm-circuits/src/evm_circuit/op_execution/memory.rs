@@ -8,7 +8,9 @@ use super::utils::{StateTransition, StateTransitionExpressions};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
-use crate::evm_circuit::param::{MAX_MEMORY_SIZE_IN_BYTES, STACK_START_IDX};
+use crate::evm_circuit::param::{
+    MAX_GAS_SIZE_IN_BYTES, MAX_MEMORY_SIZE_IN_BYTES, STACK_START_IDX,
+};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
@@ -43,8 +45,7 @@ struct MemorySuccessCase<F> {
     case_selector: Cell<F>,
     address: Word<F>,
     value: Word<F>,
-    call_id: Cell<F>,
-    memory_expansion: MemoryExpansionGadget<F>,
+    memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
     is_mload: IsEqualGadget<F>,
 }
 
@@ -52,10 +53,10 @@ impl<F: FieldExt> MemorySuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
         num_word: 2  // value + address
-            + MemoryExpansionGadget::<F>::NUM_WORDS
+            + MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_WORDS
             + IsEqualGadget::<F>::NUM_WORDS,
         num_cell: 1  // call_id
-            + MemoryExpansionGadget::<F>::NUM_CELLS
+            + MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_CELLS
             + IsEqualGadget::<F>::NUM_CELLS,
         will_halt: false,
     };
@@ -65,7 +66,6 @@ impl<F: FieldExt> MemorySuccessCase<F> {
             case_selector: alloc.selector.clone(),
             address: alloc.words.pop().unwrap(),
             value: alloc.words.pop().unwrap(),
-            call_id: alloc.cells.pop().unwrap(),
             memory_expansion: MemoryExpansionGadget::construct(alloc),
             is_mload: IsEqualGadget::construct(alloc),
         }
@@ -77,7 +77,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         state_next: &OpExecutionState<F>,
         name: &'static str,
     ) -> Constraint<F> {
-        let mut cb = ConstraintBuilder::with_call_id(self.call_id.expr());
+        let mut cb = ConstraintBuilder::with_call_id(state_curr.call_id.expr());
 
         // Check if this is an MLOAD or an MSTORE
         let is_mload = self.is_mload.constraints(
@@ -145,13 +145,6 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         self.value
             .assign(region, offset, Some(step.values[1].to_word()))?;
 
-        // The call id of the current call context
-        self.call_id.assign(
-            region,
-            offset,
-            Some(F::from_u64(state.call_id as u64)),
-        )?;
-
         // Check if this is an MLOAD or an MSTORE
         let is_mload = self.is_mload.assign(
             region,
@@ -190,7 +183,8 @@ struct MemoryOutOfGasCase<F> {
     gas_available: Cell<F>,
     address: Word<F>,
     address_in_range: IsZeroGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F>,
+    memory_expansion:
+        MemoryExpansionGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>,
     insufficient_gas: LtGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>,
 }
 
@@ -199,11 +193,11 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         case: Case::OutOfGas,
         num_word: 1  // address
             + IsZeroGadget::<F>::NUM_WORDS
-            + MemoryExpansionGadget::<F>::NUM_WORDS
+            + MemoryExpansionGadget::<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1}>::NUM_WORDS
             + LtGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2-1}>::NUM_WORDS,
         num_cell: IsZeroGadget::<F>::NUM_CELLS
-            + MemoryExpansionGadget::<F>::NUM_CELLS
-            + LtGadget::<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>::NUM_CELLS,
+            + MemoryExpansionGadget::<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1}>::NUM_CELLS
+            + LtGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2-1}>::NUM_CELLS,
         will_halt: true,
     };
 

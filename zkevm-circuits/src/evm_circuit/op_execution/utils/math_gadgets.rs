@@ -381,6 +381,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
             self.quotient.expr() * self.divisor.expr(),
         );
 
+        // Return the quotient and the remainder
         (self.quotient.expr(), self.remainder.expr())
     }
 

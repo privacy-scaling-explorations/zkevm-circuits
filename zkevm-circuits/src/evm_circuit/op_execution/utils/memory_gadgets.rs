@@ -1,5 +1,4 @@
-use super::super::CaseAllocation;
-use super::super::Word;
+use super::super::{CaseAllocation, Word};
 use super::constraint_builder::ConstraintBuilder;
 use super::math_gadgets::{ConstantDivisionGadget, MaxGadget};
 use super::{Address, MemorySize};
@@ -100,22 +99,23 @@ impl<F: FieldExt> MemorySizeGadget<F> {
 /// This gas cost is the difference between the next and current memory costs:
 /// `memory_cost = Gmem * memory_size + floor(memory_size * memory_size / 512)`
 #[derive(Clone, Debug)]
-pub(crate) struct MemoryExpansionGadget<F> {
+pub(crate) struct MemoryExpansionGadget<F, const MAX_QUAD_COST_IN_BYTES: usize>
+{
     address_memory_size: MemorySizeGadget<F>,
     next_memory_size: MaxGadget<F, MAX_MEMORY_SIZE_IN_BYTES>,
-    curr_quad_memory_cost:
-        ConstantDivisionGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 }>,
-    next_quad_memory_cost:
-        ConstantDivisionGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 }>,
+    curr_quad_memory_cost: ConstantDivisionGadget<F, MAX_QUAD_COST_IN_BYTES>,
+    next_quad_memory_cost: ConstantDivisionGadget<F, MAX_QUAD_COST_IN_BYTES>,
 }
 
-impl<F: FieldExt> MemoryExpansionGadget<F> {
+impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
+    MemoryExpansionGadget<F, MAX_QUAD_COST_IN_BYTES>
+{
     pub const NUM_CELLS: usize = MemorySizeGadget::<F>::NUM_CELLS
         + MaxGadget::<F, MAX_MEMORY_SIZE_IN_BYTES>::NUM_CELLS
-        + ConstantDivisionGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2}>::NUM_CELLS * 2;
+        + ConstantDivisionGadget::<F, MAX_QUAD_COST_IN_BYTES>::NUM_CELLS * 2;
     pub const NUM_WORDS: usize = MemorySizeGadget::<F>::NUM_WORDS
         + MaxGadget::<F, MAX_MEMORY_SIZE_IN_BYTES>::NUM_WORDS
-        + ConstantDivisionGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2}>::NUM_WORDS * 2;
+        + ConstantDivisionGadget::<F, MAX_QUAD_COST_IN_BYTES>::NUM_WORDS * 2;
 
     pub const GAS_MEM: GasCost = GasCost::MEMORY;
     pub const QUAD_COEFF_DIV: u64 = 512u64;
@@ -137,10 +137,10 @@ impl<F: FieldExt> MemoryExpansionGadget<F> {
 
     /// Input requirements:
     /// - `curr_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `address` needs to be `< 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
+    /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
-    /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES*`
-    /// - `memory_gas_cost <= 0x80000002fefffffffd < 256**(MAX_MEMORY_SIZE_IN_BYTES*2-1)`
+    /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
+    /// - `memory_gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn constraints(
         &self,
         cb: &mut ConstraintBuilder<F>,
@@ -162,6 +162,7 @@ impl<F: FieldExt> MemoryExpansionGadget<F> {
         );
 
         // Calculate the quad memory cost for the current and next memory size.
+        // These quad costs will also be range limited to `< 256**MAX_QUAD_COST_IN_BYTES`.
         let (curr_quad_memory_cost, _) =
             self.curr_quad_memory_cost.constraints(
                 cb,
@@ -175,7 +176,7 @@ impl<F: FieldExt> MemoryExpansionGadget<F> {
 
         // Calculate the gas cost for the memory expansion.
         // This gas cost is the difference between the next and current memory costs.
-        // `memory_cost <= 0x80000002fefffffffd < 256**(2*MAX_MEMORY_SIZE_IN_BYTES-1)`
+        // `memory_gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
         let memory_gas_cost = (next_memory_size.clone() - curr_memory_size)
             * Self::GAS_MEM.expr()
             + (next_quad_memory_cost - curr_quad_memory_cost);
