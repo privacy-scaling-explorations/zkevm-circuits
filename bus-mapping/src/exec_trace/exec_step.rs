@@ -7,7 +7,7 @@ use crate::evm::{
 use crate::{
     error::Error,
     evm::{opcodes::Opcode, OpcodeId},
-    operation::container::OperationContainer,
+    exec_trace::TraceContext,
 };
 use std::collections::HashMap;
 
@@ -26,6 +26,7 @@ pub struct ExecutionStep {
     pub(crate) stack: Stack,
     pub(crate) storage: Storage,
     pub(crate) instruction: OpcodeId,
+    // TODO: Split into gas, gas_cost
     pub(crate) gas_info: GasInfo,
     pub(crate) depth: u8,
     pub(crate) pc: ProgramCounter,
@@ -120,21 +121,21 @@ impl ExecutionStep {
         &mut self.bus_mapping_instance
     }
 
-    /// Given a mutable reference to an [`OperationContainer`], generate all of
+    /// Given a mutable reference to an [`OperationContainer`](crate::operation::OperationContainer), generate all of
     /// it's associated Memory, Stack and Storage operations, and register
     /// them in the container.
     ///
-    /// This function will not only add the ops to the [`OperationContainer`] but also get it's
+    /// This function will not only add the ops to the [`OperationContainer`](crate::operation::OperationContainer) but also get it's
     /// [`OperationRef`]s and add them to the bus-mapping instance of the step.
     ///
     /// ## Returns the #operations added by the
     /// [`OpcodeId`](crate::evm::OpcodeId) into the container.
     pub(crate) fn gen_associated_ops(
         &mut self,
-        container: &mut OperationContainer,
+        ctx: &mut TraceContext,
         next_steps: &[ExecutionStep],
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         let instruction = *self.instruction();
-        instruction.gen_associated_ops(self, container, next_steps)
+        instruction.gen_associated_ops(ctx, self, next_steps)
     }
 }

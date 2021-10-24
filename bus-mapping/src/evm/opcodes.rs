@@ -6,7 +6,8 @@ mod sload;
 mod stop;
 use self::push::Push1;
 use crate::{
-    exec_trace::ExecutionStep, operation::container::OperationContainer, Error,
+    exec_trace::{ExecutionStep, TraceContext},
+    Error,
 };
 use core::fmt::Debug;
 use ids::OpcodeId;
@@ -25,10 +26,10 @@ pub trait Opcode: Debug {
     /// is implemented for.
     fn gen_associated_ops(
         &self,
+        ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
-        container: &mut OperationContainer,
         next_steps: &[ExecutionStep],
-    ) -> Result<usize, Error>;
+    ) -> Result<(), Error>;
 }
 
 // This is implemented for OpcodeId so that we can downcast the responsabilities
@@ -39,22 +40,22 @@ pub trait Opcode: Debug {
 impl Opcode for OpcodeId {
     fn gen_associated_ops(
         &self,
+        ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
-        container: &mut OperationContainer,
         next_steps: &[ExecutionStep],
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         match *self {
             OpcodeId::PUSH1 => {
-                Push1 {}.gen_associated_ops(exec_step, container, next_steps)
+                Push1 {}.gen_associated_ops(ctx, exec_step, next_steps)
             }
             OpcodeId::MLOAD => {
-                Mload {}.gen_associated_ops(exec_step, container, next_steps)
+                Mload {}.gen_associated_ops(ctx, exec_step, next_steps)
             }
             OpcodeId::SLOAD => {
-                Sload {}.gen_associated_ops(exec_step, container, next_steps)
+                Sload {}.gen_associated_ops(ctx, exec_step, next_steps)
             }
             OpcodeId::STOP => {
-                Stop {}.gen_associated_ops(exec_step, container, next_steps)
+                Stop {}.gen_associated_ops(ctx, exec_step, next_steps)
             }
             _ => unimplemented!(),
         }

@@ -3,7 +3,9 @@
 pub(crate) mod exec_step;
 pub(crate) mod parsing;
 use crate::evm::EvmWord;
-use crate::operation::{container::OperationContainer, Operation};
+use crate::operation::{
+    container::OperationContainer, GlobalCounter, Op, Operation,
+};
 use crate::operation::{EthAddress, MemoryOp, StackOp, StorageOp, Target};
 use crate::util::serialize_field_ext;
 use crate::Error;
@@ -126,6 +128,43 @@ impl<F: FieldExt> BlockConstants<F> {
     }
 }
 
+/// Context of a trace, which mutates at every ExecutionStep and provides both a context of
+/// execution and an accumulation of operations we need to generate the witness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraceContext {
+    /// The next gc to be used
+    pub gc: GlobalCounter,
+    /// Container of Operations
+    pub container: OperationContainer,
+    // TODO: Add CallContext here
+}
+
+impl Default for TraceContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TraceContext {
+    /// Create a new empty TraceContext
+    pub fn new() -> Self {
+        Self {
+            gc: GlobalCounter::new(),
+            container: OperationContainer::new(),
+        }
+    }
+
+    /// Push an [`Operation`] into the [`OperationContainer`] with the next [`GlobalCounter`] and
+    /// then adds a reference to the stored operation ([`OperationRef`]) inside the bus-mapping
+    /// instance of the given [`ExecutionStep`].  Then increase the internal [`GlobalCounter`] by
+    /// one.
+    pub fn push_op<T: Op>(&mut self, exec_step: &mut ExecutionStep, op: T) {
+        exec_step
+            .bus_mapping_instance_mut()
+            .push(self.container.insert(Operation::new(self.gc.inc_pre(), op)));
+    }
+}
+
 /// Result of the parsing of an EVM execution trace.
 /// This structure is the centre of the crate and is intended to be the only
 /// entry point to it. The `ExecutionTrace` provides three main actions:
@@ -144,11 +183,11 @@ impl<F: FieldExt> BlockConstants<F> {
 /// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecutionTrace` step so that
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ExecutionTrace<F: FieldExt> {
     pub(crate) steps: Vec<ExecutionStep>,
     pub(crate) block_ctants: BlockConstants<F>,
-    pub(crate) container: OperationContainer,
+    pub(crate) ctx: TraceContext,
 }
 
 impl<F: FieldExt> Index<usize> for ExecutionTrace<F> {
@@ -205,8 +244,8 @@ impl<F: FieldExt> ExecutionTrace<F> {
         ExecutionTrace {
             steps,
             block_ctants,
-            /// Dummy empty container to enable build.
-            container: OperationContainer::new(),
+            /// Dummy empty TraceContext to enable build.
+            ctx: TraceContext::new(),
         }
         .build()
     }
@@ -214,22 +253,22 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// Returns an ordered `Vec` containing all the [`StackOp`]s of the actual
     /// `ExecutionTrace` so that they can be directly included in the State
     /// proof.
-    pub fn sorted_stack_ops(&self) -> Vec<StackOp> {
-        self.container.sorted_stack()
+    pub fn sorted_stack_ops(&self) -> Vec<Operation<StackOp>> {
+        self.ctx.container.sorted_stack()
     }
 
     /// Returns an ordered `Vec` containing all the [`MemoryOp`]s of the actual
     /// `ExecutionTrace` so that they can be directly included in the State
     /// proof.
-    pub fn sorted_memory_ops(&self) -> Vec<MemoryOp> {
-        self.container.sorted_memory()
+    pub fn sorted_memory_ops(&self) -> Vec<Operation<MemoryOp>> {
+        self.ctx.container.sorted_memory()
     }
 
     /// Returns an ordered `Vec` containing all the [`StorageOp`]s of the actual
     /// `ExecutionTrace` so that they can be directly included in the State
     /// proof.
-    pub fn sorted_storage_ops(&self) -> Vec<StorageOp> {
-        self.container.sorted_storage()
+    pub fn sorted_storage_ops(&self) -> Vec<Operation<StorageOp>> {
+        self.ctx.container.sorted_storage()
     }
 
     /// Traverses the trace step by step, and for each [`ExecutionStep`]:
@@ -240,9 +279,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// It also adds the [`OperationRef`]s obtained from the container
     /// addition into each [`ExecutionStep`] bus-mapping instances.
     fn build(mut self) -> Result<Self, Error> {
-        // Set a counter to add the correct global counters.
-        let mut gc = 0usize;
-        let mut new_container = OperationContainer::new();
+        let mut ctx = TraceContext::new();
         // XXX: We need a better achitecture to work on that without cloning..
         let cloned_steps = self.steps().clone();
 
@@ -251,37 +288,17 @@ impl<F: FieldExt> ExecutionTrace<F> {
             .iter_mut()
             .enumerate()
             .try_for_each::<_, Result<_, Error>>(|(idx, exec_step)| {
-                // Set correct global counter
-                exec_step.set_gc(gc);
+                // Set the exec_step global counter
+                exec_step.set_gc(ctx.gc);
                 // Add the `OpcodeId` associated ops and increment the gc counting
                 // all of them.
-                gc += exec_step.gen_associated_ops(
-                    &mut new_container,
-                    &cloned_steps[idx + 1..],
-                )?;
-                // Sum 1 to counter so that we set the next exec_step GC to the
-                // correct index
-                gc += 1;
+                exec_step
+                    .gen_associated_ops(&mut ctx, &cloned_steps[idx + 1..])?;
                 Ok(())
             })?;
         // Replace the empty original container with the new one we just filled.
-        self.container = new_container;
+        self.ctx = ctx;
         Ok(self)
-    }
-
-    /// Registers an [`Operation`] into the [`OperationContainer`] and then adds
-    /// a reference to the stored operation ([`OperationRef`]) inside the
-    /// bus-mapping instance of the [`ExecutionStep`] located at `exec_step_idx`
-    /// inside the [`ExecutionTrace`].
-    pub(crate) fn add_op_to_container(
-        &mut self,
-        op: Operation,
-        exec_step_idx: usize,
-    ) {
-        let op_ref = self.container_mut().insert(op);
-        self.steps[exec_step_idx]
-            .bus_mapping_instance_mut()
-            .push(op_ref);
     }
 
     /// Returns a reference to the [`ExecutionStep`] vector instance
@@ -299,7 +316,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// Returns a mutable reference to the [`OperationContainer`] instance that
     /// the `ExecutionTrace` holds.
     fn container_mut(&mut self) -> &mut OperationContainer {
-        &mut self.container
+        &mut self.ctx.container
     }
 }
 
@@ -314,7 +331,7 @@ impl From<(Target, usize)> for OperationRef {
             Target::Memory => Self(Target::Memory, op_ref_data.1),
             Target::Stack => Self(Target::Stack, op_ref_data.1),
             Target::Storage => Self(Target::Storage, op_ref_data.1),
-            _ => unreachable!(),
+            // _ => unreachable!(),
         }
     }
 }

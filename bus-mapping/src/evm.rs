@@ -37,6 +37,20 @@ impl From<usize> for ProgramCounter {
     }
 }
 
+impl ProgramCounter {
+    /// Increase Self by one
+    pub fn inc(&mut self) {
+        self.0 += 1;
+    }
+
+    /// Increase Self by one and return the value before the increase.
+    pub fn inc_pre(&mut self) -> Self {
+        let pre = *self;
+        self.inc();
+        pre
+    }
+}
+
 /// Wrapper type over `usize` which represents the global counter associated to
 /// an [`ExecutionStep`](crate::exec_trace::ExecutionStep) or
 /// [`Operation`](crate::operation::Operation). The purpose of the
@@ -54,6 +68,31 @@ impl From<GlobalCounter> for usize {
 impl From<usize> for GlobalCounter {
     fn from(gc: usize) -> Self {
         GlobalCounter(gc)
+    }
+}
+
+impl Default for GlobalCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GlobalCounter {
+    /// Create a new GlobalCounter with the initial default value
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    /// Increase Self by one
+    pub fn inc(&mut self) {
+        self.0 += 1;
+    }
+
+    /// Increase Self by one and return the value before the increase.
+    pub fn inc_pre(&mut self) -> Self {
+        let pre = *self;
+        self.inc();
+        pre
     }
 }
 
