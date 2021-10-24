@@ -2,7 +2,7 @@ use core::ops::Deref;
 // Port this to a macro if possible to avoid defining all the PushN
 use super::Opcode;
 use crate::{
-    exec_trace::{Context, ExecutionStep},
+    exec_trace::{ExecutionStep, TraceContext},
     operation::{StackOp, RW},
     Error,
 };
@@ -17,7 +17,7 @@ pub(crate) struct Push1;
 impl Opcode for Push1 {
     fn gen_associated_ops(
         &self,
-        ctx: &mut Context,
+        ctx: &mut TraceContext,
         // Contains the PUSH1 instr
         exec_step: &mut ExecutionStep,
         // Contains the next step where we can find the value that was pushed.
@@ -74,7 +74,7 @@ mod push_tests {
             block_ctants,
         )?;
 
-        let mut ctx = Context::new();
+        let mut ctx = TraceContext::new();
 
         // Start from the same pc and gas limit
         let mut pc = obtained_steps[0].pc();

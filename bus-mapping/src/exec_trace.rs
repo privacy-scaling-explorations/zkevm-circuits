@@ -131,7 +131,7 @@ impl<F: FieldExt> BlockConstants<F> {
 /// Context of a trace, which mutates at every ExecutionStep and provides both a context of
 /// execution and an accumulation of operations we need to generate the witness.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Context {
+pub struct TraceContext {
     /// The next gc to be used
     pub gc: GlobalCounter,
     /// Container of Operations
@@ -139,14 +139,14 @@ pub struct Context {
     // TODO: Add CallContext here
 }
 
-impl Default for Context {
+impl Default for TraceContext {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Context {
-    /// Create a new empty Context
+impl TraceContext {
+    /// Create a new empty TraceContext
     pub fn new() -> Self {
         Self {
             gc: GlobalCounter::new(),
@@ -187,7 +187,7 @@ impl Context {
 pub struct ExecutionTrace<F: FieldExt> {
     pub(crate) steps: Vec<ExecutionStep>,
     pub(crate) block_ctants: BlockConstants<F>,
-    pub(crate) ctx: Context,
+    pub(crate) ctx: TraceContext,
 }
 
 impl<F: FieldExt> Index<usize> for ExecutionTrace<F> {
@@ -244,8 +244,8 @@ impl<F: FieldExt> ExecutionTrace<F> {
         ExecutionTrace {
             steps,
             block_ctants,
-            /// Dummy empty Context to enable build.
-            ctx: Context::new(),
+            /// Dummy empty TraceContext to enable build.
+            ctx: TraceContext::new(),
         }
         .build()
     }
@@ -279,7 +279,7 @@ impl<F: FieldExt> ExecutionTrace<F> {
     /// It also adds the [`OperationRef`]s obtained from the container
     /// addition into each [`ExecutionStep`] bus-mapping instances.
     fn build(mut self) -> Result<Self, Error> {
-        let mut ctx = Context::new();
+        let mut ctx = TraceContext::new();
         // XXX: We need a better achitecture to work on that without cloning..
         let cloned_steps = self.steps().clone();
 

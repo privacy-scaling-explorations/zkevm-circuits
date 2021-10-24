@@ -7,7 +7,7 @@ use crate::evm::{
 use crate::{
     error::Error,
     evm::{opcodes::Opcode, OpcodeId},
-    exec_trace::Context,
+    exec_trace::TraceContext,
 };
 use std::collections::HashMap;
 
@@ -132,7 +132,7 @@ impl ExecutionStep {
     /// [`OpcodeId`](crate::evm::OpcodeId) into the container.
     pub(crate) fn gen_associated_ops(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut TraceContext,
         next_steps: &[ExecutionStep],
     ) -> Result<(), Error> {
         let instruction = *self.instruction();

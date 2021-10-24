@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    exec_trace::{Context, ExecutionStep},
+    exec_trace::{ExecutionStep, TraceContext},
     operation::{EthAddress, StackOp, StorageOp, RW},
     Error,
 };
@@ -14,7 +14,7 @@ impl Opcode for Sload {
     #[allow(unused_variables)]
     fn gen_associated_ops(
         &self,
-        ctx: &mut Context,
+        ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
         next_steps: &[ExecutionStep],
     ) -> Result<(), Error> {
@@ -100,7 +100,7 @@ mod sload_tests {
             block_ctants,
         )?;
 
-        let mut ctx = Context::new();
+        let mut ctx = TraceContext::new();
 
         // Start from the same pc and gas limit
         let mut pc = obtained_steps[0].pc();

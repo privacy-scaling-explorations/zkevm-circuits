@@ -6,7 +6,7 @@ mod sload;
 mod stop;
 use self::push::Push1;
 use crate::{
-    exec_trace::{Context, ExecutionStep},
+    exec_trace::{ExecutionStep, TraceContext},
     Error,
 };
 use core::fmt::Debug;
@@ -26,7 +26,7 @@ pub trait Opcode: Debug {
     /// is implemented for.
     fn gen_associated_ops(
         &self,
-        ctx: &mut Context,
+        ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
         next_steps: &[ExecutionStep],
     ) -> Result<(), Error>;
@@ -40,7 +40,7 @@ pub trait Opcode: Debug {
 impl Opcode for OpcodeId {
     fn gen_associated_ops(
         &self,
-        ctx: &mut Context,
+        ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
         next_steps: &[ExecutionStep],
     ) -> Result<(), Error> {

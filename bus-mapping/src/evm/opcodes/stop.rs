@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    exec_trace::{Context, ExecutionStep},
+    exec_trace::{ExecutionStep, TraceContext},
     Error,
 };
 
@@ -16,7 +16,7 @@ impl Opcode for Stop {
     #[allow(unused_variables)]
     fn gen_associated_ops(
         &self,
-        ctx: &mut Context,
+        ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
         next_steps: &[ExecutionStep],
     ) -> Result<(), Error> {
