@@ -1,6 +1,8 @@
+use super::super::utils;
 use super::super::CaseAllocation;
 use super::super::Cell;
 use crate::util::Expr;
+use array_init::array_init;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 
@@ -81,5 +83,141 @@ impl<F: FieldExt> IsEqualGadget<F> {
         rhs: F,
     ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
+    }
+}
+
+/// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
+/// lhs and rhs `< 256**NUM_BYTES`
+/// `NUM_BYTES` is required to be `<= 31`.
+#[derive(Clone, Debug)]
+pub struct LtGadget<F, const NUM_BYTES: usize> {
+    lt: Cell<F>,
+    diff: [Cell<F>; NUM_BYTES],
+    range: F,
+}
+
+impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
+    pub const NUM_CELLS: usize = 1 + NUM_BYTES; // lt + diff
+    pub const NUM_WORDS: usize = 0;
+
+    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
+        assert!(NUM_BYTES <= 31, "unsupported number of bytes");
+        Self {
+            lt: alloc.cells.pop().unwrap(),
+            diff: array_init(|_| alloc.cells.pop().unwrap()),
+            range: utils::get_range(NUM_BYTES * 8),
+        }
+    }
+
+    pub(crate) fn constraints(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> Expression<F> {
+        let diff = utils::from_bytes::expr(self.diff.to_vec());
+        // The comparison equation that needs to hold.
+        cb.require_equal(lhs, rhs + diff - (self.lt.expr() * self.range));
+
+        // `lt` needs to be boolean
+        cb.require_boolean(self.lt.expr());
+        // All parts of `diff` need to be bytes
+        for byte in self.diff.iter() {
+            cb.require_in_range(byte.expr(), 256);
+        }
+
+        self.lt.expr()
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        lhs: F,
+        rhs: F,
+    ) -> Result<(F, Vec<u8>), Error> {
+        // Set `lt`
+        let lt = lhs < rhs;
+        self.lt.assign(
+            region,
+            offset,
+            Some(F::from_u64(if lt { 1 } else { 0 })),
+        )?;
+
+        // Set the bytes of diff
+        let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
+        let diff_bytes = diff.to_bytes();
+        for (idx, diff) in self.diff.iter().enumerate() {
+            diff.assign(
+                region,
+                offset,
+                Some(F::from_u64(diff_bytes[idx] as u64)),
+            )?;
+        }
+
+        Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))
+    }
+
+    pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {
+        self.diff.to_vec()
+    }
+}
+
+/// Returns (lt, eq):
+/// - `lt` is `1` when `lhs < rhs`, `0` otherwise.
+/// - `eq` is `1` when `lhs == rhs`, `0` otherwise.
+/// lhs and rhs `< 256**NUM_BYTES`
+/// `NUM_BYTES` is required to be `<= 31`.
+#[derive(Clone, Debug)]
+pub struct ComparisonGadget<F, const NUM_BYTES: usize> {
+    lt: LtGadget<F, NUM_BYTES>,
+    eq: IsZeroGadget<F>,
+}
+
+impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
+    pub const NUM_CELLS: usize =
+        LtGadget::<F, NUM_BYTES>::NUM_CELLS + IsZeroGadget::<F>::NUM_CELLS;
+    pub const NUM_WORDS: usize = 0;
+
+    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
+        Self {
+            lt: LtGadget::<F, NUM_BYTES>::construct(alloc),
+            eq: IsZeroGadget::<F>::construct(alloc),
+        }
+    }
+
+    pub(crate) fn constraints(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> (Expression<F>, Expression<F>) {
+        // lt
+        let lt = self.lt.constraints(cb, lhs, rhs);
+
+        // eq
+        let eq = self
+            .eq
+            .constraints(cb, utils::sum::expr(&self.lt.diff_bytes()[..]));
+
+        (lt, eq)
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        lhs: F,
+        rhs: F,
+    ) -> Result<(F, F), Error> {
+        // lt
+        let (lt, diff) = self.lt.assign(region, offset, lhs, rhs)?;
+
+        // eq
+        let eq =
+            self.eq
+                .assign(region, offset, utils::sum::value(&diff[..]))?;
+
+        Ok((lt, eq))
     }
 }
