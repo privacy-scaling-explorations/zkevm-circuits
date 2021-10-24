@@ -121,11 +121,11 @@ impl ExecutionStep {
         &mut self.bus_mapping_instance
     }
 
-    /// Given a mutable reference to an [`OperationContainer`], generate all of
+    /// Given a mutable reference to an [`OperationContainer`](crate::operation::OperationContainer), generate all of
     /// it's associated Memory, Stack and Storage operations, and register
     /// them in the container.
     ///
-    /// This function will not only add the ops to the [`OperationContainer`] but also get it's
+    /// This function will not only add the ops to the [`OperationContainer`](crate::operation::OperationContainer) but also get it's
     /// [`OperationRef`]s and add them to the bus-mapping instance of the step.
     ///
     /// ## Returns the #operations added by the

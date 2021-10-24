@@ -10,7 +10,7 @@ use core::convert::TryInto;
 /// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
 /// [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD) `OpcodeId`.
 /// This is responsible of generating all of the associated [`StackOp`]s and [`MemoryOp`]s and place them
-/// inside the trace's [`OperationContainer`].
+/// inside the trace's [`OperationContainer`](crate::operation::OperationContainer).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Mload;
 
