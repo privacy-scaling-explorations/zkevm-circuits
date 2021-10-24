@@ -55,8 +55,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         num_word: 2  // value + address
             + MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_WORDS
             + IsEqualGadget::<F>::NUM_WORDS,
-        num_cell: 1  // call_id
-            + MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_CELLS
+        num_cell: MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_CELLS
             + IsEqualGadget::<F>::NUM_CELLS,
         will_halt: false,
     };
