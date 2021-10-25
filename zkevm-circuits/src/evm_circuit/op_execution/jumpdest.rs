@@ -69,7 +69,7 @@ impl<F: FieldExt> JumpdestSuccessCase<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: &mut CoreStateInstance,
-        step: &ExecutionStep,
+        _step: &ExecutionStep,
     ) -> Result<(), Error> {
         state.global_counter += GC_DELTA;
         state.program_counter += PC_DELTA;
