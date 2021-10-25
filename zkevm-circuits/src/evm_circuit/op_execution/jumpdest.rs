@@ -1,6 +1,6 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep};
 use super::utils;
-use super::utils::common_cases::{OutOfGasCase};
+use super::utils::common_cases::OutOfGasCase;
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
@@ -16,7 +16,6 @@ const GC_DELTA: usize = 0;
 const PC_DELTA: usize = 1;
 const SP_DELTA: usize = 0;
 const GAS: GasCost = GasCost::ONE;
-//const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
     [JUMPDEST]
@@ -34,7 +33,7 @@ struct JumpdestSuccessCase<F> {
 impl<F: FieldExt> JumpdestSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 0, 
+        num_word: 0,
         num_cell: 0,
         will_halt: false,
     };
@@ -72,12 +71,11 @@ impl<F: FieldExt> JumpdestSuccessCase<F> {
         state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
-
         state.global_counter += GC_DELTA;
         state.program_counter += PC_DELTA;
         state.stack_pointer += SP_DELTA;
         state.gas_counter += GAS.as_usize();
-    
+
         self.case_selector
             .assign(region, offset, Some(F::from_u64(1)))
             .unwrap();
@@ -104,7 +102,7 @@ mod test {
         }};
     }
 
-      #[test]
+    #[test]
     fn jumpdest_gadget() {
         try_test_circuit!(
             vec![

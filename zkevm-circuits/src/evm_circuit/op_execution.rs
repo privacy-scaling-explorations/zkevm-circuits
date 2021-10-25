@@ -294,7 +294,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(pc_gadget);
         construct_op_gadget!(signextend_gadget);
         construct_op_gadget!(swap_gadget);
-        construct_op_gadget!(jumpdest_gadget);       
+        construct_op_gadget!(jumpdest_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -617,7 +617,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 (_, _, _, OpcodeId::SIGNEXTEND) => self
                     .signextend_gadget
                     .assign(region, offset, core_state, execution_step)?,
-                
+
                 (_, _, _, OpcodeId::JUMPDEST) => self.jumpdest_gadget.assign(
                     region,
                     offset,
