@@ -131,6 +131,12 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             special_chunk_table_config,
         }
     }
+    pub fn assign_region(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> Result<Lane<F>, Error> {
+    }
 }
 
 #[derive(Debug)]
@@ -402,28 +408,29 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         layouter: &mut impl Layouter<F>,
         lane_base_13: &Lane<F>,
     ) -> Result<(Lane<F>, (Cell, Cell)), Error> {
-        layouter.assign_region(
+        let region = layouter.assign_region(
             || format!("lane {:?}", self.lane_xy),
-            |mut region| {
-                let offset = 0;
-                let cell = region.assign_advice(
-                    || "base_13_col",
-                    self.base_13_cols[0],
-                    offset,
-                    || Ok(lane_base_13.value),
-                )?;
-                region.constrain_equal(lane_base_13.cell, cell)?;
-
-                let mut chunk_idx = 1;
-                let mut offset = offset + 1;
-                for config in self.chunk_rotate_convert_configs.iter() {
-                    let cells = config.assign_region(&mut region, offset)?;
-                    offset += config.step as usize;
-                }
-                let lane = self.special_chunk_config.assign_region(&mut region, offset);
-                Ok(region)
-            },
+            |mut region| Ok(region),
         )?;
-        Ok(lane, cells)
+        let offset = 0;
+        let cell = region.assign_advice(
+            || "base_13_col",
+            self.base_13_cols[0],
+            offset,
+            || Ok(lane_base_13.value),
+        )?;
+        region.constrain_equal(lane_base_13.cell, cell)?;
+
+        let mut chunk_idx = 1;
+        let mut offset = offset + 1;
+        let mut cells;
+        for config in self.chunk_rotate_convert_configs.iter() {
+            cells = config.assign_region(&mut region, offset)?;
+            offset += config.step as usize;
+        }
+        let lane = self
+            .special_chunk_config
+            .assign_region(&mut region, offset)?;
+        Ok((lane, cells))
     }
 }
