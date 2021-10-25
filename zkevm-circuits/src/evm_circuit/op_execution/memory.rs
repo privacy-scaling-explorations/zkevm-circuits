@@ -328,7 +328,7 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
         let is_mstore = self.is_mstore.constraints(
             &mut cb,
             state_curr.opcode.expr(),
-            OpcodeId::MLOAD.expr(),
+            OpcodeId::MSTORE.expr(),
         );
 
         // For MLOAD we only pop one value from the stack,
