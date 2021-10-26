@@ -407,7 +407,7 @@ impl<F: FieldExt> MPTConfig<F> {
     fn assign_branch_row(
         &self,
         region: &mut Region<'_, F>,
-        ind: usize,
+        branch_ind: usize,
         key: u8,
         row: &Vec<u8>,
         s_words: &Vec<u64>,
@@ -418,7 +418,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign node_index"),
             self.node_index,
             offset,
-            || Ok(F::from_u64((ind - 1) as u64)),
+            || Ok(F::from_u64(branch_ind as u64)),
         )?;
 
         region.assign_advice(
@@ -464,10 +464,12 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key = 0;
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
+                    let mut branch_ind = 0;
                     for (ind, row) in witness.iter().enumerate() {
                         if row[row.len() - 1] == 0 {
                             // branch init
                             key = row[4];
+                            branch_ind = 0;
 
                             // Get the child that is being changed and convert it to words to enable lookups:
                             let s_hash = witness[ind + 1 + key as usize]
@@ -491,7 +493,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.q_enable.enable(&mut region, offset)?;
                             self.assign_branch_row(
                                 &mut region,
-                                ind,
+                                branch_ind,
                                 key,
                                 &row[0..row.len() - 1].to_vec(),
                                 &s_words,
@@ -499,6 +501,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
                             offset += 1;
+                            branch_ind += 1;
                         } else if row[row.len() - 1] == 2 {
                             // compact leaf
                             self.q_enable.enable(&mut region, offset)?;
@@ -610,11 +613,15 @@ mod tests {
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+        plonk::{
+            keygen_pk, keygen_vk, Advice, Circuit, Column, ConstraintSystem,
+            Error,
+        },
+        poly::commitment::Params,
     };
 
-    use pasta_curves::{arithmetic::FieldExt, pallas};
-    use std::marker::PhantomData;
+    use pasta_curves::{arithmetic::FieldExt, pallas, EqAffine};
+    use std::{fs, marker::PhantomData, path::Path};
 
     #[test]
     fn test_mpt() {
@@ -658,19 +665,31 @@ mod tests {
         }
 
         // for debugging:
-        // let file = std::fs::File::open("mpt/tests/test.json");
-        let file = std::fs::File::open("tests/test.json");
-        let reader = std::io::BufReader::new(file.unwrap());
-        let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
+        // let path = "mpt/tests";
+        let path = "tests";
+        let files = fs::read_dir(path).unwrap();
+        files
+            .filter_map(Result::ok)
+            .filter(|d| {
+                if let Some(e) = d.path().extension() {
+                    e == "json"
+                } else {
+                    false
+                }
+            })
+            .for_each(|f| {
+                let file = std::fs::File::open(f.path());
+                let reader = std::io::BufReader::new(file.unwrap());
+                let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
+                let circuit = MyCircuit::<pallas::Base> {
+                    _marker: PhantomData,
+                    witness: w,
+                };
 
-        let circuit = MyCircuit::<pallas::Base> {
-            _marker: PhantomData,
-            witness: w,
-        };
-
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
-
-        assert_eq!(prover.verify(), Ok(()));
+                let prover =
+                    MockProver::<pallas::Base>::run(9, &circuit, vec![])
+                        .unwrap();
+                assert_eq!(prover.verify(), Ok(()));
+            });
     }
 }
