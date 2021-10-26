@@ -413,7 +413,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             || format!("lane {:?}", self.lane_xy),
             |mut region| Ok(region),
         )?;
-        let offset = 0;
+        let mut offset = 0;
         let cell = region.assign_advice(
             || "base_13_col",
             self.base_13_cols[0],
@@ -423,7 +423,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         region.constrain_equal(lane_base_13.cell, cell)?;
 
         let mut chunk_idx = 1;
-        let mut offset = offset + 1;
+        offset += 1;
         let mut cells;
         for config in self.chunk_rotate_convert_configs.iter() {
             cells = config.assign_region(&mut region, offset)?;
