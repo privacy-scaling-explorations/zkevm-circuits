@@ -106,18 +106,19 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             ]));
             let pow_of_13 =
                 Expression::Constant(F::from_u64(B13).pow(&[64u64, 0, 0, 0]));
-
-            vec![
-                (
+            iter::empty()
+                .chain(Some((
                     "base_9_acc === (high_value + low_value) * 9**rotation",
                     base_9_last_accumulator - base_9_slice * base_9_coef,
-                ),
-                (
+                )))
+                .chain(Some((
                     "base_13_acc === high_value * 13**64 + low_value",
                     base_13_last_accumulator - high_value * pow_of_13
                         + low_value,
-                ),
-            ]
+                )))
+                .map(|(name, poly)| {
+                    (name, meta.query_selector(q_enable) * poly)
+                })
         });
         let special_chunk_table_config =
             SpecialChunkTableConfig::configure(meta, high_value, low_value);
