@@ -338,6 +338,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         base_9_cols: [Column<Advice>; 3],
         block_count_cols: [Column<Advice>; 3],
         step: u32,
+        rotation: u32,
+        chunk_idx: u32,
     ) -> Self {
         let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
             meta,
@@ -353,10 +355,21 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             base_13_cols,
             step,
             B13,
+            true,
+            rotation,
+            chunk_idx,
         );
 
-        let b9_rs_config =
-            RunningSumConfig::configure(meta, q_enable, base_9_cols, step, B9);
+        let b9_rs_config = RunningSumConfig::configure(
+            meta,
+            q_enable,
+            base_9_cols,
+            step,
+            B9,
+            false,
+            rotation,
+            chunk_idx,
+        );
 
         let block_count_acc_config = BlockCountAccConfig::configure(
             meta,
@@ -444,6 +457,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 base_9_cols,
                 block_count_cols,
                 step,
+                rotation,
+                chunk_idx,
             );
             chunk_idx += step;
             chunk_rotate_convert_configs.push(config);
