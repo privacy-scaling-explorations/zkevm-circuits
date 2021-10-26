@@ -479,6 +479,11 @@ impl OpcodeId {
             OpcodeId::SELFDESTRUCT => 0xffu8,
         }
     }
+
+    /// Returns the `OpcodeId` as a `u64`.
+    pub const fn as_u64(&self) -> u64 {
+        self.as_u8() as u64
+    }
 }
 
 impl FromStr for OpcodeId {

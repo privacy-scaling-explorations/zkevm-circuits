@@ -14,18 +14,20 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-const GC_DELTA: usize = 3;
-const PC_DELTA: usize = 1;
-const SP_DELTA: usize = 1;
-const GAS: GasCost = GasCost::FASTEST;
+static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+    gc_delta: Some(3),
+    pc_delta: Some(1),
+    sp_delta: Some(1),
+    gas_delta: Some(GasCost::FASTEST.as_usize()),
+};
 const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
-    [BYTE]
+    #set[BYTE]
     ByteGadget {
         ByteSuccessCase(),
         StackUnderflowCase(NUM_POPPED),
-        OutOfGasCase(GAS.as_usize()),
+        OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
 
@@ -102,13 +104,7 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         cb.stack_push(selected_byte);
 
         // State transitions
-        utils::StateTransitions {
-            gc_delta: Some(GC_DELTA.expr()),
-            sp_delta: Some(SP_DELTA.expr()),
-            pc_delta: Some(PC_DELTA.expr()),
-            gas_delta: Some(GAS.expr()),
-        }
-        .constraints(&mut cb, state_curr, state_next);
+        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
@@ -121,17 +117,20 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
+        // Inputs/Outputs
         self.index
             .assign(region, offset, Some(step.values[0].to_word()))?;
         self.value
             .assign(region, offset, Some(step.values[1].to_word()))?;
 
+        // Set `is_msb_sum_zero`
         self.is_msb_sum_zero.assign(
             region,
             offset,
             utils::sum::value(&step.values[0].to_word()[1..32]),
         )?;
 
+        // Set `is_byte_selected`
         for i in 0..32 {
             self.is_byte_selected[i].assign(
                 region,
@@ -141,10 +140,8 @@ impl<F: FieldExt> ByteSuccessCase<F> {
             )?;
         }
 
-        state.global_counter += GC_DELTA;
-        state.program_counter += PC_DELTA;
-        state.stack_pointer += SP_DELTA;
-        state.gas_counter += GAS.as_usize();
+        // State transitions
+        STATE_TRANSITION.assign(state);
 
         Ok(())
     }

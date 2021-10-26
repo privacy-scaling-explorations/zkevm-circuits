@@ -16,18 +16,20 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use num::{BigUint, ToPrimitive};
 use std::convert::TryInto;
 
-const GC_DELTA: usize = 3;
-const PC_DELTA: usize = 1;
-const SP_DELTA: usize = 1;
-const GAS: GasCost = GasCost::FAST;
+static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+    gc_delta: Some(3),
+    pc_delta: Some(1),
+    sp_delta: Some(1),
+    gas_delta: Some(GasCost::FAST.as_usize()),
+};
 const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
-    [SIGNEXTEND]
+    #set[SIGNEXTEND]
     SignextendGadget {
         SignextendSuccessCase(),
         StackUnderflowCase(NUM_POPPED),
-        OutOfGasCase(GAS.as_usize()),
+        OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
 
@@ -156,13 +158,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         cb.stack_push(self.result.expr());
 
         // State transitions
-        utils::StateTransitions {
-            gc_delta: Some(GC_DELTA.expr()),
-            sp_delta: Some(SP_DELTA.expr()),
-            pc_delta: Some(PC_DELTA.expr()),
-            gas_delta: Some(GAS.expr()),
-        }
-        .constraints(&mut cb, state_curr, state_next);
+        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
@@ -218,10 +214,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             .unwrap();
 
         // State transitions
-        state.global_counter += GC_DELTA;
-        state.program_counter += PC_DELTA;
-        state.stack_pointer += SP_DELTA;
-        state.gas_counter += GAS.as_usize();
+        STATE_TRANSITION.assign(state);
 
         Ok(())
     }

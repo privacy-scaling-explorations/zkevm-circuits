@@ -11,18 +11,20 @@ use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
-const GC_DELTA: usize = 1;
-const PC_DELTA: usize = 1;
-const SP_DELTA: i32 = -1;
-const GAS: GasCost = GasCost::QUICK;
+static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+    gc_delta: Some(1),
+    pc_delta: Some(1),
+    sp_delta: Some(-1),
+    gas_delta: Some(GasCost::QUICK.as_usize()),
+};
 const NUM_PUSHED: usize = 1;
 
 impl_op_gadget!(
-    [PC]
+    #set[PC]
     PcGadget {
         PcSuccessCase(),
         StackOverflowCase(NUM_PUSHED),
-        OutOfGasCase(GAS.as_usize()),
+        OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
 
@@ -72,13 +74,8 @@ impl<F: FieldExt> PcSuccessCase<F> {
         // Push the result on the stack
         cb.stack_push(self.pc.expr());
 
-        utils::StateTransitions {
-            gc_delta: Some(GC_DELTA.expr()),
-            sp_delta: Some(SP_DELTA.expr()),
-            pc_delta: Some(PC_DELTA.expr()),
-            gas_delta: Some(GAS.expr()),
-        }
-        .constraints(&mut cb, state_curr, state_next);
+        // State transitions
+        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
@@ -88,19 +85,15 @@ impl<F: FieldExt> PcSuccessCase<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        core_state: &mut CoreStateInstance,
-        execution_step: &ExecutionStep,
+        state: &mut CoreStateInstance,
+        step: &ExecutionStep,
     ) -> Result<(), Error> {
-        core_state.global_counter += 1;
-        core_state.program_counter += 1;
-        core_state.stack_pointer -= 1;
-        core_state.gas_counter += GasCost::QUICK.as_usize();
+        // Input
+        self.pc
+            .assign(region, offset, Some(step.values[0].to_word()))?;
 
-        self.pc.assign(
-            region,
-            offset,
-            Some(execution_step.values[0].to_word()),
-        )?;
+        // State transitions
+        STATE_TRANSITION.assign(state);
 
         Ok(())
     }
