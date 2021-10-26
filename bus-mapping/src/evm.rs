@@ -260,7 +260,6 @@ impl EthAddress {
 /// Defines the gas consumed by an
 /// [`ExecutionStep`](crate::exec_trace::ExecutionStep) as well as the gas left
 /// to operate.
-/// Gas Cost structure which is integrated inside [`GasInfo`].
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
