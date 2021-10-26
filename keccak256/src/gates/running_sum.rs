@@ -1,12 +1,14 @@
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
-use crate::gates::gate_helpers::Lane;
+use crate::gates::gate_helpers::{biguint_to_F, Lane};
 use crate::gates::tables::*;
 use halo2::{
     circuit::{Cell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
+use num_bigint::BigUint;
+use num_traits::One;
 use pasta_curves::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
@@ -24,6 +26,9 @@ pub struct RunningSumConfig<F> {
     accumulator: Column<Advice>,
     step: u32,
     base: u64,
+    is_input: bool,
+    rotation: u32,
+    chunk_idx: u32,
     _marker: PhantomData<F>,
 }
 impl<F: FieldExt> RunningSumConfig<F> {
@@ -33,6 +38,9 @@ impl<F: FieldExt> RunningSumConfig<F> {
         cols: [Column<Advice>; 3],
         step: u32,
         base: u64,
+        is_input: bool,
+        rotation: u32,
+        chunk_idx: u32,
     ) -> Self {
         let config = Self {
             q_enable,
@@ -41,23 +49,33 @@ impl<F: FieldExt> RunningSumConfig<F> {
             accumulator: cols[2],
             step,
             base,
+            is_input,
+            rotation,
+            chunk_idx,
             _marker: PhantomData,
         };
         meta.create_gate("mul", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let coef = meta.query_advice(config.coef, Rotation::cur());
             let slice = meta.query_advice(config.slice, Rotation::cur());
-            let acc = meta.query_advice(config.accumulator, Rotation::cur());
+            let delta_acc = meta
+                .query_advice(config.accumulator, Rotation::next())
+                - meta.query_advice(config.accumulator, Rotation::cur());
             let next_slice = meta.query_advice(config.slice, Rotation::next());
-            let next_acc =
-                meta.query_advice(config.accumulator, Rotation::next());
             let slice_multiplier =
                 Expression::Constant(F::from(u64::pow(base, step)));
+            let running_poly = match is_input {
+                true => (
+                    "delta_acc === - coef * slice", // running down for input
+                    delta_acc + coef.clone() * slice.clone(),
+                ),
+                false => (
+                    "delta_acc === coef * slice", // running up for output
+                    delta_acc - coef.clone() * slice.clone(),
+                ),
+            };
             iter::empty()
-                .chain(Some((
-                    "next_acc === acc - coef * slice",
-                    (next_acc - (acc.clone() - coef.clone() * slice.clone())),
-                )))
+                .chain(Some(running_poly))
                 .chain(Some((
                     "next_slice === slice * slice_multiplier",
                     next_slice - slice * slice_multiplier,
@@ -66,6 +84,52 @@ impl<F: FieldExt> RunningSumConfig<F> {
                 .collect::<Vec<_>>()
         });
         config
+    }
+
+    pub fn assign_region(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        raw: &mut BigUint,
+        cur_coef: &mut BigUint,
+        acc: &mut BigUint,
+    ) -> Result<(), Error> {
+        let coef = self.base.pow(self.step);
+        let slice = *raw % coef;
+        region.assign_advice(
+            || "coef",
+            self.coef,
+            offset,
+            || Ok(F::from(coef)),
+        )?;
+
+        region.assign_advice(
+            || "slice",
+            self.slice,
+            offset,
+            || biguint_to_F::<F>(slice).ok_or(Error::SynthesisError),
+        )?;
+        region.assign_advice(
+            || "accumulator",
+            self.accumulator,
+            offset,
+            || biguint_to_F::<F>(*acc).ok_or(Error::SynthesisError),
+        )?;
+
+        *raw /= BigUint::from(coef);
+        if self.is_input {
+            *acc -= *cur_coef * slice;
+        } else {
+            *acc += *cur_coef * slice;
+        }
+
+        if self.chunk_idx == 64 - self.rotation {
+            *cur_coef = BigUint::one();
+        } else {
+            *cur_coef *= coef;
+        }
+
+        Ok(())
     }
 }
 
