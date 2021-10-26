@@ -2,8 +2,9 @@
 
 use super::OperationRef;
 use crate::evm::{
-    EvmWord, GasInfo, GlobalCounter, Memory, ProgramCounter, Stack, Storage,
+    EvmWord, GasCost, GlobalCounter, Memory, ProgramCounter, Stack, Storage,
 };
+use crate::Gas;
 use crate::{
     error::Error,
     evm::{opcodes::Opcode, OpcodeId},
@@ -26,8 +27,8 @@ pub struct ExecutionStep {
     pub(crate) stack: Stack,
     pub(crate) storage: Storage,
     pub(crate) instruction: OpcodeId,
-    // TODO: Split into gas, gas_cost
-    pub(crate) gas_info: GasInfo,
+    pub(crate) gas: Gas,
+    pub(crate) gas_cost: GasCost,
     pub(crate) depth: u8,
     pub(crate) pc: ProgramCounter,
     pub(crate) gc: GlobalCounter,
@@ -44,7 +45,8 @@ impl ExecutionStep {
         stack: Vec<EvmWord>,
         storage: HashMap<EvmWord, EvmWord>,
         instruction: OpcodeId,
-        gas_info: GasInfo,
+        gas: Gas,
+        gas_cost: GasCost,
         depth: u8,
         pc: ProgramCounter,
         gc: GlobalCounter,
@@ -54,7 +56,8 @@ impl ExecutionStep {
             stack: Stack::from_vec(stack),
             storage: Storage::from(storage),
             instruction,
-            gas_info,
+            gas,
+            gas_cost,
             depth,
             pc,
             gc,
@@ -82,9 +85,14 @@ impl ExecutionStep {
         &self.instruction
     }
 
-    /// Returns the [`GasInfo`] of this step.
-    pub const fn gas_info(&self) -> &GasInfo {
-        &self.gas_info
+    /// Returns the [`Gas`] of this step.
+    pub const fn gas(&self) -> Gas {
+        self.gas
+    }
+
+    /// Returns the [`GasCost`] of this step.
+    pub const fn gas_cost(&self) -> GasCost {
+        self.gas_cost
     }
 
     /// Returns the call-depth we're operating at this step.
