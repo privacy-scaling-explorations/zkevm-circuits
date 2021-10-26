@@ -2,10 +2,14 @@
 name: Stable lints
 
 # We only run these lints on trial-merges of PRs to reduce noise.
-on: pull_request
+on: 
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
 
 jobs:
   clippy:
+    if: github.event.pull_request.draft == false
+    
     name: Clippy (1.53.0)
     timeout-minutes: 30
     runs-on: ubuntu-latest
