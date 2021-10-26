@@ -2,6 +2,7 @@
 // just used in tests
 
 pub mod arith_helpers;
+pub mod circuit;
 pub mod common;
 pub mod gates;
 // We build arith module to get test cases for the circuit

@@ -10,6 +10,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
+#[derive(Clone, Debug)]
 pub struct PiConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
