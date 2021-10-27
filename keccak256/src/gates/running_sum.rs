@@ -98,19 +98,22 @@ impl<F: FieldExt> RunningSumConfig<F> {
             || "coef",
             self.coef,
             offset,
-            || biguint_to_F::<F>(*coef).ok_or(Error::SynthesisError),
+            || biguint_to_F::<F>(coef.clone()).ok_or(Error::SynthesisError),
         )?;
         region.assign_advice(
             || "power_of_base",
             self.power_of_base,
             offset,
-            || biguint_to_F::<F>(*power_of_base).ok_or(Error::SynthesisError),
+            || {
+                biguint_to_F::<F>(power_of_base.clone())
+                    .ok_or(Error::SynthesisError)
+            },
         )?;
         region.assign_advice(
             || "accumulator",
             self.accumulator,
             offset,
-            || biguint_to_F::<F>(*acc).ok_or(Error::SynthesisError),
+            || biguint_to_F::<F>(acc.clone()).ok_or(Error::SynthesisError),
         )?;
         Ok(())
     }
@@ -139,7 +142,6 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             let delta_base_9_acc = meta
                 .query_advice(base_9_acc, Rotation::next())
                 - meta.query_advice(base_9_acc, Rotation::cur());
-            let base_13_acc = meta.query_advice(base_13_acc, Rotation::cur());
             let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
             let pow_of_9 = Expression::Constant(
                 F::from_u64(B9.pow(keccak_rotation)).pow(&[
@@ -184,7 +186,10 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             || "input_acc",
             self.base_13_acc,
             offset,
-            || biguint_to_F::<F>(*base_13_acc).ok_or(Error::SynthesisError),
+            || {
+                biguint_to_F::<F>(base_13_acc.clone())
+                    .ok_or(Error::SynthesisError)
+            },
         )?;
         region.assign_advice(
             || "input_acc_last",
@@ -192,8 +197,8 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             offset + 1,
             || Ok(F::zero()),
         )?;
-        let base_9_acc =
-            biguint_to_F::<F>(*base_9_acc).ok_or(Error::SynthesisError)?;
+        let base_9_acc = biguint_to_F::<F>(base_9_acc.clone())
+            .ok_or(Error::SynthesisError)?;
         region.assign_advice(
             || "ouput_acc",
             self.base_9_acc,
@@ -281,7 +286,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         step2_acc: F,
         step3_acc: F,
     ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
-        let cell_block_count = region.assign_advice(
+        region.assign_advice(
             || "block_count",
             self.block_count_cols[0],
             offset,
@@ -367,7 +372,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
             |mut region| {
                 for offset in 0..25 {
                     self.q_enable.enable(&mut region, offset);
-                    let bc = block_count_cells[offset];
+                    let bc = &block_count_cells[offset];
                     let cell_1 = region.assign_advice(
                         || format!("block_count step2 acc lane {}", offset),
                         self.block_count_cols[0],
@@ -484,7 +489,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         step3_acc: &mut F,
     ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
         let input_base_to_step = B13.pow(self.step);
-        let input_coef = *input_raw % input_base_to_step;
+        let input_coef = input_raw.clone() % input_base_to_step;
         self.b13_rs_config.assign_region(
             region,
             offset,
@@ -492,7 +497,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             &input_power_of_base,
             &input_acc,
         )?;
-        *input_acc -= *input_power_of_base * input_coef;
+        *input_acc -= input_power_of_base.clone() * input_coef;
         *input_raw /= input_base_to_step;
         *input_power_of_base *= input_base_to_step;
 
@@ -509,11 +514,11 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             &output_power_of_base,
             &output_acc,
         )?;
-        *output_acc += *output_power_of_base * output_coef;
+        *output_acc += output_power_of_base.clone() * output_coef;
         *output_power_of_base = if self.chunk_idx == 64 - self.rotation {
             BigUint::one()
         } else {
-            *output_power_of_base * output_base_to_step
+            output_power_of_base.clone() * output_base_to_step
         };
 
         let block_count = F::from(block_count as u64);
@@ -640,7 +645,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
 
         let mut input_raw =
             F_to_biguint(lane_base_13.value).ok_or(Error::SynthesisError)?;
-        let input_power_of_base = BigUint::from(B13);
+        let mut input_power_of_base = BigUint::from(B13);
         let mut input_acc = input_raw.clone();
         let mut output_power_of_base = if self.rotation == 63 {
             BigUint::one()
@@ -650,7 +655,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let mut output_acc = BigUint::zero();
         let mut step2_acc = F::zero();
         let mut step3_acc = F::zero();
-        let low_value = input_raw % B13;
+        let low_value = input_raw.clone() % B13;
 
         for config in self.chunk_rotate_convert_configs.iter() {
             block_counts = config.assign_region(
