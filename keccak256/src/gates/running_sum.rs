@@ -612,7 +612,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 &mut step2_acc,
                 &mut step3_acc,
             )?;
-            offset += config.step as usize;
+            offset += 1;
         }
         let lane = self
             .special_chunk_config
