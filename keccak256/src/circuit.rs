@@ -17,6 +17,7 @@ use halo2::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use num_bigint::BigUint;
 use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
@@ -65,7 +66,9 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 // assignment
                 self.theta_config.assign_state(region, offset, state)?;
                 // Apply theta outside circuit
-                KeccakFArith::theta(state)
+                let state_after_theta =
+                    KeccakFArith::theta(&state_to_biguint(state));
+                state_bigint_to_pallas(state_after_theta)
             };
 
             offset += 1;
@@ -84,4 +87,31 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // Final round (if / else)
         Ok(state)
     }
+}
+
+fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
+    StateBigInt {
+        xy: state
+            .iter()
+            .map(|elem| elem.to_bytes())
+            .map(|bytes| BigUint::from_bytes_le(&bytes))
+            .collect(),
+    }
+}
+
+fn state_bigint_to_pallas<F: FieldExt>(state: StateBigInt) -> [F; 25] {
+    let mut arr = [F::zero(); 25];
+    let vector: Vec<F> = state
+        .xy
+        .iter()
+        .map(|elem| {
+            let mut array = [0u8; 32];
+            let bytes = elem.to_bytes_le();
+            array[0..32].copy_from_slice(&bytes[0..32]);
+            array
+        })
+        .map(|bytes| F::from_bytes(&bytes).unwrap())
+        .collect();
+    arr[0..25].copy_from_slice(&vector[0..25]);
+    arr
 }
