@@ -122,11 +122,10 @@ impl<F: FieldExt> RunningSumConfig<F> {
 #[derive(Debug)]
 pub struct SpecialChunkConfig<F> {
     q_enable: Selector,
-    high_value: Column<Advice>,
-    low_value: Column<Advice>,
+    last_b9_coef: Column<Advice>,
     keccak_rotation: u32,
-    base_13_last_accumulator: Column<Advice>,
-    base_9_last_accumulator: Column<Advice>,
+    base_13_acc: Column<Advice>,
+    base_9_acc: Column<Advice>,
     special_chunk_table_config: SpecialChunkTableConfig<F>,
 }
 
@@ -134,51 +133,43 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
-        base_13_last_accumulator: Column<Advice>,
-        base_9_last_accumulator: Column<Advice>,
+        base_13_acc: Column<Advice>,
+        base_9_acc: Column<Advice>,
         keccak_rotation: u32,
     ) -> Self {
-        let high_value = meta.advice_column();
-        let low_value = meta.advice_column();
-        meta.create_gate("validate base_9_last_accumulator", |meta| {
-            let base_9_last_accumulator =
-                meta.query_advice(base_9_last_accumulator, Rotation::cur());
-            let base_13_last_accumulator =
-                meta.query_advice(base_13_last_accumulator, Rotation::cur());
-            let high_value = meta.query_advice(high_value, Rotation::cur());
-            let low_value = meta.query_advice(low_value, Rotation::cur());
-            let base_9_slice = high_value.clone() + low_value.clone();
-            let base_9_coef = Expression::Constant(F::from_u64(B9).pow(&[
-                keccak_rotation as u64,
-                0,
-                0,
-                0,
-            ]));
-            let pow_of_13 =
-                Expression::Constant(F::from_u64(B13).pow(&[64u64, 0, 0, 0]));
-            iter::empty()
-                .chain(Some((
-                    "base_9_acc === (high_value + low_value) * 9**rotation",
-                    base_9_last_accumulator - base_9_slice * base_9_coef,
-                )))
-                .chain(Some((
-                    "base_13_acc === high_value * 13**64 + low_value",
-                    base_13_last_accumulator - high_value * pow_of_13
-                        + low_value,
-                )))
-                .map(|(name, poly)| {
-                    (name, meta.query_selector(q_enable) * poly)
-                })
+        let last_b9_coef = meta.advice_column();
+        meta.create_gate("validate base_9_acc", |meta| {
+            let delta_base_9_acc = meta
+                .query_advice(base_9_acc, Rotation::next())
+                - meta.query_advice(base_9_acc, Rotation::cur());
+            let base_13_acc = meta.query_advice(base_13_acc, Rotation::cur());
+            let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
+            let pow_of_9 = Expression::Constant(
+                F::from_u64(B9.pow(keccak_rotation)).pow(&[
+                    keccak_rotation as u64,
+                    0,
+                    0,
+                    0,
+                ]),
+            );
+            vec![(
+                "delta_base_9_acc === (high_value + low_value) * 9**rotation",
+                meta.query_selector(q_enable)
+                    * (delta_base_9_acc - last_b9_coef * pow_of_9),
+            )]
         });
-        let special_chunk_table_config =
-            SpecialChunkTableConfig::configure(meta, high_value, low_value);
+        let special_chunk_table_config = SpecialChunkTableConfig::configure(
+            meta,
+            q_enable,
+            base_13_acc,
+            last_b9_coef,
+        );
         Self {
             q_enable,
-            high_value,
-            low_value,
+            last_b9_coef,
             keccak_rotation,
-            base_13_last_accumulator,
-            base_9_last_accumulator,
+            base_13_acc,
+            base_9_acc,
             special_chunk_table_config,
         }
     }
@@ -186,7 +177,44 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        low_value: &BigUint,
+        base_13_acc: &BigUint,
+        base_9_acc: &BigUint,
     ) -> Result<Lane<F>, Error> {
+        self.q_enable.enable(region, offset);
+        let high_value = base_13_acc % B13;
+        region.assign_advice(
+            || "input_acc",
+            self.base_13_acc,
+            offset,
+            || biguint_to_F::<F>(*base_13_acc).ok_or(Error::SynthesisError),
+        )?;
+        region.assign_advice(
+            || "input_acc_last",
+            self.base_13_acc,
+            offset + 1,
+            || Ok(F::zero()),
+        )?;
+        let base_9_acc =
+            biguint_to_F::<F>(*base_9_acc).ok_or(Error::SynthesisError)?;
+        region.assign_advice(
+            || "ouput_acc",
+            self.base_9_acc,
+            offset,
+            || Ok(base_9_acc),
+        )?;
+        let last_pow_of_9 =
+            F::from_u64(B9).pow(&[self.keccak_rotation as u64, 0, 0, 0]);
+        let last_b9_coef = biguint_to_F::<F>((high_value + low_value) % 2u64)
+            .ok_or(Error::SynthesisError)?;
+        let value = base_9_acc + last_b9_coef * last_pow_of_9;
+        let cell = region.assign_advice(
+            || "ouput_acc_last",
+            self.base_9_acc,
+            offset + 1,
+            || Ok(value),
+        )?;
+        Ok(Lane { cell, value })
     }
 }
 
@@ -585,7 +613,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let mut chunk_idx = 1;
         offset += 1;
         let mut block_counts;
-        let mut input_acc = lane_base_13.value;
 
         let mut input_raw =
             F_to_biguint(lane_base_13.value).ok_or(Error::SynthesisError)?;
@@ -599,6 +626,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let mut output_acc = BigUint::zero();
         let mut step2_acc = F::zero();
         let mut step3_acc = F::zero();
+        let low_value = input_raw % B13;
 
         for config in self.chunk_rotate_convert_configs.iter() {
             block_counts = config.assign_region(
@@ -614,9 +642,13 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             )?;
             offset += 1;
         }
-        let lane = self
-            .special_chunk_config
-            .assign_region(&mut region, offset)?;
+        let lane = self.special_chunk_config.assign_region(
+            &mut region,
+            offset,
+            &low_value,
+            &input_acc,
+            &output_acc,
+        )?;
         let cells = (block_counts.0.cell, block_counts.1.cell);
         Ok((lane, cells))
     }

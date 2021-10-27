@@ -211,6 +211,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
 
 #[derive(Debug)]
 pub struct SpecialChunkTableConfig<F> {
+    q_enable: Selector,
     from_special_chunk_config: [Column<Fixed>; 2],
     _marker: PhantomData<F>,
 }
@@ -225,17 +226,19 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
 
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        high_chunk: Column<Advice>,
-        low_chunk: Column<Advice>,
+        q_enable: Selector,
+        last_b13_coef: Column<Advice>,
+        last_b9_coef: Column<Advice>,
     ) -> Self {
         let from_special_chunk_config =
             [meta.fixed_column(), meta.fixed_column()];
 
         // Lookup for special chunk conversion
         meta.lookup(|meta| {
-            let last_limb_key = meta.query_advice(high_chunk, Rotation::cur());
+            let last_limb_key =
+                meta.query_advice(last_b13_coef, Rotation::cur());
             let last_limb_value =
-                meta.query_advice(low_chunk, Rotation::next());
+                meta.query_advice(last_b9_coef, Rotation::cur());
 
             let key =
                 meta.query_fixed(from_special_chunk_config[0], Rotation::cur());
@@ -245,6 +248,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
             vec![(last_limb_key, key), (last_limb_value, value)]
         });
         Self {
+            q_enable,
             from_special_chunk_config,
             _marker: PhantomData,
         }
