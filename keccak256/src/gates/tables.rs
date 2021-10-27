@@ -204,6 +204,9 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
             },
         )
     }
+    pub fn get_block_count_and_output_coef(&self) -> (u32, u64) {
+        (0, 0)
+    }
 }
 
 #[derive(Debug)]

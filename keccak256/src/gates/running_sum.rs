@@ -8,21 +8,22 @@ use halo2::{
     poly::Rotation,
 };
 use num_bigint::BigUint;
-use num_traits::One;
+use num_traits::Zero;
 use pasta_curves::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
 
-/// | coef | slice | accumulator |
-/// |------|-------|-------------|
-/// | 5    | 10**2 |       30500 | (step = 2)
-/// | 3    | 10**4 |       30000 |
+pub struct BlockCount<F> {
+    cell: Cell,
+    value: F,
+}
+
 #[derive(Debug)]
 // TODO: make STEP and BASE const generics, make `slice` a fixed column.
 pub struct RunningSumConfig<F> {
     q_enable: Selector,
     coef: Column<Advice>,
-    slice: Column<Advice>,
+    power_of_base: Column<Advice>,
     accumulator: Column<Advice>,
     step: u32,
     base: u64,
@@ -45,7 +46,7 @@ impl<F: FieldExt> RunningSumConfig<F> {
         let config = Self {
             q_enable,
             coef: cols[0],
-            slice: cols[1],
+            power_of_base: cols[1],
             accumulator: cols[2],
             step,
             base,
@@ -57,28 +58,30 @@ impl<F: FieldExt> RunningSumConfig<F> {
         meta.create_gate("mul", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let coef = meta.query_advice(config.coef, Rotation::cur());
-            let slice = meta.query_advice(config.slice, Rotation::cur());
+            let power_of_base =
+                meta.query_advice(config.power_of_base, Rotation::cur());
             let delta_acc = meta
                 .query_advice(config.accumulator, Rotation::next())
                 - meta.query_advice(config.accumulator, Rotation::cur());
-            let next_slice = meta.query_advice(config.slice, Rotation::next());
-            let slice_multiplier =
+            let next_power_of_base =
+                meta.query_advice(config.power_of_base, Rotation::next());
+            let base_to_step =
                 Expression::Constant(F::from(u64::pow(base, step)));
             let running_poly = match is_input {
                 true => (
-                    "delta_acc === - coef * slice", // running down for input
-                    delta_acc + coef.clone() * slice.clone(),
+                    "delta_acc === - coef * power_of_base", // running down for input
+                    delta_acc + coef.clone() * power_of_base.clone(),
                 ),
                 false => (
-                    "delta_acc === coef * slice", // running up for output
-                    delta_acc - coef.clone() * slice.clone(),
+                    "delta_acc === coef * power_of_base", // running up for output
+                    delta_acc - coef.clone() * power_of_base.clone(),
                 ),
             };
             iter::empty()
                 .chain(Some(running_poly))
                 .chain(Some((
-                    "next_slice === slice * slice_multiplier",
-                    next_slice - slice * slice_multiplier,
+                    "next_power_of_base === power_of_base * base_to_step",
+                    next_power_of_base - power_of_base * base_to_step,
                 )))
                 .map(|(name, poly)| (name, q_enable.clone() * poly))
                 .collect::<Vec<_>>()
@@ -90,24 +93,21 @@ impl<F: FieldExt> RunningSumConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        raw: &mut BigUint,
-        cur_coef: &mut BigUint,
-        acc: &mut BigUint,
+        coef: &BigUint,
+        power_of_base: &BigUint,
+        acc: &BigUint,
     ) -> Result<(), Error> {
-        let coef = self.base.pow(self.step);
-        let slice = *raw % coef;
         region.assign_advice(
             || "coef",
             self.coef,
             offset,
-            || Ok(F::from(coef)),
+            || biguint_to_F::<F>(*coef).ok_or(Error::SynthesisError),
         )?;
-
         region.assign_advice(
-            || "slice",
-            self.slice,
+            || "power_of_base",
+            self.power_of_base,
             offset,
-            || biguint_to_F::<F>(slice).ok_or(Error::SynthesisError),
+            || biguint_to_F::<F>(*power_of_base).ok_or(Error::SynthesisError),
         )?;
         region.assign_advice(
             || "accumulator",
@@ -115,20 +115,6 @@ impl<F: FieldExt> RunningSumConfig<F> {
             offset,
             || biguint_to_F::<F>(*acc).ok_or(Error::SynthesisError),
         )?;
-
-        *raw /= BigUint::from(coef);
-        if self.is_input {
-            *acc -= *cur_coef * slice;
-        } else {
-            *acc += *cur_coef * slice;
-        }
-
-        if self.chunk_idx == 64 - self.rotation {
-            *cur_coef = BigUint::one();
-        } else {
-            *cur_coef *= coef;
-        }
-
         Ok(())
     }
 }
@@ -260,6 +246,43 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
             step,
             _marker: PhantomData,
         }
+    }
+
+    pub fn assign_region(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        block_count: F,
+        step2_acc: F,
+        step3_acc: F,
+    ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
+        let cell_block_count = region.assign_advice(
+            || "block_count",
+            self.block_count_cols[0],
+            offset,
+            || Ok(block_count),
+        )?;
+        let cell_step2 = region.assign_advice(
+            || "block_count",
+            self.block_count_cols[1],
+            offset,
+            || Ok(step2_acc),
+        )?;
+        let block_count_step2 = BlockCount {
+            cell: cell_step2,
+            value: step2_acc,
+        };
+        let cell_step3 = region.assign_advice(
+            || "block_count",
+            self.block_count_cols[2],
+            offset,
+            || Ok(step3_acc),
+        )?;
+        let block_count_step3 = BlockCount {
+            cell: cell_step3,
+            value: step3_acc,
+        };
+        Ok((block_count_step2, block_count_step3))
     }
 }
 
@@ -395,10 +418,62 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-    ) -> Result<(Cell, Cell), Error> {
-        self.b13_rs_config.assign_region();
-        self.b9_rs_config.assign_region();
-        self.block_count_acc_config.assign_region();
+        input_raw: &mut BigUint,
+        input_power_of_base: &mut BigUint,
+        input_acc: &mut BigUint,
+        output_power_of_base: &mut BigUint,
+        output_acc: &mut BigUint,
+        step2_acc: F,
+        step3_acc: F,
+    ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
+        let input_base_to_step = B13.pow(self.step);
+        let input_coef = *input_raw % input_base_to_step;
+        self.b13_rs_config.assign_region(
+            region,
+            offset,
+            &input_coef,
+            &input_power_of_base,
+            &input_acc,
+        )?;
+        *input_acc -= *input_power_of_base * input_coef;
+        *input_raw /= input_base_to_step;
+
+        let (block_count, output_coef) = self
+            .base_13_to_base_9_lookup
+            .get_block_count_and_output_coef();
+
+        let output_base_to_step = B9.pow(self.step);
+        let output_coef = BigUint::from(output_coef);
+        self.b9_rs_config.assign_region(
+            region,
+            offset,
+            &output_coef,
+            &output_power_of_base,
+            &output_acc,
+        )?;
+        *output_acc += *output_power_of_base * output_coef;
+
+        let block_count = F::from(block_count as u64);
+
+        let step2_acc = if self.step == 2 {
+            step2_acc + block_count
+        } else {
+            step2_acc
+        };
+
+        let step3_acc = if self.step == 3 {
+            step3_acc + block_count
+        } else {
+            step3_acc
+        };
+        let block_counts = self.block_count_acc_config.assign_region(
+            region,
+            offset,
+            block_count,
+            step2_acc,
+            step3_acc,
+        )?;
+        Ok(block_counts)
     }
 }
 
@@ -504,6 +579,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let mut chunk_idx = 1;
         offset += 1;
         let mut cells;
+        let mut input_acc = lane_base_13.value;
+
         for config in self.chunk_rotate_convert_configs.iter() {
             cells = config.assign_region(&mut region, offset)?;
             offset += config.step as usize;
