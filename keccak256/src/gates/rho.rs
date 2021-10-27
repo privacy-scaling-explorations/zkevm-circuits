@@ -1,10 +1,10 @@
-use crate::gates::gate_helpers::Lane;
+use crate::gates::gate_helpers::{BlockCount, Lane};
 use crate::gates::running_sum::{
     BlockCountFinalConfig, LaneRotateConversionConfig,
 };
 
 use halo2::{
-    circuit::{Cell, Layouter, Region},
+    circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::Itertools;
@@ -43,12 +43,12 @@ impl<F: FieldExt> RhoConfig<F> {
         previous_state: [Lane<F>; 25],
     ) -> Result<[Lane<F>; 25], Error> {
         let mut next_state: Vec<Lane<F>> = vec![];
-        let mut block_count_cells: Vec<(Cell, Cell)> = vec![];
+        let mut block_counts: Vec<(BlockCount<F>, BlockCount<F>)> = vec![];
         for (idx, lane) in previous_state.iter().enumerate() {
-            let lane_config = self.state_rotate_convert_configs[idx];
+            let lane_config = &self.state_rotate_convert_configs[idx];
 
             // copy constain enforced inside assign_region
-            let (lane_next_row, cols) = lane_config.assign_region(
+            let (lane_next_row, bc) = lane_config.assign_region(
                 &mut layouter.namespace(|| format!("lane {}", idx)),
                 lane,
             )?;
@@ -63,11 +63,11 @@ impl<F: FieldExt> RhoConfig<F> {
                 cell,
                 value: lane_next_row.value,
             });
-            block_count_cells.push(cols);
+            block_counts.push(bc);
         }
         self.final_block_count_config.assign_region(
             &mut layouter.namespace(|| "Final block count check"),
-            block_count_cells.try_into().unwrap(),
+            block_counts.try_into().unwrap(),
         );
 
         Ok(next_state.try_into().unwrap())

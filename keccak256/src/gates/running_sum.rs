@@ -1,6 +1,8 @@
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
-use crate::gates::gate_helpers::{biguint_to_F, F_to_biguint, Lane};
+use crate::gates::gate_helpers::{
+    biguint_to_F, BlockCount, F_to_biguint, Lane,
+};
 use crate::gates::tables::*;
 use halo2::{
     circuit::{Cell, Layouter, Region},
@@ -12,11 +14,6 @@ use num_traits::{One, Zero};
 use pasta_curves::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
-
-pub struct BlockCount<F> {
-    cell: Cell,
-    value: F,
-}
 
 #[derive(Debug)]
 // TODO: make STEP and BASE const generics, make `slice` a fixed column.
@@ -316,17 +313,20 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
 
 pub struct BlockCountFinalConfig<F> {
     q_enable: Selector,
-    block_count_cols: [Column<Advice>; 3],
+    block_count_cols: [Column<Advice>; 2],
     _marker: PhantomData<F>,
 }
 impl<F: FieldExt> BlockCountFinalConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        let q_enable = meta.selector();
+        let block_count_cols = [meta.advice_column(); 2];
+
         meta.create_gate("block count final check", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let step2_acc =
-                meta.query_advice(block_count_cols[1], Rotation::cur());
+                meta.query_advice(block_count_cols[0], Rotation::cur());
             let step3_acc =
-                meta.query_advice(block_count_cols[2], Rotation::cur());
+                meta.query_advice(block_count_cols[1], Rotation::cur());
             iter::empty()
                 .chain(Some((
                     "step2_acc <=12",
@@ -360,8 +360,33 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        block_count_cells: [(Cell, Cell); 25],
-    ) {
+        block_count_cells: [(BlockCount<F>, BlockCount<F>); 25],
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "final block count",
+            |mut region| {
+                for offset in 0..25 {
+                    self.q_enable.enable(&mut region, offset);
+                    let bc = block_count_cells[offset];
+                    let cell_1 = region.assign_advice(
+                        || format!("block_count step2 acc lane {}", offset),
+                        self.block_count_cols[0],
+                        offset,
+                        || Ok(bc.0.value),
+                    )?;
+                    region.constrain_equal(cell_1, bc.0.cell);
+                    let cell_2 = region.assign_advice(
+                        || format!("block_count step3 acc lane {}", offset),
+                        self.block_count_cols[1],
+                        offset,
+                        || Ok(bc.1.value),
+                    )?;
+                    region.constrain_equal(cell_2, bc.1.cell);
+                }
+                Ok(())
+            },
+        );
+        Ok(())
     }
 }
 
@@ -596,10 +621,10 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         lane_base_13: &Lane<F>,
-    ) -> Result<(Lane<F>, (Cell, Cell)), Error> {
-        let region = layouter.assign_region(
+    ) -> Result<(Lane<F>, (BlockCount<F>, BlockCount<F>)), Error> {
+        let mut region = layouter.assign_region(
             || format!("lane {:?}", self.lane_xy),
-            |mut region| Ok(region),
+            |region| Ok(region),
         )?;
         let mut offset = 0;
         let cell = region.assign_advice(
@@ -610,7 +635,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         )?;
         region.constrain_equal(lane_base_13.cell, cell)?;
 
-        let mut chunk_idx = 1;
         offset += 1;
         let mut block_counts;
 
@@ -649,7 +673,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             &input_acc,
             &output_acc,
         )?;
-        let cells = (block_counts.0.cell, block_counts.1.cell);
-        Ok((lane, cells))
+        Ok((lane, block_counts))
     }
 }
