@@ -1,8 +1,8 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils;
 use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
+use super::utils::{and, select, sum, StateTransition};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -16,7 +16,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use num::{BigUint, ToPrimitive};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(3), // 2 stack pops + 1 stack push
     pc_delta: Some(1),
     sp_delta: Some(1),
@@ -83,7 +83,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         // so we can use that as an additional condition to enable the selector.
         let is_msb_sum_zero = self
             .is_msb_sum_zero
-            .constraints(&mut cb, utils::sum::expr(&self.index.cells[1..32]));
+            .constraints(&mut cb, sum::expr(&self.index.cells[1..32]));
         // We need to find the byte we have to get the sign from so we can extend correctly.
         // We go byte by byte and check if `idx == index[0]`.
         // If they are equal (at most once) we add the byte value to the sum, else we add 0.
@@ -94,7 +94,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         for idx in 0..31 {
             // Check if this byte is selected
             // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
-            let is_selected = utils::and::expr(vec![
+            let is_selected = and::expr(vec![
                 self.is_byte_selected[idx].constraints(
                     &mut cb,
                     self.index.cells[0].expr(),
@@ -143,7 +143,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
                 if idx == 0 {
                     self.value.cells[idx].expr()
                 } else {
-                    utils::select::expr(
+                    select::expr(
                         self.selectors[idx - 1].expr(),
                         self.sign_byte.expr(),
                         self.value.cells[idx].expr(),
@@ -183,11 +183,11 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         let msb_sum_zero = self.is_msb_sum_zero.assign(
             region,
             offset,
-            utils::sum::value(&step.values[0].to_word()[1..32]),
+            sum::value(&step.values[0].to_word()[1..32]),
         )?;
         let mut previous_selector_value: F = 0.into();
         for i in 0..31 {
-            let selected = utils::and::value(vec![
+            let selected = and::value(vec![
                 self.is_byte_selected[i].assign(
                     region,
                     offset,

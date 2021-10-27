@@ -1,7 +1,7 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils;
 use super::utils::common_cases::{OutOfGasCase, StackOverflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::{sum, StateTransition, StateTransitionExpressions};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -13,7 +13,7 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(1), // 1 stack push
     pc_delta: None,
     sp_delta: Some(-1),
@@ -69,6 +69,7 @@ impl<F: FieldExt> PushSuccessCase<F> {
         let mut cb = ConstraintBuilder::default();
 
         // Deduce the number of bytes to push from the 'x' value of 'pushx'
+        // The number of bytes starts at 1 for PUSH1
         let num_pushed =
             state_curr.opcode.expr() - (OpcodeId::PUSH1.as_u64() - 1).expr();
 
@@ -92,18 +93,14 @@ impl<F: FieldExt> PushSuccessCase<F> {
 
         // Sum of selectors needs to be exactly the number of bytes
         // that needs to be pushed.
-        cb.require_equal(
-            utils::sum::expr(&self.selectors[..]),
-            num_pushed.clone(),
-        );
+        cb.require_equal(sum::expr(&self.selectors[..]), num_pushed.clone());
 
         // Push the value on the stack
         cb.stack_push(self.value.expr());
 
         // State transitions
         // `pc` needs to be increased by number of bytes pushed + 1
-        let mut st =
-            utils::StateTransitionExpressions::new(STATE_TRANSITION.clone());
+        let mut st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
         st.pc_delta = Some(1.expr() + num_pushed);
         st.constraints(&mut cb, state_curr, state_next);
 

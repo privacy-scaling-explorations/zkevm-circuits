@@ -1,9 +1,9 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils;
 use super::utils::common_cases::{
     OutOfGasCase, RangeStackUnderflowCase, StackOverflowCase,
 };
 use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::StateTransition;
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -14,7 +14,7 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(2), // 1 stack read + 1 stack push
     pc_delta: Some(1),
     sp_delta: Some(-1),
@@ -30,7 +30,7 @@ impl_op_gadget!(
     ]
     DupGadget {
         DupSuccessCase(),
-        RangeStackUnderflowCase(OpcodeId::DUP1.as_u64(), 16, 0),
+        RangeStackUnderflowCase(OpcodeId::DUP1, 16, 0),
         StackOverflowCase(NUM_PUSHED),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
@@ -66,6 +66,7 @@ impl<F: FieldExt> DupSuccessCase<F> {
         let mut cb = ConstraintBuilder::default();
 
         // The stack index we have to peek, deduced from the 'x' value of 'dupx'
+        // The offset starts at 0 for DUP1
         let dup_offset = state_curr.opcode.expr() - OpcodeId::DUP1.expr();
 
         // Peek the value at `dup_offset` and push the value on the stack

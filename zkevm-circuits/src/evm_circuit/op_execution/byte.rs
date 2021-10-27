@@ -1,8 +1,8 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils;
 use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
+use super::utils::{sum, StateTransition};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -14,7 +14,7 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(3), // 2 stack pops + 1 stack push
     pc_delta: Some(1),
     sp_delta: Some(1),
@@ -72,7 +72,7 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         // so we can use that as an additional condition when to copy the byte value.
         let msb_sum_zero = self
             .is_msb_sum_zero
-            .constraints(&mut cb, utils::sum::expr(&self.index.cells[1..32]));
+            .constraints(&mut cb, sum::expr(&self.index.cells[1..32]));
 
         // Now we just need to check that `result[0]` is the sum of all copied bytes.
         // We go byte by byte and check if `idx == index[0]`.
@@ -127,7 +127,7 @@ impl<F: FieldExt> ByteSuccessCase<F> {
         self.is_msb_sum_zero.assign(
             region,
             offset,
-            utils::sum::value(&step.values[0].to_word()[1..32]),
+            sum::value(&step.values[0].to_word()[1..32]),
         )?;
 
         // Set `is_byte_selected`

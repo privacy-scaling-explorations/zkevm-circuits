@@ -4,6 +4,7 @@ use super::super::{
 };
 use super::constraint_builder::ConstraintBuilder;
 use crate::util::Expr;
+use bus_mapping::evm::OpcodeId;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 
@@ -137,13 +138,13 @@ impl<F: FieldExt> RangeStackUnderflowCase<F> {
 
     pub(crate) fn construct(
         alloc: &mut CaseAllocation<F>,
-        start_op: u64,
+        start_op: OpcodeId,
         range: u64,
         start_offset: u64,
     ) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            start: start_op - start_offset,
+            start: start_op.as_u64() - start_offset,
             range: range + start_offset,
         }
     }
@@ -156,11 +157,13 @@ impl<F: FieldExt> RangeStackUnderflowCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // The stack index we have to peek, deduced from the opcode and `start`
+        // The stack index we have to access, deduced from the opcode and `start`
         let stack_offset = state_curr.opcode.expr() - self.start.expr();
 
         // Stack underflow when
-        //  `STACK_START_IDX <= state_curr.stack_pointer.expr() + stack_offset < STACK_START_IDX + range`
+        //  `STACK_START_IDX <=
+        //      state_curr.stack_pointer.expr() + stack_offset
+        //          < STACK_START_IDX + range`
         cb.require_in_range(
             state_curr.stack_pointer.expr() + stack_offset
                 - STACK_START_IDX.expr(),

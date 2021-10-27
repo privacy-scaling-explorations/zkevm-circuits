@@ -1,7 +1,7 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils;
 use super::utils::common_cases::{OutOfGasCase, RangeStackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::StateTransition;
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -13,7 +13,7 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(4), // 2 stack reads + 2 stack writes
     pc_delta: Some(1),
     sp_delta: Some(0),
@@ -28,7 +28,7 @@ impl_op_gadget!(
     ]
     SwapGadget {
         SwapSuccessCase(),
-        RangeStackUnderflowCase(OpcodeId::SWAP1.as_u64(), 16, 1),
+        RangeStackUnderflowCase(OpcodeId::SWAP1, 16, 1),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
@@ -63,6 +63,7 @@ impl<F: FieldExt> SwapSuccessCase<F> {
         let mut cb = ConstraintBuilder::default();
 
         // The stack index we have to peek, deduced from the 'x' value of 'swapx'
+        // The offset starts at 1 for SWAP1
         let swap_offset =
             state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 

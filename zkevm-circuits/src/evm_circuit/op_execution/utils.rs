@@ -234,7 +234,7 @@ pub(crate) mod from_bytes {
     pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
         assert!(bytes.len() <= 32, "number of bytes too large");
         let mut value = 0.expr();
-        let mut multiplier = F::from_u64(1);
+        let mut multiplier = F::one();
         for byte in bytes.iter() {
             value = value + byte.expr() * multiplier;
             multiplier *= F::from_u64(256);
@@ -244,8 +244,8 @@ pub(crate) mod from_bytes {
 
     pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
         assert!(bytes.len() <= 32, "number of bytes too large");
-        let mut value = F::from_u64(0);
-        let mut multiplier = F::from_u64(1);
+        let mut value = F::zero();
+        let mut multiplier = F::one();
         for byte in bytes.iter() {
             value += F::from_u64(*byte as u64) * multiplier;
             multiplier *= F::from_u64(256);
@@ -351,11 +351,11 @@ macro_rules! impl_op_gadget {
                         )*
                     ];
                     // Add common expressions to all cases
-                    let cb = utils::[<require_opcode_in_ $shared>](
+                    let cb = super::utils::[<require_opcode_in_ $shared>](
                         state_curr.opcode.expr(),
                         vec![$(OpcodeId::$op),*],
                     );
-                    utils::batch_add_expressions(
+                    super::utils::batch_add_expressions(
                         cases,
                         cb.expressions,
                         cb.lookups,

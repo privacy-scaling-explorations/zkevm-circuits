@@ -1,7 +1,7 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils;
 use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::StateTransition;
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -12,7 +12,7 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(1), // 1 stack pop
     pc_delta: Some(1),
     sp_delta: Some(1),

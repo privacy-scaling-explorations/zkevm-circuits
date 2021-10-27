@@ -1,9 +1,9 @@
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
-use super::utils;
 use super::utils::common_cases::{OutOfGasCase, StackOverflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::{from_bytes, sum, StateTransition};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -11,7 +11,7 @@ use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
-static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
+static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(1), // 1 stack push
     pc_delta: Some(1),
     sp_delta: Some(-1),
@@ -63,10 +63,10 @@ impl<F: FieldExt> PcSuccessCase<F> {
         // - pc[7..0] = state.program_counter
         // - pc[32] + .. + pc[8] = 0
         cb.require_equal(
-            utils::from_bytes::expr(self.pc.cells[0..8].to_vec()),
+            from_bytes::expr(self.pc.cells[0..8].to_vec()),
             state_curr.program_counter.expr(),
         );
-        cb.require_zero(utils::sum::expr(&self.pc.cells[8..32]));
+        cb.require_zero(sum::expr(&self.pc.cells[8..32]));
 
         // Push the result on the stack
         cb.stack_push(self.pc.expr());
