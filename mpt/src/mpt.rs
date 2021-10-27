@@ -1,6 +1,8 @@
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+    },
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
@@ -16,6 +18,7 @@ use crate::param::{
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     q_enable: Selector,
+    q_not_first: Column<Fixed>,
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_compact_leaf: Column<Advice>,
@@ -37,6 +40,7 @@ pub struct MPTConfig<F> {
 impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
+        let q_not_first = meta.fixed_column();
 
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
@@ -83,29 +87,29 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let one = Expression::Constant(F::one());
 
-        meta.create_gate("branch", |meta| {
+        meta.create_gate("general constraints", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
             let mut constraints = vec![];
-            let is_branch_init =
+            let is_branch_init_cur =
                 meta.query_advice(is_branch_init, Rotation::cur());
-            let is_branch_child =
+            let is_branch_child_cur =
                 meta.query_advice(is_branch_child, Rotation::cur());
             let is_compact_leaf =
                 meta.query_advice(is_compact_leaf, Rotation::cur());
             let is_keccak_leaf =
                 meta.query_advice(is_keccak_leaf, Rotation::cur());
 
-            let bool_check_is_branch_init =
-                is_branch_init.clone() * (one.clone() - is_branch_init.clone());
-            let bool_check_is_branch_child = is_branch_child.clone()
-                * (one.clone() - is_branch_child.clone());
+            let bool_check_is_branch_init = is_branch_init_cur.clone()
+                * (one.clone() - is_branch_init_cur.clone());
+            let bool_check_is_branch_child = is_branch_child_cur.clone()
+                * (one.clone() - is_branch_child_cur.clone());
             let bool_check_is_compact_leaf = is_compact_leaf.clone()
                 * (one.clone() - is_compact_leaf.clone());
             let bool_check_is_keccak_leaf =
                 is_keccak_leaf.clone() * (one.clone() - is_keccak_leaf.clone());
 
-            let node_index = meta.query_advice(node_index, Rotation::cur());
+            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
@@ -144,40 +148,101 @@ impl<F: FieldExt> MPTConfig<F> {
                 gives us the key where the storage change is happening.
             */
 
-            constraints.push(q_enable.clone() * bool_check_is_branch_init);
-            constraints.push(q_enable.clone() * bool_check_is_branch_child);
-            constraints.push(q_enable.clone() * bool_check_is_compact_leaf);
-            constraints.push(q_enable.clone() * bool_check_is_keccak_leaf);
+            constraints.push((
+                "bool check is branch init",
+                q_enable.clone() * bool_check_is_branch_init,
+            ));
+            constraints.push((
+                "bool check is branch child",
+                q_enable.clone() * bool_check_is_branch_child,
+            ));
+            constraints.push((
+                "bool check is compact leaf",
+                q_enable.clone() * bool_check_is_compact_leaf,
+            ));
+            constraints.push((
+                "bool check is keccak leaf",
+                q_enable.clone() * bool_check_is_keccak_leaf,
+            ));
             // TODO: might be similar structure as in evm circuit - having branch child, compact leaf ...
             // modularized the same way as opcodes are
 
-            // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
-            // TODO: node_index is increasing by 1 for is_branch_child
-            // TODO: constraints for order of is_branch_init, is_branch_child, ...
-            // TODO: constraints for branch init
-            constraints.push(
+            constraints.push((
+                "rlp 1",
                 q_enable.clone()
-                    * is_branch_child.clone()
+                    * is_branch_child_cur.clone()
                     * (s_rlp1 - c_rlp1)
-                    * (node_index.clone() - key.clone()),
-            );
-            constraints.push(
+                    * (node_index_cur.clone() - key.clone()),
+            ));
+            constraints.push((
+                "rlp 2",
                 q_enable.clone()
-                    * is_branch_child.clone()
+                    * is_branch_child_cur.clone()
                     * (s_rlp2 - c_rlp2)
-                    * (node_index.clone() - key.clone()),
-            );
+                    * (node_index_cur.clone() - key.clone()),
+            ));
 
             for (ind, col) in s_advices.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                constraints.push(
+                constraints.push((
+                    "s = c",
                     q_enable.clone()
-                        * is_branch_child.clone()
+                        * is_branch_child_cur.clone()
                         * (s - c)
-                        * (node_index.clone() - key.clone()),
-                );
+                        * (node_index_cur.clone() - key.clone()),
+                ));
             }
+
+            constraints
+        });
+
+        meta.create_gate("branch children", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+
+            let mut constraints = vec![];
+            let is_branch_child_cur =
+                meta.query_advice(is_branch_child, Rotation::cur());
+
+            // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
+
+            // If we have is_branch_init in the previous row, we have
+            // is_branch_child with node_index = 0 in the current row.
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
+            constraints.push((
+                "first branch children 1",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * (is_branch_child_cur.clone() - one.clone()), // is_branch_child has to be 1
+            ));
+            // We could have only one constraint using sum, but then we would need
+            // to limit node_index (to prevent values like -1). Now, node_index is
+            // limited by ensuring it's first value is 0, its last value is 15,
+            // and it's increasing by 1.
+            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+            constraints.push((
+                "first branch children 2",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * node_index_cur.clone(), // node_index has to be 0
+            ));
+
+            // TODO: last node_index = 15
+
+            // node_index is increasing by 1 for is_branch_child
+            let node_index_prev =
+                meta.query_advice(node_index, Rotation::prev());
+            constraints.push((
+                "node index increasing for branch children",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (node_index_cur.clone() - node_index_prev - one),
+            ));
+
+            // TODO: constraints for order of is_branch_init, is_branch_child, ...
+            // TODO: constraints for branch init
 
             constraints
         });
@@ -206,6 +271,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         MPTConfig {
             q_enable,
+            q_not_first,
             is_branch_init,
             is_branch_child,
             is_compact_leaf,
@@ -338,7 +404,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
         self.assign_row(region, row, false, false, true, false, offset)?;
 
+        // We now add another row for keccak format:
         self.q_enable.enable(region, offset + 1)?;
+        region.assign_fixed(
+            || "not first",
+            self.q_not_first,
+            offset,
+            || Ok(F::one()),
+        )?;
         region.assign_advice(
             || format!("assign node_index"),
             self.node_index,
@@ -482,6 +555,21 @@ impl<F: FieldExt> MPTConfig<F> {
                             c_words = self.into_words(&c_hash);
 
                             self.q_enable.enable(&mut region, offset)?;
+                            if ind == 0 {
+                                region.assign_fixed(
+                                    || "not first",
+                                    self.q_not_first,
+                                    offset,
+                                    || Ok(F::zero()),
+                                )?;
+                            } else {
+                                region.assign_fixed(
+                                    || "not first",
+                                    self.q_not_first,
+                                    offset,
+                                    || Ok(F::one()),
+                                )?;
+                            }
                             self.assign_branch_init(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
@@ -491,6 +579,12 @@ impl<F: FieldExt> MPTConfig<F> {
                         } else if row[row.len() - 1] == 1 {
                             // branch child
                             self.q_enable.enable(&mut region, offset)?;
+                            region.assign_fixed(
+                                || "not first",
+                                self.q_not_first,
+                                offset,
+                                || Ok(F::one()),
+                            )?;
                             self.assign_branch_row(
                                 &mut region,
                                 branch_ind,
@@ -505,6 +599,12 @@ impl<F: FieldExt> MPTConfig<F> {
                         } else if row[row.len() - 1] == 2 {
                             // compact leaf
                             self.q_enable.enable(&mut region, offset)?;
+                            region.assign_fixed(
+                                || "not first",
+                                self.q_not_first,
+                                offset,
+                                || Ok(F::one()),
+                            )?;
                             self.assign_leaf(
                                 &mut region,
                                 &row[0..row.len() - 1].to_vec(),
@@ -621,7 +721,7 @@ mod tests {
     };
 
     use pasta_curves::{arithmetic::FieldExt, pallas, EqAffine};
-    use std::{fs, marker::PhantomData, path::Path};
+    use std::{fs, marker::PhantomData};
 
     #[test]
     fn test_mpt() {
@@ -665,8 +765,8 @@ mod tests {
         }
 
         // for debugging:
-        // let path = "mpt/tests";
-        let path = "tests";
+        let path = "mpt/tests";
+        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
