@@ -7,8 +7,8 @@ use super::gates::{
     theta::ThetaConfig,
     xi::XiConfig,
 };
-use crate::arith_helpers::*;
 use crate::keccak_arith::*;
+use crate::{arith_helpers::*, common::ROUND_CONSTANTS};
 use halo2::{
     circuit::Region,
     plonk::{
@@ -57,12 +57,16 @@ impl<F: FieldExt> KeccakFConfig<F> {
         offset: usize,
         state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        // In case is needed
+        let old_state = state;
+        let mut state = state;
         let mut offset = offset;
 
         // First 23 rounds
         for round in 0..23 {
+            // State in base-13
             // theta
-            let state = {
+            state = {
                 // assignment
                 self.theta_config.assign_state(region, offset, state)?;
                 // Apply theta outside circuit
@@ -74,12 +78,45 @@ impl<F: FieldExt> KeccakFConfig<F> {
             offset += 1;
 
             // rho
-            let state = {
+            state = {
                 // assignment
                 self.rho_config.assign_state(region, offset, state)?;
                 // Apply rho outside circuit
-                rho(state)
+                let state_after_rho =
+                    KeccakFArith::rho(&state_to_biguint(state));
+                state_bigint_to_pallas(state_after_rho)
             };
+
+            // pi
+            state = {
+                // assignment
+                self.pi_config.assign_state(region, offset, state)?;
+                // Apply pi outside circuit
+                let state_after_pi = KeccakFArith::pi(&state_to_biguint(state));
+                state_bigint_to_pallas(state_after_pi)
+            };
+
+            // xi
+            state = {
+                // assignment
+                self.xi_config.assign_state(region, offset, state)?;
+                // Apply xi outside circuit
+                let state_after_xi = KeccakFArith::xi(&state_to_biguint(state));
+                state_bigint_to_pallas(state_after_xi)
+            };
+
+            // iota_b9
+            state = {
+                // assignment
+                self.iota_b9_config.assign_state(region, offset, state)?;
+                // Apply iota_b9 outside circuit
+                let state_after_iota_b9 = KeccakFArith::iota_b9(
+                    &state_to_biguint(state),
+                    ROUND_CONSTANTS[round],
+                );
+                state_bigint_to_pallas(state_after_iota_b9)
+            };
+            // The resulting state is in Base-13 now. Which is what Theta requires again at the start of the loop.
         }
 
         // 24th round
