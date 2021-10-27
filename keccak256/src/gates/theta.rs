@@ -70,7 +70,7 @@ impl<F: FieldExt> ThetaConfig<F> {
         state: [F; 25],
     ) -> Result<[F; 25], Error> {
         self.q_enable.enable(region, offset)?;
-        
+
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -94,8 +94,7 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use num_bigint::BigUint;
-    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+    use pasta_curves::{arithmetic::FieldExt, pallas};
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -149,19 +148,6 @@ mod tests {
 
                 Ok(())
             }
-        }
-        fn big_uint_to_pallas(a: &BigUint) -> Fp {
-            let mut b: [u64; 4] = [0; 4];
-            let mut iter = a.iter_u64_digits();
-
-            for i in &mut b {
-                *i = match &iter.next() {
-                    Some(x) => *x,
-                    None => 0u64,
-                };
-            }
-
-            Fp::from_raw(b)
         }
 
         let input1: State = [

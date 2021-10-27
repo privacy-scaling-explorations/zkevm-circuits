@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
+use pasta_curves::pallas;
 use std::ops::{Index, IndexMut};
 
 pub const B13: u64 = 13;
@@ -21,7 +22,7 @@ pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
 
 pub struct StateBigInt {
-    xy: Vec<BigUint>,
+    pub(crate) xy: Vec<BigUint>,
 }
 impl Default for StateBigInt {
     fn default() -> Self {
@@ -181,6 +182,20 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .take(1)
         .next()
         .unwrap_or(0)
+}
+
+pub fn big_uint_to_pallas(a: &BigUint) -> pallas::Base {
+    let mut b: [u64; 4] = [0; 4];
+    let mut iter = a.iter_u64_digits();
+
+    for i in &mut b {
+        *i = match &iter.next() {
+            Some(x) => *x,
+            None => 0u64,
+        };
+    }
+
+    pallas::Base::from_raw(b)
 }
 
 /// This function allows us to inpect coefficients of big-numbers in different
