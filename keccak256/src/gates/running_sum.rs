@@ -1,6 +1,6 @@
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
-use crate::gates::gate_helpers::{biguint_to_F, Lane};
+use crate::gates::gate_helpers::{biguint_to_F, F_to_biguint, Lane};
 use crate::gates::tables::*;
 use halo2::{
     circuit::{Cell, Layouter, Region},
@@ -8,7 +8,7 @@ use halo2::{
     poly::Rotation,
 };
 use num_bigint::BigUint;
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use pasta_curves::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
@@ -351,6 +351,8 @@ pub struct ChunkRotateConversionConfig<F> {
     b9_rs_config: RunningSumConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
     step: u32,
+    rotation: u32,
+    chunk_idx: u32,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
@@ -411,6 +413,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             b9_rs_config,
             block_count_acc_config,
             step,
+            rotation,
+            chunk_idx,
         }
     }
 
@@ -423,8 +427,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         input_acc: &mut BigUint,
         output_power_of_base: &mut BigUint,
         output_acc: &mut BigUint,
-        step2_acc: F,
-        step3_acc: F,
+        step2_acc: &mut F,
+        step3_acc: &mut F,
     ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
         let input_base_to_step = B13.pow(self.step);
         let input_coef = *input_raw % input_base_to_step;
@@ -437,6 +441,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         )?;
         *input_acc -= *input_power_of_base * input_coef;
         *input_raw /= input_base_to_step;
+        *input_power_of_base *= input_base_to_step;
 
         let (block_count, output_coef) = self
             .base_13_to_base_9_lookup
@@ -452,26 +457,27 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             &output_acc,
         )?;
         *output_acc += *output_power_of_base * output_coef;
+        *output_power_of_base = if self.chunk_idx == 64 - self.rotation {
+            BigUint::one()
+        } else {
+            *output_power_of_base * output_base_to_step
+        };
 
         let block_count = F::from(block_count as u64);
 
-        let step2_acc = if self.step == 2 {
-            step2_acc + block_count
-        } else {
-            step2_acc
+        if self.step == 2 {
+            *step2_acc += block_count;
         };
 
-        let step3_acc = if self.step == 3 {
-            step3_acc + block_count
-        } else {
-            step3_acc
+        if self.step == 3 {
+            *step3_acc += block_count;
         };
         let block_counts = self.block_count_acc_config.assign_region(
             region,
             offset,
             block_count,
-            step2_acc,
-            step3_acc,
+            *step2_acc,
+            *step3_acc,
         )?;
         Ok(block_counts)
     }
@@ -578,16 +584,40 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
 
         let mut chunk_idx = 1;
         offset += 1;
-        let mut cells;
+        let mut block_counts;
         let mut input_acc = lane_base_13.value;
 
+        let mut input_raw =
+            F_to_biguint(lane_base_13.value).ok_or(Error::SynthesisError)?;
+        let input_power_of_base = BigUint::from(B13);
+        let mut input_acc = input_raw.clone();
+        let mut output_power_of_base = if self.rotation == 63 {
+            BigUint::one()
+        } else {
+            BigUint::from(B9).pow(self.rotation + 1)
+        };
+        let mut output_acc = BigUint::zero();
+        let mut step2_acc = F::zero();
+        let mut step3_acc = F::zero();
+
         for config in self.chunk_rotate_convert_configs.iter() {
-            cells = config.assign_region(&mut region, offset)?;
+            block_counts = config.assign_region(
+                &mut region,
+                offset,
+                &mut input_raw,
+                &mut input_power_of_base,
+                &mut input_acc,
+                &mut output_power_of_base,
+                &mut output_acc,
+                &mut step2_acc,
+                &mut step3_acc,
+            )?;
             offset += config.step as usize;
         }
         let lane = self
             .special_chunk_config
             .assign_region(&mut region, offset)?;
+        let cells = (block_counts.0.cell, block_counts.1.cell);
         Ok((lane, cells))
     }
 }
