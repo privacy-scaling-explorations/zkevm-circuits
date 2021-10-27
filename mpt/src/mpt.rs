@@ -228,7 +228,20 @@ impl<F: FieldExt> MPTConfig<F> {
                     * node_index_cur.clone(), // node_index has to be 0
             ));
 
-            // TODO: last node_index = 15
+            // When is_branch_child changes back to 0, previous node_index has to be 15.
+            let is_branch_child_prev =
+                meta.query_advice(is_branch_child, Rotation::prev());
+            let node_index_prev =
+                meta.query_advice(node_index, Rotation::prev());
+            constraints.push((
+                "last branch children",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
+                    * (is_branch_child_prev.clone()
+                        - is_branch_child_cur.clone())
+                    * (node_index_prev.clone()
+                        - Expression::Constant(F::from_u64(15 as u64))), // node_index has to be 15
+            ));
 
             // node_index is increasing by 1 for is_branch_child
             let node_index_prev =
@@ -241,7 +254,9 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (node_index_cur.clone() - node_index_prev - one),
             ));
 
-            // TODO: constraints for order of is_branch_init, is_branch_child, ...
+            // TODO: is_branch_child is followed by is_compact_leaf
+            // TODO: is_compact_leaf is followed by is_keccak_leaf
+
             // TODO: constraints for branch init
 
             constraints
@@ -253,7 +268,6 @@ impl<F: FieldExt> MPTConfig<F> {
             let q_enable = meta.query_selector(q_enable);
             let is_keccak_leaf =
                 meta.query_advice(is_keccak_leaf, Rotation::cur());
-            // TODO: check branch/leaf selectors sum and booleanity
 
             let mut constraints = vec![];
             for i in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
