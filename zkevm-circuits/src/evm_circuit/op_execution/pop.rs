@@ -13,7 +13,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
-    gc_delta: Some(1),
+    gc_delta: Some(1), // 1 stack pop
     pc_delta: Some(1),
     sp_delta: Some(1),
     gas_delta: Some(GasCost::QUICK.as_usize()),

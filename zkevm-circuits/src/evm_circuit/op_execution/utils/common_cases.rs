@@ -4,7 +4,7 @@ use super::super::{
 };
 use super::constraint_builder::ConstraintBuilder;
 use crate::util::Expr;
-use halo2::plonk::{Error, Expression};
+use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 
 pub const STACK_START_IDX: usize = 1024;
@@ -123,7 +123,7 @@ impl<F: FieldExt> StackUnderflowCase<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct RangeStackUnderflowCase<F> {
     case_selector: Cell<F>,
-    start_op: u64,
+    start: u64,
     range: u64,
 }
 
@@ -139,11 +139,12 @@ impl<F: FieldExt> RangeStackUnderflowCase<F> {
         alloc: &mut CaseAllocation<F>,
         start_op: u64,
         range: u64,
+        start_offset: u64,
     ) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            start_op,
-            range,
+            start: start_op - start_offset,
+            range: range + start_offset,
         }
     }
 
@@ -155,8 +156,8 @@ impl<F: FieldExt> RangeStackUnderflowCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // The stack index we have to peek, deduced from the opcode and `start_op`
-        let stack_offset = state_curr.opcode.expr() - self.start_op.expr();
+        // The stack index we have to peek, deduced from the opcode and `start`
+        let stack_offset = state_curr.opcode.expr() - self.start.expr();
 
         // Stack underflow when
         //  `STACK_START_IDX <= state_curr.stack_pointer.expr() + stack_offset < STACK_START_IDX + range`
@@ -226,23 +227,4 @@ impl<F: FieldExt> StackOverflowCase<F> {
     ) -> Result<(), Error> {
         Ok(())
     }
-}
-
-pub(crate) fn require_opcode_in_set<F: FieldExt>(
-    value: Expression<F>,
-    set: Vec<Expression<F>>,
-) -> ConstraintBuilder<F> {
-    let mut cb = ConstraintBuilder::default();
-    cb.require_in_set(value, set);
-    cb
-}
-
-pub(crate) fn require_opcode_in_range<F: FieldExt>(
-    value: Expression<F>,
-    set: Vec<Expression<F>>,
-) -> ConstraintBuilder<F> {
-    assert!(!set.is_empty());
-    let mut cb = ConstraintBuilder::default();
-    cb.require_in_range(value - set[0].clone(), set.len() as u64);
-    cb
 }

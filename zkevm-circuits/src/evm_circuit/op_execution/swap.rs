@@ -28,7 +28,7 @@ impl_op_gadget!(
     ]
     SwapGadget {
         SwapSuccessCase(),
-        RangeStackUnderflowCase(OpcodeId::SWAP1.as_u64() - 1, 17),
+        RangeStackUnderflowCase(OpcodeId::SWAP1.as_u64(), 16, 1),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
@@ -42,7 +42,7 @@ struct SwapSuccessCase<F> {
 impl<F: FieldExt> SwapSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 2, // value
+        num_word: 2, // values
         num_cell: 0,
         will_halt: false,
     };
@@ -64,13 +64,13 @@ impl<F: FieldExt> SwapSuccessCase<F> {
 
         // The stack index we have to peek, deduced from the 'x' value of 'swapx'
         let swap_offset =
-            state_curr.opcode.expr() - OpcodeId::SWAP1.expr() + 1.expr();
+            state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 
         // Peek the value at `swap_offset`
         cb.stack_lookup(swap_offset.clone(), self.values[0].expr(), false);
         // Peek the value at the top of the stack
         cb.stack_lookup(0.expr(), self.values[1].expr(), false);
-        // Write the value previously at the top of the stack at `swap_offset`
+        // Write the value previously at the top of the stack to `swap_offset`
         cb.stack_lookup(swap_offset, self.values[1].expr(), true);
         // Write the value previously at `swap_offset` to the top of the stack
         cb.stack_lookup(0.expr(), self.values[0].expr(), true);

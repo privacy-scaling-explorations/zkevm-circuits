@@ -12,7 +12,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
-    gc_delta: Some(1),
+    gc_delta: Some(1), // 1 stack push
     pc_delta: Some(1),
     sp_delta: Some(-1),
     gas_delta: Some(GasCost::QUICK.as_usize()),
@@ -59,17 +59,14 @@ impl<F: FieldExt> PcSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // pc[7..0] = state.program_counter
-        // pc[32] + .. + pc[8] = 0
-        // Because pc is Uint64, we only need to consider lower 8 bytes
-        let pc_expr = (0..8).rev().fold(0.expr(), |acc, i| {
-            acc * 256.expr() + self.pc.cells[i].expr()
-        });
-        let rest_sum =
-            (8..32).fold(0.expr(), |acc, i| acc + self.pc.cells[i].expr());
-
-        cb.require_equal(pc_expr, state_curr.program_counter.expr());
-        cb.require_zero(rest_sum);
+        // We limit `pc` to 64 bits so we only consider the lower 8 bytes:
+        // - pc[7..0] = state.program_counter
+        // - pc[32] + .. + pc[8] = 0
+        cb.require_equal(
+            utils::from_bytes::expr(self.pc.cells[0..8].to_vec()),
+            state_curr.program_counter.expr(),
+        );
+        cb.require_zero(utils::sum::expr(&self.pc.cells[8..32]));
 
         // Push the result on the stack
         cb.stack_push(self.pc.expr());

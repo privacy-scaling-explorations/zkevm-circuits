@@ -15,9 +15,9 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
-    gc_delta: Some(2), // stack read + stack write
+    gc_delta: Some(2), // 1 stack read + 1 stack push
     pc_delta: Some(1),
-    sp_delta: Some(1),
+    sp_delta: Some(-1),
     gas_delta: Some(GasCost::FASTEST.as_usize()),
 };
 const NUM_PUSHED: usize = 1;
@@ -30,7 +30,7 @@ impl_op_gadget!(
     ]
     DupGadget {
         DupSuccessCase(),
-        RangeStackUnderflowCase(OpcodeId::DUP1.as_u64(), 16),
+        RangeStackUnderflowCase(OpcodeId::DUP1.as_u64(), 16, 0),
         StackOverflowCase(NUM_PUSHED),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }

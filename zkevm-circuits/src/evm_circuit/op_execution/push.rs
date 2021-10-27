@@ -14,7 +14,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 static STATE_TRANSITION: utils::StateTransition = utils::StateTransition {
-    gc_delta: Some(1),
+    gc_delta: Some(1), // 1 stack push
     pc_delta: None,
     sp_delta: Some(-1),
     gas_delta: Some(GasCost::FASTEST.as_usize()),
@@ -48,7 +48,7 @@ impl<F: FieldExt> PushSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
         num_word: 1,
-        num_cell: 32, // for PUSH selectors
+        num_cell: 32, // 32 selectors
         will_halt: false,
     };
 
@@ -68,8 +68,9 @@ impl<F: FieldExt> PushSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
+        // Deduce the number of bytes to push from the 'x' value of 'pushx'
         let num_pushed =
-            state_curr.opcode.expr() - OpcodeId::PUSH1.expr() + 1.expr();
+            state_curr.opcode.expr() - (OpcodeId::PUSH1.as_u64() - 1).expr();
 
         // First selector (for the LSB) always needs to be enabled
         cb.require_equal(self.selectors[0].expr(), 1.expr());
@@ -77,21 +78,20 @@ impl<F: FieldExt> PushSuccessCase<F> {
         for idx in 1..32 {
             // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
             // 0, 0, 0]
-            if idx > 0 {
-                let diff =
-                    self.selectors[idx - 1].expr() - self.selectors[idx].expr();
-                cb.require_boolean(diff);
-            }
+            cb.require_boolean(
+                self.selectors[idx - 1].expr() - self.selectors[idx].expr(),
+            );
             // selectors needs to be 0 or 1
             cb.require_boolean(self.selectors[idx].expr());
             // word byte should be 0 when selector is 0
-            cb.add_expression(
+            cb.require_zero(
                 self.value.cells[idx].expr()
                     * (1.expr() - self.selectors[idx].expr()),
             );
         }
 
-        // Sum of selectors needs to be exactly the number of bytes that needs to be pushed.
+        // Sum of selectors needs to be exactly the number of bytes
+        // that needs to be pushed.
         cb.require_equal(
             utils::sum::expr(&self.selectors[..]),
             num_pushed.clone(),
@@ -101,6 +101,7 @@ impl<F: FieldExt> PushSuccessCase<F> {
         cb.stack_push(self.value.expr());
 
         // State transitions
+        // `pc` needs to be increased by number of bytes pushed + 1
         let mut st =
             utils::StateTransitionExpressions::new(STATE_TRANSITION.clone());
         st.pc_delta = Some(1.expr() + num_pushed);

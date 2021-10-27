@@ -7,6 +7,7 @@ use crate::{
     evm_circuit::{CoreStateInstance, Lookup},
     util::Expr,
 };
+use bus_mapping::evm::OpcodeId;
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 pub(crate) mod common_cases;
@@ -48,17 +49,17 @@ impl<F: FieldExt> StateTransitionExpressions<F> {
                 - (state_curr.global_counter.expr()
                     + self.gc_delta.clone().unwrap_or_else(|| 0.expr())),
         );
-        // Stack Pointer
-        cb.add_expression(
-            state_next.stack_pointer.expr()
-                - (state_curr.stack_pointer.expr()
-                    + self.sp_delta.clone().unwrap_or_else(|| 0.expr())),
-        );
         // Program Counter
         cb.add_expression(
             state_next.program_counter.expr()
                 - (state_curr.program_counter.expr()
                     + self.pc_delta.clone().unwrap_or_else(|| 0.expr())),
+        );
+        // Stack Pointer
+        cb.add_expression(
+            state_next.stack_pointer.expr()
+                - (state_curr.stack_pointer.expr()
+                    + self.sp_delta.clone().unwrap_or_else(|| 0.expr())),
         );
         // Gas Counter
         cb.add_expression(
@@ -81,6 +82,8 @@ impl StateTransition {
     pub(crate) fn assign(&self, state: &mut CoreStateInstance) {
         // Global Counter
         state.global_counter += self.gc_delta.unwrap_or(0);
+        // Program Counter
+        state.program_counter += self.pc_delta.unwrap_or(0);
         // Stack Pointer
         let sp_delta = self.sp_delta.unwrap_or(0);
         if sp_delta < 0 {
@@ -88,8 +91,6 @@ impl StateTransition {
         } else {
             state.stack_pointer += sp_delta as usize;
         }
-        // Program Counter
-        state.program_counter += self.pc_delta.unwrap_or(0);
         // Gas Counter
         state.gas_counter += self.gas_delta.unwrap_or(0);
     }
@@ -225,6 +226,61 @@ pub(crate) fn get_range<F: FieldExt>(num_bits: usize) -> F {
     F::from_u64(2).pow(&[num_bits as u64, 0, 0, 0])
 }
 
+/// Decodes a field element from its byte representation
+pub(crate) mod from_bytes {
+    use crate::{evm_circuit::Cell, util::Expr};
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
+        assert!(bytes.len() <= 32, "number of bytes too large");
+        let mut value = 0.expr();
+        let mut multiplier = F::from_u64(1);
+        for byte in bytes.iter() {
+            value = value + byte.expr() * multiplier;
+            multiplier *= F::from_u64(256);
+        }
+        value
+    }
+
+    pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
+        assert!(bytes.len() <= 32, "number of bytes too large");
+        let mut value = F::from_u64(0);
+        let mut multiplier = F::from_u64(1);
+        for byte in bytes.iter() {
+            value += F::from_u64(*byte as u64) * multiplier;
+            multiplier *= F::from_u64(256);
+        }
+        value
+    }
+}
+
+pub(crate) fn require_opcode_in_set<F: FieldExt>(
+    opcode: Expression<F>,
+    opcodes: Vec<OpcodeId>,
+) -> ConstraintBuilder<F> {
+    let mut cb = ConstraintBuilder::default();
+    cb.require_in_set(opcode, opcodes.iter().map(|op| op.expr()).collect());
+    cb
+}
+
+pub(crate) fn require_opcode_in_range<F: FieldExt>(
+    opcode: Expression<F>,
+    opcodes: Vec<OpcodeId>,
+) -> ConstraintBuilder<F> {
+    assert!(!opcodes.is_empty());
+    // Verify the opcodes are in a continuous range
+    for idx in 1..opcodes.len() {
+        assert!(
+            opcodes[idx].as_u8() - opcodes[idx - 1].as_u8() == 1,
+            "opcodes not in continuous range"
+        );
+    }
+
+    let mut cb = ConstraintBuilder::default();
+    cb.require_in_range(opcode - opcodes[0].expr(), opcodes.len() as u64);
+    cb
+}
+
 /// Counts the number of repetitions
 #[macro_export]
 macro_rules! count {
@@ -295,9 +351,9 @@ macro_rules! impl_op_gadget {
                         )*
                     ];
                     // Add common expressions to all cases
-                    let cb = utils::common_cases::[<require_opcode_in_ $shared>](
+                    let cb = utils::[<require_opcode_in_ $shared>](
                         state_curr.opcode.expr(),
-                        vec![$(OpcodeId::$op.expr()),*],
+                        vec![$(OpcodeId::$op),*],
                     );
                     utils::batch_add_expressions(
                         cases,
