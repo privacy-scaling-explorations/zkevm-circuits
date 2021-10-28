@@ -16,6 +16,7 @@ use halo2::{
 use std::marker::PhantomData;
 
 use itertools::Itertools;
+use num_bigint::BigUint;
 
 pub struct BinaryToBase13TableConfig<F> {
     from_binary_config: [Column<Fixed>; 2],
@@ -134,7 +135,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         i,
                         || {
                             Ok(coefs.iter().fold(F::zero(), |acc, x| {
-                                acc * F::from_u64(B9) + F::from_u64(*x)
+                                acc * F::from_u64(B9)
+                                    + F::from_u64(convert_b13_coef(*x))
                             }))
                         },
                     )?;
@@ -190,8 +192,25 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         config
     }
 
-    pub fn get_block_count_and_output_coef(&self) -> (u32, u64) {
-        (0, 0)
+    pub fn get_block_count_and_output_coef(
+        &self,
+        input_coef: BigUint,
+    ) -> (u32, u64) {
+        let mut x = input_coef;
+        let mut output_coef = 0;
+        let mut non_zero_chunk_count = 0;
+        for i in 0..4 {
+            let base13_chunk = (x.clone() % B13).to_u64_digits()[0];
+            let base9_chunk = convert_b13_coef(base13_chunk);
+            if base9_chunk != 0 {
+                non_zero_chunk_count += 1;
+            }
+            output_coef += base9_chunk * B9.pow(i as u32);
+            x /= B13;
+        }
+        let block_count = block_counting_function(non_zero_chunk_count);
+
+        (block_count as u32, output_coef)
     }
 }
 

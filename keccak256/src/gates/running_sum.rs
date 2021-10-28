@@ -506,13 +506,13 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             &rv.input_power_of_base,
             &rv.input_acc,
         )?;
-        rv.input_acc -= rv.input_power_of_base.clone() * input_coef;
+        rv.input_acc -= rv.input_power_of_base.clone() * input_coef.clone();
         rv.input_raw /= input_base_to_step;
         rv.input_power_of_base *= input_base_to_step;
 
         let (block_count, output_coef) = self
             .base_13_to_base_9_lookup
-            .get_block_count_and_output_coef();
+            .get_block_count_and_output_coef(input_coef);
 
         let output_base_to_step = B9.pow(self.step);
         let output_coef = BigUint::from(output_coef);
