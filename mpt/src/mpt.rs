@@ -311,24 +311,30 @@ impl<F: FieldExt> MPTConfig<F> {
 
             // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
             // as s_keccak 2 rows before (there is leaf row in between)
-            // TODO: this is not working properly
+            // or
+            // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
+            // as c_keccak 4 rows before (there is leaf row, keccak row, and another leaf row in between)
+            /*
             let is_keccak_leaf =
                 meta.query_advice(is_keccak_leaf, Rotation::cur());
             for (ind, column) in s_keccak.iter().enumerate() {
-                let s_keccak_prev_prev =
-                    meta.query_advice(*column, Rotation(-2));
+                let s_keccak_prev_2 = meta.query_advice(*column, Rotation(-2));
+                let c_keccak_prev_4 =
+                    meta.query_advice(c_keccak[ind], Rotation(-4));
 
                 let keccak = meta.query_advice(
                     s_advices[KECCAK_INPUT_WIDTH + ind],
                     Rotation::cur(),
                 );
                 constraints.push((
-                    "s keccak leaf output same as s_keccak",
+                    "keccak leaf output same as keccak in branch nodes",
                     q_not_first.clone()
                         * is_keccak_leaf.clone()
-                        * (keccak.clone() - s_keccak_prev_prev),
+                        * (keccak.clone() - s_keccak_prev_2)
+                        * (keccak.clone() - c_keccak_prev_4),
                 ));
             }
+            */
 
             // TODO: s_keccak and c_keccak correspond to s and c at the modified index
 
@@ -496,7 +502,7 @@ impl<F: FieldExt> MPTConfig<F> {
         region.assign_fixed(
             || "not first",
             self.q_not_first,
-            offset,
+            offset + 1,
             || Ok(F::one()),
         )?;
         region.assign_advice(
@@ -520,7 +526,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let row: Vec<u8> = vec![0; WITNESS_ROW_WIDTH];
         self.assign_row(region, &row, false, false, false, true, offset + 1)?;
 
-        // Reassign the proper values now (0s assinged assign_row to set all columns).
+        // Reassign the proper values now (0s assinged in assign_row to set all columns).
         for ind in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
             let val: u64;
             if ind < KECCAK_INPUT_WIDTH {
