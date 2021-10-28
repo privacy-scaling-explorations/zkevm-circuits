@@ -13,6 +13,7 @@ use pasta_curves::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
 
+#[derive(Debug)]
 struct RotatingVariables<F> {
     input_raw: BigUint,
     input_power_of_base: BigUint,

@@ -18,12 +18,11 @@ pub struct BlockCount<F> {
 pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 
 pub fn biguint_to_f<F: FieldExt>(x: BigUint) -> Option<F> {
-    let mut foo = [0; 32];
+    let mut word = [0; 32];
     let x_bytes = x.to_bytes_le();
-    for idx in 0..min(x_bytes.len(), 32) {
-        foo[idx] = x_bytes[idx];
-    }
-    Option::from(F::from_bytes(&foo))
+    let len = min(x_bytes.len(), 32);
+    word[..len].clone_from_slice(&x_bytes[..len]);
+    Option::from(F::from_bytes(&word))
 }
 
 pub fn f_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {

@@ -62,7 +62,7 @@ impl<F: FieldExt> RhoConfig<F> {
 
         self.final_block_count_config.assign_region(
             &mut layouter.namespace(|| "Final block count check"),
-            block_counts.try_into().unwrap(),
+            block_counts,
         )?;
         Ok(next_state)
     }
@@ -145,7 +145,7 @@ mod tests {
                                         || format!("lane {}", idx),
                                         config.state[idx],
                                         offset,
-                                        || Ok(value.clone()),
+                                        || Ok(*value),
                                     )
                                     .unwrap();
                                 Lane {
