@@ -52,7 +52,7 @@ impl<F: FieldExt> RhoConfig<F> {
                 &mut layouter.namespace(|| format!("lane {}", idx)),
                 lane,
             )?;
-            region.constrain_equal(lane.cell, lane_next_row.cell);
+            region.constrain_equal(lane.cell, lane_next_row.cell)?;
             let cell = region.assign_advice(
                 || "lane next row",
                 self.state[idx],
@@ -68,7 +68,7 @@ impl<F: FieldExt> RhoConfig<F> {
         self.final_block_count_config.assign_region(
             &mut layouter.namespace(|| "Final block count check"),
             block_counts.try_into().unwrap(),
-        );
+        )?;
 
         Ok(next_state.try_into().unwrap())
     }

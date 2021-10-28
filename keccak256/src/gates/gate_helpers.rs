@@ -9,16 +9,16 @@ pub struct Lane<F> {
     pub value: F,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct BlockCount<F> {
     pub cell: Cell,
     pub value: F,
 }
 
-pub fn biguint_to_F<F: FieldExt>(x: BigUint) -> Option<F> {
+pub fn biguint_to_f<F: FieldExt>(x: BigUint) -> Option<F> {
     Option::from(F::from_bytes(x.to_bytes_le()[..=32].try_into().unwrap()))
 }
 
-pub fn F_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {
+pub fn f_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {
     Option::from(BigUint::from_bytes_le(&x.to_bytes()[..]))
 }

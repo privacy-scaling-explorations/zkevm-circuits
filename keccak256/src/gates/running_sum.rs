@@ -1,11 +1,9 @@
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
-use crate::gates::gate_helpers::{
-    biguint_to_F, BlockCount, F_to_biguint, Lane,
-};
+use crate::gates::gate_helpers::*;
 use crate::gates::tables::*;
 use halo2::{
-    circuit::{Cell, Layouter, Region},
+    circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -67,11 +65,11 @@ impl<F: FieldExt> RunningSumConfig<F> {
             let running_poly = match is_input {
                 true => (
                     "delta_acc === - coef * power_of_base", // running down for input
-                    delta_acc + coef.clone() * power_of_base.clone(),
+                    delta_acc + coef * power_of_base.clone(),
                 ),
                 false => (
                     "delta_acc === coef * power_of_base", // running up for output
-                    delta_acc - coef.clone() * power_of_base.clone(),
+                    delta_acc - coef * power_of_base.clone(),
                 ),
             };
             iter::empty()
@@ -98,14 +96,14 @@ impl<F: FieldExt> RunningSumConfig<F> {
             || "coef",
             self.coef,
             offset,
-            || biguint_to_F::<F>(coef.clone()).ok_or(Error::SynthesisError),
+            || biguint_to_f::<F>(coef.clone()).ok_or(Error::SynthesisError),
         )?;
         region.assign_advice(
             || "power_of_base",
             self.power_of_base,
             offset,
             || {
-                biguint_to_F::<F>(power_of_base.clone())
+                biguint_to_f::<F>(power_of_base.clone())
                     .ok_or(Error::SynthesisError)
             },
         )?;
@@ -113,7 +111,7 @@ impl<F: FieldExt> RunningSumConfig<F> {
             || "accumulator",
             self.accumulator,
             offset,
-            || biguint_to_F::<F>(acc.clone()).ok_or(Error::SynthesisError),
+            || biguint_to_f::<F>(acc.clone()).ok_or(Error::SynthesisError),
         )?;
         Ok(())
     }
@@ -180,14 +178,14 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         base_13_acc: &BigUint,
         base_9_acc: &BigUint,
     ) -> Result<Lane<F>, Error> {
-        self.q_enable.enable(region, offset);
+        self.q_enable.enable(region, offset)?;
         let high_value = base_13_acc % B13;
         region.assign_advice(
             || "input_acc",
             self.base_13_acc,
             offset,
             || {
-                biguint_to_F::<F>(base_13_acc.clone())
+                biguint_to_f::<F>(base_13_acc.clone())
                     .ok_or(Error::SynthesisError)
             },
         )?;
@@ -197,7 +195,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             offset + 1,
             || Ok(F::zero()),
         )?;
-        let base_9_acc = biguint_to_F::<F>(base_9_acc.clone())
+        let base_9_acc = biguint_to_f::<F>(base_9_acc.clone())
             .ok_or(Error::SynthesisError)?;
         region.assign_advice(
             || "ouput_acc",
@@ -207,7 +205,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         )?;
         let last_pow_of_9 =
             F::from_u64(B9).pow(&[self.keccak_rotation as u64, 0, 0, 0]);
-        let last_b9_coef = biguint_to_F::<F>((high_value + low_value) % 2u64)
+        let last_b9_coef = biguint_to_f::<F>((high_value + low_value) % 2u64)
             .ok_or(Error::SynthesisError)?;
         let value = base_9_acc + last_b9_coef * last_pow_of_9;
         let cell = region.assign_advice(
@@ -370,27 +368,26 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
         layouter.assign_region(
             || "final block count",
             |mut region| {
-                for offset in 0..25 {
-                    self.q_enable.enable(&mut region, offset);
-                    let bc = &block_count_cells[offset];
+                for (offset, bc) in block_count_cells.iter().enumerate() {
+                    self.q_enable.enable(&mut region, offset)?;
                     let cell_1 = region.assign_advice(
                         || format!("block_count step2 acc lane {}", offset),
                         self.block_count_cols[0],
                         offset,
                         || Ok(bc.0.value),
                     )?;
-                    region.constrain_equal(cell_1, bc.0.cell);
+                    region.constrain_equal(cell_1, bc.0.cell)?;
                     let cell_2 = region.assign_advice(
                         || format!("block_count step3 acc lane {}", offset),
                         self.block_count_cols[1],
                         offset,
                         || Ok(bc.1.value),
                     )?;
-                    region.constrain_equal(cell_2, bc.1.cell);
+                    region.constrain_equal(cell_2, bc.1.cell)?;
                 }
                 Ok(())
             },
-        );
+        )?;
         Ok(())
     }
 }
@@ -494,8 +491,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             region,
             offset,
             &input_coef,
-            &input_power_of_base,
-            &input_acc,
+            input_power_of_base,
+            input_acc,
         )?;
         *input_acc -= input_power_of_base.clone() * input_coef;
         *input_raw /= input_base_to_step;
@@ -511,8 +508,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             region,
             offset,
             &output_coef,
-            &output_power_of_base,
-            &output_acc,
+            output_power_of_base,
+            output_acc,
         )?;
         *output_acc += output_power_of_base.clone() * output_coef;
         *output_power_of_base = if self.chunk_idx == 64 - self.rotation {
@@ -627,56 +624,61 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         layouter: &mut impl Layouter<F>,
         lane_base_13: &Lane<F>,
     ) -> Result<(Lane<F>, (BlockCount<F>, BlockCount<F>)), Error> {
-        let mut region = layouter.assign_region(
+        let (lane, block_counts) = layouter.assign_region(
             || format!("lane {:?}", self.lane_xy),
-            |region| Ok(region),
-        )?;
-        let mut offset = 0;
-        let cell = region.assign_advice(
-            || "base_13_col",
-            self.base_13_cols[0],
-            offset,
-            || Ok(lane_base_13.value),
-        )?;
-        region.constrain_equal(lane_base_13.cell, cell)?;
+            |mut region| {
+                let mut offset = 0;
+                let cell = region.assign_advice(
+                    || "base_13_col",
+                    self.base_13_cols[0],
+                    offset,
+                    || Ok(lane_base_13.value),
+                )?;
+                region.constrain_equal(lane_base_13.cell, cell)?;
 
-        offset += 1;
-        let mut block_counts;
+                offset += 1;
+                let mut all_block_counts = vec![];
 
-        let mut input_raw =
-            F_to_biguint(lane_base_13.value).ok_or(Error::SynthesisError)?;
-        let mut input_power_of_base = BigUint::from(B13);
-        let mut input_acc = input_raw.clone();
-        let mut output_power_of_base = if self.rotation == 63 {
-            BigUint::one()
-        } else {
-            BigUint::from(B9).pow(self.rotation + 1)
-        };
-        let mut output_acc = BigUint::zero();
-        let mut step2_acc = F::zero();
-        let mut step3_acc = F::zero();
-        let low_value = input_raw.clone() % B13;
+                let mut input_raw = f_to_biguint(lane_base_13.value)
+                    .ok_or(Error::SynthesisError)?;
+                let mut input_power_of_base = BigUint::from(B13);
+                let mut input_acc = input_raw.clone();
+                let mut output_power_of_base = if self.rotation == 63 {
+                    BigUint::one()
+                } else {
+                    BigUint::from(B9).pow(self.rotation + 1)
+                };
+                let mut output_acc = BigUint::zero();
+                let mut step2_acc = F::zero();
+                let mut step3_acc = F::zero();
+                let low_value = input_raw.clone() % B13;
 
-        for config in self.chunk_rotate_convert_configs.iter() {
-            block_counts = config.assign_region(
-                &mut region,
-                offset,
-                &mut input_raw,
-                &mut input_power_of_base,
-                &mut input_acc,
-                &mut output_power_of_base,
-                &mut output_acc,
-                &mut step2_acc,
-                &mut step3_acc,
-            )?;
-            offset += 1;
-        }
-        let lane = self.special_chunk_config.assign_region(
-            &mut region,
-            offset,
-            &low_value,
-            &input_acc,
-            &output_acc,
+                for config in self.chunk_rotate_convert_configs.iter() {
+                    let block_counts = config.assign_region(
+                        &mut region,
+                        offset,
+                        &mut input_raw,
+                        &mut input_power_of_base,
+                        &mut input_acc,
+                        &mut output_power_of_base,
+                        &mut output_acc,
+                        &mut step2_acc,
+                        &mut step3_acc,
+                    )?;
+                    offset += 1;
+                    all_block_counts.push(block_counts);
+                }
+                let lane = self.special_chunk_config.assign_region(
+                    &mut region,
+                    offset,
+                    &low_value,
+                    &input_acc,
+                    &output_acc,
+                )?;
+                let block_counts =
+                    all_block_counts.last().ok_or(Error::SynthesisError)?;
+                Ok((lane, *block_counts))
+            },
         )?;
         Ok((lane, block_counts))
     }

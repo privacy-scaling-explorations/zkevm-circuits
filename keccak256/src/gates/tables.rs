@@ -101,8 +101,7 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
 }
 
 fn block_counting_function(n: usize) -> u64 {
-    let table = [0, 0, 1, 13, 170];
-    return table[n];
+    [0, 0, 1, 13, 170][n]
 }
 
 #[derive(Debug)]
