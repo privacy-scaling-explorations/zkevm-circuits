@@ -1,8 +1,5 @@
 //! Collection of utility macros used within this crate.
 
-#[macro_use]
-pub(crate) mod evm;
-
 macro_rules! impl_from_evm_word_wrappers {
     ($($implementor:ty),*) => {
         $(impl From<$implementor> for EvmWord {

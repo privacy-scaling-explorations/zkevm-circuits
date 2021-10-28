@@ -1,6 +1,6 @@
 //! Doc this
 
-use crate::evm::{EvmWord, GasCost, GasInfo, ProgramCounter};
+use crate::evm::{EvmWord, GasCost, ProgramCounter};
 use crate::ExecutionStep;
 use crate::Gas;
 use crate::{
@@ -54,7 +54,8 @@ impl<'a> TryFrom<&ParsedExecutionStep<'a>> for ExecutionStep {
             storage,
             // Avoid setting values now. This will be done at the end.
             OpcodeId::from_str(parsed_step.op)?,
-            GasInfo::new(parsed_step.gas, parsed_step.gas_cost),
+            parsed_step.gas,
+            parsed_step.gas_cost,
             parsed_step.depth,
             parsed_step.pc,
             0.into(),
@@ -127,7 +128,8 @@ mod tests {
                 stack: Stack(vec![EvmWord::from(0x40u8)]),
                 storage: Storage::empty(),
                 instruction: OpcodeId::JUMPDEST,
-                gas_info: GasInfo::new(82, GasCost::from(3u8)),
+                gas: 82,
+                gas_cost: GasCost::from(3u8),
                 depth: 1,
                 pc: ProgramCounter(5),
                 gc: GlobalCounter(0),

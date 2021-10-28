@@ -64,8 +64,7 @@ mod sload_tests {
     use crate::{
         bytecode,
         evm::{
-            EvmWord, GasCost, GasInfo, Memory, OpcodeId, Stack, StackAddress,
-            Storage,
+            EvmWord, GasCost, Memory, OpcodeId, Stack, StackAddress, Storage,
         },
         external_tracer, BlockConstants, ExecutionTrace,
     };
@@ -104,7 +103,7 @@ mod sload_tests {
 
         // Start from the same pc and gas limit
         let mut pc = obtained_steps[0].pc();
-        let mut gas = obtained_steps[0].gas_info().gas;
+        let gas = obtained_steps[0].gas();
 
         // Generate Step1 corresponding to SLOAD
         let mut step_1 = ExecutionStep {
@@ -115,7 +114,8 @@ mod sload_tests {
                 EvmWord::from(0x6fu32),
             )])),
             instruction: OpcodeId::SLOAD,
-            gas_info: gas_info!(gas, WARM_STORAGE_READ_COST),
+            gas,
+            gas_cost: GasCost::WARM_STORAGE_READ_COST,
             depth: 1u8,
             pc: pc.inc_pre(),
             gc: ctx.gc,

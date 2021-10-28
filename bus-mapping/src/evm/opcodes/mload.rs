@@ -71,9 +71,7 @@ mod mload_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{
-            EvmWord, GasCost, GasInfo, OpcodeId, Stack, StackAddress, Storage,
-        },
+        evm::{EvmWord, GasCost, OpcodeId, Stack, StackAddress, Storage},
         external_tracer, BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
@@ -105,7 +103,6 @@ mod mload_tests {
 
         // Start from the same pc and gas limit
         let mut pc = obtained_steps[0].pc();
-        let mut gas = obtained_steps[0].gas_info().gas;
 
         // The memory is the same in both steps as none of them edits the
         // memory of the EVM.
@@ -117,7 +114,8 @@ mod mload_tests {
             stack: Stack(vec![EvmWord::from(0x40u8)]),
             storage: Storage::empty(),
             instruction: OpcodeId::MLOAD,
-            gas_info: gas_info!(gas, FASTEST),
+            gas: obtained_steps[0].gas(),
+            gas_cost: GasCost::FASTEST,
             depth: 1u8,
             pc: pc.inc_pre(),
             gc: ctx.gc,
@@ -163,7 +161,8 @@ mod mload_tests {
             stack: Stack(vec![EvmWord::from(0x80u8)]),
             storage: Storage::empty(),
             instruction: OpcodeId::STOP,
-            gas_info: gas_info!(gas, ZERO),
+            gas: obtained_steps[1].gas(),
+            gas_cost: GasCost::ZERO,
             depth: 1u8,
             pc: pc.inc_pre(),
             gc: ctx.gc,

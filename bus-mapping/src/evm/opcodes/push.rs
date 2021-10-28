@@ -47,9 +47,7 @@ mod push_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{
-            EvmWord, GasCost, GasInfo, OpcodeId, Stack, StackAddress, Storage,
-        },
+        evm::{EvmWord, GasCost, OpcodeId, Stack, StackAddress, Storage},
         external_tracer, BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
@@ -78,7 +76,7 @@ mod push_tests {
 
         // Start from the same pc and gas limit
         let mut pc = obtained_steps[0].pc();
-        let mut gas = obtained_steps[0].gas_info().gas;
+        let gas = obtained_steps[0].gas();
 
         // The memory is the same in both steps as none of them edits the
         // memory of the EVM.
@@ -90,7 +88,8 @@ mod push_tests {
             stack: Stack::empty(),
             storage: Storage::empty(),
             instruction: OpcodeId::PUSH1,
-            gas_info: gas_info!(gas, FASTEST),
+            gas,
+            gas_cost: GasCost::FASTEST,
             depth: 1u8,
             pc: pc.inc_pre(),
             gc: ctx.gc,

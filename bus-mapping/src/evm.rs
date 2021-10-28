@@ -5,10 +5,7 @@ pub(crate) mod opcodes;
 pub mod stack;
 pub mod storage;
 
-use crate::{
-    error::{EthAddressParsingError, EvmWordParsingError},
-    Gas,
-};
+use crate::error::{EthAddressParsingError, EvmWordParsingError};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -263,30 +260,6 @@ impl EthAddress {
 /// Defines the gas consumed by an
 /// [`ExecutionStep`](crate::exec_trace::ExecutionStep) as well as the gas left
 /// to operate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct GasInfo {
-    pub(crate) gas: Gas,
-    pub(crate) gas_cost: GasCost,
-}
-
-impl GasInfo {
-    /// Generates a new `GasInfo` instance from it's fields.
-    pub fn new(gas: Gas, gas_cost: GasCost) -> GasInfo {
-        GasInfo { gas, gas_cost }
-    }
-
-    /// Returns the gas left marked by a GasInfo instance.
-    pub fn gas(&self) -> Gas {
-        self.gas
-    }
-
-    /// Returns the gas consumed by an [`OpcodeId`] execution.
-    pub fn gas_cost(&self) -> GasCost {
-        self.gas_cost
-    }
-}
-
-/// Gas Cost structure which is integrated inside [`GasInfo`].
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
