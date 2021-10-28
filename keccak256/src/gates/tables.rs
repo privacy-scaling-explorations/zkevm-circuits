@@ -99,7 +99,7 @@ fn block_counting_function(n: usize) -> u64 {
     [0, 0, 1, 13, 170][n]
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
     cols: [Column<Fixed>; 3],
     q_lookup: Selector,
@@ -214,7 +214,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpecialChunkTableConfig<F> {
     q_enable: Selector,
     from_special_chunk_config: [Column<Fixed>; 2],

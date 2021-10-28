@@ -45,7 +45,7 @@ impl<F: FieldExt> RotatingVariables<F> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 // TODO: make STEP and BASE const generics, make `slice` a fixed column.
 pub struct RunningSumConfig<F> {
     q_enable: Selector,
@@ -144,7 +144,7 @@ impl<F: FieldExt> RunningSumConfig<F> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpecialChunkConfig<F> {
     q_enable: Selector,
     last_b9_coef: Column<Advice>,
@@ -245,7 +245,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockCountAccConfig<F> {
     q_enable: Selector,
     // block count, step 2 acc, step 3 acc
@@ -340,6 +340,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
     }
 }
 
+#[derive(Clone)]
 pub struct BlockCountFinalConfig<F> {
     q_enable: Selector,
     block_count_cols: [Column<Advice>; 2],
@@ -418,7 +419,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChunkRotateConversionConfig<F> {
     q_enable: Selector,
     // coef, slice, acc
@@ -575,7 +576,7 @@ fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
     chunk_idx == 64 - rotation
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
     q_enable: Selector,
     q_is_special: Selector,

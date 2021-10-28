@@ -3,7 +3,7 @@ use num_bigint::BigUint;
 use pasta_curves::arithmetic::FieldExt;
 use std::convert::TryInto;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lane<F> {
     pub cell: Cell,
     pub value: F,
