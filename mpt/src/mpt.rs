@@ -73,13 +73,15 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let s_keccak = (0..KECCAK_OUTPUT_WIDTH)
+        let s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH] = (0
+            ..KECCAK_OUTPUT_WIDTH)
             .map(|_| meta.advice_column())
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
 
-        let c_keccak = (0..KECCAK_OUTPUT_WIDTH)
+        let c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH] = (0
+            ..KECCAK_OUTPUT_WIDTH)
             .map(|_| meta.advice_column())
             .collect::<Vec<_>>()
             .try_into()
@@ -118,36 +120,6 @@ impl<F: FieldExt> MPTConfig<F> {
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
-            /*
-            TODO for leaf:
-            Let's say we have a leaf n where
-                n.Key = [10,6,3,5,7,0,1,2,12,1,10,3,10,14,0,10,1,7,13,3,0,4,12,9,9,2,0,3,1,0,3,8,2,13,9,6,8,14,11,12,12,4,11,1,7,7,1,15,4,1,12,6,11,3,0,4,2,0,5,11,5,7,0,16]
-                n.Val = [2].
-            Before put in a proof, a leaf is hashed:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/proof.go#L78
-            But before being hashed, Key is put in compact form:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L110
-            Key becomes:
-                [58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112]
-            Then the node is RLP encoded:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L157
-            RLP:
-                [226,160,58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112,2]
-            Finally, the RLP is hashed:
-                [32,34,39,131,73,65,47,37,211,142,206,231,172,16,11,203,33,107,30,7,213,226,2,174,55,216,4,117,220,10,186,68]
-
-            In a proof (witness), we have [226, 160, ...] in columns s_rlp1, s_rlp2, ...
-            Constraint 1: We need to compute a hash of this value and compare it with [32, 34, ...] which should be
-                one of the branch children. lookup ...
-                Constraint 1.1: s_keccak, c_keccak the same for all 16 children
-                Constraint 1.2: for key = ind: s_keccak = converted s_advice and c_keccak = converted c_advice
-                Constraint 1.3: we add additional row for a leaf prepared for keccak (17 words),
-                  we do a lookup on this 17 words in s_keccak / c_keccak
-            Constraint 2: We need to convert it back to non-compact format to get the remaining key.
-                We need to verify the key until now (in nodes above) concatenated with the remaining key
-                gives us the key where the storage change is happening.
-            */
-
             constraints.push((
                 "bool check is branch init",
                 q_enable.clone() * bool_check_is_branch_init,
@@ -164,8 +136,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 "bool check is keccak leaf",
                 q_enable.clone() * bool_check_is_keccak_leaf,
             ));
-            // TODO: might be similar structure as in evm circuit - having branch child, compact leaf ...
-            // modularized the same way as opcodes are
 
             constraints.push((
                 "rlp 1",
@@ -201,15 +171,26 @@ impl<F: FieldExt> MPTConfig<F> {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
             let mut constraints = vec![];
+            let is_branch_child_prev =
+                meta.query_advice(is_branch_child, Rotation::prev());
             let is_branch_child_cur =
                 meta.query_advice(is_branch_child, Rotation::cur());
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
 
             // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
 
+            // if we have branch child, we can only have branch child or branch init in the previous row
+            constraints.push((
+                "before branch children",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * (is_branch_child_prev.clone() - one.clone())
+                    * (is_branch_init_prev.clone() - one.clone()),
+            ));
+
             // If we have is_branch_init in the previous row, we have
             // is_branch_child with node_index = 0 in the current row.
-            let is_branch_init_prev =
-                meta.query_advice(is_branch_init, Rotation::prev());
             constraints.push((
                 "first branch children 1",
                 q_not_first.clone()
@@ -229,8 +210,6 @@ impl<F: FieldExt> MPTConfig<F> {
             ));
 
             // When is_branch_child changes back to 0, previous node_index has to be 15.
-            let is_branch_child_prev =
-                meta.query_advice(is_branch_child, Rotation::prev());
             let node_index_prev =
                 meta.query_advice(node_index, Rotation::prev());
             constraints.push((
@@ -251,13 +230,107 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * node_index_cur.clone() // ignore if node_index = 0
-                    * (node_index_cur.clone() - node_index_prev - one),
+                    * (node_index_cur.clone() - node_index_prev - one.clone()),
             ));
 
             // TODO: is_branch_child is followed by is_compact_leaf
             // TODO: is_compact_leaf is followed by is_keccak_leaf
 
             // TODO: constraints for branch init
+
+            constraints
+        });
+
+        meta.create_gate("keccak constraints", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+
+            let mut constraints = vec![];
+            let is_branch_child_cur =
+                meta.query_advice(is_branch_child, Rotation::cur());
+
+            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+
+            /*
+            TODO for leaf:
+            Let's say we have a leaf n where
+                n.Key = [10,6,3,5,7,0,1,2,12,1,10,3,10,14,0,10,1,7,13,3,0,4,12,9,9,2,0,3,1,0,3,8,2,13,9,6,8,14,11,12,12,4,11,1,7,7,1,15,4,1,12,6,11,3,0,4,2,0,5,11,5,7,0,16]
+                n.Val = [2].
+            Before put in a proof, a leaf is hashed:
+            https://github.com/ethereum/go-ethereum/blob/master/trie/proof.go#L78
+            But before being hashed, Key is put in compact form:
+            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L110
+            Key becomes:
+                [58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112]
+            Then the node is RLP encoded:
+            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L157
+            RLP:
+                [226,160,58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112,2]
+            Finally, the RLP is hashed:
+                [32,34,39,131,73,65,47,37,211,142,206,231,172,16,11,203,33,107,30,7,213,226,2,174,55,216,4,117,220,10,186,68]
+
+            In a proof (witness), we have [226, 160, ...] in columns s_rlp1, s_rlp2, ...
+            Constraint 1: We need to compute a hash of this value and compare it with [32, 34, ...] which should be
+                one of the branch children. lookup ...
+                Constraint 1.1: s_keccak, c_keccak the same for all 16 children
+                Constraint 1.2: for key = ind: s_keccak = converted s_advice and c_keccak = converted c_advice
+                Constraint 1.3: we add additional row for a leaf prepared for keccak (17 words),
+                  we do a lookup on this 17 words in s_keccak / c_keccak
+            Constraint 2: We need to convert it back to non-compact format to get the remaining key.
+                We need to verify the key until now (in nodes above) concatenated with the remaining key
+                gives us the key where the storage change is happening.
+            */
+
+            // s_keccak is the same for all is_branch_child rows
+            // (this is to enable easier comparison (we know rotation) when in keccak leaf row
+            // where we need to compare the keccak output is the same as keccak of the modified node)
+            for column in s_keccak.iter() {
+                let s_keccak_prev =
+                    meta.query_advice(*column, Rotation::prev());
+                let s_keccak_cur = meta.query_advice(*column, Rotation::cur());
+                constraints.push((
+                    "s_keccak the same for all branch children",
+                    q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (s_keccak_cur.clone() - s_keccak_prev),
+                ));
+            }
+            // c_keccak is the same for all is_branch_child rows
+            for column in c_keccak.iter() {
+                let c_keccak_prev =
+                    meta.query_advice(*column, Rotation::prev());
+                let c_keccak_cur = meta.query_advice(*column, Rotation::cur());
+                constraints.push((
+                    "c_keccak the same for all branch children",
+                    q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (c_keccak_cur.clone() - c_keccak_prev),
+                ));
+            }
+
+            // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
+            // as s_keccak 2 rows before (there is leaf row in between)
+            // TODO: this is not working properly
+            let is_keccak_leaf =
+                meta.query_advice(is_keccak_leaf, Rotation::cur());
+            for (ind, column) in s_keccak.iter().enumerate() {
+                let s_keccak_prev_prev =
+                    meta.query_advice(*column, Rotation(-2));
+
+                let keccak = meta.query_advice(
+                    s_advices[KECCAK_INPUT_WIDTH + ind],
+                    Rotation::cur(),
+                );
+                constraints.push((
+                    "s keccak leaf output same as s_keccak",
+                    q_not_first.clone()
+                        * is_keccak_leaf.clone()
+                        * (keccak.clone() - s_keccak_prev_prev),
+                ));
+            }
+
+            // TODO: s_keccak and c_keccak correspond to s and c at the modified index
 
             constraints
         });
