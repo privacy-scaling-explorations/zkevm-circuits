@@ -13,7 +13,7 @@ use pasta_curves::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RotatingVariables<F> {
     input_raw: BigUint,
     input_power_of_base: BigUint,
@@ -349,6 +349,9 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
         let block_count_cols = [meta.advice_column(), meta.advice_column()];
+        for column in block_count_cols.iter() {
+            meta.enable_equality((*column).into());
+        }
 
         meta.create_gate("block count final check", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -579,7 +582,9 @@ fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
 pub struct LaneRotateConversionConfig<F> {
     q_enable: Selector,
     q_is_special: Selector,
+    // coef, power_of_13, acc
     base_13_cols: [Column<Advice>; 3],
+    // coef, power_of_9, acc
     base_9_cols: [Column<Advice>; 3],
     chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
     special_chunk_config: SpecialChunkConfig<F>,
@@ -608,6 +613,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             meta.advice_column(),
             meta.advice_column(),
         ];
+        meta.enable_equality(base_13_cols[2].into());
+        meta.enable_equality(base_9_cols[2].into());
         let q_enable = meta.selector();
         let q_is_special = meta.selector();
 
@@ -660,7 +667,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 let mut offset = 0;
                 let cell = region.assign_advice(
                     || "base_13_col",
-                    self.base_13_cols[0],
+                    self.base_13_cols[2],
                     offset,
                     || Ok(lane_base_13.value),
                 )?;

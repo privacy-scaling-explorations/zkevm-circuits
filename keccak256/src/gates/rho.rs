@@ -23,6 +23,9 @@ impl<F: FieldExt> RhoConfig<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
     ) -> Self {
+        for lane in state.iter() {
+            meta.enable_equality((*lane).into());
+        }
         let state_rotate_convert_configs = (0..5)
             .cartesian_product(0..5)
             .map(|(x, y)| LaneRotateConversionConfig::configure(meta, (x, y)))
