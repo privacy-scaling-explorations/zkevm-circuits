@@ -13,7 +13,7 @@ impl Opcode for Add {
         &self,
         ctx: &mut TraceContext,
         exec_step: &mut ExecutionStep,
-        next_steps: &[ExecutionStep],
+        _next_steps: &[ExecutionStep],
     ) -> Result<(), Error> {
         //
         // First stack read
@@ -55,17 +55,17 @@ impl Opcode for Add {
         // First plus second stack value write
         //
 
-        let added_value = stack_last_value_read
+        let sum = stack_last_value_read
             .add(stack_second_last_value_read)
             .unwrap();
+
+        exec_step.mut_stack().add();
 
         // Manage second stack read at second latest stack position
         ctx.push_op(
             exec_step,
-            StackOp::new(RW::WRITE, stack_second_last_position, added_value),
+            StackOp::new(RW::WRITE, stack_second_last_position, sum),
         );
-
-        exec_step.mut_stack().pop();
 
         Ok(())
     }
@@ -160,13 +160,16 @@ mod add_tests {
         // Generate Step3 corresponding to ADD
         let mut step_3 = ExecutionStep {
             memory: mem_map.clone(),
-            stack: Stack::empty(),
+            stack: Stack(vec![EvmWord([
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            ])]),
             storage: Storage::empty(),
             instruction: OpcodeId::ADD,
-            gas: obtained_steps[0].gas(),
+            gas: obtained_steps[2].gas(),
             gas_cost: GasCost::FASTEST,
             depth: 1u8,
-            pc: obtained_steps[0].pc(),
+            pc: obtained_steps[2].pc(),
             gc: ctx.gc,
             bus_mapping_instance: vec![],
         };
@@ -193,7 +196,7 @@ mod add_tests {
         // Compare first step entirely
         assert_eq!(obtained_exec_trace[0], step_1);
         assert_eq!(obtained_exec_trace[1], step_2);
-        // assert_eq!(obtained_exec_trace[2], step_3);
+        assert_eq!(obtained_exec_trace[2], step_3);
 
         // Compare containers
         // assert_eq!(obtained_exec_trace.ctx.container, ctx.container);

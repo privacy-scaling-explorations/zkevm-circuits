@@ -95,6 +95,16 @@ impl Stack {
         self.0.get(self.0.len() - 2)
     }
 
+    /// Add last and second last value, and store on second last address and delete last element in the `Stack`.
+    pub fn add(&mut self) -> Option<EvmWord> {
+        let length = self.0.len();
+        let last_value = self.0.last().unwrap();
+        let second_last_value = self.0.get(self.0.len() - 2).unwrap();
+        let sum = last_value.add(*second_last_value).unwrap();
+        self.0[length - 1] = sum;
+        self.0.pop()
+    }
+
     /// Pop the last [`EvmWord`] allocated in the `Stack`.
     pub fn pop(&mut self) -> Option<EvmWord> {
         self.0.pop()
