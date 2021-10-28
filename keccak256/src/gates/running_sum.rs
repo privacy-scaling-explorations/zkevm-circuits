@@ -101,6 +101,7 @@ impl<F: FieldExt> RunningSumConfig<F> {
             iter::empty()
                 .chain(Some(running_poly))
                 .chain(Some((
+                    // TODO: this check should failed at the output power of base due to the rotation
                     "next_power_of_base === power_of_base * base_to_step",
                     next_power_of_base - power_of_base * base_to_step,
                 )))
