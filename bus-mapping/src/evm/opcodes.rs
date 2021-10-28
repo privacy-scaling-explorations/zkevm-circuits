@@ -1,4 +1,5 @@
 //! Definition of each opcode of the EVM.
+mod add;
 pub mod ids;
 mod mload;
 mod push;
@@ -9,6 +10,7 @@ use crate::{
     exec_trace::{ExecutionStep, TraceContext},
     Error,
 };
+use add::Add;
 use core::fmt::Debug;
 use ids::OpcodeId;
 use mload::Mload;
@@ -56,6 +58,9 @@ impl Opcode for OpcodeId {
             }
             OpcodeId::STOP => {
                 Stop {}.gen_associated_ops(ctx, exec_step, next_steps)
+            }
+            OpcodeId::ADD => {
+                Add {}.gen_associated_ops(ctx, exec_step, next_steps)
             }
             _ => unimplemented!(),
         }

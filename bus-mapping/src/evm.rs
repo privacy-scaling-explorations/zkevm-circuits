@@ -5,7 +5,7 @@ pub(crate) mod opcodes;
 pub mod stack;
 pub mod storage;
 
-use crate::error::{EthAddressParsingError, EvmWordParsingError};
+use crate::error::{Error, EthAddressParsingError, EvmWordParsingError};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -96,6 +96,12 @@ impl GlobalCounter {
 /// Representation of an EVM word which is basically a 32-byte word.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct EvmWord(pub(crate) [u8; 32]);
+
+impl Default for EvmWord {
+    fn default() -> Self {
+        EvmWord([0; 32])
+    }
+}
 
 impl FromStr for EvmWord {
     type Err = EvmWordParsingError;
@@ -191,6 +197,25 @@ impl EvmWord {
     /// Returns an `EvmWord` as a hex string representation.
     pub fn to_hex(self) -> String {
         hex::encode(self.to_be_bytes())
+    }
+
+    /// Returns an added `EvmWord`
+    pub fn add(self, number: EvmWord) -> Result<EvmWord, Error> {
+        let u8_max = u8::MAX as u16;
+        let mut result = EvmWord::default();
+        let mut carry = 0;
+        for n in 0..32 {
+            let a = self.0[31 - n] as u16;
+            let b = number.0[31 - n] as u16;
+            let sum = a + b + carry;
+            let rem = sum % (u8_max + 1);
+            carry = if sum > u8_max { 1 } else { 0 };
+            result.0[31 - n] = rem as u8;
+            if n == 31 && carry == 1 {
+                return Err(Error::EvmWordAddingOverflow);
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -355,6 +380,25 @@ mod evm_tests {
         let word_from_str = EvmWord::from_str(word_str)?;
 
         assert_eq!(word_from_u128, word_from_str);
+        Ok(())
+    }
+
+    #[test]
+    fn evmword_add() -> Result<(), Error> {
+        let a = EvmWord::from_str("deadbeef")?;
+        let b = EvmWord::from_str("faceb00c")?;
+        let c = a.add(b);
+        assert_eq!(
+            c.unwrap().to_hex(),
+            "00000000000000000000000000000000000000000000000000000001d97c6efb"
+        );
+        let a = EvmWord::from_str(
+            "8000000000000000000000000000000000000000000000000000000000000000",
+        )?;
+        let b = EvmWord::from_str(
+            "8000000000000000000000000000000000000000000000000000000000000000",
+        )?;
+        assert!(a.add(b).is_err());
         Ok(())
     }
 
