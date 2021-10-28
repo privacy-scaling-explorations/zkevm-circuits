@@ -22,7 +22,7 @@ impl Opcode for Pop {
         // Contains the next step.
         next_steps: &[ExecutionStep],
     ) -> Result<(), Error> {
-        ctx.pop_op(
+        ctx.push_op(
             exec_step,
             StackOp::new(
                 RW::READ,
@@ -57,6 +57,7 @@ mod pop_tests {
     fn pop_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
             #[start]
+            PUSH1(0x80u64)
             POP
             STOP
         };
@@ -102,7 +103,7 @@ mod pop_tests {
             StackOp::new(
                 RW::READ,
                 StackAddress::from(1023),
-                EvmWord::from(0x80u8),
+                EvmWord::from(0x80u64),
             ),
         );
 
