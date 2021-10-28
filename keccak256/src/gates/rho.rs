@@ -189,10 +189,13 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
-            in_state[5 * x + y] =
-                biguint_to_f(in_biguint[(x, y)].clone()).unwrap();
         }
-        let s1_arith = KeccakFArith::rho(&in_biguint);
+        let s0_arith = KeccakFArith::theta(&in_biguint);
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            in_state[5 * x + y] =
+                biguint_to_f(s0_arith[(x, y)].clone()).unwrap();
+        }
+        let s1_arith = KeccakFArith::rho(&s0_arith);
         let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out_state[5 * x + y] =

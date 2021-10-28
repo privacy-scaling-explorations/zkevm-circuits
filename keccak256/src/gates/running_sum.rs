@@ -168,14 +168,12 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                 .query_advice(base_9_acc, Rotation::next())
                 - meta.query_advice(base_9_acc, Rotation::cur());
             let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
-            let pow_of_9 = Expression::Constant(
-                F::from_u64(B9.pow(keccak_rotation)).pow(&[
-                    keccak_rotation as u64,
-                    0,
-                    0,
-                    0,
-                ]),
-            );
+            let pow_of_9 = Expression::Constant(F::from_u64(B9).pow(&[
+                keccak_rotation as u64,
+                0,
+                0,
+                0,
+            ]));
             vec![(
                 "delta_base_9_acc === (high_value + low_value) * 9**rotation",
                 meta.query_selector(q_enable)
@@ -202,11 +200,11 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         low_value: &BigUint,
+        high_value: &BigUint,
         base_13_acc: &BigUint,
         base_9_acc: &BigUint,
     ) -> Result<Lane<F>, Error> {
         self.q_enable.enable(region, offset)?;
-        let high_value = base_13_acc % B13;
         region.assign_advice(
             || "input_acc",
             self.base_13_acc,
@@ -349,7 +347,7 @@ pub struct BlockCountFinalConfig<F> {
 impl<F: FieldExt> BlockCountFinalConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
-        let block_count_cols = [meta.advice_column(); 2];
+        let block_count_cols = [meta.advice_column(), meta.advice_column()];
 
         meta.create_gate("block count final check", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -594,9 +592,21 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         lane_xy: (usize, usize),
     ) -> Self {
-        let base_13_cols = [meta.advice_column(); 3];
-        let base_9_cols = [meta.advice_column(); 3];
-        let block_count_cols = [meta.advice_column(); 3];
+        let base_13_cols = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+        let base_9_cols = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+        let block_count_cols = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
         let q_enable = meta.selector();
         let q_is_special = meta.selector();
 
@@ -661,6 +671,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 let mut rv =
                     RotatingVariables::from(lane_base_13.value, self.rotation)?;
                 let low_value = rv.input_raw.clone() % B13;
+                rv.input_raw /= B13;
 
                 for config in self.chunk_rotate_convert_configs.iter() {
                     let block_counts =
@@ -668,10 +679,12 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     offset += 1;
                     all_block_counts.push(block_counts);
                 }
+                let high_value = rv.input_raw % B13;
                 let lane = self.special_chunk_config.assign_region(
                     &mut region,
                     offset,
                     &low_value,
+                    &high_value,
                     &rv.input_acc,
                     &rv.output_acc,
                 )?;

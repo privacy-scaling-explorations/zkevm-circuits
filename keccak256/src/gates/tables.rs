@@ -70,7 +70,7 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
         base13_slice: Column<Advice>,
     ) -> Self {
         let config = Self {
-            from_binary_config: [meta.fixed_column(); 2],
+            from_binary_config: [meta.fixed_column(), meta.fixed_column()],
             q_lookup,
             _marker: PhantomData,
         };
@@ -168,7 +168,11 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         block_count: Column<Advice>,
     ) -> Self {
         let config = Self {
-            cols: [meta.fixed_column(); 3],
+            cols: [
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+            ],
             q_lookup,
             _marker: PhantomData,
         };
@@ -200,7 +204,10 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         let mut output_coef = 0;
         let mut non_zero_chunk_count = 0;
         for i in 0..4 {
-            let base13_chunk = (x.clone() % B13).to_u64_digits()[0];
+            let base13_chunk = match (x.clone() % B13).to_u64_digits().first() {
+                Some(d) => *d,
+                None => 0u64,
+            };
             let base9_chunk = convert_b13_coef(base13_chunk);
             if base9_chunk != 0 {
                 non_zero_chunk_count += 1;
@@ -351,7 +358,11 @@ impl<F: FieldExt> Base9toBase13BinaryTableConfig<F> {
         advices: [Column<Advice>; 3],
     ) -> Self {
         let config = Self {
-            cols: [meta.fixed_column(); 3],
+            cols: [
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+            ],
             q_lookup,
             _marker: PhantomData,
         };
