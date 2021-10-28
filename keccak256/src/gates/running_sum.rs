@@ -23,8 +23,6 @@ pub struct RunningSumConfig<F> {
     step: u32,
     base: u64,
     is_input: bool,
-    rotation: u32,
-    chunk_idx: u32,
     _marker: PhantomData<F>,
 }
 impl<F: FieldExt> RunningSumConfig<F> {
@@ -35,8 +33,6 @@ impl<F: FieldExt> RunningSumConfig<F> {
         step: u32,
         base: u64,
         is_input: bool,
-        rotation: u32,
-        chunk_idx: u32,
     ) -> Self {
         let config = Self {
             q_enable,
@@ -46,8 +42,6 @@ impl<F: FieldExt> RunningSumConfig<F> {
             step,
             base,
             is_input,
-            rotation,
-            chunk_idx,
             _marker: PhantomData,
         };
         meta.create_gate("mul", |meta| {
@@ -406,8 +400,7 @@ pub struct ChunkRotateConversionConfig<F> {
     b9_rs_config: RunningSumConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
     step: u32,
-    rotation: u32,
-    chunk_idx: u32,
+    is_at_rotation_offset: bool,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
@@ -418,8 +411,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         base_9_cols: [Column<Advice>; 3],
         block_count_cols: [Column<Advice>; 3],
         step: u32,
-        rotation: u32,
-        chunk_idx: u32,
+        is_at_rotation_offset: bool,
     ) -> Self {
         let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
             meta,
@@ -436,8 +428,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             step,
             B13,
             true,
-            rotation,
-            chunk_idx,
         );
 
         let b9_rs_config = RunningSumConfig::configure(
@@ -447,8 +437,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             step,
             B9,
             false,
-            rotation,
-            chunk_idx,
         );
 
         let block_count_acc_config = BlockCountAccConfig::configure(
@@ -468,8 +456,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             b9_rs_config,
             block_count_acc_config,
             step,
-            rotation,
-            chunk_idx,
+            is_at_rotation_offset,
         }
     }
 
@@ -512,7 +499,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             output_acc,
         )?;
         *output_acc += output_power_of_base.clone() * output_coef;
-        *output_power_of_base = if self.chunk_idx == 64 - self.rotation {
+        *output_power_of_base = if self.is_at_rotation_offset {
             BigUint::one()
         } else {
             output_power_of_base.clone() * output_base_to_step
@@ -555,6 +542,10 @@ fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
     }
     BASE_NUM_OF_CHUNKS
 }
+/// This is the point where power of 9 starts from 1
+fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
+    chunk_idx == 64 - rotation
+}
 
 #[derive(Debug)]
 pub struct LaneRotateConversionConfig<F> {
@@ -593,8 +584,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 base_9_cols,
                 block_count_cols,
                 step,
-                rotation,
-                chunk_idx,
+                is_at_rotation_offset(chunk_idx, rotation),
             );
             chunk_idx += step;
             chunk_rotate_convert_configs.push(config);
@@ -643,11 +633,13 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     .ok_or(Error::SynthesisError)?;
                 let mut input_power_of_base = BigUint::from(B13);
                 let mut input_acc = input_raw.clone();
-                let mut output_power_of_base = if self.rotation == 63 {
-                    BigUint::one()
-                } else {
-                    BigUint::from(B9).pow(self.rotation + 1)
-                };
+                let chunk_idx = 1;
+                let mut output_power_of_base =
+                    if is_at_rotation_offset(chunk_idx, self.rotation) {
+                        BigUint::one()
+                    } else {
+                        BigUint::from(B9).pow(self.rotation + chunk_idx)
+                    };
                 let mut output_acc = BigUint::zero();
                 let mut step2_acc = F::zero();
                 let mut step3_acc = F::zero();
