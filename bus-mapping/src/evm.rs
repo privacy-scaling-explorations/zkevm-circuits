@@ -372,34 +372,36 @@ mod evm_tests {
     }
 
     #[test]
-    fn evmword_from_str() -> Result<(), Error> {
+    fn evmword_from_str() {
         let word_str =
             "000000000000000000000000000000000000000000000000000c849c24f39248";
 
         let word_from_u128 = EvmWord::from(3523505890234952u128);
-        let word_from_str = EvmWord::from_str(word_str)?;
+        let word_from_str = EvmWord::from_str(word_str).unwrap();
 
         assert_eq!(word_from_u128, word_from_str);
-        Ok(())
     }
 
     #[test]
-    fn evmword_add() -> Result<(), Error> {
-        let a = EvmWord::from_str("deadbeef")?;
-        let b = EvmWord::from_str("faceb00c")?;
-        let c = a.add(b);
+    fn evmword_add() {
+        // Test add
+        let a = EvmWord::from_str("deadbeef").unwrap();
+        let b = EvmWord::from_str("faceb00c").unwrap();
         assert_eq!(
-            c.unwrap().to_hex(),
+            a.add(b).unwrap().to_hex(),
             "00000000000000000000000000000000000000000000000000000001d97c6efb"
         );
-        let a = EvmWord::from_str(
+
+        // Test add Error
+        let c = EvmWord::from_str(
             "8000000000000000000000000000000000000000000000000000000000000000",
-        )?;
-        let b = EvmWord::from_str(
+        )
+        .unwrap();
+        let d = EvmWord::from_str(
             "8000000000000000000000000000000000000000000000000000000000000000",
-        )?;
-        assert!(a.add(b).is_err());
-        Ok(())
+        )
+        .unwrap();
+        assert_eq!(&format!("{:?}", c.add(d)), "Err(EvmWordAddingOverflow)");
     }
 
     #[test]
