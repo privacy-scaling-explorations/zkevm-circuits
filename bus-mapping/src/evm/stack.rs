@@ -2,7 +2,6 @@
 use crate::evm::EvmWord;
 use crate::Error;
 use core::str::FromStr;
-
 /// Represents a `StackAddress` of the EVM.
 /// The address range goes `TOP -> DOWN (1024, 0]`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -85,8 +84,23 @@ impl Stack {
         StackAddress::from(1024 - self.0.len())
     }
 
+    /// Returns the second last filled `StackAddress`.
+    pub fn second_last_filled(&self) -> StackAddress {
+        StackAddress::from(1024 - self.0.len() - 1)
+    }
+
     /// Returns the last [`EvmWord`] allocated in the `Stack`.
     pub fn last(&self) -> Option<&EvmWord> {
         self.0.last()
+    }
+
+    /// Returns the second last [`EvmWord`] allocated in the `Stack`.
+    pub fn second_last(&self) -> Option<&EvmWord> {
+        self.0.get(self.0.len() - 1)
+    }
+
+    /// Pop the last [`EvmWord`] allocated in the `Stack`.
+    pub fn pop(&mut self) -> Option<EvmWord> {
+        self.0.pop()
     }
 }
