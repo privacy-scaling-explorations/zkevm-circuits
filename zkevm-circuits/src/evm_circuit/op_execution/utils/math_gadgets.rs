@@ -1,4 +1,4 @@
-use super::super::utils;
+use super::super::utils::{self, MAX_BYTES_FIELD};
 use super::super::CaseAllocation;
 use super::super::Cell;
 use crate::util::Expr;
@@ -88,12 +88,19 @@ impl<F: FieldExt> IsEqualGadget<F> {
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
 /// lhs and rhs `< 256**NUM_BYTES`
-/// `NUM_BYTES` is required to be `<= 31`.
+/// `NUM_BYTES` is required to be `<= MAX_BYTES_FIELD` to prevent overflow:
+/// values are stored in a single field element and two of these
+/// are added together.
+/// The equation that is enforced is `lhs == rhs + diff - (lt * range)`.
+/// Because all values are `<= 256**NUM_BYTES` and `lt` is boolean,
+///  `lt` can only be `1` when `lhs < rhs`.
 #[derive(Clone, Debug)]
 pub struct LtGadget<F, const NUM_BYTES: usize> {
-    lt: Cell<F>,
-    diff: [Cell<F>; NUM_BYTES],
-    range: F,
+    lt: Cell<F>, // `1` when `lhs < rhs`, `0` otherwise.
+    diff: [Cell<F>; NUM_BYTES], /* The byte values of `diff`.
+                  * `diff` equals `lhs - rhs` if `lhs >= rhs`,
+                  * `lhs - rhs + range` otherwise. */
+    range: F, // The range of the inputs, `256**NUM_BYTES`
 }
 
 impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
@@ -101,7 +108,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
     pub const NUM_WORDS: usize = 0;
 
     pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        assert!(NUM_BYTES <= 31, "unsupported number of bytes");
+        assert!(NUM_BYTES <= MAX_BYTES_FIELD, "unsupported number of bytes");
         Self {
             lt: alloc.cells.pop().unwrap(),
             diff: array_init(|_| alloc.cells.pop().unwrap()),
@@ -116,7 +123,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         rhs: Expression<F>,
     ) -> Expression<F> {
         let diff = utils::from_bytes::expr(self.diff.to_vec());
-        // The comparison equation that needs to hold.
+        // The equation we require to hold: `lhs == rhs + diff - (lt * range)`.
         cb.require_equal(lhs, rhs + diff - (self.lt.expr() * self.range));
 
         // `lt` needs to be boolean
@@ -167,7 +174,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
 /// - `lt` is `1` when `lhs < rhs`, `0` otherwise.
 /// - `eq` is `1` when `lhs == rhs`, `0` otherwise.
 /// lhs and rhs `< 256**NUM_BYTES`
-/// `NUM_BYTES` is required to be `<= 31`.
+/// `NUM_BYTES` is required to be `<= MAX_BYTES_FIELD`.
 #[derive(Clone, Debug)]
 pub struct ComparisonGadget<F, const NUM_BYTES: usize> {
     lt: LtGadget<F, NUM_BYTES>,
