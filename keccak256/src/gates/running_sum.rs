@@ -240,7 +240,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
                 - meta.query_advice(block_count_cols[2], Rotation::cur());
 
             match step {
-                1 => vec![
+                1 | 4 => vec![
                     ("block_count = 0", block_count),
                     ("delta_step2 = 0", delta_step2),
                     ("delta_step3 = 0", delta_step3),
@@ -275,8 +275,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block_count: F,
-        step2_acc: F,
-        step3_acc: F,
+        block_count_acc: [F; 2],
     ) -> Result<BlockCount2<F>, Error> {
         region.assign_advice(
             || "block_count",
@@ -288,21 +287,21 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
             || "block_count",
             self.block_count_cols[1],
             offset,
-            || Ok(step2_acc),
+            || Ok(block_count_acc[0]),
         )?;
         let block_count_step2 = BlockCount {
             cell: cell_step2,
-            value: step2_acc,
+            value: block_count_acc[0],
         };
         let cell_step3 = region.assign_advice(
             || "block_count",
             self.block_count_cols[2],
             offset,
-            || Ok(step3_acc),
+            || Ok(block_count_acc[1]),
         )?;
         let block_count_step3 = BlockCount {
             cell: cell_step3,
-            value: step3_acc,
+            value: block_count_acc[1],
         };
         Ok((block_count_step2, block_count_step3))
     }
@@ -469,8 +468,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         input_acc: &mut BigUint,
         output_power_of_base: &mut BigUint,
         output_acc: &mut BigUint,
-        step2_acc: &mut F,
-        step3_acc: &mut F,
+        block_count_acc: &mut [F; 2],
     ) -> Result<BlockCount2<F>, Error> {
         let input_base_to_step = B13.pow(self.step);
         let input_coef = input_raw.clone() % input_base_to_step;
@@ -507,19 +505,21 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 
         let block_count = F::from(block_count as u64);
 
-        if self.step == 2 {
-            *step2_acc += block_count;
-        };
-
-        if self.step == 3 {
-            *step3_acc += block_count;
-        };
+        match self.step {
+            1 | 4 => {}
+            2 => {
+                block_count_acc[0] += block_count;
+            }
+            3 => {
+                block_count_acc[1] += block_count;
+            }
+            _ => unreachable!("step <=4"),
+        }
         let block_counts = self.block_count_acc_config.assign_region(
             region,
             offset,
             block_count,
-            *step2_acc,
-            *step3_acc,
+            *block_count_acc,
         )?;
         Ok(block_counts)
     }
@@ -641,8 +641,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                         BigUint::from(B9).pow(self.rotation + chunk_idx)
                     };
                 let mut output_acc = BigUint::zero();
-                let mut step2_acc = F::zero();
-                let mut step3_acc = F::zero();
+                let mut block_count_acc = [F::zero(); 2];
                 let low_value = input_raw.clone() % B13;
 
                 for config in self.chunk_rotate_convert_configs.iter() {
@@ -654,8 +653,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                         &mut input_acc,
                         &mut output_power_of_base,
                         &mut output_acc,
-                        &mut step2_acc,
-                        &mut step3_acc,
+                        &mut block_count_acc,
                     )?;
                     offset += 1;
                     all_block_counts.push(block_counts);
