@@ -15,6 +15,8 @@ pub struct BlockCount<F> {
     pub value: F,
 }
 
+pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
+
 pub fn biguint_to_f<F: FieldExt>(x: BigUint) -> Option<F> {
     Option::from(F::from_bytes(x.to_bytes_le()[..=32].try_into().unwrap()))
 }

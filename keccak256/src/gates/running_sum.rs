@@ -283,7 +283,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         block_count: F,
         step2_acc: F,
         step3_acc: F,
-    ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
+    ) -> Result<BlockCount2<F>, Error> {
         region.assign_advice(
             || "block_count",
             self.block_count_cols[0],
@@ -363,7 +363,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        block_count_cells: [(BlockCount<F>, BlockCount<F>); 25],
+        block_count_cells: [BlockCount2<F>; 25],
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "final block count",
@@ -484,7 +484,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         output_acc: &mut BigUint,
         step2_acc: &mut F,
         step3_acc: &mut F,
-    ) -> Result<(BlockCount<F>, BlockCount<F>), Error> {
+    ) -> Result<BlockCount2<F>, Error> {
         let input_base_to_step = B13.pow(self.step);
         let input_coef = input_raw.clone() % input_base_to_step;
         self.b13_rs_config.assign_region(
@@ -623,7 +623,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         lane_base_13: &Lane<F>,
-    ) -> Result<(Lane<F>, (BlockCount<F>, BlockCount<F>)), Error> {
+    ) -> Result<(Lane<F>, BlockCount2<F>), Error> {
         let (lane, block_counts) = layouter.assign_region(
             || format!("lane {:?}", self.lane_xy),
             |mut region| {
