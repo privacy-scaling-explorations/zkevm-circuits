@@ -41,10 +41,7 @@ impl Opcode for Sload {
             exec_step,
             StorageOp::new(
                 RW::READ,
-                EthAddress([
-                    154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41,
-                    155, 5, 96, 152, 181, 67, 155,
-                ]),
+                EthAddress([0u8; 20]), // TODO: Fill with the correct value
                 stack_value_read,
                 storage_value_read,
                 storage_value_read,
@@ -139,10 +136,7 @@ mod sload_tests {
             &mut step_1,
             StorageOp::new(
                 RW::READ,
-                EthAddress([
-                    154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41,
-                    155, 5, 96, 152, 181, 67, 155,
-                ]),
+                EthAddress([0u8; 20]), // TODO: Fill with the correct value
                 EvmWord::from(0x0u32),
                 EvmWord::from(0x6fu32),
                 EvmWord::from(0x6fu32),
