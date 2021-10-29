@@ -42,3 +42,5 @@ pub static ROTATION_CONSTANTS: [[u32; 5]; 5] = [
     [28, 55, 25, 21, 56],
     [27, 20, 39, 8, 14],
 ];
+
+pub const LANE_SIZE: u32 = 64;

@@ -1,5 +1,5 @@
 use crate::arith_helpers::*;
-use crate::common::ROTATION_CONSTANTS;
+use crate::common::{LANE_SIZE, ROTATION_CONSTANTS};
 use crate::gates::gate_helpers::*;
 use crate::gates::tables::*;
 use halo2::{
@@ -562,7 +562,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 /// we need to take care of.
 fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
     const BASE_NUM_OF_CHUNKS: u32 = 4;
-    const LANE_SIZE: u32 = 64;
     // near the rotation position of the lane
     if chunk_idx < rotation && rotation < chunk_idx + BASE_NUM_OF_CHUNKS {
         return rotation - chunk_idx;
@@ -575,7 +574,20 @@ fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
 }
 /// This is the point where power of 9 starts from 1
 fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
-    chunk_idx == 64 - rotation
+    chunk_idx == LANE_SIZE - rotation
+}
+
+fn slice_lane(rotation: u32) -> Vec<(u32, u32)> {
+    // we start chunk_idx from 1
+    // because the 0th chunk is for the low value from the theta step
+    let mut chunk_idx = 1;
+    let mut output = vec![];
+    while chunk_idx < LANE_SIZE {
+        let step = get_step_size(chunk_idx, rotation);
+        chunk_idx += step;
+        output.push((chunk_idx, step));
+    }
+    output
 }
 
 #[derive(Debug, Clone)]
@@ -617,25 +629,22 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         meta.enable_equality(base_9_cols[2].into());
         let q_enable = meta.selector();
         let q_is_special = meta.selector();
-
-        let mut chunk_idx = 1;
-        let mut chunk_rotate_convert_configs = vec![];
         let rotation = ROTATION_CONSTANTS[lane_xy.0][lane_xy.1];
-
-        while chunk_idx < 64 {
-            let step = get_step_size(chunk_idx, rotation);
-            let config = ChunkRotateConversionConfig::configure(
-                q_enable,
-                meta,
-                base_13_cols,
-                base_9_cols,
-                block_count_cols,
-                step,
-                is_at_rotation_offset(chunk_idx, rotation),
-            );
-            chunk_idx += step;
-            chunk_rotate_convert_configs.push(config);
-        }
+        let slices = slice_lane(rotation);
+        let chunk_rotate_convert_configs = slices
+            .iter()
+            .map(|(chunk_idx, step)| {
+                ChunkRotateConversionConfig::configure(
+                    q_enable,
+                    meta,
+                    base_13_cols,
+                    base_9_cols,
+                    block_count_cols,
+                    *step,
+                    is_at_rotation_offset(*chunk_idx, rotation),
+                )
+            })
+            .collect::<Vec<_>>();
         let special_chunk_config = SpecialChunkConfig::configure(
             meta,
             q_is_special,
