@@ -5,7 +5,7 @@ use crate::gates::running_sum::{
 
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
 use pasta_curves::arithmetic::FieldExt;
@@ -24,13 +24,9 @@ impl<F: FieldExt> RhoConfig<F> {
         state: [Column<Advice>; 25],
         rotate_conversion: [[Column<Advice>; 3]; 3],
         axiliary: [Column<Advice>; 2],
+        base13_to_9: [Column<Fixed>; 3],
+        special: [Column<Fixed>; 2],
     ) -> Self {
-        let base13_to_9 = [
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-        ];
-        let special = [meta.fixed_column(), meta.fixed_column()];
         for lane in state.iter() {
             meta.enable_equality((*lane).into());
         }
@@ -62,28 +58,22 @@ impl<F: FieldExt> RhoConfig<F> {
         layouter: &mut impl Layouter<F>,
         previous_state: [Lane<F>; 25],
     ) -> Result<[Lane<F>; 25], Error> {
-        let lane_and_bcs: Vec<Result<(Lane<F>, BlockCount2<F>), Error>> =
-            previous_state
-                .iter()
-                .enumerate()
-                .map(
-                    |(idx, lane)| -> Result<(Lane<F>, BlockCount2<F>), Error> {
-                        let (lane_next_row, bc) = &self
-                            .state_rotate_convert_configs[idx]
-                            .assign_region(
-                                &mut layouter
-                                    .namespace(|| format!("arc lane {}", idx)),
-                                lane,
-                            )?;
-                        Ok((lane_next_row.clone(), *bc))
-                    },
-                )
-                .collect();
-        let lane_and_bcs: Result<Vec<_>, Error> =
-            lane_and_bcs.into_iter().collect();
+        type R<F> = (Lane<F>, BlockCount2<F>);
+        let lane_and_bcs: Result<Vec<R<F>>, Error> = previous_state
+            .iter()
+            .enumerate()
+            .map(|(idx, lane)| -> Result<R<F>, Error> {
+                let (lane_next_row, bc) =
+                    &self.state_rotate_convert_configs[idx].assign_region(
+                        &mut layouter.namespace(|| format!("arc lane {}", idx)),
+                        lane,
+                    )?;
+                Ok((lane_next_row.clone(), *bc))
+            })
+            .into_iter()
+            .collect();
         let lane_and_bcs = lane_and_bcs?;
-        let lane_and_bcs: [(Lane<F>, BlockCount2<F>); 25] =
-            lane_and_bcs.try_into().unwrap();
+        let lane_and_bcs: [R<F>; 25] = lane_and_bcs.try_into().unwrap();
 
         let block_counts = lane_and_bcs.clone().map(|(_, bc)| bc);
         let next_state = lane_and_bcs.map(|(lane_next_row, _)| lane_next_row);
@@ -154,7 +144,21 @@ mod tests {
                     [state[6], state[7], state[8]],
                 ];
                 let axiliary = [state[9], state[10]];
-                RhoConfig::configure(meta, state, rotate_conversion, axiliary)
+
+                let base13_to_9 = [
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                ];
+                let special = [meta.fixed_column(), meta.fixed_column()];
+                RhoConfig::configure(
+                    meta,
+                    state,
+                    rotate_conversion,
+                    axiliary,
+                    base13_to_9,
+                    special,
+                )
             }
 
             fn synthesize(
