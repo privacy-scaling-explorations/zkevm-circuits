@@ -163,10 +163,10 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         q_enable: Selector,
         base_13_acc: Column<Advice>,
         base_9_acc: Column<Advice>,
+        last_b9_coef: Column<Advice>,
         special: [Column<Fixed>; 2],
         rotation: u64,
     ) -> Self {
-        let last_b9_coef = meta.advice_column();
         meta.create_gate("validate base_9_acc", |meta| {
             let delta_base_9_acc = meta
                 .query_advice(base_9_acc, Rotation::next())
@@ -345,9 +345,11 @@ pub struct BlockCountFinalConfig<F> {
     _marker: PhantomData<F>,
 }
 impl<F: FieldExt> BlockCountFinalConfig<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        block_count_cols: [Column<Advice>; 2],
+    ) -> Self {
         let q_enable = meta.selector();
-        let block_count_cols = [meta.advice_column(), meta.advice_column()];
         for column in block_count_cols.iter() {
             meta.enable_equality((*column).into());
         }
@@ -610,24 +612,12 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         lane_xy: (usize, usize),
+        rotate_conversion: [[Column<Advice>; 3]; 3],
+        axiliary: [Column<Advice>; 2],
         base13_to_9: [Column<Fixed>; 3],
         special: [Column<Fixed>; 2],
     ) -> Self {
-        let base_13_cols = [
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ];
-        let base_9_cols = [
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ];
-        let block_count_cols = [
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ];
+        let [base_13_cols, base_9_cols, block_count_cols] = rotate_conversion;
         meta.enable_equality(base_13_cols[2].into());
         meta.enable_equality(base_9_cols[2].into());
         let q_enable = meta.selector();
@@ -654,6 +644,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             q_is_special,
             base_13_cols[2],
             base_9_cols[2],
+            axiliary[0],
             special,
             rotation as u64,
         );

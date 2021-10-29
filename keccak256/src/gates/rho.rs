@@ -22,6 +22,8 @@ impl<F: FieldExt> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
+        rotate_conversion: [[Column<Advice>; 3]; 3],
+        axiliary: [Column<Advice>; 2],
     ) -> Self {
         let base13_to_9 = [
             meta.fixed_column(),
@@ -38,6 +40,8 @@ impl<F: FieldExt> RhoConfig<F> {
                 LaneRotateConversionConfig::configure(
                     meta,
                     (x, y),
+                    rotate_conversion,
+                    axiliary,
                     base13_to_9,
                     special,
                 )
@@ -45,7 +49,8 @@ impl<F: FieldExt> RhoConfig<F> {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        let final_block_count_config = BlockCountFinalConfig::configure(meta);
+        let final_block_count_config =
+            BlockCountFinalConfig::configure(meta, axiliary);
         Self {
             state,
             state_rotate_convert_configs,
@@ -143,7 +148,13 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                RhoConfig::configure(meta, state)
+                let rotate_conversion: [[Column<Advice>; 3]; 3] = [
+                    [state[0], state[1], state[2]],
+                    [state[3], state[4], state[5]],
+                    [state[6], state[7], state[8]],
+                ];
+                let axiliary = [state[9], state[10]];
+                RhoConfig::configure(meta, state, rotate_conversion, axiliary)
             }
 
             fn synthesize(
@@ -225,7 +236,7 @@ mod tests {
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
-            let root = BitMapBackend::new("rho-test-circuit.png", (8192, 2048))
+            let root = BitMapBackend::new("rho-test-circuit.png", (2048, 4096))
                 .into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
