@@ -1,7 +1,6 @@
 use halo2::circuit::Cell;
 use num_bigint::BigUint;
 use pasta_curves::arithmetic::FieldExt;
-use std::cmp::min;
 
 #[derive(Debug, Clone)]
 pub struct Lane<F> {
@@ -20,7 +19,8 @@ pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 pub fn biguint_to_f<F: FieldExt>(x: BigUint) -> Option<F> {
     let mut word = [0; 32];
     let x_bytes = x.to_bytes_le();
-    let len = min(x_bytes.len(), 32);
+    let len = x_bytes.len();
+    assert!(len <= 32);
     word[..len].clone_from_slice(&x_bytes[..len]);
     Option::from(F::from_bytes(&word))
 }
