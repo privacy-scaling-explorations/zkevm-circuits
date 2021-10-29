@@ -23,18 +23,24 @@ impl<F: FieldExt> RhoConfig<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
     ) -> Self {
-        let fixed_cols = [
+        let base13_to_9 = [
             meta.fixed_column(),
             meta.fixed_column(),
             meta.fixed_column(),
         ];
+        let special = [meta.fixed_column(), meta.fixed_column()];
         for lane in state.iter() {
             meta.enable_equality((*lane).into());
         }
         let state_rotate_convert_configs = (0..5)
             .cartesian_product(0..5)
             .map(|(x, y)| {
-                LaneRotateConversionConfig::configure(meta, (x, y), fixed_cols)
+                LaneRotateConversionConfig::configure(
+                    meta,
+                    (x, y),
+                    base13_to_9,
+                    special,
+                )
             })
             .collect::<Vec<_>>()
             .try_into()
