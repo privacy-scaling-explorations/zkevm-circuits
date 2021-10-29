@@ -200,7 +200,7 @@ impl EvmWord {
     }
 
     /// Returns an added `EvmWord`
-    pub fn add(self, number: EvmWord) -> Result<EvmWord, Error> {
+    pub fn adc(self, number: EvmWord) -> Result<EvmWord, Error> {
         let u8_max = u8::MAX as u16;
         let mut result = EvmWord::default();
         let mut carry = 0;
@@ -388,7 +388,7 @@ mod evm_tests {
         let a = EvmWord::from_str("deadbeef").unwrap();
         let b = EvmWord::from_str("faceb00c").unwrap();
         assert_eq!(
-            a.add(b).unwrap().to_hex(),
+            a.adc(b).unwrap().to_hex(),
             "00000000000000000000000000000000000000000000000000000001d97c6efb"
         );
 
@@ -401,7 +401,7 @@ mod evm_tests {
             "8000000000000000000000000000000000000000000000000000000000000000",
         )
         .unwrap();
-        assert_eq!(&format!("{:?}", c.add(d)), "Err(EvmWordAddingOverflow)");
+        assert_eq!(&format!("{:?}", c.adc(d)), "Err(EvmWordAddingOverflow)");
     }
 
     #[test]

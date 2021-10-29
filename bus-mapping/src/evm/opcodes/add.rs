@@ -56,7 +56,7 @@ impl Opcode for Add {
         //
 
         let sum = stack_last_value_read
-            .add(stack_second_last_value_read)
+            .adc(stack_second_last_value_read)
             .unwrap();
 
         // Manage second stack read at second latest stack position
@@ -77,10 +77,13 @@ mod add_tests {
     use crate::{
         bytecode,
         evm::{
-            EvmWord, GasCost, Memory, OpcodeId::{PUSH1, ADD}, Stack, StackAddress, Storage,
+            EvmWord, GasCost, Memory,
+            OpcodeId::{ADD, PUSH1},
+            Stack, StackAddress, Storage,
         },
-        operation::{RW::{WRITE, READ}},
-        external_tracer, BlockConstants, ExecutionTrace,
+        external_tracer,
+        operation::RW::{READ, WRITE},
+        BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
 
@@ -134,15 +137,11 @@ mod add_tests {
         let second_last_stack_pointer = StackAddress::from(1023);
         let stack_value_a = EvmWord::from(0x80u8);
         let stack_value_b = EvmWord::from(0x80u8);
-        let sum = stack_value_a.add(stack_value_b).unwrap();
+        let sum = stack_value_a.adc(stack_value_b).unwrap();
 
         // Generate Step1 corresponding to PUSH1 80
-        let mut step_1 = step_setup!(
-            Stack::empty(),
-            PUSH1,
-            obtained_steps[0],
-            ctx.gc
-        );
+        let mut step_1 =
+            step_setup!(Stack::empty(), PUSH1, obtained_steps[0], ctx.gc);
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
         push_opcode_to_ctx!(
@@ -171,12 +170,8 @@ mod add_tests {
         );
 
         // Generate Step3 corresponding to ADD
-        let mut step_3 = step_setup!(
-            Stack(vec![sum]),
-            ADD,
-            obtained_steps[2],
-            ctx.gc
-        );
+        let mut step_3 =
+            step_setup!(Stack(vec![sum]), ADD, obtained_steps[2], ctx.gc);
 
         // Manage first stack read at latest stack position
         push_opcode_to_ctx!(
@@ -197,13 +192,7 @@ mod add_tests {
         );
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        push_opcode_to_ctx!(
-            ctx,
-            step_3,
-            WRITE,
-            second_last_stack_pointer,
-            sum
-        );
+        push_opcode_to_ctx!(ctx, step_3, WRITE, second_last_stack_pointer, sum);
 
         // Compare each step bus mapping instance
         assert_eq!(
