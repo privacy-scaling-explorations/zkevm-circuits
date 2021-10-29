@@ -335,11 +335,19 @@ impl<F: FieldExt> MPTConfig<F> {
             }
 
             // TODO: s_keccak and c_keccak correspond to s and c at the modified index
+            // add is_modified is zero chip (key = node_index_cur)
+            // compute expression from s_keccak and c_keccak using into_words_expr
+            /*
+            constraints.push((
+                "s_keccak correspond to s_advices at the modified index",
+                q_not_first.clone() * is_branch_child_cur.clone() * is_modified,
+            ));
+            */
 
             constraints
         });
 
-        // TODO: check transition from compact to keccak leaf
+        // TODO: check transition from compact to keccak leaf (compact leaf as keccak input - 17 cells)
 
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -742,6 +750,23 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let message = [input, &padding].concat();
         message
+    }
+
+    // Turn 32 hash cells into 4 cells containing keccak words.
+    fn into_words_expr(&self, hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
+        let mut words = vec![];
+        for i in 0..4 {
+            let mut word = Expression::Constant(F::zero());
+            let mut exp = Expression::Constant(F::one());
+            // TODO: check this impl, was just quickly added
+            for j in 0..8 {
+                word = word + hash[i * 8 + j].clone() * exp.clone();
+                exp = exp * Expression::Constant(F::from_u64(256));
+            }
+            words.push(word)
+        }
+
+        words
     }
 
     // see bits_to_u64_words_le
