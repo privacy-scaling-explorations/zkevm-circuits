@@ -38,26 +38,26 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
                 for (i, coefs) in
                     (0..16).map(|_| 0..1).multi_cartesian_product().enumerate()
                 {
-                    let key = coefs.iter().fold(F::zero(), |acc, x| {
-                        acc * F::from_u64(2) + F::from_u64(*x)
-                    });
-
                     region.assign_fixed(
-                        || "binary col",
+                        || "binary",
                         self.binary,
                         i,
-                        || Ok(key),
+                        || {
+                            Ok(coefs.iter().fold(F::zero(), |acc, x| {
+                                acc * F::from_u64(2) + F::from_u64(*x)
+                            }))
+                        },
                     )?;
-
-                    let value = coefs.iter().fold(F::zero(), |acc, x| {
-                        acc * F::from_u64(B13) + F::from_u64(*x)
-                    });
 
                     region.assign_fixed(
                         || "base 13 col",
                         self.base13,
                         i,
-                        || Ok(value),
+                        || {
+                            Ok(coefs.iter().fold(F::zero(), |acc, x| {
+                                acc * F::from_u64(B13) + F::from_u64(*x)
+                            }))
+                        },
                     )?;
                 }
                 Ok(())
