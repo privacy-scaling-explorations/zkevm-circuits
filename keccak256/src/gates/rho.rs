@@ -51,22 +51,29 @@ impl<F: FieldExt> RhoConfig<F> {
         layouter: &mut impl Layouter<F>,
         previous_state: [Lane<F>; 25],
     ) -> Result<[Lane<F>; 25], Error> {
-        let lane_and_bcs: [(Lane<F>, BlockCount2<F>); 25] = previous_state
-            .iter()
-            .enumerate()
-            .map(|(idx, lane)| {
-                let (lane_next_row, bc) = &self.state_rotate_convert_configs
-                    [idx]
-                    .assign_region(
-                        &mut layouter.namespace(|| format!("arc lane {}", idx)),
-                        lane,
-                    )
-                    .unwrap();
-                (lane_next_row.clone(), *bc)
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+        let lane_and_bcs: Vec<Result<(Lane<F>, BlockCount2<F>), Error>> =
+            previous_state
+                .iter()
+                .enumerate()
+                .map(
+                    |(idx, lane)| -> Result<(Lane<F>, BlockCount2<F>), Error> {
+                        let (lane_next_row, bc) = &self
+                            .state_rotate_convert_configs[idx]
+                            .assign_region(
+                                &mut layouter
+                                    .namespace(|| format!("arc lane {}", idx)),
+                                lane,
+                            )?;
+                        Ok((lane_next_row.clone(), *bc))
+                    },
+                )
+                .collect();
+        let lane_and_bcs: Result<Vec<_>, Error> =
+            lane_and_bcs.into_iter().collect();
+        let lane_and_bcs = lane_and_bcs?;
+        let lane_and_bcs: [(Lane<F>, BlockCount2<F>); 25] =
+            lane_and_bcs.try_into().unwrap();
+
         let block_counts = lane_and_bcs.clone().map(|(_, bc)| bc);
         let next_state = lane_and_bcs.map(|(lane_next_row, _)| lane_next_row);
 
