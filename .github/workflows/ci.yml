@@ -1,12 +1,16 @@
 name: CI checks
 
-on: [push, pull_request]
+on: 
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
 
 ## `actions-rs/toolchain@v1` overwrite set to false so that 
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
   test:
+    if: github.event.pull_request.draft == false
+
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -27,6 +31,8 @@ jobs:
           args: --verbose --release --all --all-features
 
   build:
+    if: github.event.pull_request.draft == false
+
     name: Build target ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
@@ -49,6 +55,8 @@ jobs:
           args: --all-features
 
   bitrot:
+    if: github.event.pull_request.draft == false
+
     name: Bitrot check
     runs-on: ubuntu-latest
 
@@ -65,6 +73,8 @@ jobs:
           args: --benches --examples --all-features
 
   doc-links:
+    if: github.event.pull_request.draft == false
+
     name: Intra-doc links
     runs-on: ubuntu-latest
 
@@ -87,6 +97,8 @@ jobs:
           args: --all --document-private-items
 
   fmt:
+    if: github.event.pull_request.draft == false
+    
     name: Rustfmt
     timeout-minutes: 30
     runs-on: ubuntu-latest
