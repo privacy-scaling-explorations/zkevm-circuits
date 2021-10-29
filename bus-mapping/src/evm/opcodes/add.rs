@@ -59,13 +59,13 @@ impl Opcode for Add {
             .add(stack_second_last_value_read)
             .unwrap();
 
-        exec_step.mut_stack().add();
-
         // Manage second stack read at second latest stack position
         ctx.push_op(
             exec_step,
             StackOp::new(RW::WRITE, stack_second_last_position, sum),
         );
+
+        exec_step.mut_stack().add();
 
         Ok(())
     }
@@ -174,6 +174,32 @@ mod add_tests {
             bus_mapping_instance: vec![],
         };
 
+        // Manage first stack read at latest stack position
+        ctx.push_op(
+            &mut step_3,
+            StackOp::new(
+                RW::READ,
+                StackAddress::from(1022),
+                EvmWord([
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128,
+                ]),
+            ),
+        );
+
+        // Manage second stack read at second latest stack position
+        ctx.push_op(
+            &mut step_3,
+            StackOp::new(
+                RW::READ,
+                StackAddress::from(1023),
+                EvmWord([
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128,
+                ]),
+            ),
+        );
+
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
         ctx.push_op(
             &mut step_3,
@@ -199,7 +225,7 @@ mod add_tests {
         assert_eq!(obtained_exec_trace[2], step_3);
 
         // Compare containers
-        // assert_eq!(obtained_exec_trace.ctx.container, ctx.container);
+        assert_eq!(obtained_exec_trace.ctx.container, ctx.container);
 
         Ok(())
     }

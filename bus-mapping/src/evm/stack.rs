@@ -101,8 +101,8 @@ impl Stack {
         let last_value = self.0.last().unwrap();
         let second_last_value = self.0.get(self.0.len() - 2).unwrap();
         let sum = last_value.add(*second_last_value).unwrap();
-        self.0[length - 1] = sum;
-        self.0.pop()
+        self.0[length - 2] = sum;
+        self.pop()
     }
 
     /// Pop the last [`EvmWord`] allocated in the `Stack`.
