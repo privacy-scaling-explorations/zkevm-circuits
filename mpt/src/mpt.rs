@@ -314,7 +314,6 @@ impl<F: FieldExt> MPTConfig<F> {
             // or
             // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
             // as c_keccak 4 rows before (there is leaf row, keccak row, and another leaf row in between)
-            /*
             let is_keccak_leaf =
                 meta.query_advice(is_keccak_leaf, Rotation::cur());
             for (ind, column) in s_keccak.iter().enumerate() {
@@ -334,7 +333,6 @@ impl<F: FieldExt> MPTConfig<F> {
                         * (keccak.clone() - c_keccak_prev_4),
                 ));
             }
-            */
 
             // TODO: s_keccak and c_keccak correspond to s and c at the modified index
 
@@ -444,6 +442,18 @@ impl<F: FieldExt> MPTConfig<F> {
             )?;
         }
 
+        // not all columns may be needed
+        let get_val = |curr_ind: usize| {
+            let val;
+            if curr_ind >= row.len() {
+                val = 0;
+            } else {
+                val = row[curr_ind];
+            }
+
+            return val as u64;
+        };
+
         region.assign_advice(
             || format!("assign c_rlp1"),
             self.c_rlp1,
@@ -454,22 +464,16 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign c_rlp2"),
             self.c_rlp2,
             offset,
-            || Ok(F::from_u64(row[WITNESS_ROW_WIDTH / 2 + 1] as u64)),
+            || Ok(F::from_u64(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
         )?;
 
         for (idx, _c) in self.c_advices.iter().enumerate() {
-            let val;
-            if WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx >= row.len() {
-                // leaf might not need all columns
-                val = 0;
-            } else {
-                val = row[WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx];
-            }
+            let val = get_val(WITNESS_ROW_WIDTH / 2 + LAYOUT_OFFSET + idx);
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
                 self.c_advices[idx],
                 offset,
-                || Ok(F::from_u64(val as u64)),
+                || Ok(F::from_u64(val)),
             )?;
         }
         Ok(())
