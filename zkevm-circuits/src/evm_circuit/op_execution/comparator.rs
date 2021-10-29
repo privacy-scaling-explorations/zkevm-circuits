@@ -32,7 +32,6 @@ struct ComparatorSuccessCase<F> {
     case_selector: Cell<F>,
     a: Word<F>,
     b: Word<F>,
-    result: Word<F>,
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
     is_eq_op: IsEqualGadget<F>,
@@ -42,7 +41,7 @@ struct ComparatorSuccessCase<F> {
 impl<F: FieldExt> ComparatorSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 3,
+        num_word: 2, // a + b
         num_cell: ComparisonGadget::<F, 16>::NUM_CELLS * 2
             + IsEqualGadget::<F>::NUM_CELLS * 2,
         will_halt: false,
@@ -53,7 +52,6 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
             case_selector: alloc.selector.clone(),
             a: alloc.words.pop().unwrap(),
             b: alloc.words.pop().unwrap(),
-            result: alloc.words.pop().unwrap(),
             comparison_lo: ComparisonGadget::<F, 16>::construct(alloc),
             comparison_hi: ComparisonGadget::<F, 16>::construct(alloc),
             is_eq_op: IsEqualGadget::<F>::construct(alloc),
@@ -105,23 +103,18 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
         // `a == b` when both parts are equal
         let eq = eq_hi * eq_lo;
 
-        // The LSB of result is:
+        // The result is:
         // - `lt` when LT or GT
         // - `eq` when EQ
-        cb.require_equal(
-            select::expr(is_eq_op, eq, lt),
-            self.result.cells[0].expr(),
-        );
-        // All the other bytes of result always need to be 0.
-        for idx in 1..32 {
-            cb.require_zero(self.result.cells[idx].expr());
-        }
+        let result = select::expr(is_eq_op, eq, lt);
 
         // Pop a and b from the stack, push the result on the stack.
         // When swap is enabled we swap stack places between a and b.
+        // We can push result here directly because
+        // it only uses the LSB of a word.
         cb.stack_pop(select::expr(swap.clone(), self.b.expr(), self.a.expr()));
         cb.stack_pop(select::expr(swap, self.a.expr(), self.b.expr()));
-        cb.stack_push(self.result.expr());
+        cb.stack_push(result);
 
         // State transitions
         StateTransitions {
@@ -155,12 +148,10 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
         } else {
             step.values[1].clone()
         };
-        let result = step.values[2].clone();
 
         // Inputs and output
         self.a.assign(region, offset, Some(a.to_word()))?;
         self.b.assign(region, offset, Some(b.to_word()))?;
-        self.result.assign(region, offset, Some(result.to_word()))?;
 
         // EQ op check
         self.is_eq_op.assign(
@@ -247,7 +238,7 @@ mod test {
                 ExecutionStep {
                     opcode,
                     case: Case::Success,
-                    values: vec![a.clone(), b.clone(), result.clone()],
+                    values: vec![a.clone(), b.clone()],
                 }
             ],
             vec![
