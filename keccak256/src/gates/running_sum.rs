@@ -4,7 +4,9 @@ use crate::gates::gate_helpers::*;
 use crate::gates::tables::*;
 use halo2::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+    },
     poly::Rotation,
 };
 use num_bigint::BigUint;
@@ -440,6 +442,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         base_13_cols: [Column<Advice>; 3],
         base_9_cols: [Column<Advice>; 3],
         block_count_cols: [Column<Advice>; 3],
+        fix_cols: [Column<Fixed>; 3],
         step: u32,
         is_at_rotation_offset: bool,
     ) -> Self {
@@ -449,6 +452,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             base_13_cols[1],
             base_9_cols[1],
             block_count_cols[0],
+            fix_cols,
         );
 
         let b13_rs_config = RunningSumConfig::configure(
@@ -604,6 +608,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         lane_xy: (usize, usize),
+        fixed_cols: [Column<Fixed>; 3],
     ) -> Self {
         let base_13_cols = [
             meta.advice_column(),
@@ -635,6 +640,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     base_13_cols,
                     base_9_cols,
                     block_count_cols,
+                    fixed_cols,
                     *step,
                     is_at_rotation_offset(*chunk_idx, rotation),
                 )

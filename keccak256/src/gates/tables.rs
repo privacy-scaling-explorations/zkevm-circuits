@@ -166,13 +166,10 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         base13_slice: Column<Advice>,
         base9_slice: Column<Advice>,
         block_count: Column<Advice>,
+        cols: [Column<Fixed>; 3],
     ) -> Self {
         let config = Self {
-            cols: [
-                meta.fixed_column(),
-                meta.fixed_column(),
-                meta.fixed_column(),
-            ],
+            cols,
             q_lookup,
             _marker: PhantomData,
         };
