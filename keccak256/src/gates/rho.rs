@@ -51,7 +51,7 @@ impl<F: FieldExt> RhoConfig<F> {
                 let (lane_next_row, bc) = &self.state_rotate_convert_configs
                     [idx]
                     .assign_region(
-                        &mut layouter.namespace(|| format!("lane {}", idx)),
+                        &mut layouter.namespace(|| format!("arc lane {}", idx)),
                         lane,
                     )
                     .unwrap();
@@ -104,7 +104,6 @@ mod tests {
     use pasta_curves::pallas;
     use std::convert::TryInto;
     use std::marker::PhantomData;
-
     #[test]
     fn test_rho_gate() {
         #[derive(Default)]
@@ -135,7 +134,7 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 let state = layouter.assign_region(
-                    || "assign input & output state + constant in same region",
+                    || "assign input state",
                     |mut region| {
                         let offset = 0;
                         let state: [Lane<F>; 25] = self
@@ -165,7 +164,7 @@ mod tests {
                 let next_state =
                     config.assign_rotation_checks(&mut layouter, state)?;
                 layouter.assign_region(
-                    || "assign input & output state + constant in same region",
+                    || "assign rho state",
                     |mut region| {
                         let offset = 1;
                         config.assign_region(
@@ -208,6 +207,17 @@ mod tests {
             in_state,
             _marker: PhantomData,
         };
+        #[cfg(feature = "dev-graph")]
+        {
+            use plotters::prelude::*;
+            let root = BitMapBackend::new("rho-test-circuit.png", (8192, 2048))
+                .into_drawing_area();
+            root.fill(&WHITE).unwrap();
+            let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
+            halo2::dev::CircuitLayout::default()
+                .render(&circuit, &root)
+                .unwrap();
+        }
         // Test without public inputs
         let prover =
             MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();

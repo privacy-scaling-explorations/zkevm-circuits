@@ -662,7 +662,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         lane_base_13: &Lane<F>,
     ) -> Result<(Lane<F>, BlockCount2<F>), Error> {
         let (lane, block_counts) = layouter.assign_region(
-            || format!("lane {:?}", self.lane_xy),
+            || format!("LRCC {:?}", self.lane_xy),
             |mut region| {
                 let mut offset = 0;
                 let cell = region.assign_advice(
