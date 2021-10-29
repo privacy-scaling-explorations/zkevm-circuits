@@ -76,10 +76,36 @@ mod add_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{EvmWord, GasCost, OpcodeId, Stack, StackAddress, Storage},
+        evm::{
+            EvmWord, GasCost, Memory, OpcodeId::{PUSH1, ADD}, Stack, StackAddress, Storage,
+        },
+        operation::{RW::{WRITE, READ}},
         external_tracer, BlockConstants, ExecutionTrace,
     };
     use pasta_curves::pallas::Scalar;
+
+    macro_rules! push_opcode_to_ctx {
+        ($ctx:ident, $step:ident, $rw:path, $address:expr, $word:expr) => {
+            $ctx.push_op(&mut $step, StackOp::new($rw, $address, $word))
+        };
+    }
+
+    macro_rules! step_setup {
+        ($stack:expr, $instruction:path, $obtained_steps:expr, $gc:expr) => {
+            ExecutionStep {
+                memory: Memory::empty(),
+                stack: $stack,
+                storage: Storage::empty(),
+                instruction: $instruction,
+                gas: $obtained_steps.gas(),
+                gas_cost: GasCost::FASTEST,
+                depth: 1u8,
+                pc: $obtained_steps.pc(),
+                gc: $gc,
+                bus_mapping_instance: vec![],
+            }
+        };
+    }
 
     #[test]
     fn add_opcode_impl() -> Result<(), Error> {
@@ -104,122 +130,96 @@ mod add_tests {
         )?;
 
         let mut ctx = TraceContext::new();
-
-        // The memory is the same in both steps as none of them edits the
-        // memory of the EVM.
-        let mem_map = obtained_steps[0].memory.clone();
+        let last_stack_pointer = StackAddress::from(1022);
+        let second_last_stack_pointer = StackAddress::from(1023);
+        let stack_value_a = EvmWord::from(0x80u8);
+        let stack_value_b = EvmWord::from(0x80u8);
+        let sum = stack_value_a.add(stack_value_b).unwrap();
 
         // Generate Step1 corresponding to PUSH1 80
-        let mut step_1 = ExecutionStep {
-            memory: mem_map.clone(),
-            stack: Stack::empty(),
-            storage: Storage::empty(),
-            instruction: OpcodeId::PUSH1,
-            gas: obtained_steps[0].gas(),
-            gas_cost: GasCost::FASTEST,
-            depth: 1u8,
-            pc: obtained_steps[0].pc(),
-            gc: ctx.gc,
-            bus_mapping_instance: vec![],
-        };
+        let mut step_1 = step_setup!(
+            Stack::empty(),
+            PUSH1,
+            obtained_steps[0],
+            ctx.gc
+        );
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023),
-                EvmWord::from(0x80u8),
-            ),
+        push_opcode_to_ctx!(
+            ctx,
+            step_1,
+            WRITE,
+            second_last_stack_pointer,
+            stack_value_a
         );
 
         // Generate Step2 corresponding to PUSH1 80
-        let mut step_2 = ExecutionStep {
-            memory: mem_map.clone(),
-            stack: Stack(vec![EvmWord::from(0x80u8)]),
-            storage: Storage::empty(),
-            instruction: OpcodeId::PUSH1,
-            gas: obtained_steps[1].gas(),
-            gas_cost: GasCost::FASTEST,
-            depth: 1u8,
-            pc: obtained_steps[1].pc(),
-            gc: ctx.gc,
-            bus_mapping_instance: vec![],
-        };
+        let mut step_2 = step_setup!(
+            Stack(vec![stack_value_a]),
+            PUSH1,
+            obtained_steps[1],
+            ctx.gc
+        );
 
-        // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        ctx.push_op(
-            &mut step_2,
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1022),
-                EvmWord::from(0x80u8),
-            ),
+        // Add StackOp associated to the 0x80 push at the second latest Stack pos.
+        push_opcode_to_ctx!(
+            ctx,
+            step_2,
+            WRITE,
+            last_stack_pointer,
+            stack_value_b
         );
 
         // Generate Step3 corresponding to ADD
-        let mut step_3 = ExecutionStep {
-            memory: mem_map.clone(),
-            stack: Stack(vec![EvmWord([
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-            ])]),
-            storage: Storage::empty(),
-            instruction: OpcodeId::ADD,
-            gas: obtained_steps[2].gas(),
-            gas_cost: GasCost::FASTEST,
-            depth: 1u8,
-            pc: obtained_steps[2].pc(),
-            gc: ctx.gc,
-            bus_mapping_instance: vec![],
-        };
+        let mut step_3 = step_setup!(
+            Stack(vec![sum]),
+            ADD,
+            obtained_steps[2],
+            ctx.gc
+        );
 
         // Manage first stack read at latest stack position
-        ctx.push_op(
-            &mut step_3,
-            StackOp::new(
-                RW::READ,
-                StackAddress::from(1022),
-                EvmWord([
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128,
-                ]),
-            ),
+        push_opcode_to_ctx!(
+            ctx,
+            step_3,
+            READ,
+            last_stack_pointer,
+            stack_value_a
         );
 
         // Manage second stack read at second latest stack position
-        ctx.push_op(
-            &mut step_3,
-            StackOp::new(
-                RW::READ,
-                StackAddress::from(1023),
-                EvmWord([
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128,
-                ]),
-            ),
+        push_opcode_to_ctx!(
+            ctx,
+            step_3,
+            READ,
+            second_last_stack_pointer,
+            stack_value_b
         );
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        ctx.push_op(
-            &mut step_3,
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023),
-                EvmWord([
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-                ]),
-            ),
+        push_opcode_to_ctx!(
+            ctx,
+            step_3,
+            WRITE,
+            second_last_stack_pointer,
+            sum
         );
 
-        // Compare first step bus mapping instance
+        // Compare each step bus mapping instance
         assert_eq!(
             obtained_exec_trace[0].bus_mapping_instance(),
             step_1.bus_mapping_instance()
         );
-        // println!("{:?}", obtained_exec_trace);
-        // Compare first step entirely
+        assert_eq!(
+            obtained_exec_trace[1].bus_mapping_instance(),
+            step_2.bus_mapping_instance()
+        );
+        assert_eq!(
+            obtained_exec_trace[2].bus_mapping_instance(),
+            step_3.bus_mapping_instance()
+        );
+
+        // Compare each step entirely
         assert_eq!(obtained_exec_trace[0], step_1);
         assert_eq!(obtained_exec_trace[1], step_2);
         assert_eq!(obtained_exec_trace[2], step_3);
