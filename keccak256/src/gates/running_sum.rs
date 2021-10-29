@@ -149,7 +149,7 @@ impl<F: FieldExt> RunningSumConfig<F> {
 pub struct SpecialChunkConfig<F> {
     q_enable: Selector,
     last_b9_coef: Column<Advice>,
-    keccak_rotation: u32,
+    rotation: u64,
     base_13_acc: Column<Advice>,
     base_9_acc: Column<Advice>,
     special_chunk_table_config: SpecialChunkTableConfig<F>,
@@ -161,7 +161,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         q_enable: Selector,
         base_13_acc: Column<Advice>,
         base_9_acc: Column<Advice>,
-        keccak_rotation: u32,
+        rotation: u64,
     ) -> Self {
         let last_b9_coef = meta.advice_column();
         meta.create_gate("validate base_9_acc", |meta| {
@@ -169,12 +169,8 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                 .query_advice(base_9_acc, Rotation::next())
                 - meta.query_advice(base_9_acc, Rotation::cur());
             let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
-            let pow_of_9 = Expression::Constant(F::from_u64(B9).pow(&[
-                keccak_rotation as u64,
-                0,
-                0,
-                0,
-            ]));
+            let pow_of_9 =
+                Expression::Constant(F::from_u64(B9).pow(&[rotation, 0, 0, 0]));
             vec![(
                 "delta_base_9_acc === (high_value + low_value) * 9**rotation",
                 meta.query_selector(q_enable)
@@ -190,7 +186,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         Self {
             q_enable,
             last_b9_coef,
-            keccak_rotation,
+            rotation,
             base_13_acc,
             base_9_acc,
             special_chunk_table_config,
@@ -229,8 +225,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             offset,
             || Ok(base_9_acc),
         )?;
-        let last_pow_of_9 =
-            F::from_u64(B9).pow(&[self.keccak_rotation as u64, 0, 0, 0]);
+        let last_pow_of_9 = F::from_u64(B9).pow(&[self.rotation, 0, 0, 0]);
         let last_b9_coef = biguint_to_f::<F>((high_value + low_value) % 2u64)
             .ok_or(Error::SynthesisError)?;
         let value = base_9_acc + last_b9_coef * last_pow_of_9;
@@ -650,7 +645,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             q_is_special,
             base_13_cols[2],
             base_9_cols[2],
-            rotation,
+            rotation as u64,
         );
 
         Self {

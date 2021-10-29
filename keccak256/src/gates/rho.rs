@@ -103,13 +103,11 @@ mod tests {
     use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
     use std::convert::TryInto;
-    use std::marker::PhantomData;
     #[test]
     fn test_rho_gate() {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
-            _marker: PhantomData<F>,
         }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             type Config = RhoConfig<F>;
@@ -203,10 +201,7 @@ mod tests {
             out_state[5 * x + y] =
                 biguint_to_f(s1_arith[(x, y)].clone()).unwrap();
         }
-        let circuit = MyCircuit::<pallas::Base> {
-            in_state,
-            _marker: PhantomData,
-        };
+        let circuit = MyCircuit::<pallas::Base> { in_state };
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
