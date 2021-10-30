@@ -565,9 +565,10 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 /// we need to take care of.
 fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
     const BASE_NUM_OF_CHUNKS: u32 = 4;
-    // near the rotation position of the lane
-    if chunk_idx < rotation && rotation < chunk_idx + BASE_NUM_OF_CHUNKS {
-        return rotation - chunk_idx;
+    // near the rotation offset position of the lane
+    let offset = LANE_SIZE - rotation;
+    if chunk_idx < offset && offset < chunk_idx + BASE_NUM_OF_CHUNKS {
+        return offset - chunk_idx;
     }
     // near the end of the lane
     if chunk_idx < LANE_SIZE && LANE_SIZE < chunk_idx + BASE_NUM_OF_CHUNKS {
@@ -587,8 +588,8 @@ fn slice_lane(rotation: u32) -> Vec<(u32, u32)> {
     let mut output = vec![];
     while chunk_idx < LANE_SIZE {
         let step = get_step_size(chunk_idx, rotation);
-        chunk_idx += step;
         output.push((chunk_idx, step));
+        chunk_idx += step;
     }
     output
 }
