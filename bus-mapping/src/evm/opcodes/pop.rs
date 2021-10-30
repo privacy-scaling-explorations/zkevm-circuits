@@ -84,12 +84,12 @@ mod pop_tests {
         // memory of the EVM.
         let mem_map = obtained_steps[0].memory.clone();
 
-        // Generate Step1 corresponding to POP
+        // Generate Step1 corresponding to PUSH
         let mut step_1 = ExecutionStep {
             memory: mem_map,
-            stack: Stack(vec![EvmWord::from(0x80u8)]),,
+            stack: Stack(vec![EvmWord::from(0x80u64)]),,
             storage: Storage::empty(),
-            instruction: OpcodeId::POP,
+            instruction: OpcodeId::PUSH1,
             gas_info: gas_info!(gas, FASTEST),
             depth: 1u8,
             pc: pc.inc_pre(),
@@ -100,6 +100,29 @@ mod pop_tests {
         // Add StackOp associated to the pop at the latest Stack pos.
         ctx.push_op(
             &mut step_1,
+            StackOp::new(
+                RW::WRITE,
+                StackAddress::from(1023),
+                EvmWord::from(0x80u64),
+            ),
+        );
+
+        // Generate Step2 corresponding to POP
+        let mut step_2 = ExecutionStep {
+            memory: mem_map,
+            stack: Stack(vec![EvmWord::from(0x80u8)]),,
+            storage: Storage::empty(),
+            instruction: OpcodeId::POP,
+            gas_info: gas_info!(gas, FASTEST),
+            depth: 1u8,
+            pc: pc.inc_pre(),
+            gc: ctx.gc + 1,
+            bus_mapping_instance: vec![],
+        };
+
+        // Add StackOp associated to the pop at the latest Stack pos.
+        ctx.push_op(
+            &mut step_2,
             StackOp::new(
                 RW::READ,
                 StackAddress::from(1023),
