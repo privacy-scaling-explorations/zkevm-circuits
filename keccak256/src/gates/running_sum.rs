@@ -16,35 +16,94 @@ use std::iter;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
-struct RotatingVariables<F> {
+struct RotatingVariables {
+    rotation: u32,
+    chunk_idx: u32,
+    step: u32,
     input_raw: BigUint,
+    input_coef: BigUint,
     input_power_of_base: BigUint,
     input_acc: BigUint,
+    output_coef: BigUint,
     output_power_of_base: BigUint,
     output_acc: BigUint,
+    block_count: u32,
     // step2 acc and step3 acc
-    block_count_acc: [F; 2],
+    block_count_acc: [u32; 2],
+    low_value: BigUint,
+    high_value: Option<BigUint>,
 }
 
-impl<F: FieldExt> RotatingVariables<F> {
-    fn from(lane_base_13: F, rotation: u32) -> Result<Self, Error> {
-        let input_raw =
-            f_to_biguint(lane_base_13).ok_or(Error::SynthesisError)?;
-        let input_acc = input_raw.clone();
+impl RotatingVariables {
+    fn from(lane_base_13: BigUint, rotation: u32) -> Result<Self, Error> {
         let chunk_idx = 1;
+        let step = get_step_size(chunk_idx, rotation);
+        let input_raw = lane_base_13.clone() / B13;
+        let input_coef = input_raw.clone() % B13.pow(step);
+        let input_power_of_base = BigUint::from(B13);
+        let input_acc = lane_base_13.clone();
+        let (block_count, output_coef) =
+            get_block_count_and_output_coef(input_coef.clone());
+        let output_coef = BigUint::from(output_coef);
+        let output_power_of_base = if is_at_rotation_offset(chunk_idx, rotation)
+        {
+            BigUint::one()
+        } else {
+            BigUint::from(B9).pow(rotation + chunk_idx)
+        };
+        let output_acc = BigUint::zero();
+        let mut block_count_acc = [0; 2];
+        if step == 2 || step == 3 {
+            block_count_acc[(step - 2) as usize] += block_count;
+        }
+        let low_value = lane_base_13 % B13;
         Ok(Self {
+            rotation,
+            chunk_idx,
+            step,
             input_raw,
-            input_power_of_base: BigUint::from(B13),
+            input_coef,
+            input_power_of_base,
             input_acc,
-            output_power_of_base: if is_at_rotation_offset(chunk_idx, rotation)
-            {
+            output_coef,
+            output_power_of_base,
+            output_acc,
+            block_count,
+            block_count_acc,
+            low_value,
+            high_value: None,
+        })
+    }
+
+    fn next(&self) -> Self {
+        assert!(self.chunk_idx < LANE_SIZE);
+        let mut new = self.clone();
+        new.chunk_idx += self.step;
+        new.step = get_step_size(new.chunk_idx, self.rotation);
+        new.input_raw /= B13.pow(self.step);
+        new.input_coef = new.input_raw.clone() % B13.pow(new.step);
+        new.input_power_of_base *= B13.pow(self.step);
+        new.input_acc -=
+            self.input_power_of_base.clone() * self.input_coef.clone();
+        let (block_count, output_coef) =
+            get_block_count_and_output_coef(new.input_coef.clone());
+        new.output_coef = BigUint::from(output_coef);
+        new.output_power_of_base =
+            if is_at_rotation_offset(new.chunk_idx, self.rotation) {
                 BigUint::one()
             } else {
-                BigUint::from(B9).pow(rotation + chunk_idx)
-            },
-            output_acc: BigUint::zero(),
-            block_count_acc: [F::zero(); 2],
-        })
+                self.output_power_of_base.clone() * B9.pow(self.step)
+            };
+        new.output_acc +=
+            self.output_power_of_base.clone() * self.output_coef.clone();
+        new.block_count = block_count;
+        if self.step == 2 || self.step == 3 {
+            new.block_count_acc[(self.step - 2) as usize] += block_count;
+        }
+        if new.chunk_idx >= LANE_SIZE {
+            new.high_value = Some(self.input_raw.clone() % B13);
+        }
+        new
     }
 }
 
@@ -305,9 +364,11 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        block_count: F,
-        block_count_acc: [F; 2],
+        block_count: u32,
+        block_count_acc: [u32; 2],
     ) -> Result<BlockCount2<F>, Error> {
+        let block_count = F::from_u64(block_count.into());
+        let block_count_acc = block_count_acc.map(|x| F::from_u64(x.into()));
         region.assign_advice(
             || "block_count",
             self.block_count_cols[0],
@@ -436,7 +497,6 @@ pub struct ChunkRotateConversionConfig<F> {
     b9_rs_config: RunningSumConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
     step: u32,
-    is_at_rotation_offset: bool,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
@@ -448,7 +508,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         block_count_cols: [Column<Advice>; 3],
         fix_cols: [Column<Fixed>; 3],
         step: u32,
-        is_at_rotation_offset: bool,
     ) -> Self {
         let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
             meta,
@@ -494,7 +553,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             b9_rs_config,
             block_count_acc_config,
             step,
-            is_at_rotation_offset,
         }
     }
 
@@ -502,57 +560,26 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        rv: &mut RotatingVariables<F>,
+        rv: &mut RotatingVariables,
     ) -> Result<BlockCount2<F>, Error> {
-        let input_base_to_step = B13.pow(self.step);
-        let input_coef = rv.input_raw.clone() % input_base_to_step;
         self.b13_rs_config.assign_region(
             region,
             offset,
-            &input_coef,
+            &rv.input_coef,
             &rv.input_power_of_base,
             &rv.input_acc,
         )?;
-        rv.input_acc -= rv.input_power_of_base.clone() * input_coef.clone();
-        rv.input_raw /= input_base_to_step;
-        rv.input_power_of_base *= input_base_to_step;
-
-        let (block_count, output_coef) = self
-            .base_13_to_base_9_lookup
-            .get_block_count_and_output_coef(input_coef);
-
-        let output_base_to_step = B9.pow(self.step);
-        let output_coef = BigUint::from(output_coef);
         self.b9_rs_config.assign_region(
             region,
             offset,
-            &output_coef,
+            &rv.output_coef,
             &rv.output_power_of_base,
             &rv.output_acc,
         )?;
-        rv.output_acc += rv.output_power_of_base.clone() * output_coef;
-        rv.output_power_of_base = if self.is_at_rotation_offset {
-            BigUint::one()
-        } else {
-            rv.output_power_of_base.clone() * output_base_to_step
-        };
-
-        let block_count = F::from(block_count as u64);
-
-        match self.step {
-            1 | 4 => {}
-            2 => {
-                rv.block_count_acc[0] += block_count;
-            }
-            3 => {
-                rv.block_count_acc[1] += block_count;
-            }
-            _ => unreachable!("step <=4"),
-        }
         let block_counts = self.block_count_acc_config.assign_region(
             region,
             offset,
-            block_count,
+            rv.block_count,
             rv.block_count_acc,
         )?;
         Ok(block_counts)
@@ -594,6 +621,31 @@ fn slice_lane(rotation: u32) -> Vec<(u32, u32)> {
     output
 }
 
+fn block_counting_function(n: usize) -> u32 {
+    [0, 0, 1, 13, 170][n]
+}
+
+fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
+    let mut x = input_coef;
+    let mut output_coef = 0;
+    let mut non_zero_chunk_count = 0;
+    for i in 0..4 {
+        let base13_chunk = match (x.clone() % B13).to_u64_digits().first() {
+            Some(d) => *d,
+            None => 0u64,
+        };
+        let base9_chunk = convert_b13_coef(base13_chunk);
+        if base9_chunk != 0 {
+            non_zero_chunk_count += 1;
+        }
+        output_coef += base9_chunk * B9.pow(i as u32);
+        x /= B13;
+    }
+    let block_count = block_counting_function(non_zero_chunk_count);
+
+    (block_count, output_coef)
+}
+
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
     q_enable: Selector,
@@ -627,7 +679,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let slices = slice_lane(rotation);
         let chunk_rotate_convert_configs = slices
             .iter()
-            .map(|(chunk_idx, step)| {
+            .map(|(_, step)| {
                 ChunkRotateConversionConfig::configure(
                     q_enable,
                     meta,
@@ -636,7 +688,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     block_count_cols,
                     base13_to_9,
                     *step,
-                    is_at_rotation_offset(*chunk_idx, rotation),
                 )
             })
             .collect::<Vec<_>>();
@@ -680,30 +731,37 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 region.constrain_equal(lane_base_13.cell, cell)?;
 
                 offset += 1;
-                let mut all_block_counts = vec![];
 
-                let mut rv =
-                    RotatingVariables::from(lane_base_13.value, self.rotation)?;
-                let low_value = rv.input_raw.clone() % B13;
-                rv.input_raw /= B13;
-
-                for config in self.chunk_rotate_convert_configs.iter() {
-                    let block_counts =
-                        config.assign_region(&mut region, offset, &mut rv)?;
-                    offset += 1;
-                    all_block_counts.push(block_counts);
-                }
-                let high_value = rv.input_raw % B13;
+                let mut rv = RotatingVariables::from(
+                    f_to_biguint(lane_base_13.value)
+                        .ok_or(Error::SynthesisError)?,
+                    self.rotation,
+                )?;
+                let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
+                    .chunk_rotate_convert_configs
+                    .iter()
+                    .map(|config| {
+                        let block_counts = config.assign_region(
+                            &mut region,
+                            offset,
+                            &mut rv,
+                        )?;
+                        offset += 1;
+                        rv = rv.next();
+                        Ok(block_counts)
+                    })
+                    .collect();
+                let all_block_counts = all_block_counts?;
+                let block_counts =
+                    all_block_counts.last().ok_or(Error::SynthesisError)?;
                 let lane = self.special_chunk_config.assign_region(
                     &mut region,
                     offset,
-                    &low_value,
-                    &high_value,
+                    &rv.low_value,
+                    &rv.high_value.ok_or(Error::SynthesisError)?,
                     &rv.input_acc,
                     &rv.output_acc,
                 )?;
-                let block_counts =
-                    all_block_counts.last().ok_or(Error::SynthesisError)?;
                 Ok((lane, *block_counts))
             },
         )?;
