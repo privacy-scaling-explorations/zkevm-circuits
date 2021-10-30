@@ -81,7 +81,7 @@ impl OperationContainer {
 }
 
 #[cfg(test)]
-mod stack_tests {
+mod container_test {
     use super::*;
 
     use crate::{

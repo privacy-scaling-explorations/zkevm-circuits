@@ -81,8 +81,8 @@ impl Stack {
     }
 
     /// Returns the second last filled `StackAddress`.
-    pub fn second_last_filled(&self) -> StackAddress {
-        StackAddress::from(1025 - self.0.len())
+    pub fn nth_last_filled(&self, nth: usize) -> StackAddress {
+        StackAddress::from(1024 - self.0.len() + nth)
     }
 
     /// Returns the last [`EvmWord`] allocated in the `Stack`.
@@ -91,8 +91,8 @@ impl Stack {
     }
 
     /// Returns the second last [`EvmWord`] allocated in the `Stack`.
-    pub fn second_last(&self) -> Option<&EvmWord> {
-        self.0.get(self.0.len() - 2)
+    pub fn nth_last(&self, nth: usize) -> Option<&EvmWord> {
+        self.0.get(self.0.len() - (nth + 1))
     }
 
     /// Add last and second last value, and store on second last address and delete last element in the `Stack`.
@@ -136,7 +136,7 @@ mod stack_tests {
 
         assert_eq!(stack.stack_pointer(), StackAddress::from(1020));
         assert_eq!(stack.last_filled(), StackAddress::from(1021));
-        assert_eq!(stack.second_last_filled(), StackAddress::from(1022));
+        assert_eq!(stack.nth_last_filled(1), StackAddress::from(1022));
         Ok(())
     }
 
@@ -146,7 +146,7 @@ mod stack_tests {
 
         assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17").unwrap());
         assert_eq!(
-            stack.second_last().unwrap(),
+            stack.nth_last(1).unwrap(),
             &EvmWord::from_str("0x16").unwrap()
         );
         Ok(())

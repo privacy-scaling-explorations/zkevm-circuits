@@ -36,10 +36,10 @@ impl Opcode for Add {
         //
         let stack_second_last_value_read = exec_step
             .stack()
-            .second_last()
+            .nth_last(1)
             .cloned()
             .ok_or(Error::InvalidStackPointer)?;
-        let stack_second_last_position = exec_step.stack().second_last_filled();
+        let stack_second_last_position = exec_step.stack().nth_last_filled(1);
 
         // Manage second stack read at second latest stack position
         ctx.push_op(
@@ -77,7 +77,7 @@ mod add_tests {
     use crate::{
         bytecode,
         evm::{
-            EvmWord, GasCost, Memory,
+            EvmWord, GasCost, GlobalCounter, Memory, OpcodeId,
             OpcodeId::{ADD, PUSH1},
             Stack, StackAddress, Storage,
         },
@@ -87,27 +87,24 @@ mod add_tests {
     };
     use pasta_curves::pallas::Scalar;
 
-    macro_rules! push_opcode_to_ctx {
-        ($ctx:ident, $step:ident, $rw:path, $address:expr, $word:expr) => {
-            $ctx.push_op(&mut $step, StackOp::new($rw, $address, $word))
-        };
-    }
-
-    macro_rules! step_setup {
-        ($stack:expr, $instruction:path, $obtained_steps:expr, $gc:expr) => {
-            ExecutionStep {
-                memory: Memory::empty(),
-                stack: $stack,
-                storage: Storage::empty(),
-                instruction: $instruction,
-                gas: $obtained_steps.gas(),
-                gas_cost: GasCost::FASTEST,
-                depth: 1u8,
-                pc: $obtained_steps.pc(),
-                gc: $gc,
-                bus_mapping_instance: vec![],
-            }
-        };
+    fn step_setup(
+        stack: Stack,
+        instruction: OpcodeId,
+        obtained_steps: ExecutionStep,
+        gc: GlobalCounter,
+    ) -> ExecutionStep {
+        ExecutionStep {
+            memory: Memory::empty(),
+            stack,
+            storage: Storage::empty(),
+            instruction: instruction,
+            gas: obtained_steps.gas(),
+            gas_cost: GasCost::FASTEST,
+            depth: 1u8,
+            pc: obtained_steps.pc(),
+            gc: gc,
+            bus_mapping_instance: vec![],
+        }
     }
 
     #[test]
@@ -140,59 +137,58 @@ mod add_tests {
         let sum = stack_value_a.adc(stack_value_b).unwrap();
 
         // Generate Step1 corresponding to PUSH1 80
-        let mut step_1 =
-            step_setup!(Stack::empty(), PUSH1, obtained_steps[0], ctx.gc);
+        let mut step_1 = step_setup(
+            Stack::empty(),
+            PUSH1,
+            obtained_steps[0].clone(),
+            ctx.gc,
+        );
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        push_opcode_to_ctx!(
-            ctx,
-            step_1,
-            WRITE,
-            second_last_stack_pointer,
-            stack_value_a
+        ctx.push_op(
+            &mut step_1,
+            StackOp::new(WRITE, second_last_stack_pointer, stack_value_a),
         );
 
         // Generate Step2 corresponding to PUSH1 80
-        let mut step_2 = step_setup!(
+        let mut step_2 = step_setup(
             Stack(vec![stack_value_a]),
             PUSH1,
-            obtained_steps[1],
-            ctx.gc
+            obtained_steps[1].clone(),
+            ctx.gc,
         );
 
         // Add StackOp associated to the 0x80 push at the second latest Stack pos.
-        push_opcode_to_ctx!(
-            ctx,
-            step_2,
-            WRITE,
-            last_stack_pointer,
-            stack_value_b
+        ctx.push_op(
+            &mut step_2,
+            StackOp::new(WRITE, last_stack_pointer, stack_value_b),
         );
 
         // Generate Step3 corresponding to ADD
-        let mut step_3 =
-            step_setup!(Stack(vec![sum]), ADD, obtained_steps[2], ctx.gc);
+        let mut step_3 = step_setup(
+            Stack(vec![sum]),
+            ADD,
+            obtained_steps[2].clone(),
+            ctx.gc,
+        );
 
         // Manage first stack read at latest stack position
-        push_opcode_to_ctx!(
-            ctx,
-            step_3,
-            READ,
-            last_stack_pointer,
-            stack_value_a
+        ctx.push_op(
+            &mut step_3,
+            StackOp::new(READ, last_stack_pointer, stack_value_a),
         );
 
         // Manage second stack read at second latest stack position
-        push_opcode_to_ctx!(
-            ctx,
-            step_3,
-            READ,
-            second_last_stack_pointer,
-            stack_value_b
+        ctx.push_op(
+            &mut step_3,
+            StackOp::new(READ, second_last_stack_pointer, stack_value_b),
         );
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        push_opcode_to_ctx!(ctx, step_3, WRITE, second_last_stack_pointer, sum);
+        ctx.push_op(
+            &mut step_3,
+            StackOp::new(WRITE, second_last_stack_pointer, sum),
+        );
 
         // Compare each step bus mapping instance
         assert_eq!(
