@@ -56,8 +56,8 @@ mod pop_tests {
     #[test]
     fn pop_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
-            #[start]
             PUSH1(0x80u64)
+            #[start]
             POP
             STOP
         };
@@ -98,7 +98,7 @@ mod pop_tests {
         };
 
         // Add StackOp associated to the pop at the latest Stack pos.
-        ctx.pop_op(
+        ctx.push_op(
             &mut step_1,
             StackOp::new(
                 RW::READ,
