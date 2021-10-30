@@ -69,8 +69,6 @@ impl<F: FieldExt> ThetaConfig<F> {
         offset: usize,
         state: [F; 25],
     ) -> Result<[F; 25], Error> {
-        self.q_enable.enable(region, offset)?;
-
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),

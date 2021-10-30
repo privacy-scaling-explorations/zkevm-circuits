@@ -213,6 +213,31 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
         Ok(state)
     }
+
+    /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed asn an absolute instance column.
+    pub fn assign_round_ctant_b9(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        absolute_row: usize,
+    ) -> Result<(), Error> {
+        self.iota_b9_config
+            .assign_round_ctant_b9(region, offset, absolute_row)
+    }
+
+    /// Assigns the ROUND_CONSTANTS_BASE_13 to the `absolute_row` passed asn an absolute instance column.
+    pub fn assign_round_ctant_b13(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        absolute_row: usize,
+    ) -> Result<(), Error> {
+        self.iota_b13_config.assign_round_ctant_b13(
+            region,
+            offset,
+            absolute_row,
+        )
+    }
 }
 
 fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {

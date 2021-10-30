@@ -61,16 +61,18 @@ impl<F: FieldExt> IotaB13Config<F> {
         Ok(state)
     }
 
+    /// Assigns the ROUND_CONSTANTS_BASE_13to the `absolute_row` passed asn an absolute instance column.
     pub fn assign_round_ctant_b13(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        round_ctant: usize,
+        absolute_row: usize,
     ) -> Result<(), Error> {
         region.assign_advice_from_instance(
-            || format!("assign round_ctant_b13 {}", 0),
+            // `absolute_row` is the absolute offset in the overall Region where the Column is laying.
+            || format!("assign round_ctant_b13 {}", absolute_row),
             self.round_constants,
-            round_ctant,
+            absolute_row,
             self.round_ctant_b13,
             offset,
         )?;
