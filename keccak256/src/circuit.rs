@@ -44,10 +44,45 @@ pub struct KeccakFConfig<F: FieldExt> {
 impl<F: FieldExt> KeccakFConfig<F> {
     // We assume state is recieved in base-9.
     pub fn configure(
-        q_enable: Selector,
+        &self,
         meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
     ) -> KeccakFConfig<F> {
+        for _ in 0..24 {
+            // theta
+            ThetaConfig::configure(self.q_enable_theta, meta, self.state);
+            // rho
+            RhoConfig::configure(self.q_enable_theta, meta, self.state); // Should this contain the state of self.theta_config??
+
+            // Pi
+            PiConfig::configure(self.q_enable_theta, meta, self.state);
+            // xi
+            XiConfig::configure(self.q_enable_theta, meta, self.state);
+            // Iotab9
+            IotaB9Config::configure(
+                self.q_enable_theta,
+                meta,
+                self.state,
+                self.iota_b9_config.round_ctant_b9,
+                self.iota_b9_config.round_constants,
+            );
+        }
+        // theta
+        ThetaConfig::configure(self.q_enable_theta, meta, self.state);
+        // rho
+        RhoConfig::configure(self.q_enable_theta, meta, self.state); // Should this contain the state of self.theta_config??
+
+        // Pi
+        PiConfig::configure(self.q_enable_theta, meta, self.state);
+        // xi
+        XiConfig::configure(self.q_enable_theta, meta, self.state);
+        // Iotab9
+        IotaB9Config::configure(
+            self.q_enable_theta,
+            meta,
+            self.state,
+            self.iota_b9_config.round_ctant_b9,
+            self.iota_b9_config.round_constants,
+        );
         unimplemented!()
     }
 
@@ -58,7 +93,6 @@ impl<F: FieldExt> KeccakFConfig<F> {
         state: [F; 25],
     ) -> Result<[F; 25], Error> {
         // In case is needed
-        let old_state = state;
         let mut state = state;
         let mut offset = offset;
 
