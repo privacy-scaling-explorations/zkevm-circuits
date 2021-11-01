@@ -123,7 +123,7 @@ mod stack_tests {
     fn stack_addr_conversion() -> Result<(), Error> {
         let first_usize = 1023usize;
         let addr1 = StackAddress::from(first_usize);
-        let addr2 = StackAddress::from_str("0x3ff").unwrap();
+        let addr2 = StackAddress::from_str("0x3ff")?;
 
         assert_eq!(addr1.0, first_usize);
         assert_eq!(addr2.0, first_usize);
@@ -144,11 +144,8 @@ mod stack_tests {
     fn stack_get_value() -> Result<(), Error> {
         let stack = test_vec!("0x15", "0x16", "0x17");
 
-        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17").unwrap());
-        assert_eq!(
-            stack.nth_last(1).unwrap(),
-            &EvmWord::from_str("0x16").unwrap()
-        );
+        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17")?);
+        assert_eq!(stack.nth_last(1).unwrap(), &EvmWord::from_str("0x16")?);
         Ok(())
     }
 
@@ -157,7 +154,7 @@ mod stack_tests {
         let mut stack = test_vec!("0x15", "0x16", "0x17");
         stack.pop();
 
-        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x16").unwrap());
+        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x16")?);
         assert_eq!(stack.stack_pointer(), StackAddress::from(1021));
         Ok(())
     }
