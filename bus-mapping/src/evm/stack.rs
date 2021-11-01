@@ -101,8 +101,12 @@ impl Stack {
 mod stack_tests {
     use super::*;
 
-    macro_rules! test_vec {
-        ($($x:expr),*) => (Stack::new(vec![ $(EvmWord::from_str($x).unwrap()), *]))
+    fn setup_stack(stack_value: [&str; 3]) -> Stack {
+        Stack::new(vec![
+            EvmWord::from_str(stack_value[0]).unwrap(),
+            EvmWord::from_str(stack_value[1]).unwrap(),
+            EvmWord::from_str(stack_value[2]).unwrap(),
+        ])
     }
 
     #[test]
@@ -118,7 +122,7 @@ mod stack_tests {
 
     #[test]
     fn stack_pointer() -> Result<(), Error> {
-        let stack = test_vec!("0x15", "0x16", "0x17");
+        let stack = setup_stack(["0x15", "0x16", "0x17"]);
 
         assert_eq!(stack.stack_pointer(), StackAddress::from(1020));
         assert_eq!(stack.last_filled(), StackAddress::from(1021));
@@ -128,7 +132,7 @@ mod stack_tests {
 
     #[test]
     fn stack_get_value() -> Result<(), Error> {
-        let stack = test_vec!("0x15", "0x16", "0x17");
+        let stack = setup_stack(["0x15", "0x16", "0x17"]);
 
         assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17")?);
         assert_eq!(stack.nth_last(1).unwrap(), &EvmWord::from_str("0x16")?);
