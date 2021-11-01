@@ -38,8 +38,6 @@ pub enum Error {
     WordToMemAddr,
     /// Error while generating a trace.
     TracingError,
-    /// Error while adding EvmWord
-    EvmWordAddingOverflow,
 }
 
 impl Display for Error {

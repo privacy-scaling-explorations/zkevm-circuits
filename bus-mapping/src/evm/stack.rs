@@ -2,6 +2,7 @@
 use crate::evm::EvmWord;
 use crate::Error;
 use core::str::FromStr;
+
 /// Represents a `StackAddress` of the EVM.
 /// The address range goes `TOP -> DOWN (1024, 0]`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -94,21 +95,6 @@ impl Stack {
     pub fn nth_last(&self, nth: usize) -> Option<&EvmWord> {
         self.0.get(self.0.len() - (nth + 1))
     }
-
-    /// Add last and second last value, and store on second last address and delete last element in the `Stack`.
-    pub fn add(&mut self) -> Option<EvmWord> {
-        let length = self.0.len();
-        let last_value = self.0.last().unwrap();
-        let second_last_value = self.0.get(self.0.len() - 2).unwrap();
-        let sum = last_value.adc(*second_last_value).unwrap();
-        self.0[length - 2] = sum;
-        self.pop()
-    }
-
-    /// Pop the last [`EvmWord`] allocated in the `Stack`.
-    pub fn pop(&mut self) -> Option<EvmWord> {
-        self.0.pop()
-    }
 }
 
 #[cfg(test)]
@@ -146,16 +132,6 @@ mod stack_tests {
 
         assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17")?);
         assert_eq!(stack.nth_last(1).unwrap(), &EvmWord::from_str("0x16")?);
-        Ok(())
-    }
-
-    #[test]
-    fn stack_pop() -> Result<(), Error> {
-        let mut stack = test_vec!("0x15", "0x16", "0x17");
-        stack.pop();
-
-        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x16")?);
-        assert_eq!(stack.stack_pointer(), StackAddress::from(1021));
         Ok(())
     }
 }

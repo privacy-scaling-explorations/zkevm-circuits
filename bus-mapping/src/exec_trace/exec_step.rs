@@ -75,11 +75,6 @@ impl ExecutionStep {
         &self.stack
     }
 
-    /// Returns the mut Stack of this `ExecutionStep`.
-    pub fn mut_stack(&mut self) -> &mut Stack {
-        &mut self.stack
-    }
-
     /// Returns the Storage view of this `ExecutionStep`.
     pub const fn storage(&self) -> &Storage {
         &self.storage

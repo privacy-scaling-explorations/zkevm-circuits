@@ -5,7 +5,7 @@ pub(crate) mod opcodes;
 pub mod stack;
 pub mod storage;
 
-use crate::error::{Error, EthAddressParsingError, EvmWordParsingError};
+use crate::error::{EthAddressParsingError, EvmWordParsingError};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -198,25 +198,6 @@ impl EvmWord {
     pub fn to_hex(self) -> String {
         hex::encode(self.to_be_bytes())
     }
-
-    /// Returns an added `EvmWord`
-    pub fn adc(self, number: EvmWord) -> Result<EvmWord, Error> {
-        let u8_max = u8::MAX as u16;
-        let mut result = EvmWord::default();
-        let mut carry = 0;
-        for n in 0..32 {
-            let a = self.0[31 - n] as u16;
-            let b = number.0[31 - n] as u16;
-            let sum = a + b + carry;
-            let rem = sum % (u8_max + 1);
-            carry = if sum > u8_max { 1 } else { 0 };
-            result.0[31 - n] = rem as u8;
-            if n == 31 && carry == 1 {
-                return Err(Error::EvmWordAddingOverflow);
-            }
-        }
-        Ok(result)
-    }
 }
 
 /// Representation of an Ethereum Address which is basically a 20-byte array.
@@ -380,27 +361,6 @@ mod evm_tests {
         let word_from_str = EvmWord::from_str(word_str)?;
 
         assert_eq!(word_from_u128, word_from_str);
-        Ok(())
-    }
-
-    #[test]
-    fn evmword_add() -> Result<(), Error> {
-        // Test add
-        let a = EvmWord::from_str("deadbeef")?;
-        let b = EvmWord::from_str("faceb00c")?;
-        assert_eq!(
-            a.adc(b)?.to_hex(),
-            "00000000000000000000000000000000000000000000000000000001d97c6efb"
-        );
-
-        // Test add Error
-        let c = EvmWord::from_str(
-            "8000000000000000000000000000000000000000000000000000000000000000",
-        )?;
-        let d = EvmWord::from_str(
-            "8000000000000000000000000000000000000000000000000000000000000000",
-        )?;
-        assert_eq!(&format!("{:?}", c.adc(d)), "Err(EvmWordAddingOverflow)");
         Ok(())
     }
 
