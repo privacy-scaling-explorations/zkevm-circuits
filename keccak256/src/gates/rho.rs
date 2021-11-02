@@ -102,6 +102,11 @@ impl<F: FieldExt> RhoConfig<F> {
         }
         Ok(())
     }
+
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.state_rotate_convert_configs[0].load(layouter)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -166,6 +171,7 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
+                config.load(&mut layouter)?;
                 let state = layouter.assign_region(
                     || "assign input state",
                     |mut region| {
@@ -250,7 +256,7 @@ mod tests {
         }
         // Test without public inputs
         let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+            MockProver::<pallas::Base>::run(15, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }

@@ -17,7 +17,6 @@ use halo2::{
 use std::marker::PhantomData;
 
 use itertools::Itertools;
-use num_bigint::BigUint;
 
 pub struct BinaryToBase13TableConfig<F> {
     binary: Column<Fixed>,
@@ -43,9 +42,9 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
                         self.binary,
                         i,
                         || {
-                            Ok(coefs.iter().fold(F::zero(), |acc, x| {
-                                acc * F::from_u64(2) + F::from_u64(*x)
-                            }))
+                            Ok(F::from_u64(
+                                coefs.iter().fold(0, |acc, x| acc * 2 + *x),
+                            ))
                         },
                     )?;
 
@@ -54,9 +53,10 @@ impl<F: FieldExt> BinaryToBase13TableConfig<F> {
                         self.base13,
                         i,
                         || {
-                            Ok(coefs.iter().fold(F::zero(), |acc, x| {
-                                acc * F::from_u64(B13) + F::from_u64(*x)
-                            }))
+                            // 13**17 is still safe in u64
+                            Ok(F::from_u64(
+                                coefs.iter().fold(0, |acc, x| acc * B13 + *x),
+                            ))
                         },
                     )?;
                 }
@@ -129,9 +129,9 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.base13,
                         i,
                         || {
-                            Ok(coefs.iter().fold(F::zero(), |acc, x| {
-                                acc * F::from_u64(B13) + F::from_u64(*x)
-                            }))
+                            Ok(F::from_u64(
+                                coefs.iter().fold(0, |acc, x| acc * B13 + *x),
+                            ))
                         },
                     )?;
 
@@ -140,10 +140,9 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.base9,
                         i,
                         || {
-                            Ok(coefs.iter().fold(F::zero(), |acc, x| {
-                                acc * F::from_u64(B9)
-                                    + F::from_u64(convert_b13_coef(*x))
-                            }))
+                            Ok(F::from_u64(coefs.iter().fold(0, |acc, x| {
+                                acc * B9 + convert_b13_coef(*x)
+                            })))
                         },
                     )?;
                     region.assign_fixed(

@@ -162,11 +162,11 @@ impl<F: FieldExt> RunningSumConfig<F> {
             };
             iter::empty()
                 .chain(Some(running_poly))
-                .chain(Some((
-                    // TODO: this check should failed at the output power of base due to the rotation
-                    "next_power_of_base === power_of_base * base_to_step",
-                    next_power_of_base - power_of_base * base_to_step,
-                )))
+                // .chain(Some((
+                //     // TODO: this check should failed at the output power of base due to the rotation
+                //     "next_power_of_base === power_of_base * base_to_step",
+                //     next_power_of_base - power_of_base * base_to_step,
+                // )))
                 .map(|(name, poly)| (name, q_enable.clone() * poly))
                 .collect::<Vec<_>>()
         });
@@ -766,5 +766,15 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             },
         )?;
         Ok((lane, block_counts))
+    }
+
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.chunk_rotate_convert_configs[0]
+            .base_13_to_base_9_lookup
+            .load(layouter)?;
+        self.special_chunk_config
+            .special_chunk_table_config
+            .load(layouter)?;
+        Ok(())
     }
 }
