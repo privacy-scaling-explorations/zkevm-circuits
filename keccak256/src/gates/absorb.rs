@@ -59,12 +59,15 @@ impl<F: FieldExt> AbsorbConfig<F> {
         }
     }
 
-    pub fn assign_state(
+    pub fn assign_state_and_next_inp(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        next_input: [F; ABSORB_NEXT_INPUTS],
+        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        self.q_enable.enable(region, offset)?;
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -73,15 +76,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 || Ok(*lane),
             )?;
         }
-        Ok(state)
-    }
 
-    pub fn assign_next_input(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        next_input: [F; ABSORB_NEXT_INPUTS],
-    ) -> Result<[F; ABSORB_NEXT_INPUTS], Error> {
         for (idx, lane) in next_input.iter().enumerate() {
             region.assign_advice(
                 || format!("assign next_input {}", idx),
@@ -90,6 +85,27 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 || Ok(*lane),
             )?;
         }
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+
+        Ok(out_state)
+    }
+
+    pub fn assign_next_input(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        next_input: [F; ABSORB_NEXT_INPUTS],
+    ) -> Result<[F; ABSORB_NEXT_INPUTS], Error> {
+        self.q_enable.enable(region, offset)?;
+
         Ok(next_input)
     }
 }
@@ -154,19 +170,13 @@ mod tests {
                     || "assign input state",
                     |mut region| {
                         let offset = 0;
-                        config.q_enable.enable(&mut region, offset)?;
-                        config.assign_state(
+                        config.assign_state_and_next_inp(
                             &mut region,
                             offset,
                             self.in_state,
-                        )?;
-                        config.assign_next_input(
-                            &mut region,
-                            offset,
                             self.next_input,
-                        )?;
-                        let offset = 1;
-                        config.assign_state(&mut region, offset, self.out_state)
+                            self.out_state,
+                        )
                     },
                 )?;
 
