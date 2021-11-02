@@ -26,6 +26,9 @@ impl<F: FieldExt> IotaB9Config<F> {
         round_ctant_b9: Column<Advice>,
         round_constants: Column<Instance>,
     ) -> IotaB9Config<F> {
+        // Enable copy constraints over PI and the Advices.
+        meta.enable_equality(round_ctant_b9.into());
+        meta.enable_equality(round_constants.into());
         meta.create_gate("iota_b9", |meta| {
             // def iota_b9(state: List[List[int], round_constant_base9: int):
             //     d = round_constant_base9
@@ -53,7 +56,9 @@ impl<F: FieldExt> IotaB9Config<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        self.q_enable.enable(region, offset)?;
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -62,7 +67,16 @@ impl<F: FieldExt> IotaB9Config<F> {
                 || Ok(*lane),
             )?;
         }
-        Ok(state)
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign out_state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+        Ok(out_state)
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed asn an
@@ -133,9 +147,6 @@ mod tests {
                 // Allocate space for the round constants in base-9 which is an
                 // instance column
                 let round_ctants = meta.instance_column();
-                // Enable copy constraints over PI and the Advices.
-                meta.enable_equality(round_ctant_b9.into());
-                meta.enable_equality(round_ctants.into());
                 IotaB9Config::configure(
                     q_enable,
                     meta,
@@ -159,14 +170,8 @@ mod tests {
                             &mut region,
                             offset,
                             self.in_state,
-                        )?;
-                        let offset = 1;
-                        config.assign_state(
-                            &mut region,
-                            offset,
                             self.out_state,
                         )?;
-                        let offset = 0;
                         // Within the Region itself, we use the constant in the
                         // same offset so at position
                         // (Rotation::curr()). Therefore we use `0` here.

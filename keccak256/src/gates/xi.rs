@@ -72,7 +72,9 @@ impl<F: FieldExt> XiConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        self.q_enable.enable(region, offset)?;
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -81,7 +83,16 @@ impl<F: FieldExt> XiConfig<F> {
                 || Ok(*lane),
             )?;
         }
-        Ok(state)
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign out_state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+        Ok(out_state)
     }
 }
 
@@ -142,9 +153,8 @@ mod tests {
                             &mut region,
                             offset,
                             self.in_state,
-                        )?;
-                        let offset = 1;
-                        config.assign_state(&mut region, offset, self.out_state)
+                            self.out_state,
+                        )
                     },
                 )?;
 

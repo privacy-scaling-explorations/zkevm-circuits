@@ -272,6 +272,7 @@ mod tests {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
         unimplemented!()
     }

@@ -11,31 +11,21 @@ use crate::keccak_arith::*;
 use crate::{arith_helpers::*, common::ROUND_CONSTANTS};
 use halo2::{
     circuit::Region,
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Instance, Selector,
-    },
-    poly::Rotation,
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
 use pasta_curves::arithmetic::FieldExt;
-use std::marker::PhantomData;
+use std::{convert::TryInto, marker::PhantomData};
 
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: FieldExt> {
-    q_enable_theta: Selector,
     theta_config: ThetaConfig<F>,
-    q_enable_rho: Selector,
     rho_config: RhoConfig<F>,
-    q_enable_pi: Selector,
     pi_config: PiConfig<F>,
-    q_enable_xi: Selector,
     xi_config: XiConfig<F>,
-    q_enable_iota_b9: Selector,
     iota_b9_config: IotaB9Config<F>,
-    q_enable_iota_b13: Selector,
     iota_b13_config: IotaB13Config<F>,
-    q_enable_absorb: Selector,
     absorb_config: AbsorbConfig<F>,
     state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
@@ -47,43 +37,74 @@ impl<F: FieldExt> KeccakFConfig<F> {
         &self,
         meta: &mut ConstraintSystem<F>,
     ) -> KeccakFConfig<F> {
-        for _ in 0..24 {
-            // theta
-            ThetaConfig::configure(self.q_enable_theta, meta, self.state);
-            // rho
-            RhoConfig::configure(self.q_enable_theta, meta, self.state); // Should this contain the state of self.theta_config??
+        let state = (0..25)
+            .map(|_| {
+                let column = meta.advice_column();
+                meta.enable_equality(column.into());
+                column
+            })
+            .collect_vec()
+            .try_into()
+            .unwrap();
 
-            // Pi
-            PiConfig::configure(self.q_enable_theta, meta, self.state);
-            // xi
-            XiConfig::configure(self.q_enable_theta, meta, self.state);
-            // Iotab9
-            IotaB9Config::configure(
-                self.q_enable_theta,
-                meta,
-                self.state,
-                self.iota_b9_config.round_ctant_b9,
-                self.iota_b9_config.round_constants,
-            );
-        }
+        // TMP for mixing
+        let next_input = (0..ABSORB_NEXT_INPUTS)
+            .map(|_| meta.advice_column())
+            .collect_vec()
+            .try_into()
+            .unwrap();
         // theta
-        ThetaConfig::configure(self.q_enable_theta, meta, self.state);
+        let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        RhoConfig::configure(self.q_enable_theta, meta, self.state); // Should this contain the state of self.theta_config??
-
+        let rho_config = RhoConfig::configure(meta.selector(), meta, state);
         // Pi
-        PiConfig::configure(self.q_enable_theta, meta, self.state);
+        let pi_config = PiConfig::configure(meta.selector(), meta, state);
         // xi
-        XiConfig::configure(self.q_enable_theta, meta, self.state);
+        let xi_config = XiConfig::configure(meta.selector(), meta, state);
         // Iotab9
-        IotaB9Config::configure(
-            self.q_enable_theta,
-            meta,
-            self.state,
-            self.iota_b9_config.round_ctant_b9,
-            self.iota_b9_config.round_constants,
-        );
-        unimplemented!()
+
+        let iota_b9_config = {
+            // Generate advice and instance column for Round constants in base9
+            let round_ctant_b9 = meta.advice_column();
+            let round_constants_b9 = meta.instance_column();
+            IotaB9Config::configure(
+                meta.selector(),
+                meta,
+                state,
+                round_ctant_b9,
+                round_constants_b9,
+            )
+        };
+
+        // Just TMP until Mixing stage is done
+        let iota_b13_config = {
+            // Generate advice and instance column for Round constants in base13
+            let round_ctant_b13 = meta.advice_column();
+            let round_constants_b13 = meta.instance_column();
+            IotaB13Config::configure(
+                meta.selector(),
+                meta,
+                state,
+                round_ctant_b13,
+                round_constants_b13,
+            )
+        };
+
+        // Absorb TMP
+        let absorb_config =
+            AbsorbConfig::configure(meta.selector(), meta, state, next_input);
+
+        KeccakFConfig {
+            theta_config,
+            rho_config,
+            pi_config,
+            xi_config,
+            iota_b9_config,
+            iota_b13_config,
+            absorb_config,
+            state,
+            _marker: PhantomData,
+        }
     }
 
     pub fn assign_state(
@@ -101,55 +122,58 @@ impl<F: FieldExt> KeccakFConfig<F> {
             // State in base-13
             // theta
             state = {
-                // assignment
-                self.theta_config.assign_state(region, offset, state)?;
                 // Apply theta outside circuit
-                let state_after_theta =
-                    KeccakFArith::theta(&state_to_biguint(state));
-                state_bigint_to_pallas(state_after_theta)
+                let out_state = KeccakFArith::theta(&state_to_biguint(state));
+                let out_state = state_bigint_to_pallas(out_state);
+                // assignment
+                self.theta_config
+                    .assign_state(region, offset, state, out_state)?
             };
 
             offset += 1;
 
             // rho
             state = {
-                // assignment
-                self.rho_config.assign_state(region, offset, state)?;
                 // Apply rho outside circuit
-                let state_after_rho =
-                    KeccakFArith::rho(&state_to_biguint(state));
-                state_bigint_to_pallas(state_after_rho)
+                let out_state = KeccakFArith::rho(&state_to_biguint(state));
+                let out_state = state_bigint_to_pallas(out_state);
+                // assignment
+                self.rho_config
+                    .assign_state(region, offset, state, out_state)?
             };
             // Outputs in base-9 which is what Pi requires.
 
             // pi
             state = {
-                // assignment
-                self.pi_config.assign_state(region, offset, state)?;
                 // Apply pi outside circuit
-                let state_after_pi = KeccakFArith::pi(&state_to_biguint(state));
-                state_bigint_to_pallas(state_after_pi)
+                let out_state = KeccakFArith::pi(&state_to_biguint(state));
+                let out_state = state_bigint_to_pallas(out_state);
+                // assignment
+                self.pi_config
+                    .assign_state(region, offset, state, out_state)?
             };
 
             // xi
             state = {
-                // assignment
-                self.xi_config.assign_state(region, offset, state)?;
                 // Apply xi outside circuit
-                let state_after_xi = KeccakFArith::xi(&state_to_biguint(state));
-                state_bigint_to_pallas(state_after_xi)
+                let out_state = KeccakFArith::xi(&state_to_biguint(state));
+                let out_state = state_bigint_to_pallas(out_state);
+                // assignment
+                self.xi_config
+                    .assign_state(region, offset, state, out_state)?
             };
 
             // iota_b9
             state = {
-                // assignment
-                self.iota_b9_config.assign_state(region, offset, state)?;
                 // Apply iota_b9 outside circuit
-                let state_after_iota_b9 = KeccakFArith::iota_b9(
+                let out_state = KeccakFArith::iota_b9(
                     &state_to_biguint(state),
                     ROUND_CONSTANTS[round],
                 );
-                state_bigint_to_pallas(state_after_iota_b9)
+                let out_state = state_bigint_to_pallas(out_state);
+                // assignment
+                self.iota_b9_config
+                    .assign_state(region, offset, state, out_state)?
             };
             // The resulting state is in Base-13 now. Which is what Theta requires again at the start of the loop.
         }
@@ -158,54 +182,58 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // State in base-13
         // theta
         state = {
-            // assignment
-            self.theta_config.assign_state(region, offset, state)?;
             // Apply theta outside circuit
-            let state_after_theta =
-                KeccakFArith::theta(&state_to_biguint(state));
-            state_bigint_to_pallas(state_after_theta)
+            let out_state = KeccakFArith::theta(&state_to_biguint(state));
+            let out_state = state_bigint_to_pallas(out_state);
+            // assignment
+            self.theta_config
+                .assign_state(region, offset, state, out_state)?
         };
 
         offset += 1;
 
         // rho
         state = {
-            // assignment
-            self.rho_config.assign_state(region, offset, state)?;
             // Apply rho outside circuit
-            let state_after_rho = KeccakFArith::rho(&state_to_biguint(state));
-            state_bigint_to_pallas(state_after_rho)
+            let out_state = KeccakFArith::rho(&state_to_biguint(state));
+            let out_state = state_bigint_to_pallas(out_state);
+            // assignment
+            self.rho_config
+                .assign_state(region, offset, state, out_state)?
         };
         // Outputs in base-9 which is what Pi requires.
 
         // pi
         state = {
-            // assignment
-            self.pi_config.assign_state(region, offset, state)?;
             // Apply pi outside circuit
-            let state_after_pi = KeccakFArith::pi(&state_to_biguint(state));
-            state_bigint_to_pallas(state_after_pi)
+            let out_state = KeccakFArith::pi(&state_to_biguint(state));
+            let out_state = state_bigint_to_pallas(out_state);
+            // assignment
+            self.pi_config
+                .assign_state(region, offset, state, out_state)?
         };
 
         // xi
         state = {
-            // assignment
-            self.xi_config.assign_state(region, offset, state)?;
             // Apply xi outside circuit
-            let state_after_xi = KeccakFArith::xi(&state_to_biguint(state));
-            state_bigint_to_pallas(state_after_xi)
+            let out_state = KeccakFArith::xi(&state_to_biguint(state));
+            let out_state = state_bigint_to_pallas(out_state);
+            // assignment
+            self.xi_config
+                .assign_state(region, offset, state, out_state)?
         };
 
         // iota_b9
         state = {
-            // assignment
-            self.iota_b9_config.assign_state(region, offset, state)?;
             // Apply iota_b9 outside circuit
-            let state_after_iota_b9 = KeccakFArith::iota_b9(
+            let out_state = KeccakFArith::iota_b9(
                 &state_to_biguint(state),
                 ROUND_CONSTANTS[round],
             );
-            state_bigint_to_pallas(state_after_iota_b9)
+            let out_state = state_bigint_to_pallas(out_state);
+            // assignment
+            self.iota_b9_config
+                .assign_state(region, offset, state, out_state)?
         };
 
         // Final round (if / else)
@@ -213,34 +241,9 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
         Ok(state)
     }
-
-    /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed asn an absolute instance column.
-    pub fn assign_round_ctant_b9(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        absolute_row: usize,
-    ) -> Result<(), Error> {
-        self.iota_b9_config
-            .assign_round_ctant_b9(region, offset, absolute_row)
-    }
-
-    /// Assigns the ROUND_CONSTANTS_BASE_13 to the `absolute_row` passed asn an absolute instance column.
-    pub fn assign_round_ctant_b13(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        absolute_row: usize,
-    ) -> Result<(), Error> {
-        self.iota_b13_config.assign_round_ctant_b13(
-            region,
-            offset,
-            absolute_row,
-        )
-    }
 }
 
-fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
+pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
@@ -250,7 +253,7 @@ fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
     }
 }
 
-fn state_bigint_to_pallas<F: FieldExt>(state: StateBigInt) -> [F; 25] {
+pub fn state_bigint_to_pallas<F: FieldExt>(state: StateBigInt) -> [F; 25] {
     let mut arr = [F::zero(); 25];
     let vector: Vec<F> = state
         .xy
