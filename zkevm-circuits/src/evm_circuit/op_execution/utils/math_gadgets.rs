@@ -91,7 +91,7 @@ impl<F: FieldExt> IsEqualGadget<F> {
 /// `NUM_BYTES` is required to be `<= MAX_BYTES_FIELD` to prevent overflow:
 /// values are stored in a single field element and two of these
 /// are added together.
-/// The equation that is enforced is `lhs == rhs + diff - (lt * range)`.
+/// The equation that is enforced is `lhs - rhs == diff - (lt * range)`.
 /// Because all values are `<= 256**NUM_BYTES` and `lt` is boolean,
 ///  `lt` can only be `1` when `lhs < rhs`.
 #[derive(Clone, Debug)]
@@ -123,8 +123,8 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         rhs: Expression<F>,
     ) -> Expression<F> {
         let diff = utils::from_bytes::expr(self.diff.to_vec());
-        // The equation we require to hold: `lhs == rhs + diff - (lt * range)`.
-        cb.require_equal(lhs, rhs + diff - (self.lt.expr() * self.range));
+        // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
+        cb.require_equal(lhs - rhs, diff - (self.lt.expr() * self.range));
 
         // `lt` needs to be boolean
         cb.require_boolean(self.lt.expr());
