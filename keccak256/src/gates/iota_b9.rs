@@ -165,7 +165,6 @@ mod tests {
                     || "assign input & output state + constant in same region",
                     |mut region| {
                         let offset = 0;
-                        config.q_enable.enable(&mut region, offset)?;
                         config.assign_state(
                             &mut region,
                             offset,
