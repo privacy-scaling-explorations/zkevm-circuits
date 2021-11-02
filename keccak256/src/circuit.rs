@@ -142,6 +142,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     .assign_state(region, offset, state, out_state)?
             };
             // Outputs in base-9 which is what Pi requires.
+            offset += 1;
 
             // pi
             state = {
@@ -153,6 +154,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     .assign_state(region, offset, state, out_state)?
             };
 
+            offset += 1;
+
             // xi
             state = {
                 // Apply xi outside circuit
@@ -162,6 +165,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 self.xi_config
                     .assign_state(region, offset, state, out_state)?
             };
+
+            offset += 1;
 
             // iota_b9
             state = {
@@ -176,6 +181,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     .assign_state(region, offset, state, out_state)?
             };
             // The resulting state is in Base-13 now. Which is what Theta requires again at the start of the loop.
+            offset += 1;
         }
         let round = 24;
         // 24th round
@@ -202,6 +208,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 .assign_state(region, offset, state, out_state)?
         };
         // Outputs in base-9 which is what Pi requires.
+        offset += 1;
 
         // pi
         state = {
@@ -213,6 +220,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 .assign_state(region, offset, state, out_state)?
         };
 
+        offset += 1;
+
         // xi
         state = {
             // Apply xi outside circuit
@@ -222,6 +231,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
             self.xi_config
                 .assign_state(region, offset, state, out_state)?
         };
+
+        offset += 1;
 
         // iota_b9
         state = {
@@ -235,6 +246,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
             self.iota_b9_config
                 .assign_state(region, offset, state, out_state)?
         };
+
+        offset += 1;
 
         // Final round (if / else)
         // TODO!!!
