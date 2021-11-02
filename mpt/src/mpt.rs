@@ -24,6 +24,7 @@ pub struct MPTConfig<F> {
     is_compact_leaf: Column<Advice>,
     is_keccak_leaf: Column<Advice>,
     node_index: Column<Advice>,
+    is_modified: Column<Advice>, // whether this branch child is modified
     key: Column<Advice>,
     s_rlp1: Column<Advice>,
     s_rlp2: Column<Advice>,
@@ -47,6 +48,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_compact_leaf = meta.advice_column();
         let is_keccak_leaf = meta.advice_column();
         let node_index = meta.advice_column();
+        let is_modified = meta.advice_column();
         let key = meta.advice_column();
 
         let s_rlp1 = meta.advice_column();
@@ -89,6 +91,22 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let one = Expression::Constant(F::one());
 
+        // Turn 32 hash cells into 4 cells containing keccak words.
+        let into_words_expr = |hash: Vec<Expression<F>>| {
+            let mut words = vec![];
+            for i in 0..4 {
+                let mut word = Expression::Constant(F::zero());
+                let mut exp = Expression::Constant(F::one());
+                for j in 0..8 {
+                    word = word + hash[i * 8 + j].clone() * exp.clone();
+                    exp = exp * Expression::Constant(F::from_u64(256));
+                }
+                words.push(word)
+            }
+
+            words
+        };
+
         meta.create_gate("general constraints", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
@@ -113,6 +131,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
+            let is_modified = meta.query_advice(is_modified, Rotation::cur());
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
@@ -149,6 +168,24 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable.clone()
                     * is_branch_child_cur.clone()
                     * (s_rlp2 - c_rlp2)
+                    * (node_index_cur.clone() - key.clone()),
+            ));
+
+            let bool_check_is_modified =
+                is_modified.clone() * (one.clone() - is_modified.clone());
+            constraints.push((
+                "bool check is_modified",
+                q_enable.clone() * bool_check_is_modified,
+            ));
+
+            // is_modified is:
+            //   0 when node_index_cur != key
+            //   1 when node_index_cur == key
+            constraints.push((
+                "is modified",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * is_modified
                     * (node_index_cur.clone() - key.clone()),
             ));
 
@@ -231,6 +268,17 @@ impl<F: FieldExt> MPTConfig<F> {
                     * is_branch_child_cur.clone()
                     * node_index_cur.clone() // ignore if node_index = 0
                     * (node_index_cur.clone() - node_index_prev - one.clone()),
+            ));
+
+            // key needs to be the same for all branch nodes
+            let key_prev = meta.query_advice(key, Rotation::prev());
+            let key_cur = meta.query_advice(key, Rotation::cur());
+            constraints.push((
+                "key the same for branch children",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (key_cur - key_prev),
             ));
 
             // TODO: is_branch_child is followed by is_compact_leaf
@@ -334,15 +382,38 @@ impl<F: FieldExt> MPTConfig<F> {
                 ));
             }
 
-            // TODO: s_keccak and c_keccak correspond to s and c at the modified index
-            // add is_modified is zero chip (key = node_index_cur)
-            // compute expression from s_keccak and c_keccak using into_words_expr
-            /*
-            constraints.push((
-                "s_keccak correspond to s_advices at the modified index",
-                q_not_first.clone() * is_branch_child_cur.clone() * is_modified,
-            ));
-            */
+            // s_keccak and c_keccak correspond to s and c at the modified index
+            let is_modified = meta.query_advice(is_modified, Rotation::cur());
+
+            let mut s_hash = vec![];
+            let mut c_hash = vec![];
+            for (ind, column) in s_advices.iter().enumerate() {
+                s_hash.push(meta.query_advice(*column, Rotation::cur()));
+                c_hash.push(meta.query_advice(c_advices[ind], Rotation::cur()));
+            }
+            let s_advices_words = into_words_expr(s_hash);
+            let c_advices_words = into_words_expr(c_hash);
+
+            for (ind, column) in s_keccak.iter().enumerate() {
+                let s_keccak_cur = meta.query_advice(*column, Rotation::cur());
+                constraints.push((
+                    "s_keccak correspond to s_advices at the modified index",
+                    q_not_first.clone()
+                        * is_branch_child_cur.clone()
+                        * is_modified.clone()
+                        * (s_advices_words[ind].clone() - s_keccak_cur),
+                ));
+            }
+            for (ind, column) in c_keccak.iter().enumerate() {
+                let c_keccak_cur = meta.query_advice(*column, Rotation::cur());
+                constraints.push((
+                    "c_keccak correspond to s_advices at the modified index",
+                    q_not_first.clone()
+                        * is_branch_child_cur.clone()
+                        * is_modified.clone()
+                        * (c_advices_words[ind].clone() - c_keccak_cur),
+                ));
+            }
 
             constraints
         });
@@ -376,6 +447,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_compact_leaf,
             is_keccak_leaf,
             node_index,
+            is_modified,
             key,
             s_rlp1,
             s_rlp2,
@@ -396,6 +468,8 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &Vec<u8>,
         is_branch_init: bool,
         is_branch_child: bool,
+        node_index: u8,
+        key: u8,
         is_compact_leaf: bool,
         is_keccak_leaf: bool,
         offset: usize,
@@ -412,6 +486,27 @@ impl<F: FieldExt> MPTConfig<F> {
             self.is_branch_child,
             offset,
             || Ok(F::from_u64(is_branch_child as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign node_index"),
+            self.node_index,
+            offset,
+            || Ok(F::from_u64(node_index as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign key"),
+            self.key,
+            offset,
+            || Ok(F::from_u64(key as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign is_modified"),
+            self.is_modified,
+            offset,
+            || Ok(F::from_u64((key == node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -493,21 +588,7 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &Vec<u8>,
         offset: usize,
     ) -> Result<(), Error> {
-        region.assign_advice(
-            || format!("assign node_index"),
-            self.node_index,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || format!("assign key"),
-            self.key,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
-        self.assign_row(region, row, false, false, true, false, offset)?;
+        self.assign_row(region, row, false, false, 0, 0, true, false, offset)?;
 
         // We now add another row for keccak format:
         self.q_enable.enable(region, offset + 1)?;
@@ -517,26 +598,24 @@ impl<F: FieldExt> MPTConfig<F> {
             offset + 1,
             || Ok(F::one()),
         )?;
-        region.assign_advice(
-            || format!("assign node_index"),
-            self.node_index,
-            offset + 1,
-            || Ok(F::zero()),
-        )?;
 
-        region.assign_advice(
-            || format!("assign key"),
-            self.key,
-            offset + 1,
-            || Ok(F::zero()),
-        )?;
         let hash = self.compute_keccak(row);
         let padded = self.pad(row);
         let keccak_input = self.into_words(&padded);
         let keccak_output = self.into_words(&hash);
 
         let row: Vec<u8> = vec![0; WITNESS_ROW_WIDTH];
-        self.assign_row(region, &row, false, false, false, true, offset + 1)?;
+        self.assign_row(
+            region,
+            &row,
+            false,
+            false,
+            0,
+            0,
+            false,
+            true,
+            offset + 1,
+        )?;
 
         // Reassign the proper values now (0s assinged in assign_row to set all columns).
         for ind in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
@@ -577,7 +656,14 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(F::zero()),
         )?;
 
-        self.assign_row(region, row, true, false, false, false, offset)?;
+        region.assign_advice(
+            || format!("assign is_modified"),
+            self.is_modified,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        self.assign_row(region, row, true, false, 0, 0, false, false, offset)?;
 
         Ok(())
     }
@@ -585,27 +671,13 @@ impl<F: FieldExt> MPTConfig<F> {
     fn assign_branch_row(
         &self,
         region: &mut Region<'_, F>,
-        branch_ind: usize,
+        node_index: u8,
         key: u8,
         row: &Vec<u8>,
         s_words: &Vec<u64>,
         c_words: &Vec<u64>,
         offset: usize,
     ) -> Result<(), Error> {
-        region.assign_advice(
-            || format!("assign node_index"),
-            self.node_index,
-            offset,
-            || Ok(F::from_u64(branch_ind as u64)),
-        )?;
-
-        region.assign_advice(
-            || format!("assign key"),
-            self.key,
-            offset,
-            || Ok(F::from_u64(key as u64)),
-        )?;
-
         for (ind, column) in self.s_keccak.iter().enumerate() {
             region.assign_advice(
                 || "Keccak s",
@@ -623,7 +695,9 @@ impl<F: FieldExt> MPTConfig<F> {
             )?;
         }
 
-        self.assign_row(region, row, false, true, false, false, offset)?;
+        self.assign_row(
+            region, row, false, true, node_index, key, false, false, offset,
+        )?;
 
         Ok(())
     }
@@ -642,7 +716,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key = 0;
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
-                    let mut branch_ind = 0;
+                    let mut branch_ind: u8 = 0;
                     for (ind, row) in witness.iter().enumerate() {
                         if row[row.len() - 1] == 0 {
                             // branch init
@@ -750,23 +824,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let message = [input, &padding].concat();
         message
-    }
-
-    // Turn 32 hash cells into 4 cells containing keccak words.
-    fn into_words_expr(&self, hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
-        let mut words = vec![];
-        for i in 0..4 {
-            let mut word = Expression::Constant(F::zero());
-            let mut exp = Expression::Constant(F::one());
-            // TODO: check this impl, was just quickly added
-            for j in 0..8 {
-                word = word + hash[i * 8 + j].clone() * exp.clone();
-                exp = exp * Expression::Constant(F::from_u64(256));
-            }
-            words.push(word)
-        }
-
-        words
     }
 
     // see bits_to_u64_words_le
@@ -912,6 +969,21 @@ mod tests {
                     MockProver::<pallas::Base>::run(9, &circuit, vec![])
                         .unwrap();
                 assert_eq!(prover.verify(), Ok(()));
+
+                const K: u32 = 5;
+                let params: Params<EqAffine> = Params::new(K);
+                let empty_circuit = MyCircuit::<pallas::Base> {
+                    _marker: PhantomData,
+                    witness: vec![],
+                };
+
+                let vk = keygen_vk(&params, &empty_circuit)
+                    .expect("keygen_vk should not fail");
+
+                let pk = keygen_pk(&params, vk, &empty_circuit)
+                    .expect("keygen_pk should not fail");
+
+                println!("{:?}", params);
             });
     }
 }
