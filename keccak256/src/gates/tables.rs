@@ -217,7 +217,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "for special chunks",
+            || "Special Chunks",
             |mut region| {
                 // Iterate over all possible values less than 13 for both low
                 // and high

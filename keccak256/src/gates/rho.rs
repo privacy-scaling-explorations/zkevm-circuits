@@ -246,7 +246,7 @@ mod tests {
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
-            let root = BitMapBackend::new("rho-test-circuit.png", (2048, 4096))
+            let root = BitMapBackend::new("rho-test-circuit.png", (4096, 32768))
                 .into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();

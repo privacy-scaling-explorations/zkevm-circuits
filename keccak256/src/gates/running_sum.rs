@@ -27,11 +27,11 @@ struct RotatingVariables {
     output_coef: BigUint,
     output_power_of_base: BigUint,
     output_acc: BigUint,
-    block_count: u32,
+    block_count: Option<u32>,
     // step2 acc and step3 acc
     block_count_acc: [u32; 2],
-    low_value: BigUint,
-    high_value: Option<BigUint>,
+    low_value: u64,
+    high_value: Option<u64>,
 }
 
 impl RotatingVariables {
@@ -56,7 +56,7 @@ impl RotatingVariables {
         if step == 2 || step == 3 {
             block_count_acc[(step - 2) as usize] += block_count;
         }
-        let low_value = lane_base_13 % B13;
+        let low_value: u64 = biguint_mod(&lane_base_13, B13);
         Ok(Self {
             rotation,
             chunk_idx,
@@ -68,7 +68,7 @@ impl RotatingVariables {
             output_coef,
             output_power_of_base,
             output_acc,
-            block_count,
+            block_count: Some(block_count),
             block_count_acc,
             low_value,
             high_value: None,
@@ -85,9 +85,6 @@ impl RotatingVariables {
         new.input_power_of_base *= B13.pow(self.step);
         new.input_acc -=
             self.input_power_of_base.clone() * self.input_coef.clone();
-        let (block_count, output_coef) =
-            get_block_count_and_output_coef(new.input_coef.clone());
-        new.output_coef = BigUint::from(output_coef);
         new.output_power_of_base =
             if is_at_rotation_offset(new.chunk_idx, self.rotation) {
                 BigUint::one()
@@ -96,13 +93,35 @@ impl RotatingVariables {
             };
         new.output_acc +=
             self.output_power_of_base.clone() * self.output_coef.clone();
-        new.block_count = block_count;
+        // Case of last chunk, aka special chunks
+        if new.chunk_idx >= LANE_SIZE {
+            assert_eq!(new.input_raw, BigUint::zero());
+            new.block_count = None;
+            new.high_value = Some(biguint_mod(&self.input_raw, B13));
+            new.output_coef = BigUint::from(convert_b13_coef(
+                new.high_value.unwrap() + self.low_value,
+            ));
+            assert_eq!(
+                new.input_acc,
+                new.low_value.clone()
+                    + new.high_value.clone().unwrap()
+                        * BigUint::from(B13).pow(LANE_SIZE)
+            );
+            return new;
+        }
+        let (block_count, usual_output_coef) =
+            get_block_count_and_output_coef(new.input_coef.clone());
+        new.output_coef = BigUint::from(usual_output_coef);
+        new.block_count = Some(block_count);
         if self.step == 2 || self.step == 3 {
             new.block_count_acc[(self.step - 2) as usize] += block_count;
         }
-        if new.chunk_idx >= LANE_SIZE {
-            new.high_value = Some(self.input_raw.clone() % B13);
-        }
+        new
+    }
+    fn finalize(&self) -> Self {
+        let mut new = self.clone();
+        new.output_acc +=
+            self.output_power_of_base.clone() * self.output_coef.clone();
         new
     }
 }
@@ -239,6 +258,9 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                     * (delta_base_9_acc - last_b9_coef * pow_of_9),
             )]
         });
+        // The table check the relationship of
+        // last base_13_acc is high_value*13**64 + low_value
+        // last_b9_coef is high_value + low_value
         let special_chunk_table_config = SpecialChunkTableConfig::configure(
             meta,
             q_enable,
@@ -255,49 +277,58 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             special_chunk_table_config,
         }
     }
-    pub fn assign_region(
+    fn assign_region(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        low_value: &BigUint,
-        high_value: &BigUint,
-        base_13_acc: &BigUint,
-        base_9_acc: &BigUint,
+        rv: &RotatingVariables,
     ) -> Result<Lane<F>, Error> {
         self.q_enable.enable(region, offset)?;
+        rv.high_value.ok_or(Error::SynthesisError).unwrap();
         region.assign_advice(
             || "input_acc",
             self.base_13_acc,
             offset,
             || {
-                biguint_to_f::<F>(base_13_acc.clone())
+                biguint_to_f::<F>(rv.input_acc.clone())
                     .ok_or(Error::SynthesisError)
             },
         )?;
         region.assign_advice(
-            || "input_acc_last",
+            || "ouput_acc",
+            self.base_9_acc,
+            offset,
+            || {
+                biguint_to_f::<F>(rv.output_acc.clone())
+                    .ok_or(Error::SynthesisError)
+            },
+        )?;
+        region.assign_advice(
+            || "last_b9_coef",
+            self.last_b9_coef,
+            offset,
+            || {
+                biguint_to_f::<F>(rv.output_coef.clone())
+                    .ok_or(Error::SynthesisError)
+            },
+        )?;
+
+        let rv_final = rv.finalize();
+        region.assign_advice(
+            || "input_acc",
             self.base_13_acc,
             offset + 1,
             || Ok(F::zero()),
         )?;
-        let base_9_acc = biguint_to_f::<F>(base_9_acc.clone())
+        let value = biguint_to_f::<F>(rv_final.output_acc)
             .ok_or(Error::SynthesisError)?;
-        region.assign_advice(
-            || "ouput_acc",
-            self.base_9_acc,
-            offset,
-            || Ok(base_9_acc),
-        )?;
-        let last_pow_of_9 = F::from_u64(B9).pow(&[self.rotation, 0, 0, 0]);
-        let last_b9_coef = biguint_to_f::<F>((high_value + low_value) % 2u64)
-            .ok_or(Error::SynthesisError)?;
-        let value = base_9_acc + last_b9_coef * last_pow_of_9;
         let cell = region.assign_advice(
-            || "ouput_acc_last",
+            || "input_acc",
             self.base_9_acc,
             offset + 1,
             || Ok(value),
         )?;
+
         Ok(Lane { cell, value })
     }
 }
@@ -579,7 +610,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         let block_counts = self.block_count_acc_config.assign_region(
             region,
             offset,
-            rv.block_count,
+            rv.block_count.ok_or(Error::SynthesisError)?,
             rv.block_count_acc,
         )?;
         Ok(block_counts)
@@ -625,15 +656,19 @@ fn block_counting_function(n: usize) -> u32 {
     [0, 0, 1, 13, 170][n]
 }
 
+fn biguint_mod(x: &BigUint, modulus: u64) -> u64 {
+    match (x % modulus).to_u64_digits().first() {
+        Some(d) => *d,
+        None => 0u64,
+    }
+}
+
 fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
     let mut x = input_coef;
     let mut output_coef = 0;
     let mut non_zero_chunk_count = 0;
     for i in 0..4 {
-        let base13_chunk = match (x.clone() % B13).to_u64_digits().first() {
-            Some(d) => *d,
-            None => 0u64,
-        };
+        let base13_chunk = biguint_mod(&x, B13);
         let base9_chunk = convert_b13_coef(base13_chunk);
         if base9_chunk != 0 {
             non_zero_chunk_count += 1;
@@ -757,10 +792,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 let lane = self.special_chunk_config.assign_region(
                     &mut region,
                     offset,
-                    &rv.low_value,
-                    &rv.high_value.ok_or(Error::SynthesisError)?,
-                    &rv.input_acc,
-                    &rv.output_acc,
+                    &rv,
                 )?;
                 Ok((lane, *block_counts))
             },
