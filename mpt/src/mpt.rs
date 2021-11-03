@@ -21,6 +21,7 @@ pub struct MPTConfig<F> {
     q_not_first: Column<Fixed>,
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
+    is_last_branch_child: Column<Advice>,
     is_compact_leaf: Column<Advice>,
     is_keccak_leaf: Column<Advice>,
     node_index: Column<Advice>,
@@ -45,6 +46,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
+        let is_last_branch_child = meta.advice_column();
         let is_compact_leaf = meta.advice_column();
         let is_keccak_leaf = meta.advice_column();
         let node_index = meta.advice_column();
@@ -115,6 +117,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_branch_init, Rotation::cur());
             let is_branch_child_cur =
                 meta.query_advice(is_branch_child, Rotation::cur());
+            let is_last_branch_child_cur =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
             let is_compact_leaf =
                 meta.query_advice(is_compact_leaf, Rotation::cur());
             let is_keccak_leaf =
@@ -124,6 +128,9 @@ impl<F: FieldExt> MPTConfig<F> {
                 * (one.clone() - is_branch_init_cur.clone());
             let bool_check_is_branch_child = is_branch_child_cur.clone()
                 * (one.clone() - is_branch_child_cur.clone());
+            let bool_check_is_last_branch_child = is_last_branch_child_cur
+                .clone()
+                * (one.clone() - is_last_branch_child_cur.clone());
             let bool_check_is_compact_leaf = is_compact_leaf.clone()
                 * (one.clone() - is_compact_leaf.clone());
             let bool_check_is_keccak_leaf =
@@ -146,6 +153,10 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints.push((
                 "bool check is branch child",
                 q_enable.clone() * bool_check_is_branch_child,
+            ));
+            constraints.push((
+                "bool check is last branch child",
+                q_enable.clone() * bool_check_is_last_branch_child,
             ));
             constraints.push((
                 "bool check is compact leaf",
@@ -214,8 +225,18 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_branch_child, Rotation::cur());
             let is_branch_init_prev =
                 meta.query_advice(is_branch_init, Rotation::prev());
+            let is_last_branch_child_prev =
+                meta.query_advice(is_last_branch_child, Rotation::prev());
+            let is_last_branch_child_cur =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
 
             // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
+            // It's actually more complex that just sum = 1.
+            // For example, we have to allow is_last_branch_child to have value 1 only
+            // when is_branch_child. So we need to add constraint like:
+            // (is_branch_child - is_last_branch_child) * is_last_branch_child
+            // There are already constraints "is last branch child 1 and 2" below
+            // to make sure that is_last_branch_child is 1 only when node_index = 15.
 
             // if we have branch child, we can only have branch child or branch init in the previous row
             constraints.push((
@@ -254,9 +275,27 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
                     * (is_branch_child_prev.clone()
-                        - is_branch_child_cur.clone())
+                        - is_branch_child_cur.clone()) // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
                     * (node_index_prev.clone()
                         - Expression::Constant(F::from_u64(15 as u64))), // node_index has to be 15
+            ));
+
+            // When node_index is not 15, is_last_branch_child needs to be 0.
+            constraints.push((
+                "is last branch child 1",
+                q_not_first.clone()
+                    * is_last_branch_child_cur.clone()
+                    * (node_index_cur.clone() // for this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
+                        - Expression::Constant(F::from_u64(15 as u64))),
+            ));
+            // When node_index is 15, is_last_branch_child needs to be 1.
+            constraints.push((
+                "is last branch child 2",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
+                    * (is_last_branch_child_prev - one.clone())
+                    * (is_branch_child_prev.clone()
+                        - is_branch_child_cur.clone()), // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
             ));
 
             // node_index is increasing by 1 for is_branch_child
@@ -422,6 +461,73 @@ impl<F: FieldExt> MPTConfig<F> {
 
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
+            // We need to construct RLP from branch nodes, turn it into words,
+            // and check its hash.
+
+            let mut s_words: Vec<Expression<F>> = vec![];
+            let mut c_words: Vec<Expression<F>> = vec![];
+
+            // The first two elements of RLP are in colums *_rlp1 and *_rlp2.
+            let s_rlp1_meta = meta.query_advice(s_rlp1, Rotation(-15));
+            let s_rlp2_meta = meta.query_advice(s_rlp2, Rotation(-15));
+            let c_rlp1_meta = meta.query_advice(c_rlp1, Rotation(-15));
+            let c_rlp2_meta = meta.query_advice(c_rlp2, Rotation(-15));
+
+            let mut exp = Expression::Constant(F::from_u64(256));
+            let ws1 = s_rlp1_meta + s_rlp2_meta * exp.clone(); // part of the first s word
+            let wc1 = c_rlp1_meta + c_rlp2_meta * exp.clone(); // part of the first c word
+            s_words.push(ws1);
+            c_words.push(wc1);
+
+            exp = exp * Expression::Constant(F::from_u64(256));
+
+            // might use utils from evm_circuit, but would need to make them public
+            let select = |selector: Expression<F>,
+                          when_true: Expression<F>,
+                          when_false: Expression<F>| {
+                selector.clone() * when_true
+                    + (one.clone() - selector) * when_false
+            };
+
+            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
+            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
+            // non-empty nodes have 32 values ...
+            let c128 = Expression::Constant(F::from_u64(128));
+            let c160 = Expression::Constant(F::from_u64(160));
+            for i in 0..15 {
+                let s_rlp1 = meta.query_advice(s_rlp1, Rotation(-14 + i));
+                let s_rlp2 = meta.query_advice(s_rlp2, Rotation(-14 + i));
+                let c_rlp1 = meta.query_advice(c_rlp1, Rotation(-14 + i));
+                let c_rlp2 = meta.query_advice(c_rlp2, Rotation(-14 + i));
+
+                // if empty node:
+                //   s_words[curr] += s_advices[0] * exp
+                // if non-empty node:
+                //   s_words[curr] += s_rlp2 * exp + s_advices[0] * exp * 256 +
+                //   until we fill the word
+
+                // select(s_rlp2)
+            }
+
+            // We need to do the lookup only if we are in the last branch child.
+            let is_last_branch_child =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
+
+            let mut constraints = vec![];
+            for i in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
+                let keccak_table_i =
+                    meta.query_advice(keccak_table[i], Rotation::cur());
+                constraints.push((
+                    q_enable.clone() * is_last_branch_child.clone(),
+                    keccak_table_i,
+                ))
+            }
+
+            constraints
+        });
+
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
             let is_keccak_leaf =
                 meta.query_advice(is_keccak_leaf, Rotation::cur());
 
@@ -444,6 +550,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             is_branch_init,
             is_branch_child,
+            is_last_branch_child,
             is_compact_leaf,
             is_keccak_leaf,
             node_index,
@@ -468,6 +575,7 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &Vec<u8>,
         is_branch_init: bool,
         is_branch_child: bool,
+        is_last_branch_child: bool,
         node_index: u8,
         key: u8,
         is_compact_leaf: bool,
@@ -486,6 +594,13 @@ impl<F: FieldExt> MPTConfig<F> {
             self.is_branch_child,
             offset,
             || Ok(F::from_u64(is_branch_child as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign is_last_branch_child"),
+            self.is_last_branch_child,
+            offset,
+            || Ok(F::from_u64(is_last_branch_child as u64)),
         )?;
 
         region.assign_advice(
@@ -588,7 +703,9 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &Vec<u8>,
         offset: usize,
     ) -> Result<(), Error> {
-        self.assign_row(region, row, false, false, 0, 0, true, false, offset)?;
+        self.assign_row(
+            region, row, false, false, false, 0, 0, true, false, offset,
+        )?;
 
         // We now add another row for keccak format:
         self.q_enable.enable(region, offset + 1)?;
@@ -608,6 +725,7 @@ impl<F: FieldExt> MPTConfig<F> {
         self.assign_row(
             region,
             &row,
+            false,
             false,
             false,
             0,
@@ -663,7 +781,9 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(F::zero()),
         )?;
 
-        self.assign_row(region, row, true, false, 0, 0, false, false, offset)?;
+        self.assign_row(
+            region, row, true, false, false, 0, 0, false, false, offset,
+        )?;
 
         Ok(())
     }
@@ -696,7 +816,16 @@ impl<F: FieldExt> MPTConfig<F> {
         }
 
         self.assign_row(
-            region, row, false, true, node_index, key, false, false, offset,
+            region,
+            row,
+            false,
+            true,
+            node_index == 15,
+            node_index,
+            key,
+            false,
+            false,
+            offset,
         )?;
 
         Ok(())
@@ -893,10 +1022,11 @@ mod tests {
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{
-            keygen_pk, keygen_vk, Advice, Circuit, Column, ConstraintSystem,
-            Error,
+            create_proof, keygen_pk, keygen_vk, Advice, Circuit, Column,
+            ConstraintSystem, Error,
         },
         poly::commitment::Params,
+        transcript::{Blake2bWrite, Challenge255},
     };
 
     use pasta_curves::{arithmetic::FieldExt, pallas, EqAffine};
@@ -930,7 +1060,7 @@ mod tests {
                 let mut to_be_hashed = vec![];
 
                 for row in self.witness.iter() {
-                    if row[row.len() - 1] == 2 {
+                    if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
                         // compact leaf
                         to_be_hashed.push(row[0..row.len() - 1].to_vec());
                     }
@@ -983,7 +1113,13 @@ mod tests {
                 let pk = keygen_pk(&params, vk, &empty_circuit)
                     .expect("keygen_pk should not fail");
 
-                println!("{:?}", params);
+                let mut transcript =
+                    Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+                create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
+                    .expect("proof generation should not fail");
+                let proof = transcript.finalize();
+
+                println!("{:?}", proof);
             });
     }
 }
