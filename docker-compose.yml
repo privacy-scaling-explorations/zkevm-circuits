@@ -1,0 +1,12 @@
+version: '3'
+services:
+    prover:
+      build:
+        context: .
+        dockerfile: Prover
+      container_name: prover
+      tty: true
+      stdin_open:  true
+      volumes:
+        - .:/app
+        - /app/target
