@@ -1,6 +1,7 @@
-use super::super::utils::{self, MAX_BYTES_FIELD};
+use super::super::utils;
 use super::super::CaseAllocation;
 use super::super::Cell;
+use crate::evm_circuit::param::MAX_BYTES_FIELD;
 use crate::util::Expr;
 use array_init::array_init;
 use halo2::plonk::Error;

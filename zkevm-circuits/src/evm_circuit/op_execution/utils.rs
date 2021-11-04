@@ -10,11 +10,6 @@ pub(crate) mod common_cases;
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadgets;
 
-/// The maximum number of bytes that a field element
-/// can be broken down into without causing the value it
-/// represents to overflow a single field element.
-pub const MAX_BYTES_FIELD: usize = 31;
-
 // Makes sure all state transition variables are always constrained.
 // This makes it impossible for opcodes to forget to constrain
 // any state variables. If no update is specified it is assumed
