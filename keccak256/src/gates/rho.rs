@@ -22,7 +22,8 @@ impl<F: FieldExt> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        rotate_conversion: [[Column<Advice>; 3]; 3],
+        rotate_conversion: [[Column<Advice>; 2]; 2],
+        block_count_cols: [Column<Advice>; 3],
         axiliary: [Column<Advice>; 2],
         base13_to_9: [Column<Fixed>; 3],
         special: [Column<Fixed>; 2],
@@ -37,6 +38,7 @@ impl<F: FieldExt> RhoConfig<F> {
                     meta,
                     (x, y),
                     rotate_conversion,
+                    block_count_cols,
                     axiliary,
                     base13_to_9,
                     special,
@@ -143,11 +145,9 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let rotate_conversion: [[Column<Advice>; 3]; 3] = [
-                    [state[0], state[1], state[2]],
-                    [state[3], state[4], state[5]],
-                    [state[6], state[7], state[8]],
-                ];
+                let rotate_conversion: [[Column<Advice>; 2]; 2] =
+                    [[state[0], state[1]], [state[2], state[3]]];
+                let block_counts = [state[4], state[5], state[6]];
                 let axiliary = [state[9], state[10]];
 
                 let base13_to_9 = [
@@ -160,6 +160,7 @@ mod tests {
                     meta,
                     state,
                     rotate_conversion,
+                    block_counts,
                     axiliary,
                     base13_to_9,
                     special,
@@ -246,8 +247,9 @@ mod tests {
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
-            let root = BitMapBackend::new("rho-test-circuit.png", (4096, 32768))
-                .into_drawing_area();
+            let root =
+                BitMapBackend::new("rho-test-circuit.png", (4096, 65536))
+                    .into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
             halo2::dev::CircuitLayout::default()
