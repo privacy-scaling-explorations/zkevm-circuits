@@ -243,8 +243,8 @@ impl PartialOrd for StorageOp {
 
 impl Ord for StorageOp {
     fn cmp(&self, other: &StorageOp) -> Ordering {
-        match self.address().cmp(&other.address()) {
-            Ordering::Equal => self.key().cmp(&other.key()),
+        match self.address().cmp(other.address()) {
+            Ordering::Equal => self.key().cmp(other.key()),
             ord => ord,
         }
     }
