@@ -128,6 +128,7 @@ mod tests {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
+            out_state: [F; 25],
         }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             type Config = RhoConfig<F>;
@@ -199,8 +200,12 @@ mod tests {
                 )?;
                 let next_state =
                     config.assign_rotation_checks(&mut layouter, state)?;
+                assert_eq!(
+                    next_state.clone().map(|lane| lane.value),
+                    self.out_state
+                );
                 layouter.assign_region(
-                    || "assign rho state",
+                    || "assign output state",
                     |mut region| {
                         let offset = 1;
                         config.assign_region(
@@ -239,7 +244,10 @@ mod tests {
             out_state[5 * x + y] =
                 biguint_to_f(s1_arith[(x, y)].clone()).unwrap();
         }
-        let circuit = MyCircuit::<pallas::Base> { in_state };
+        let circuit = MyCircuit::<pallas::Base> {
+            in_state,
+            out_state,
+        };
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
