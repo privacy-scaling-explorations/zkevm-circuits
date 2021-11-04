@@ -17,11 +17,18 @@ digest = "0.7.6"
 array-init = "2.0.0"
 paste = "1.0"
 bus-mapping = { path = "../bus-mapping"}
+halo2_kzg = { git = "https://github.com/NoCtrlZ/halo2", branch = "kzg", package = "halo2" }
+rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.3"
 num = "0.4"
+rand_xorshift = "0.3"
 
 [[bench]]
 name = "binary_value"
+harness = false
+
+[[bench]]
+name = "prover"
 harness = false
