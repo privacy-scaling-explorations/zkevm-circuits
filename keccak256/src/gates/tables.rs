@@ -168,8 +168,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         q_lookup: Selector,
-        base13_advice: Column<Advice>,
-        base9_advice: Column<Advice>,
+        base13_coef: Column<Advice>,
+        base9_coef: Column<Advice>,
         block_count: Column<Advice>,
         fixed: [Column<Fixed>; 3],
     ) -> Self {
@@ -183,9 +183,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
 
         meta.lookup(|meta| {
             let q_lookup = meta.query_selector(q_lookup);
-            let base13_advice =
-                meta.query_advice(base13_advice, Rotation::cur());
-            let base9_advice = meta.query_advice(base9_advice, Rotation::cur());
+            let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
+            let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
             let bc = meta.query_advice(block_count, Rotation::cur());
 
             let base13 = meta.query_fixed(config.base13, Rotation::cur());
@@ -194,8 +193,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                 meta.query_fixed(config.block_count, Rotation::cur());
 
             vec![
-                (q_lookup.clone() * base9_advice, base13),
-                (q_lookup.clone() * base13_advice, base9),
+                (q_lookup.clone() * base9_coef, base13),
+                (q_lookup.clone() * base13_coef, base9),
                 (q_lookup * bc, block_count),
             ]
         });
@@ -221,31 +220,33 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
             |mut region| {
                 // Iterate over all possible values less than 13 for both low
                 // and high
+                let mut offset = 0;
                 for i in 0..B13 {
                     for j in 0..(B13 - i) {
                         let (low, high) = (i, j);
-
+                        let last_chunk = F::from_u64(low)
+                            + F::from_u64(high)
+                                * F::from_u64(B13).pow(&[
+                                    LANE_SIZE as u64,
+                                    0,
+                                    0,
+                                    0,
+                                ]);
+                        let output_coef =
+                            F::from_u64(convert_b13_coef(low + high));
                         region.assign_fixed(
-                            || "key",
+                            || "last chunk",
                             self.last_chunk,
-                            i as usize,
-                            || {
-                                Ok(F::from_u64(low)
-                                    + F::from_u64(high)
-                                        * F::from_u64(B13).pow(&[
-                                            LANE_SIZE as u64,
-                                            0,
-                                            0,
-                                            0,
-                                        ]))
-                            },
+                            offset,
+                            || Ok(last_chunk),
                         )?;
                         region.assign_fixed(
-                            || "value",
+                            || "output coef",
                             self.output_coef,
-                            i as usize,
-                            || Ok(F::from_u64(convert_b13_coef(low + high))),
+                            offset,
+                            || Ok(output_coef),
                         )?;
+                        offset += 1;
                     }
                 }
                 Ok(())
@@ -268,6 +269,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         };
         // Lookup for special chunk conversion
         meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
             let last_chunk_advice =
                 meta.query_advice(last_chunk_advice, Rotation::cur());
             let output_coef_advice =
@@ -279,8 +281,8 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
                 meta.query_fixed(config.output_coef, Rotation::cur());
 
             vec![
-                (last_chunk_advice, last_chunk),
-                (output_coef_advice, output_coef),
+                (q_enable.clone() * last_chunk_advice, last_chunk),
+                (q_enable * output_coef_advice, output_coef),
             ]
         });
         config
