@@ -136,23 +136,6 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
         state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
-        // Prepare inputs
-        let swap = step.opcode == OpcodeId::GT;
-        let a = if swap {
-            step.values[1].clone()
-        } else {
-            step.values[0].clone()
-        };
-        let b = if swap {
-            step.values[0].clone()
-        } else {
-            step.values[1].clone()
-        };
-
-        // Inputs and output
-        self.a.assign(region, offset, Some(a.to_word()))?;
-        self.b.assign(region, offset, Some(b.to_word()))?;
-
         // EQ op check
         self.is_eq_op.assign(
             region,
@@ -162,27 +145,41 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
         )?;
 
         // swap when doing GT
-        self.swap.assign(
+        let swap = self.swap.assign(
             region,
             offset,
             F::from_u64(step.opcode.as_u8() as u64),
             F::from_u64(OpcodeId::GT.as_u8() as u64),
         )?;
 
+        // Inputs and output
+        let a = select::value_word::<F>(
+            swap,
+            step.values[1].to_word(),
+            step.values[0].to_word(),
+        );
+        let b = select::value_word::<F>(
+            swap,
+            step.values[0].to_word(),
+            step.values[1].to_word(),
+        );
+        self.a.assign(region, offset, Some(a))?;
+        self.b.assign(region, offset, Some(b))?;
+
         // `a[0..16] <= b[0..16]`
         self.comparison_lo.assign(
             region,
             offset,
-            from_bytes::value::<F>(a.to_word()[0..16].to_vec()),
-            from_bytes::value::<F>(b.to_word()[0..16].to_vec()),
+            from_bytes::value::<F>(a[0..16].to_vec()),
+            from_bytes::value::<F>(b[0..16].to_vec()),
         )?;
 
         // `a[16..32] <= b[16..32]`
         self.comparison_hi.assign(
             region,
             offset,
-            from_bytes::value(a.to_word()[16..32].to_vec()),
-            from_bytes::value(b.to_word()[16..32].to_vec()),
+            from_bytes::value(a[16..32].to_vec()),
+            from_bytes::value(b[16..32].to_vec()),
         )?;
 
         // State transitions
@@ -200,6 +197,7 @@ mod test {
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
+    use crate::{gadget::evm_word::encode, util::ToWord};
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
@@ -215,10 +213,8 @@ mod test {
     }
 
     fn compress(value: BigUint) -> Base {
-        value
-            .to_bytes_le()
-            .iter()
-            .fold(Base::zero(), |acc, val| acc + Base::from_u64(*val as u64))
+        let r = Base::from_u64(1);
+        encode(value.to_word().to_vec().into_iter().rev(), r)
     }
 
     fn check(opcode: OpcodeId, a: BigUint, b: BigUint, result: BigUint) {

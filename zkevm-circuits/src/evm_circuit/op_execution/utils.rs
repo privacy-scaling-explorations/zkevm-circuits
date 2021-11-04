@@ -129,6 +129,18 @@ pub(crate) mod select {
     ) -> F {
         selector * when_true + (F::one() - selector) * when_false
     }
+
+    pub(crate) fn value_word<F: FieldExt>(
+        selector: F,
+        when_true: [u8; 32],
+        when_false: [u8; 32],
+    ) -> [u8; 32] {
+        if selector == F::one() {
+            when_true
+        } else {
+            when_false
+        }
+    }
 }
 
 /// Decodes a field element from its byte representation
