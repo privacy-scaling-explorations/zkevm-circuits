@@ -1,6 +1,6 @@
 use crate::gates::gate_helpers::{BlockCount2, Lane};
 use crate::gates::running_sum::{
-    BlockCountFinalConfig, LaneRotateConversionConfig,
+    BlockCountFinalConfig, LaneRotateConversionConfig, RhoAdvices,
 };
 
 use halo2::{
@@ -22,8 +22,7 @@ impl<F: FieldExt> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        rotate_conversion: [[Column<Advice>; 2]; 2],
-        block_count_cols: [Column<Advice>; 3],
+        adv: &RhoAdvices,
         axiliary: [Column<Advice>; 2],
         base13_to_9: [Column<Fixed>; 3],
         special: [Column<Fixed>; 2],
@@ -37,8 +36,7 @@ impl<F: FieldExt> RhoConfig<F> {
                 LaneRotateConversionConfig::configure(
                     meta,
                     (x, y),
-                    rotate_conversion,
-                    block_count_cols,
+                    adv.clone(),
                     axiliary,
                     base13_to_9,
                     special,
@@ -145,10 +143,9 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let rotate_conversion: [[Column<Advice>; 2]; 2] =
-                    [[state[0], state[1]], [state[2], state[3]]];
-                let block_counts = [state[4], state[5], state[6]];
-                let axiliary = [state[9], state[10]];
+                let cols: [Column<Advice>; 7] = state[0..7].try_into().unwrap();
+                let adv = RhoAdvices::from(cols);
+                let axiliary = [state[8], state[9]];
 
                 let base13_to_9 = [
                     meta.fixed_column(),
@@ -159,8 +156,7 @@ mod tests {
                 RhoConfig::configure(
                     meta,
                     state,
-                    rotate_conversion,
-                    block_counts,
+                    &adv,
                     axiliary,
                     base13_to_9,
                     special,

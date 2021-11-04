@@ -16,6 +16,44 @@ use std::iter;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
+struct RunningSumAdvices {
+    coef: Column<Advice>,
+    acc: Column<Advice>,
+}
+#[derive(Debug, Clone)]
+pub struct BlockCountAdvices {
+    block_count: Column<Advice>,
+    step2_acc: Column<Advice>,
+    step3_acc: Column<Advice>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RhoAdvices {
+    input: RunningSumAdvices,
+    output: RunningSumAdvices,
+    bc: BlockCountAdvices,
+}
+
+impl From<[Column<Advice>; 7]> for RhoAdvices {
+    fn from(cols: [Column<Advice>; 7]) -> Self {
+        let input = RunningSumAdvices {
+            coef: cols[0],
+            acc: cols[1],
+        };
+        let output = RunningSumAdvices {
+            coef: cols[2],
+            acc: cols[3],
+        };
+        let bc = BlockCountAdvices {
+            block_count: cols[4],
+            step2_acc: cols[5],
+            step3_acc: cols[6],
+        };
+        Self { input, output, bc }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct RotatingVariables {
     rotation: u32,
     chunk_idx: u32,
@@ -103,8 +141,8 @@ impl RotatingVariables {
             ));
             assert_eq!(
                 new.input_acc,
-                new.low_value.clone()
-                    + new.high_value.clone().unwrap()
+                new.low_value
+                    + new.high_value.unwrap()
                         * BigUint::from(B13).pow(LANE_SIZE)
             );
             return new;
@@ -237,8 +275,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
 #[derive(Debug, Clone)]
 pub struct BlockCountAccConfig<F> {
     q_enable: Selector,
-    // block count, step 2 acc, step 3 acc
-    block_count_cols: [Column<Advice>; 3],
+    bc: BlockCountAdvices,
     step: u32,
     _marker: PhantomData<F>,
 }
@@ -247,19 +284,17 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
-        block_count_cols: [Column<Advice>; 3],
+        bc: BlockCountAdvices,
         step: u32,
     ) -> Self {
         meta.create_gate("accumulate block count", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let block_count =
-                meta.query_advice(block_count_cols[0], Rotation::cur());
-            let delta_step2 = meta
-                .query_advice(block_count_cols[1], Rotation::next())
-                - meta.query_advice(block_count_cols[1], Rotation::cur());
-            let delta_step3 = meta
-                .query_advice(block_count_cols[2], Rotation::next())
-                - meta.query_advice(block_count_cols[2], Rotation::cur());
+                meta.query_advice(bc.block_count, Rotation::cur());
+            let delta_step2 = meta.query_advice(bc.step2_acc, Rotation::next())
+                - meta.query_advice(bc.step2_acc, Rotation::cur());
+            let delta_step3 = meta.query_advice(bc.step3_acc, Rotation::next())
+                - meta.query_advice(bc.step3_acc, Rotation::cur());
 
             match step {
                 1 | 4 => vec![
@@ -286,7 +321,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
 
         Self {
             q_enable,
-            block_count_cols,
+            bc,
             step,
             _marker: PhantomData,
         }
@@ -300,34 +335,34 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         block_count_acc: [u32; 2],
     ) -> Result<BlockCount2<F>, Error> {
         let block_count = F::from_u64(block_count.into());
-        let block_count_acc = block_count_acc.map(|x| F::from_u64(x.into()));
+        let acc = block_count_acc.map(|x| F::from_u64(x.into()));
         region.assign_advice(
             || "block_count",
-            self.block_count_cols[0],
+            self.bc.block_count,
             offset,
             || Ok(block_count),
         )?;
-        let cell_step2 = region.assign_advice(
-            || "block_count",
-            self.block_count_cols[1],
+        let cell = region.assign_advice(
+            || "step 2 bc acc",
+            self.bc.step2_acc,
             offset,
-            || Ok(block_count_acc[0]),
+            || Ok(acc[0]),
         )?;
-        let block_count_step2 = BlockCount {
-            cell: cell_step2,
-            value: block_count_acc[0],
+        let step2 = BlockCount {
+            cell,
+            value: acc[0],
         };
-        let cell_step3 = region.assign_advice(
-            || "block_count",
-            self.block_count_cols[2],
+        let cell = region.assign_advice(
+            || "step 3 bc acc",
+            self.bc.step3_acc,
             offset,
-            || Ok(block_count_acc[1]),
+            || Ok(acc[1]),
         )?;
-        let block_count_step3 = BlockCount {
-            cell: cell_step3,
-            value: block_count_acc[1],
+        let step3 = BlockCount {
+            cell,
+            value: acc[1],
         };
-        Ok((block_count_step2, block_count_step3))
+        Ok((step2, step3))
     }
 }
 
@@ -418,12 +453,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
 #[derive(Debug, Clone)]
 pub struct ChunkRotateConversionConfig<F> {
     q_enable: Selector,
-    // coef, acc
-    base_13_cols: [Column<Advice>; 2],
-    // coef, acc
-    base_9_cols: [Column<Advice>; 2],
-    // block count, step 2 acc, step 3 acc
-    block_count_cols: [Column<Advice>; 3],
+    adv: RhoAdvices,
     base_13_to_base_9_lookup: Base13toBase9TableConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
     chunk_idx: u32,
@@ -432,12 +462,10 @@ pub struct ChunkRotateConversionConfig<F> {
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
-    pub fn configure(
+    fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
-        base_13_cols: [Column<Advice>; 2],
-        base_9_cols: [Column<Advice>; 2],
-        block_count_cols: [Column<Advice>; 3],
+        adv: RhoAdvices,
         fix_cols: [Column<Fixed>; 3],
         chunk_idx: u32,
         rotation: u32,
@@ -446,24 +474,23 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
             meta,
             q_enable,
-            base_13_cols[1],
-            base_9_cols[1],
-            block_count_cols[0],
+            adv.input.coef,
+            adv.output.coef,
+            adv.bc.block_count,
             fix_cols,
         );
 
         meta.create_gate("Running down input", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let coef = meta.query_advice(base_13_cols[0], Rotation::cur());
+            let coef = meta.query_advice(adv.input.coef, Rotation::cur());
             let power_of_base = Expression::Constant(F::from(B13).pow(&[
                 chunk_idx.into(),
                 0,
                 0,
                 0,
             ]));
-            let delta_acc = meta
-                .query_advice(base_13_cols[1], Rotation::next())
-                - meta.query_advice(base_13_cols[1], Rotation::cur());
+            let delta_acc = meta.query_advice(adv.input.acc, Rotation::next())
+                - meta.query_advice(adv.input.acc, Rotation::cur());
 
             vec![(
                 "delta_acc === - coef * power_of_base", // running down for input
@@ -472,7 +499,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         });
         meta.create_gate("Running up for output", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let coef = meta.query_advice(base_9_cols[0], Rotation::cur());
+            let coef = meta.query_advice(adv.output.coef, Rotation::cur());
             let power_of_base = F::from(B9).pow(&[
                 ((rotation + chunk_idx) % LANE_SIZE).into(),
                 0,
@@ -480,8 +507,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
                 0,
             ]);
             let power_of_base = Expression::Constant(power_of_base);
-            let delta_acc = meta.query_advice(base_9_cols[1], Rotation::next())
-                - meta.query_advice(base_9_cols[1], Rotation::cur());
+            let delta_acc = meta.query_advice(adv.output.acc, Rotation::next())
+                - meta.query_advice(adv.output.acc, Rotation::cur());
             vec![(
                 "delta_acc === coef * power_of_base", // running up for output
                 q_enable * (delta_acc - coef * power_of_base),
@@ -491,15 +518,13 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         let block_count_acc_config = BlockCountAccConfig::configure(
             meta,
             q_enable,
-            block_count_cols,
+            adv.bc.clone(),
             step,
         );
 
         Self {
             q_enable,
-            base_13_cols,
-            base_9_cols,
-            block_count_cols,
+            adv,
             base_13_to_base_9_lookup,
             block_count_acc_config,
             chunk_idx,
@@ -516,7 +541,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
     ) -> Result<BlockCount2<F>, Error> {
         region.assign_advice(
             || "Input Coef",
-            self.base_13_cols[0],
+            self.adv.input.coef,
             offset,
             || {
                 biguint_to_f::<F>(rv.input_coef.clone())
@@ -525,7 +550,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         )?;
         region.assign_advice(
             || "Input accumulator",
-            self.base_13_cols[1],
+            self.adv.input.acc,
             offset,
             || {
                 biguint_to_f::<F>(rv.input_acc.clone())
@@ -534,7 +559,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         )?;
         region.assign_advice(
             || "Output Coef",
-            self.base_9_cols[0],
+            self.adv.output.coef,
             offset,
             || {
                 biguint_to_f::<F>(rv.output_coef.clone())
@@ -543,7 +568,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         )?;
         region.assign_advice(
             || "Output accumulator",
-            self.base_9_cols[1],
+            self.adv.output.acc,
             offset,
             || {
                 biguint_to_f::<F>(rv.output_acc.clone())
@@ -628,13 +653,9 @@ fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
 pub struct LaneRotateConversionConfig<F> {
     q_enable: Selector,
     q_is_special: Selector,
-    // coef, acc
-    base_13_cols: [Column<Advice>; 2],
-    // coef, acc
-    base_9_cols: [Column<Advice>; 2],
+    adv: RhoAdvices,
     chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
     special_chunk_config: SpecialChunkConfig<F>,
-    block_count_cols: [Column<Advice>; 3],
     lane_xy: (usize, usize),
     rotation: u32,
 }
@@ -643,15 +664,13 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         lane_xy: (usize, usize),
-        rotate_conversion: [[Column<Advice>; 2]; 2],
-        block_count_cols: [Column<Advice>; 3],
+        adv: RhoAdvices,
         axiliary: [Column<Advice>; 2],
         base13_to_9: [Column<Fixed>; 3],
         special: [Column<Fixed>; 2],
     ) -> Self {
-        let [base_13_cols, base_9_cols] = rotate_conversion;
-        meta.enable_equality(base_13_cols[1].into());
-        meta.enable_equality(base_9_cols[1].into());
+        meta.enable_equality(adv.input.acc.into());
+        meta.enable_equality(adv.output.acc.into());
         let q_enable = meta.selector();
         let q_is_special = meta.selector();
         let rotation = ROTATION_CONSTANTS[lane_xy.0][lane_xy.1];
@@ -662,9 +681,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 ChunkRotateConversionConfig::configure(
                     q_enable,
                     meta,
-                    base_13_cols,
-                    base_9_cols,
-                    block_count_cols,
+                    adv.clone(),
                     base13_to_9,
                     *chunk_idx,
                     rotation,
@@ -675,8 +692,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let special_chunk_config = SpecialChunkConfig::configure(
             meta,
             q_is_special,
-            base_13_cols[1],
-            base_9_cols[1],
+            adv.input.acc,
+            adv.output.acc,
             axiliary[0],
             special,
             rotation as u64,
@@ -685,11 +702,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         Self {
             q_enable,
             q_is_special,
-            base_13_cols,
-            base_9_cols,
+            adv,
             chunk_rotate_convert_configs,
             special_chunk_config,
-            block_count_cols,
             lane_xy,
             rotation,
         }
@@ -705,7 +720,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 let mut offset = 0;
                 let cell = region.assign_advice(
                     || "base_13_col",
-                    self.base_13_cols[1],
+                    self.adv.input.acc,
                     offset,
                     || Ok(lane_base_13.value),
                 )?;
