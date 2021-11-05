@@ -1,5 +1,5 @@
 use crate::arith_helpers::*;
-use halo2_kzg::{
+use halo2::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
@@ -85,7 +85,7 @@ mod tests {
     use super::*;
     use crate::common::*;
     use crate::keccak_arith::*;
-    use halo2_kzg::{
+    use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},

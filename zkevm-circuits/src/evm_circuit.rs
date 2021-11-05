@@ -2,7 +2,7 @@
 
 use crate::util::Expr;
 use bus_mapping::{evm::OpcodeId, operation::Target};
-use halo2_kzg::{
+use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Layouter, Region},
     plonk::{
@@ -939,7 +939,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 #[cfg(test)]
 mod test {
     use super::{EvmCircuit, ExecutionStep, Operation};
-    use halo2_kzg::{
+    use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::{Circuit, ConstraintSystem, Error},

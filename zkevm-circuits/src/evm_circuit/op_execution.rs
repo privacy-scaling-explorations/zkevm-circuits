@@ -7,7 +7,7 @@ use super::{
 };
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
-use halo2_kzg::{
+use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},

@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-halo2 = "0.0"
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"
-halo2_kzg = { git = "https://github.com/NoCtrlZ/halo2", branch = "kzg", package = "halo2" }
+halo2 = { git = "https://github.com/kilic/halo2", branch = "kzg" }
 pairing = { git = 'https://github.com/kilic/pairing', package = "pairing_bn256" }

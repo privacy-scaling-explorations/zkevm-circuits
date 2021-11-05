@@ -4,7 +4,7 @@ use super::super::Constraint;
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::OpExecutionState;
 use crate::util::Expr;
-use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
+use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 pub(crate) mod common_cases;
 pub(crate) mod constraint_builder;
@@ -76,7 +76,7 @@ pub(crate) fn batch_add_expressions<F: FieldExt>(
 pub(crate) mod sum {
     use super::super::Cell;
     use crate::util::Expr;
-    use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(cells: &[Cell<F>]) -> Expression<F> {
         cells.iter().fold(0.expr(), |acc, cell| acc + cell.expr())
@@ -93,7 +93,7 @@ pub(crate) mod sum {
 /// Inputs need to be boolean
 pub(crate) mod and {
     use crate::util::Expr;
-    use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(
         inputs: Vec<Expression<F>>,
@@ -112,7 +112,7 @@ pub(crate) mod and {
 /// `selector` needs to be boolean.
 pub(crate) mod select {
     use crate::util::Expr;
-    use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(
         selector: Expression<F>,

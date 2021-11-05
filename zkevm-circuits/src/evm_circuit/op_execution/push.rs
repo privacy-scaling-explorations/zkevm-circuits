@@ -5,7 +5,7 @@ use super::super::{
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2_kzg::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
@@ -271,7 +271,7 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
     use pairing::bn256::Fr as Fp;
 

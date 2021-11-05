@@ -1,5 +1,5 @@
 //! Reusable gadgets for the zk_evm circuits.
-use halo2_kzg::circuit::Cell;
+use halo2::circuit::Cell;
 use pairing::arithmetic::FieldExt;
 
 /// An assigned cell in the circuit.

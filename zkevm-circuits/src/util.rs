@@ -3,7 +3,7 @@ use bus_mapping::{
     evm::{GasCost, OpcodeId},
     operation::Target,
 };
-use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
+use halo2::{arithmetic::FieldExt, plonk::Expression};
 use num::BigUint;
 
 pub(crate) trait Expr<F: FieldExt> {

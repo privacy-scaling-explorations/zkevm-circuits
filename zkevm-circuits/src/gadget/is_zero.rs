@@ -1,4 +1,4 @@
-use halo2_kzg::{
+use halo2::{
     circuit::{Chip, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, VirtualCells,
@@ -122,7 +122,7 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 #[cfg(test)]
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
-    use halo2_kzg::{
+    use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure::ConstraintNotSatisfied},

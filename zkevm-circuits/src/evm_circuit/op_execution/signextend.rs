@@ -11,8 +11,8 @@ use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use array_init::array_init;
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2_kzg::plonk::Error;
-use halo2_kzg::{arithmetic::FieldExt, circuit::Region};
+use halo2::plonk::Error;
+use halo2::{arithmetic::FieldExt, circuit::Region};
 use num::{BigUint, ToPrimitive};
 use std::convert::TryInto;
 
@@ -233,7 +233,7 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
     use pairing::bn256::Fr as Fp;
 

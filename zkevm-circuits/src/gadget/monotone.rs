@@ -1,4 +1,4 @@
-use halo2_kzg::{
+use halo2::{
     circuit::{Chip, Layouter},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed,
@@ -111,7 +111,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
 #[cfg(test)]
 mod test {
     use super::{MonotoneChip, MonotoneConfig};
-    use halo2_kzg::{
+    use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{

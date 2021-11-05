@@ -4,8 +4,8 @@ use super::super::{
 };
 use super::constraint_builder::ConstraintBuilder;
 use crate::util::Expr;
-use halo2_kzg::plonk::Error;
-use halo2_kzg::{arithmetic::FieldExt, circuit::Region};
+use halo2::plonk::Error;
+use halo2::{arithmetic::FieldExt, circuit::Region};
 
 pub const STACK_START_IDX: usize = 1024;
 

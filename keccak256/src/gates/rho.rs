@@ -2,7 +2,7 @@ use crate::arith_helpers::convert_b13_lane_to_b9;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gates::gate_helpers::Lane;
 
-use halo2_kzg::{
+use halo2::{
     circuit::Region,
     plonk::{Advice, Column, Error},
 };

@@ -1,6 +1,6 @@
 use crate::gates::gate_helpers::Lane;
 
-use halo2_kzg::{
+use halo2::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,

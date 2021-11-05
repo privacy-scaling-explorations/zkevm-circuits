@@ -1,8 +1,8 @@
 use super::super::CaseAllocation;
 use super::super::Cell;
 use crate::util::Expr;
-use halo2_kzg::plonk::Error;
-use halo2_kzg::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2::plonk::Error;
+use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 
 use super::constraint_builder::ConstraintBuilder;
 

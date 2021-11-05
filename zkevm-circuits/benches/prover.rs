@@ -1,6 +1,6 @@
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
 use criterion::criterion_main;
-use halo2_kzg::{
+use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Layouter, SimpleFloorPlanner},
     pairing::bn256::{Bn256, Fr as Fp},

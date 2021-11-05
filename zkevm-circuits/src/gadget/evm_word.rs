@@ -8,10 +8,10 @@
 
 use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
-use halo2_kzg::{
+use halo2::{
     circuit::Region,
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
     },
     poly::Rotation,
 };
@@ -20,7 +20,7 @@ use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
 #[cfg(test)]
-use halo2_kzg::circuit::{Layouter, };
+use halo2::circuit::Layouter;
 
 // r = hash([0, 1, ..., 255])
 // TODO: Move into crate-level `constants` file.
@@ -93,14 +93,13 @@ impl<F: FieldExt> WordConfig<F> {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
-                let byte_lookup = TableColumn {
-                    inner: meta.query_fixed(byte_lookup, Rotation::cur())
-                };
+                let byte_lookup =
+                    meta.query_fixed(byte_lookup, Rotation::cur());
 
                 // Update encode_word_expr.
                 encode_word_expr = encode_word_expr.clone() * r + byte.clone();
 
-                vec![(q_encode * byte, byte_lookup]
+                vec![(q_encode * byte, byte_lookup)]
             });
         }
 
@@ -168,7 +167,7 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_kzg::{
+    use halo2::{
         circuit::SimpleFloorPlanner,
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, Instance},

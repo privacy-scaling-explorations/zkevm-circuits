@@ -2,8 +2,8 @@ use super::super::{Case, Cell, Constraint, CoreStateInstance, ExecutionStep};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::Expr;
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2_kzg::plonk::Error;
-use halo2_kzg::{arithmetic::FieldExt, circuit::Region};
+use halo2::plonk::Error;
+use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -183,7 +183,7 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
     use pairing::bn256::Fr as Fp;
 

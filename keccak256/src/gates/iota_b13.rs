@@ -1,5 +1,5 @@
-use halo2_kzg::plonk::Instance;
-use halo2_kzg::{
+use halo2::plonk::Instance;
+use halo2::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
@@ -84,11 +84,9 @@ mod tests {
     use crate::arith_helpers::*;
     use crate::common::*;
     use crate::keccak_arith::*;
-    use halo2_kzg::circuit::Layouter;
-    use halo2_kzg::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2_kzg::{
-        circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit,
-    };
+    use halo2::circuit::Layouter;
+    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use num_bigint::BigUint;
     use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};

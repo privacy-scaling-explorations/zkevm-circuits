@@ -4,7 +4,7 @@ use crate::gadget::{
     Variable,
 };
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
-use halo2_kzg::{
+use halo2::{
     circuit::{Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed,
@@ -1167,7 +1167,7 @@ mod tests {
     use std::str::FromStr;
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
-    use halo2_kzg::{
+    use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{
             MockProver, VerifyFailure::ConstraintNotSatisfied,
@@ -1270,7 +1270,7 @@ mod tests {
         gate_index: usize,
         gate_name: &'static str,
         index: usize,
-    ) -> halo2_kzg::dev::VerifyFailure {
+    ) -> halo2::dev::VerifyFailure {
         ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
             row,
@@ -1280,7 +1280,7 @@ mod tests {
     fn lookup_fail(
         row: usize,
         lookup_index: usize,
-    ) -> halo2_kzg::dev::VerifyFailure {
+    ) -> halo2::dev::VerifyFailure {
         Lookup { lookup_index, row }
     }
 

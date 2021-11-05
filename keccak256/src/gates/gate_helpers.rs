@@ -1,4 +1,4 @@
-use halo2_kzg::circuit::Cell;
+use halo2::circuit::Cell;
 
 #[derive(Debug)]
 pub struct Lane<F> {

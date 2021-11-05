@@ -1,6 +1,6 @@
 use super::super::super::{BusMappingLookup, Constraint, FixedLookup, Lookup};
 use crate::util::Expr;
-use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
+use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 // Default max degree allowed in all expressions passing through the ConstraintBuilder.
 const DEFAULT_MAX_DEGREE: usize = 2usize.pow(3) + 1;
