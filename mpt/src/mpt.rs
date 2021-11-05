@@ -12,7 +12,8 @@ use std::{convert::TryInto, marker::PhantomData};
 use crate::param::LAYOUT_OFFSET;
 use crate::param::WITNESS_ROW_WIDTH;
 use crate::param::{
-    C_START, HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_START,
+    BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_START, HASH_WIDTH,
+    KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_START,
 };
 
 #[derive(Clone, Debug)]
@@ -35,7 +36,12 @@ pub struct MPTConfig<F> {
     c_advices: [Column<Advice>; HASH_WIDTH],
     s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+    branch_acc_s: Column<Advice>,
+    branch_mult_s: Column<Advice>,
+    branch_acc_c: Column<Advice>,
+    branch_mult_c: Column<Advice>,
     keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+    branch_acc_r: F,
     _marker: PhantomData<F>,
 }
 
@@ -43,6 +49,8 @@ impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
         let q_not_first = meta.fixed_column();
+
+        let branch_acc_r = F::rand(); // TODO: generate from commitments
 
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
@@ -90,6 +98,11 @@ impl<F: FieldExt> MPTConfig<F> {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
+
+        let branch_acc_s = meta.advice_column();
+        let branch_mult_s = meta.advice_column();
+        let branch_acc_c = meta.advice_column();
+        let branch_mult_c = meta.advice_column();
 
         let one = Expression::Constant(F::one());
 
@@ -328,6 +341,69 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
+        meta.create_gate("branch accumulator", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let is_branch_init_cur =
+                meta.query_advice(is_branch_init, Rotation::cur());
+
+            let mut constraints = vec![];
+
+            // TODO: RLP length can also be 3 or 4
+            // check branch accumulator S in row 0
+            let branch_acc_s_cur =
+                meta.query_advice(branch_acc_s, Rotation::cur());
+            let branch_acc_c_cur =
+                meta.query_advice(branch_acc_c, Rotation::cur());
+            let branch_mult_s_cur =
+                meta.query_advice(branch_mult_s, Rotation::cur());
+            let branch_mult_c_cur =
+                meta.query_advice(branch_mult_c, Rotation::cur());
+
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let c_rlp1 = meta.query_advice(s_advices[0], Rotation::cur());
+            let c_rlp2 = meta.query_advice(s_advices[1], Rotation::cur());
+
+            let acc_s = s_rlp1 + s_rlp2 * branch_acc_r;
+            constraints.push((
+                "branch accumulator S row 0",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (acc_s - branch_acc_s_cur),
+            ));
+
+            let mult_s = Expression::Constant(branch_acc_r * branch_acc_r);
+            constraints.push((
+                "branch mult S row 0",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (mult_s - branch_mult_s_cur),
+            ));
+
+            let acc_c = c_rlp1 + c_rlp2 * branch_acc_r;
+            constraints.push((
+                "branch accumulator C row 0",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (acc_c - branch_acc_c_cur),
+            ));
+
+            let mult_c = Expression::Constant(branch_acc_r * branch_acc_r);
+            constraints.push((
+                "branch mult C row 0",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * (mult_c - branch_mult_c_cur),
+            ));
+
+            // TODO:
+            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
+            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
+            // non-empty nodes have 32 values ...
+
+            constraints
+        });
+
         meta.create_gate("keccak constraints", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
@@ -459,27 +535,9 @@ impl<F: FieldExt> MPTConfig<F> {
 
         // TODO: check transition from compact to keccak leaf (compact leaf as keccak input - 17 cells)
 
+        /*
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
-            // We need to construct RLP from branch nodes, turn it into words,
-            // and check its hash.
-
-            let mut s_words: Vec<Expression<F>> = vec![];
-            let mut c_words: Vec<Expression<F>> = vec![];
-
-            // The first two elements of RLP are in colums *_rlp1 and *_rlp2.
-            let s_rlp1_meta = meta.query_advice(s_rlp1, Rotation(-15));
-            let s_rlp2_meta = meta.query_advice(s_rlp2, Rotation(-15));
-            let c_rlp1_meta = meta.query_advice(c_rlp1, Rotation(-15));
-            let c_rlp2_meta = meta.query_advice(c_rlp2, Rotation(-15));
-
-            let mut exp = Expression::Constant(F::from_u64(256));
-            let ws1 = s_rlp1_meta + s_rlp2_meta * exp.clone(); // part of the first s word
-            let wc1 = c_rlp1_meta + c_rlp2_meta * exp.clone(); // part of the first c word
-            s_words.push(ws1);
-            c_words.push(wc1);
-
-            exp = exp * Expression::Constant(F::from_u64(256));
 
             // might use utils from evm_circuit, but would need to make them public
             let select = |selector: Expression<F>,
@@ -488,26 +546,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 selector.clone() * when_true
                     + (one.clone() - selector) * when_false
             };
-
-            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
-            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
-            // non-empty nodes have 32 values ...
-            let c128 = Expression::Constant(F::from_u64(128));
-            let c160 = Expression::Constant(F::from_u64(160));
-            for i in 0..15 {
-                let s_rlp1 = meta.query_advice(s_rlp1, Rotation(-14 + i));
-                let s_rlp2 = meta.query_advice(s_rlp2, Rotation(-14 + i));
-                let c_rlp1 = meta.query_advice(c_rlp1, Rotation(-14 + i));
-                let c_rlp2 = meta.query_advice(c_rlp2, Rotation(-14 + i));
-
-                // if empty node:
-                //   s_words[curr] += s_advices[0] * exp
-                // if non-empty node:
-                //   s_words[curr] += s_rlp2 * exp + s_advices[0] * exp * 256 +
-                //   until we fill the word
-
-                // select(s_rlp2)
-            }
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
@@ -525,6 +563,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
             constraints
         });
+        */
 
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -564,8 +603,13 @@ impl<F: FieldExt> MPTConfig<F> {
             c_advices,
             s_keccak,
             c_keccak,
+            branch_acc_s,
+            branch_mult_s,
+            branch_acc_c,
+            branch_mult_c,
             keccak_table,
             _marker: PhantomData,
+            branch_acc_r,
         }
     }
 
@@ -594,6 +638,34 @@ impl<F: FieldExt> MPTConfig<F> {
             self.is_branch_child,
             offset,
             || Ok(F::from_u64(is_branch_child as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_acc_s"),
+            self.branch_acc_s,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_mult_s"),
+            self.branch_mult_s,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_acc_c"),
+            self.branch_acc_c,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_mult_c"),
+            self.branch_mult_c,
+            offset,
+            || Ok(F::zero()),
         )?;
 
         region.assign_advice(
@@ -760,27 +832,6 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &Vec<u8>,
         offset: usize,
     ) -> Result<(), Error> {
-        region.assign_advice(
-            || format!("assign node_index"),
-            self.node_index,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || format!("assign key"),
-            self.key,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || format!("assign is_modified"),
-            self.is_modified,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
         self.assign_row(
             region, row, true, false, false, 0, 0, false, false, offset,
         )?;
@@ -838,7 +889,7 @@ impl<F: FieldExt> MPTConfig<F> {
     ) {
         layouter
             .assign_region(
-                || "assign MPT proof",
+                || "MPT",
                 |mut region| {
                     let mut offset = 0;
 
@@ -849,7 +900,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     for (ind, row) in witness.iter().enumerate() {
                         if row[row.len() - 1] == 0 {
                             // branch init
-                            key = row[4];
+                            key = row[BRANCH_0_KEY_POS];
                             branch_ind = 0;
 
                             // Get the child that is being changed and convert it to words to enable lookups:
@@ -883,6 +934,52 @@ impl<F: FieldExt> MPTConfig<F> {
                                 &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
+
+                            // reassign (it was assigned to 0 in assign_row) branch_acc and branch_mult to proper values
+
+                            // TODO: depends on how much positions RLP occupies
+                            let acc_s =
+                                F::from_u64(row[BRANCH_0_S_START] as u64)
+                                    + F::from_u64(
+                                        row[BRANCH_0_S_START + 1] as u64,
+                                    ) * self.branch_acc_r;
+                            region.assign_advice(
+                                || format!("assign branch_acc_s"),
+                                self.branch_acc_s,
+                                offset,
+                                || Ok(acc_s),
+                            )?;
+
+                            let branch_mult_s =
+                                self.branch_acc_r * self.branch_acc_r;
+                            region.assign_advice(
+                                || format!("assign branch_mult_s"),
+                                self.branch_mult_s,
+                                offset,
+                                || Ok(branch_mult_s),
+                            )?;
+
+                            let acc_c =
+                                F::from_u64(row[BRANCH_0_C_START] as u64)
+                                    + F::from_u64(
+                                        row[BRANCH_0_C_START + 1] as u64,
+                                    ) * self.branch_acc_r;
+                            region.assign_advice(
+                                || format!("assign branch_acc_c"),
+                                self.branch_acc_c,
+                                offset,
+                                || Ok(acc_c),
+                            )?;
+
+                            let branch_mult_c =
+                                self.branch_acc_r * self.branch_acc_r;
+                            region.assign_advice(
+                                || format!("assign branch_mult_c"),
+                                self.branch_mult_c,
+                                offset,
+                                || Ok(branch_mult_c),
+                            )?;
+
                             offset += 1;
                         } else if row[row.len() - 1] == 1 {
                             // branch child
@@ -1100,6 +1197,7 @@ mod tests {
                         .unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
+                /*
                 const K: u32 = 5;
                 let params: Params<EqAffine> = Params::new(K);
                 let empty_circuit = MyCircuit::<pallas::Base> {
@@ -1120,6 +1218,7 @@ mod tests {
                 let proof = transcript.finalize();
 
                 println!("{:?}", proof);
+                */
             });
     }
 }
