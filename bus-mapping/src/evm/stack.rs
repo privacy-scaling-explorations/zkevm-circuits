@@ -54,19 +54,19 @@ impl<T: Into<Vec<EvmWord>>> From<T> for Stack {
 }
 
 impl Stack {
-    /// Generate an empty instance of EVM stack.
-    pub const fn empty() -> Stack {
-        Stack(Vec::new())
-    }
-
-    /// Generate an new instance of EVM stack given a `Vec<EvmWord>`.
-    pub const fn new(words: Vec<EvmWord>) -> Stack {
-        Stack(words)
+    /// Generate a new instance of EVM stack.
+    pub const fn new() -> Stack {
+        Stack(vec![])
     }
 
     /// Generates a `Stack` instance from the given slice.
     pub fn from_slice(words: &[EvmWord]) -> Self {
         Stack(words.into())
+    }
+
+    /// Generates a `Stack` instance from the given vec.
+    pub const fn from_vec(words: Vec<EvmWord>) -> Self {
+        Stack(words)
     }
 
     /// Returns the first avaliable/free `StackAddress`.
@@ -102,7 +102,7 @@ mod stack_tests {
     use super::*;
 
     fn setup_stack(stack_value: [&str; 3]) -> Stack {
-        Stack::new(vec![
+        Stack::from_vec(vec![
             EvmWord::from_str(stack_value[0]).unwrap(),
             EvmWord::from_str(stack_value[1]).unwrap(),
             EvmWord::from_str(stack_value[2]).unwrap(),
