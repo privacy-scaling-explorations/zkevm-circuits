@@ -1,178 +1,87 @@
-use super::super::{Case, Cell, Constraint, CoreStateInstance, ExecutionStep};
-use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
-use crate::util::Expr;
+use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
+use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
+use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::StateTransition;
+use super::{
+    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+};
+use crate::impl_op_gadget;
+use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
+static STATE_TRANSITION: StateTransition = StateTransition {
+    gc_delta: Some(1), // 1 stack pop
+    pc_delta: Some(1),
+    sp_delta: Some(1),
+    gas_delta: Some(GasCost::QUICK.as_usize()),
+};
+const NUM_POPPED: usize = 1;
+
+impl_op_gadget!(
+    #set[POP]
+    PopGadget {
+        PopSuccessCase(),
+        StackUnderflowCase(NUM_POPPED),
+        OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
+    }
+);
+
 #[derive(Clone, Debug)]
-pub struct PopGadget<F> {
-    success: Cell<F>,
-    stack_underflow: Cell<F>, // case selector
-    out_of_gas: (
-        Cell<F>, // case selector
-        Cell<F>, // gas available
-    ),
+struct PopSuccessCase<F> {
+    case_selector: Cell<F>,
+    value: Word<F>,
 }
 
-impl<F: FieldExt> OpGadget<F> for PopGadget<F> {
-    const RESPONSIBLE_OPCODES: &'static [OpcodeId] = &[
-        OpcodeId::POP, // 0x50 of op id
-    ];
+impl<F: FieldExt> PopSuccessCase<F> {
+    pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
+        case: Case::Success,
+        num_word: 1,
+        num_cell: 0,
+        will_halt: false,
+    };
 
-    const CASE_CONFIGS: &'static [CaseConfig] = &[
-        CaseConfig {
-            case: Case::Success,
-            num_word: 0, // no operand required for pop
-            num_cell: 0,
-            will_halt: false,
-        },
-        CaseConfig {
-            case: Case::StackUnderflow,
-            num_word: 0,
-            num_cell: 0,
-            will_halt: true,
-        },
-        CaseConfig {
-            case: Case::OutOfGas,
-            num_word: 0,
-            num_cell: 0,
-            will_halt: true,
-        },
-    ];
-
-    fn construct(case_allocations: Vec<CaseAllocation<F>>) -> Self {
-        let [success, stack_underflow, out_of_gas]: [CaseAllocation<F>; 3] =
-            case_allocations.try_into().unwrap();
+    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
-            success: success.selector,
-
-            stack_underflow: stack_underflow.selector,
-            out_of_gas: (
-                out_of_gas.selector.clone(),
-                out_of_gas.resumption.unwrap().gas_available,
-            ),
+            case_selector: alloc.selector.clone(),
+            value: alloc.words.pop().unwrap(),
         }
     }
 
-    fn constraints(
+    pub(crate) fn constraint(
         &self,
-        op_execution_state_curr: &OpExecutionState<F>,
-        op_execution_state_next: &OpExecutionState<F>,
-    ) -> Vec<Constraint<F>> {
-        let OpExecutionState { opcode, .. } = &op_execution_state_curr;
-        let common_polys = vec![opcode.expr() - OpcodeId::POP.expr()];
+        state_curr: &OpExecutionState<F>,
+        state_next: &OpExecutionState<F>,
+        name: &'static str,
+    ) -> Constraint<F> {
+        let mut cb = ConstraintBuilder::default();
 
-        let success = {
-            // interpreter state transition constraints
-            let op_execution_state_transition_constraints = vec![
-                op_execution_state_next.global_counter.expr()
-                    - (op_execution_state_curr.global_counter.expr()
-                        + 1.expr()),
-                op_execution_state_next.stack_pointer.expr()
-                    - (op_execution_state_curr.stack_pointer.expr() + 1.expr()),
-                op_execution_state_next.program_counter.expr()
-                    - (op_execution_state_curr.program_counter.expr()
-                        + 1.expr()),
-                op_execution_state_next.gas_counter.expr()
-                    - (op_execution_state_curr.gas_counter.expr()
-                        + GasCost::QUICK.expr()),
-            ];
+        // Pop the value from the stack
+        cb.stack_pop(self.value.expr());
 
-            let case_selector = &self.success;
+        // State transitions
+        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
-            Constraint {
-                name: "PopGadget success",
-                selector: case_selector.expr(),
-                polys: [
-                    common_polys.clone(),
-                    op_execution_state_transition_constraints,
-                ]
-                .concat(),
-                lookups: vec![],
-            }
-        };
-
-        let stack_underflow = {
-            let stack_pointer = op_execution_state_curr.stack_pointer.expr();
-            Constraint {
-                name: "PopGadget stack underflow",
-                selector: self.stack_underflow.expr(),
-                polys: vec![
-                    common_polys.clone(),
-                    vec![(stack_pointer - 1024.expr())],
-                ]
-                .concat(),
-                lookups: vec![],
-            }
-        };
-
-        let out_of_gas = {
-            let (case_selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = op_execution_state_curr.gas_counter.expr()
-                + GasCost::QUICK.expr()
-                - gas_available.expr();
-            Constraint {
-                name: "PopGadget out of gas",
-                selector: case_selector.expr(),
-                polys: [
-                    common_polys,
-                    vec![
-                        (gas_overdemand.clone() - 1.expr())
-                            * (gas_overdemand - 2.expr()),
-                    ],
-                ]
-                .concat(),
-                lookups: vec![],
-            }
-        };
-
-        vec![success, stack_underflow, out_of_gas]
+        // Generate the constraint
+        cb.constraint(self.case_selector.expr(), name)
     }
 
     fn assign(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        op_execution_state: &mut CoreStateInstance,
-        execution_step: &ExecutionStep,
+        state: &mut CoreStateInstance,
+        step: &ExecutionStep,
     ) -> Result<(), Error> {
-        match execution_step.case {
-            Case::Success => self.assign_success(
-                region,
-                offset,
-                op_execution_state,
-                execution_step,
-            ),
-            Case::StackUnderflow => {
-                unimplemented!()
-            }
-            Case::OutOfGas => {
-                unimplemented!()
-            }
-            _ => unreachable!(),
-        }
-    }
-}
+        // Input
+        self.value
+            .assign(region, offset, Some(step.values[0].to_word()))?;
 
-impl<F: FieldExt> PopGadget<F> {
-    fn assign_success(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        op_execution_state: &mut CoreStateInstance,
-        _execution_step: &ExecutionStep,
-    ) -> Result<(), Error> {
-        op_execution_state.global_counter += 1;
-        op_execution_state.program_counter += 1;
-        op_execution_state.stack_pointer += 1;
-        op_execution_state.gas_counter += 2; // pop consume 2 gas point
-                                             // no word assignments
+        // State transitions
+        STATE_TRANSITION.assign(state);
 
-        self.success
-            .assign(region, offset, Some(F::from_u64(1)))
-            .unwrap();
         Ok(())
     }
 }
@@ -211,7 +120,7 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::POP,
                     case: Case::Success,
-                    values: vec![],
+                    values: vec![BigUint::from(0x02_03u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,

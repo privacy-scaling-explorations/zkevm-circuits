@@ -1,6 +1,7 @@
 use super::super::utils;
 use super::super::CaseAllocation;
 use super::super::Cell;
+use super::{from_bytes, get_range};
 use crate::evm_circuit::param::MAX_BYTES_FIELD;
 use crate::util::Expr;
 use array_init::array_init;
@@ -113,7 +114,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         Self {
             lt: alloc.cells.pop().unwrap(),
             diff: array_init(|_| alloc.cells.pop().unwrap()),
-            range: utils::get_range(NUM_BYTES * 8),
+            range: get_range(NUM_BYTES * 8),
         }
     }
 
@@ -123,7 +124,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Expression<F> {
-        let diff = utils::from_bytes::expr(self.diff.to_vec());
+        let diff = from_bytes::expr(self.diff.to_vec());
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(lhs - rhs, diff - (self.lt.expr() * self.range));
 
@@ -227,5 +228,60 @@ impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
                 .assign(region, offset, utils::sum::value(&diff[..]))?;
 
         Ok((lt, eq))
+    }
+}
+
+/// Returns (is_a, is_b):
+/// - `is_a` is `1` when `value == a`, else `0`
+/// - `is_b` is `1` when `value == b`, else `0`
+/// `value` is required to be either `a` or `b`.
+/// The benefit of this gadget over `IsEqualGadget` is that the
+/// expression returned is a single value which will make
+/// future expressions depending on this result more efficient.
+#[derive(Clone, Debug)]
+pub struct PairSelectGadget<F> {
+    pub(crate) is_a: Cell<F>,
+}
+
+impl<F: FieldExt> PairSelectGadget<F> {
+    pub const NUM_CELLS: usize = 1;
+    pub const NUM_WORDS: usize = 0;
+
+    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
+        Self {
+            is_a: alloc.cells.pop().unwrap(),
+        }
+    }
+
+    pub(crate) fn constraints(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        value: Expression<F>,
+        a: Expression<F>,
+        b: Expression<F>,
+    ) -> (Expression<F>, Expression<F>) {
+        let is_b = 1.expr() - self.is_a.expr();
+        // `is_a` needs to be boolean
+        cb.require_boolean(self.is_a.expr());
+        // Force `is_a` to be `0` when `value != a`
+        cb.add_expression(self.is_a.expr() * (value.clone() - a));
+        // Force `1 - is_a` to be `0` when `value != b`
+        cb.add_expression(is_b.clone() * (value - b));
+
+        (self.is_a.expr(), is_b)
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: F,
+        a: F,
+        _b: F,
+    ) -> Result<(F, F), Error> {
+        let is_a = if value == a { F::one() } else { F::zero() };
+        self.is_a.assign(region, offset, Some(is_a))?;
+
+        Ok((is_a, F::one() - is_a))
     }
 }

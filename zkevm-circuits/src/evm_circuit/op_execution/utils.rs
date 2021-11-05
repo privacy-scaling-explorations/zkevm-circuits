@@ -3,7 +3,11 @@
 use super::super::Constraint;
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::OpExecutionState;
-use crate::util::Expr;
+use crate::{
+    evm_circuit::{CoreStateInstance, Lookup},
+    util::Expr,
+};
+use bus_mapping::evm::OpcodeId;
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 pub(crate) mod common_cases;
@@ -16,14 +20,23 @@ pub(crate) mod math_gadgets;
 // that the state variable needs to remain the same (which may not
 // be correct, but this will easily be detected while testing).
 #[derive(Clone, Debug, Default)]
-pub(crate) struct StateTransitions<F> {
+pub(crate) struct StateTransitionExpressions<F> {
     pub gc_delta: Option<Expression<F>>,
     pub sp_delta: Option<Expression<F>>,
     pub pc_delta: Option<Expression<F>>,
     pub gas_delta: Option<Expression<F>>,
 }
 
-impl<F: FieldExt> StateTransitions<F> {
+impl<F: FieldExt> StateTransitionExpressions<F> {
+    pub(crate) fn new(state_transition: StateTransition) -> Self {
+        Self {
+            gc_delta: Some(state_transition.gc_delta.unwrap_or(0).expr()),
+            pc_delta: Some(state_transition.pc_delta.unwrap_or(0).expr()),
+            sp_delta: Some(state_transition.sp_delta.unwrap_or(0).expr()),
+            gas_delta: Some(state_transition.gas_delta.unwrap_or(0).expr()),
+        }
+    }
+
     pub(crate) fn constraints(
         &self,
         cb: &mut ConstraintBuilder<F>,
@@ -36,17 +49,17 @@ impl<F: FieldExt> StateTransitions<F> {
                 - (state_curr.global_counter.expr()
                     + self.gc_delta.clone().unwrap_or_else(|| 0.expr())),
         );
-        // Stack Pointer
-        cb.add_expression(
-            state_next.stack_pointer.expr()
-                - (state_curr.stack_pointer.expr()
-                    + self.sp_delta.clone().unwrap_or_else(|| 0.expr())),
-        );
         // Program Counter
         cb.add_expression(
             state_next.program_counter.expr()
                 - (state_curr.program_counter.expr()
                     + self.pc_delta.clone().unwrap_or_else(|| 0.expr())),
+        );
+        // Stack Pointer
+        cb.add_expression(
+            state_next.stack_pointer.expr()
+                - (state_curr.stack_pointer.expr()
+                    + self.sp_delta.clone().unwrap_or_else(|| 0.expr())),
         );
         // Gas Counter
         cb.add_expression(
@@ -57,9 +70,46 @@ impl<F: FieldExt> StateTransitions<F> {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct StateTransition {
+    pub gc_delta: Option<usize>,
+    pub sp_delta: Option<i32>,
+    pub pc_delta: Option<usize>,
+    pub gas_delta: Option<usize>,
+}
+
+impl StateTransition {
+    pub(crate) fn assign(&self, state: &mut CoreStateInstance) {
+        // Global Counter
+        state.global_counter += self.gc_delta.unwrap_or(0);
+        // Program Counter
+        state.program_counter += self.pc_delta.unwrap_or(0);
+        // Stack Pointer
+        let sp_delta = self.sp_delta.unwrap_or(0);
+        if sp_delta < 0 {
+            state.stack_pointer -= -sp_delta as usize;
+        } else {
+            state.stack_pointer += sp_delta as usize;
+        }
+        // Gas Counter
+        state.gas_counter += self.gas_delta.unwrap_or(0);
+    }
+
+    pub(crate) fn constraints<F: FieldExt>(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        state_curr: &OpExecutionState<F>,
+        state_next: &OpExecutionState<F>,
+    ) {
+        StateTransitionExpressions::new(self.clone())
+            .constraints(cb, state_curr, state_next);
+    }
+}
+
 pub(crate) fn batch_add_expressions<F: FieldExt>(
     constraints: Vec<Constraint<F>>,
     expressions: Vec<Expression<F>>,
+    lookups: Vec<Lookup<F>>,
 ) -> Vec<Constraint<F>> {
     constraints
         .into_iter()
@@ -67,6 +117,8 @@ pub(crate) fn batch_add_expressions<F: FieldExt>(
             constraint.polys =
                 [constraint.polys.clone(), expressions.clone().to_vec()]
                     .concat();
+            constraint.lookups =
+                [constraint.lookups.clone(), lookups.clone().to_vec()].concat();
             constraint
         })
         .collect()
@@ -145,22 +197,27 @@ pub(crate) mod select {
 
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
-    use crate::{evm_circuit::Cell, util::Expr};
+    use crate::{
+        evm_circuit::{param::MAX_BYTES_FIELD, Cell},
+        util::Expr,
+    };
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
-        let mut multiplier = 1.expr();
+        assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
         let mut value = 0.expr();
+        let mut multiplier = F::one();
         for byte in bytes.iter() {
-            value = value + byte.expr() * multiplier.clone();
-            multiplier = multiplier * 256.expr();
+            value = value + byte.expr() * multiplier;
+            multiplier *= F::from_u64(256);
         }
         value
     }
 
     pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
-        let mut value = F::from_u64(0);
-        let mut multiplier = F::from_u64(1);
+        assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
+        let mut value = F::zero();
+        let mut multiplier = F::one();
         for byte in bytes.iter() {
             value += F::from_u64(*byte as u64) * multiplier;
             multiplier *= F::from_u64(256);
@@ -174,6 +231,33 @@ pub(crate) fn get_range<F: FieldExt>(num_bits: usize) -> F {
     F::from_u64(2).pow(&[num_bits as u64, 0, 0, 0])
 }
 
+pub(crate) fn require_opcode_in_set<F: FieldExt>(
+    opcode: Expression<F>,
+    opcodes: Vec<OpcodeId>,
+) -> ConstraintBuilder<F> {
+    let mut cb = ConstraintBuilder::default();
+    cb.require_in_set(opcode, opcodes.iter().map(|op| op.expr()).collect());
+    cb
+}
+
+pub(crate) fn require_opcode_in_range<F: FieldExt>(
+    opcode: Expression<F>,
+    opcodes: Vec<OpcodeId>,
+) -> ConstraintBuilder<F> {
+    assert!(!opcodes.is_empty());
+    // Verify the opcodes are in a continuous range
+    for idx in 1..opcodes.len() {
+        assert!(
+            opcodes[idx].as_u8() - opcodes[idx - 1].as_u8() == 1,
+            "opcodes not in continuous range"
+        );
+    }
+
+    let mut cb = ConstraintBuilder::default();
+    cb.require_in_range(opcode - opcodes[0].expr(), opcodes.len() as u64);
+    cb
+}
+
 /// Counts the number of repetitions
 #[macro_export]
 macro_rules! count {
@@ -184,7 +268,7 @@ macro_rules! count {
 /// Common OpGadget implementer
 #[macro_export]
 macro_rules! impl_op_gadget {
-    ([$($op:ident),*] $name:ident { $($case:ident ($($args:expr),*) ),* $(,)? }) => {
+    (# $shared:ident [$($op:ident),* $(,)?] $name:ident { $($case:ident ($($args:expr),*) ),* $(,)? }) => {
 
         paste::paste! {
             #[derive(Clone, Debug)]
@@ -243,17 +327,17 @@ macro_rules! impl_op_gadget {
                             [<$case:snake>],
                         )*
                     ];
+                    // Add common expressions to all cases
+                    let cb = super::utils::[<require_opcode_in_ $shared>](
+                        state_curr.opcode.expr(),
+                        vec![$(OpcodeId::$op),*],
+                    );
+                    super::utils::batch_add_expressions(
+                        cases,
+                        cb.expressions,
+                        cb.lookups,
+                    )
                 }
-                // Add common expressions to all cases
-                let mut cb = ConstraintBuilder::default();
-                cb.require_in_set(
-                    state_curr.opcode.expr(),
-                    vec![$(OpcodeId::$op.expr()),*],
-                );
-                utils::batch_add_expressions(
-                    cases,
-                    cb.expressions,
-                )
             }
 
             paste::paste! {

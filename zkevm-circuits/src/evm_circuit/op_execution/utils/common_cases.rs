@@ -4,6 +4,7 @@ use super::super::{
 };
 use super::constraint_builder::ConstraintBuilder;
 use crate::util::Expr;
+use bus_mapping::evm::OpcodeId;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 
@@ -106,6 +107,70 @@ impl<F: FieldExt> StackUnderflowCase<F> {
             .collect();
         let mut cb = ConstraintBuilder::default();
         cb.require_in_set(state_curr.stack_pointer.expr(), set);
+        cb.constraint(self.case_selector.expr(), name)
+    }
+
+    pub(crate) fn assign(
+        &self,
+        _region: &mut Region<'_, F>,
+        _offset: usize,
+        _state: &mut CoreStateInstance,
+        _step: &ExecutionStep,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RangeStackUnderflowCase<F> {
+    case_selector: Cell<F>,
+    start: u64,
+    range: u64,
+}
+
+impl<F: FieldExt> RangeStackUnderflowCase<F> {
+    pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
+        case: Case::StackUnderflow,
+        num_word: 0,
+        num_cell: 0,
+        will_halt: true,
+    };
+
+    pub(crate) fn construct(
+        alloc: &mut CaseAllocation<F>,
+        start_op: OpcodeId,
+        range: u64,
+        start_offset: u64,
+    ) -> Self {
+        Self {
+            case_selector: alloc.selector.clone(),
+            start: start_op.as_u64() - start_offset,
+            range: range + start_offset,
+        }
+    }
+
+    pub(crate) fn constraint(
+        &self,
+        state_curr: &OpExecutionState<F>,
+        _state_next: &OpExecutionState<F>,
+        name: &'static str,
+    ) -> Constraint<F> {
+        let mut cb = ConstraintBuilder::default();
+
+        // The stack index we have to access, deduced from the opcode and `start`
+        let stack_offset = state_curr.opcode.expr() - self.start.expr();
+
+        // Stack underflow when
+        //  `STACK_START_IDX <=
+        //      state_curr.stack_pointer.expr() + stack_offset
+        //          < STACK_START_IDX + range`
+        cb.require_in_range(
+            state_curr.stack_pointer.expr() + stack_offset
+                - STACK_START_IDX.expr(),
+            self.range,
+        );
+
+        // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
     }
 

@@ -11,7 +11,7 @@ const LOOKUP_DEGREE: usize = 3;
 pub struct ConstraintBuilder<F> {
     pub expressions: Vec<Expression<F>>,
     pub(crate) lookups: Vec<Lookup<F>>,
-    pub stack_offset: Expression<F>,
+    pub stack_offset: i32,
     pub call_id: Option<Expression<F>>,
     pub max_degree: usize,
 }
@@ -33,7 +33,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         ConstraintBuilder {
             expressions: vec![],
             lookups: vec![],
-            stack_offset: 0.expr(),
+            stack_offset: 0,
             call_id,
             max_degree,
         }
@@ -63,6 +63,8 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         range: u64,
     ) {
         let table = match range {
+            16 => FixedLookup::Range16,
+            17 => FixedLookup::Range17,
             32 => FixedLookup::Range32,
             256 => FixedLookup::Range256,
             _ => unimplemented!(),
@@ -85,19 +87,24 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     // Stack
 
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
-        self.stack_lookup(value, false);
-        self.stack_offset = self.stack_offset.clone() + 1.expr();
+        self.stack_lookup(self.stack_offset.expr(), value, false);
+        self.stack_offset += 1;
     }
 
     pub(crate) fn stack_push(&mut self, value: Expression<F>) {
-        self.stack_offset = self.stack_offset.clone() - 1.expr();
-        self.stack_lookup(value, true);
+        self.stack_offset -= 1;
+        self.stack_lookup(self.stack_offset.expr(), value, true);
     }
 
-    fn stack_lookup(&mut self, value: Expression<F>, is_write: bool) {
+    pub(crate) fn stack_lookup(
+        &mut self,
+        index_offset: Expression<F>,
+        value: Expression<F>,
+        is_write: bool,
+    ) {
         self.validate_lookup_expression(&value);
         self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
-            index_offset: self.stack_offset.clone(),
+            index_offset,
             value,
             is_write,
         }));

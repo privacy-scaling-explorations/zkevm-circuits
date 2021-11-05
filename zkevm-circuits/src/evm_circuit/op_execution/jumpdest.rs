@@ -1,7 +1,7 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep};
-use super::utils;
 use super::utils::common_cases::OutOfGasCase;
 use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::StateTransition;
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -12,16 +12,18 @@ use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
-const GC_DELTA: usize = 0;
-const PC_DELTA: usize = 1;
-const SP_DELTA: usize = 0;
-const GAS: GasCost = GasCost::ONE;
+static STATE_TRANSITION: StateTransition = StateTransition {
+    gc_delta: Some(0),
+    pc_delta: Some(1),
+    sp_delta: Some(0),
+    gas_delta: Some(GasCost::ONE.as_usize()),
+};
 
 impl_op_gadget!(
-    [JUMPDEST]
+    #set[JUMPDEST]
     JumpdestGadget {
         JumpdestSuccessCase(),
-        OutOfGasCase(GAS.as_usize()),
+        OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
 
@@ -51,14 +53,9 @@ impl<F: FieldExt> JumpdestSuccessCase<F> {
         name: &'static str,
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
+
         // State transitions
-        utils::StateTransitions {
-            gc_delta: Some(GC_DELTA.expr()),
-            sp_delta: Some(SP_DELTA.expr()),
-            pc_delta: Some(PC_DELTA.expr()),
-            gas_delta: Some(GAS.expr()),
-        }
-        .constraints(&mut cb, state_curr, state_next);
+        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
@@ -66,19 +63,14 @@ impl<F: FieldExt> JumpdestSuccessCase<F> {
 
     fn assign(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
+        _region: &mut Region<'_, F>,
+        _offset: usize,
         state: &mut CoreStateInstance,
         _step: &ExecutionStep,
     ) -> Result<(), Error> {
-        state.global_counter += GC_DELTA;
-        state.program_counter += PC_DELTA;
-        state.stack_pointer += SP_DELTA;
-        state.gas_counter += GAS.as_usize();
+        // State transitions
+        STATE_TRANSITION.assign(state);
 
-        self.case_selector
-            .assign(region, offset, Some(F::from_u64(1)))
-            .unwrap();
         Ok(())
     }
 }
