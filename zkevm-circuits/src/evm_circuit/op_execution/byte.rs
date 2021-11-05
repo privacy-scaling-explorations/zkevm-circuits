@@ -10,8 +10,8 @@ use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use array_init::array_init;
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region};
+use halo2_kzg::plonk::Error;
+use halo2_kzg::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 const GC_DELTA: usize = 3;
@@ -34,6 +34,7 @@ struct ByteSuccessCase<F> {
     case_selector: Cell<F>,
     index: Word<F>,
     value: Word<F>,
+    result: Word<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
     is_byte_selected: [IsEqualGadget<F>; 32],
 }
@@ -41,7 +42,7 @@ struct ByteSuccessCase<F> {
 impl<F: FieldExt> ByteSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 2, // value + index
+        num_word: 3, // value + index + result
         num_cell: IsZeroGadget::<F>::NUM_CELLS
             + IsEqualGadget::<F>::NUM_CELLS * 32, // 1x is_msb_sum_zero + 32x is_byte_selected
         will_halt: false,
@@ -52,6 +53,7 @@ impl<F: FieldExt> ByteSuccessCase<F> {
             case_selector: alloc.selector.clone(),
             index: alloc.words.pop().unwrap(),
             value: alloc.words.pop().unwrap(),
+            result: alloc.words.pop().unwrap(),
             is_msb_sum_zero: IsZeroGadget::construct(alloc),
             is_byte_selected: array_init(|_| IsEqualGadget::construct(alloc)),
         }
@@ -92,14 +94,17 @@ impl<F: FieldExt> ByteSuccessCase<F> {
                     * msb_sum_zero.clone()
                     * self.value.cells[idx].expr());
         }
+        cb.require_equal(self.result.cells[0].expr(), selected_byte);
 
-        // Pop the byte index and the value from the stack,
-        // push the selected byte on the stack
-        // We can push the selected byte here directly because
-        // it only uses the LSB of a word.
+        // All bytes of result, except for the LSB, always need to be 0.
+        for idx in 1..32 {
+            cb.require_zero(self.result.cells[idx].expr());
+        }
+
+        // Pop the byte index and the value from the stack, push the result on the stack
         cb.stack_pop(self.index.expr());
         cb.stack_pop(self.value.expr());
-        cb.stack_push(selected_byte);
+        cb.stack_push(self.result.expr());
 
         // State transitions
         utils::StateTransitions {
@@ -125,6 +130,8 @@ impl<F: FieldExt> ByteSuccessCase<F> {
             .assign(region, offset, Some(step.values[0].to_word()))?;
         self.value
             .assign(region, offset, Some(step.values[1].to_word()))?;
+        self.result
+            .assign(region, offset, Some(step.values[2].to_word()))?;
 
         self.is_msb_sum_zero.assign(
             region,
@@ -136,8 +143,8 @@ impl<F: FieldExt> ByteSuccessCase<F> {
             self.is_byte_selected[i].assign(
                 region,
                 offset,
-                F::from_u64(step.values[0].to_word()[0] as u64),
-                F::from_u64((31 - i) as u64),
+                F::from(step.values[0].to_word()[0] as u64),
+                F::from((31 - i) as u64),
             )?;
         }
 
@@ -156,24 +163,23 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
+            let prover = MockProver::<Fp>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
 
-    fn compress(value: BigUint) -> Base {
+    fn compress(value: BigUint) -> Fp {
         value
             .to_bytes_le()
             .iter()
-            .fold(Base::zero(), |acc, val| acc + Base::from_u64(*val as u64))
+            .fold(Fp::zero(), |acc, val| acc + Fp::from(*val as u64))
     }
 
     fn check_byte_gadget(value: BigUint, index: BigUint, result: BigUint) {
@@ -193,7 +199,7 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::BYTE,
                     case: Case::Success,
-                    values: vec![index.clone(), value.clone()],
+                    values: vec![index.clone(), value.clone(), result.clone()],
                 }
             ],
             vec![
@@ -202,10 +208,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(value.clone()),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -213,10 +219,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
+                        Fp::zero(),
+                        Fp::from(1022),
                         compress(index.clone()),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -224,10 +230,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
+                        Fp::zero(),
+                        Fp::from(1022),
                         compress(index),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -235,10 +241,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(value),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -246,10 +252,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(result),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
             ],

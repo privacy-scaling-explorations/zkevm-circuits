@@ -4,8 +4,8 @@ use super::super::{
 };
 use super::constraint_builder::ConstraintBuilder;
 use crate::util::Expr;
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region};
+use halo2_kzg::plonk::Error;
+use halo2_kzg::{arithmetic::FieldExt, circuit::Region};
 
 pub const STACK_START_IDX: usize = 1024;
 
@@ -65,7 +65,7 @@ impl<F: FieldExt> OutOfGasCase<F> {
         self.gas_available.assign(
             region,
             offset,
-            Some(F::from_u64(state.gas_counter as u64)),
+            Some(F::from(state.gas_counter as u64)),
         )?;
         Ok(())
     }

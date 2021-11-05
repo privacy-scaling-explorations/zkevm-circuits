@@ -4,7 +4,7 @@ use super::super::Constraint;
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::OpExecutionState;
 use crate::util::Expr;
-use halo2::{arithmetic::FieldExt, plonk::Expression};
+use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
 
 pub(crate) mod common_cases;
 pub(crate) mod constraint_builder;
@@ -76,7 +76,7 @@ pub(crate) fn batch_add_expressions<F: FieldExt>(
 pub(crate) mod sum {
     use super::super::Cell;
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(cells: &[Cell<F>]) -> Expression<F> {
         cells.iter().fold(0.expr(), |acc, cell| acc + cell.expr())
@@ -85,7 +85,7 @@ pub(crate) mod sum {
     pub(crate) fn value<F: FieldExt>(values: &[u8]) -> F {
         values
             .iter()
-            .fold(F::zero(), |acc, value| acc + F::from_u64(*value as u64))
+            .fold(F::zero(), |acc, value| acc + F::from(*value as u64))
     }
 }
 
@@ -93,7 +93,7 @@ pub(crate) mod sum {
 /// Inputs need to be boolean
 pub(crate) mod and {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(
         inputs: Vec<Expression<F>>,
@@ -112,7 +112,7 @@ pub(crate) mod and {
 /// `selector` needs to be boolean.
 pub(crate) mod select {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(
         selector: Expression<F>,
@@ -129,49 +129,6 @@ pub(crate) mod select {
     ) -> F {
         selector * when_true + (F::one() - selector) * when_false
     }
-
-    pub(crate) fn value_word<F: FieldExt>(
-        selector: F,
-        when_true: [u8; 32],
-        when_false: [u8; 32],
-    ) -> [u8; 32] {
-        if selector == F::one() {
-            when_true
-        } else {
-            when_false
-        }
-    }
-}
-
-/// Decodes a field element from its byte representation
-pub(crate) mod from_bytes {
-    use crate::{evm_circuit::Cell, util::Expr};
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
-
-    pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
-        let mut multiplier = 1.expr();
-        let mut value = 0.expr();
-        for byte in bytes.iter() {
-            value = value + byte.expr() * multiplier.clone();
-            multiplier = multiplier * 256.expr();
-        }
-        value
-    }
-
-    pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
-        let mut value = F::from_u64(0);
-        let mut multiplier = F::from_u64(1);
-        for byte in bytes.iter() {
-            value += F::from_u64(*byte as u64) * multiplier;
-            multiplier *= F::from_u64(256);
-        }
-        value
-    }
-}
-
-/// Returns 2**num_bits
-pub(crate) fn get_range<F: FieldExt>(num_bits: usize) -> F {
-    F::from_u64(2).pow(&[num_bits as u64, 0, 0, 0])
 }
 
 /// Counts the number of repetitions

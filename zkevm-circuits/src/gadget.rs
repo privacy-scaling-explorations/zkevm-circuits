@@ -1,6 +1,6 @@
 //! Reusable gadgets for the zk_evm circuits.
-use halo2::circuit::Cell;
-use pasta_curves::arithmetic::FieldExt;
+use halo2_kzg::circuit::Cell;
+use pairing::arithmetic::FieldExt;
 
 /// An assigned cell in the circuit.
 #[derive(Clone, Debug)]

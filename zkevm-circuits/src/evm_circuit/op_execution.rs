@@ -7,7 +7,7 @@ use super::{
 };
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
-use halo2::{
+use halo2_kzg::{
     arithmetic::FieldExt,
     circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
@@ -27,7 +27,7 @@ mod utils;
 
 use arithmetic::AddGadget;
 use byte::ByteGadget;
-use comparator::ComparatorGadget;
+use comparator::LtGadget;
 use dup::DupGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -222,7 +222,7 @@ pub(crate) struct OpExecutionGadget<F> {
     preset_map: HashMap<(usize, Case), Preset<F>>,
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
-    comparator_gadget: ComparatorGadget<F>,
+    lt_gadget: LtGadget<F>,
     byte_gadget: ByteGadget<F>,
     pop_gadget: PopGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -284,7 +284,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         construct_op_gadget!(add_gadget);
         construct_op_gadget!(push_gadget);
-        construct_op_gadget!(comparator_gadget);
+        construct_op_gadget!(lt_gadget);
         construct_op_gadget!(pop_gadget);
         construct_op_gadget!(byte_gadget);
         construct_op_gadget!(dup_gadget);
@@ -328,7 +328,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             resumption,
             add_gadget,
             push_gadget,
-            comparator_gadget,
+            lt_gadget,
             pop_gadget,
             byte_gadget,
             dup_gadget,
@@ -385,7 +385,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 for idx in 0..case_configs.len() {
                     preset
                         .free_cells
-                        .push((idx, F::from_u64((idx == q_case_idx) as u64)));
+                        .push((idx, F::from((idx == q_case_idx) as u64)));
                 }
 
                 let (word_ranges, cell_idxs, unused_idxs) =
@@ -426,7 +426,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                         .iter()
                         .enumerate()
                         .map(|(idx, value)| {
-                            if value.is_zero() {
+                            if value.is_zero().into() {
                                 // constraint qs_byte_lookup to 0 by default
                                 qs_byte_lookups[idx].expr()
                             } else {
@@ -491,34 +491,34 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         self.state_curr.global_counter.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.global_counter as u64)),
+            Some(F::from(core_state.global_counter as u64)),
         )?;
         self.state_curr.call_id.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.call_id as u64)),
+            Some(F::from(core_state.call_id as u64)),
         )?;
         self.state_curr.program_counter.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.program_counter as u64)),
+            Some(F::from(core_state.program_counter as u64)),
         )?;
         self.state_curr.stack_pointer.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.stack_pointer as u64)),
+            Some(F::from(core_state.stack_pointer as u64)),
         )?;
         self.state_curr.gas_counter.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.gas_counter as u64)),
+            Some(F::from(core_state.gas_counter as u64)),
         )?;
 
         if let Some(execution_step) = execution_step {
             self.state_curr.opcode.assign(
                 region,
                 offset,
-                Some(F::from_u64(execution_step.opcode.as_u8() as u64)),
+                Some(F::from(execution_step.opcode.as_u8() as u64)),
             )?;
 
             let &qs_op_idx = self
@@ -529,7 +529,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 q_op.assign(
                     region,
                     offset,
-                    Some(F::from_u64((idx == qs_op_idx) as u64)),
+                    Some(F::from((idx == qs_op_idx) as u64)),
                 )?;
             }
 
@@ -579,8 +579,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 (_, _, _, OpcodeId::ADD | OpcodeId::SUB) => self
                     .add_gadget
                     .assign(region, offset, core_state, execution_step)?,
-                (_, _, _, OpcodeId::LT | OpcodeId::GT | OpcodeId::EQ) => self
-                    .comparator_gadget
+                (_, _, _, OpcodeId::LT | OpcodeId::GT) => self
+                    .lt_gadget
                     .assign(region, offset, core_state, execution_step)?,
                 (_, _, _, OpcodeId::POP) => self.pop_gadget.assign(
                     region,

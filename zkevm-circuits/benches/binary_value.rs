@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use halo2::{
+use halo2_kzg::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
     plonk::{
@@ -9,8 +9,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 
 #[derive(Copy, Clone, Debug)]
 struct MemoryAddress<F: FieldExt>(F);
@@ -129,7 +128,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                         || "binary table",
                         self.binary_table,
                         idx,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                 }
                 Ok(())
@@ -244,7 +243,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         let value = read_write
             .as_ref()
             .map(|read_write| read_write.global_counter().0);
-        let field_elem = value.map(|value| F::from_u64(value as u64));
+        let field_elem = value.map(|value| F::from(value as u64));
 
         region
             .assign_advice(
@@ -267,7 +266,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
             .ok();
 
         let value = read_write.as_ref().map(|read_write| read_write.flag());
-        let field_elem = value.map(|value| F::from_u64(value as u64));
+        let field_elem = value.map(|value| F::from(value as u64));
         region
             .assign_advice(
                 || "flag",

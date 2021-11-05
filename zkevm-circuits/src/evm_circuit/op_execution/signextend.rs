@@ -11,8 +11,8 @@ use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use array_init::array_init;
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region};
+use halo2_kzg::plonk::Error;
+use halo2_kzg::{arithmetic::FieldExt, circuit::Region};
 use num::{BigUint, ToPrimitive};
 use std::convert::TryInto;
 
@@ -195,8 +195,8 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
                 self.is_byte_selected[i].assign(
                     region,
                     offset,
-                    F::from_u64(step.values[0].to_word()[0] as u64),
-                    F::from_u64(i as u64),
+                    F::from(step.values[0].to_word()[0] as u64),
+                    F::from(i as u64),
                 )?,
                 msb_sum_zero,
             ]);
@@ -214,7 +214,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             sign = (step.values[1].to_word()[index] >> 7) as u64;
         }
         self.sign_byte
-            .assign(region, offset, Some(F::from_u64(sign * 0xFF)))
+            .assign(region, offset, Some(F::from(sign * 0xFF)))
             .unwrap();
 
         // State transitions
@@ -233,24 +233,23 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
+            let prover = MockProver::<Fp>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
 
-    fn compress(value: BigUint) -> Base {
+    fn compress(value: BigUint) -> Fp {
         value
             .to_bytes_le()
             .iter()
-            .fold(Base::zero(), |acc, val| acc + Base::from_u64(*val as u64))
+            .fold(Fp::zero(), |acc, val| acc + Fp::from(*val as u64))
     }
 
     fn check_signextend_gadget(
@@ -283,10 +282,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(value.clone()),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -294,10 +293,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
+                        Fp::zero(),
+                        Fp::from(1022),
                         compress(index.clone()),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -305,10 +304,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
+                        Fp::zero(),
+                        Fp::from(1022),
                         compress(index),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -316,10 +315,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(value),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -327,10 +326,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(result),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
             ],

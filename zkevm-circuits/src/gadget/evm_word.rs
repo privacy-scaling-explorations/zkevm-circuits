@@ -8,19 +8,19 @@
 
 use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
-use halo2::{
+use halo2_kzg::{
     circuit::Region,
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
 #[cfg(test)]
-use halo2::circuit::Layouter;
+use halo2_kzg::circuit::{Layouter, };
 
 // r = hash([0, 1, ..., 255])
 // TODO: Move into crate-level `constants` file.
@@ -36,7 +36,7 @@ pub(crate) fn r<F: FieldExt>() -> F {
 // Returns encoding of big-endian representation of a 256-bit word.
 pub(crate) fn encode<F: FieldExt>(vals: impl Iterator<Item = u8>, r: F) -> F {
     vals.fold(F::zero(), |acc, val| {
-        let byte = F::from_u64(val as u64);
+        let byte = F::from(val as u64);
         acc * r + byte
     })
 }
@@ -93,13 +93,14 @@ impl<F: FieldExt> WordConfig<F> {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
-                let byte_lookup =
-                    meta.query_fixed(byte_lookup, Rotation::cur());
+                let byte_lookup = TableColumn {
+                    inner: meta.query_fixed(byte_lookup, Rotation::cur())
+                };
 
                 // Update encode_word_expr.
                 encode_word_expr = encode_word_expr.clone() * r + byte.clone();
 
-                vec![(q_encode * byte, byte_lookup)]
+                vec![(q_encode * byte, byte_lookup]
             });
         }
 
@@ -125,7 +126,7 @@ impl<F: FieldExt> WordConfig<F> {
                         || format!("load {}", byte),
                         self.byte_lookup,
                         byte.into(),
-                        || Ok(F::from_u64(byte as u64)),
+                        || Ok(F::from(byte as u64)),
                     )?;
                 }
 
@@ -149,7 +150,7 @@ impl<F: FieldExt> WordConfig<F> {
             // TODO: We will likely enable this selector outside of the helper.
             self.q_encode.enable(region, offset)?;
 
-            let byte_field_elem = byte.map(|byte| F::from_u64(byte as u64));
+            let byte_field_elem = byte.map(|byte| F::from(byte as u64));
             let cell = region.assign_advice(
                 || format!("assign byte {}", idx),
                 *column,
@@ -167,12 +168,12 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::{
+    use halo2_kzg::{
         circuit::SimpleFloorPlanner,
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, Instance},
     };
-    use pasta_curves::pallas;
+    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     #[test]
@@ -252,7 +253,7 @@ mod tests {
 
         {
             let word = pallas::Base::rand();
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 word: word
                     .to_bytes()
                     .iter()
@@ -265,8 +266,7 @@ mod tests {
 
             // Test without public inputs
             let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![vec![]])
-                    .unwrap();
+                MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
@@ -276,14 +276,11 @@ mod tests {
             );
 
             // Calculate word commitment and use it as public input.
-            let encoded: pallas::Base =
+            let encoded: Fp =
                 encode(word.to_bytes().iter().rev().cloned(), r());
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![vec![encoded]],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]])
+                    .unwrap();
             assert_eq!(prover.verify(), Ok(()))
         }
     }

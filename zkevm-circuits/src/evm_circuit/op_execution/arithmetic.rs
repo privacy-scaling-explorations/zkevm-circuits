@@ -5,7 +5,7 @@ use super::super::{
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_kzg::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::{array, convert::TryInto};
 
 #[derive(Clone, Debug)]
@@ -259,7 +259,7 @@ impl<F: FieldExt> AddGadget<F> {
         self.success.swap.assign(
             region,
             offset,
-            Some(F::from_u64((execution_step.opcode == OpcodeId::SUB) as u64)),
+            Some(F::from((execution_step.opcode == OpcodeId::SUB) as u64)),
         )?;
         self.success.a.assign(
             region,
@@ -281,7 +281,7 @@ impl<F: FieldExt> AddGadget<F> {
             .iter()
             .zip(execution_step.values[3].to_word().iter())
             .map(|(alloc, carry)| {
-                alloc.assign(region, offset, Some(F::from_u64(*carry as u64)))
+                alloc.assign(region, offset, Some(F::from(*carry as u64)))
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
@@ -294,15 +294,14 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
+            let prover = MockProver::<Fp>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -348,10 +347,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(1 + 2 + 3),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -359,10 +358,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(4 + 5 + 6),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1022),
+                        Fp::from(4 + 5 + 6),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -370,10 +369,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(4 + 5 + 6),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1022),
+                        Fp::from(4 + 5 + 6),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -381,10 +380,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(1 + 2 + 3),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -392,10 +391,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(5 + 7 + 9),
+                        Fp::zero(),
                     ]
                 }
             ],
@@ -437,10 +436,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(5 + 7 + 9),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -448,10 +447,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(4 + 5 + 6),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1022),
+                        Fp::from(4 + 5 + 6),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -459,10 +458,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(4 + 5 + 6),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1022),
+                        Fp::from(4 + 5 + 6),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -470,10 +469,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(5 + 7 + 9),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -481,10 +480,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(1 + 2 + 3),
+                        Fp::zero(),
                     ]
                 }
             ],

@@ -1,6 +1,6 @@
 use super::super::super::{BusMappingLookup, Constraint, FixedLookup, Lookup};
 use crate::util::Expr;
-use halo2::{arithmetic::FieldExt, plonk::Expression};
+use halo2_kzg::{arithmetic::FieldExt, plonk::Expression};
 
 // Default max degree allowed in all expressions passing through the ConstraintBuilder.
 const DEFAULT_MAX_DEGREE: usize = 2usize.pow(3) + 1;
@@ -135,7 +135,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
                 BusMappingLookup::Memory {
                     call_id: self.call_id.clone().unwrap(),
                     index: address.clone()
-                        + Expression::Constant(F::from_u64(idx as u64)),
+                        + Expression::Constant(F::from(idx as u64)),
                     value: bytes[bytes.len() - 1 - idx].clone(),
                     is_write,
                 },

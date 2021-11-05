@@ -4,7 +4,7 @@ use crate::gadget::{
     Variable,
 };
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
-use halo2::{
+use halo2_kzg::{
     circuit::{Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed,
@@ -12,7 +12,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 
 /*
 Example state table:
@@ -70,7 +70,7 @@ Example bus mapping:
 /// TODO: The complete version of this mapping will involve storage, stack,
 /// and opcode details as well.
 #[derive(Clone, Debug)]
-pub(crate) struct BusMapping<F: FieldExt> {
+pub struct BusMapping<F: FieldExt> {
     global_counter: Variable<usize, F>,
     target: Variable<usize, F>,
     flag: Variable<bool, F>,
@@ -80,8 +80,9 @@ pub(crate) struct BusMapping<F: FieldExt> {
     value_prev: Variable<F, F>,
 }
 
+/// Circuit Config
 #[derive(Clone, Debug)]
-pub(crate) struct Config<
+pub struct Config<
     F: FieldExt,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
@@ -148,9 +149,9 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let one = Expression::Constant(F::one());
-        let two = Expression::Constant(F::from_u64(2));
-        let three = Expression::Constant(F::from_u64(3));
-        let four = Expression::Constant(F::from_u64(4));
+        let two = Expression::Constant(F::from(2));
+        let three = Expression::Constant(F::from(3));
+        let four = Expression::Constant(F::from(4));
 
         let q_memory_first = |meta: &mut VirtualCells<F>| {
             // For first memory row it holds q_target_cur = 1 and q_target_next
@@ -173,7 +174,7 @@ impl<
             let e = q_memory_first(meta);
             // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
             // 2, we use 1/12 to normalize the value
-            let inv = F::from_u64(12_u64).invert().unwrap();
+            let inv = F::from(12_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -192,7 +193,7 @@ impl<
             let e = q_memory_not_first(meta);
             // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize
             // the value
-            let inv = F::from_u64(4_u64).invert().unwrap();
+            let inv = F::from(4_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -213,7 +214,7 @@ impl<
         let q_stack_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_stack_first(meta);
             // q_stack_first is 12, we use 1/12 to normalize the value
-            let inv = F::from_u64(12_u64).invert().unwrap();
+            let inv = F::from(12_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -232,7 +233,7 @@ impl<
             let e = q_stack_not_first(meta);
             // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize
             // the value
-            let inv = F::from_u64(6_u64).invert().unwrap();
+            let inv = F::from(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -250,7 +251,7 @@ impl<
             let e = q_storage_not_first(meta);
             // q_storage_not_first is 24 when target is 4, we use 1/24 to
             // normalize the value
-            let inv = F::from_u64(24_u64).invert().unwrap();
+            let inv = F::from(24_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -623,7 +624,7 @@ impl<
                             || "global counter table",
                             self.global_counter_table,
                             idx,
-                            || Ok(F::from_u64(idx as u64)),
+                            || Ok(F::from(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -640,7 +641,7 @@ impl<
                             || "memory value table",
                             self.memory_value_table,
                             idx,
-                            || Ok(F::from_u64(idx as u64)),
+                            || Ok(F::from(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -657,7 +658,7 @@ impl<
                             || "address table with zero",
                             self.memory_address_table_zero,
                             idx,
-                            || Ok(F::from_u64(idx as u64)),
+                            || Ok(F::from(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -673,7 +674,7 @@ impl<
                         || "stack address table with zero",
                         self.stack_address_table_zero,
                         idx,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                 }
                 Ok(())
@@ -767,7 +768,7 @@ impl<
         let mut offset = MEMORY_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
-            let address = F::from_u64(usize::from(*op.address()) as u64);
+            let address = F::from(usize::from(*op.address()) as u64);
             let gc = usize::from(oper.gc());
             let val = F::from_bytes(&op.value().to_le_bytes()).unwrap();
 
@@ -904,7 +905,7 @@ impl<
                     || "target",
                     self.q_target,
                     i,
-                    || Ok(F::from_u64(target as u64)),
+                    || Ok(F::from(target as u64)),
                 )?;
             }
             region.assign_advice(
@@ -1017,7 +1018,7 @@ impl<
             || "target",
             self.q_target,
             offset,
-            || Ok(F::from_u64(target as u64)),
+            || Ok(F::from(target as u64)),
         )?;
 
         Ok(())
@@ -1051,7 +1052,7 @@ impl<
         };
 
         let global_counter = {
-            let field_elem = F::from_u64(global_counter as u64);
+            let field_elem = F::from(global_counter as u64);
 
             let cell = region.assign_advice(
                 || "global counter",
@@ -1113,7 +1114,7 @@ impl<
         };
 
         let flag = {
-            let field_elem = F::from_u64(flag as u64);
+            let field_elem = F::from(flag as u64);
             let cell = region.assign_advice(
                 || "flag",
                 self.flag,
@@ -1130,12 +1131,12 @@ impl<
 
         let target = {
             let value = Some(target);
-            let field_elem = Some(F::from_u64(target as u64));
+            let field_elem = Some(F::from(target as u64));
             let cell = region.assign_fixed(
                 || "target",
                 self.q_target,
                 offset,
-                || Ok(F::from_u64(target as u64)),
+                || Ok(F::from(target as u64)),
             )?;
             Variable::<usize, F> {
                 cell,
@@ -1166,7 +1167,7 @@ mod tests {
     use std::str::FromStr;
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
-    use halo2::{
+    use halo2_kzg::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{
             MockProver, VerifyFailure::ConstraintNotSatisfied,
@@ -1174,8 +1175,7 @@ mod tests {
         },
         plonk::{Circuit, ConstraintSystem, Error},
     };
-
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
@@ -1260,8 +1260,7 @@ mod tests {
                 storage_ops: $storage_ops,
             };
 
-            let prover =
-                MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run($k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -1271,7 +1270,7 @@ mod tests {
         gate_index: usize,
         gate_name: &'static str,
         index: usize,
-    ) -> halo2::dev::VerifyFailure {
+    ) -> halo2_kzg::dev::VerifyFailure {
         ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
             row,
@@ -1281,7 +1280,7 @@ mod tests {
     fn lookup_fail(
         row: usize,
         lookup_index: usize,
-    ) -> halo2::dev::VerifyFailure {
+    ) -> halo2_kzg::dev::VerifyFailure {
         Lookup { lookup_index, row }
     }
 
@@ -2075,12 +2074,12 @@ mod tests {
         let block_ctants = BlockConstants::new(
             EvmWord::from(0u8),
             EthAddress::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
-            pasta_curves::Fp::zero(),
+            Fp::zero(),
+            Fp::zero(),
+            Fp::zero(),
+            Fp::zero(),
+            Fp::zero(),
+            Fp::zero(),
         );
 
         // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.

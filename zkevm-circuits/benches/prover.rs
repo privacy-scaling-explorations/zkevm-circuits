@@ -1,3 +1,4 @@
+use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
 use criterion::criterion_main;
 use halo2_kzg::{
     arithmetic::FieldExt,
@@ -7,9 +8,77 @@ use halo2_kzg::{
     poly::{commitment::Setup, Rotation},
     transcript::{Blake2bRead, Blake2bWrite, Challenge255},
 };
-
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
+use zkevm_circuits::state_circuit::state::{BusMapping, Config};
 
+#[derive(Default)]
+struct StateCircuit<
+    const GLOBAL_COUNTER_MAX: usize,
+    const MEMORY_ROWS_MAX: usize,
+    const MEMORY_ADDRESS_MAX: usize,
+    const STACK_ROWS_MAX: usize,
+    const STACK_ADDRESS_MAX: usize,
+    const STORAGE_ROWS_MAX: usize,
+> {
+    memory_ops: Vec<Operation<MemoryOp>>,
+    stack_ops: Vec<Operation<StackOp>>,
+    storage_ops: Vec<Operation<StorageOp>>,
+}
+
+impl<
+        F: FieldExt,
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    > Circuit<F>
+    for StateCircuit<
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >
+{
+    type Config = Config<
+        F,
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        Config::configure(meta)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.load(&mut layouter)?;
+        config.assign(
+            layouter,
+            self.memory_ops.clone(),
+            self.stack_ops.clone(),
+            self.storage_ops.clone(),
+        )?;
+
+        Ok(())
+    }
+}
 #[derive(Clone)]
 struct PlonkConfig {
     a: Column<Advice>,

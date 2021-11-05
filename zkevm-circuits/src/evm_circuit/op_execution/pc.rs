@@ -8,7 +8,7 @@ use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_kzg::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 const GC_DELTA: usize = 1;
@@ -112,15 +112,14 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2_kzg::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
+            let prover = MockProver::<Fp>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -150,10 +149,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1023),
+                        Fp::from(1 + 2 + 3),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -161,10 +160,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(4),
-                        Base::zero(),
+                        Fp::zero(),
+                        Fp::from(1022),
+                        Fp::from(4),
+                        Fp::zero(),
                     ]
                 },
             ],
