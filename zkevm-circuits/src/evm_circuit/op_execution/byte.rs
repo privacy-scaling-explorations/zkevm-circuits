@@ -34,7 +34,6 @@ struct ByteSuccessCase<F> {
     case_selector: Cell<F>,
     index: Word<F>,
     value: Word<F>,
-    result: Word<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
     is_byte_selected: [IsEqualGadget<F>; 32],
 }
@@ -42,7 +41,7 @@ struct ByteSuccessCase<F> {
 impl<F: FieldExt> ByteSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 3, // value + index + result
+        num_word: 2, // value + index
         num_cell: IsZeroGadget::<F>::NUM_CELLS
             + IsEqualGadget::<F>::NUM_CELLS * 32, // 1x is_msb_sum_zero + 32x is_byte_selected
         will_halt: false,
@@ -53,7 +52,6 @@ impl<F: FieldExt> ByteSuccessCase<F> {
             case_selector: alloc.selector.clone(),
             index: alloc.words.pop().unwrap(),
             value: alloc.words.pop().unwrap(),
-            result: alloc.words.pop().unwrap(),
             is_msb_sum_zero: IsZeroGadget::construct(alloc),
             is_byte_selected: array_init(|_| IsEqualGadget::construct(alloc)),
         }
@@ -94,17 +92,14 @@ impl<F: FieldExt> ByteSuccessCase<F> {
                     * msb_sum_zero.clone()
                     * self.value.cells[idx].expr());
         }
-        cb.require_equal(self.result.cells[0].expr(), selected_byte);
 
-        // All bytes of result, except for the LSB, always need to be 0.
-        for idx in 1..32 {
-            cb.require_zero(self.result.cells[idx].expr());
-        }
-
-        // Pop the byte index and the value from the stack, push the result on the stack
+        // Pop the byte index and the value from the stack,
+        // push the selected byte on the stack
+        // We can push the selected byte here directly because
+        // it only uses the LSB of a word.
         cb.stack_pop(self.index.expr());
         cb.stack_pop(self.value.expr());
-        cb.stack_push(self.result.expr());
+        cb.stack_push(selected_byte);
 
         // State transitions
         utils::StateTransitions {
@@ -130,8 +125,6 @@ impl<F: FieldExt> ByteSuccessCase<F> {
             .assign(region, offset, Some(step.values[0].to_word()))?;
         self.value
             .assign(region, offset, Some(step.values[1].to_word()))?;
-        self.result
-            .assign(region, offset, Some(step.values[2].to_word()))?;
 
         self.is_msb_sum_zero.assign(
             region,
@@ -200,7 +193,7 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::BYTE,
                     case: Case::Success,
-                    values: vec![index.clone(), value.clone(), result.clone()],
+                    values: vec![index.clone(), value.clone()],
                 }
             ],
             vec![

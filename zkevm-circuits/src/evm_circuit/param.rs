@@ -10,3 +10,8 @@ pub const NUM_CELL_OP_EXECUTION_STATE: usize = 7;
 // FIXME: naive estimation, should be optmize to fit in the future
 pub const NUM_CELL_OP_GADGET_SELECTOR: usize = 80;
 pub const NUM_CELL_RESUMPTION: usize = 2;
+
+/// The maximum number of bytes that a field element
+/// can be broken down into without causing the value it
+/// represents to overflow a single field element.
+pub const MAX_BYTES_FIELD: usize = 31;

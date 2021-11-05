@@ -1,379 +1,193 @@
 use super::super::{
-    BusMappingLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    FixedLookup, Lookup, Word,
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
+use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
+use super::utils::constraint_builder::ConstraintBuilder;
+use super::utils::math_gadgets::{ComparisonGadget, IsEqualGadget};
+use super::utils::{self, from_bytes, select, StateTransitions};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
-use std::{array, convert::TryInto};
+use std::convert::TryInto;
+
+const GC_DELTA: usize = 3;
+const PC_DELTA: usize = 1;
+const SP_DELTA: usize = 1;
+const GAS: GasCost = GasCost::FASTEST;
+const NUM_POPPED: usize = 2;
+
+impl_op_gadget!(
+    [LT, GT, EQ]
+    ComparatorGadget {
+        ComparatorSuccessCase(),
+        StackUnderflowCase(NUM_POPPED),
+        OutOfGasCase(GAS.as_usize()),
+    }
+);
 
 #[derive(Clone, Debug)]
-struct LtSuccessAllocation<F> {
-    selector: Cell<F>,
-    // A 0/1 value. The gadget always checks if `a < b`. When the swap value is 0,
-    // the gadget performs opcode LT and treats top 2 stack values as `a, b`.
-    // Otherwise, the gadget performs opcode GT, and the top 2 stack values are
-    // interpreted as `b, a`.
-    swap: Cell<F>,
+struct ComparatorSuccessCase<F> {
+    case_selector: Cell<F>,
     a: Word<F>,
     b: Word<F>,
-    // A 0/1 value of opcode output.
-    result: Word<F>,
-    // Satisfy `a + c = b` and allow overflow at 256 bit
-    c: [Cell<F>; 32],
-    // The carry of the addition check `a + c = b` in 128 bit chunks.
-    carry: Cell<F>,
-    // The sum of all limbs in `c`.
-    sumc: Cell<F>,
-    // The inverse of `sumc`.
-    sumc_inv: Cell<F>,
+    comparison_lo: ComparisonGadget<F, 16>,
+    comparison_hi: ComparisonGadget<F, 16>,
+    is_eq_op: IsEqualGadget<F>,
+    swap: IsEqualGadget<F>,
 }
 
-#[derive(Clone, Debug)]
-pub struct LtGadget<F> {
-    success: LtSuccessAllocation<F>,
-    stack_underflow: Cell<F>,
-    out_of_gas: (Cell<F>, Cell<F>),
-}
+impl<F: FieldExt> ComparatorSuccessCase<F> {
+    pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
+        case: Case::Success,
+        num_word: 2, // a + b
+        num_cell: ComparisonGadget::<F, 16>::NUM_CELLS * 2
+            + IsEqualGadget::<F>::NUM_CELLS * 2,
+        will_halt: false,
+    };
 
-impl<F: FieldExt> OpGadget<F> for LtGadget<F> {
-    const RESPONSIBLE_OPCODES: &'static [OpcodeId] =
-        &[OpcodeId::LT, OpcodeId::GT];
-
-    const CASE_CONFIGS: &'static [CaseConfig] = &[
-        CaseConfig {
-            case: Case::Success,
-            num_word: 3,
-            num_cell: 36, // 32 c + swap + carry + sumc + sumc_inv
-            will_halt: false,
-        },
-        CaseConfig {
-            case: Case::StackUnderflow,
-            num_word: 0,
-            num_cell: 0,
-            will_halt: true,
-        },
-        CaseConfig {
-            case: Case::OutOfGas,
-            num_word: 0,
-            num_cell: 0,
-            will_halt: true,
-        },
-    ];
-
-    fn construct(case_allocations: Vec<CaseAllocation<F>>) -> Self {
-        let [mut success, stack_underflow, out_of_gas]: [CaseAllocation<F>; 3] =
-            case_allocations.try_into().unwrap();
+    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
-            success: LtSuccessAllocation {
-                selector: success.selector,
-                swap: success.cells.pop().unwrap(),
-                a: success.words.pop().unwrap(),
-                b: success.words.pop().unwrap(),
-                result: success.words.pop().unwrap(),
-                c: success
-                    .cells
-                    .drain(0..32)
-                    .collect::<Vec<Cell<F>>>()
-                    .try_into()
-                    .unwrap(),
-                carry: success.cells.pop().unwrap(),
-                sumc: success.cells.pop().unwrap(),
-                sumc_inv: success.cells.pop().unwrap(),
-            },
-            stack_underflow: stack_underflow.selector,
-            out_of_gas: (
-                out_of_gas.selector,
-                out_of_gas.resumption.unwrap().gas_available,
-            ),
+            case_selector: alloc.selector.clone(),
+            a: alloc.words.pop().unwrap(),
+            b: alloc.words.pop().unwrap(),
+            comparison_lo: ComparisonGadget::<F, 16>::construct(alloc),
+            comparison_hi: ComparisonGadget::<F, 16>::construct(alloc),
+            is_eq_op: IsEqualGadget::<F>::construct(alloc),
+            swap: IsEqualGadget::<F>::construct(alloc),
         }
     }
 
-    fn constraints(
+    fn constraint(
         &self,
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
-    ) -> Vec<Constraint<F>> {
-        let OpExecutionState { opcode, .. } = &state_curr;
+        name: &'static str,
+    ) -> Constraint<F> {
+        let mut cb = ConstraintBuilder::default();
 
-        let common_polys = vec![
-            (opcode.expr() - OpcodeId::LT.expr())
-                * (opcode.expr() - OpcodeId::GT.expr()),
-        ];
+        // Check if this is EQ
+        let is_eq_op = self.is_eq_op.constraints(
+            &mut cb,
+            state_curr.opcode.expr(),
+            OpcodeId::EQ.expr(),
+        );
 
-        let success = {
-            // interpreter state transition constraints
-            let state_transition_constraints = vec![
-                state_next.global_counter.expr()
-                    - (state_curr.global_counter.expr() + 3.expr()),
-                state_next.stack_pointer.expr()
-                    - (state_curr.stack_pointer.expr() + 1.expr()),
-                state_next.program_counter.expr()
-                    - (state_curr.program_counter.expr() + 1.expr()),
-                state_next.gas_counter.expr()
-                    - (state_curr.gas_counter.expr() + GasCost::FASTEST.expr()),
-            ];
+        // For GT we swap the stack inputs so that we actually do
+        // greater than instead of smaller than.
+        let swap = self.swap.constraints(
+            &mut cb,
+            state_curr.opcode.expr(),
+            OpcodeId::GT.expr(),
+        );
 
-            let LtSuccessAllocation {
-                selector,
-                swap,
-                a,
-                b,
-                result,
-                c,
-                carry,
-                sumc,
-                sumc_inv,
-            } = &self.success;
+        // `a[0..16] <= b[0..16]`
+        let (lt_lo, eq_lo) = self.comparison_lo.constraints(
+            &mut cb,
+            from_bytes::expr(self.a.cells[0..16].to_vec()),
+            from_bytes::expr(self.b.cells[0..16].to_vec()),
+        );
 
-            // swap = 0/1
-            // swap = 0 <=> opcode = LT
-            // swap = 1 <=> opcode = GT
-            let no_swap = 1.expr() - swap.expr();
-            let swap_constraints = vec![
-                swap.expr() * no_swap.clone(),
-                swap.expr() * (opcode.expr() - OpcodeId::GT.expr()),
-                no_swap.clone() * (opcode.expr() - OpcodeId::LT.expr()),
-            ];
+        // `a[16..32] <= b[16..32]`
+        let (lt_hi, eq_hi) = self.comparison_hi.constraints(
+            &mut cb,
+            from_bytes::expr(self.a.cells[16..32].to_vec()),
+            from_bytes::expr(self.b.cells[16..32].to_vec()),
+        );
 
-            // The sum of c limbs
-            let sumc_expr =
-                c.iter().fold(0.expr(), |acc, byte| acc + byte.expr());
-            let sumc_is_zero_expr =
-                1.expr() - sumc_expr.clone() * sumc_inv.expr();
-            // same as is_zero gadget, currently we cannot use gadget inside OpGadget
-            let sumc_is_zero_constraints = vec![
-                sumc_expr.clone() * sumc_is_zero_expr.clone(),
-                sumc_inv.expr() * sumc_is_zero_expr.clone(),
-            ];
-            // sumc_expr == sumc_cell
-            // `result * (1 - sumc * sumc_inv) = 0`. This means `result = 1 <=> sumc_expr != 0`
-            let sumc_constraints = vec![
-                sumc_expr - sumc.expr(),
-                result.cells[0].expr() * sumc_is_zero_expr.clone(),
-            ];
+        // `a < b` when:
+        // - `a[16..32] < b[16..32]` OR
+        // - `a[16..32] == b[16..32]` AND `a[0..16] < b[0..16]`
+        let lt = select::expr(lt_hi, 1.expr(), eq_hi.clone() * lt_lo);
+        // `a == b` when both parts are equal
+        let eq = eq_hi * eq_lo;
 
-            // carry = 0/1
-            let mut lt_constraints =
-                vec![carry.expr() * (1.expr() - carry.expr())];
-            // a[15..0] + c[15..0] = carry * 256^16 + b[15..0]
-            let mut exponent = 1.expr();
-            let mut lhs = 0.expr();
-            let mut rhs = 0.expr();
-            #[allow(clippy::needless_range_loop)]
-            for idx in 0..16 {
-                lhs = lhs
-                    + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
-                rhs = rhs + b.cells[idx].expr() * exponent.clone();
-                exponent = exponent * 256.expr();
-            }
-            rhs = rhs + carry.expr() * exponent;
-            lt_constraints.push(lhs - rhs);
+        // The result is:
+        // - `lt` when LT or GT
+        // - `eq` when EQ
+        let result = select::expr(is_eq_op, eq, lt);
 
-            // a[31..16] + c[31..16] + carry =
-            //     b[31..16] + (1 - result) * 256^16 * (1 - sumc_is_zero)
-            // a < b, a + c = b, result = 1, sumc_is_zero = 0
-            // a = b, a + c = b, result = 0, sumc_is_zero = 1
-            // a > b, a + c = b + 2^256, result = 0, sumc_is_zero = 0
-            // Note that, when result = 1, sumc != 0 is guaranteed by `sumc_constraints`,
-            // and so sumc_is_zero must be 0.
-            exponent = 1.expr();
-            lhs = carry.expr();
-            rhs = 0.expr();
-            #[allow(clippy::needless_range_loop)]
-            for idx in 16..32 {
-                lhs = lhs
-                    + (a.cells[idx].expr() + c[idx].expr()) * exponent.clone();
-                rhs = rhs + b.cells[idx].expr() * exponent.clone();
-                exponent = exponent * 256.expr();
-            }
-            rhs = rhs
-                + (1.expr() - result.cells[0].expr())
-                    * exponent
-                    * (1.expr() - sumc_is_zero_expr);
-            lt_constraints.push(lhs - rhs);
+        // Pop a and b from the stack, push the result on the stack.
+        // When swap is enabled we swap stack places between a and b.
+        // We can push result here directly because
+        // it only uses the LSB of a word.
+        cb.stack_pop(select::expr(swap.clone(), self.b.expr(), self.a.expr()));
+        cb.stack_pop(select::expr(swap, self.a.expr(), self.b.expr()));
+        cb.stack_push(result);
 
-            // result[0] = 0/1, result[1..32] = 0
-            let result_constraints = result
-                .cells
-                .iter()
-                .enumerate()
-                .map(|(idx, cell)| {
-                    if idx == 0 {
-                        cell.expr() * (1.expr() - cell.expr())
-                    } else {
-                        cell.expr()
-                    }
-                })
-                .collect();
+        // State transitions
+        StateTransitions {
+            gc_delta: Some(GC_DELTA.expr()),
+            sp_delta: Some(SP_DELTA.expr()),
+            pc_delta: Some(PC_DELTA.expr()),
+            gas_delta: Some(GAS.expr()),
+        }
+        .constraints(&mut cb, state_curr, state_next);
 
-            // Check each cell in c in within 8-bit range
-            let c_range_lookups = c
-                .iter()
-                .map(|cell| {
-                    Lookup::FixedLookup(
-                        FixedLookup::Range256,
-                        [cell.expr(), 0.expr(), 0.expr()],
-                    )
-                })
-                .collect();
-
-            #[allow(clippy::suspicious_operation_groupings)]
-            let bus_mapping_lookups = vec![
-                Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 0.expr(),
-                    value: swap.expr() * b.expr() + no_swap.clone() * a.expr(),
-                    is_write: false,
-                }),
-                Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1.expr(),
-                    value: swap.expr() * a.expr() + no_swap * b.expr(),
-                    is_write: false,
-                }),
-                Lookup::BusMappingLookup(BusMappingLookup::Stack {
-                    index_offset: 1.expr(),
-                    value: result.expr(),
-                    is_write: true,
-                }),
-            ];
-
-            Constraint {
-                name: "LtGadget success",
-                selector: selector.expr(),
-                polys: [
-                    state_transition_constraints,
-                    swap_constraints,
-                    sumc_constraints,
-                    sumc_is_zero_constraints,
-                    lt_constraints,
-                    result_constraints,
-                ]
-                .concat(),
-                lookups: [c_range_lookups, bus_mapping_lookups].concat(),
-            }
-        };
-
-        let stack_underflow = {
-            let stack_pointer = state_curr.stack_pointer.expr();
-            Constraint {
-                name: "LtGadget stack underflow",
-                selector: self.stack_underflow.expr(),
-                polys: vec![
-                    (stack_pointer.clone() - 1024.expr())
-                        * (stack_pointer - 1023.expr()),
-                ],
-                lookups: vec![],
-            }
-        };
-
-        let out_of_gas = {
-            let (selector, gas_available) = &self.out_of_gas;
-            let gas_overdemand = state_curr.gas_counter.expr()
-                + GasCost::FASTEST.expr()
-                - gas_available.expr();
-            Constraint {
-                name: "LtGadget out of gas",
-                selector: selector.expr(),
-                polys: vec![
-                    (gas_overdemand.clone() - 1.expr())
-                        * (gas_overdemand.clone() - 2.expr())
-                        * (gas_overdemand - 3.expr()),
-                ],
-                lookups: vec![],
-            }
-        };
-
-        array::IntoIter::new([success, stack_underflow, out_of_gas])
-            .map(move |mut constraint| {
-                constraint.polys =
-                    [common_polys.clone(), constraint.polys].concat();
-                constraint
-            })
-            .collect()
+        // Generate the constraint
+        cb.constraint(self.case_selector.expr(), name)
     }
 
     fn assign(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        core_state: &mut CoreStateInstance,
-        execution_step: &ExecutionStep,
+        state: &mut CoreStateInstance,
+        step: &ExecutionStep,
     ) -> Result<(), Error> {
-        match execution_step.case {
-            Case::Success => {
-                self.assign_success(region, offset, core_state, execution_step)
-            }
-            Case::StackUnderflow => {
-                unimplemented!()
-            }
-            Case::OutOfGas => {
-                unimplemented!()
-            }
-            _ => unreachable!(),
-        }
-    }
-}
+        // EQ op check
+        self.is_eq_op.assign(
+            region,
+            offset,
+            F::from_u64(step.opcode.as_u8() as u64),
+            F::from_u64(OpcodeId::EQ.as_u8() as u64),
+        )?;
 
-impl<F: FieldExt> LtGadget<F> {
-    fn assign_success(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        core_state: &mut CoreStateInstance,
-        execution_step: &ExecutionStep,
-    ) -> Result<(), Error> {
-        core_state.global_counter += 3;
-        core_state.program_counter += 1;
-        core_state.stack_pointer += 1;
-        core_state.gas_counter += 3;
+        // swap when doing GT
+        let swap = self.swap.assign(
+            region,
+            offset,
+            F::from_u64(step.opcode.as_u8() as u64),
+            F::from_u64(OpcodeId::GT.as_u8() as u64),
+        )?;
 
-        self.success.swap.assign(
+        // Inputs and output
+        let a = select::value_word::<F>(
+            swap,
+            step.values[1].to_word(),
+            step.values[0].to_word(),
+        );
+        let b = select::value_word::<F>(
+            swap,
+            step.values[0].to_word(),
+            step.values[1].to_word(),
+        );
+        self.a.assign(region, offset, Some(a))?;
+        self.b.assign(region, offset, Some(b))?;
+
+        // `a[0..16] <= b[0..16]`
+        self.comparison_lo.assign(
             region,
             offset,
-            Some(F::from_u64((execution_step.opcode == OpcodeId::GT) as u64)),
+            from_bytes::value::<F>(a[0..16].to_vec()),
+            from_bytes::value::<F>(b[0..16].to_vec()),
         )?;
-        self.success.a.assign(
+
+        // `a[16..32] <= b[16..32]`
+        self.comparison_hi.assign(
             region,
             offset,
-            Some(execution_step.values[0].to_word()),
+            from_bytes::value(a[16..32].to_vec()),
+            from_bytes::value(b[16..32].to_vec()),
         )?;
-        self.success.b.assign(
-            region,
-            offset,
-            Some(execution_step.values[1].to_word()),
-        )?;
-        self.success.result.assign(
-            region,
-            offset,
-            Some(execution_step.values[2].to_word()),
-        )?;
-        self.success
-            .c
-            .iter()
-            .zip(execution_step.values[3].to_word().iter())
-            .map(|(alloc, value)| {
-                alloc.assign(region, offset, Some(F::from_u64(*value as u64)))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        self.success.carry.assign(
-            region,
-            offset,
-            Some(F::from_u64(
-                execution_step.values[4].to_bytes_le()[0] as u64,
-            )),
-        )?;
-        let sumc_digits = execution_step.values[5].to_u64_digits();
-        let sumc = F::from_u64(if sumc_digits.is_empty() {
-            0u64
-        } else {
-            sumc_digits[0]
-        });
-        let sumc_inv = sumc.invert().unwrap_or(F::zero());
-        self.success.sumc.assign(region, offset, Some(sumc))?;
-        self.success
-            .sumc_inv
-            .assign(region, offset, Some(sumc_inv))?;
+
+        // State transitions
+        state.global_counter += GC_DELTA;
+        state.program_counter += PC_DELTA;
+        state.stack_pointer += SP_DELTA;
+        state.gas_counter += GAS.as_usize();
+
         Ok(())
     }
 }
@@ -383,7 +197,7 @@ mod test {
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
-    use crate::util::ToWord;
+    use crate::{gadget::evm_word::encode, util::ToWord};
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
@@ -398,571 +212,162 @@ mod test {
         }};
     }
 
-    fn subtract(a: &BigUint, b: &BigUint) -> (BigUint, BigUint, BigUint) {
-        let a8s = a.to_word();
-        let b8s = b.to_word();
-        let mut c8s = [0u8; 32];
-        let mut sub_carry: i16 = 0;
-        let mut carry: u8 = 0;
-        for idx in 0..32 {
-            let tmp = a8s[idx] as i16 - b8s[idx] as i16 - sub_carry;
-            if tmp < 0 {
-                c8s[idx] = (tmp + (1 << 8)) as u8;
-                sub_carry = 1;
-            } else {
-                c8s[idx] = tmp as u8;
-                sub_carry = 0;
-            }
-        }
-        // compute the carry
-        for idx in 0..16 {
-            let tmp = b8s[idx] as i16 + c8s[idx] as i16 + carry as i16;
-            carry = (tmp >= (1 << 8)) as u8;
-        }
-        // compute the sum of all limbs in c8s
-        let mut sumc: u64 = 0;
-        for limb in c8s.iter() {
-            sumc += *limb as u64;
-        }
-        (
-            BigUint::from_bytes_le(&c8s),
-            BigUint::from(carry),
-            BigUint::from(sumc),
-        )
+    fn compress(value: BigUint) -> Base {
+        let r = Base::from_u64(1);
+        encode(value.to_word().to_vec().into_iter().rev(), r)
+    }
+
+    fn check(opcode: OpcodeId, a: BigUint, b: BigUint, result: BigUint) {
+        let all_ones = BigUint::from_bytes_le(&[1u8; 32]);
+        try_test_circuit!(
+            vec![
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH32,
+                    case: Case::Success,
+                    values: vec![b.clone(), all_ones.clone()],
+                },
+                ExecutionStep {
+                    opcode: OpcodeId::PUSH32,
+                    case: Case::Success,
+                    values: vec![a.clone(), all_ones],
+                },
+                ExecutionStep {
+                    opcode,
+                    case: Case::Success,
+                    values: vec![a.clone(), b.clone()],
+                }
+            ],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        compress(b.clone()),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        compress(a.clone()),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 3,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
+                        compress(a),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 4,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        compress(b),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 5,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        compress(result),
+                        Base::zero(),
+                    ]
+                },
+            ],
+            Ok(())
+        );
     }
 
     #[test]
-    fn lt_gadget() {
-        let a = BigUint::from(0x03_02_01u64);
-        let b = BigUint::from(0x09_07_05u64);
-        let mut result = [0u8; 32];
+    fn comparator_gadget() {
+        let hi_lo = BigUint::from_bytes_be(&[[255u8; 16], [0u8; 16]].concat());
+        let lo_hi = BigUint::from_bytes_be(&[[0u8; 16], [255u8; 16]].concat());
 
-        // LT: a < b, result = 1
-        let (c, carry, sumc) = subtract(&b, &a);
-        result[0] = 1;
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::LT,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        b.clone(),
-                        BigUint::from_bytes_le(&result),
-                        c,
-                        carry,
-                        sumc,
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
+        // LT
+        // hi_lo < lo_hi == 0
+        check(OpcodeId::LT, hi_lo.clone(), lo_hi.clone(), 0x00u64.into());
+        // lo_hi < hi_lo == 1
+        check(OpcodeId::LT, lo_hi.clone(), hi_lo.clone(), 0x01u64.into());
+        // hi_lo < hi_lo == 0
+        check(OpcodeId::LT, hi_lo.clone(), hi_lo.clone(), 0x00u64.into());
+        // lo_hi < lo_hi == 0
+        check(OpcodeId::LT, lo_hi.clone(), lo_hi.clone(), 0x00u64.into());
 
-        // LT: a = a, result = 0
-        let (c, carry, sumc) = subtract(&a, &a);
-        result[0] = 0;
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::LT,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        a.clone(),
-                        BigUint::from_bytes_le(&result),
-                        c,
-                        carry,
-                        sumc,
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
+        // GT
+        // hi_lo > lo_hi == 1
+        check(OpcodeId::GT, hi_lo.clone(), lo_hi.clone(), 0x01u64.into());
+        // lo_hi > hi_lo == 0
+        check(OpcodeId::GT, lo_hi.clone(), hi_lo.clone(), 0x00u64.into());
+        // hi_lo > hi_lo == 0
+        check(OpcodeId::GT, hi_lo.clone(), hi_lo.clone(), 0x00u64.into());
+        // lo_hi > lo_hi == 0
+        check(OpcodeId::GT, lo_hi.clone(), lo_hi.clone(), 0x00u64.into());
 
-        // LT: b > a, result = 0
-        let (c, carry, sumc) = subtract(&a, &b);
-        result[0] = 0;
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::LT,
-                    case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        a.clone(),
-                        BigUint::from_bytes_le(&result),
-                        c,
-                        carry,
-                        sumc,
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
+        // EQ
+        // (hi_lo == lo_hi) == 0
+        check(OpcodeId::EQ, hi_lo.clone(), lo_hi.clone(), 0x00u64.into());
+        // (lo_hi == hi_lo) == 0
+        check(OpcodeId::EQ, lo_hi.clone(), hi_lo.clone(), 0x00u64.into());
+        // (hi_lo == hi_lo) == 1
+        check(OpcodeId::EQ, hi_lo.clone(), hi_lo, 0x01u64.into());
+        // (lo_hi == lo_hi) == 1
+        check(OpcodeId::EQ, lo_hi.clone(), lo_hi, 0x01u64.into());
+    }
 
-        // GT: b > a, result = 1
-        let (c, carry, sumc) = subtract(&b, &a);
-        result[0] = 1;
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::GT,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        b.clone(),
-                        BigUint::from_bytes_le(&result),
-                        c,
-                        carry,
-                        sumc,
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
+    #[test]
+    #[ignore]
+    fn comparator_gadget_exhaustive() {
+        let zero = BigUint::default();
+        let max = BigUint::from_bytes_be(&[255u8; 32]);
 
-        // GT: a = a, result = 0
-        let (c, carry, sumc) = subtract(&a, &a);
-        result[0] = 0;
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::GT,
-                    case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        a.clone(),
-                        BigUint::from_bytes_le(&result),
-                        c,
-                        carry,
-                        sumc,
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
+        // LT
+        // max < max == 0
+        check(OpcodeId::LT, max.clone(), max.clone(), 0x00u64.into());
+        // zero < zero == 0
+        check(OpcodeId::LT, zero.clone(), zero.clone(), 0x00u64.into());
+        // max < zero == 0
+        check(OpcodeId::LT, max.clone(), zero.clone(), 0x00u64.into());
+        // zero < max == 1
+        check(OpcodeId::LT, zero.clone(), max.clone(), 0x01u64.into());
 
-        // GT: a < b, result = 0
-        let (c, carry, sumc) = subtract(&a, &b);
-        result[0] = 0;
-        try_test_circuit!(
-            vec![
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
-                    case: Case::Success,
-                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::GT,
-                    case: Case::Success,
-                    values: vec![
-                        b,
-                        a,
-                        BigUint::from_bytes_le(&result),
-                        c,
-                        carry,
-                        sumc,
-                    ],
-                }
-            ],
-            vec![
-                Operation {
-                    gc: 1,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 2,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(1 + 2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 4,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(5 + 7 + 9),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(0),
-                        Base::zero(),
-                    ]
-                }
-            ],
-            Ok(())
-        );
+        // GT
+        // max > max == 0
+        check(OpcodeId::GT, max.clone(), max.clone(), 0x00u64.into());
+        // zero > zero == 0
+        check(OpcodeId::GT, zero.clone(), zero.clone(), 0x00u64.into());
+        // max > zero == 1
+        check(OpcodeId::GT, max.clone(), zero.clone(), 0x01u64.into());
+        // zero > max == 0
+        check(OpcodeId::GT, zero.clone(), max.clone(), 0x00u64.into());
+
+        // EQ
+        // (max == max) == 1
+        check(OpcodeId::EQ, max.clone(), max.clone(), 0x01u64.into());
+        // (zero == zero) == 1
+        check(OpcodeId::EQ, zero.clone(), zero.clone(), 0x01u64.into());
+        // (max == zero) == 0
+        check(OpcodeId::EQ, max.clone(), zero.clone(), 0x00u64.into());
+        // (zero == max) == 0
+        check(OpcodeId::EQ, zero, max, 0x00u64.into());
     }
 }
