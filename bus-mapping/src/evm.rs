@@ -268,6 +268,8 @@ pub struct GasCost(u64);
 impl GasCost {
     /// Constant cost for free step
     pub const ZERO: Self = Self(0);
+    /// Constant cost for jumpdest step, only it takes one gas
+    pub const ONE: Self = Self(1);
     /// Constant cost for quick step
     pub const QUICK: Self = Self(2);
     /// Constant cost for fastest step
