@@ -10,7 +10,7 @@ jobs:
   clippy:
     if: github.event.pull_request.draft == false
     
-    name: Clippy (1.53.0)
+    name: Clippy
     timeout-minutes: 30
     runs-on: ubuntu-latest
 
@@ -18,12 +18,11 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.53.0
           components: clippy
-          override: true
+          override: false
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:
-          name: Clippy (1.53.0)
+          name: Clippy
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features --all-targets -- -D warnings
