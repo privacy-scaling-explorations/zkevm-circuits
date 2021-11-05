@@ -97,6 +97,12 @@ impl GlobalCounter {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct EvmWord(pub(crate) [u8; 32]);
 
+impl Default for EvmWord {
+    fn default() -> Self {
+        EvmWord([0; 32])
+    }
+}
+
 impl FromStr for EvmWord {
     type Err = EvmWordParsingError;
 
@@ -406,6 +412,6 @@ mod evm_tests {
                 .unwrap()
                 .to_word(),
             EvmWord::from(1u32),
-        )
+        );
     }
 }

@@ -85,7 +85,7 @@ mod push_tests {
         // Generate Step1 corresponding to PUSH1 80
         let mut step_1 = ExecutionStep {
             memory: mem_map,
-            stack: Stack::empty(),
+            stack: Stack::new(),
             storage: Storage::empty(),
             instruction: OpcodeId::PUSH1,
             gas,

@@ -31,6 +31,7 @@ impl FromStr for StackAddress {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
         let value = usize::from_str_radix(s, 16)
             .map_err(|_| Error::StackAddressParsing)?;
         // Stack only has 1023 slots avaliable.
@@ -53,12 +54,7 @@ impl<T: Into<Vec<EvmWord>>> From<T> for Stack {
 }
 
 impl Stack {
-    /// Generate an empty instance of EVM stack.
-    pub const fn empty() -> Stack {
-        Stack(Vec::new())
-    }
-
-    /// Generate an new instance of EVM stack given a `Vec<EvmWord>`.
+    /// Generate a new instance of EVM stack.
     pub const fn new() -> Stack {
         Stack(vec![])
     }
@@ -85,8 +81,61 @@ impl Stack {
         StackAddress::from(1024 - self.0.len())
     }
 
+    /// Returns the second last filled `StackAddress`.
+    pub fn nth_last_filled(&self, nth: usize) -> StackAddress {
+        StackAddress::from(1024 - self.0.len() + nth)
+    }
+
     /// Returns the last [`EvmWord`] allocated in the `Stack`.
     pub fn last(&self) -> Option<&EvmWord> {
         self.0.last()
+    }
+
+    /// Returns the second last [`EvmWord`] allocated in the `Stack`.
+    pub fn nth_last(&self, nth: usize) -> Option<&EvmWord> {
+        self.0.get(self.0.len() - (nth + 1))
+    }
+}
+
+#[cfg(test)]
+mod stack_tests {
+    use super::*;
+
+    fn setup_stack(stack_value: [&str; 3]) -> Stack {
+        Stack::from_vec(vec![
+            EvmWord::from_str(stack_value[0]).unwrap(),
+            EvmWord::from_str(stack_value[1]).unwrap(),
+            EvmWord::from_str(stack_value[2]).unwrap(),
+        ])
+    }
+
+    #[test]
+    fn stack_addr_conversion() -> Result<(), Error> {
+        let first_usize = 1023usize;
+        let addr1 = StackAddress::from(first_usize);
+        let addr2 = StackAddress::from_str("0x3ff")?;
+
+        assert_eq!(addr1.0, first_usize);
+        assert_eq!(addr2.0, first_usize);
+        Ok(())
+    }
+
+    #[test]
+    fn stack_pointer() -> Result<(), Error> {
+        let stack = setup_stack(["0x15", "0x16", "0x17"]);
+
+        assert_eq!(stack.stack_pointer(), StackAddress::from(1020));
+        assert_eq!(stack.last_filled(), StackAddress::from(1021));
+        assert_eq!(stack.nth_last_filled(1), StackAddress::from(1022));
+        Ok(())
+    }
+
+    #[test]
+    fn stack_get_value() -> Result<(), Error> {
+        let stack = setup_stack(["0x15", "0x16", "0x17"]);
+
+        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17")?);
+        assert_eq!(stack.nth_last(1).unwrap(), &EvmWord::from_str("0x16")?);
+        Ok(())
     }
 }
