@@ -10,3 +10,6 @@ pub const KECCAK_OUTPUT_WIDTH: usize = 4;
 pub const RLP_NUM: usize = 2;
 pub const S_START: usize = RLP_NUM;
 pub const C_START: usize = RLP_NUM + HASH_WIDTH + RLP_NUM;
+pub const BRANCH_0_S_START: usize = 0; // row 0 of a branch contains some RLP data
+pub const BRANCH_0_C_START: usize = 2;
+pub const BRANCH_0_KEY_POS: usize = 4; // row 0 of a branch contains info (deriving from key) about which branch node is being modified
