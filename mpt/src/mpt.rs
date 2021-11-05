@@ -12,8 +12,8 @@ use std::{convert::TryInto, marker::PhantomData};
 use crate::param::LAYOUT_OFFSET;
 use crate::param::WITNESS_ROW_WIDTH;
 use crate::param::{
-    BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_START, HASH_WIDTH,
-    KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_START,
+    BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
+    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_START,
 };
 
 #[derive(Clone, Debug)]
@@ -333,6 +333,11 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (key_cur - key_prev),
             ));
 
+            // TODO:
+            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
+            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
+            // non-empty nodes have 32 values ...
+
             // TODO: is_branch_child is followed by is_compact_leaf
             // TODO: is_compact_leaf is followed by is_keccak_leaf
 
@@ -395,11 +400,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     * is_branch_init_cur.clone()
                     * (mult_c - branch_mult_c_cur),
             ));
-
-            // TODO:
-            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
-            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
-            // non-empty nodes have 32 values ...
 
             constraints
         });
@@ -999,6 +999,26 @@ impl<F: FieldExt> MPTConfig<F> {
                                 &c_words,
                                 offset,
                             )?;
+
+                            // reassign (it was assigned to 0 in assign_row) branch_acc and branch_mult to proper values
+
+                            // TODO: depends on how much positions RLP occupies
+
+                            // We need to distinguish between empty and non-empty node:
+                            // empty node at position 1: 0
+                            // non-empty node at position 1: 160
+
+                            if row[1] == 0 {
+                                // branch_acc_s = 128 * branch_mult_s_prev
+                                // branch_mult_s_cur = branch_mult_s_prev * r
+                            } else {
+                            }
+                            if row[C_RLP_START + 1] == 0 {
+                                // branch_acc_c = 128 * branch_mult_c_prev
+                                // branch_mult_c_cur = branch_mult_c_prev * r
+                            } else {
+                            }
+
                             offset += 1;
                             branch_ind += 1;
                         } else if row[row.len() - 1] == 2 {
@@ -1171,8 +1191,8 @@ mod tests {
         }
 
         // for debugging:
-        let path = "mpt/tests";
-        // let path = "tests";
+        // let path = "mpt/tests";
+        let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
