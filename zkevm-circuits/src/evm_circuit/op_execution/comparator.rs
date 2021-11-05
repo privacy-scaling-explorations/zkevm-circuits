@@ -4,7 +4,7 @@ use super::super::{
 use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{ComparisonGadget, IsEqualGadget};
-use super::utils::{self, from_bytes, select, StateTransitions};
+use super::utils::{from_bytes, select, StateTransition};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -12,18 +12,20 @@ use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
-const GC_DELTA: usize = 3;
-const PC_DELTA: usize = 1;
-const SP_DELTA: usize = 1;
-const GAS: GasCost = GasCost::FASTEST;
+static STATE_TRANSITION: StateTransition = StateTransition {
+    gc_delta: Some(3), // 2 stack pops + 1 stack push
+    pc_delta: Some(1),
+    sp_delta: Some(1),
+    gas_delta: Some(GasCost::FASTEST.as_usize()),
+};
 const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
-    [LT, GT, EQ]
+    #set[LT, GT, EQ]
     ComparatorGadget {
         ComparatorSuccessCase(),
         StackUnderflowCase(NUM_POPPED),
-        OutOfGasCase(GAS.as_usize()),
+        OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
 
@@ -117,13 +119,7 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
         cb.stack_push(result);
 
         // State transitions
-        StateTransitions {
-            gc_delta: Some(GC_DELTA.expr()),
-            sp_delta: Some(SP_DELTA.expr()),
-            pc_delta: Some(PC_DELTA.expr()),
-            gas_delta: Some(GAS.expr()),
-        }
-        .constraints(&mut cb, state_curr, state_next);
+        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
@@ -183,10 +179,7 @@ impl<F: FieldExt> ComparatorSuccessCase<F> {
         )?;
 
         // State transitions
-        state.global_counter += GC_DELTA;
-        state.program_counter += PC_DELTA;
-        state.stack_pointer += SP_DELTA;
-        state.gas_counter += GAS.as_usize();
+        STATE_TRANSITION.assign(state);
 
         Ok(())
     }

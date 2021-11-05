@@ -197,22 +197,27 @@ pub(crate) mod select {
 
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
-    use crate::{evm_circuit::Cell, util::Expr};
+    use crate::{
+        evm_circuit::{param::MAX_BYTES_FIELD, Cell},
+        util::Expr,
+    };
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
-        let mut multiplier = 1.expr();
+        assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
         let mut value = 0.expr();
+        let mut multiplier = F::one();
         for byte in bytes.iter() {
-            value = value + byte.expr() * multiplier.clone();
-            multiplier = multiplier * 256.expr();
+            value = value + byte.expr() * multiplier;
+            multiplier *= F::from_u64(256);
         }
         value
     }
 
     pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
-        let mut value = F::from_u64(0);
-        let mut multiplier = F::from_u64(1);
+        assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
+        let mut value = F::zero();
+        let mut multiplier = F::one();
         for byte in bytes.iter() {
             value += F::from_u64(*byte as u64) * multiplier;
             multiplier *= F::from_u64(256);
@@ -224,34 +229,6 @@ pub(crate) mod from_bytes {
 /// Returns 2**num_bits
 pub(crate) fn get_range<F: FieldExt>(num_bits: usize) -> F {
     F::from_u64(2).pow(&[num_bits as u64, 0, 0, 0])
-}
-
-/// Decodes a field element from its byte representation
-pub(crate) mod from_bytes {
-    use crate::{evm_circuit::Cell, util::Expr};
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
-
-    pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
-        assert!(bytes.len() <= 32, "number of bytes too large");
-        let mut value = 0.expr();
-        let mut multiplier = F::one();
-        for byte in bytes.iter() {
-            value = value + byte.expr() * multiplier;
-            multiplier *= F::from_u64(256);
-        }
-        value
-    }
-
-    pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
-        assert!(bytes.len() <= 32, "number of bytes too large");
-        let mut value = F::zero();
-        let mut multiplier = F::one();
-        for byte in bytes.iter() {
-            value += F::from_u64(*byte as u64) * multiplier;
-            multiplier *= F::from_u64(256);
-        }
-        value
-    }
 }
 
 pub(crate) fn require_opcode_in_set<F: FieldExt>(

@@ -1,6 +1,7 @@
 use super::super::utils;
 use super::super::CaseAllocation;
 use super::super::Cell;
+use super::{from_bytes, get_range};
 use crate::evm_circuit::param::MAX_BYTES_FIELD;
 use crate::util::Expr;
 use array_init::array_init;
@@ -113,7 +114,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         Self {
             lt: alloc.cells.pop().unwrap(),
             diff: array_init(|_| alloc.cells.pop().unwrap()),
-            range: utils::get_range(NUM_BYTES * 8),
+            range: get_range(NUM_BYTES * 8),
         }
     }
 
@@ -123,7 +124,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Expression<F> {
-        let diff = utils::from_bytes::expr(self.diff.to_vec());
+        let diff = from_bytes::expr(self.diff.to_vec());
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(lhs - rhs, diff - (self.lt.expr() * self.range));
 
