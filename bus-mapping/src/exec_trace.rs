@@ -11,8 +11,8 @@ use crate::util::serialize_field_ext;
 use crate::Error;
 use core::ops::{Index, IndexMut};
 pub use exec_step::ExecutionStep;
+use pairing::arithmetic::FieldExt;
 pub(crate) use parsing::ParsedExecutionStep;
-use pasta_curves::arithmetic::FieldExt;
 use serde::Serialize;
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -45,12 +45,12 @@ impl<F: FieldExt> Default for BlockConstants<F> {
                 "0x00000000000000000000000000000000c014ba5e",
             )
             .unwrap(),
-            timestamp: F::from_u64(1633398551u64),
-            number: F::from_u64(123456u64),
-            difficulty: F::from_u64(0x200000u64),
-            gas_limit: F::from_u64(15_000_000u64),
+            timestamp: F::from(1633398551u64),
+            number: F::from(123456u64),
+            difficulty: F::from(0x200000u64),
+            gas_limit: F::from(15_000_000u64),
             chain_id: F::one(),
-            base_fee: F::from_u64(97u64),
+            base_fee: F::from(97u64),
         }
     }
 }

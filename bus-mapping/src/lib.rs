@@ -46,7 +46,7 @@
 //!
 //! ```rust
 //! use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::{EvmWord, EthAddress}};
-//! use pasta_curves::arithmetic::FieldExt;
+//! use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 //!
 //! let input_trace = r#"
 //! [
@@ -99,12 +99,12 @@
 //! let block_ctants = BlockConstants::new(
 //!     EvmWord::from(0u8),
 //!     EthAddress::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
+//!     Fp::zero(),
+//!     Fp::zero(),
+//!     Fp::zero(),
+//!     Fp::zero(),
+//!     Fp::zero(),
+//!     Fp::zero(),
 //! );
 //!
 //! // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.

@@ -2,13 +2,13 @@ use crate::arith_helpers::convert_b13_lane_to_b9;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gates::gate_helpers::Lane;
 
-use halo2::{
+use halo2_kzg::{
     circuit::Region,
     plonk::{Advice, Column, Error},
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
