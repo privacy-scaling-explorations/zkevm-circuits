@@ -21,9 +21,9 @@ use std::convert::TryInto;
 static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(34), // 2 stack + 32 memory
     pc_delta: Some(1),
-    sp_delta: None, // MLOAD: SP_DELTA_MLOAD, MSTORE: SP_DELTA_MSTORE
-    gas_delta: None, // GAS + memory_cost
-    next_memory_size: None, // mext_memory_size
+    sp_delta: None,         // SP_DELTA_MLOAD/SP_DELTA_MSTORE
+    gas_delta: None,        // GAS + memory_cost
+    next_memory_size: None, // next_memory_size
 };
 const GAS: GasCost = GasCost::FASTEST;
 const SP_DELTA_MLOAD: i32 = 0;
@@ -52,9 +52,7 @@ struct MemorySuccessCase<F> {
 impl<F: FieldExt> MemorySuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 2  // value + address
-            + MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_WORDS
-            + IsEqualGadget::<F>::NUM_WORDS,
+        num_word: 2, // address + value,
         num_cell: MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_CELLS
             + IsEqualGadget::<F>::NUM_CELLS,
         will_halt: false,
@@ -190,10 +188,7 @@ struct MemoryOutOfGasCase<F> {
 impl<F: FieldExt> MemoryOutOfGasCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::OutOfGas,
-        num_word: 1  // address
-            + IsZeroGadget::<F>::NUM_WORDS
-            + MemoryExpansionGadget::<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1}>::NUM_WORDS
-            + LtGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2-1}>::NUM_WORDS,
+        num_word: 1,  // address
         num_cell: IsZeroGadget::<F>::NUM_CELLS
             + MemoryExpansionGadget::<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1}>::NUM_CELLS
             + LtGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2-1}>::NUM_CELLS,
