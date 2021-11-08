@@ -1,9 +1,9 @@
 use halo2::{
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 /// The number of next_inputs that are used inside the `absorb` circuit.
@@ -99,12 +99,15 @@ mod tests {
     use crate::arith_helpers::*;
     use crate::common::*;
     use crate::keccak_arith::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2::{
+        arithmetic::FieldExt,
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        pasta::Fp,
+        plonk::{Circuit, Column, ConstraintSystem, Error},
+    };
     use itertools::Itertools;
     use num_bigint::BigUint;
-    use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -234,8 +237,10 @@ mod tests {
         };
 
         // Test without public inputs
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+        let prover = match MockProver::<Fp>::run(9, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:?}", e),
+        };
 
         assert_eq!(prover.verify(), Ok(()));
     }

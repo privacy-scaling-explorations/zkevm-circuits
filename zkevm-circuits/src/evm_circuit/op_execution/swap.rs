@@ -112,7 +112,7 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::{arithmetic::FieldExt, dev::MockProver, pasta::Fp};
     use num::BigUint;
     use pasta_curves::pallas::Base;
 
@@ -120,7 +120,10 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let prover = match MockProver::<Fp>::run(10, &circuit, vec![]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:?}", e),
+            };
             assert_eq!(prover.verify(), $result);
         }};
     }

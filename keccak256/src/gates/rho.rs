@@ -3,12 +3,12 @@ use crate::common::ROTATION_CONSTANTS;
 use crate::gates::gate_helpers::Lane;
 
 use halo2::{
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, Error},
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
-use pasta_curves::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 

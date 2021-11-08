@@ -1,17 +1,17 @@
+use halo2::arithmetic::FieldExt;
 use halo2::{
     circuit::{Chip, Layouter},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed,
+        Advice, Column, ConstraintSystem, Error, Expression, TableColumn,
         VirtualCells,
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
 use std::{marker::PhantomData, u64};
 
 #[derive(Clone, Debug)]
 pub(crate) struct MonotoneConfig {
-    range_table: Column<Fixed>,
+    range_table: TableColumn,
     value: Column<Advice>,
 }
 
@@ -37,14 +37,12 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         value: Column<Advice>,
     ) -> MonotoneConfig {
-        let range_table = meta.fixed_column();
+        let range_table = meta.lookup_table_column();
 
         let config = MonotoneConfig { range_table, value };
 
         meta.lookup(|meta| {
             let q_enable = q_enable(meta);
-            let range_table =
-                meta.query_fixed(config.range_table, Rotation::cur());
             let value_diff = {
                 let value_cur = meta.query_advice(value, Rotation::cur());
                 let value_prev = meta.query_advice(value, Rotation::prev());
@@ -66,13 +64,13 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
+        layouter.assign_table(
             || "range_table",
-            |mut meta| {
+            |mut table| {
                 let max = RANGE - STRICT as usize;
 
                 for idx in 0..=max {
-                    meta.assign_fixed(
+                    table.assign_cell(
                         || "range_table_value",
                         self.config.range_table,
                         idx,
@@ -118,6 +116,7 @@ mod test {
             MockProver,
             VerifyFailure::{self, Lookup},
         },
+        pasta::Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
     use pasta_curves::pallas::Base;
@@ -223,12 +222,14 @@ mod test {
                     values: Some(values),
                     _marker: PhantomData,
                 };
-                let prover = MockProver::<Base>::run(
+                let prover = match MockProver::<Fp>::run(
                     usize::BITS - ($range as usize).leading_zeros(),
                     &circuit,
                     vec![],
-                )
-                .unwrap();
+                ) {
+                    Ok(prover) => prover,
+                    Err(e) => panic!("{:?}", e),
+                };
                 assert_eq!(prover.verify(), result);
             }
         };

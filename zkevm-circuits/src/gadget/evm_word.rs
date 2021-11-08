@@ -8,14 +8,15 @@
 
 use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
+use halo2::arithmetic::FieldExt;
 use halo2::{
     circuit::Region,
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+        Advice, Column, ConstraintSystem, Error, Expression, Selector,
+        TableColumn,
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
@@ -67,7 +68,7 @@ pub(crate) struct WordConfig<F: FieldExt> {
     pub bytes: [Column<Advice>; 32],
     // Fixed column containing all possible 8-bit values. This is used in
     // a lookup argument to range-constrain each byte.
-    pub byte_lookup: Column<Fixed>,
+    pub byte_lookup: TableColumn,
     // Expression representing `encode(word)`.
     pub encode_word_expr: Expression<F>,
 }
@@ -78,7 +79,7 @@ impl<F: FieldExt> WordConfig<F> {
         r: F,
         q_encode: Selector,
         bytes: [Column<Advice>; 32],
-        byte_lookup: Column<Fixed>,
+        byte_lookup: TableColumn,
     ) -> Self {
         // Expression representing `encode(word)`.
         let mut encode_word_expr = Expression::Constant(F::zero());
@@ -93,8 +94,6 @@ impl<F: FieldExt> WordConfig<F> {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
-                let byte_lookup =
-                    meta.query_fixed(byte_lookup, Rotation::cur());
 
                 // Update encode_word_expr.
                 encode_word_expr = encode_word_expr.clone() * r + byte.clone();
@@ -117,11 +116,11 @@ impl<F: FieldExt> WordConfig<F> {
     /// global 8-bit table.
     #[cfg(test)]
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
+        layouter.assign_table(
             || "8-bit table",
-            |mut meta| {
+            |mut table| {
                 for byte in 0..=u8::MAX {
-                    meta.assign_fixed(
+                    table.assign_cell(
                         || format!("load {}", byte),
                         self.byte_lookup,
                         byte.into(),
@@ -170,6 +169,7 @@ mod tests {
     use halo2::{
         circuit::SimpleFloorPlanner,
         dev::{MockProver, VerifyFailure},
+        pasta::Fp,
         plonk::{Circuit, Instance},
     };
     use pasta_curves::pallas;
@@ -204,7 +204,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let byte_lookup = meta.fixed_column();
+                let byte_lookup = meta.lookup_table_column();
 
                 let config = WordConfig::configure(
                     meta,
@@ -278,12 +278,12 @@ mod tests {
             // Calculate word commitment and use it as public input.
             let encoded: pallas::Base =
                 encode(word.to_bytes().iter().rev().cloned(), r());
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![vec![encoded]],
-            )
-            .unwrap();
+
+            let prover =
+                match MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]) {
+                    Ok(prover) => prover,
+                    Err(e) => panic!("{:?}", e),
+                };
             assert_eq!(prover.verify(), Ok(()))
         }
     }

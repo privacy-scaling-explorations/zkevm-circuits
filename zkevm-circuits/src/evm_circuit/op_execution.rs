@@ -431,7 +431,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                         .iter()
                         .enumerate()
                         .map(|(idx, value)| {
-                            if value.is_zero() {
+                            if value.is_zero().unwrap_u8() == 1 {
                                 // constraint qs_byte_lookup to 0 by default
                                 qs_byte_lookups[idx].expr()
                             } else {

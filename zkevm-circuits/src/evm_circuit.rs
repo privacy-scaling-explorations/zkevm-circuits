@@ -6,7 +6,8 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Layouter, Region},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+        Advice, Column, ConstraintSystem, Error, Expression, Selector,
+        TableColumn,
     },
     poly::Rotation,
 };
@@ -329,7 +330,7 @@ pub(crate) struct Operation<F> {
 struct EvmCircuit<F> {
     q_step: Selector,
     qs_byte_lookup: Column<Advice>,
-    fixed_table: [Column<Fixed>; 4],
+    fixed_table: [TableColumn; 4],
     rw_table: [Column<Advice>; 7],
     op_execution_gadget: OpExecutionGadget<F>,
 }
@@ -362,10 +363,10 @@ impl<F: FieldExt> EvmCircuit<F> {
         // - comparator table
         // - ...
         let fixed_table = [
-            meta.fixed_column(), // tag
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
+            meta.lookup_table_column(), // tag
+            meta.lookup_table_column(),
+            meta.lookup_table_column(),
+            meta.lookup_table_column(),
         ];
 
         let (
@@ -502,7 +503,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         meta: &mut ConstraintSystem<F>,
         qs_byte_lookup: Column<Advice>,
         advices: [Column<Advice>; CIRCUIT_WIDTH],
-        fixed_table: [Column<Fixed>; 4],
+        fixed_table: [TableColumn; 4],
         rw_table: [Column<Advice>; 7],
         op_execution_state_curr: OpExecutionState<F>,
         independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
@@ -633,9 +634,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                 ]
                 .iter()
                 .zip(fixed_table.iter())
-                .map(|(expr, column)| {
-                    (expr.clone(), meta.query_fixed(*column, Rotation::cur()))
-                })
+                .map(|(expr, column)| (expr.clone(), *column))
                 .collect::<Vec<_>>()
             });
         }
@@ -646,12 +645,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                 fixed_lookup
                     .iter()
                     .zip(fixed_table.iter())
-                    .map(|(expr, column)| {
-                        (
-                            expr.clone(),
-                            meta.query_fixed(*column, Rotation::cur()),
-                        )
-                    })
+                    .map(|(expr, column)| (expr.clone(), *column))
                     .collect::<Vec<_>>()
             });
         }
@@ -677,14 +671,14 @@ impl<F: FieldExt> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        layouter.assign_table(
             || "fixed table",
-            |mut region| {
+            |mut table| {
                 let mut offset = 0;
 
                 // Noop
                 for (idx, column) in self.fixed_table.iter().enumerate() {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || format!("Noop: {}", idx),
                         *column,
                         offset,
@@ -695,13 +689,13 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                 // Range256
                 for idx in 0..256 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range256: tag",
                         self.fixed_table[0],
                         offset,
                         || Ok(F::from_u64(FixedLookup::Range256 as u64)),
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range256: value",
                         self.fixed_table[1],
                         offset,
@@ -710,7 +704,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
                     {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || format!("Range256: padding {}", idx),
                             *column,
                             offset,
@@ -722,13 +716,13 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                 // Range32
                 for idx in 0..32 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range32: tag",
                         self.fixed_table[0],
                         offset,
                         || Ok(F::from_u64(FixedLookup::Range32 as u64)),
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range32: value",
                         self.fixed_table[1],
                         offset,
@@ -737,7 +731,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
                     {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || format!("Range32: padding {}", idx),
                             *column,
                             offset,
@@ -749,13 +743,13 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                 // Range17
                 for idx in 0..17 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range17: tag",
                         self.fixed_table[0],
                         offset,
                         || Ok(F::from_u64(FixedLookup::Range17 as u64)),
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range17: value",
                         self.fixed_table[1],
                         offset,
@@ -764,7 +758,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
                     {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || format!("Range17: padding {}", idx),
                             *column,
                             offset,
@@ -776,13 +770,13 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                 // Range16
                 for idx in 0..16 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range16: tag",
                         self.fixed_table[0],
                         offset,
                         || Ok(F::from_u64(FixedLookup::Range16 as u64)),
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "Range16: value",
                         self.fixed_table[1],
                         offset,
@@ -791,7 +785,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
                     {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || format!("Range16: padding {}", idx),
                             *column,
                             offset,
@@ -803,19 +797,19 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                 // SignByte
                 for idx in 0..256 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "SignByte: tag",
                         self.fixed_table[0],
                         offset,
                         || Ok(F::from_u64(FixedLookup::SignByte as u64)),
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "SignByte: value",
                         self.fixed_table[1],
                         offset,
                         || Ok(F::from_u64(idx as u64)),
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "SignByte: sign",
                         self.fixed_table[2],
                         offset,
@@ -824,7 +818,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     for (idx, column) in
                         self.fixed_table[3..].iter().enumerate()
                     {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || format!("SignByte: padding {}", idx),
                             *column,
                             offset,

@@ -7,4 +7,4 @@ members = [
 ]
 
 [patch.crates-io]
-halo2 = { git = "https://github.com/zcash/halo2.git", rev = "4283713ec76051eaf21a06d0279fa7d3497cafb6" }
+halo2 = { git = "https://github.com/zcash/halo2.git", rev = "9dd1bffa760cdfba123d451010b9ad2af3d463a1" }

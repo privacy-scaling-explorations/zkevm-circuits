@@ -1,11 +1,11 @@
 use crate::arith_helpers::*;
 use halo2::{
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -86,13 +86,15 @@ mod tests {
     use crate::common::*;
     use crate::keccak_arith::*;
     use halo2::{
+        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
+        pasta::Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
     use num_bigint::BigUint;
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pasta_curves::pallas;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -188,9 +190,10 @@ mod tests {
         };
 
         // Test without public inputs
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
-
+        let prover = match MockProver::<Fp>::run(9, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:?}", e),
+        };
         assert_eq!(prover.verify(), Ok(()));
 
         let mut out_state2 = out_state;
@@ -202,8 +205,10 @@ mod tests {
             _marker: PhantomData,
         };
 
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit2, vec![]).unwrap();
+        let prover = match MockProver::<Fp>::run(9, &circuit2, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:?}", e),
+        };
         assert_eq!(
             prover.verify(),
             Err(vec![VerifyFailure::ConstraintNotSatisfied {

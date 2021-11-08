@@ -4,8 +4,10 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
+    pasta::Fp,
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed,
+        TableColumn,
     },
     poly::Rotation,
 };
@@ -67,7 +69,7 @@ pub(crate) struct Config<F: FieldExt, const LOOKUP: bool> {
     global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
-    binary_table: Column<Fixed>,
+    binary_table: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -79,14 +81,12 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         let global_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
-        let binary_table = meta.fixed_column();
+        let binary_table = meta.lookup_table_column();
 
         if LOOKUP {
             meta.lookup(|meta| {
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let flag = meta.query_advice(flag, Rotation::cur());
-                let binary_table =
-                    meta.query_fixed(binary_table, Rotation::cur());
 
                 vec![(q_target * flag, binary_table)]
             });
@@ -121,11 +121,11 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         &self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        layouter.assign_table(
             || "binary table",
-            |mut region| {
+            |mut table| {
                 for idx in 0..=1 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "binary table",
                         self.binary_table,
                         idx,
@@ -287,7 +287,9 @@ macro_rules! test_state_circuit {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt, const LOOKUP: bool> Circuit<F> for MemoryCircuit<F, LOOKUP> {
+        impl<F: FieldExt, const LOOKUP: bool> Circuit<F>
+            for MemoryCircuit<F, LOOKUP>
+        {
             type Config = Config<F, LOOKUP>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -334,7 +336,10 @@ macro_rules! test_state_circuit {
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<pallas::Base>::run(7, &circuit, vec![]).unwrap();
+        let prover = match MockProver::<Fp>::run(7, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:?}", e),
+        };
         assert_eq!(prover.verify(), Ok(()));
     }};
 }

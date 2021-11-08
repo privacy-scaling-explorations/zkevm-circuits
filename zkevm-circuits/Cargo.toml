@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 ff = "0.10"
-halo2 = "0.0"
-pasta_curves = "0.1"
+halo2 = "0.1.0-beta.1"
+pasta_curves = "0.2.1"
 bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"

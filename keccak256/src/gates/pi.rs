@@ -1,12 +1,12 @@
 use crate::gates::gate_helpers::Lane;
 
+use halo2::arithmetic::FieldExt;
 use halo2::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 

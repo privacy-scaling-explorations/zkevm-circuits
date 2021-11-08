@@ -1,3 +1,4 @@
+use halo2::arithmetic::FieldExt;
 use halo2::{
     circuit::{Chip, Region},
     plonk::{
@@ -5,7 +6,6 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
 use std::array;
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
@@ -126,6 +126,7 @@ mod test {
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure::ConstraintNotSatisfied},
+        pasta::Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
@@ -144,7 +145,10 @@ mod test {
                 checks: Some($checks),
                 _marker: PhantomData,
             };
-            let prover = MockProver::<Base>::run(k, &circuit, vec![]).unwrap();
+            let prover = match MockProver::<Fp>::run(k, &circuit, vec![]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:?}", e),
+            };
             assert_eq!(prover.verify(), $result);
         }};
     }

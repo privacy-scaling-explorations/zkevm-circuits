@@ -48,7 +48,11 @@ impl<F: FieldExt> IsZeroGadget<F> {
     ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::zero());
         self.inverse.assign(region, offset, Some(inverse))?;
-        Ok(if value.is_zero() { F::one() } else { F::zero() })
+        Ok(if value.is_zero().unwrap_u8() == 1 {
+            F::one()
+        } else {
+            F::zero()
+        })
     }
 }
 

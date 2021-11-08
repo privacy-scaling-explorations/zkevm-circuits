@@ -5,14 +5,14 @@ use crate::gadget::{
 };
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
 use halo2::{
+    arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed,
-        VirtualCells,
+        TableColumn, VirtualCells,
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
 
 /*
 Example state table:
@@ -101,10 +101,10 @@ pub(crate) struct Config<
     storage_key: Column<Advice>,
     storage_key_diff_inv: Column<Advice>,
     value_prev: Column<Advice>,
-    global_counter_table: Column<Fixed>,
-    memory_address_table_zero: Column<Fixed>,
-    stack_address_table_zero: Column<Fixed>,
-    memory_value_table: Column<Fixed>,
+    global_counter_table: TableColumn,
+    memory_address_table_zero: TableColumn,
+    stack_address_table_zero: TableColumn,
+    memory_value_table: TableColumn,
     address_diff_is_zero: IsZeroConfig<F>,
     address_monotone: MonotoneConfig,
     padding_monotone: MonotoneConfig,
@@ -142,10 +142,10 @@ impl<
         let storage_key = meta.advice_column();
         let storage_key_diff_inv = meta.advice_column();
         let value_prev = meta.advice_column();
-        let global_counter_table = meta.fixed_column();
-        let memory_address_table_zero = meta.fixed_column();
-        let stack_address_table_zero = meta.fixed_column();
-        let memory_value_table = meta.fixed_column();
+        let global_counter_table = meta.lookup_table_column();
+        let memory_address_table_zero = meta.lookup_table_column();
+        let stack_address_table_zero = meta.lookup_table_column();
+        let memory_value_table = meta.lookup_table_column();
 
         let one = Expression::Constant(F::one());
         let two = Expression::Constant(F::from_u64(2));
@@ -396,8 +396,6 @@ impl<
         // address_cur == address_prev. (Recall that operations are
         // ordered first by address, and then by global_counter.)
         meta.lookup(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
@@ -421,8 +419,6 @@ impl<
             let q_memory =
                 q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
-            let memory_address_table_zero =
-                meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
             vec![(q_memory * address_cur, memory_address_table_zero)]
         });
@@ -432,8 +428,6 @@ impl<
             let q_stack =
                 q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
-            let stack_address_table_zero =
-                meta.query_fixed(stack_address_table_zero, Rotation::cur());
 
             vec![(q_stack * address_cur, stack_address_table_zero)]
         });
@@ -442,8 +436,6 @@ impl<
         meta.lookup(|meta| {
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
 
             vec![(global_counter, global_counter_table)]
         });
@@ -454,8 +446,6 @@ impl<
         meta.lookup(|meta| {
             let q_memory_not_first = q_memory_not_first_norm(meta);
             let value = meta.query_advice(value, Rotation::cur());
-            let memory_value_table =
-                meta.query_fixed(memory_value_table, Rotation::cur());
 
             vec![(q_memory_not_first * value, memory_value_table)]
         });
@@ -565,8 +555,6 @@ impl<
         // (Recall that storage operations are ordered first by account address,
         // then by storage_key, and finally by global_counter.)
         meta.lookup(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
@@ -615,11 +603,11 @@ impl<
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         layouter
-            .assign_region(
+            .assign_table(
                 || "global counter table",
-                |mut region| {
+                |mut table| {
                     for idx in 0..=GLOBAL_COUNTER_MAX {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || "global counter table",
                             self.global_counter_table,
                             idx,
@@ -632,11 +620,11 @@ impl<
             .ok();
 
         layouter
-            .assign_region(
+            .assign_table(
                 || "memory value table",
-                |mut region| {
+                |mut table| {
                     for idx in 0..=255 {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || "memory value table",
                             self.memory_value_table,
                             idx,
@@ -649,11 +637,11 @@ impl<
             .ok();
 
         layouter
-            .assign_region(
+            .assign_table(
                 || "memory address table with zero",
-                |mut region| {
+                |mut table| {
                     for idx in 0..=MEMORY_ADDRESS_MAX {
-                        region.assign_fixed(
+                        table.assign_cell(
                             || "address table with zero",
                             self.memory_address_table_zero,
                             idx,
@@ -665,11 +653,11 @@ impl<
             )
             .ok();
 
-        layouter.assign_region(
+        layouter.assign_table(
             || "stack address table with zero",
-            |mut region| {
+            |mut table| {
                 for idx in 0..=STACK_ADDRESS_MAX {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "stack address table with zero",
                         self.stack_address_table_zero,
                         idx,
