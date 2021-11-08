@@ -8,6 +8,7 @@ pub const KECCAK_OUTPUT_WIDTH: usize = 4;
 // for s: RLP 2 cells + HASH_WIDTH cells
 // for c: RLP 2 cells + HASH_WIDTH cells
 pub const RLP_NUM: usize = 2;
+pub const S_RLP_START: usize = 0;
 pub const S_START: usize = RLP_NUM;
 pub const C_RLP_START: usize = RLP_NUM + HASH_WIDTH;
 pub const C_START: usize = RLP_NUM + HASH_WIDTH + RLP_NUM;

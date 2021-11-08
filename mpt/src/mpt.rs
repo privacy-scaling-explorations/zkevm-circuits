@@ -13,7 +13,7 @@ use crate::param::LAYOUT_OFFSET;
 use crate::param::WITNESS_ROW_WIDTH;
 use crate::param::{
     BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
-    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_START,
+    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
 };
 
 #[derive(Clone, Debug)]
@@ -882,6 +882,46 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
+    fn assign_branch_acc(
+        &self,
+        region: &mut Region<'_, F>,
+        acc_s: F,
+        branch_mult_s: F,
+        acc_c: F,
+        branch_mult_c: F,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("assign branch_acc_s"),
+            self.branch_acc_s,
+            offset,
+            || Ok(acc_s),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_mult_s"),
+            self.branch_mult_s,
+            offset,
+            || Ok(branch_mult_s),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_acc_c"),
+            self.branch_acc_c,
+            offset,
+            || Ok(acc_c),
+        )?;
+
+        region.assign_advice(
+            || format!("assign branch_mult_c"),
+            self.branch_mult_c,
+            offset,
+            || Ok(branch_mult_c),
+        )?;
+
+        Ok(())
+    }
+
     pub(crate) fn assign(
         &self,
         mut layouter: impl Layouter<F>,
@@ -897,6 +937,10 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut branch_ind: u8 = 0;
+                    let mut branch_acc_s = F::zero();
+                    let mut branch_mult_s = F::zero();
+                    let mut branch_acc_c = F::zero();
+                    let mut branch_mult_c = F::zero();
                     for (ind, row) in witness.iter().enumerate() {
                         if row[row.len() - 1] == 0 {
                             // branch init
@@ -938,46 +982,27 @@ impl<F: FieldExt> MPTConfig<F> {
                             // reassign (it was assigned to 0 in assign_row) branch_acc and branch_mult to proper values
 
                             // TODO: depends on how much positions RLP occupies
-                            let acc_s =
+                            branch_acc_s =
                                 F::from_u64(row[BRANCH_0_S_START] as u64)
                                     + F::from_u64(
                                         row[BRANCH_0_S_START + 1] as u64,
                                     ) * self.branch_acc_r;
-                            region.assign_advice(
-                                || format!("assign branch_acc_s"),
-                                self.branch_acc_s,
-                                offset,
-                                || Ok(acc_s),
-                            )?;
-
-                            let branch_mult_s =
+                            branch_mult_s =
                                 self.branch_acc_r * self.branch_acc_r;
-                            region.assign_advice(
-                                || format!("assign branch_mult_s"),
-                                self.branch_mult_s,
-                                offset,
-                                || Ok(branch_mult_s),
-                            )?;
-
-                            let acc_c =
+                            branch_acc_c =
                                 F::from_u64(row[BRANCH_0_C_START] as u64)
                                     + F::from_u64(
                                         row[BRANCH_0_C_START + 1] as u64,
                                     ) * self.branch_acc_r;
-                            region.assign_advice(
-                                || format!("assign branch_acc_c"),
-                                self.branch_acc_c,
-                                offset,
-                                || Ok(acc_c),
-                            )?;
-
-                            let branch_mult_c =
+                            branch_mult_c =
                                 self.branch_acc_r * self.branch_acc_r;
-                            region.assign_advice(
-                                || format!("assign branch_mult_c"),
-                                self.branch_mult_c,
+                            self.assign_branch_acc(
+                                &mut region,
+                                branch_acc_s,
+                                branch_mult_s,
+                                branch_acc_c,
+                                branch_mult_c,
                                 offset,
-                                || Ok(branch_mult_c),
                             )?;
 
                             offset += 1;
@@ -1002,22 +1027,56 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             // reassign (it was assigned to 0 in assign_row) branch_acc and branch_mult to proper values
 
-                            // TODO: depends on how much positions RLP occupies
-
                             // We need to distinguish between empty and non-empty node:
                             // empty node at position 1: 0
                             // non-empty node at position 1: 160
 
-                            if row[1] == 0 {
-                                // branch_acc_s = 128 * branch_mult_s_prev
-                                // branch_mult_s_cur = branch_mult_s_prev * r
-                            } else {
-                            }
-                            if row[C_RLP_START + 1] == 0 {
-                                // branch_acc_c = 128 * branch_mult_c_prev
-                                // branch_mult_c_cur = branch_mult_c_prev * r
-                            } else {
-                            }
+                            let c128 = F::from_u64(128 as u64);
+                            let c160 = F::from_u64(160 as u64);
+
+                            let compute_acc_and_mult =
+                                |branch_acc: &mut F,
+                                 branch_mult: &mut F,
+                                 rlp_start: usize,
+                                 start: usize| {
+                                    if row[rlp_start + 1] == 0 {
+                                        *branch_acc += c128 * *branch_mult;
+                                        *branch_mult =
+                                            *branch_mult * self.branch_acc_r;
+                                    } else {
+                                        *branch_acc += c160 * *branch_mult;
+                                        *branch_mult =
+                                            *branch_mult * self.branch_acc_r;
+                                        for i in 0..HASH_WIDTH {
+                                            *branch_acc += F::from_u64(
+                                                row[start + i] as u64,
+                                            ) * *branch_mult;
+                                            *branch_mult = *branch_mult
+                                                * self.branch_acc_r;
+                                        }
+                                    }
+                                };
+
+                            compute_acc_and_mult(
+                                &mut branch_acc_s,
+                                &mut branch_mult_s,
+                                S_RLP_START,
+                                S_START,
+                            );
+                            compute_acc_and_mult(
+                                &mut branch_acc_c,
+                                &mut branch_mult_c,
+                                C_RLP_START,
+                                C_START,
+                            );
+                            self.assign_branch_acc(
+                                &mut region,
+                                branch_acc_s,
+                                branch_mult_s,
+                                branch_acc_c,
+                                branch_mult_c,
+                                offset,
+                            )?;
 
                             offset += 1;
                             branch_ind += 1;
@@ -1191,8 +1250,8 @@ mod tests {
         }
 
         // for debugging:
-        // let path = "mpt/tests";
-        let path = "tests";
+        let path = "mpt/tests";
+        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
