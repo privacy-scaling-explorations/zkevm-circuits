@@ -380,8 +380,14 @@ fn bus_mapping_prover() {
               }
         ]
         "#;
-
-    let circuit: StateCircuit<Fp> = Witness::new(input_trace);
+    let block_ctants = BlockConstants::default();
+    let obtained_exec_trace =
+        ExecutionTrace::from_trace_bytes(input_trace.as_bytes(), block_ctants);
+    let circuit: StateCircuit<Fp> = StateCircuit {
+        memory_ops: obtained_exec_trace.sorted_memory_ops(),
+        stack_ops: obtained_exec_trace.sorted_stack_ops(),
+        storage_ops: obtained_exec_trace.sorted_storage_ops(),
+    };
 
     // Create a proof
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
@@ -402,28 +408,6 @@ fn bus_mapping_prover() {
 }
 
 criterion_main!(bus_mapping_prover);
-
-struct Witness {
-    memory_ops: Vec<Operation<MemoryOp>>,
-    stack_ops: Vec<Operation<StackOp>>,
-    storage_ops: Vec<Operation<StorageOp>>,
-}
-
-impl Witness {
-    fn new(input: str) -> Witness {
-        let block_ctants = BlockConstants::default();
-        let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
-            input_trace.as_bytes(),
-            block_ctants,
-        )
-        .expect("Error on trace generation");
-        Witness {
-            memory_ops: obtained_exec_trace.sorted_memory_opc(),
-            stack_ops: obtained_exec_trace.sorted_stack_ops(),
-            storage_ops: obtained_exec_trace.sorted_storage_ops(),
-        }
-    }
-}
 
 #[derive(Default)]
 struct StateCircuit<
