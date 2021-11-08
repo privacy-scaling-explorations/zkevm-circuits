@@ -7,6 +7,7 @@ use halo2::{
     circuit::{self, Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+        TableColumn,
     },
     poly::Rotation,
 };
@@ -634,7 +635,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                 .iter()
                 .zip(fixed_table.iter())
                 .map(|(expr, column)| {
-                    (expr.clone(), meta.query_fixed(*column, Rotation::cur()))
+                    (expr.clone(), TableColumn { inner: *column })
                 })
                 .collect::<Vec<_>>()
             });
@@ -647,26 +648,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     .iter()
                     .zip(fixed_table.iter())
                     .map(|(expr, column)| {
-                        (
-                            expr.clone(),
-                            meta.query_fixed(*column, Rotation::cur()),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            });
-        }
-
-        // Configure rw lookups
-        for rw_lookup in rw_lookups.iter() {
-            meta.lookup(|meta| {
-                rw_lookup
-                    .iter()
-                    .zip(rw_table.iter())
-                    .map(|(expr, column)| {
-                        (
-                            expr.clone(),
-                            meta.query_advice(*column, Rotation::cur()),
-                        )
+                        (expr.clone(), TableColumn { inner: *column })
                     })
                     .collect::<Vec<_>>()
             });

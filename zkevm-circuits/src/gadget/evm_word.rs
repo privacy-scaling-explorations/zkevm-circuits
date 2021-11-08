@@ -12,6 +12,7 @@ use halo2::{
     circuit::Region,
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+        TableColumn,
     },
     poly::Rotation,
 };
@@ -93,13 +94,11 @@ impl<F: FieldExt> WordConfig<F> {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
-                let byte_lookup =
-                    meta.query_fixed(byte_lookup, Rotation::cur());
 
                 // Update encode_word_expr.
                 encode_word_expr = encode_word_expr.clone() * r + byte.clone();
 
-                vec![(q_encode * byte, byte_lookup)]
+                vec![(q_encode * byte, TableColumn { inner: byte_lookup })]
             });
         }
 

@@ -12,73 +12,6 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 use zkevm_circuits::state_circuit::state::{BusMapping, Config};
 
-#[derive(Default)]
-struct StateCircuit<
-    const GLOBAL_COUNTER_MAX: usize,
-    const MEMORY_ROWS_MAX: usize,
-    const MEMORY_ADDRESS_MAX: usize,
-    const STACK_ROWS_MAX: usize,
-    const STACK_ADDRESS_MAX: usize,
-    const STORAGE_ROWS_MAX: usize,
-> {
-    memory_ops: Vec<Operation<MemoryOp>>,
-    stack_ops: Vec<Operation<StackOp>>,
-    storage_ops: Vec<Operation<StorageOp>>,
-}
-
-impl<
-        F: FieldExt,
-        const GLOBAL_COUNTER_MAX: usize,
-        const MEMORY_ROWS_MAX: usize,
-        const MEMORY_ADDRESS_MAX: usize,
-        const STACK_ROWS_MAX: usize,
-        const STACK_ADDRESS_MAX: usize,
-        const STORAGE_ROWS_MAX: usize,
-    > Circuit<F>
-    for StateCircuit<
-        GLOBAL_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
-        STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
-    >
-{
-    type Config = Config<
-        F,
-        GLOBAL_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
-        STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
-    >;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        Config::configure(meta)
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        config.load(&mut layouter)?;
-        config.assign(
-            layouter,
-            self.memory_ops.clone(),
-            self.stack_ops.clone(),
-            self.storage_ops.clone(),
-        )?;
-
-        Ok(())
-    }
-}
 #[derive(Clone)]
 struct PlonkConfig {
     a: Column<Advice>,
@@ -378,10 +311,10 @@ fn bus_mapping_prover() {
     let k = 8;
     let public_inputs_size = 0;
 
-    let empty_circuit: MyCircuit<Fp> = MyCircuit {
-        a: None,
-        zero: None,
-        k,
+    let empty_circuit: StateCircuit<Fp> = StateCircuit {
+        memory_ops: Vec::new(),
+        stack_ops: Vec::new(),
+        storage_ops: Vec::new(),
     };
 
     // Initialize the polynomial commitment parameters
@@ -400,11 +333,55 @@ fn bus_mapping_prover() {
     let pk = keygen_pk(&params, vk, &empty_circuit)
         .expect("keygen_pk should not fail");
 
-    let circuit: MyCircuit<Fp> = MyCircuit {
-        a: Some(Fp::from(5)),
-        zero: Some(Fp::zero()),
-        k,
-    };
+    let input_trace = r#"
+        [
+            {
+                "pc": 5,
+                "op": "PUSH1",
+                "gas": 82,
+                "gasCost": 3,
+                "depth": 1,
+                "stack": [],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000080"
+                ]
+              },
+              {
+                "pc": 7,
+                "op": "MLOAD",
+                "gas": 79,
+                "gasCost": 3,
+                "depth": 1,
+                "stack": [
+                  "40"
+                ],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000080"
+                ]
+              },
+              {
+                "pc": 8,
+                "op": "STOP",
+                "gas": 76,
+                "gasCost": 0,
+                "depth": 1,
+                "stack": [
+                  "80"
+                ],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000080"
+                ]
+              }
+        ]
+        "#;
+
+    let circuit: StateCircuit<Fp> = Witness::new(input_trace);
 
     // Create a proof
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
@@ -425,3 +402,93 @@ fn bus_mapping_prover() {
 }
 
 criterion_main!(bus_mapping_prover);
+
+struct Witness {
+    memory_ops: Vec<Operation<MemoryOp>>,
+    stack_ops: Vec<Operation<StackOp>>,
+    storage_ops: Vec<Operation<StorageOp>>,
+}
+
+impl Witness {
+    fn new(input: str) -> Witness {
+        let block_ctants = BlockConstants::default();
+        let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
+            input_trace.as_bytes(),
+            block_ctants,
+        )
+        .expect("Error on trace generation");
+        Witness {
+            memory_ops: obtained_exec_trace.sorted_memory_opc(),
+            stack_ops: obtained_exec_trace.sorted_stack_ops(),
+            storage_ops: obtained_exec_trace.sorted_storage_ops(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct StateCircuit<
+    const GLOBAL_COUNTER_MAX: usize,
+    const MEMORY_ROWS_MAX: usize,
+    const MEMORY_ADDRESS_MAX: usize,
+    const STACK_ROWS_MAX: usize,
+    const STACK_ADDRESS_MAX: usize,
+    const STORAGE_ROWS_MAX: usize,
+> {
+    memory_ops: Vec<Operation<MemoryOp>>,
+    stack_ops: Vec<Operation<StackOp>>,
+    storage_ops: Vec<Operation<StorageOp>>,
+}
+
+impl<
+        F: FieldExt,
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    > Circuit<F>
+    for StateCircuit<
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >
+{
+    type Config = Config<
+        F,
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        Config::configure(meta)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.load(&mut layouter)?;
+        config.assign(
+            layouter,
+            self.memory_ops.clone(),
+            self.stack_ops.clone(),
+            self.storage_ops.clone(),
+        )?;
+
+        Ok(())
+    }
+}

@@ -8,7 +8,7 @@ use halo2::{
     circuit::{Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed,
-        VirtualCells,
+        TableColumn, VirtualCells,
     },
     poly::Rotation,
 };
@@ -371,7 +371,7 @@ impl<
             ]
         });
 
-        // We don't require first stack op to be write as this is enforced by evm circuit.
+        // We don't require first stack op to be written as this is enforced by evm circuit.
 
         meta.create_gate("Stack operation", |meta| {
             let q_stack_not_first = q_stack_not_first(meta);
@@ -397,8 +397,6 @@ impl<
         // address_cur == address_prev. (Recall that operations are
         // ordered first by address, and then by global_counter.)
         meta.lookup(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
@@ -413,7 +411,9 @@ impl<
                     * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
                     * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
+                TableColumn {
+                    inner: global_counter_table,
+                },
             )]
         });
 
@@ -422,10 +422,13 @@ impl<
             let q_memory =
                 q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
-            let memory_address_table_zero =
-                meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
-            vec![(q_memory * address_cur, memory_address_table_zero)]
+            vec![(
+                q_memory * address_cur,
+                TableColumn {
+                    inner: memory_address_table_zero,
+                },
+            )]
         });
 
         // Stack address is in the allowed range.
@@ -433,20 +436,26 @@ impl<
             let q_stack =
                 q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
-            let stack_address_table_zero =
-                meta.query_fixed(stack_address_table_zero, Rotation::cur());
 
-            vec![(q_stack * address_cur, stack_address_table_zero)]
+            vec![(
+                q_stack * address_cur,
+                TableColumn {
+                    inner: stack_address_table_zero,
+                },
+            )]
         });
 
         // global_counter is in the allowed range:
         meta.lookup(|meta| {
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
 
-            vec![(global_counter, global_counter_table)]
+            vec![(
+                global_counter,
+                TableColumn {
+                    inner: global_counter_table,
+                },
+            )]
         });
 
         // Memory value (for non-first rows) is in the allowed range.
@@ -455,10 +464,13 @@ impl<
         meta.lookup(|meta| {
             let q_memory_not_first = q_memory_not_first_norm(meta);
             let value = meta.query_advice(value, Rotation::cur());
-            let memory_value_table =
-                meta.query_fixed(memory_value_table, Rotation::cur());
 
-            vec![(q_memory_not_first * value, memory_value_table)]
+            vec![(
+                q_memory_not_first * value,
+                TableColumn {
+                    inner: memory_value_table,
+                },
+            )]
         });
 
         let storage_key_diff_is_zero = IsZeroChip::configure(
@@ -566,8 +578,6 @@ impl<
         // (Recall that storage operations are ordered first by account address,
         // then by storage_key, and finally by global_counter.)
         meta.lookup(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
@@ -582,7 +592,9 @@ impl<
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
                     * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
+                TableColumn {
+                    inner: global_counter_table,
+                },
             )]
         });
 
