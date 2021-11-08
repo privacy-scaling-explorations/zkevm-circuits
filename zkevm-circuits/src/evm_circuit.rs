@@ -659,6 +659,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     .map(|(expr, column)| {
                         (
                             expr.clone(),
+                            // I think we have some problem here
                             meta.query_advice(*column, Rotation::cur()),
                         )
                     })
