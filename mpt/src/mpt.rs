@@ -9,12 +9,12 @@ use keccak256::plain::Keccak;
 use pasta_curves::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
-use crate::param::LAYOUT_OFFSET;
-use crate::param::WITNESS_ROW_WIDTH;
 use crate::param::{
     BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
     HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
 };
+use crate::{branch_acc::BranchAccChip, param::LAYOUT_OFFSET};
+use crate::{branch_acc::BranchAccConfig, param::WITNESS_ROW_WIDTH};
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
@@ -40,8 +40,10 @@ pub struct MPTConfig<F> {
     branch_mult_s: Column<Advice>,
     branch_acc_c: Column<Advice>,
     branch_mult_c: Column<Advice>,
-    keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     branch_acc_r: F,
+    branch_acc_s_chip: BranchAccConfig,
+    branch_acc_c_chip: BranchAccConfig,
+    keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     _marker: PhantomData<F>,
 }
 
@@ -346,7 +348,7 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        meta.create_gate("branch accumulator", |meta| {
+        meta.create_gate("branch init accumulator", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let is_branch_init_cur =
                 meta.query_advice(is_branch_init, Rotation::cur());
@@ -565,6 +567,40 @@ impl<F: FieldExt> MPTConfig<F> {
         });
         */
 
+        let branch_acc_s_chip = BranchAccChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_branch_child =
+                    meta.query_advice(is_branch_child, Rotation::cur());
+
+                q_not_first * is_branch_child
+            },
+            branch_acc_r,
+            s_rlp2,
+            s_advices,
+            branch_acc_s,
+            branch_mult_s,
+        );
+
+        let branch_acc_c_chip = BranchAccChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_branch_child =
+                    meta.query_advice(is_branch_child, Rotation::cur());
+
+                q_not_first * is_branch_child
+            },
+            branch_acc_r,
+            c_rlp2,
+            c_advices,
+            branch_acc_c,
+            branch_mult_c,
+        );
+
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let is_keccak_leaf =
@@ -607,9 +643,11 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_mult_s,
             branch_acc_c,
             branch_mult_c,
+            branch_acc_r,
+            branch_acc_s_chip,
+            branch_acc_c_chip,
             keccak_table,
             _marker: PhantomData,
-            branch_acc_r,
         }
     }
 
@@ -1250,8 +1288,8 @@ mod tests {
         }
 
         // for debugging:
-        let path = "mpt/tests";
-        // let path = "tests";
+        // let path = "mpt/tests";
+        let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
