@@ -14,7 +14,6 @@ pub struct AbsorbConfig<F> {
     #[allow(dead_code)]
     q_enable: Selector,
     state: [Column<Advice>; 25],
-    next_input: [Column<Advice>; ABSORB_NEXT_INPUTS],
     _marker: PhantomData<F>,
 }
 
@@ -24,7 +23,6 @@ impl<F: FieldExt> AbsorbConfig<F> {
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        next_input: [Column<Advice>; ABSORB_NEXT_INPUTS],
     ) -> AbsorbConfig<F> {
         // def absorb(state: List[List[int], next_input: List[List[int]):
         //     for x in range(5):
@@ -36,12 +34,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
         meta.create_gate("absorb", |meta| {
             (0..ABSORB_NEXT_INPUTS)
                 .map(|idx| {
-                    let val = meta.query_advice(state[idx], Rotation::cur())
+                    let val = meta.query_advice(state[idx], Rotation::prev())
                         + (Expression::Constant(F::from(2))
-                            * meta.query_advice(
-                                next_input[idx],
-                                Rotation::cur(),
-                            ));
+                            * meta.query_advice(state[idx], Rotation::cur()));
 
                     let next_lane =
                         meta.query_advice(state[idx], Rotation::next());
@@ -54,7 +49,6 @@ impl<F: FieldExt> AbsorbConfig<F> {
         AbsorbConfig {
             q_enable,
             state,
-            next_input,
             _marker: PhantomData,
         }
     }
@@ -67,7 +61,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
         next_input: [F; ABSORB_NEXT_INPUTS],
         out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
-        self.q_enable.enable(region, offset)?;
+        self.q_enable.enable(region, offset + 1)?;
+
+        // Assign current state
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -77,20 +73,22 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
+        // Assign next_mixing
         for (idx, lane) in next_input.iter().enumerate() {
             region.assign_advice(
                 || format!("assign next_input {}", idx),
-                self.next_input[idx],
-                offset,
+                self.state[idx],
+                offset + 1,
                 || Ok(*lane),
             )?;
         }
 
+        // Assign out_state
         for (idx, lane) in out_state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
-                offset + 1,
+                offset + 2,
                 || Ok(*lane),
             )?;
         }
@@ -98,15 +96,48 @@ impl<F: FieldExt> AbsorbConfig<F> {
         Ok(out_state)
     }
 
-    pub fn assign_next_input(
+    // TODO! Do as IotaB9 !
+    pub fn assign_state_and_next_inp_from_cell(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        state: [F; 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
-    ) -> Result<[F; ABSORB_NEXT_INPUTS], Error> {
-        self.q_enable.enable(region, offset)?;
+        out_state: [F; 25],
+    ) -> Result<[F; 25], Error> {
+        self.q_enable.enable(region, offset + 1)?;
 
-        Ok(next_input)
+        // Assign current state
+        for (idx, lane) in state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset,
+                || Ok(*lane),
+            )?;
+        }
+
+        // Assign next_mixing
+        for (idx, lane) in next_input.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign next_input {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+
+        // Assign out_state
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset + 2,
+                || Ok(*lane),
+            )?;
+        }
+
+        Ok(out_state)
     }
 }
 
@@ -151,14 +182,7 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                let next_input: [Column<Advice>; ABSORB_NEXT_INPUTS] = (0
-                    ..ABSORB_NEXT_INPUTS)
-                    .map(|_| meta.advice_column())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap();
-
-                AbsorbConfig::configure(q_enable, meta, state, next_input)
+                AbsorbConfig::configure(q_enable, meta, state)
             }
 
             fn synthesize(
