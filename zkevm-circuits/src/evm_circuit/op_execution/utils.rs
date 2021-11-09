@@ -13,6 +13,10 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 pub(crate) mod common_cases;
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadgets;
+pub(crate) mod memory_gadgets;
+
+type Address = u64;
+type MemorySize = u64;
 
 // Makes sure all state transition variables are always constrained.
 // This makes it impossible for opcodes to forget to constrain
@@ -25,6 +29,7 @@ pub(crate) struct StateTransitionExpressions<F> {
     pub sp_delta: Option<Expression<F>>,
     pub pc_delta: Option<Expression<F>>,
     pub gas_delta: Option<Expression<F>>,
+    pub next_memory_size: Option<Expression<F>>,
 }
 
 impl<F: FieldExt> StateTransitionExpressions<F> {
@@ -34,6 +39,9 @@ impl<F: FieldExt> StateTransitionExpressions<F> {
             pc_delta: Some(state_transition.pc_delta.unwrap_or(0).expr()),
             sp_delta: Some(state_transition.sp_delta.unwrap_or(0).expr()),
             gas_delta: Some(state_transition.gas_delta.unwrap_or(0).expr()),
+            next_memory_size: state_transition
+                .next_memory_size
+                .map(|v| v.expr()),
         }
     }
 
@@ -44,28 +52,35 @@ impl<F: FieldExt> StateTransitionExpressions<F> {
         state_next: &OpExecutionState<F>,
     ) {
         // Global Counter
-        cb.add_expression(
-            state_next.global_counter.expr()
-                - (state_curr.global_counter.expr()
-                    + self.gc_delta.clone().unwrap_or_else(|| 0.expr())),
+        cb.require_equal(
+            state_next.global_counter.expr(),
+            state_curr.global_counter.expr()
+                + self.gc_delta.clone().unwrap_or_else(|| 0.expr()),
         );
         // Program Counter
-        cb.add_expression(
-            state_next.program_counter.expr()
-                - (state_curr.program_counter.expr()
-                    + self.pc_delta.clone().unwrap_or_else(|| 0.expr())),
+        cb.require_equal(
+            state_next.program_counter.expr(),
+            state_curr.program_counter.expr()
+                + self.pc_delta.clone().unwrap_or_else(|| 0.expr()),
         );
         // Stack Pointer
-        cb.add_expression(
-            state_next.stack_pointer.expr()
-                - (state_curr.stack_pointer.expr()
-                    + self.sp_delta.clone().unwrap_or_else(|| 0.expr())),
+        cb.require_equal(
+            state_next.stack_pointer.expr(),
+            state_curr.stack_pointer.expr()
+                + self.sp_delta.clone().unwrap_or_else(|| 0.expr()),
         );
         // Gas Counter
-        cb.add_expression(
-            state_next.gas_counter.expr()
-                - (state_curr.gas_counter.expr()
-                    + self.gas_delta.clone().unwrap_or_else(|| 0.expr())),
+        cb.require_equal(
+            state_next.gas_counter.expr(),
+            state_curr.gas_counter.expr()
+                + self.gas_delta.clone().unwrap_or_else(|| 0.expr()),
+        );
+        // Memory size
+        cb.require_equal(
+            state_next.memory_size.expr(),
+            self.next_memory_size
+                .clone()
+                .unwrap_or_else(|| state_curr.memory_size.expr()),
         );
     }
 }
@@ -75,7 +90,8 @@ pub(crate) struct StateTransition {
     pub gc_delta: Option<usize>,
     pub sp_delta: Option<i32>,
     pub pc_delta: Option<usize>,
-    pub gas_delta: Option<usize>,
+    pub gas_delta: Option<u64>,
+    pub next_memory_size: Option<u64>,
 }
 
 impl StateTransition {
@@ -93,6 +109,8 @@ impl StateTransition {
         }
         // Gas Counter
         state.gas_counter += self.gas_delta.unwrap_or(0);
+        // Memory size
+        state.memory_size = self.next_memory_size.unwrap_or(state.memory_size);
     }
 
     pub(crate) fn constraints<F: FieldExt>(

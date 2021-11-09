@@ -288,6 +288,8 @@ impl GasCost {
     pub const SLOW: Self = Self(10);
     /// Constant cost for ext step
     pub const EXT: Self = Self(20);
+    /// Constant cost for every additional word when expanding memory
+    pub const MEMORY: Self = Self(3);
     /// Constant cost for a cold SLOAD
     pub const COLD_SLOAD_COST: Self = Self(2100);
     /// Constant cost for a cold account access

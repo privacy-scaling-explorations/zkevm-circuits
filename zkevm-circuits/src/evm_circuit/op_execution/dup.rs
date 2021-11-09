@@ -18,7 +18,8 @@ static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(2), // 1 stack read + 1 stack push
     pc_delta: Some(1),
     sp_delta: Some(-1),
-    gas_delta: Some(GasCost::FASTEST.as_usize()),
+    gas_delta: Some(GasCost::FASTEST.as_u64()),
+    next_memory_size: None,
 };
 const NUM_PUSHED: usize = 1;
 
@@ -70,7 +71,7 @@ impl<F: FieldExt> DupSuccessCase<F> {
         let dup_offset = state_curr.opcode.expr() - OpcodeId::DUP1.expr();
 
         // Peek the value at `dup_offset` and push the value on the stack
-        cb.stack_lookup(dup_offset, self.value.expr(), false);
+        cb.stack_lookup(dup_offset, self.value.expr(), false.expr());
         cb.stack_push(self.value.expr());
 
         // State transitions
@@ -112,7 +113,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

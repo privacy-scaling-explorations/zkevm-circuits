@@ -16,7 +16,8 @@ static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(0),
     pc_delta: Some(1),
     sp_delta: Some(0),
-    gas_delta: Some(GasCost::ONE.as_usize()),
+    gas_delta: Some(GasCost::ONE.as_u64()),
+    next_memory_size: None,
 };
 
 impl_op_gadget!(
@@ -89,7 +90,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

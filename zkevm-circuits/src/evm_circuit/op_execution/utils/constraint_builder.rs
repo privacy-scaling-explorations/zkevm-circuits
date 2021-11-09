@@ -67,6 +67,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             17 => FixedLookup::Range17,
             32 => FixedLookup::Range32,
             256 => FixedLookup::Range256,
+            512 => FixedLookup::Range512,
             _ => unimplemented!(),
         };
         self.add_fixed_lookup(table, [value, 0.expr(), 0.expr()]);
@@ -87,22 +88,23 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     // Stack
 
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
-        self.stack_lookup(self.stack_offset.expr(), value, false);
+        self.stack_lookup(self.stack_offset.expr(), value, false.expr());
         self.stack_offset += 1;
     }
 
     pub(crate) fn stack_push(&mut self, value: Expression<F>) {
         self.stack_offset -= 1;
-        self.stack_lookup(self.stack_offset.expr(), value, true);
+        self.stack_lookup(self.stack_offset.expr(), value, true.expr());
     }
 
     pub(crate) fn stack_lookup(
         &mut self,
         index_offset: Expression<F>,
         value: Expression<F>,
-        is_write: bool,
+        is_write: Expression<F>,
     ) {
         self.validate_lookup_expression(&value);
+        self.validate_lookup_expression(&is_write);
         self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
             index_offset,
             value,
@@ -117,7 +119,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         address: Expression<F>,
         bytes: Vec<Expression<F>>,
     ) {
-        self.memory_lookup(address, bytes, true)
+        self.memory_lookup(address, bytes, true.expr())
     }
 
     pub(crate) fn memory_read(
@@ -125,17 +127,18 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         address: Expression<F>,
         bytes: Vec<Expression<F>>,
     ) {
-        self.memory_lookup(address, bytes, false);
+        self.memory_lookup(address, bytes, false.expr());
     }
 
-    fn memory_lookup(
+    pub(crate) fn memory_lookup(
         &mut self,
         address: Expression<F>,
         bytes: Vec<Expression<F>>,
-        is_write: bool,
+        is_write: Expression<F>,
     ) {
         self.validate_lookup_expression(&self.call_id.clone().unwrap());
         self.validate_lookup_expression(&address);
+        self.validate_lookup_expression(&is_write);
         for idx in 0..bytes.len() {
             self.validate_lookup_expression(&bytes[idx]);
             self.add_lookup(Lookup::BusMappingLookup(
@@ -144,7 +147,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
                     index: address.clone()
                         + Expression::Constant(F::from_u64(idx as u64)),
                     value: bytes[bytes.len() - 1 - idx].clone(),
-                    is_write,
+                    is_write: is_write.clone(),
                 },
             ));
         }
