@@ -224,9 +224,9 @@ mod tests {
 
         let input1: State = [
             [1, 0, 0, 0, 0],
+            [0, 0, 5, 0, 0],
             [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
+            [0, 0, 0, 5, 0],
             [0, 0, 0, 0, 0],
         ];
         let mut in_biguint = StateBigInt::default();
@@ -237,14 +237,12 @@ mod tests {
         }
         let s0_arith = KeccakFArith::theta(&in_biguint);
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_state[5 * x + y] =
-                biguint_to_f(s0_arith[(x, y)].clone()).unwrap();
+            in_state[5 * x + y] = biguint_to_f(&s0_arith[(x, y)]).unwrap();
         }
         let s1_arith = KeccakFArith::rho(&s0_arith);
         let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] =
-                biguint_to_f(s1_arith[(x, y)].clone()).unwrap();
+            out_state[5 * x + y] = biguint_to_f(&s1_arith[(x, y)]).unwrap();
         }
         let circuit = MyCircuit::<pallas::Base> {
             in_state,

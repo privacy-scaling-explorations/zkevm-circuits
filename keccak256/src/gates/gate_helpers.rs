@@ -1,4 +1,4 @@
-use halo2::circuit::Cell;
+use halo2::{circuit::Cell, plonk::Error};
 use num_bigint::BigUint;
 use pasta_curves::arithmetic::FieldExt;
 
@@ -16,13 +16,13 @@ pub struct BlockCount<F> {
 
 pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 
-pub fn biguint_to_f<F: FieldExt>(x: BigUint) -> Option<F> {
+pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> Result<F, Error> {
     let mut word = [0; 32];
     let x_bytes = x.to_bytes_le();
     let len = x_bytes.len();
-    assert!(len <= 32);
+    assert!(len <= 32, "expect len <=32 but got {}", len);
     word[..len].clone_from_slice(&x_bytes[..len]);
-    Option::from(F::from_bytes(&word))
+    Option::from(F::from_bytes(&word)).ok_or(Error::SynthesisError)
 }
 
 pub fn f_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {

@@ -392,37 +392,25 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             || "Input Coef",
             self.adv.input.coef,
             offset,
-            || {
-                biguint_to_f::<F>(rv.input_coef.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.input_coef),
         )?;
         region.assign_advice(
             || "Input accumulator",
             self.adv.input.acc,
             offset,
-            || {
-                biguint_to_f::<F>(rv.input_acc.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.input_acc),
         )?;
         region.assign_advice(
             || "Output Coef",
             self.adv.output.coef,
             offset,
-            || {
-                biguint_to_f::<F>(rv.output_coef.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.output_coef),
         )?;
         region.assign_advice(
             || "Output accumulator",
             self.adv.output.acc,
             offset,
-            || {
-                biguint_to_f::<F>(rv.output_acc.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.output_acc),
         )?;
         let block_counts = self.block_count_acc_config.assign_region(
             region,
@@ -495,28 +483,19 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             || "input_acc",
             self.base_13_acc,
             offset,
-            || {
-                biguint_to_f::<F>(rv.input_acc.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.input_acc),
         )?;
         region.assign_advice(
             || "ouput_acc",
             self.base_9_acc,
             offset,
-            || {
-                biguint_to_f::<F>(rv.output_acc.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.output_acc),
         )?;
         region.assign_advice(
             || "last_b9_coef",
             self.last_b9_coef,
             offset,
-            || {
-                biguint_to_f::<F>(rv.output_coef.clone())
-                    .ok_or(Error::SynthesisError)
-            },
+            || biguint_to_f::<F>(&rv.output_coef),
         )?;
 
         let rv_final = rv.finalize();
@@ -526,8 +505,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             offset + 1,
             || Ok(F::zero()),
         )?;
-        let value = biguint_to_f::<F>(rv_final.output_acc)
-            .ok_or(Error::SynthesisError)?;
+        let value = biguint_to_f::<F>(&rv_final.output_acc)?;
         let cell = region.assign_advice(
             || "input_acc",
             self.base_9_acc,
