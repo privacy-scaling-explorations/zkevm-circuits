@@ -1,16 +1,20 @@
+use halo2::circuit::Cell;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, VirtualCells,
+    },
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
+use crate::common::ROUND_CONSTANTS;
+
 #[derive(Clone, Debug)]
 pub struct IotaB9Config<F> {
-    #[allow(dead_code)]
-    q_enable: Selector,
+    q_enable: Expression<F>,
     state: [Column<Advice>; 25],
     pub(crate) round_ctant_b9: Column<Advice>,
     pub(crate) round_constants: Column<Instance>,
@@ -20,12 +24,13 @@ pub struct IotaB9Config<F> {
 impl<F: FieldExt> IotaB9Config<F> {
     // We assume state is recieved in base-9.
     pub fn configure(
-        q_enable: Selector,
+        q_enable_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         round_ctant_b9: Column<Advice>,
         round_constants: Column<Instance>,
     ) -> IotaB9Config<F> {
+        let mut q_enable = Expression::Constant(F::zero());
         // Enable copy constraints over PI and the Advices.
         meta.enable_equality(round_ctant_b9.into());
         meta.enable_equality(round_constants.into());
@@ -36,11 +41,12 @@ impl<F: FieldExt> IotaB9Config<F> {
             // it 2*a + b + 3*c + 2*d     # coefficient in 0~8
             //     state[0][0] += 2*d
             //     return state
+            q_enable = q_enable_fn(meta);
             let state_00 = meta.query_advice(state[0], Rotation::cur())
                 + (Expression::Constant(F::from(2))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
             let next_lane = meta.query_advice(state[0], Rotation::next());
-            vec![meta.query_selector(q_enable) * (state_00 - next_lane)]
+            vec![q_enable * (state_00 - next_lane)]
         });
         IotaB9Config {
             q_enable,
@@ -51,14 +57,13 @@ impl<F: FieldExt> IotaB9Config<F> {
         }
     }
 
+    // We need to enable q_enable outside in parallel to the call to this!
     pub fn assign_state(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
-        out_state: [F; 25],
-    ) -> Result<[F; 25], Error> {
-        self.q_enable.enable(region, offset)?;
+    ) -> Result<([F; 25], usize), Error> {
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -68,25 +73,41 @@ impl<F: FieldExt> IotaB9Config<F> {
             )?;
         }
 
-        for (idx, lane) in out_state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign out_state {}", idx),
+        // TODO: Compute out state
+        Ok(out_state)
+    }
+
+    // We need to enable q_enable outside in parallel to the call to this!
+    pub fn assign_state_from_cells(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        state: [(Cell, F); 25],
+    ) -> Result<([F; 25], usize), Error> {
+        for (idx, (cell, value)) in state.iter().enumerate() {
+            let new_cell = region.assign_advice(
+                || format!("assign state {}", idx),
                 self.state[idx],
-                offset + 1,
-                || Ok(*lane),
+                offset,
+                || Ok(*value),
             )?;
+
+            region.constrain_equal(*cell, new_cell)?;
         }
+
+        // TODO! COMPUTE OUT STATE
         Ok(out_state)
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed asn an
-    /// absolute instance column.
+    /// absolute instance column. Returns the new offset after the
+    /// assigment.
     pub fn assign_round_ctant_b9(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         absolute_row: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         region.assign_advice_from_instance(
             // `absolute_row` is the absolute offset in the overall Region
             // where the Column is laying.
@@ -97,7 +118,27 @@ impl<F: FieldExt> IotaB9Config<F> {
             offset,
         )?;
 
-        Ok(())
+        Ok(offset + 1)
+    }
+
+    pub fn assing_mixing_flag(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        absolute_row: usize,
+        flag: bool,
+    ) -> Result<usize, Error> {
+        // Assign to the 25th column the flag that determinates if we have a
+        // mixing or a non-mixing step.
+        region.assign_advice_from_instance(
+            || format!("assign mixing bool flag{}", flag),
+            self.round_constants,
+            absolute_row,
+            self.round_ctant_b9,
+            offset,
+        )?;
+
+        Ok(offset + 1)
     }
 }
 
@@ -109,7 +150,11 @@ mod tests {
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2::{
+        circuit::SimpleFloorPlanner,
+        dev::MockProver,
+        plonk::{Circuit, Selector},
+    };
     use itertools::Itertools;
     use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
@@ -127,8 +172,14 @@ mod tests {
             round_ctant_b9: usize,
             _marker: PhantomData<F>,
         }
+
+        #[derive(Debug, Clone)]
+        struct MyConfig<F> {
+            q_enable: Selector,
+            iota_b9_config: IotaB9Config<F>,
+        }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
-            type Config = IotaB9Config<F>;
+            type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -147,13 +198,18 @@ mod tests {
                 // Allocate space for the round constants in base-9 which is an
                 // instance column
                 let round_ctants = meta.instance_column();
-                IotaB9Config::configure(
-                    q_enable,
+                let iota_b9_config = IotaB9Config::configure(
+                    |meta| meta.query_selector(q_enable),
                     meta,
                     state,
                     round_ctant_b9,
                     round_ctants,
-                )
+                );
+
+                MyConfig {
+                    q_enable,
+                    iota_b9_config,
+                }
             }
 
             fn synthesize(
@@ -165,16 +221,16 @@ mod tests {
                     || "assign input & output state + constant in same region",
                     |mut region| {
                         let offset = 0;
-                        config.assign_state(
+                        config.q_enable.enable(&mut region, offset)?;
+                        config.iota_b9_config.assign_state(
                             &mut region,
                             offset,
                             self.in_state,
-                            self.out_state,
                         )?;
                         // Within the Region itself, we use the constant in the
                         // same offset so at position
                         // (Rotation::curr()). Therefore we use `0` here.
-                        config.assign_round_ctant_b9(
+                        config.iota_b9_config.assign_round_ctant_b9(
                             &mut region,
                             offset,
                             self.round_ctant_b9,
