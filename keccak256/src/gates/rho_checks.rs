@@ -136,17 +136,26 @@ impl RotatingVariables {
             self.output_power_of_base.clone() * self.output_coef.clone();
         // Case of last chunk, aka special chunks
         if new.chunk_idx >= LANE_SIZE {
-            assert_eq!(new.input_raw, BigUint::zero());
+            assert!(
+                new.input_raw.is_zero(),
+                "Expect raw input at last chunk should be zero, but got {:?}",
+                new.input_raw
+            );
             new.block_count = None;
             new.high_value = Some(biguint_mod(&self.input_raw, B13));
-            new.output_coef = BigUint::from(convert_b13_coef(
-                new.high_value.unwrap() + self.low_value,
-            ));
+            let high = new.high_value.unwrap();
+            new.output_coef =
+                BigUint::from(convert_b13_coef(high + self.low_value));
+            let expect =
+                new.low_value + high * BigUint::from(B13).pow(LANE_SIZE);
             assert_eq!(
                 new.input_acc,
-                new.low_value
-                    + new.high_value.unwrap()
-                        * BigUint::from(B13).pow(LANE_SIZE)
+                expect,
+                "input_acc got: {:?}  expect: {:?} = low({:?}) + high({:?}) * 13**64",
+                new.input_acc,
+                expect,
+                new.low_value,
+                high,
             );
             return new;
         }
