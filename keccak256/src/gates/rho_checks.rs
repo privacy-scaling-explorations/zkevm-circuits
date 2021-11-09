@@ -1,3 +1,44 @@
+//! Inner checks in the Rho step
+//!
+//! ## Overview
+//!
+//! In the Rho checks we convert each lane from base 13 to base 9.
+//! We call the base 13 lane the input and the base 9 lane the output.
+//! We can view the lane as a polynomial
+//! - where the input lane is `A(13) =  a0 13^0 + ... + a64 13^64`, and
+//! - the output lane is  `B(9)  =  b0  9^0 + ... + b63  9^63`
+//!
+//! We call the a coefficient of the polynomial a chunk.
+//!
+//! The output chunks represent the output bits of the lane in binary, where b0 is the least significant bit and b63 is the most significant bit.
+//!
+//! Note that the input lane is special because it's an output from the Theta step,
+//! so it has 65 chunks. It holds that `0 <= a0 + a64 < 13`. We refer a0 to be low value and a64 high value.
+//!
+//! In the Rho step we perform the **rotation** of chunk positions and the **convertion** from base 13 to base 9.
+//!
+//! More formally speaking, we have a transform `T`, where `bi = T(aj)` for some `i`, `j`, and `ai` is not special chunks.
+//! For special chunk, `bi = T(a0 + a64)`.
+//!
+//! - The rotate means we perform the rotate left of the rotation specified in `ROTATION_CONSTANTS`. Say if our rotation is 3,
+//! The a1 will be contribute to b3, and a63 will go to b0.
+//!
+//! The convert `T` is the [`crate::arith_helpers::convert_b13_coef`], in the circuit we have to do a lookup check for that
+//!
+//! The lookup is more efficient when we lookup multiple([`crate::gates::rho_helpers::BASE_NUM_OF_CHUNKS`]) chunks at a time.
+//!
+//! ## Checks
+//!
+//! The goal is to check the conversion from the base 13 input lane to the base 9 output lane is sound.
+//!
+//! For each lane, we split up the lane in slices of chunks.
+//! - We run down the input accumulator by subtracting each `input_coef * power_of_13`
+//! - We run up the output accumulator by adding up `output_coef * power_of_9`
+//! - We lookup and check the conversion between `input_coef` and `output_coef` is valid
+//!
+//! But there's a catch,
+//! - Special chunks need to be dealt with. A special table lookup is for that.
+//! - Block counts. Sum of the zero chunks need to be checked across the 25 lanes. (TODO: this doesn't make sense)
 use crate::arith_helpers::*;
 use crate::common::{LANE_SIZE, ROTATION_CONSTANTS};
 use crate::gates::{
