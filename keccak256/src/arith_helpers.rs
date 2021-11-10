@@ -227,16 +227,26 @@ pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
     }
 }
 
-pub fn state_to_state_bigint<F: FieldExt>(state: [F; 25]) -> State {
-    let mut matrix = [[u64; 5]; 5];
+pub fn state_to_state_bigint<F: FieldExt>(state: [F; 17]) -> State {
+    let mut matrix = [[0u64; 5]; 5];
 
-    state
+    let mut elems: Vec<u64> = state
         .iter()
-        .map(|elem| u64::from(*elem))
-        .chunks(5)
+        .map(|elem| elem.to_bytes())
+        // This is horrible. But FieldExt does not give much better alternatives and
+        // refactoring `State` will be done once the keccak_all_togheter is done.
+        .map(|bytes| {
+            let mut arr = [0u8; 8];
+            arr.copy_from_slice(&bytes[0..8]);
+            u64::from_le_bytes(arr)
+        })
+        .collect();
+    elems.extend(vec![0u64; 25 - 17]);
+    (0..5)
         .into_iter()
-        .enumerate()
-        .for_each(|(idx, chunk)| matrix[idx].copy_from_slice(chunk));
+        .for_each(|idx| matrix[idx].copy_from_slice(&elems[0 * idx..5 * idx]));
+
+    matrix
 }
 
 pub fn state_bigint_to_pallas<F: FieldExt, const N: usize>(
