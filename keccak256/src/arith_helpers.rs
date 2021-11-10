@@ -1,8 +1,10 @@
+use crate::{common::State, gates::absorb::ABSORB_NEXT_INPUTS};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use pasta_curves::arithmetic::FieldExt;
 use pasta_curves::pallas;
+use std::convert::TryFrom;
 use std::ops::{Index, IndexMut};
 
 pub const B13: u64 = 13;
@@ -225,8 +227,22 @@ pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
     }
 }
 
-pub fn state_bigint_to_pallas<F: FieldExt>(state: StateBigInt) -> [F; 25] {
-    let mut arr = [F::zero(); 25];
+pub fn state_to_state_bigint<F: FieldExt>(state: [F; 25]) -> State {
+    let mut matrix = [[u64; 5]; 5];
+
+    state
+        .iter()
+        .map(|elem| u64::from(*elem))
+        .chunks(5)
+        .into_iter()
+        .enumerate()
+        .for_each(|(idx, chunk)| matrix[idx].copy_from_slice(chunk));
+}
+
+pub fn state_bigint_to_pallas<F: FieldExt, const N: usize>(
+    state: StateBigInt,
+) -> [F; N] {
+    let mut arr = [F::zero(); N];
     let vector: Vec<F> = state
         .xy
         .iter()
@@ -238,6 +254,6 @@ pub fn state_bigint_to_pallas<F: FieldExt>(state: StateBigInt) -> [F; 25] {
         })
         .map(|bytes| F::from_bytes(&bytes).unwrap())
         .collect();
-    arr[0..25].copy_from_slice(&vector[0..25]);
+    arr[0..N].copy_from_slice(&vector[0..N]);
     arr
 }
