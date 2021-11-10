@@ -16,6 +16,7 @@ pub(crate) struct BranchAccConfig {
     advices: [Column<Advice>; HASH_WIDTH],
 }
 
+// BranchAccChip verifies the random linear combination for the branch.
 pub(crate) struct BranchAccChip<F> {
     config: BranchAccConfig,
     _marker: PhantomData<F>,
@@ -59,7 +60,7 @@ impl<F: FieldExt> BranchAccChip<F> {
             constraints.push((
                 "branch acc empty",
                 q_enable.clone()
-                    * (rlp2.clone() - c160.clone()) // rlp2 is 160 when non-empty
+                    * (c160.clone() - rlp2.clone()) // rlp2 is 160 when non-empty and 0 when empty (field modulus is not divisible by 160, so this should be secure)
                     * (branch_acc_cur.clone()
                         - branch_acc_prev.clone()
                         - c128.clone() * branch_mult_prev.clone()),
@@ -67,7 +68,7 @@ impl<F: FieldExt> BranchAccChip<F> {
             constraints.push((
                 "branch acc mult empty",
                 q_enable.clone()
-                    * (rlp2.clone() - c160.clone()) // rlp2 is 160 when non-empty
+                    * (c160.clone() - rlp2.clone()) // rlp2 is 160 when non-empty and 0 when empty (field modulus is not divisible by 160, so this should be secure)
                     * (branch_mult_cur.clone()
                         - branch_mult_prev.clone() * branch_acc_r),
             ));
@@ -85,13 +86,13 @@ impl<F: FieldExt> BranchAccChip<F> {
             constraints.push((
                 "branch acc non-empty",
                 q_enable.clone()
-                    * rlp2.clone() // rlp2 is 0 when empty
+                    * rlp2.clone() // rlp2 is 0 when empty and 160 when non-empty (field modulus is not divisible by 160, so this should be secure)
                     * (branch_acc_cur.clone() - branch_acc_prev.clone() - expr),
             ));
             constraints.push((
                 "branch acc mult non-empty",
                 q_enable.clone()
-                    * rlp2 // rlp2 is 0 when empty
+                    * rlp2.clone() // rlp2 is 0 when empty and 160 when non-empty (field modulus is not divisible by 160, so this should be secure)
                     * (branch_mult_cur.clone() - curr_r),
             ));
 
