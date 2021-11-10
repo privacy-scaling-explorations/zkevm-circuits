@@ -107,9 +107,7 @@ impl<F: FieldExt> IotaB13Config<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::*;
     use crate::common::*;
-    use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{

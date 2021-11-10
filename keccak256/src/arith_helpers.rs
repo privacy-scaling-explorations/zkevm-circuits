@@ -4,7 +4,6 @@ use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use pasta_curves::arithmetic::FieldExt;
 use pasta_curves::pallas;
-use std::convert::TryFrom;
 use std::ops::{Index, IndexMut};
 
 pub const B13: u64 = 13;

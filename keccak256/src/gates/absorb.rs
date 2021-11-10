@@ -1,5 +1,6 @@
+use crate::{arith_helpers::*, keccak_arith::*};
 use halo2::{
-    circuit::Region,
+    circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -53,27 +54,33 @@ impl<F: FieldExt> AbsorbConfig<F> {
         }
     }
 
-    pub fn assign_state_and_next_inp(
+    pub fn assign_state_and_next_inp_from_cell(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        state: [F; 25],
+        state: [(Cell, F); 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
-        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        // Selector placed at offset + 1
         self.q_enable.enable(region, offset + 1)?;
 
-        // Assign current state
-        for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
+        let mut state_array = [F::zero(); 25];
+
+        // State at offset + 0
+        for (idx, (cell, value)) in state.iter().enumerate() {
+            // Copy value into state_array
+            state_array[idx] = *value;
+            let new_cell = region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
                 offset,
-                || Ok(*lane),
+                || Ok(*value),
             )?;
+
+            region.constrain_equal(*cell, new_cell)?;
         }
 
-        // Assign next_mixing
+        // Assign next_mixing at offset + 1
         for (idx, lane) in next_input.iter().enumerate() {
             region.assign_advice(
                 || format!("assign next_input {}", idx),
@@ -83,7 +90,14 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        // Assign out_state
+        // Apply absorb outside circuit
+        let out_state = KeccakFArith::absorb(
+            &state_to_biguint(state_array),
+            &state_to_state_bigint(next_input),
+        );
+        let out_state = state_bigint_to_pallas(out_state);
+
+        // Assign out_state at offset + 2
         for (idx, lane) in out_state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -97,17 +111,17 @@ impl<F: FieldExt> AbsorbConfig<F> {
     }
 
     // TODO! Do as IotaB9 !
-    pub fn assign_state_and_next_inp_from_cell(
+    pub fn assign_state_and_next_inp(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
-        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        // Selector placed at offset + 1
         self.q_enable.enable(region, offset + 1)?;
 
-        // Assign current state
+        // Assign current state at offset + 0
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -117,7 +131,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        // Assign next_mixing
+        // Assign next_mixing at offset + 1
         for (idx, lane) in next_input.iter().enumerate() {
             region.assign_advice(
                 || format!("assign next_input {}", idx),
@@ -127,7 +141,14 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        // Assign out_state
+        // Apply absorb outside circuit
+        let out_state = KeccakFArith::absorb(
+            &state_to_biguint(state),
+            &state_to_state_bigint(next_input),
+        );
+        let out_state = state_bigint_to_pallas(out_state);
+
+        // Assign out_state at offset + 2
         for (idx, lane) in out_state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -144,9 +165,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::*;
     use crate::common::*;
-    use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
@@ -162,7 +181,6 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             next_input: [F; ABSORB_NEXT_INPUTS],
-            out_state: [F; 25],
             _marker: PhantomData<F>,
         }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
@@ -199,7 +217,6 @@ mod tests {
                             offset,
                             self.in_state,
                             self.next_input,
-                            self.out_state,
                         )
                     },
                 )?;
@@ -242,14 +259,10 @@ mod tests {
         in_next_input_17
             .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
         let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
-        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
-        }
-        let circuit = MyCircuit::<Fp> {
+
+        let circuit = MyCircuit::<pallas::Base> {
             in_state,
             next_input: in_next_input_17,
-            out_state,
             _marker: PhantomData,
         };
 
