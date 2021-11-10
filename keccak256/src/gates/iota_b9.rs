@@ -1,3 +1,6 @@
+use crate::arith_helpers::*;
+use crate::common::ROUND_CONSTANTS;
+use crate::keccak_arith::KeccakFArith;
 use halo2::circuit::Cell;
 use halo2::plonk::Instance;
 use halo2::{
@@ -9,8 +12,6 @@ use halo2::{
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
-
-use crate::common::ROUND_CONSTANTS;
 
 #[derive(Clone, Debug)]
 pub struct IotaB9Config<F> {
@@ -63,6 +64,7 @@ impl<F: FieldExt> IotaB9Config<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        round: usize,
     ) -> Result<([F; 25], usize), Error> {
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
@@ -73,8 +75,22 @@ impl<F: FieldExt> IotaB9Config<F> {
             )?;
         }
 
-        // TODO: Compute out state
-        Ok(out_state)
+        // Apply iota_b9 outside circuit
+        let out_state = KeccakFArith::iota_b9(
+            &state_to_biguint(state),
+            ROUND_CONSTANTS[round],
+        );
+        let out_state = state_bigint_to_pallas(out_state);
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+        Ok((out_state, offset + 1))
     }
 
     // We need to enable q_enable outside in parallel to the call to this!
@@ -83,8 +99,12 @@ impl<F: FieldExt> IotaB9Config<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [(Cell, F); 25],
+        round: usize,
     ) -> Result<([F; 25], usize), Error> {
+        let mut state_array = [F::zero(); 25];
         for (idx, (cell, value)) in state.iter().enumerate() {
+            // Copy value into state_array
+            state_array[idx] = *value;
             let new_cell = region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
@@ -95,8 +115,22 @@ impl<F: FieldExt> IotaB9Config<F> {
             region.constrain_equal(*cell, new_cell)?;
         }
 
-        // TODO! COMPUTE OUT STATE
-        Ok(out_state)
+        // Apply iota_b9 outside circuit
+        let out_state = KeccakFArith::iota_b9(
+            &state_to_biguint(state_array),
+            ROUND_CONSTANTS[round],
+        );
+        let out_state = state_bigint_to_pallas(out_state);
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+        Ok((out_state, offset + 1))
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed asn an
@@ -121,6 +155,7 @@ impl<F: FieldExt> IotaB9Config<F> {
         Ok(offset + 1)
     }
 
+    // TODO: Review with YT
     pub fn assing_mixing_flag(
         &self,
         region: &mut Region<'_, F>,
@@ -145,7 +180,6 @@ impl<F: FieldExt> IotaB9Config<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::*;
     use crate::common::*;
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
@@ -166,7 +200,6 @@ mod tests {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
-            out_state: [F; 25],
             // This usize is indeed pointing the exact row of the
             // ROUND_CTANTS_B9 we want to use.
             round_ctant_b9: usize,
@@ -226,6 +259,7 @@ mod tests {
                             &mut region,
                             offset,
                             self.in_state,
+                            0,
                         )?;
                         // Within the Region itself, we use the constant in the
                         // same offset so at position
@@ -257,13 +291,9 @@ mod tests {
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::iota_b9(&in_biguint, ROUND_CONSTANTS[0]);
-        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
-        }
-        let circuit = MyCircuit::<Fp> {
+
+        let circuit = MyCircuit::<pallas::Base> {
             in_state,
-            out_state,
             round_ctant_b9: 0,
             _marker: PhantomData,
         };

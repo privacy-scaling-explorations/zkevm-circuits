@@ -1,3 +1,5 @@
+use crate::common::ROUND_CONSTANTS;
+use crate::{arith_helpers::*, keccak_arith::*};
 use halo2::plonk::{Expression, Instance};
 use halo2::{
     circuit::Region,
@@ -6,8 +8,6 @@ use halo2::{
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
-
-use crate::common::ROUND_CONSTANTS;
 
 #[derive(Clone, Debug)]
 pub struct IotaB13Config<F> {
@@ -53,6 +53,7 @@ impl<F: FieldExt> IotaB13Config<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        round: usize,
     ) -> Result<([F; 25], usize), Error> {
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
@@ -63,8 +64,22 @@ impl<F: FieldExt> IotaB13Config<F> {
             )?;
         }
 
-        // TODO! COMPUTE OUT STATE
-        Ok(out_state)
+        // Apply iota_b9 outside circuit
+        let out_state = KeccakFArith::iota_b13(
+            &state_to_biguint(state),
+            ROUND_CONSTANTS[round],
+        );
+        let out_state = state_bigint_to_pallas(out_state);
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+        Ok((out_state, offset + 1))
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_13to the `absolute_row` passed asn an
@@ -113,7 +128,6 @@ mod tests {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
-            out_state: [F; 25],
             // This usize is indeed pointing the exact row of the
             // ROUND_CTANTS_B13 we want to use.
             round_ctant_b13: usize,
@@ -123,7 +137,7 @@ mod tests {
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
             q_enable: Selector,
-            iota_b9_config: MyConfig<F>,
+            iota_b9_config: IotaB13Config<F>,
         }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             type Config = IotaB13Config<F>;
@@ -167,7 +181,7 @@ mod tests {
                             &mut region,
                             offset,
                             self.in_state,
-                            self.out_state,
+                            0,
                         )?;
                         config.assign_round_ctant_b13(
                             &mut region,
@@ -196,13 +210,9 @@ mod tests {
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::iota_b13(&in_biguint, ROUND_CONSTANTS[0]);
-        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
-        }
-        let circuit = MyCircuit::<Fp> {
+
+        let circuit = MyCircuit::<pallas::Base> {
             in_state,
-            out_state,
             round_ctant_b13: 0,
             _marker: PhantomData,
         };
