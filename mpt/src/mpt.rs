@@ -23,6 +23,7 @@ pub struct MPTConfig<F> {
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
+    is_branch_rlp: Column<Advice>,
     is_compact_leaf: Column<Advice>,
     is_keccak_leaf: Column<Advice>,
     node_index: Column<Advice>,
@@ -57,6 +58,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
+        let is_branch_rlp = meta.advice_column();
         let is_compact_leaf = meta.advice_column();
         let is_keccak_leaf = meta.advice_column();
         let node_index = meta.advice_column();
@@ -124,6 +126,22 @@ impl<F: FieldExt> MPTConfig<F> {
             words
         };
 
+        // Turn 4 keccak words into a compressed value.
+        let into_compressed_expr = |words: Vec<Expression<F>>| {
+            let mut compressed_val = Expression::Constant(F::zero());
+            let mut exp = Expression::Constant(F::one());
+            for i in 0..4 {
+                compressed_val =
+                    compressed_val + words[i].clone() * exp.clone();
+                exp = exp
+                    * Expression::Constant(F::from_u64(256 * 256 * 256 * 256));
+            }
+
+            compressed_val
+        };
+
+        // TODO: range proofs for bytes and keccak words
+
         meta.create_gate("general constraints", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
@@ -134,6 +152,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_branch_child, Rotation::cur());
             let is_last_branch_child_cur =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
+            let is_branch_rlp_cur =
+                meta.query_advice(is_branch_rlp, Rotation::cur());
             let is_compact_leaf =
                 meta.query_advice(is_compact_leaf, Rotation::cur());
             let is_keccak_leaf =
@@ -143,6 +163,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 * (one.clone() - is_branch_init_cur.clone());
             let bool_check_is_branch_child = is_branch_child_cur.clone()
                 * (one.clone() - is_branch_child_cur.clone());
+            let bool_check_is_branch_rlp = is_branch_rlp_cur.clone()
+                * (one.clone() - is_branch_rlp_cur.clone());
             let bool_check_is_last_branch_child = is_last_branch_child_cur
                 .clone()
                 * (one.clone() - is_last_branch_child_cur.clone());
@@ -168,6 +190,10 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints.push((
                 "bool check is branch child",
                 q_enable.clone() * bool_check_is_branch_child,
+            ));
+            constraints.push((
+                "bool check is branch rlp",
+                q_enable.clone() * bool_check_is_branch_rlp,
             ));
             constraints.push((
                 "bool check is last branch child",
@@ -446,7 +472,7 @@ impl<F: FieldExt> MPTConfig<F> {
             */
 
             // s_keccak is the same for all is_branch_child rows
-            // (this is to enable easier comparison (we know rotation) when in keccak leaf row
+            // (this is to enable easier comparison when in keccak leaf row
             // where we need to compare the keccak output is the same as keccak of the modified node)
             for column in s_keccak.iter() {
                 let s_keccak_prev =
@@ -475,16 +501,16 @@ impl<F: FieldExt> MPTConfig<F> {
             }
 
             // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
-            // as s_keccak 2 rows before (there is leaf row in between)
+            // as s_keccak 4 rows before (there are two branch RLP, leaf, keccak leaf rows in between)
             // or
             // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
-            // as c_keccak 4 rows before (there is leaf row, keccak row, and another leaf row in between)
+            // as c_keccak 6 rows before (there are two branch RLP, leaf, keccak, and another leaf rows in between)
             let is_keccak_leaf =
                 meta.query_advice(is_keccak_leaf, Rotation::cur());
             for (ind, column) in s_keccak.iter().enumerate() {
-                let s_keccak_prev_2 = meta.query_advice(*column, Rotation(-2));
+                let s_keccak_prev_2 = meta.query_advice(*column, Rotation(-4));
                 let c_keccak_prev_4 =
-                    meta.query_advice(c_keccak[ind], Rotation(-4));
+                    meta.query_advice(c_keccak[ind], Rotation(-6));
 
                 let keccak = meta.query_advice(
                     s_advices[KECCAK_INPUT_WIDTH + ind],
@@ -524,7 +550,7 @@ impl<F: FieldExt> MPTConfig<F> {
             for (ind, column) in c_keccak.iter().enumerate() {
                 let c_keccak_cur = meta.query_advice(*column, Rotation::cur());
                 constraints.push((
-                    "c_keccak correspond to s_advices at the modified index",
+                    "c_keccak correspond to c_advices at the modified index",
                     q_not_first.clone()
                         * is_branch_child_cur.clone()
                         * is_modified.clone()
@@ -534,6 +560,45 @@ impl<F: FieldExt> MPTConfig<F> {
 
             constraints
         });
+
+        /*
+        meta.create_gate("branch hash in parent branch", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+
+            let mut constraints = vec![];
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_child_prev =
+                meta.query_advice(is_branch_child, Rotation::prev());
+            let is_branch_child_cur =
+                meta.query_advice(is_branch_child, Rotation::cur());
+
+            let s_exprs = s_keccak
+                .iter()
+                .map(|c| meta.query_advice(*c, Rotation::cur()))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            let expr = into_compressed_expr(s_exprs);
+            // Rotation(-18) can be avoided, see TODO below
+            let branch_acc_s = meta.query_advice(branch_acc_s, Rotation(-18));
+
+            // In the next row of the last branch child (when is_branch_child changes back to 0)
+            // we need to check that the hash of a branch is in the parent branch.
+            // TODO: this can be made better by inverting the accumulator - having the final
+            // value in the branch init (thus only Rotation(-1) would be needed).
+            constraints.push((
+                "branch hash",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
+                    * (is_branch_child_prev.clone()
+                        - is_branch_child_cur.clone()) // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
+                    * (expr - branch_acc_s),
+            ));
+
+            constraints
+        });
+        */
 
         // TODO: check transition from compact to keccak leaf (compact leaf as keccak input - 17 cells)
 
@@ -626,6 +691,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
+            is_branch_rlp,
             is_compact_leaf,
             is_keccak_leaf,
             node_index,
@@ -658,6 +724,7 @@ impl<F: FieldExt> MPTConfig<F> {
         is_branch_init: bool,
         is_branch_child: bool,
         is_last_branch_child: bool,
+        is_branch_rlp: bool,
         node_index: u8,
         key: u8,
         is_compact_leaf: bool,
@@ -676,6 +743,13 @@ impl<F: FieldExt> MPTConfig<F> {
             self.is_branch_child,
             offset,
             || Ok(F::from_u64(is_branch_child as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign is_branch_rlp"),
+            self.is_branch_rlp,
+            offset,
+            || Ok(F::from_u64(is_branch_rlp as u64)),
         )?;
 
         region.assign_advice(
@@ -814,7 +888,7 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, false, false, false, 0, 0, true, false, offset,
+            region, row, false, false, false, false, 0, 0, true, false, offset,
         )?;
 
         // We now add another row for keccak format:
@@ -835,6 +909,7 @@ impl<F: FieldExt> MPTConfig<F> {
         self.assign_row(
             region,
             &row,
+            false,
             false,
             false,
             false,
@@ -871,8 +946,31 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, true, false, false, 0, 0, false, false, offset,
+            region, row, true, false, false, false, 0, 0, false, false, offset,
         )?;
+
+        Ok(())
+    }
+
+    fn assign_branch_rlp(
+        &self,
+        region: &mut Region<'_, F>,
+        row: &Vec<u8>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        self.assign_row(
+            region, row, false, false, false, true, 0, 0, false, false, offset,
+        )?;
+        let padded = self.pad(row);
+        let words = self.into_words(&padded);
+        for idx in 0..words.len() {
+            region.assign_advice(
+                || format!("assign s_advice {}", idx),
+                self.s_advices[idx],
+                offset,
+                || Ok(F::from_u64(words[idx] as u64)),
+            )?;
+        }
 
         Ok(())
     }
@@ -910,6 +1008,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             true,
             node_index == 15,
+            false,
             node_index,
             key,
             false,
@@ -1118,6 +1217,21 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             offset += 1;
                             branch_ind += 1;
+                        } else if row[row.len() - 1] == 3 {
+                            // branch RLP
+                            self.q_enable.enable(&mut region, offset)?;
+                            region.assign_fixed(
+                                || "not first",
+                                self.q_not_first,
+                                offset,
+                                || Ok(F::one()),
+                            )?;
+                            self.assign_branch_rlp(
+                                &mut region,
+                                &row[0..row.len() - 1].to_vec(),
+                                offset,
+                            )?;
+                            offset += 1;
                         } else if row[row.len() - 1] == 2 {
                             // compact leaf
                             self.q_enable.enable(&mut region, offset)?;
@@ -1275,7 +1389,7 @@ mod tests {
 
                 for row in self.witness.iter() {
                     if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
-                        // compact leaf
+                        // compact leaf or branch RLP
                         to_be_hashed.push(row[0..row.len() - 1].to_vec());
                     }
                 }
@@ -1288,8 +1402,8 @@ mod tests {
         }
 
         // for debugging:
-        // let path = "mpt/tests";
-        let path = "tests";
+        let path = "mpt/tests";
+        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
@@ -1315,7 +1429,7 @@ mod tests {
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*
-                const K: u32 = 5;
+                const K: u32 = 6;
                 let params: Params<EqAffine> = Params::new(K);
                 let empty_circuit = MyCircuit::<pallas::Base> {
                     _marker: PhantomData,
