@@ -4,7 +4,7 @@ use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget};
 use super::utils::memory_gadgets::{
     self, address_high, address_low, MemoryExpansionGadget,
 };
-use super::utils::{StateTransition, StateTransitionExpressions};
+use super::utils::{select, StateTransition, StateTransitionExpressions};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -19,20 +19,22 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 static STATE_TRANSITION: StateTransition = StateTransition {
-    gc_delta: Some(34), // 2 stack + 32 memory
+    gc_delta: None, // GC_DELTA_MLOAD_MSTORE/GC_DELTA_MSTORE8
     pc_delta: Some(1),
     sp_delta: None,         // SP_DELTA_MLOAD/SP_DELTA_MSTORE
     gas_delta: None,        // GAS + memory_cost
     next_memory_size: None, // next_memory_size
 };
 const GAS: GasCost = GasCost::FASTEST;
+const GC_DELTA_MLOAD_MSTORE: usize = 34; // 2 stack + 32 memory
+const GC_DELTA_MSTORE8: usize = 3; // 2 stack + 1 memory
 const SP_DELTA_MLOAD: i32 = 0;
 const SP_DELTA_MSTORE: i32 = 2;
 const NUM_POPPED_MLOAD: usize = 2;
 const NUM_POPPED_MSTORE: usize = 1;
 
 impl_op_gadget!(
-    #set[MLOAD, MSTORE]
+    #set[MLOAD, MSTORE, MSTORE8]
     MemoryGadget {
         MemorySuccessCase(),
         MemoryStackUnderflowCase(),
@@ -47,6 +49,7 @@ struct MemorySuccessCase<F> {
     value: Word<F>,
     memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
     is_mload: IsEqualGadget<F>,
+    is_mstore8: IsEqualGadget<F>,
 }
 
 impl<F: FieldExt> MemorySuccessCase<F> {
@@ -54,7 +57,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         case: Case::Success,
         num_word: 2, // address + value,
         num_cell: MemoryExpansionGadget::<F, MAX_GAS_SIZE_IN_BYTES>::NUM_CELLS
-            + IsEqualGadget::<F>::NUM_CELLS,
+            + IsEqualGadget::<F>::NUM_CELLS * 2,
         will_halt: false,
     };
 
@@ -65,6 +68,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
             value: alloc.words.pop().unwrap(),
             memory_expansion: MemoryExpansionGadget::construct(alloc),
             is_mload: IsEqualGadget::construct(alloc),
+            is_mstore8: IsEqualGadget::construct(alloc),
         }
     }
 
@@ -76,13 +80,22 @@ impl<F: FieldExt> MemorySuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::with_call_id(state_curr.call_id.expr());
 
-        // Check if this is an MLOAD or an MSTORE
+        // Check if this is an MLOAD
         let is_mload = self.is_mload.constraints(
             &mut cb,
             state_curr.opcode.expr(),
             OpcodeId::MLOAD.expr(),
         );
-        let is_mstore = 1.expr() - is_mload.clone();
+        // Check if this is an MSTORE8
+        let is_mstore8 = self.is_mstore8.constraints(
+            &mut cb,
+            state_curr.opcode.expr(),
+            OpcodeId::MSTORE8.expr(),
+        );
+        // This is an MSTORE/MSTORE8
+        let is_store = 1.expr() - is_mload.clone();
+        // This in an MSTORE/MLOAD
+        let is_not_mstore8 = 1.expr() - is_mstore8.clone();
 
         // Not all address bytes are used to calculate the gas cost for the memory access,
         // so make sure this success case is disabled if any of those address bytes
@@ -96,7 +109,9 @@ impl<F: FieldExt> MemorySuccessCase<F> {
             self.memory_expansion.constraints(
                 &mut cb,
                 state_curr.memory_size.expr(),
-                address.clone() + 32.expr(),
+                address.clone()
+                    + 1.expr()
+                    + (is_not_mstore8.clone() * 31.expr()),
             );
 
         /* Stack operations */
@@ -109,18 +124,46 @@ impl<F: FieldExt> MemorySuccessCase<F> {
 
         /* Memory operations */
         // Read/Write the value from memory at the specified address
-        cb.memory_lookup(
-            address,
-            self.value.cells.iter().map(|cell| cell.expr()).collect(),
-            is_mstore.clone(),
-        );
+        // We always read/write 32 bytes, but for MSTORE8 this will be
+        // 32 lookups for the same LSB byte (at the same gc).
+        for idx in 0..32 {
+            // For MSTORE8 we write the LSB of value 32x times to the same address
+            // For MLOAD and MSTORE we read/write all the bytes of value
+            // at an increasing address value.
+            let byte = if idx == 31 {
+                self.value.cells[0].expr()
+            } else {
+                select::expr(
+                    is_mstore8.clone(),
+                    self.value.cells[0].expr(),
+                    self.value.cells[31 - idx].expr(),
+                )
+            };
+
+            // We only increase the offset for MLOAD and MSTORE so that for
+            // MSTORE8 `gc` and `address` remain the same.
+            let offset = if idx == 0 {
+                0.expr()
+            } else {
+                is_not_mstore8.clone() * idx.expr()
+            };
+            cb.memory_lookup_at(
+                address.clone() + offset.clone(),
+                byte,
+                is_store.clone(),
+                cb.gc_offset.expr() + offset,
+            );
+        }
 
         // State transitions
+        // - `gc_delta` needs to be increased by GC_DELTA_MLOAD_MSTORE/GC_DELTA_MSTORE8
         // - `sp_delta` needs to be increased by SP_DELTA_MLOAD/SP_DELTA_MSTORE
         // - `gas_delta` needs to be increased by `GAS + memory_cost`
         // - `next_memory_size` needs to be set to `next_memory_size`
         let mut st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
-        st.sp_delta = Some(is_mstore * 2.expr());
+        st.gc_delta =
+            Some(GC_DELTA_MLOAD_MSTORE.expr() - (is_mstore8 * 31.expr()));
+        st.sp_delta = Some(is_store * 2.expr());
         st.gas_delta = Some(GAS.expr() + memory_cost);
         st.next_memory_size = Some(next_memory_size);
         st.constraints(&mut cb, state_curr, state_next);
@@ -142,12 +185,19 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         self.value
             .assign(region, offset, Some(step.values[1].to_word()))?;
 
-        // Check if this is an MLOAD or an MSTORE
+        // Check if this is an MLOAD
         let is_mload = self.is_mload.assign(
             region,
             offset,
             F::from_u64(step.opcode.as_u8() as u64),
             F::from_u64(OpcodeId::MLOAD.as_u8() as u64),
+        )?;
+        // Check if this is an MSTORE8
+        let is_mstore8 = self.is_mstore8.assign(
+            region,
+            offset,
+            F::from_u64(step.opcode.as_u8() as u64),
+            F::from_u64(OpcodeId::MSTORE8.as_u8() as u64),
         )?;
 
         // Memory expansion
@@ -156,11 +206,16 @@ impl<F: FieldExt> MemorySuccessCase<F> {
             region,
             offset,
             state.memory_size as u64,
-            address + 32,
+            address + 1u64 + if is_mstore8 == F::one() { 0u64 } else { 31u64 },
         )?;
 
         // State transitions
         let mut st = STATE_TRANSITION.clone();
+        st.gc_delta = Some(if is_mstore8 == F::one() {
+            GC_DELTA_MSTORE8
+        } else {
+            GC_DELTA_MLOAD_MSTORE
+        });
         st.sp_delta = Some(if is_mload == F::one() {
             SP_DELTA_MLOAD
         } else {
@@ -183,6 +238,7 @@ struct MemoryOutOfGasCase<F> {
     memory_expansion:
         MemoryExpansionGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>,
     insufficient_gas: LtGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>,
+    is_mstore8: IsEqualGadget<F>,
 }
 
 impl<F: FieldExt> MemoryOutOfGasCase<F> {
@@ -191,7 +247,8 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         num_word: 1,  // address
         num_cell: IsZeroGadget::<F>::NUM_CELLS
             + MemoryExpansionGadget::<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1}>::NUM_CELLS
-            + LtGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2-1}>::NUM_CELLS,
+            + LtGadget::<F, {MAX_MEMORY_SIZE_IN_BYTES*2-1}>::NUM_CELLS
+            + IsEqualGadget::<F>::NUM_CELLS,
         will_halt: true,
     };
 
@@ -203,6 +260,7 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
             address_in_range: IsZeroGadget::construct(alloc),
             memory_expansion: MemoryExpansionGadget::construct(alloc),
             insufficient_gas: LtGadget::construct(alloc),
+            is_mstore8: IsEqualGadget::construct(alloc),
         }
     }
 
@@ -214,13 +272,21 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
+        // Check if this is an MSTORE8
+        let is_mstore8 = self.is_mstore8.constraints(
+            &mut cb,
+            state_curr.opcode.expr(),
+            OpcodeId::MSTORE8.expr(),
+        );
+        let is_not_mstore8 = 1.expr() - is_mstore8;
+
         // Get the capped address value we will use in the memory calculations
         let address = address_low::expr(&self.address);
         // Get the next memory size and the gas cost for this memory access
         let (_, memory_cost) = self.memory_expansion.constraints(
             &mut cb,
             state_curr.memory_size.expr(),
-            address + 32.expr(),
+            address + 1.expr() + (is_not_mstore8 * 31.expr()),
         );
 
         // Check if the memory address is too large
@@ -258,6 +324,14 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         self.address
             .assign(region, offset, Some(step.values[0].to_word()))?;
 
+        // Check if this is an MSTORE8
+        let is_mstore8 = self.is_mstore8.assign(
+            region,
+            offset,
+            F::from_u64(step.opcode.as_u8() as u64),
+            F::from_u64(OpcodeId::MSTORE8.as_u8() as u64),
+        )?;
+
         // Address in range check
         let address = address_low::value::<F>(step.values[0].to_word());
         self.address_in_range.assign(
@@ -272,7 +346,7 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
             region,
             offset,
             state.memory_size as u64,
-            address + 32,
+            address + 1u64 + if is_mstore8 == F::one() { 0u64 } else { 31u64 },
         )?;
 
         // Gas insufficient check
@@ -293,7 +367,7 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryStackUnderflowCase<F> {
     case_selector: Cell<F>,
-    is_mstore: IsEqualGadget<F>,
+    is_mload: IsEqualGadget<F>,
 }
 
 impl<F: FieldExt> MemoryStackUnderflowCase<F> {
@@ -307,7 +381,7 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
     pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            is_mstore: IsEqualGadget::construct(alloc),
+            is_mload: IsEqualGadget::construct(alloc),
         }
     }
 
@@ -319,17 +393,18 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // Check if this is an MLOAD or an MSTORE
-        let is_mstore = self.is_mstore.constraints(
+        // Check if this is an MLOAD or an MSTORE/MSTORE8
+        let is_mload = self.is_mload.constraints(
             &mut cb,
             state_curr.opcode.expr(),
-            OpcodeId::MSTORE.expr(),
+            OpcodeId::MLOAD.expr(),
         );
+        let is_store = 1.expr() - is_mload;
 
         // For MLOAD we only pop one value from the stack,
-        // For MSTORE we pop two values from the stack.
+        // For MSTORE/MSTORE8 we pop two values from the stack.
         let set =
-            vec![STACK_START_IDX.expr(), STACK_START_IDX.expr() - is_mstore];
+            vec![STACK_START_IDX.expr(), STACK_START_IDX.expr() - is_store];
         cb.require_in_set(state_curr.stack_pointer.expr(), set);
 
         // Generate the constraint
@@ -343,12 +418,12 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
         _state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
-        // Check if this is an MLOAD or an MSTORE
-        self.is_mstore.assign(
+        // Check if this is an MLOAD or an MSTORE/MSTORE8
+        self.is_mload.assign(
             region,
             offset,
             F::from_u64(step.opcode.as_u8() as u64),
-            F::from_u64(OpcodeId::MSTORE.as_u8() as u64),
+            F::from_u64(OpcodeId::MLOAD.as_u8() as u64),
         )?;
         Ok(())
     }
@@ -359,7 +434,7 @@ mod test {
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
-    use crate::util::ToWord;
+    use crate::{gadget::evm_word::encode, util::ToWord};
     use bus_mapping::{evm::OpcodeId, operation::Target};
     use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
@@ -386,10 +461,9 @@ mod test {
         }};
     }
 
-    fn compress(bytes: [u8; 32]) -> Base {
-        bytes
-            .iter()
-            .fold(Base::zero(), |acc, val| acc + Base::from_u64(*val as u64))
+    fn compress(value: BigUint) -> Base {
+        let r = Base::from_u64(1);
+        encode(value.to_word().to_vec().into_iter().rev(), r)
     }
 
     fn mstore_ops(
@@ -398,6 +472,7 @@ mod test {
         stack_index: u64,
         address: BigUint,
         value: BigUint,
+        count: usize,
     ) {
         operations.push(Operation {
             gc: advance_gc!(gc),
@@ -406,7 +481,7 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index),
-                compress(value.to_word()),
+                compress(value.clone()),
                 Base::zero(),
             ],
         });
@@ -417,7 +492,7 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index - 1),
-                compress(address.to_word()),
+                compress(address.clone()),
                 Base::zero(),
             ],
         });
@@ -428,7 +503,7 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index - 1),
-                compress(address.to_word()),
+                compress(address.clone()),
                 Base::zero(),
             ],
         });
@@ -439,11 +514,11 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index),
-                compress(value.to_word()),
+                compress(value.clone()),
                 Base::zero(),
             ],
         });
-        for idx in 0..32 {
+        for idx in 0..count {
             operations.push(Operation {
                 gc: advance_gc!(gc),
                 target: Target::Memory,
@@ -456,7 +531,7 @@ mod test {
                     )
                     .unwrap(),
                     Base::from_u64(
-                        value.to_bytes_le()[31 - idx as usize] as u64,
+                        value.to_bytes_le()[count - 1 - idx as usize] as u64,
                     ),
                     Base::zero(),
                 ],
@@ -478,7 +553,7 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index),
-                compress(address.to_word()),
+                compress(address.clone()),
                 Base::zero(),
             ],
         });
@@ -489,7 +564,7 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index),
-                compress(address.to_word()),
+                compress(address.clone()),
                 Base::zero(),
             ],
         });
@@ -500,7 +575,7 @@ mod test {
             values: [
                 Base::zero(),
                 Base::from_u64(stack_index),
-                compress(value.to_word()),
+                compress(value.clone()),
                 Base::zero(),
             ],
         });
@@ -545,6 +620,8 @@ mod test {
                 .collect::<Vec<u8>>()[..],
         );
 
+        let value_c = BigUint::from_bytes_be(&[255u8; 32]);
+
         let all_ones = BigUint::from_bytes_le(&[1u8; 32]);
 
         let execution_steps = vec![
@@ -576,12 +653,27 @@ mod test {
             ExecutionStep {
                 opcode: OpcodeId::PUSH32,
                 case: Case::Success,
-                values: vec![address_b.clone(), all_ones],
+                values: vec![address_b.clone(), all_ones.clone()],
             },
             ExecutionStep {
                 opcode: OpcodeId::MLOAD,
                 case: Case::Success,
                 values: vec![address_b.clone(), value_b.clone()],
+            },
+            ExecutionStep {
+                opcode: OpcodeId::PUSH32,
+                case: Case::Success,
+                values: vec![value_c.clone(), all_ones.clone()],
+            },
+            ExecutionStep {
+                opcode: OpcodeId::PUSH32,
+                case: Case::Success,
+                values: vec![address_a.clone(), all_ones],
+            },
+            ExecutionStep {
+                opcode: OpcodeId::MSTORE8,
+                case: Case::Success,
+                values: vec![address_a.clone(), value_c.clone()],
             },
         ];
 
@@ -593,9 +685,17 @@ mod test {
             1023u64,
             address_a.clone(),
             value_a.clone(),
+            32,
         );
-        mload_ops(&mut operations, &mut gc, 1023u64, address_a, value_a);
+        mload_ops(
+            &mut operations,
+            &mut gc,
+            1023u64,
+            address_a.clone(),
+            value_a,
+        );
         mload_ops(&mut operations, &mut gc, 1022u64, address_b, value_b);
+        mstore_ops(&mut operations, &mut gc, 1021u64, address_a, value_c, 1);
 
         try_test_circuit!(execution_steps, operations, Ok(()));
     }
