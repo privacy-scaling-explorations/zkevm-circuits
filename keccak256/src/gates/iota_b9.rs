@@ -94,12 +94,13 @@ impl<F: FieldExt> IotaB9Config<F> {
     }
 
     // We need to enable q_enable outside in parallel to the call to this!
-    pub fn assign_state_from_cells(
+    fn assign_state_and_rc_from_cells(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [(Cell, F); 25],
         round: usize,
+        absolute_row: usize,
     ) -> Result<([F; 25], usize), Error> {
         let mut state_array = [F::zero(); 25];
         for (idx, (cell, value)) in state.iter().enumerate() {
@@ -114,6 +115,8 @@ impl<F: FieldExt> IotaB9Config<F> {
 
             region.constrain_equal(*cell, new_cell)?;
         }
+
+        self.assign_round_ctant_b9(&mut region, offset, absolute_row)?;
 
         // Apply iota_b9 outside circuit
         let out_state = KeccakFArith::iota_b9(
@@ -156,24 +159,34 @@ impl<F: FieldExt> IotaB9Config<F> {
     }
 
     // TODO: Review with YT
-    pub fn assing_mixing_flag(
+    pub fn assign_state_and_mixing_flag_and_rc(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        absolute_row: usize,
         flag: bool,
-    ) -> Result<usize, Error> {
-        // Assign to the 25th column the flag that determinates if we have a
-        // mixing or a non-mixing step.
-        region.assign_advice_from_instance(
-            || format!("assign mixing bool flag{}", flag),
-            self.round_constants,
-            absolute_row,
-            self.round_ctant_b9,
+        state: [(Cell, F); 25],
+        absolute_row: usize,
+        round: usize,
+    ) -> Result<((Cell, F), usize), Error> {
+        let (state, offset) = self.assign_state_and_rc_from_cells(
+            &mut region,
             offset,
+            state,
+            round,
+            absolute_row,
         )?;
 
-        Ok(offset + 1)
+        let flag: F = flag.into();
+        // Assign to the 25th column the flag that determinates if we have a
+        // mixing or a non-mixing step.
+        let cell = region.assign_advice(
+            || format!("assign mixing bool flag{:?}", flag),
+            self.round_ctant_b9,
+            offset,
+            || Ok(flag),
+        )?;
+
+        Ok(((cell, flag), offset + 1))
     }
 }
 
