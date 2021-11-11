@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-halo2 = "0.0"
+halo2 = { git = "https://github.com/NoCtrlZ/halo2", branch = "lookup2" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"
