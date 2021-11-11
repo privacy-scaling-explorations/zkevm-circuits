@@ -1,6 +1,6 @@
 use crate::{arith_helpers::*, keccak_arith::*};
 use halo2::{
-    circuit::{Cell, Region},
+    circuit::{layouter::RegionLayouter, Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -12,16 +12,18 @@ pub(crate) const ABSORB_NEXT_INPUTS: usize = 17;
 
 #[derive(Clone, Debug)]
 pub struct AbsorbConfig<F> {
-    #[allow(dead_code)]
-    q_enable: Selector,
     state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> AbsorbConfig<F> {
     // We assume state is recieved in base-9.
+    // Rows are assigned as:
+    // 1) STATE (25 columns) (offset +2)
+    // 2) NEXT_INPUTS (17 columns) + is_mixing flag (1 column) (offset +1)
+    // (current rotation) 3) OUT_STATE (25 columns) (offset +2)
+    // TODO: Review with YT!
     pub fn configure(
-        q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
     ) -> AbsorbConfig<F> {
@@ -33,6 +35,10 @@ impl<F: FieldExt> AbsorbConfig<F> {
         //             state[x][y] += 2 * next_input[x][y]
         //     return state
         meta.create_gate("absorb", |meta| {
+            // Query is_mixing flag and multiply it at each round as the
+            // selector!
+            let is_mixing = meta
+                .query_advice(state[ABSORB_NEXT_INPUTS + 1], Rotation::cur());
             (0..ABSORB_NEXT_INPUTS)
                 .map(|idx| {
                     let val = meta.query_advice(state[idx], Rotation::prev())
@@ -42,28 +48,26 @@ impl<F: FieldExt> AbsorbConfig<F> {
                     let next_lane =
                         meta.query_advice(state[idx], Rotation::next());
 
-                    meta.query_selector(q_enable) * (val - next_lane)
+                    is_mixing * (val - next_lane)
                 })
                 .collect::<Vec<_>>()
         });
 
         AbsorbConfig {
-            q_enable,
             state,
             _marker: PhantomData,
         }
     }
 
+    // TODO: Review with YT!
     pub fn assign_state_and_next_inp_from_cell(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [(Cell, F); 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
-    ) -> Result<[F; 25], Error> {
-        // Selector placed at offset + 1
-        self.q_enable.enable(region, offset + 1)?;
-
+        flag: (Cell, F),
+    ) -> Result<([F; 25], usize), Error> {
         let mut state_array = [F::zero(); 25];
 
         // State at offset + 0
@@ -89,6 +93,14 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 || Ok(*lane),
             )?;
         }
+        // Assign flag at last column(18th) of the offset + 1 row.
+        let obtained_cell = region.assign_advice(
+            || format!("assign next_input {}", ABSORB_NEXT_INPUTS + 1),
+            self.state[ABSORB_NEXT_INPUTS + 1],
+            offset + 1,
+            || Ok(flag.1),
+        )?;
+        region.constrain_equal(flag.0, obtained_cell)?;
 
         // Apply absorb outside circuit
         let out_state = KeccakFArith::absorb(
@@ -107,20 +119,18 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        Ok(out_state)
+        Ok((out_state, offset + 2))
     }
 
-    // TODO! Do as IotaB9 !
-    pub fn assign_state_and_next_inp(
+    // TODO: Review with YT!
+    pub fn assign_state_next_inp_and_flag(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
-    ) -> Result<[F; 25], Error> {
-        // Selector placed at offset + 1
-        self.q_enable.enable(region, offset + 1)?;
-
+        flag: bool,
+    ) -> Result<([F; 25], usize), Error> {
         // Assign current state at offset + 0
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
@@ -140,6 +150,14 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 || Ok(*lane),
             )?;
         }
+        // Assign flag at last column of the offset + 1 row.
+        let flag: F = flag.into();
+        region.assign_advice(
+            || format!("assign next_input {}", ABSORB_NEXT_INPUTS + 1),
+            self.state[ABSORB_NEXT_INPUTS + 1],
+            offset + 1,
+            || Ok(flag),
+        )?;
 
         // Apply absorb outside circuit
         let out_state = KeccakFArith::absorb(
@@ -158,7 +176,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        Ok(out_state)
+        Ok((out_state, offset + 2))
     }
 }
 
@@ -179,8 +197,11 @@ mod tests {
     fn test_absorb_gate() {
         #[derive(Default)]
         struct MyCircuit<F> {
+            // TODO: Review with YT the idea of state being already [(Cell,
+            // F;25)] since will always come from copied cells.
             in_state: [F; 25],
             next_input: [F; ABSORB_NEXT_INPUTS],
+            is_mixing: bool,
             _marker: PhantomData<F>,
         }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
@@ -200,7 +221,7 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                AbsorbConfig::configure(q_enable, meta, state)
+                AbsorbConfig::configure(meta, state)
             }
 
             fn synthesize(
@@ -208,15 +229,31 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
+                let val: F = self.is_mixing.into();
+                let flag: (Cell, F) = layouter.assign_region(
+                    || "witness_is_mixing_flag",
+                    |mut region| {
+                        let offset = 1;
+                        let cell = region.assign_advice(
+                            || "assign is_mising",
+                            config.state[ABSORB_NEXT_INPUTS + 1],
+                            offset,
+                            || Ok(val),
+                        )?;
+                        Ok((cell, val))
+                    },
+                )?;
+
                 layouter.assign_region(
                     || "assign input state",
                     |mut region| {
                         let offset = 0;
-                        config.assign_state_and_next_inp(
+                        config.assign_state_and_next_inp_from_cell(
                             &mut region,
                             offset,
                             self.in_state,
                             self.next_input,
+                            flag,
                         )
                     },
                 )?;
@@ -261,6 +298,7 @@ mod tests {
         let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
 
         let circuit = MyCircuit::<pallas::Base> {
+            is_mixing: false,
             in_state,
             next_input: in_next_input_17,
             _marker: PhantomData,
