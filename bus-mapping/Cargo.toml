@@ -13,4 +13,4 @@ lazy_static = "1.4"
 serde_json = "1.0.66"
 hex = "0.4"
 geth-utils = { path = "../geth-utils" }
-pairing = { git = 'https://github.com/kilic/pairing', package = "pairing_bn256" }
+pairing = { git = 'https://github.com/NoCtrlZ/pairing', package = "pairing_bn256" }

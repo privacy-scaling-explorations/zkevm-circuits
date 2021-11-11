@@ -328,7 +328,7 @@ macro_rules! test_state_circuit {
             ops.push(op);
         }
 
-        let circuit = MemoryCircuit::<pallas::Base, $lookup> {
+        let circuit = MemoryCircuit::<Fp, $lookup> {
             ops,
             _marker: PhantomData,
         };
