@@ -83,7 +83,7 @@ mod add_tests {
         operation::RW::{READ, WRITE},
         BlockConstants, ExecutionTrace,
     };
-    use pasta_curves::pallas::Scalar;
+    use pairing::bn256::Fr as Scalar;
 
     fn step_setup(
         stack: Stack,

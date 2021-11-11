@@ -68,7 +68,7 @@ mod sload_tests {
         },
         external_tracer, BlockConstants, ExecutionTrace,
     };
-    use pasta_curves::pallas::Scalar;
+    use pairing::bn256::Fr as Scalar;
     use std::collections::HashMap;
     use std::iter::FromIterator;
 

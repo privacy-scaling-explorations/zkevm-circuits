@@ -8,7 +8,7 @@ use halo2::{
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 

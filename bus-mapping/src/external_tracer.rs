@@ -6,7 +6,7 @@ use crate::{
     bytecode::Bytecode, BlockConstants, ExecutionStep, ExecutionTrace,
 };
 use geth_utils;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use serde::Serialize;
 use std::str::FromStr;
 
@@ -26,7 +26,7 @@ impl<F: FieldExt> Default for Transaction<F> {
                 "0x00000000000000000000000000000000c014ba5e",
             )
             .unwrap(),
-            gas_limit: F::from_u64(1_000_000u64),
+            gas_limit: F::from(1_000_000u64),
             target: EthAddress::zero(),
         }
     }
@@ -58,7 +58,7 @@ pub fn trace<F: FieldExt>(
     let transaction = Transaction::default();
     let account = Account {
         address: transaction.target,
-        balance: F::from_u64(555u64),
+        balance: F::from(555u64),
         code: hex::encode(code.to_bytes()),
     };
 

@@ -1,7 +1,7 @@
 //! Common utility traits and functions.
 
 use crate::operation::EvmWord;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use serde::{ser, Serialize};
 
 /// Serializes a field element

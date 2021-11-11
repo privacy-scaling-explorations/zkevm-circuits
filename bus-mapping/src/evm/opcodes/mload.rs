@@ -75,7 +75,7 @@ mod mload_tests {
         evm::{EvmWord, GasCost, OpcodeId, Stack, StackAddress, Storage},
         external_tracer, BlockConstants, ExecutionTrace,
     };
-    use pasta_curves::pallas::Scalar;
+    use pairing::bn256::Fr as Scalar;
 
     #[test]
     fn mload_opcode_impl() -> Result<(), Error> {

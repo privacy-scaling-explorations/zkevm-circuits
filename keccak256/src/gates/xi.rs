@@ -4,7 +4,7 @@ use halo2::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -95,8 +95,7 @@ mod tests {
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use num_bigint::BigUint;
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -151,7 +150,7 @@ mod tests {
                 Ok(())
             }
         }
-        fn big_uint_to_pallas(a: &BigUint) -> pallas::Base {
+        fn big_uint_to_pallas(a: &BigUint) -> Fp {
             let mut b: [u64; 4] = [0; 4];
             let mut iter = a.iter_u64_digits();
 
@@ -162,7 +161,7 @@ mod tests {
                 };
             }
 
-            pallas::Base::from_raw(b)
+            Fp::from_raw(b)
         }
 
         let input1: State = [
@@ -173,26 +172,25 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
         let mut in_biguint = StateBigInt::default();
-        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut in_state: [Fp; 25] = [Fp::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::xi(&in_biguint);
-        let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
         }
-        let circuit = MyCircuit::<pallas::Base> {
+        let circuit = MyCircuit::<Fp> {
             in_state,
             out_state,
             _marker: PhantomData,
         };
 
         // Test without public inputs
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }

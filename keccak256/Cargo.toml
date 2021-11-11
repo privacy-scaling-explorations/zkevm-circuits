@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-halo2 = { git = "https://github.com/NoCtrlZ/halo2", branch = "lookup2" }
+halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "ff354862e8e80a48f3f691fc227f48c91c958bc1" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"
-pasta_curves =  "0.1"
+pairing = { git = 'https://github.com/kilic/pairing', package = "pairing_bn256" }
