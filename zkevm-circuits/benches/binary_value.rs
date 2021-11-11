@@ -9,8 +9,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 
 #[derive(Copy, Clone, Debug)]
 struct MemoryAddress<F: FieldExt>(F);
@@ -82,7 +81,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         let binary_table = meta.fixed_column();
 
         if LOOKUP {
-            meta.lookup(|meta| {
+            meta.lookup2(|meta| {
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let flag = meta.query_advice(flag, Rotation::cur());
                 let binary_table =
@@ -129,7 +128,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                         || "binary table",
                         self.binary_table,
                         idx,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                 }
                 Ok(())
@@ -244,7 +243,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         let value = read_write
             .as_ref()
             .map(|read_write| read_write.global_counter().0);
-        let field_elem = value.map(|value| F::from_u64(value as u64));
+        let field_elem = value.map(|value| F::from(value as u64));
 
         region
             .assign_advice(
@@ -267,7 +266,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
             .ok();
 
         let value = read_write.as_ref().map(|read_write| read_write.flag());
-        let field_elem = value.map(|value| F::from_u64(value as u64));
+        let field_elem = value.map(|value| F::from(value as u64));
         region
             .assign_advice(
                 || "flag",
@@ -314,15 +313,15 @@ macro_rules! test_state_circuit {
         let mut ops = vec![];
         for _i in 0..10000 {
             let op = MemoryOp {
-                address: MemoryAddress(pallas::Base::zero()),
+                address: MemoryAddress(Fp::zero()),
                 global_counters: vec![
                     Some(ReadWrite::Write(
                         GlobalCounter(12),
-                        Value(pallas::Base::from_u64(12)),
+                        Value(Fp::from(12)),
                     )),
                     Some(ReadWrite::Read(
                         GlobalCounter(24),
-                        Value(pallas::Base::from_u64(12)),
+                        Value(Fp::from(12)),
                     )),
                 ],
             };
@@ -334,7 +333,7 @@ macro_rules! test_state_circuit {
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<pallas::Base>::run(7, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(7, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }};
 }

@@ -155,7 +155,7 @@ pub(crate) enum FixedLookup {
 
 impl<F: FieldExt> Expr<F> for FixedLookup {
     fn expr(&self) -> Expression<F> {
-        Expression::Constant(F::from_u64(*self as u64))
+        Expression::Constant(F::from(*self as u64))
     }
 }
 
@@ -241,7 +241,7 @@ impl<F: FieldExt> Word<F> {
                 .iter()
                 .zip(word.iter())
                 .map(|(cell, byte)| {
-                    cell.assign(region, offset, Some(F::from_u64(*byte as u64)))
+                    cell.assign(region, offset, Some(F::from(*byte as u64)))
                 })
                 .collect()
         })
@@ -618,7 +618,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure whole row lookups by qs_byte_lookup
         for column in advices {
-            meta.lookup(|meta| {
+            meta.lookup2(|meta| {
                 let tag = FixedLookup::Range256.expr();
                 let qs_byte_lookup =
                     meta.query_advice(qs_byte_lookup, Rotation::cur());
@@ -639,7 +639,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure fixed lookups
         for fixed_lookup in fixed_lookups.iter() {
-            meta.lookup(|meta| {
+            meta.lookup2(|meta| {
                 fixed_lookup
                     .iter()
                     .zip(fixed_table.iter())
@@ -655,7 +655,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure rw lookups
         for rw_lookup in rw_lookups.iter() {
-            meta.lookup(|meta| {
+            meta.lookup2(|meta| {
                 rw_lookup
                     .iter()
                     .zip(rw_table.iter())
@@ -696,13 +696,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "Range256: tag",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from_u64(FixedLookup::Range256 as u64)),
+                        || Ok(F::from(FixedLookup::Range256 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range256: value",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
@@ -723,13 +723,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "Range32: tag",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from_u64(FixedLookup::Range32 as u64)),
+                        || Ok(F::from(FixedLookup::Range32 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range32: value",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
@@ -750,13 +750,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "Range17: tag",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from_u64(FixedLookup::Range17 as u64)),
+                        || Ok(F::from(FixedLookup::Range17 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range17: value",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
@@ -777,13 +777,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "Range16: tag",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from_u64(FixedLookup::Range16 as u64)),
+                        || Ok(F::from(FixedLookup::Range16 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range16: value",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
@@ -804,13 +804,13 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "Range512: tag",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from_u64(FixedLookup::Range512 as u64)),
+                        || Ok(F::from(FixedLookup::Range512 as u64)),
                     )?;
                     region.assign_fixed(
                         || "Range512: value",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[2..].iter().enumerate()
@@ -831,19 +831,19 @@ impl<F: FieldExt> EvmCircuit<F> {
                         || "SignByte: tag",
                         self.fixed_table[0],
                         offset,
-                        || Ok(F::from_u64(FixedLookup::SignByte as u64)),
+                        || Ok(F::from(FixedLookup::SignByte as u64)),
                     )?;
                     region.assign_fixed(
                         || "SignByte: value",
                         self.fixed_table[1],
                         offset,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                     region.assign_fixed(
                         || "SignByte: sign",
                         self.fixed_table[2],
                         offset,
-                        || Ok(F::from_u64((idx >> 7) * 0xFFu64)),
+                        || Ok(F::from((idx >> 7) * 0xFFu64)),
                     )?;
                     for (idx, column) in
                         self.fixed_table[3..].iter().enumerate()
@@ -896,9 +896,9 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                     let values = [
                         vec![
-                            F::from_u64(operation.gc as u64),
-                            F::from_u64(operation.target as u64),
-                            F::from_u64(operation.is_write as u64),
+                            F::from(operation.gc as u64),
+                            F::from(operation.target as u64),
+                            F::from(operation.is_write as u64),
                         ],
                         operation.values.to_vec(),
                     ]

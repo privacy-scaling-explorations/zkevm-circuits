@@ -15,7 +15,7 @@ macro_rules! impl_unsigned_expr {
         impl<F: FieldExt> Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
-                Expression::Constant(F::from_u64(*self as u64))
+                Expression::Constant(F::from(*self as u64))
             }
         }
     };
@@ -23,7 +23,7 @@ macro_rules! impl_unsigned_expr {
         impl<F: FieldExt> Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
-                Expression::Constant(F::from_u64($method(self) as u64))
+                Expression::Constant(F::from($method(self) as u64))
             }
         }
     };
@@ -35,7 +35,7 @@ macro_rules! impl_signed_expr {
             #[inline]
             fn expr(&self) -> Expression<F> {
                 Expression::Constant(
-                    F::from_u64(self.abs() as u64)
+                    F::from(self.abs() as u64)
                         * if self.is_negative() {
                             -F::one()
                         } else {

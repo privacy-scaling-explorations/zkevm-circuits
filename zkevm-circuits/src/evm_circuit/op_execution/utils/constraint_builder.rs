@@ -145,7 +145,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
                 BusMappingLookup::Memory {
                     call_id: self.call_id.clone().unwrap(),
                     index: address.clone()
-                        + Expression::Constant(F::from_u64(idx as u64)),
+                        + Expression::Constant(F::from(idx as u64)),
                     value: bytes[bytes.len() - 1 - idx].clone(),
                     is_write: is_write.clone(),
                 },

@@ -65,7 +65,7 @@ impl<F: FieldExt> OutOfGasCase<F> {
         self.gas_available.assign(
             region,
             offset,
-            Some(F::from_u64(state.gas_counter as u64)),
+            Some(F::from(state.gas_counter as u64)),
         )?;
         Ok(())
     }
