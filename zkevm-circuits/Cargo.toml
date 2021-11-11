@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 ff = "0.10"
-halo2 = { git = "https://github.com/NoCtrlZ/halo2", branch = "lookup2" }
+halo2 = "0.0"
 pasta_curves = "0.1"
 bigint = "4"
 num = "0.4"
