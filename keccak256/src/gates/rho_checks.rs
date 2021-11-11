@@ -204,8 +204,13 @@ impl RotatingVariables {
             get_block_count_and_output_coef(new.input_coef.clone());
         new.output_coef = BigUint::from(usual_output_coef);
         new.block_count = Some(block_count);
-        if self.step == 2 || self.step == 3 {
-            new.block_count_acc[(self.step - 2) as usize] += block_count;
+        if new.step == 2 || new.step == 3 {
+            assert!(
+                block_count < 13,
+                "expect block count < 13 but got {}",
+                block_count
+            );
+            new.block_count_acc[(new.step - 2) as usize] += block_count;
         }
         new
     }
