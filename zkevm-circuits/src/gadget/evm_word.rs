@@ -10,9 +10,7 @@ use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
 use halo2::{
     circuit::Region,
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
-    },
+    plonk::*,
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -167,13 +165,9 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::{
-        circuit::SimpleFloorPlanner,
-        dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, Instance},
-    };
+    use halo2::{arithmetic::Field, circuit::SimpleFloorPlanner, dev::{MockProver, VerifyFailure}, plonk::{Circuit, Instance}};
     use pairing::bn256::Fr as Fp;
-    use rand::{RngCore, SeedableRng};
+    use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::marker::PhantomData;
 
@@ -253,13 +247,11 @@ mod tests {
         }
 
         {
-            let mut rng = XorShiftRng::from_seed([
+            let rng = XorShiftRng::from_seed([
                 0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb,
                 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
             ]);
-            let mut random_bytes = [0; 64];
-            rng.fill_bytes(&mut random_bytes[..]);
-            let word = Fp::from_bytes_wide(&random_bytes);
+            let word = Fp::random(rng);
             let circuit = MyCircuit::<Fp> {
                 word: word
                     .to_bytes()

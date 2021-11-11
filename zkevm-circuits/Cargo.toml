@@ -27,3 +27,7 @@ rand = "0.8"
 [[bench]]
 name = "binary_value"
 harness = false
+
+[[bench]]
+name = "prover"
+harness = false
