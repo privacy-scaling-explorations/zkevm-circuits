@@ -58,11 +58,45 @@ impl<F: FieldExt> IotaB9Config<F> {
         }
     }
 
-    // We need to enable q_enable outside in parallel to the call to this!
-    pub fn assign_state(
+    pub fn copy_state_and_mixing_flag_and_rc(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        flag: bool,
+        state: [(Cell, F); 25],
+        absolute_row: usize,
+        round: usize,
+    ) -> Result<((Cell, F), [F; 25], usize), Error> {
+        let (out_state, offset) = self.assign_state_and_rc_from_cells(
+            region,
+            offset,
+            state,
+            round,
+            absolute_row,
+        )?;
+
+        let flag: F = flag.into();
+        // Assign to the 25th column the flag that determinates if we have a
+        // mixing or a non-mixing step.
+        let cell = region.assign_advice(
+            || format!("assign mixing bool flag{:?}", flag),
+            self.round_ctant_b9,
+            offset,
+            || Ok(flag),
+        )?;
+
+        Ok(((cell, flag), out_state, offset + 1))
+    }
+
+    // We need to enable q_enable outside in parallel to the call to this!
+    // TODO: Review with YT the need to aassign the flag when we are not using
+    // the flag as we're not using Iota in the mixing stage. I presume we
+    // need to assign it to 1 always so it behaves as an active selector.
+    pub fn assign_state_and_rc(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        _flag: bool,
         state: [F; 25],
         round: usize,
     ) -> Result<([F; 25], usize), Error> {
@@ -157,37 +191,6 @@ impl<F: FieldExt> IotaB9Config<F> {
 
         Ok(offset + 1)
     }
-
-    // TODO: Review with YT
-    pub fn assign_state_and_mixing_flag_and_rc(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        flag: bool,
-        state: [(Cell, F); 25],
-        absolute_row: usize,
-        round: usize,
-    ) -> Result<((Cell, F), usize), Error> {
-        let (state, offset) = self.assign_state_and_rc_from_cells(
-            &mut region,
-            offset,
-            state,
-            round,
-            absolute_row,
-        )?;
-
-        let flag: F = flag.into();
-        // Assign to the 25th column the flag that determinates if we have a
-        // mixing or a non-mixing step.
-        let cell = region.assign_advice(
-            || format!("assign mixing bool flag{:?}", flag),
-            self.round_ctant_b9,
-            offset,
-            || Ok(flag),
-        )?;
-
-        Ok(((cell, flag), offset + 1))
-    }
 }
 
 #[cfg(test)]
@@ -268,9 +271,10 @@ mod tests {
                     |mut region| {
                         let offset = 0;
                         config.q_enable.enable(&mut region, offset)?;
-                        config.iota_b9_config.assign_state(
+                        config.iota_b9_config.assign_state_and_rc(
                             &mut region,
                             offset,
+                            true,
                             self.in_state,
                             0,
                         )?;
