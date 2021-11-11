@@ -1,5 +1,6 @@
 use crate::common::ROUND_CONSTANTS;
 use crate::{arith_helpers::*, keccak_arith::*};
+use halo2::circuit::Cell;
 use halo2::plonk::{Expression, Instance};
 use halo2::{
     circuit::Region,
@@ -11,8 +12,8 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct IotaB13Config<F> {
-    q_enable: Expression<F>,
     state: [Column<Advice>; 25],
+    // Last element contains the is_mixing flag
     round_ctant_b13: Column<Advice>,
     round_constants: Column<Instance>,
     _marker: PhantomData<F>,
@@ -21,25 +22,23 @@ pub struct IotaB13Config<F> {
 impl<F: FieldExt> IotaB13Config<F> {
     // We assume state is recieved in base-9.
     pub fn configure(
-        q_enable_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         round_ctant_b13: Column<Advice>,
         round_constants: Column<Instance>,
     ) -> IotaB13Config<F> {
-        let mut q_enable = Expression::Constant(F::zero());
         meta.create_gate("iota_b13", |meta| {
             // def iota_b13(state: List[List[int], round_constant_base13: int):
             // state[0][0] += round_constant_base13
             // return state
-            q_enable = q_enable_fn(meta);
+            let is_mixing =
+                meta.query_advice(round_ctant_b13, Rotation::next());
             let state_00 = meta.query_advice(state[0], Rotation::cur())
                 + meta.query_advice(round_ctant_b13, Rotation::cur());
             let next_lane = meta.query_advice(state[0], Rotation::next());
-            vec![q_enable * (state_00 - next_lane)]
+            vec![is_mixing * (state_00 - next_lane)]
         });
         IotaB13Config {
-            q_enable,
             state,
             round_ctant_b13,
             round_constants,
@@ -48,12 +47,14 @@ impl<F: FieldExt> IotaB13Config<F> {
     }
 
     // We need to enable q_enable outside in parallel to the call to this!
-    pub fn assign_state(
+    pub fn assign_state_and_round_ctant(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
         round: usize,
+        absolute_row: usize,
+        is_mixing: (Cell, F),
     ) -> Result<([F; 25], usize), Error> {
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
@@ -63,6 +64,9 @@ impl<F: FieldExt> IotaB13Config<F> {
                 || Ok(*lane),
             )?;
         }
+
+        let offset =
+            self.assign_round_ctant_b13(&mut region, offset, absolute_row)?;
 
         // Apply iota_b9 outside circuit
         let out_state = KeccakFArith::iota_b13(
@@ -75,16 +79,26 @@ impl<F: FieldExt> IotaB13Config<F> {
             region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
-                offset + 1,
+                offset,
                 || Ok(*lane),
             )?;
         }
+
+        let obtained_cell = region.assign_advice(
+            || format!("assign is_mixing_flag {:?}", is_mixing.1),
+            self.round_ctant_b13,
+            offset,
+            || Ok(is_mixing.1),
+        )?;
+
+        region.constrain_equal(is_mixing.0, obtained_cell)?;
+
         Ok((out_state, offset + 1))
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_13to the `absolute_row` passed asn an
     /// absolute instance column.
-    pub fn assign_round_ctant_b13(
+    fn assign_round_ctant_b13(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -100,7 +114,7 @@ impl<F: FieldExt> IotaB13Config<F> {
             offset,
         )?;
 
-        Ok(offset + ROUND_CONSTANTS.len())
+        Ok(offset + 1)
     }
 }
 
@@ -126,17 +140,13 @@ mod tests {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
+            is_mixing: bool,
             // This usize is indeed pointing the exact row of the
             // ROUND_CTANTS_B13 we want to use.
             round_ctant_b13: usize,
             _marker: PhantomData<F>,
         }
 
-        #[derive(Debug, Clone)]
-        struct MyConfig<F> {
-            q_enable: Selector,
-            iota_b9_config: IotaB13Config<F>,
-        }
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             type Config = IotaB13Config<F>;
             type FloorPlanner = SimpleFloorPlanner;
@@ -146,8 +156,6 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.complex_selector();
-
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| meta.advice_column())
                     .collect::<Vec<_>>()
@@ -158,7 +166,6 @@ mod tests {
                 meta.enable_equality(round_ctant_b13.into());
                 meta.enable_equality(round_ctants.into());
                 IotaB13Config::configure(
-                    |meta| meta.query_selector(q_enable),
                     meta,
                     state,
                     round_ctant_b13,
@@ -171,20 +178,34 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
+                let val: F = self.is_mixing.into();
+                let flag: (Cell, F) = layouter.assign_region(
+                    || "witness_is_mixing_flag",
+                    |mut region| {
+                        let offset = 0;
+                        let cell = region.assign_advice(
+                            || "assign is_mising",
+                            config.round_ctant_b13,
+                            offset,
+                            || Ok(val),
+                        )?;
+                        Ok((cell, val))
+                    },
+                )?;
+
+                // TODO: Review with YT: Missing state assignation no?
+
                 layouter.assign_region(
                     || "assign input & output state + constant in same region",
                     |mut region| {
                         let offset = 0;
-                        config.assign_state(
+                        config.assign_state_and_round_ctant(
                             &mut region,
                             offset,
                             self.in_state,
                             0,
-                        )?;
-                        config.assign_round_ctant_b13(
-                            &mut region,
-                            offset,
                             self.round_ctant_b13,
+                            flag,
                         )
                     },
                 )?;
@@ -212,6 +233,7 @@ mod tests {
         let circuit = MyCircuit::<pallas::Base> {
             in_state,
             round_ctant_b13: 0,
+            is_mixing: true,
             _marker: PhantomData,
         };
 
