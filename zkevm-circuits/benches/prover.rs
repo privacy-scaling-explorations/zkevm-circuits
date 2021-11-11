@@ -34,7 +34,12 @@ trait StandardCs<FF: FieldExt> {
     ) -> Result<(Cell, Cell, Cell), Error>
     where
         F: FnMut() -> Result<(FF, FF, FF), Error>;
-    fn copy(&self, layouter: &mut impl Layouter<FF>, a: Cell, b: Cell) -> Result<(), Error>;
+    fn copy(
+        &self,
+        layouter: &mut impl Layouter<FF>,
+        a: Cell,
+        b: Cell,
+    ) -> Result<(), Error>;
 }
 
 #[derive(Clone)]
@@ -94,10 +99,30 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
                     || Ok(values.ok_or(Error::SynthesisError)?.2),
                 )?;
 
-                region.assign_fixed(|| "a", self.config.sa, 0, || Ok(FF::zero()))?;
-                region.assign_fixed(|| "b", self.config.sb, 0, || Ok(FF::zero()))?;
-                region.assign_fixed(|| "c", self.config.sc, 0, || Ok(FF::one()))?;
-                region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(FF::one()))?;
+                region.assign_fixed(
+                    || "a",
+                    self.config.sa,
+                    0,
+                    || Ok(FF::zero()),
+                )?;
+                region.assign_fixed(
+                    || "b",
+                    self.config.sb,
+                    0,
+                    || Ok(FF::zero()),
+                )?;
+                region.assign_fixed(
+                    || "c",
+                    self.config.sc,
+                    0,
+                    || Ok(FF::one()),
+                )?;
+                region.assign_fixed(
+                    || "a * b",
+                    self.config.sm,
+                    0,
+                    || Ok(FF::one()),
+                )?;
 
                 Ok((lhs, rhs, out))
             },
@@ -139,17 +164,42 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
                     || Ok(values.ok_or(Error::SynthesisError)?.2),
                 )?;
 
-                region.assign_fixed(|| "a", self.config.sa, 0, || Ok(FF::one()))?;
-                region.assign_fixed(|| "b", self.config.sb, 0, || Ok(FF::one()))?;
-                region.assign_fixed(|| "c", self.config.sc, 0, || Ok(FF::one()))?;
-                region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(FF::zero()))?;
+                region.assign_fixed(
+                    || "a",
+                    self.config.sa,
+                    0,
+                    || Ok(FF::one()),
+                )?;
+                region.assign_fixed(
+                    || "b",
+                    self.config.sb,
+                    0,
+                    || Ok(FF::one()),
+                )?;
+                region.assign_fixed(
+                    || "c",
+                    self.config.sc,
+                    0,
+                    || Ok(FF::one()),
+                )?;
+                region.assign_fixed(
+                    || "a * b",
+                    self.config.sm,
+                    0,
+                    || Ok(FF::zero()),
+                )?;
 
                 Ok((lhs, rhs, out))
             },
         )
     }
 
-    fn copy(&self, layouter: &mut impl Layouter<FF>, left: Cell, right: Cell) -> Result<(), Error> {
+    fn copy(
+        &self,
+        layouter: &mut impl Layouter<FF>,
+        left: Cell,
+        right: Cell,
+    ) -> Result<(), Error> {
         layouter.assign_region(
             || "copy",
             |mut region| {
@@ -196,7 +246,12 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             let sc = meta.query_fixed(sc, Rotation::cur());
             let sm = meta.query_fixed(sm, Rotation::cur());
 
-            vec![a.clone() * sa + b.clone() * sb + a * b * sm.clone() + (c * sc * (-F::one()))]
+            vec![
+                a.clone() * sa
+                    + b.clone() * sb
+                    + a * b * sm.clone()
+                    + (c * sc * (-F::one())),
+            ]
         });
 
         PlonkConfig {
@@ -211,7 +266,11 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
         }
     }
 
-    fn synthesize(&self, config: PlonkConfig, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+    fn synthesize(
+        &self,
+        config: PlonkConfig,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
         let cs = StandardPlonk::new(config);
 
         for _ in 0..(1 << (self.k - 1) - 3) {
@@ -255,16 +314,19 @@ fn main() {
 
     // Initialize the polynomial commitment parameters
     let rng = XorShiftRng::from_seed([
-        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
-        0xe5,
+        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32,
+        0x54, 0x06, 0xbc, 0xe5,
     ]);
 
     let params = Setup::<Bn256>::new(k, rng);
-    let verifier_params = Setup::<Bn256>::verifier_params(&params, public_inputs_size).unwrap();
+    let verifier_params =
+        Setup::<Bn256>::verifier_params(&params, public_inputs_size).unwrap();
 
     // Initialize the proving key
-    let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
+    let vk =
+        keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
+    let pk = keygen_pk(&params, vk, &empty_circuit)
+        .expect("keygen_pk should not fail");
 
     let circuit: MyCircuit<Fp> = MyCircuit {
         a: Some(Fp::from(5)),
@@ -287,6 +349,7 @@ fn main() {
 
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
     assert!(bool::from(
-        verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript).unwrap()
+        verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
+            .unwrap()
     ));
 }

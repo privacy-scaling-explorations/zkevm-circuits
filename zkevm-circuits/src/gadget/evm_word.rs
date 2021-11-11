@@ -8,11 +8,7 @@
 
 use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
-use halo2::{
-    circuit::Region,
-    plonk::*,
-    poly::Rotation,
-};
+use halo2::{circuit::Region, plonk::*, poly::Rotation};
 use pairing::arithmetic::FieldExt;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
@@ -165,122 +161,144 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::{arithmetic::Field, circuit::SimpleFloorPlanner, dev::{MockProver, VerifyFailure}, plonk::{Circuit, Instance}};
-    use pairing::bn256::Fr as Fp;
+    use halo2::poly::{commitment::Setup, Rotation};
+    use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
+    use halo2::{
+        circuit::SimpleFloorPlanner,
+        plonk::{Circuit, Instance},
+    };
+    use pairing::bn256::{Bn256, Fr as Fp};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::marker::PhantomData;
 
+    #[derive(Default)]
+    struct MyCircuit<F: FieldExt> {
+        word: [Option<u8>; 32],
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        // Introduce an additional instance column here to test lookups
+        // with public inputs. This is analogous to the bus mapping
+        // commitment which will be provided as public inputs.
+        type Config = (WordConfig<F>, Column<Instance>);
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let r = r();
+
+            let q_encode = meta.selector();
+
+            let bytes: [Column<Advice>; 32] = (0..32)
+                .map(|_| meta.advice_column())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            let byte_lookup = meta.fixed_column();
+
+            let config =
+                WordConfig::configure(meta, r, q_encode, bytes, byte_lookup);
+
+            let pub_inputs = meta.instance_column();
+
+            // Make sure each encoded word has been committed to in the
+            // public inputs.
+            meta.lookup2(|meta| {
+                let q_encode = meta.query_selector(q_encode);
+                let pub_inputs =
+                    meta.query_instance(pub_inputs, Rotation::cur());
+
+                let encode_word = config.clone().encode_word_expr;
+
+                vec![(q_encode * encode_word, pub_inputs)]
+            });
+
+            (config, pub_inputs)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.0.load(&mut layouter)?;
+
+            layouter.assign_region(
+                || "assign word",
+                |mut region| {
+                    let offset = 0;
+                    config.0.assign_word(&mut region, offset, self.word)
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
     #[test]
     fn evm_word() {
-        #[derive(Default)]
-        struct MyCircuit<F: FieldExt> {
-            word: [Option<u8>; 32],
-            _marker: PhantomData<F>,
-        }
+        let k = 8;
+        let public_inputs_size = 0;
+        let rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
+            0x32, 0x54, 0x06, 0xbc, 0xe5,
+        ]);
+        let word = Fp::one();
+        let empty_circuit = MyCircuit::<Fp> {
+            word: [None; 32],
+            _marker: PhantomData,
+        };
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
-            // Introduce an additional instance column here to test lookups
-            // with public inputs. This is analogous to the bus mapping
-            // commitment which will be provided as public inputs.
-            type Config = (WordConfig<F>, Column<Instance>);
-            type FloorPlanner = SimpleFloorPlanner;
+        let params = Setup::<Bn256>::new(k, rng);
+        let verifier_params =
+            Setup::<Bn256>::verifier_params(&params, public_inputs_size)
+                .unwrap();
 
-            fn without_witnesses(&self) -> Self {
-                Self::default()
-            }
+        // Initialize the proving key
+        let vk = keygen_vk(&params, &empty_circuit)
+            .expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit)
+            .expect("keygen_pk should not fail");
 
-            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let r = r();
+        let circuit = MyCircuit::<Fp> {
+            word: word
+                .to_bytes()
+                .iter()
+                .map(|b| Some(*b))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            _marker: PhantomData,
+        };
 
-                let q_encode = meta.selector();
+        let mut transcript =
+            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
-                let bytes: [Column<Advice>; 32] = (0..32)
-                    .map(|_| meta.advice_column())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap();
-                let byte_lookup = meta.fixed_column();
+        use std::time::Instant;
+        let _dur = Instant::now();
 
-                let config = WordConfig::configure(
-                    meta,
-                    r,
-                    q_encode,
-                    bytes,
-                    byte_lookup,
-                );
+        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
+            .expect("proof generation should not fail");
 
-                let pub_inputs = meta.instance_column();
+        println!("proving period: {:?}", _dur.elapsed());
 
-                // Make sure each encoded word has been committed to in the
-                // public inputs.
-                meta.lookup2(|meta| {
-                    let q_encode = meta.query_selector(q_encode);
-                    let pub_inputs =
-                        meta.query_instance(pub_inputs, Rotation::cur());
+        let proof = transcript.finalize();
 
-                    let encode_word = config.clone().encode_word_expr;
-
-                    vec![(q_encode * encode_word, pub_inputs)]
-                });
-
-                (config, pub_inputs)
-            }
-
-            fn synthesize(
-                &self,
-                config: Self::Config,
-                mut layouter: impl Layouter<F>,
-            ) -> Result<(), Error> {
-                config.0.load(&mut layouter)?;
-
-                layouter.assign_region(
-                    || "assign word",
-                    |mut region| {
-                        let offset = 0;
-                        config.0.assign_word(&mut region, offset, self.word)
-                    },
-                )?;
-
-                Ok(())
-            }
-        }
-
-        {
-            let rng = XorShiftRng::from_seed([
-                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb,
-                0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
-            ]);
-            let word = Fp::random(rng);
-            let circuit = MyCircuit::<Fp> {
-                word: word
-                    .to_bytes()
-                    .iter()
-                    .map(|b| Some(*b))
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-                _marker: PhantomData,
-            };
-
-            // Test without public inputs
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
-            assert_eq!(
-                prover.verify(),
-                Err(vec![VerifyFailure::Lookup {
-                    lookup_index: 32,
-                    row: 0
-                }])
-            );
-
-            // Calculate word commitment and use it as public input.
-            let encoded: Fp =
-                encode(word.to_bytes().iter().rev().cloned(), r());
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]])
-                    .unwrap();
-            assert_eq!(prover.verify(), Ok(()))
-        }
+        let mut transcript =
+            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        assert!(bool::from(
+            verify_proof(
+                &verifier_params,
+                pk.get_vk(),
+                &[&[]],
+                &mut transcript
+            )
+            .unwrap()
+        ));
     }
 }
