@@ -679,27 +679,25 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
                 meta.query_advice(block_count_cols[0], Rotation::cur());
             let step3_acc =
                 meta.query_advice(block_count_cols[1], Rotation::cur());
+            let one = Expression::Constant(F::one());
             iter::empty()
                 .chain(Some((
-                    "step2_acc <=12",
-                    (0..=12)
+                    "step2_acc <= 12",
+                    (0..=STEP2_RANGE)
                         .map(|x| {
                             step2_acc.clone() - Expression::Constant(F::from(x))
                         })
-                        .reduce(|a, b| a * b),
+                        .fold(one.clone(), |acc, x| acc * x),
                 )))
                 .chain(Some((
                     "step3_acc <= 13 * 13",
-                    (0..=13 * 13)
+                    (0..=STEP3_RANGE)
                         .map(|x| {
                             step3_acc.clone() - Expression::Constant(F::from(x))
                         })
-                        .reduce(|a, b| a * b),
+                        .fold(one, |acc, x| acc * x),
                 )))
-                .map(|(name, poly)| match poly {
-                    Some(poly) => (name, q_enable.clone() * poly),
-                    None => (name, Expression::Constant(F::zero())),
-                })
+                .map(|(name, poly)| (name, q_enable.clone() * poly))
                 .collect::<Vec<_>>()
         });
 

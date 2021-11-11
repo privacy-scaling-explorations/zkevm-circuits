@@ -1,12 +1,13 @@
 use crate::arith_helpers::*;
-use crate::common::*;
-use crate::gates::rho_helpers::block_counting_function;
+use crate::common::LANE_SIZE;
+use crate::gates::rho_helpers::{get_block_count, BASE_NUM_OF_CHUNKS};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
+use std::convert::TryInto;
 use std::marker::PhantomData;
 
 use itertools::Itertools;
@@ -29,8 +30,10 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
             || "from base13",
             |mut region| {
                 // Iterate over all possible 13-ary values of size 4
-                for (i, coefs) in
-                    (0..4).map(|_| 0..B13).multi_cartesian_product().enumerate()
+                for (i, b13_chunks) in (0..BASE_NUM_OF_CHUNKS)
+                    .map(|_| 0..B13)
+                    .multi_cartesian_product()
+                    .enumerate()
                 {
                     region.assign_fixed(
                         || "base 13",
@@ -38,7 +41,9 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         i,
                         || {
                             Ok(F::from_u64(
-                                coefs.iter().fold(0, |acc, x| acc * B13 + *x),
+                                b13_chunks
+                                    .iter()
+                                    .fold(0, |acc, x| acc * B13 + *x),
                             ))
                         },
                     )?;
@@ -48,9 +53,11 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.base9,
                         i,
                         || {
-                            Ok(F::from_u64(coefs.iter().fold(0, |acc, x| {
-                                acc * B9 + convert_b13_coef(*x)
-                            })))
+                            Ok(F::from_u64(
+                                b13_chunks.iter().fold(0, |acc, x| {
+                                    acc * B9 + convert_b13_coef(*x)
+                                }),
+                            ))
                         },
                     )?;
                     region.assign_fixed(
@@ -58,13 +65,12 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.block_count,
                         i,
                         || {
-                            // could be 0, 1, 2, 3, 4
-                            let non_zero_chunk_count =
-                                coefs.iter().filter(|x| **x != 0).count();
-                            // could be 0, 0, 1, 13, 170
-                            let block_count =
-                                block_counting_function(non_zero_chunk_count);
-                            Ok(F::from_u64(block_count.into()))
+                            Ok(F::from_u64(
+                                get_block_count(
+                                    b13_chunks.clone().try_into().unwrap(),
+                                )
+                                .into(),
+                            ))
                         },
                     )?;
                 }
