@@ -32,6 +32,9 @@ pub struct KeccakFConfig<F: FieldExt> {
 }
 
 impl<F: FieldExt> KeccakFConfig<F> {
+    const B9_ROW: usize = 0;
+    const B13_ROW: usize = 1;
+
     // We assume state is recieved in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> KeccakFConfig<F> {
         let q_iota_b9 = meta.selector();
@@ -53,22 +56,32 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let pi_config = PiConfig::configure(meta.selector(), meta, state);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
-        // Iotab9
 
-        let iota_b9_config = {
-            // Generate advice and instance column for Round constants in base9
-            let round_ctant_b9 = meta.advice_column();
-            let round_constants_b9 = meta.instance_column();
-            IotaB9Config::configure(
-                |meta| meta.query_selector(q_iota_b9),
+        // Iotab9
+        // Generate advice and instance column for Round constants in base9
+        let round_ctant_b9 = meta.advice_column();
+        let round_constants_b9 = meta.instance_column();
+        let iota_b9_config = IotaB9Config::configure(
+            |meta| meta.query_selector(q_iota_b9),
+            meta,
+            state,
+            round_ctant_b9,
+            round_constants_b9,
+        );
+
+        let mixing_config = {
+            let round_ctant_b13 = meta.advice_column();
+            let round_ctants_b13 = meta.instance_column();
+
+            MixingConfig::configure(
                 meta,
                 state,
                 round_ctant_b9,
                 round_constants_b9,
+                round_ctant_b13,
+                round_ctants_b13,
             )
         };
-
-        let mixing_config = unimplemented!();
 
         KeccakFConfig {
             theta_config,
@@ -88,6 +101,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        flag: bool,
     ) -> Result<[F; 25], Error> {
         // In case is needed
         let mut state = state;
@@ -145,9 +159,9 @@ impl<F: FieldExt> KeccakFConfig<F> {
             offset += 1;
 
             // iota_b9
-            (state, offset) = self
+            let (state, offset) = self
                 .iota_b9_config
-                .assign_state(region, offset, state, round)?;
+                .assign_state_and_rc(region, offset, flag, state, round)?;
 
             // The resulting state is in Base-13 now. Which is what Theta requires again at the start of the loop.
         }
@@ -203,9 +217,9 @@ impl<F: FieldExt> KeccakFConfig<F> {
         offset += 1;
 
         // iota_b9
-        (state, offset) = self
+        let (state, offset) = self
             .iota_b9_config
-            .assign_state(region, offset, state, round)?;
+            .assign_state_and_rc(region, offset, flag, state, round)?;
 
         // Final round (if / else)
         // TODO!!!
