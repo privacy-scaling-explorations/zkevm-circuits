@@ -1,7 +1,8 @@
 //! Doc this
-use crate::evm::EvmWord;
+use crate::eth_types::Word;
 use crate::Error;
 use core::str::FromStr;
+use serde::Deserialize;
 
 /// Represents a `StackAddress` of the EVM.
 /// The address range goes `TOP -> DOWN (1024, 0]`.
@@ -44,10 +45,10 @@ impl FromStr for StackAddress {
 
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Stack(pub(crate) Vec<EvmWord>);
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+pub struct Stack(pub(crate) Vec<Word>);
 
-impl<T: Into<Vec<EvmWord>>> From<T> for Stack {
+impl<T: Into<Vec<Word>>> From<T> for Stack {
     fn from(words: T) -> Self {
         Stack(words.into())
     }
@@ -60,12 +61,12 @@ impl Stack {
     }
 
     /// Generates a `Stack` instance from the given slice.
-    pub fn from_slice(words: &[EvmWord]) -> Self {
+    pub fn from_slice(words: &[Word]) -> Self {
         Stack(words.into())
     }
 
     /// Generates a `Stack` instance from the given vec.
-    pub const fn from_vec(words: Vec<EvmWord>) -> Self {
+    pub const fn from_vec(words: Vec<Word>) -> Self {
         Stack(words)
     }
 
@@ -86,33 +87,37 @@ impl Stack {
         StackAddress::from(1024 - self.0.len() + nth)
     }
 
-    /// Returns the last [`EvmWord`] allocated in the `Stack`.
-    pub fn last(&self) -> Option<&EvmWord> {
-        self.0.last()
+    /// Returns the last [`Word`] allocated in the `Stack`.
+    pub fn last(&self) -> Result<Word, Error> {
+        self.0.last().cloned().ok_or(Error::InvalidStackPointer)
     }
 
-    /// Returns the second last [`EvmWord`] allocated in the `Stack`.
-    pub fn nth_last(&self, nth: usize) -> Option<&EvmWord> {
-        self.0.get(self.0.len() - (nth + 1))
+    /// Returns the second last [`Word`] allocated in the `Stack`.
+    pub fn nth_last(&self, nth: usize) -> Result<Word, Error> {
+        self.0
+            .get(self.0.len() - (nth + 1))
+            .cloned()
+            .ok_or(Error::InvalidStackPointer)
     }
 }
 
 #[cfg(test)]
 mod stack_tests {
     use super::*;
+    use crate::word;
 
     fn setup_stack(stack_value: [&str; 3]) -> Stack {
         Stack::from_vec(vec![
-            EvmWord::from_str(stack_value[0]).unwrap(),
-            EvmWord::from_str(stack_value[1]).unwrap(),
-            EvmWord::from_str(stack_value[2]).unwrap(),
+            word!(stack_value[0]),
+            word!(stack_value[1]),
+            word!(stack_value[2]),
         ])
     }
 
     #[test]
     fn stack_addr_conversion() -> Result<(), Error> {
         let first_usize = 1023usize;
-        let addr1 = StackAddress::from(first_usize);
+        let addr1 = StackAddress(first_usize);
         let addr2 = StackAddress::from_str("0x3ff")?;
 
         assert_eq!(addr1.0, first_usize);
@@ -124,9 +129,9 @@ mod stack_tests {
     fn stack_pointer() -> Result<(), Error> {
         let stack = setup_stack(["0x15", "0x16", "0x17"]);
 
-        assert_eq!(stack.stack_pointer(), StackAddress::from(1020));
-        assert_eq!(stack.last_filled(), StackAddress::from(1021));
-        assert_eq!(stack.nth_last_filled(1), StackAddress::from(1022));
+        assert_eq!(stack.stack_pointer(), StackAddress(1020));
+        assert_eq!(stack.last_filled(), StackAddress(1021));
+        assert_eq!(stack.nth_last_filled(1), StackAddress(1022));
         Ok(())
     }
 
@@ -134,8 +139,8 @@ mod stack_tests {
     fn stack_get_value() -> Result<(), Error> {
         let stack = setup_stack(["0x15", "0x16", "0x17"]);
 
-        assert_eq!(stack.last().unwrap(), &EvmWord::from_str("0x17")?);
-        assert_eq!(stack.nth_last(1).unwrap(), &EvmWord::from_str("0x16")?);
+        assert_eq!(stack.last().unwrap(), word!("0x17"));
+        assert_eq!(stack.nth_last(1).unwrap(), word!("0x16"));
         Ok(())
     }
 }

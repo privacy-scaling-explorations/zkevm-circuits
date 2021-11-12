@@ -24,6 +24,7 @@ type StructLogRes struct {
 	Storage *map[string]string `json:"storage,omitempty"`
 }
 
+// FormatLogs formats EVM returned structured logs for json output.
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.FormatLogs
 func FormatLogs(logs []vm.StructLog) []StructLogRes {
 	formatted := make([]StructLogRes, len(logs))
@@ -39,7 +40,7 @@ func FormatLogs(logs []vm.StructLog) []StructLogRes {
 		if trace.Stack != nil {
 			stack := make([]string, len(trace.Stack))
 			for i, stackValue := range trace.Stack {
-				stack[i] = stackValue.Hex()[2:]
+				stack[i] = stackValue.Hex()
 			}
 			formatted[index].Stack = &stack
 		}

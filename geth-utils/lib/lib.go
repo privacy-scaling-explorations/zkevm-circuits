@@ -14,11 +14,14 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
 )
 
+// TODO: Add proper error handling.  For example, return an int, where 0 means
+// ok, and !=0 means error.
 //export CreateTrace
 func CreateTrace(config *C.char) *C.char {
 	var gethConfig GethConfig
@@ -52,26 +55,26 @@ type GethConfig struct {
 }
 
 type BlockConstants struct {
-	Hash        string `json:"hash"`
-	Coinbase    string `json:"coinbase"`
-	Timestamp   string `json:"timestamp"`
-	BlockNumber string `json:"number"`
-	Difficulty  string `json:"difficulty"`
-	GasLimit    string `json:"gas_limit"`
-	ChainID     string `json:"chain_id"`
-	BaseFee     string `json:"base_fee"`
+	Hash        common.Hash    `json:"hash"`
+	Coinbase    common.Address `json:"coinbase"`
+	Timestamp   *hexutil.Big   `json:"timestamp"`
+	BlockNumber *hexutil.Big   `json:"number"`
+	Difficulty  *hexutil.Big   `json:"difficulty"`
+	GasLimit    *hexutil.Big   `json:"gas_limit"`
+	ChainID     *hexutil.Big   `json:"chain_id"`
+	BaseFee     *hexutil.Big   `json:"base_fee"`
 }
 
 type Transaction struct {
-	Origin   string `json:"origin"`
-	GasLimit string `json:"gas_limit"`
-	Target   string `json:"target"`
+	Origin   common.Address `json:"origin"`
+	GasLimit *hexutil.Big   `json:"gas_limit"`
+	Target   common.Address `json:"target"`
 }
 
 type AccountData struct {
-	Address string `json:"address"`
-	Balance string `json:"balance"`
-	Code    string `json:"code"`
+	Address common.Address `json:"address"`
+	Balance *hexutil.Big   `json:"balance"`
+	Code    string         `json:"code"`
 }
 
 type JsonConfig struct {
@@ -88,14 +91,14 @@ func (this *GethConfig) UnmarshalJSON(b []byte) error {
 	}
 
 	this.config = runtime.Config{
-		Origin:      AddressFromString(jConfig.Transaction.Origin, 16),
-		GasLimit:    NewBigIntFromString(jConfig.Transaction.GasLimit, 16).Uint64(),
-		Difficulty:  NewBigIntFromString(jConfig.Block.Difficulty, 16),
-		Time:        NewBigIntFromString(jConfig.Block.Timestamp, 16),
-		Coinbase:    AddressFromString(jConfig.Block.Coinbase, 16),
-		BlockNumber: NewBigIntFromString(jConfig.Block.BlockNumber, 16),
+		Origin:      jConfig.Transaction.Origin,
+		GasLimit:    jConfig.Transaction.GasLimit.ToInt().Uint64(),
+		Difficulty:  jConfig.Block.Difficulty.ToInt(),
+		Time:        jConfig.Block.Timestamp.ToInt(),
+		Coinbase:    jConfig.Block.Coinbase,
+		BlockNumber: jConfig.Block.BlockNumber.ToInt(),
 		ChainConfig: &params.ChainConfig{
-			ChainID:             NewBigIntFromString(jConfig.Block.ChainID, 16),
+			ChainID:             jConfig.Block.ChainID.ToInt(),
 			HomesteadBlock:      big.NewInt(0),
 			DAOForkBlock:        big.NewInt(0),
 			DAOForkSupport:      true,
@@ -115,8 +118,8 @@ func (this *GethConfig) UnmarshalJSON(b []byte) error {
 	}
 
 	for _, contract := range jConfig.Accounts {
-		address := AddressFromString(contract.Address, 16)
-		balance := NewBigIntFromString(contract.Balance, 16)
+		address := contract.Address
+		balance := contract.Balance.ToInt()
 		code, err := hex.DecodeString(contract.Code)
 		if err != nil {
 			return err
@@ -124,23 +127,9 @@ func (this *GethConfig) UnmarshalJSON(b []byte) error {
 		this.contracts = append(this.contracts, gethutil.Account{Address: address, Balance: balance, Bytecode: code})
 	}
 
-	this.target = AddressFromString(jConfig.Transaction.Target, 16)
+	this.target = jConfig.Transaction.Target
 
 	return nil
-}
-
-func NewBigIntFromString(v string, base int) *big.Int {
-	b, success := new(big.Int).SetString(v, base)
-	if !success {
-		fmt.Fprintf(os.Stderr, "failed to convert string '%s' to bigint\n", v)
-		return nil
-	}
-	return b
-}
-
-func AddressFromString(v string, base int) common.Address {
-	b := NewBigIntFromString(v, base)
-	return common.BigToAddress(b)
 }
 
 func main() {}

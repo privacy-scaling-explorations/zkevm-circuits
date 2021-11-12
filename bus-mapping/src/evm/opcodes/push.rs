@@ -1,8 +1,8 @@
-use core::ops::Deref;
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::eth_types::GethExecStep;
 // Port this to a macro if possible to avoid defining all the PushN
 use super::Opcode;
 use crate::{
-    exec_trace::{ExecutionStep, TraceContext},
     operation::{StackOp, RW},
     Error,
 };
@@ -16,27 +16,15 @@ pub(crate) struct Push1;
 
 impl Opcode for Push1 {
     fn gen_associated_ops(
-        &self,
-        ctx: &mut TraceContext,
-        // Contains the PUSH1 instr
-        exec_step: &mut ExecutionStep,
-        // Contains the next step where we can find the value that was pushed.
-        next_steps: &[ExecutionStep],
+        state: &mut CircuitInputStateRef,
+        steps: &[GethExecStep],
     ) -> Result<(), Error> {
-        ctx.push_op(
-            exec_step,
-            StackOp::new(
-                RW::WRITE,
-                // Get the value and addr from the next step. Being the last position filled with an element in the stack
-                next_steps[0].stack().last_filled(),
-                next_steps[0]
-                    .stack()
-                    .deref()
-                    .last()
-                    .cloned()
-                    .ok_or(Error::InvalidStackPointer)?,
-            ),
-        );
+        state.push_op(StackOp::new(
+            RW::WRITE,
+            // Get the value and addr from the next step. Being the last position filled with an element in the stack
+            steps[1].stack.last_filled(),
+            steps[1].stack.last()?,
+        ));
 
         Ok(())
     }
@@ -47,10 +35,13 @@ mod push_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{EvmWord, GasCost, OpcodeId, Stack, StackAddress, Storage},
-        external_tracer, BlockConstants, ExecutionTrace,
+        circuit_input_builder::{
+            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
+        },
+        eth_types::Word,
+        evm::StackAddress,
+        mock,
     };
-    use pasta_curves::pallas::Scalar;
 
     #[test]
     fn push1_opcode_impl() -> Result<(), Error> {
@@ -60,62 +51,47 @@ mod push_tests {
             STOP
         };
 
-        let block_ctants = BlockConstants::default();
-
         // Get the execution steps from the external tracer
-        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
-            [code.get_pos("start")..];
+        let block =
+            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
-            obtained_steps.to_vec(),
-            block_ctants,
-        )?;
+        let mut builder = CircuitInputBuilder::new(
+            block.eth_block.clone(),
+            block.block_ctants.clone(),
+        );
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut ctx = TraceContext::new();
+        let mut test_builder = CircuitInputBuilder::new(
+            block.eth_block,
+            block.block_ctants.clone(),
+        );
+        let mut tx = Transaction::new(&block.eth_tx);
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Start from the same pc and gas limit
-        let mut pc = obtained_steps[0].pc();
-        let gas = obtained_steps[0].gas();
-
-        // The memory is the same in both steps as none of them edits the
-        // memory of the EVM.
-        let mem_map = obtained_steps[0].memory.clone();
-
-        // Generate Step1 corresponding to PUSH1 80
-        let mut step_1 = ExecutionStep {
-            memory: mem_map,
-            stack: Stack::new(),
-            storage: Storage::empty(),
-            instruction: OpcodeId::PUSH1,
-            gas,
-            gas_cost: GasCost::FASTEST,
-            depth: 1u8,
-            pc: pc.inc_pre(),
-            gc: ctx.gc,
-            bus_mapping_instance: vec![],
-        };
+        // Generate step corresponding to PUSH1 80
+        let mut step = ExecStep::new(
+            &block.geth_trace.struct_logs[0],
+            test_builder.block_ctx.gc,
+        );
+        let mut state_ref =
+            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023),
-                EvmWord::from(0x80u8),
-            ),
-        );
+        state_ref.push_op(StackOp::new(
+            RW::WRITE,
+            StackAddress::from(1023),
+            Word::from(0x80),
+        ));
+        tx.steps_mut().push(step);
+        test_builder.block.txs_mut().push(tx);
 
         // Compare first step bus mapping instance
         assert_eq!(
-            obtained_exec_trace[0].bus_mapping_instance(),
-            step_1.bus_mapping_instance()
+            builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            test_builder.block.txs()[0].steps()[0].bus_mapping_instance
         );
-        // Compare first step entirely
-        assert_eq!(obtained_exec_trace[0], step_1);
-
         // Compare containers
-        assert_eq!(obtained_exec_trace.ctx.container, ctx.container);
+        assert_eq!(builder.block.container, test_builder.block.container);
 
         Ok(())
     }

@@ -100,7 +100,7 @@ let input_trace = r#"
 "#;
 
 let block_ctants = BlockConstants::new(
-    EvmWord::from(0u8),
+    Word::from(0),
     pasta_curves::Fp::zero(),
     pasta_curves::Fp::zero(),
     pasta_curves::Fp::zero(),

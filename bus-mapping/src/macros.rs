@@ -1,18 +1,5 @@
 //! Collection of utility macros used within this crate.
 
-macro_rules! impl_from_evm_word_wrappers {
-    ($($implementor:ty),*) => {
-        $(impl From<$implementor> for EvmWord {
-            fn from(item: $implementor) -> EvmWord {
-                let mut bytes = [0u8;32];
-                let item_bytes = item.to_be_bytes();
-                bytes[32-item_bytes.len()..].copy_from_slice(&item_bytes[..]);
-                EvmWord(bytes)
-            }
-        })*
-    };
-}
-
 macro_rules! impl_from_usize_wrappers {
     ($implemented:ty = $alias:expr, ($($implementor:ty),*)) => {
         $(impl From<$implementor> for $implemented {

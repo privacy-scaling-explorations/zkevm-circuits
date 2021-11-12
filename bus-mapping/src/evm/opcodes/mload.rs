@@ -1,7 +1,8 @@
 use super::Opcode;
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::eth_types::{GethExecStep, ToBigEndian};
 use crate::{
     evm::MemoryAddress,
-    exec_trace::{ExecutionStep, TraceContext},
     operation::{MemoryOp, StackOp, RW},
     Error,
 };
@@ -17,47 +18,34 @@ pub(crate) struct Mload;
 impl Opcode for Mload {
     #[allow(unused_variables)]
     fn gen_associated_ops(
-        &self,
-        ctx: &mut TraceContext,
-        exec_step: &mut ExecutionStep,
-        next_steps: &[ExecutionStep],
+        state: &mut CircuitInputStateRef,
+        steps: &[GethExecStep],
     ) -> Result<(), Error> {
+        let step = &steps[0];
         //
         // First stack read
         //
-        let stack_value_read = exec_step
-            .stack()
-            .last()
-            .cloned()
-            .ok_or(Error::InvalidStackPointer)?;
-        let stack_position = exec_step.stack().last_filled();
+        let stack_value_read = step.stack.last()?;
+        let stack_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        ctx.push_op(
-            exec_step,
-            StackOp::new(RW::READ, stack_position, stack_value_read),
-        );
+        state.push_op(StackOp::new(RW::READ, stack_position, stack_value_read));
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        let mem_read_value = next_steps[0].memory().read_word(mem_read_addr)?;
+        let mem_read_value = steps[1].memory.read_word(mem_read_addr)?;
 
         //
         // First stack write
         //
-        ctx.push_op(
-            exec_step,
-            StackOp::new(RW::WRITE, stack_position, mem_read_value),
-        );
+        state.push_op(StackOp::new(RW::WRITE, stack_position, mem_read_value));
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
-        mem_read_value.inner().iter().for_each(|value_byte| {
-            ctx.push_op(
-                exec_step,
-                MemoryOp::new(RW::READ, mem_read_addr, *value_byte),
-            );
+        let bytes = mem_read_value.to_be_bytes();
+        bytes.iter().for_each(|value_byte| {
+            state.push_op(MemoryOp::new(RW::READ, mem_read_addr, *value_byte));
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
@@ -72,10 +60,13 @@ mod mload_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{EvmWord, GasCost, OpcodeId, Stack, StackAddress, Storage},
-        external_tracer, BlockConstants, ExecutionTrace,
+        circuit_input_builder::{
+            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
+        },
+        eth_types::Word,
+        evm::StackAddress,
+        mock,
     };
-    use pasta_curves::pallas::Scalar;
 
     #[test]
     fn mload_opcode_impl() -> Result<(), Error> {
@@ -88,106 +79,66 @@ mod mload_tests {
             STOP
         };
 
-        let block_ctants = BlockConstants::default();
-
         // Get the execution steps from the external tracer
-        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
-            [code.get_pos("start")..];
+        let block =
+            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
-            obtained_steps.to_vec(),
-            block_ctants,
-        )?;
+        let mut builder = CircuitInputBuilder::new(
+            block.eth_block.clone(),
+            block.block_ctants.clone(),
+        );
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut ctx = TraceContext::new();
+        let mut test_builder = CircuitInputBuilder::new(
+            block.eth_block,
+            block.block_ctants.clone(),
+        );
+        let mut tx = Transaction::new(&block.eth_tx);
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Start from the same pc and gas limit
-        let mut pc = obtained_steps[0].pc();
-
-        // The memory is the same in both steps as none of them edits the
-        // memory of the EVM.
-        let mem_map = obtained_steps[0].memory.clone();
-
-        // Generate Step1 corresponding to PUSH1 40
-        let mut step_1 = ExecutionStep {
-            memory: mem_map.clone(),
-            stack: Stack(vec![EvmWord::from(0x40u8)]),
-            storage: Storage::empty(),
-            instruction: OpcodeId::MLOAD,
-            gas: obtained_steps[0].gas(),
-            gas_cost: GasCost::FASTEST,
-            depth: 1u8,
-            pc: pc.inc_pre(),
-            gc: ctx.gc,
-            bus_mapping_instance: vec![],
-        };
+        // Generate step corresponding to MLOAD
+        let mut step = ExecStep::new(
+            &block.geth_trace.struct_logs[0],
+            test_builder.block_ctx.gc,
+        );
+        let mut state_ref =
+            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOp associated to the 0x40 read from the latest Stack pos.
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(
-                RW::READ,
-                StackAddress::from(1023),
-                EvmWord::from(0x40u8),
-            ),
-        );
+        state_ref.push_op(StackOp::new(
+            RW::READ,
+            StackAddress::from(1023),
+            Word::from(0x40),
+        ));
 
         // Add the last Stack write
-        ctx.push_op(
-            &mut step_1,
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023),
-                EvmWord::from(0x80u8),
-            ),
-        );
+        state_ref.push_op(StackOp::new(
+            RW::WRITE,
+            StackAddress::from(1023),
+            Word::from(0x80),
+        ));
 
         // Add the 32 MemoryOp generated from the Memory read at addr 0x40<->0x80 for each byte.
-        EvmWord::from(0x80u8)
-            .inner()
+        Word::from(0x80)
+            .to_be_bytes()
             .iter()
             .enumerate()
             .map(|(idx, byte)| (idx + 0x40, byte))
             .for_each(|(idx, byte)| {
-                ctx.push_op(
-                    &mut step_1,
-                    MemoryOp::new(RW::READ, idx.into(), *byte),
-                );
+                state_ref.push_op(MemoryOp::new(RW::READ, idx.into(), *byte));
             });
 
-        // Generate Step1 corresponding to PUSH1 40
-        let step_2 = ExecutionStep {
-            memory: mem_map,
-            stack: Stack(vec![EvmWord::from(0x80u8)]),
-            storage: Storage::empty(),
-            instruction: OpcodeId::STOP,
-            gas: obtained_steps[1].gas(),
-            gas_cost: GasCost::ZERO,
-            depth: 1u8,
-            pc: pc.inc_pre(),
-            gc: ctx.gc,
-            bus_mapping_instance: vec![],
-        };
+        tx.steps_mut().push(step);
+        test_builder.block.txs_mut().push(tx);
 
         // Compare first step bus mapping instance
         assert_eq!(
-            obtained_exec_trace[0].bus_mapping_instance,
-            step_1.bus_mapping_instance
+            builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
         );
-        // Compare first step entirely
-        assert_eq!(obtained_exec_trace[0], step_1);
-
-        // Compare second step bus mapping instance
-        assert_eq!(
-            obtained_exec_trace[1].bus_mapping_instance,
-            step_2.bus_mapping_instance
-        );
-        // Compare second step entirely
-        assert_eq!(obtained_exec_trace[1], step_2);
 
         // Compare containers
-        assert_eq!(obtained_exec_trace.ctx.container, ctx.container);
+        assert_eq!(builder.block.container, test_builder.block.container);
 
         Ok(())
     }

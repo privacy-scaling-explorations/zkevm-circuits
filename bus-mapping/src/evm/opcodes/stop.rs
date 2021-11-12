@@ -1,8 +1,7 @@
 use super::Opcode;
-use crate::{
-    exec_trace::{ExecutionStep, TraceContext},
-    Error,
-};
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::eth_types::GethExecStep;
+use crate::Error;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
 /// [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP) `OpcodeId`.
@@ -15,10 +14,8 @@ pub(crate) struct Stop;
 impl Opcode for Stop {
     #[allow(unused_variables)]
     fn gen_associated_ops(
-        &self,
-        ctx: &mut TraceContext,
-        exec_step: &mut ExecutionStep,
-        next_steps: &[ExecutionStep],
+        state: &mut CircuitInputStateRef,
+        steps: &[GethExecStep],
     ) -> Result<(), Error> {
         // Stop does not generate any operations
         Ok(())
