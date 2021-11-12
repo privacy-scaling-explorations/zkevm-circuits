@@ -4,5 +4,8 @@ pub mod iota_b13;
 pub mod iota_b9;
 pub mod pi;
 pub mod rho;
+pub mod rho_checks;
+pub mod rho_helpers;
+pub mod tables;
 pub mod theta;
 pub mod xi;
