@@ -127,9 +127,12 @@ mod tests {
         assert_eq!(counts, STEP_COUNTS);
 
         // We define a mapping overflow g(x), it maps step to a block count value
-        // We first define g(0) = 0, g(1) = 0, because we don't have step 0.
-        // Mapping from step 0 is meaningless
-        // Then we define g(i+1) = g(i) * previous_step_count
+        // We first define g(0) = 0, g(1) = 0
+        // Mapping from step 0 is meaningless, because we don't have step 0
+        // Mapping step 1 to 0 as the base case.
+        // Then we define `g(i+1) = g(i) * previous_step_count + 1`
+        // Because `g(i) * previous_step_count` is the max possible block count sum from previous step
+        // An overflow in previous step would get the `g(i+1)` value from the lookup table and fail the final block count sum check
         let mut overflow = vec![0, 0];
         for c in counts.iter() {
             let elem = overflow.last().cloned().unwrap();
