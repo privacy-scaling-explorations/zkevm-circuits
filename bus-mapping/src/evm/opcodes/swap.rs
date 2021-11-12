@@ -7,23 +7,43 @@ use crate::{
 };
 
 /// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// `OpcodeId::PUSH*` `OpcodeId`.
-/// This is responsible of generating all of the associated [`StackOp`]s and place them
-/// inside the trace's [`OperationContainer`](crate::operation::OperationContainer).
+/// `OpcodeId::SWAP*` `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Push<const N: usize>;
+pub(crate) struct Swap<const N: usize>;
 
-impl<const N: usize> Opcode for Push<N> {
+impl<const N: usize> Opcode for Swap<N> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
+
+        // Peek b and a
+        let stack_b_value_read = step.stack.nth_last(N)?;
+        let stack_b_position = step.stack.nth_last_filled(N);
+        state.push_op(StackOp::new(
+            RW::READ,
+            stack_b_position,
+            stack_b_value_read,
+        ));
+        let stack_a_value_read = step.stack.last()?;
+        let stack_a_position = step.stack.last_filled();
+        state.push_op(StackOp::new(
+            RW::READ,
+            stack_a_position,
+            stack_a_value_read,
+        ));
+
+        // Write a into b_position, write b into a_position
         state.push_op(StackOp::new(
             RW::WRITE,
-            // Get the value and addr from the next step. Being the last position filled with an element in the stack
-            step.stack.last_filled().map(|a| a - 1),
-            steps[1].stack.last()?,
+            stack_b_position,
+            stack_a_value_read,
+        ));
+        state.push_op(StackOp::new(
+            RW::WRITE,
+            stack_a_position,
+            stack_b_value_read,
         ));
 
         Ok(())
@@ -31,25 +51,32 @@ impl<const N: usize> Opcode for Push<N> {
 }
 
 #[cfg(test)]
-mod push_tests {
+mod swap_tests {
     use super::*;
     use crate::{
         bytecode,
         circuit_input_builder::{
             CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
         },
+        eth_types::Word,
         evm::StackAddress,
-        mock, word,
+        mock,
     };
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn push_opcode_impl() -> Result<(), Error> {
+    fn swap_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
-            #[start]
-            PUSH1(0x80)
-            PUSH2(0x1234)
-            PUSH16(word!("0x00112233445566778899aabbccddeeff"))
+            PUSH1(0x1)
+            PUSH1(0x2)
+            PUSH1(0x3)
+            PUSH1(0x4)
+            PUSH1(0x5)
+            PUSH1(0x6)
+            #[start] // [1,2,3,4,5,6]
+            SWAP1    // [1,2,3,4,6,5]
+            SWAP3    // [1,2,5,4,6,3]
+            SWAP5    // [3,2,5,4,6,1]
             STOP
         };
 
@@ -70,16 +97,8 @@ mod push_tests {
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate steps corresponding to PUSH1 80, PUSH2 1234,
-        // PUSH16 0x00112233445566778899aabbccddeeff
-        for (i, word) in [
-            word!("0x80"),
-            word!("0x1234"),
-            word!("0x00112233445566778899aabbccddeeff"),
-        ]
-        .iter()
-        .enumerate()
-        {
+        // Generate steps corresponding to DUP1, DUP3, DUP5
+        for (i, (a, b)) in [(6, 5), (5, 3), (3, 1)].iter().enumerate() {
             let mut step = ExecStep::new(
                 &block.geth_trace.struct_logs[i],
                 test_builder.block_ctx.gc,
@@ -87,12 +106,16 @@ mod push_tests {
             let mut state_ref =
                 test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
-            // Add StackOp associated to the push at the latest Stack pos.
-            state_ref.push_op(StackOp::new(
-                RW::WRITE,
-                StackAddress::from(1023 - i),
-                *word,
-            ));
+            let a_pos = StackAddress(1024 - 6);
+            let b_pos = StackAddress(1024 - 5 + i * 2);
+            let a_val = Word::from(*a);
+            let b_val = Word::from(*b);
+
+            state_ref.push_op(StackOp::new(RW::READ, b_pos, b_val));
+            state_ref.push_op(StackOp::new(RW::READ, a_pos, a_val));
+            state_ref.push_op(StackOp::new(RW::WRITE, b_pos, a_val));
+            state_ref.push_op(StackOp::new(RW::WRITE, a_pos, b_val));
+
             tx.steps_mut().push(step);
         }
 

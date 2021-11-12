@@ -58,6 +58,11 @@ impl MemoryAddress {
             .copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
         Ok(MemoryAddress::from(usize::from_be_bytes(array)))
     }
+
+    /// Apply a function to the contained value.
+    pub fn map<F: FnOnce(usize) -> usize>(&self, f: F) -> Self {
+        Self(f(self.0))
+    }
 }
 
 impl TryFrom<Word> for MemoryAddress {

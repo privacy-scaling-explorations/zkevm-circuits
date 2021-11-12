@@ -6,51 +6,23 @@ use crate::{
     Error,
 };
 
+/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
+/// [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Add;
+pub(crate) struct Pc;
 
-impl Opcode for Add {
+impl Opcode for Pc {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
-        //
-        // First stack read
-        //
-        let stack_last_value_read = step.stack.last()?;
-        let stack_last_position = step.stack.last_filled();
-
-        // Manage first stack read at latest stack position
-        state.push_op(StackOp::new(
-            RW::READ,
-            stack_last_position,
-            stack_last_value_read,
-        ));
-
-        //
-        // Second stack read
-        //
-        let stack_second_last_value_read = step.stack.nth_last(1)?;
-        let stack_second_last_position = step.stack.nth_last_filled(1);
-
-        // Manage second stack read at second latest stack position
-        state.push_op(StackOp::new(
-            RW::READ,
-            stack_second_last_position,
-            stack_second_last_value_read,
-        ));
-
-        //
-        // First plus second stack value write
-        //
-        let added_value = steps[1].stack.last()?;
-
-        // Manage second stack read at second latest stack position
+        // Get value result from next step and do stack write
+        let value = steps[1].stack.last()?;
         state.push_op(StackOp::new(
             RW::WRITE,
-            stack_second_last_position,
-            added_value,
+            step.stack.last_filled().map(|a| a - 1),
+            value,
         ));
 
         Ok(())
@@ -58,7 +30,7 @@ impl Opcode for Add {
 }
 
 #[cfg(test)]
-mod add_tests {
+mod pc_tests {
     use super::*;
     use crate::{
         bytecode,
@@ -69,14 +41,15 @@ mod add_tests {
         evm::StackAddress,
         mock,
     };
+    use pretty_assertions::assert_eq;
 
     #[test]
-    fn add_opcode_impl() -> Result<(), Error> {
+    fn pc_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
-            PUSH1(0x80u64)
-            PUSH1(0x80u64)
+            PUSH1(0x1)
+            PUSH1(0x2)
             #[start]
-            ADD
+            PC
             STOP
         };
 
@@ -97,7 +70,7 @@ mod add_tests {
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate step corresponding to ADD
+        // Generate step corresponding to MLOAD
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             test_builder.block_ctx.gc,
@@ -105,31 +78,11 @@ mod add_tests {
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
-        let last_stack_pointer = StackAddress(1022);
-        let second_last_stack_pointer = StackAddress(1023);
-        let stack_value_a = Word::from(0x80);
-        let stack_value_b = Word::from(0x80);
-        let sum = Word::from(0x100);
-
-        // Manage first stack read at latest stack position
-        state_ref.push_op(StackOp::new(
-            RW::READ,
-            last_stack_pointer,
-            stack_value_a,
-        ));
-
-        // Manage second stack read at second latest stack position
-        state_ref.push_op(StackOp::new(
-            RW::READ,
-            second_last_stack_pointer,
-            stack_value_b,
-        ));
-
-        // Add StackOp associated to the 0x80 push at the latest Stack pos.
+        // Add the last Stack write
         state_ref.push_op(StackOp::new(
             RW::WRITE,
-            second_last_stack_pointer,
-            sum,
+            StackAddress::from(1024 - 3),
+            Word::from(0x4),
         ));
 
         tx.steps_mut().push(step);

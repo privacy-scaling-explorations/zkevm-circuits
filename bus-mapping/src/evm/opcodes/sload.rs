@@ -13,13 +13,11 @@ use crate::{
 pub(crate) struct Sload;
 
 impl Opcode for Sload {
-    #[allow(unused_variables)]
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
-        let gc_start = state.block_ctx.gc;
 
         // First stack read
         let stack_value_read = step.stack.last()?;
@@ -61,6 +59,7 @@ mod sload_tests {
         evm::StackAddress,
         mock,
     };
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn sload_opcode_impl() -> Result<(), Error> {
