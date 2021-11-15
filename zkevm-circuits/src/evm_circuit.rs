@@ -901,7 +901,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                             || Ok(F::from_u64(c)),
                         )?;
                         for (idx, column) in
-                        self.fixed_table[4..].iter().enumerate()
+                            self.fixed_table[4..].iter().enumerate()
                         {
                             region.assign_fixed(
                                 || format!("BitwiseAnd: padding {}", idx),
@@ -943,7 +943,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                             || Ok(F::from_u64(c)),
                         )?;
                         for (idx, column) in
-                        self.fixed_table[4..].iter().enumerate()
+                            self.fixed_table[4..].iter().enumerate()
                         {
                             region.assign_fixed(
                                 || format!("BitwiseOr: padding {}", idx),

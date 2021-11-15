@@ -3,7 +3,8 @@ use super::utils::common_cases::{OutOfGasCase, StackOverflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::{sum, StateTransition, StateTransitionExpressions};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
+    OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};

@@ -1,10 +1,10 @@
 use super::super::super::FixedLookup;
-use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
 use super::super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::super::utils::constraint_builder::ConstraintBuilder;
 use super::super::utils::StateTransition;
 use super::super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
+    OpGadget, Case, Cell, ExecutionStep, Constraint, Word,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -165,18 +165,12 @@ mod test {
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        b.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![b.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
-                    values: vec![
-                        a.clone(),
-                        BigUint::from(0x01_01_01u64)
-                    ],
+                    values: vec![a.clone(), BigUint::from(0x01_01_01u64)],
                 },
                 ExecutionStep {
                     opcode,

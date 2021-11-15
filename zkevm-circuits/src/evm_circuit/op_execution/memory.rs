@@ -6,7 +6,8 @@ use super::utils::memory_gadgets::{
 };
 use super::utils::{select, StateTransition, StateTransitionExpressions};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
+    OpGadget,
 };
 use crate::evm_circuit::param::{
     MAX_GAS_SIZE_IN_BYTES, MAX_MEMORY_SIZE_IN_BYTES, STACK_START_IDX,
@@ -447,7 +448,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

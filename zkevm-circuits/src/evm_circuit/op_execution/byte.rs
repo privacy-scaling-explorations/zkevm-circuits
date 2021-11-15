@@ -4,7 +4,8 @@ use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
 use super::utils::{sum, StateTransition};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
+    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
+    OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -166,7 +167,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

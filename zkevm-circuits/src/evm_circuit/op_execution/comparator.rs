@@ -201,7 +201,7 @@ mod test {
         ($execution_step:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_step, $operations);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

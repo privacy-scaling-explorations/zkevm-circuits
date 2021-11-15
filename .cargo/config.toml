@@ -1,4 +1,2 @@
 [target.'cfg(target_os="macos")']
 rustflags = ["-C", "link-args=-framework CoreFoundation -framework Security"]
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "link-args=-framework CoreFoundation -framework Security"]
