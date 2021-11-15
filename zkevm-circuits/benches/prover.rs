@@ -249,7 +249,7 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             vec![
                 a.clone() * sa
                     + b.clone() * sb
-                    + a * b * sm.clone()
+                    + a * b * sm
                     + (c * sc * (-F::one())),
             ]
         });
@@ -273,7 +273,7 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
     ) -> Result<(), Error> {
         let cs = StandardPlonk::new(config);
 
-        for _ in 0..(1 << (self.k - 1) - 3) {
+        for _ in 0..1 << ((self.k - 1) - 3) {
             let mut a_squared = None;
             let (a0, _, c0) = cs.raw_multiply(&mut layouter, || {
                 a_squared = self.a.map(|a| a.square());

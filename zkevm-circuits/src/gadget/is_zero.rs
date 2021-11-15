@@ -185,7 +185,7 @@ mod test {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
@@ -351,7 +351,7 @@ mod test {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
                 let (value_a, value_b) =
                     (meta.advice_column(), meta.advice_column());
                 let value_diff_inv = meta.advice_column();

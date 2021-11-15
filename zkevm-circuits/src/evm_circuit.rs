@@ -339,7 +339,7 @@ struct EvmCircuit<F> {
 
 impl<F: FieldExt> EvmCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
-        let q_step = meta.selector();
+        let q_step = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = (0..CIRCUIT_WIDTH)
             .map(|_| meta.advice_column())

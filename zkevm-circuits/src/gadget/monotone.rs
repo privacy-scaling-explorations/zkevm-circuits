@@ -156,7 +156,7 @@ mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let q_enable = meta.selector();
+            let q_enable = meta.complex_selector();
             let value = meta.advice_column();
 
             let mono_incr = MonotoneChip::<F, RANGE, INCR, STRICT>::configure(

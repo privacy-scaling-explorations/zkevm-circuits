@@ -126,7 +126,7 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
 
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| meta.advice_column())
