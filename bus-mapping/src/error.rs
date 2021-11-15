@@ -1,6 +1,7 @@
 //! Error module for the bus-mapping crate
 
 use core::fmt::{Display, Formatter, Result as FmtResult};
+use ethers_providers::ProviderError;
 use std::error::Error as StdError;
 
 /// Error type for any BusMapping related failure.
@@ -26,6 +27,14 @@ pub enum Error {
     WordToMemAddr,
     /// Error while generating a trace.
     TracingError,
+    /// JSON-RPC related error
+    JSONRpcError(ProviderError),
+}
+
+impl From<ProviderError> for Error {
+    fn from(err: ProviderError) -> Self {
+        Error::JSONRpcError(err)
+    }
 }
 
 impl Display for Error {
