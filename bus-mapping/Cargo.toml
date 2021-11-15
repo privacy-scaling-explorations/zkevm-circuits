@@ -16,6 +16,9 @@ hex = "0.4"
 geth-utils = { path = "../geth-utils" }
 web3 = {version = "0.17", default-features = false}
 uint = "0.9.1"
+ethers-providers = "0.5.5"
 
 [dev-dependencies]
+url = "2.2.2"
+tokio = { version = "1.13", features = ["macros"] }
 pretty_assertions = "1.0.0"
