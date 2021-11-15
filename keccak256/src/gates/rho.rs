@@ -15,7 +15,7 @@ use std::convert::TryInto;
 
 #[derive(Clone)]
 pub struct RhoConfig<F> {
-    state: [Column<Advice>; 25],
+    pub state: [Column<Advice>; 25],
     state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
     final_block_count_config: BlockCountFinalConfig<F>,
 }
