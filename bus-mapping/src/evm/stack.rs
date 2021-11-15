@@ -11,8 +11,13 @@ pub struct StackAddress(pub(crate) usize);
 
 impl StackAddress {
     /// Generates a new StackAddress given a `usize`.
-    pub const fn new(addr: usize) -> StackAddress {
-        StackAddress(addr)
+    pub const fn new(addr: usize) -> Self {
+        Self(addr)
+    }
+
+    /// Apply a function to the contained value.
+    pub fn map<F: FnOnce(usize) -> usize>(&self, f: F) -> Self {
+        Self(f(self.0))
     }
 }
 

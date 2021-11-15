@@ -9,53 +9,43 @@ use crate::{
 use core::convert::TryInto;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD) `OpcodeId`.
-/// This is responsible of generating all of the associated [`StackOp`]s and [`MemoryOp`]s and place them
-/// inside the trace's [`OperationContainer`](crate::operation::OperationContainer).
+/// [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE) `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Mload;
+pub(crate) struct Mstore;
 
-impl Opcode for Mload {
+impl Opcode for Mstore {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
-        //
-        // First stack read
-        //
-        let stack_value_read = step.stack.last()?;
-        let stack_position = step.stack.last_filled();
+        // First stack read (offset)
+        let offset = step.stack.nth_last(0)?;
+        let offset_pos = step.stack.nth_last_filled(0);
+        state.push_op(StackOp::new(RW::READ, offset_pos, offset));
 
-        // Manage first stack read at latest stack position
-        state.push_op(StackOp::new(RW::READ, stack_position, stack_value_read));
+        // Second stack read (value)
+        let value = step.stack.nth_last(1)?;
+        let value_pos = step.stack.nth_last_filled(1);
+        state.push_op(StackOp::new(RW::READ, value_pos, value));
 
-        // Read the memory
-        let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        let mem_read_value = steps[1].memory.read_word(mem_read_addr)?;
-
-        //
-        // First stack write
-        //
-        state.push_op(StackOp::new(RW::WRITE, stack_position, mem_read_value));
-
-        //
-        // First mem read -> 32 MemoryOp generated.
-        //
-        let bytes = mem_read_value.to_be_bytes();
-        bytes.iter().for_each(|value_byte| {
-            state.push_op(MemoryOp::new(RW::READ, mem_read_addr, *value_byte));
-
-            // Update mem_read_addr to next byte's one
-            mem_read_addr += MemoryAddress::from(1);
-        });
+        // First mem write -> 32 MemoryOp generated.
+        let offset_addr: MemoryAddress = offset.try_into()?;
+        let bytes = value.to_be_bytes();
+        for (i, byte) in bytes.iter().enumerate() {
+            state.push_op(MemoryOp::new(
+                RW::WRITE,
+                offset_addr.map(|a| a + i),
+                *byte,
+            ));
+        }
 
         Ok(())
     }
 }
 
 #[cfg(test)]
-mod mload_tests {
+mod mstore_tests {
     use super::*;
     use crate::{
         bytecode,
@@ -63,19 +53,19 @@ mod mload_tests {
             CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
         },
         eth_types::Word,
-        evm::StackAddress,
+        evm::{MemoryAddress, StackAddress},
         mock,
     };
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn mload_opcode_impl() -> Result<(), Error> {
+    fn mstore_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
             .setup_state()
-
-            PUSH1(0x40u64)
+            PUSH2(0x1234)
+            PUSH2(0x100)
             #[start]
-            MLOAD
+            MSTORE
             STOP
         };
 
@@ -96,7 +86,7 @@ mod mload_tests {
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate step corresponding to MLOAD
+        // Generate step corresponding to MSTORE
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             test_builder.block_ctx.gc,
@@ -104,29 +94,26 @@ mod mload_tests {
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
-        // Add StackOp associated to the 0x40 read from the latest Stack pos.
+        // Add StackOps associated to the 0x100, 0x1234 reads starting from last stack position.
+        state_ref.push_op(StackOp::new(
+            RW::READ,
+            StackAddress::from(1022),
+            Word::from(0x100),
+        ));
         state_ref.push_op(StackOp::new(
             RW::READ,
             StackAddress::from(1023),
-            Word::from(0x40),
+            Word::from(0x1234),
         ));
 
-        // Add the last Stack write
-        state_ref.push_op(StackOp::new(
-            RW::WRITE,
-            StackAddress::from(1023),
-            Word::from(0x80),
-        ));
-
-        // Add the 32 MemoryOp generated from the Memory read at addr 0x40<->0x80 for each byte.
-        Word::from(0x80)
-            .to_be_bytes()
-            .iter()
-            .enumerate()
-            .map(|(idx, byte)| (idx + 0x40, byte))
-            .for_each(|(idx, byte)| {
-                state_ref.push_op(MemoryOp::new(RW::READ, idx.into(), *byte));
-            });
+        // Add the 32 MemoryOp generated from the Memory write at addr 0x100..0x120 for each byte.
+        for (i, byte) in Word::from(0x1234).to_be_bytes().iter().enumerate() {
+            state_ref.push_op(MemoryOp::new(
+                RW::WRITE,
+                MemoryAddress(0x100 + i),
+                *byte,
+            ));
+        }
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
