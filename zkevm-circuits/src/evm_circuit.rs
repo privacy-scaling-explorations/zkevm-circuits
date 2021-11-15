@@ -137,7 +137,7 @@ impl<F: FieldExt> BusMappingLookup<F> {
             Self::Stack { .. } => Target::Stack,
             Self::Memory { .. } => Target::Memory,
             Self::AccountStorage { .. } => Target::Storage,
-            Self::Bytecode { .. } => Target::Byte_code,
+            Self::Bytecode { .. } => Target::Bytecode,
             _ => unimplemented!(),
         }
     }
@@ -656,7 +656,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                     }
                     Lookup::BytecodeLookup(tag, exprs) => {
                         // let exprs = iter::once(tag.expr()).chain(exprs.clone());
-                        // disable tag now for testing
+                        // TODO: add tag later but now omit for testing
                         let exprs = iter::empty().chain(exprs.clone());
                         if byte_code_lookups.len() == bytecode_lookup_count {
                             byte_code_lookups.push(
@@ -1235,7 +1235,7 @@ mod test {
     }
 
     // contruct byte code table from compiled by contract
-    pub(crate) fn assgin_byte_table(bytecode_source: &str) -> vec![u32; 5] {
+    pub(crate) fn assgin_byte_table(bytecode_source: &str) -> Vec<[u32; 5]> {
         let byte_codes = hex::decode(bytecode_source).expect("Decoding failed");
         // TODO: add keccak hash (byte_codes)
         let code_hash = 0 as u32;
@@ -1270,6 +1270,7 @@ mod test {
             }
         }
         println!("done for parse code");
+        return byte_code_table;
     }
     #[derive(Default)]
     pub(crate) struct TestCircuit<F> {
@@ -1320,7 +1321,8 @@ mod test {
                 .evm_circuit
                 .load_rw_tables(&mut layouter, &self.operations)?;
 
-            let bytecode_source = "608060406007565b00";
+            // TODO: load bytecode_source from test sequence to ensure consistency
+            let bytecode_source = "6002565b00";
             let byte_code_table = assgin_byte_table(bytecode_source);
 
             config
