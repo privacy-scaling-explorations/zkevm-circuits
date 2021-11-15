@@ -23,7 +23,6 @@ pub struct MPTConfig<F> {
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
-    is_branch_rlp: Column<Advice>,
     is_compact_leaf: Column<Advice>,
     is_keccak_leaf: Column<Advice>,
     node_index: Column<Advice>,
@@ -58,7 +57,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
-        let is_branch_rlp = meta.advice_column();
         let is_compact_leaf = meta.advice_column();
         let is_keccak_leaf = meta.advice_column();
         let node_index = meta.advice_column();
@@ -152,8 +150,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_branch_child, Rotation::cur());
             let is_last_branch_child_cur =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
-            let is_branch_rlp_cur =
-                meta.query_advice(is_branch_rlp, Rotation::cur());
             let is_compact_leaf =
                 meta.query_advice(is_compact_leaf, Rotation::cur());
             let is_keccak_leaf =
@@ -163,8 +159,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 * (one.clone() - is_branch_init_cur.clone());
             let bool_check_is_branch_child = is_branch_child_cur.clone()
                 * (one.clone() - is_branch_child_cur.clone());
-            let bool_check_is_branch_rlp = is_branch_rlp_cur.clone()
-                * (one.clone() - is_branch_rlp_cur.clone());
             let bool_check_is_last_branch_child = is_last_branch_child_cur
                 .clone()
                 * (one.clone() - is_last_branch_child_cur.clone());
@@ -190,10 +184,6 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints.push((
                 "bool check is branch child",
                 q_enable.clone() * bool_check_is_branch_child,
-            ));
-            constraints.push((
-                "bool check is branch rlp",
-                q_enable.clone() * bool_check_is_branch_rlp,
             ));
             constraints.push((
                 "bool check is last branch child",
@@ -561,71 +551,62 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        /*
-        meta.create_gate("branch hash in parent branch", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-
-            let mut constraints = vec![];
-            let is_branch_init_prev =
-                meta.query_advice(is_branch_init, Rotation::prev());
-            let is_branch_child_prev =
-                meta.query_advice(is_branch_child, Rotation::prev());
-            let is_branch_child_cur =
-                meta.query_advice(is_branch_child, Rotation::cur());
-
-            let s_exprs = s_keccak
-                .iter()
-                .map(|c| meta.query_advice(*c, Rotation::cur()))
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-            let expr = into_compressed_expr(s_exprs);
-            // Rotation(-18) can be avoided, see TODO below
-            let branch_acc_s = meta.query_advice(branch_acc_s, Rotation(-18));
-
-            // In the next row of the last branch child (when is_branch_child changes back to 0)
-            // we need to check that the hash of a branch is in the parent branch.
-            // TODO: this can be made better by inverting the accumulator - having the final
-            // value in the branch init (thus only Rotation(-1) would be needed).
-            constraints.push((
-                "branch hash",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
-                    * (is_branch_child_prev.clone()
-                        - is_branch_child_cur.clone()) // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
-                    * (expr - branch_acc_s),
-            ));
-
-            constraints
-        });
-        */
-
         // TODO: check transition from compact to keccak leaf (compact leaf as keccak input - 17 cells)
 
         /*
+        // Lookup into RLP circuit for S branch: (accumulated_rlp, hash1, hash2, hash3, hash4)
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
-
-            // might use utils from evm_circuit, but would need to make them public
-            let select = |selector: Expression<F>,
-                          when_true: Expression<F>,
-                          when_false: Expression<F>| {
-                selector.clone() * when_true
-                    + (one.clone() - selector) * when_false
-            };
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
+            // Rotation(-17) can be avoided by inverting the accumulator - having the final
+            // value in the branch init (thus only Rotation(-1) would be needed).
+            let branch_acc_s = meta.query_advice(branch_acc_s, Rotation::cur());
+
             let mut constraints = vec![];
-            for i in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
-                let keccak_table_i =
-                    meta.query_advice(keccak_table[i], Rotation::cur());
+            constraints.push((
+                q_enable.clone() * is_last_branch_child.clone(),
+                branch_acc_s,
+            ));
+
+            for column in s_keccak.iter() {
+                let s_keccak = meta.query_advice(*column, Rotation(-17));
                 constraints.push((
                     q_enable.clone() * is_last_branch_child.clone(),
-                    keccak_table_i,
-                ))
+                    s_keccak,
+                ));
+            }
+
+            constraints
+        });
+
+        // Lookup into RLP circuit for C branch: (accumulated_rlp, hash1, hash2, hash3, hash4)
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
+
+            // We need to do the lookup only if we are in the last branch child.
+            let is_last_branch_child =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
+
+            // Rotation(-17) can be avoided by inverting the accumulator - having the final
+            // value in the branch init (thus only Rotation(-1) would be needed).
+            let branch_acc_c = meta.query_advice(branch_acc_c, Rotation::cur());
+
+            let mut constraints = vec![];
+            constraints.push((
+                q_enable.clone() * is_last_branch_child.clone(),
+                branch_acc_c,
+            ));
+
+            for column in c_keccak.iter() {
+                let c_keccak = meta.query_advice(*column, Rotation(-17));
+                constraints.push((
+                    q_enable.clone() * is_last_branch_child.clone(),
+                    c_keccak,
+                ));
             }
 
             constraints
@@ -691,7 +672,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
-            is_branch_rlp,
             is_compact_leaf,
             is_keccak_leaf,
             node_index,
@@ -724,7 +704,6 @@ impl<F: FieldExt> MPTConfig<F> {
         is_branch_init: bool,
         is_branch_child: bool,
         is_last_branch_child: bool,
-        is_branch_rlp: bool,
         node_index: u8,
         key: u8,
         is_compact_leaf: bool,
@@ -743,13 +722,6 @@ impl<F: FieldExt> MPTConfig<F> {
             self.is_branch_child,
             offset,
             || Ok(F::from_u64(is_branch_child as u64)),
-        )?;
-
-        region.assign_advice(
-            || format!("assign is_branch_rlp"),
-            self.is_branch_rlp,
-            offset,
-            || Ok(F::from_u64(is_branch_rlp as u64)),
         )?;
 
         region.assign_advice(
@@ -888,7 +860,7 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, false, false, false, false, 0, 0, true, false, offset,
+            region, row, false, false, false, 0, 0, true, false, offset,
         )?;
 
         // We now add another row for keccak format:
@@ -909,7 +881,6 @@ impl<F: FieldExt> MPTConfig<F> {
         self.assign_row(
             region,
             &row,
-            false,
             false,
             false,
             false,
@@ -946,31 +917,8 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, true, false, false, false, 0, 0, false, false, offset,
+            region, row, true, false, false, 0, 0, false, false, offset,
         )?;
-
-        Ok(())
-    }
-
-    fn assign_branch_rlp(
-        &self,
-        region: &mut Region<'_, F>,
-        row: &Vec<u8>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        self.assign_row(
-            region, row, false, false, false, true, 0, 0, false, false, offset,
-        )?;
-        let padded = self.pad(row);
-        let words = self.into_words(&padded);
-        for idx in 0..words.len() {
-            region.assign_advice(
-                || format!("assign s_advice {}", idx),
-                self.s_advices[idx],
-                offset,
-                || Ok(F::from_u64(words[idx] as u64)),
-            )?;
-        }
 
         Ok(())
     }
@@ -1008,7 +956,6 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             true,
             node_index == 15,
-            false,
             node_index,
             key,
             false,
@@ -1217,21 +1164,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             offset += 1;
                             branch_ind += 1;
-                        } else if row[row.len() - 1] == 3 {
-                            // branch RLP
-                            self.q_enable.enable(&mut region, offset)?;
-                            region.assign_fixed(
-                                || "not first",
-                                self.q_not_first,
-                                offset,
-                                || Ok(F::one()),
-                            )?;
-                            self.assign_branch_rlp(
-                                &mut region,
-                                &row[0..row.len() - 1].to_vec(),
-                                offset,
-                            )?;
-                            offset += 1;
                         } else if row[row.len() - 1] == 2 {
                             // compact leaf
                             self.q_enable.enable(&mut region, offset)?;
