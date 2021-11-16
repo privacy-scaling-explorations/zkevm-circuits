@@ -134,7 +134,7 @@ impl<F: FieldExt> ToScalar<F> for Address {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 struct GethExecStepInternal {
     pc: ProgramCounter,
@@ -171,6 +171,57 @@ pub struct GethExecStep {
     pub storage: Storage,
 }
 
+impl From<GethExecStep> for GethExecStepInternal {
+    fn from(step: GethExecStep) -> Self {
+        GethExecStepInternal {
+            pc: step.pc,
+            op: step.op,
+            gas: step.gas,
+            gas_cost: step.gas_cost,
+            depth: step.depth,
+            stack: step
+                .stack
+                .0
+                .iter()
+                .map(|stack_elem| {
+                    DebugU256::from_big_endian(&stack_elem.to_be_bytes())
+                })
+                .collect(),
+            memory: step
+                .memory
+                .0
+                .iter()
+                .map(|mem_elem| {
+                    DebugU256::from_big_endian(&mem_elem.to_be_bytes())
+                })
+                .collect(),
+            storage: step
+                .storage
+                .0
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        DebugU256::from_big_endian(&k.to_be_bytes()),
+                        DebugU256::from_big_endian(&v.to_be_bytes()),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+// TODO: Tried `#[serde(into = "IntoType")]` feature but doesn't seem to work. Double check.
+impl Serialize for GethExecStep {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize as a `GethExecStepInternal`
+        let internal = GethExecStepInternal::from(self.clone());
+        internal.serialize(serializer)
+    }
+}
+
 impl<'de> Deserialize<'de> for GethExecStep {
     fn deserialize<D>(deserializer: D) -> Result<GethExecStep, D::Error>
     where
@@ -204,7 +255,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
 
 /// The execution trace type returned by geth RPC debug_trace* methods.  Corresponds to
 /// `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 pub struct GethExecTrace {
     pub gas: Gas,
