@@ -258,7 +258,7 @@ pub fn state_bigint_to_pallas<F: FieldExt, const N: usize>(
         .map(|elem| {
             let mut array = [0u8; 32];
             let bytes = elem.to_bytes_le();
-            array[0..32].copy_from_slice(&bytes[0..32]);
+            array[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
             array
         })
         .map(|bytes| F::from_bytes(&bytes).unwrap())
