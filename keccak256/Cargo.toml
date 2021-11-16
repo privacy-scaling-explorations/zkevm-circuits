@@ -14,3 +14,7 @@ num-traits = "0.2.14"
 pasta_curves =  "0.1"
 plotters = { version = "0.3.0", optional = true }
 criterion = "0.3.5"
+
+[[bench]]
+name = "bench_rho"
+harness = false

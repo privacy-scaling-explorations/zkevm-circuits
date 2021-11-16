@@ -22,10 +22,12 @@ use pasta_curves::pallas;
 use std::convert::TryInto;
 
 use criterion::Criterion;
-use halo2::pasta::{EqAffine, Fp};
+use halo2::pasta::EqAffine;
 
 /// run cargo bench bench_rho_gate
 fn bench_rho_gate(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Rho gate bench");
+    group.sample_size(10);
     #[derive(Default, Clone)]
     struct MyCircuit<F> {
         in_state: [F; 25],
@@ -152,53 +154,42 @@ fn bench_rho_gate(c: &mut Criterion) {
 
     // Initialize the proving key
     let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+    // proving key takes 3 mins
     let pk =
         keygen_pk(&params, vk, &circuit).expect("keygen_pk should not fail");
-
     let name = "rho";
 
     let prover_name = name.to_string() + "-prover";
     let verifier_name = name.to_string() + "-verifier";
 
-    c.bench_function(&prover_name, |b| {
+    group.bench_function(&prover_name, |b| {
         b.iter(|| {
             // Create a proof
             let mut transcript =
                 Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-            create_proof(
-                &params,
-                &pk,
-                &[circuit.clone()],
-                &[&[]],
-                &mut transcript,
-            )
-            .expect("proof generation should not fail")
+            create_proof(&params, &pk, &[circuit.clone()], &[], &mut transcript)
+                .expect("proof generation should not fail")
         });
     });
 
     // Create a proof
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
+    create_proof(&params, &pk, &[circuit], &[], &mut transcript)
         .expect("proof generation should not fail");
     let proof = transcript.finalize();
-
-    c.bench_function(&verifier_name, |b| {
+    group.bench_function(&verifier_name, |b| {
         b.iter(|| {
             let msm = params.empty_msm();
             let mut transcript =
                 Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-            let guard = verify_proof(
-                &params,
-                pk.get_vk(),
-                msm,
-                &[&[]],
-                &mut transcript,
-            )
-            .unwrap();
+            let guard =
+                verify_proof(&params, pk.get_vk(), msm, &[], &mut transcript)
+                    .unwrap();
             let msm = guard.clone().use_challenges();
             assert!(msm.eval());
         });
     });
+    group.finish();
 }
 
 criterion_group!(benches, bench_rho_gate);
