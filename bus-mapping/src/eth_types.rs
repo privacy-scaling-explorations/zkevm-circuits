@@ -253,6 +253,20 @@ impl<'de> Deserialize<'de> for GethExecStep {
     }
 }
 
+/// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
+/// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[doc(hidden)]
+pub(crate) struct ResultGethExecTrace(pub(crate) Vec<ResultGethExecStep>);
+
+/// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
+/// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[doc(hidden)]
+pub(crate) struct ResultGethExecStep {
+    pub(crate) result: GethExecTrace,
+}
+
 /// The execution trace type returned by geth RPC debug_trace* methods.  Corresponds to
 /// `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
