@@ -23,8 +23,10 @@ pub struct MPTConfig<F> {
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
-    is_compact_leaf: Column<Advice>,
-    is_keccak_leaf: Column<Advice>,
+    is_leaf_s: Column<Advice>,
+    is_leaf_c: Column<Advice>,
+    is_leaf_key_s: Column<Advice>,
+    is_leaf_key_c: Column<Advice>,
     node_index: Column<Advice>,
     is_modified: Column<Advice>, // whether this branch child is modified
     key: Column<Advice>,
@@ -57,8 +59,10 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
-        let is_compact_leaf = meta.advice_column();
-        let is_keccak_leaf = meta.advice_column();
+        let is_leaf_s = meta.advice_column();
+        let is_leaf_c = meta.advice_column();
+        let is_leaf_key_s = meta.advice_column();
+        let is_leaf_key_c = meta.advice_column();
         let node_index = meta.advice_column();
         let is_modified = meta.advice_column();
         let key = meta.advice_column();
@@ -124,21 +128,7 @@ impl<F: FieldExt> MPTConfig<F> {
             words
         };
 
-        // Turn 4 keccak words into a compressed value.
-        let into_compressed_expr = |words: Vec<Expression<F>>| {
-            let mut compressed_val = Expression::Constant(F::zero());
-            let mut exp = Expression::Constant(F::one());
-            for i in 0..4 {
-                compressed_val =
-                    compressed_val + words[i].clone() * exp.clone();
-                exp = exp
-                    * Expression::Constant(F::from_u64(256 * 256 * 256 * 256));
-            }
-
-            compressed_val
-        };
-
-        // TODO: range proofs for bytes and keccak words
+        // TODO: range proofs for bytes
 
         meta.create_gate("general constraints", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -150,10 +140,12 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_branch_child, Rotation::cur());
             let is_last_branch_child_cur =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
-            let is_compact_leaf =
-                meta.query_advice(is_compact_leaf, Rotation::cur());
-            let is_keccak_leaf =
-                meta.query_advice(is_keccak_leaf, Rotation::cur());
+            let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
+            let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
+            let is_leaf_key_s =
+                meta.query_advice(is_leaf_key_s, Rotation::cur());
+            let is_leaf_key_c =
+                meta.query_advice(is_leaf_key_c, Rotation::cur());
 
             let bool_check_is_branch_init = is_branch_init_cur.clone()
                 * (one.clone() - is_branch_init_cur.clone());
@@ -162,10 +154,17 @@ impl<F: FieldExt> MPTConfig<F> {
             let bool_check_is_last_branch_child = is_last_branch_child_cur
                 .clone()
                 * (one.clone() - is_last_branch_child_cur.clone());
-            let bool_check_is_compact_leaf = is_compact_leaf.clone()
-                * (one.clone() - is_compact_leaf.clone());
-            let bool_check_is_keccak_leaf =
-                is_keccak_leaf.clone() * (one.clone() - is_keccak_leaf.clone());
+            let bool_check_is_leaf_s =
+                is_leaf_s.clone() * (one.clone() - is_leaf_s.clone());
+            let bool_check_is_leaf_c =
+                is_leaf_c.clone() * (one.clone() - is_leaf_c.clone());
+            let bool_check_is_leaf_key_s =
+                is_leaf_key_s.clone() * (one.clone() - is_leaf_key_s.clone());
+            let bool_check_is_leaf_key_c =
+                is_leaf_key_c.clone() * (one.clone() - is_leaf_key_c.clone());
+
+            // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
+            // followed by is_leaf_key_s ...
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
@@ -190,12 +189,20 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable.clone() * bool_check_is_last_branch_child,
             ));
             constraints.push((
-                "bool check is compact leaf",
-                q_enable.clone() * bool_check_is_compact_leaf,
+                "bool check is leaf s",
+                q_enable.clone() * bool_check_is_leaf_s,
             ));
             constraints.push((
-                "bool check is keccak leaf",
-                q_enable.clone() * bool_check_is_keccak_leaf,
+                "bool check is leaf c",
+                q_enable.clone() * bool_check_is_leaf_c,
+            ));
+            constraints.push((
+                "bool check is leaf key s",
+                q_enable.clone() * bool_check_is_leaf_key_s,
+            ));
+            constraints.push((
+                "bool check is leaf key c",
+                q_enable.clone() * bool_check_is_leaf_key_c,
             ));
 
             constraints.push((
@@ -490,31 +497,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 ));
             }
 
-            // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
-            // as s_keccak 4 rows before (there are two branch RLP, leaf, keccak leaf rows in between)
-            // or
-            // s_advices[17], s_advices[18], s_advices[19], s_advices[20] in keccak leaf is the same
-            // as c_keccak 6 rows before (there are two branch RLP, leaf, keccak, and another leaf rows in between)
-            let is_keccak_leaf =
-                meta.query_advice(is_keccak_leaf, Rotation::cur());
-            for (ind, column) in s_keccak.iter().enumerate() {
-                let s_keccak_prev_2 = meta.query_advice(*column, Rotation(-4));
-                let c_keccak_prev_4 =
-                    meta.query_advice(c_keccak[ind], Rotation(-6));
-
-                let keccak = meta.query_advice(
-                    s_advices[KECCAK_INPUT_WIDTH + ind],
-                    Rotation::cur(),
-                );
-                constraints.push((
-                    "keccak leaf output same as keccak in branch nodes",
-                    q_not_first.clone()
-                        * is_keccak_leaf.clone()
-                        * (keccak.clone() - s_keccak_prev_2)
-                        * (keccak.clone() - c_keccak_prev_4),
-                ));
-            }
-
             // s_keccak and c_keccak correspond to s and c at the modified index
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
 
@@ -647,24 +629,61 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_mult_c,
         );
 
+        /*
+        // hash of leaf s is in the parent branch
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
-            let is_keccak_leaf =
-                meta.query_advice(is_keccak_leaf, Rotation::cur());
+            let is_leaf_s =
+                meta.query_advice(is_leaf_s, Rotation::cur());
+
+            // lookup using (RLC for leaf_s, s_keccak::prev(-2)[0], ..., s_keccak::prev(-2)[3])
 
             let mut constraints = vec![];
-            for i in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
-                let k = meta.query_advice(s_advices[i], Rotation::cur());
+            constraints.push((
+                    q_enable.clone() * is_leaf_s.clone() * rlc,
+                    keccak_table_i,
+                ))
+            for i in 0..KECCAK_OUTPUT_WIDTH {
+                let k = meta.query_advice(s_keccak[i], Rotation(-2));
                 let keccak_table_i =
                     meta.query_advice(keccak_table[i], Rotation::cur());
                 constraints.push((
-                    q_enable.clone() * is_keccak_leaf.clone() * k,
+                    q_enable.clone() * is_leaf_s.clone() * k,
                     keccak_table_i,
                 ))
             }
 
             constraints
         });
+        */
+
+        /*
+        // hash of leaf c is in the parent branch
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let is_leaf_c =
+                meta.query_advice(is_leaf_c, Rotation::cur());
+
+            // lookup using (RLC for leaf_c, c_keccak::prev(-4)[0], ..., c_keccak::prev(-4)[3])
+
+            let mut constraints = vec![];
+            constraints.push((
+                    q_enable.clone() * is_leaf_c.clone() * rlc,
+                    keccak_table_i,
+                ))
+            for i in 0..KECCAK_OUTPUT_WIDTH {
+                let k = meta.query_advice(c_keccak[i], Rotation(-4));
+                let keccak_table_i =
+                    meta.query_advice(keccak_table[i], Rotation::cur());
+                constraints.push((
+                    q_enable.clone() * is_leaf_c.clone() * k,
+                    keccak_table_i,
+                ))
+            }
+
+            constraints
+        });
+        */
 
         MPTConfig {
             q_enable,
@@ -672,8 +691,10 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
-            is_compact_leaf,
-            is_keccak_leaf,
+            is_leaf_s,
+            is_leaf_c,
+            is_leaf_key_s,
+            is_leaf_key_c,
             node_index,
             is_modified,
             key,
@@ -706,8 +727,10 @@ impl<F: FieldExt> MPTConfig<F> {
         is_last_branch_child: bool,
         node_index: u8,
         key: u8,
-        is_compact_leaf: bool,
-        is_keccak_leaf: bool,
+        is_leaf_s: bool,
+        is_leaf_c: bool,
+        is_leaf_key_s: bool,
+        is_leaf_key_c: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -781,16 +804,28 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         region.assign_advice(
-            || format!("assign is_compact_leaf"),
-            self.is_compact_leaf,
+            || format!("assign is_leaf_s"),
+            self.is_leaf_s,
             offset,
-            || Ok(F::from_u64(is_compact_leaf as u64)),
+            || Ok(F::from_u64(is_leaf_s as u64)),
         )?;
         region.assign_advice(
-            || format!("assign is_keccak_leaf"),
-            self.is_keccak_leaf,
+            || format!("assign is_leaf_c"),
+            self.is_leaf_c,
             offset,
-            || Ok(F::from_u64(is_keccak_leaf as u64)),
+            || Ok(F::from_u64(is_leaf_c as u64)),
+        )?;
+        region.assign_advice(
+            || format!("assign is_leaf_key_s"),
+            self.is_leaf_key_s,
+            offset,
+            || Ok(F::from_u64(is_leaf_key_s as u64)),
+        )?;
+        region.assign_advice(
+            || format!("assign is_leaf_key_c"),
+            self.is_leaf_key_c,
+            offset,
+            || Ok(F::from_u64(is_leaf_key_c as u64)),
         )?;
 
         region.assign_advice(
@@ -856,56 +891,27 @@ impl<F: FieldExt> MPTConfig<F> {
     fn assign_leaf(
         &self,
         region: &mut Region<'_, F>,
+        is_leaf_s: bool,
+        is_leaf_c: bool,
+        is_leaf_key_s: bool,
+        is_leaf_key_c: bool,
         row: &Vec<u8>,
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, false, false, false, 0, 0, true, false, offset,
-        )?;
-
-        // We now add another row for keccak format:
-        self.q_enable.enable(region, offset + 1)?;
-        region.assign_fixed(
-            || "not first",
-            self.q_not_first,
-            offset + 1,
-            || Ok(F::one()),
-        )?;
-
-        let hash = self.compute_keccak(row);
-        let padded = self.pad(row);
-        let keccak_input = self.into_words(&padded);
-        let keccak_output = self.into_words(&hash);
-
-        let row: Vec<u8> = vec![0; WITNESS_ROW_WIDTH];
-        self.assign_row(
             region,
-            &row,
+            row,
             false,
             false,
             false,
             0,
             0,
-            false,
-            true,
-            offset + 1,
+            is_leaf_s,
+            is_leaf_c,
+            is_leaf_key_s,
+            is_leaf_key_c,
+            offset,
         )?;
-
-        // Reassign the proper values now (0s assinged in assign_row to set all columns).
-        for ind in 0..KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH {
-            let val: u64;
-            if ind < KECCAK_INPUT_WIDTH {
-                val = keccak_input[ind];
-            } else {
-                val = keccak_output[ind - KECCAK_INPUT_WIDTH];
-            }
-            region.assign_advice(
-                || format!("assign s_advice {}", ind),
-                self.s_advices[ind],
-                offset + 1,
-                || Ok(F::from_u64(val)),
-            )?;
-        }
 
         Ok(())
     }
@@ -917,7 +923,8 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, true, false, false, 0, 0, false, false, offset,
+            region, row, true, false, false, 0, 0, false, false, false, false,
+            offset,
         )?;
 
         Ok(())
@@ -958,6 +965,8 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index == 15,
             node_index,
             key,
+            false,
+            false,
             false,
             false,
             offset,
@@ -1164,8 +1173,12 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             offset += 1;
                             branch_ind += 1;
-                        } else if row[row.len() - 1] == 2 {
-                            // compact leaf
+                        } else if row[row.len() - 1] == 2
+                            || row[row.len() - 1] == 3
+                            || row[row.len() - 1] == 4
+                            || row[row.len() - 1] == 5
+                        {
+                            // leaf s or leaf c or leaf key s or leaf key c
                             self.q_enable.enable(&mut region, offset)?;
                             region.assign_fixed(
                                 || "not first",
@@ -1173,12 +1186,29 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                                 || Ok(F::one()),
                             )?;
+                            let mut is_leaf_s = false;
+                            let mut is_leaf_c = false;
+                            let mut is_leaf_key_s = false;
+                            let mut is_leaf_key_c = false;
+                            if row[row.len() - 1] == 2 {
+                                is_leaf_s = true;
+                            } else if row[row.len() - 1] == 3 {
+                                is_leaf_c = true;
+                            } else if row[row.len() - 1] == 4 {
+                                is_leaf_key_s = true;
+                            } else if row[row.len() - 1] == 5 {
+                                is_leaf_key_c = true;
+                            }
                             self.assign_leaf(
                                 &mut region,
+                                is_leaf_s,
+                                is_leaf_c,
+                                is_leaf_key_s,
+                                is_leaf_key_c,
                                 &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
-                            offset += 2; // two rows added for a leaf
+                            offset += 1;
                         }
                     }
 
