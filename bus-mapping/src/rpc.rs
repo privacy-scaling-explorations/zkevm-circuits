@@ -14,10 +14,10 @@ pub fn serialize<T: serde::Serialize>(t: &T) -> serde_json::Value {
 }
 
 /// Placeholder structure designed to contain the methods that the BusMapping needs in order to enable Geth queries.
-pub struct GethQueries<P: JsonRpcClient>(P);
+pub struct GethClient<P: JsonRpcClient>(P);
 
-impl<P: JsonRpcClient> GethQueries<P> {
-    /// Generates a new GethQueriesProvider instance.
+impl<P: JsonRpcClient> GethClient<P> {
+    /// Generates a new `GethClient` instance.
     pub fn new(provider: P) -> Self {
         Self(provider)
     }
@@ -51,7 +51,7 @@ mod rpc_tests {
         let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
 
         let hash = Hash::from_str("0x60d58d0e417b2b7fab8c74a5efc8292cb5651cd056caad126fb308523b40abc2").unwrap();
-        let prov = GethQueries::new(transport);
+        let prov = GethClient::new(transport);
         let block = prov.get_block_by_hash(hash).await.unwrap();
         assert!(hash == block.transactions[0].hash)
     }
