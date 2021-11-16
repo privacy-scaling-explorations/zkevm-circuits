@@ -17,7 +17,7 @@ fn bus_mapping_prover() {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    let k = 8;
+    let k = 14;
     let public_inputs_size = 0;
 
     let empty_circuit: StateCircuit<2000, 100, 2, 100, 1023, 1000> =

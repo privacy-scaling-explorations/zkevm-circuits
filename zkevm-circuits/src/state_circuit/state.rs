@@ -170,15 +170,15 @@ impl<
                 * (four.clone() - q_target_next)
         };
 
-        let q_memory_first_norm = |meta: &mut VirtualCells<F>| {
-            let e = q_memory_first(meta);
-            // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
-            // 2, we use 1/12 to normalize the value
-            let inv = F::from(12_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
+        // let q_memory_first_norm = |meta: &mut VirtualCells<F>| {
+        //     let e = q_memory_first(meta);
+        //     // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
+        //     // 2, we use 1/12 to normalize the value
+        //     let inv = F::from(12_u64).invert().unwrap();
+        //     let i = Expression::Constant(inv);
 
-            e * i
-        };
+        //     e * i
+        // };
 
         let q_memory_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
@@ -418,15 +418,15 @@ impl<
         });
 
         // Memory address is in the allowed range.
-        meta.lookup2(|meta| {
-            let q_memory =
-                q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let memory_address_table_zero =
-                meta.query_fixed(memory_address_table_zero, Rotation::cur());
+        // meta.lookup2(|meta| {
+        //     let q_memory =
+        //         q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
+        //     let address_cur = meta.query_advice(address, Rotation::cur());
+        //     let memory_address_table_zero =
+        //         meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
-            vec![(q_memory * address_cur, memory_address_table_zero)]
-        });
+        //     vec![(q_memory * address_cur, memory_address_table_zero)]
+        // });
 
         // Stack address is in the allowed range.
         meta.lookup2(|meta| {
@@ -1558,317 +1558,317 @@ mod tests {
         );
     }
 
-    #[test]
-    fn max_values() {
-        let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            MemoryOp::new(
-                RW::WRITE,
-                MemoryAddress::from(MEMORY_ADDRESS_MAX),
-                32u8,
-            ),
-        );
-        let memory_op_1 = Operation::new(
-            GlobalCounter::from(GLOBAL_COUNTER_MAX),
-            MemoryOp::new(
-                RW::READ,
-                MemoryAddress::from(MEMORY_ADDRESS_MAX),
-                32u8,
-            ),
-        );
-        let memory_op_2 = Operation::new(
-            GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
-            MemoryOp::new(
-                RW::WRITE,
-                MemoryAddress::from(MEMORY_ADDRESS_MAX),
-                32u8,
-            ),
-        );
+    // #[test]
+    // fn max_values() {
+    //     let memory_op_0 = Operation::new(
+    //         GlobalCounter::from(12),
+    //         MemoryOp::new(
+    //             RW::WRITE,
+    //             MemoryAddress::from(MEMORY_ADDRESS_MAX),
+    //             32u8,
+    //         ),
+    //     );
+    //     let memory_op_1 = Operation::new(
+    //         GlobalCounter::from(GLOBAL_COUNTER_MAX),
+    //         MemoryOp::new(
+    //             RW::READ,
+    //             MemoryAddress::from(MEMORY_ADDRESS_MAX),
+    //             32u8,
+    //         ),
+    //     );
+    //     let memory_op_2 = Operation::new(
+    //         GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+    //         MemoryOp::new(
+    //             RW::WRITE,
+    //             MemoryAddress::from(MEMORY_ADDRESS_MAX),
+    //             32u8,
+    //         ),
+    //     );
 
-        let memory_op_3 = Operation::new(
-            GlobalCounter::from(12),
-            MemoryOp::new(
-                RW::WRITE,
-                MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-                32u8,
-            ),
-        );
-        let memory_op_4 = Operation::new(
-            GlobalCounter::from(24),
-            MemoryOp::new(
-                RW::READ,
-                MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-                32u8,
-            ),
-        );
+    //     let memory_op_3 = Operation::new(
+    //         GlobalCounter::from(12),
+    //         MemoryOp::new(
+    //             RW::WRITE,
+    //             MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
+    //             32u8,
+    //         ),
+    //     );
+    //     let memory_op_4 = Operation::new(
+    //         GlobalCounter::from(24),
+    //         MemoryOp::new(
+    //             RW::READ,
+    //             MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
+    //             32u8,
+    //         ),
+    //     );
 
-        let stack_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(STACK_ADDRESS_MAX),
-                EvmWord::from(12u8),
-            ),
-        );
-        let stack_op_1 = Operation::new(
-            GlobalCounter::from(24),
-            StackOp::new(
-                RW::READ,
-                StackAddress::from(STACK_ADDRESS_MAX),
-                EvmWord::from(12u8),
-            ),
-        );
+    //     let stack_op_0 = Operation::new(
+    //         GlobalCounter::from(12),
+    //         StackOp::new(
+    //             RW::WRITE,
+    //             StackAddress::from(STACK_ADDRESS_MAX),
+    //             EvmWord::from(12u8),
+    //         ),
+    //     );
+    //     let stack_op_1 = Operation::new(
+    //         GlobalCounter::from(24),
+    //         StackOp::new(
+    //             RW::READ,
+    //             StackAddress::from(STACK_ADDRESS_MAX),
+    //             EvmWord::from(12u8),
+    //         ),
+    //     );
 
-        let stack_op_2 = Operation::new(
-            GlobalCounter::from(17),
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(STACK_ADDRESS_MAX + 1),
-                EvmWord::from(12u8),
-            ),
-        );
-        let stack_op_3 = Operation::new(
-            GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(STACK_ADDRESS_MAX + 1),
-                EvmWord::from(12u8),
-            ),
-        );
+    //     let stack_op_2 = Operation::new(
+    //         GlobalCounter::from(17),
+    //         StackOp::new(
+    //             RW::WRITE,
+    //             StackAddress::from(STACK_ADDRESS_MAX + 1),
+    //             EvmWord::from(12u8),
+    //         ),
+    //     );
+    //     let stack_op_3 = Operation::new(
+    //         GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+    //         StackOp::new(
+    //             RW::WRITE,
+    //             StackAddress::from(STACK_ADDRESS_MAX + 1),
+    //             EvmWord::from(12u8),
+    //         ),
+    //     );
 
-        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
-        // rows would fail because of the address they would have - the
-        // address of the last unused row)
-        const MEMORY_ROWS_MAX: usize = 7;
-        const STACK_ROWS_MAX: usize = 7;
-        const STORAGE_ROWS_MAX: usize = 7;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
-        const MEMORY_ADDRESS_MAX: usize = 100;
-        const STACK_ADDRESS_MAX: usize = 1023;
+    //     // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
+    //     // rows would fail because of the address they would have - the
+    //     // address of the last unused row)
+    //     const MEMORY_ROWS_MAX: usize = 7;
+    //     const STACK_ROWS_MAX: usize = 7;
+    //     const STORAGE_ROWS_MAX: usize = 7;
+    //     const GLOBAL_COUNTER_MAX: usize = 60000;
+    //     const MEMORY_ADDRESS_MAX: usize = 100;
+    //     const STACK_ADDRESS_MAX: usize = 1023;
 
-        test_state_circuit!(
-            16,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
-            STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
-            vec![
-                memory_op_0,
-                memory_op_1,
-                memory_op_2,
-                memory_op_3,
-                memory_op_4
-            ],
-            vec![stack_op_0, stack_op_1, stack_op_2, stack_op_3],
-            vec![],
-            Err(vec![
-                lookup_fail(4, 3),
-                lookup_fail(5, 3),
-                lookup_fail(6, 3),
-                lookup_fail(9, 4),
-                lookup_fail(10, 4),
-                lookup_fail(3, 5),
-                lookup_fail(10, 5)
-            ])
-        );
-    }
+    //     test_state_circuit!(
+    //         16,
+    //         GLOBAL_COUNTER_MAX,
+    //         MEMORY_ROWS_MAX,
+    //         MEMORY_ADDRESS_MAX,
+    //         STACK_ROWS_MAX,
+    //         STACK_ADDRESS_MAX,
+    //         STORAGE_ROWS_MAX,
+    //         vec![
+    //             memory_op_0,
+    //             memory_op_1,
+    //             memory_op_2,
+    //             memory_op_3,
+    //             memory_op_4
+    //         ],
+    //         vec![stack_op_0, stack_op_1, stack_op_2, stack_op_3],
+    //         vec![],
+    //         Err(vec![
+    //             lookup_fail(4, 3),
+    //             lookup_fail(5, 3),
+    //             lookup_fail(6, 3),
+    //             lookup_fail(9, 4),
+    //             lookup_fail(10, 4),
+    //             lookup_fail(3, 5),
+    //             lookup_fail(10, 5)
+    //         ])
+    //     );
+    // }
 
-    #[test]
-    fn max_values_first_row() {
-        // first row of a target needs to be checked for address to be in range
-        // too
-        let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            MemoryOp::new(
-                RW::WRITE,
-                MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-                // This address is not in the allowed range
-                32u8,
-            ),
-        );
+    // #[test]
+    // fn max_values_first_row() {
+    //     // first row of a target needs to be checked for address to be in range
+    //     // too
+    //     let memory_op_0 = Operation::new(
+    //         GlobalCounter::from(12),
+    //         MemoryOp::new(
+    //             RW::WRITE,
+    //             MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
+    //             // This address is not in the allowed range
+    //             32u8,
+    //         ),
+    //     );
 
-        let stack_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            StackOp::new(
-                RW::WRITE,
-                StackAddress::from(STACK_ADDRESS_MAX + 1),
-                EvmWord::from(12u8),
-            ),
-        );
-        let stack_op_1 = Operation::new(
-            GlobalCounter::from(24),
-            StackOp::new(
-                RW::READ,
-                StackAddress::from(STACK_ADDRESS_MAX + 1),
-                EvmWord::from(12u8),
-            ),
-        );
+    //     let stack_op_0 = Operation::new(
+    //         GlobalCounter::from(12),
+    //         StackOp::new(
+    //             RW::WRITE,
+    //             StackAddress::from(STACK_ADDRESS_MAX + 1),
+    //             EvmWord::from(12u8),
+    //         ),
+    //     );
+    //     let stack_op_1 = Operation::new(
+    //         GlobalCounter::from(24),
+    //         StackOp::new(
+    //             RW::READ,
+    //             StackAddress::from(STACK_ADDRESS_MAX + 1),
+    //             EvmWord::from(12u8),
+    //         ),
+    //     );
 
-        // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
-        // rows would fail because of the address they would have - the
-        // address of the last unused row)
-        const MEMORY_ROWS_MAX: usize = 2;
-        const STACK_ROWS_MAX: usize = 2;
-        const STORAGE_ROWS_MAX: usize = 2;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
-        const MEMORY_ADDRESS_MAX: usize = 100;
-        const STACK_ADDRESS_MAX: usize = 1023;
+    //     // Small MEMORY_MAX_ROWS is set to avoid having padded rows (all padded
+    //     // rows would fail because of the address they would have - the
+    //     // address of the last unused row)
+    //     const MEMORY_ROWS_MAX: usize = 2;
+    //     const STACK_ROWS_MAX: usize = 2;
+    //     const STORAGE_ROWS_MAX: usize = 2;
+    //     const GLOBAL_COUNTER_MAX: usize = 60000;
+    //     const MEMORY_ADDRESS_MAX: usize = 100;
+    //     const STACK_ADDRESS_MAX: usize = 1023;
 
-        test_state_circuit!(
-            16,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
-            STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
-            vec![memory_op_0],
-            vec![stack_op_0, stack_op_1],
-            vec![],
-            Err(vec![
-                lookup_fail(0, 3),
-                lookup_fail(1, 3),
-                lookup_fail(2, 4),
-                lookup_fail(3, 4),
-            ])
-        );
-    }
+    //     test_state_circuit!(
+    //         16,
+    //         GLOBAL_COUNTER_MAX,
+    //         MEMORY_ROWS_MAX,
+    //         MEMORY_ADDRESS_MAX,
+    //         STACK_ROWS_MAX,
+    //         STACK_ADDRESS_MAX,
+    //         STORAGE_ROWS_MAX,
+    //         vec![memory_op_0],
+    //         vec![stack_op_0, stack_op_1],
+    //         vec![],
+    //         Err(vec![
+    //             lookup_fail(0, 3),
+    //             lookup_fail(1, 3),
+    //             lookup_fail(2, 4),
+    //             lookup_fail(3, 4),
+    //         ])
+    //     );
+    // }
 
-    #[test]
-    fn non_monotone_global_counter() {
-        let memory_op_0 = Operation::new(
-            GlobalCounter::from(1352),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32u8),
-        );
-        let memory_op_1 = Operation::new(
-            GlobalCounter::from(1255),
-            MemoryOp::new(RW::READ, MemoryAddress::from(0), 32u8),
-        );
+    // #[test]
+    // fn non_monotone_global_counter() {
+    //     let memory_op_0 = Operation::new(
+    //         GlobalCounter::from(1352),
+    //         MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32u8),
+    //     );
+    //     let memory_op_1 = Operation::new(
+    //         GlobalCounter::from(1255),
+    //         MemoryOp::new(RW::READ, MemoryAddress::from(0), 32u8),
+    //     );
 
-        // fails because it needs to be strictly monotone
-        let memory_op_2 = Operation::new(
-            GlobalCounter::from(1255),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32u8),
-        );
+    //     // fails because it needs to be strictly monotone
+    //     let memory_op_2 = Operation::new(
+    //         GlobalCounter::from(1255),
+    //         MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32u8),
+    //     );
 
-        let stack_op_0 = Operation::new(
-            GlobalCounter::from(228),
-            StackOp::new(RW::WRITE, StackAddress::from(1), EvmWord::from(12u8)),
-        );
-        let stack_op_1 = Operation::new(
-            GlobalCounter::from(217),
-            StackOp::new(RW::READ, StackAddress::from(1), EvmWord::from(12u8)),
-        );
-        let stack_op_2 = Operation::new(
-            GlobalCounter::from(217),
-            StackOp::new(RW::READ, StackAddress::from(1), EvmWord::from(12u8)),
-        );
+    //     let stack_op_0 = Operation::new(
+    //         GlobalCounter::from(228),
+    //         StackOp::new(RW::WRITE, StackAddress::from(1), EvmWord::from(12u8)),
+    //     );
+    //     let stack_op_1 = Operation::new(
+    //         GlobalCounter::from(217),
+    //         StackOp::new(RW::READ, StackAddress::from(1), EvmWord::from(12u8)),
+    //     );
+    //     let stack_op_2 = Operation::new(
+    //         GlobalCounter::from(217),
+    //         StackOp::new(RW::READ, StackAddress::from(1), EvmWord::from(12u8)),
+    //     );
 
-        let storage_op_0 = Operation::new(
-            GlobalCounter::from(301),
-            StorageOp::new(
-                RW::WRITE,
-                EthAddress::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-                EvmWord::from(0x40u8),
-                EvmWord::from(32u8),
-                EvmWord::from(0u8),
-            ),
-        );
-        let storage_op_1 = Operation::new(
-            GlobalCounter::from(302),
-            StorageOp::new(
-                RW::READ,
-                EthAddress::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-                EvmWord::from(0x40u8),
-                EvmWord::from(32u8),
-                EvmWord::from(0u8),
-            ),
-        );
-        let storage_op_2 = Operation::new(
-            GlobalCounter::from(302),
-            StorageOp::new(
-                RW::READ,
-                /*fails because the address and
-                 * storage key are the same as in
-                 * the previous row */
-                EthAddress::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-                EvmWord::from(0x40u8),
-                EvmWord::from(32u8),
-                EvmWord::from(0u8),
-            ),
-        );
-        let storage_op_3 = Operation::new(
-            GlobalCounter::from(297),
-            StorageOp::new(
-                RW::WRITE,
-                // Global counter goes down, but it doesn't fail because
-                // the storage key is not the same as in the previous row.
-                EthAddress::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-                EvmWord::from(0x41u8),
-                EvmWord::from(32u8),
-                EvmWord::from(32u8),
-            ),
-        );
+    //     let storage_op_0 = Operation::new(
+    //         GlobalCounter::from(301),
+    //         StorageOp::new(
+    //             RW::WRITE,
+    //             EthAddress::from_str(
+    //                 "0x0000000000000000000000000000000000000001",
+    //             )
+    //             .unwrap(),
+    //             EvmWord::from(0x40u8),
+    //             EvmWord::from(32u8),
+    //             EvmWord::from(0u8),
+    //         ),
+    //     );
+    //     let storage_op_1 = Operation::new(
+    //         GlobalCounter::from(302),
+    //         StorageOp::new(
+    //             RW::READ,
+    //             EthAddress::from_str(
+    //                 "0x0000000000000000000000000000000000000001",
+    //             )
+    //             .unwrap(),
+    //             EvmWord::from(0x40u8),
+    //             EvmWord::from(32u8),
+    //             EvmWord::from(0u8),
+    //         ),
+    //     );
+    //     let storage_op_2 = Operation::new(
+    //         GlobalCounter::from(302),
+    //         StorageOp::new(
+    //             RW::READ,
+    //             /*fails because the address and
+    //              * storage key are the same as in
+    //              * the previous row */
+    //             EthAddress::from_str(
+    //                 "0x0000000000000000000000000000000000000001",
+    //             )
+    //             .unwrap(),
+    //             EvmWord::from(0x40u8),
+    //             EvmWord::from(32u8),
+    //             EvmWord::from(0u8),
+    //         ),
+    //     );
+    //     let storage_op_3 = Operation::new(
+    //         GlobalCounter::from(297),
+    //         StorageOp::new(
+    //             RW::WRITE,
+    //             // Global counter goes down, but it doesn't fail because
+    //             // the storage key is not the same as in the previous row.
+    //             EthAddress::from_str(
+    //                 "0x0000000000000000000000000000000000000001",
+    //             )
+    //             .unwrap(),
+    //             EvmWord::from(0x41u8),
+    //             EvmWord::from(32u8),
+    //             EvmWord::from(32u8),
+    //         ),
+    //     );
 
-        let storage_op_4 = Operation::new(
-            GlobalCounter::from(296),
-            StorageOp::new(
-                RW::WRITE,
-                // Global counter goes down, but it doesn't fail because the
-                // address is not the same as in the previous row (while the
-                // storage key is).
-                EthAddress::from_str(
-                    "0x0000000000000000000000000000000000000002",
-                )
-                .unwrap(),
-                EvmWord::from(0x41u8),
-                EvmWord::from(32u8),
-                EvmWord::from(0u8),
-            ),
-        );
+    //     let storage_op_4 = Operation::new(
+    //         GlobalCounter::from(296),
+    //         StorageOp::new(
+    //             RW::WRITE,
+    //             // Global counter goes down, but it doesn't fail because the
+    //             // address is not the same as in the previous row (while the
+    //             // storage key is).
+    //             EthAddress::from_str(
+    //                 "0x0000000000000000000000000000000000000002",
+    //             )
+    //             .unwrap(),
+    //             EvmWord::from(0x41u8),
+    //             EvmWord::from(32u8),
+    //             EvmWord::from(0u8),
+    //         ),
+    //     );
 
-        const MEMORY_ROWS_MAX: usize = 100;
-        const STACK_ROWS_MAX: usize = 100;
-        test_state_circuit!(
-            15,
-            10000,
-            MEMORY_ROWS_MAX,
-            10000,
-            STACK_ROWS_MAX,
-            1023,
-            1000,
-            vec![memory_op_0, memory_op_1, memory_op_2],
-            vec![stack_op_0, stack_op_1, stack_op_2],
-            vec![
-                storage_op_0,
-                storage_op_1,
-                storage_op_2,
-                storage_op_3,
-                storage_op_4
-            ],
-            Err(vec![
-                lookup_fail(2, 2),
-                lookup_fail(3, 2),
-                lookup_fail(MEMORY_ROWS_MAX + 1, 2),
-                lookup_fail(MEMORY_ROWS_MAX + 2, 2),
-                lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 7),
-            ])
-        );
-    }
+    //     const MEMORY_ROWS_MAX: usize = 100;
+    //     const STACK_ROWS_MAX: usize = 100;
+    //     test_state_circuit!(
+    //         15,
+    //         10000,
+    //         MEMORY_ROWS_MAX,
+    //         10000,
+    //         STACK_ROWS_MAX,
+    //         1023,
+    //         1000,
+    //         vec![memory_op_0, memory_op_1, memory_op_2],
+    //         vec![stack_op_0, stack_op_1, stack_op_2],
+    //         vec![
+    //             storage_op_0,
+    //             storage_op_1,
+    //             storage_op_2,
+    //             storage_op_3,
+    //             storage_op_4
+    //         ],
+    //         Err(vec![
+    //             lookup_fail(2, 2),
+    //             lookup_fail(3, 2),
+    //             lookup_fail(MEMORY_ROWS_MAX + 1, 2),
+    //             lookup_fail(MEMORY_ROWS_MAX + 2, 2),
+    //             lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 7),
+    //         ])
+    //     );
+    // }
 
     #[test]
     fn non_monotone_address() {
