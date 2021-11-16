@@ -164,12 +164,12 @@ mod rpc_tests {
             trace_by_hash[0].struct_logs.len()
                 == trace_by_hash[1].struct_logs.len()
         );
-        assert!(trace_by_hash[0].struct_logs.len() != 0);
+        assert!(!trace_by_hash[0].struct_logs.is_empty());
     }
 
     // The test is ignored as the values used depend on the Geth instance used each time you run the tests.
     // And we can't assume that everyone will have a Geth client synced with mainnet to have unified "test-vectors".
-    //#[ignore]
+    #[ignore]
     #[tokio::test]
     async fn test_trace_block_by_number() {
         let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
@@ -180,6 +180,6 @@ mod rpc_tests {
             trace_by_hash[0].struct_logs.len()
                 == trace_by_hash[1].struct_logs.len()
         );
-        assert!(trace_by_hash[0].struct_logs.len() != 0);
+        assert!(!trace_by_hash[0].struct_logs.is_empty());
     }
 }
