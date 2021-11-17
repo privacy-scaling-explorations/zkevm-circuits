@@ -1,11 +1,13 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget};
-use super::utils::{sum, StateTransition};
+use super::utils::{
+    self,
+    common_cases::{OutOfGasCase, StackUnderflowCase},
+    constraint_builder::ConstraintBuilder,
+    math_gadgets::{IsEqualGadget, IsZeroGadget},
+    sum, StateTransition,
+};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
-    OpGadget,
+    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};

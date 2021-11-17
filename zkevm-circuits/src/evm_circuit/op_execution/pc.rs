@@ -1,10 +1,13 @@
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
-use super::utils::common_cases::{OutOfGasCase, StackOverflowCase};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::{from_bytes, sum, StateTransition};
-use super::{utils, CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
+use super::utils::{
+    self,
+    common_cases::{OutOfGasCase, StackOverflowCase},
+    constraint_builder::ConstraintBuilder,
+    from_bytes, sum, StateTransition,
+};
+use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};

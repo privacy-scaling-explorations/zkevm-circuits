@@ -1,13 +1,13 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget};
-use super::utils::memory_gadgets::{
-    self, address_high, address_low, MemoryExpansionGadget,
+use super::utils::{
+    self,
+    constraint_builder::ConstraintBuilder,
+    math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget},
+    memory_gadgets::{self, address_high, address_low, MemoryExpansionGadget},
+    select, StateTransition, StateTransitionExpressions,
 };
-use super::utils::{select, StateTransition, StateTransitionExpressions};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
-    OpGadget,
+    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::evm_circuit::param::{
     MAX_GAS_SIZE_IN_BYTES, MAX_MEMORY_SIZE_IN_BYTES, STACK_START_IDX,

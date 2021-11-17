@@ -1,10 +1,12 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils::common_cases::{OutOfGasCase, RangeStackUnderflowCase};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::StateTransition;
+use super::utils::{
+    self,
+    common_cases::{OutOfGasCase, RangeStackUnderflowCase},
+    constraint_builder::ConstraintBuilder,
+    StateTransition,
+};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
-    OpGadget,
+    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};

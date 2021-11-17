@@ -1,10 +1,14 @@
-use super::super::super::FixedLookup;
-use super::super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
-use super::super::utils::constraint_builder::ConstraintBuilder;
-use super::super::utils::StateTransition;
+use super::super::super::{
+    Case, Cell, Constraint, ExecutionStep, FixedLookup, Word,
+};
+use super::super::utils::{
+    self,
+    common_cases::{OutOfGasCase, StackUnderflowCase},
+    constraint_builder::ConstraintBuilder,
+    StateTransition,
+};
 use super::super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
-    OpGadget, Case, Cell, ExecutionStep, Constraint, Word,
+    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -259,7 +263,7 @@ mod test {
     fn xor_gadget() {
         let a = BigUint::from(0x12_34_56u64);
         let b = BigUint::from(0x78_9A_BCu64);
-        let c = BigUint::from(0x6A_BE_EAu64);
+        let c = BigUint::from(0x6A_AE_EAu64);
         check(OpcodeId::XOR, a, b, c);
     }
 }

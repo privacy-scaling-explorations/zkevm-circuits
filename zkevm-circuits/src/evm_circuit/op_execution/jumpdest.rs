@@ -1,10 +1,10 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep};
-use super::utils::common_cases::OutOfGasCase;
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::StateTransition;
+use super::utils::{
+    self, common_cases::OutOfGasCase, constraint_builder::ConstraintBuilder,
+    StateTransition,
+};
 use super::{
-    utils, CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState,
-    OpGadget,
+    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
 use crate::util::Expr;
