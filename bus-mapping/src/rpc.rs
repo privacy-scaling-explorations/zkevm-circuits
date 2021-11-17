@@ -1,7 +1,7 @@
 //! Module which contains all the RPC calls that are needed at any point to query a Geth node in order to get a Block, Tx or Trace info.
 
 use crate::eth_types::{
-    Block, GethExecTrace, Hash, ResultGethExecTrace, Transaction, U64,
+    Block, GethExecTrace, Hash, ResultGethExecTraces, Transaction, U64,
 };
 use crate::Error;
 use ethers_providers::JsonRpcClient;
@@ -87,7 +87,7 @@ impl<P: JsonRpcClient> GethClient<P> {
         hash: Hash,
     ) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
-        let resp: ResultGethExecTrace = self
+        let resp: ResultGethExecTraces = self
             .0
             .request("debug_traceBlockByHash", [hash])
             .await
@@ -101,7 +101,7 @@ impl<P: JsonRpcClient> GethClient<P> {
         block_num: BlockNumber,
     ) -> Result<Vec<GethExecTrace>, Error> {
         let num = block_num.serialize();
-        let resp: ResultGethExecTrace = self
+        let resp: ResultGethExecTraces = self
             .0
             .request("debug_traceBlockByNumber", [num])
             .await

@@ -183,28 +183,19 @@ impl From<GethExecStep> for GethExecStepInternal {
                 .stack
                 .0
                 .iter()
-                .map(|stack_elem| {
-                    DebugU256::from_big_endian(&stack_elem.to_be_bytes())
-                })
+                .map(|stack_elem| DebugU256(stack_elem.0))
                 .collect(),
             memory: step
                 .memory
                 .0
-                .iter()
-                .map(|mem_elem| {
-                    DebugU256::from_big_endian(&mem_elem.to_be_bytes())
-                })
+                .chunks(32)
+                .map(|word| DebugU256::from_big_endian(word))
                 .collect(),
             storage: step
                 .storage
                 .0
                 .iter()
-                .map(|(k, v)| {
-                    (
-                        DebugU256::from_big_endian(&k.to_be_bytes()),
-                        DebugU256::from_big_endian(&v.to_be_bytes()),
-                    )
-                })
+                .map(|(k, v)| (DebugU256(k.0), DebugU256(v.0)))
                 .collect(),
         }
     }
@@ -257,13 +248,13 @@ impl<'de> Deserialize<'de> for GethExecStep {
 /// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecTrace(pub(crate) Vec<ResultGethExecStep>);
+pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
 /// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecStep {
+pub(crate) struct ResultGethExecTrace {
     pub(crate) result: GethExecTrace,
 }
 
