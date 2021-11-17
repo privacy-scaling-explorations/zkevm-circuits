@@ -31,8 +31,7 @@ pub struct MPTConfig<F> {
     is_last_branch_child: Column<Advice>,
     is_leaf_s: Column<Advice>,
     is_leaf_c: Column<Advice>,
-    is_leaf_key_s: Column<Advice>,
-    is_leaf_key_c: Column<Advice>,
+    is_leaf_key: Column<Advice>,
     node_index: Column<Advice>,
     is_modified: Column<Advice>, // whether this branch child is modified
     key: Column<Advice>,
@@ -68,8 +67,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_last_branch_child = meta.advice_column();
         let is_leaf_s = meta.advice_column();
         let is_leaf_c = meta.advice_column();
-        let is_leaf_key_s = meta.advice_column();
-        let is_leaf_key_c = meta.advice_column();
+        let is_leaf_key = meta.advice_column();
         let node_index = meta.advice_column();
         let is_modified = meta.advice_column();
         let key = meta.advice_column();
@@ -149,10 +147,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_last_branch_child, Rotation::cur());
             let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
             let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
-            let is_leaf_key_s =
-                meta.query_advice(is_leaf_key_s, Rotation::cur());
-            let is_leaf_key_c =
-                meta.query_advice(is_leaf_key_c, Rotation::cur());
+            let is_leaf_key_s = meta.query_advice(is_leaf_key, Rotation::cur());
 
             let bool_check_is_branch_init = is_branch_init_cur.clone()
                 * (one.clone() - is_branch_init_cur.clone());
@@ -165,13 +160,11 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_leaf_s.clone() * (one.clone() - is_leaf_s.clone());
             let bool_check_is_leaf_c =
                 is_leaf_c.clone() * (one.clone() - is_leaf_c.clone());
-            let bool_check_is_leaf_key_s =
+            let bool_check_is_leaf_key =
                 is_leaf_key_s.clone() * (one.clone() - is_leaf_key_s.clone());
-            let bool_check_is_leaf_key_c =
-                is_leaf_key_c.clone() * (one.clone() - is_leaf_key_c.clone());
 
             // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
-            // followed by is_leaf_key_s ...
+            // followed by is_leaf_key
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let key = meta.query_advice(key, Rotation::cur());
@@ -204,12 +197,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable.clone() * bool_check_is_leaf_c,
             ));
             constraints.push((
-                "bool check is leaf key s",
-                q_enable.clone() * bool_check_is_leaf_key_s,
-            ));
-            constraints.push((
-                "bool check is leaf key c",
-                q_enable.clone() * bool_check_is_leaf_key_c,
+                "bool check is leaf key",
+                q_enable.clone() * bool_check_is_leaf_key,
             ));
 
             constraints.push((
@@ -698,7 +687,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 let q_not_first =
                     meta.query_fixed(q_not_first, Rotation::cur());
                 let is_leaf_key =
-                    meta.query_advice(is_leaf_key_s, Rotation::cur());
+                    meta.query_advice(is_leaf_key, Rotation::cur());
 
                 q_not_first * is_leaf_key
             },
@@ -718,8 +707,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_last_branch_child,
             is_leaf_s,
             is_leaf_c,
-            is_leaf_key_s,
-            is_leaf_key_c,
+            is_leaf_key,
             node_index,
             is_modified,
             key,
@@ -755,8 +743,7 @@ impl<F: FieldExt> MPTConfig<F> {
         key: u8,
         is_leaf_s: bool,
         is_leaf_c: bool,
-        is_leaf_key_s: bool,
-        is_leaf_key_c: bool,
+        is_leaf_key: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -843,15 +830,9 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
         region.assign_advice(
             || format!("assign is_leaf_key_s"),
-            self.is_leaf_key_s,
+            self.is_leaf_key,
             offset,
-            || Ok(F::from_u64(is_leaf_key_s as u64)),
-        )?;
-        region.assign_advice(
-            || format!("assign is_leaf_key_c"),
-            self.is_leaf_key_c,
-            offset,
-            || Ok(F::from_u64(is_leaf_key_c as u64)),
+            || Ok(F::from_u64(is_leaf_key as u64)),
         )?;
 
         region.assign_advice(
@@ -919,8 +900,7 @@ impl<F: FieldExt> MPTConfig<F> {
         region: &mut Region<'_, F>,
         is_leaf_s: bool,
         is_leaf_c: bool,
-        is_leaf_key_s: bool,
-        is_leaf_key_c: bool,
+        is_leaf_key: bool,
         row: &Vec<u8>,
         offset: usize,
     ) -> Result<(), Error> {
@@ -934,8 +914,7 @@ impl<F: FieldExt> MPTConfig<F> {
             0,
             is_leaf_s,
             is_leaf_c,
-            is_leaf_key_s,
-            is_leaf_key_c,
+            is_leaf_key,
             offset,
         )?;
 
@@ -949,8 +928,7 @@ impl<F: FieldExt> MPTConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
-            region, row, true, false, false, 0, 0, false, false, false, false,
-            offset,
+            region, row, true, false, false, 0, 0, false, false, false, offset,
         )?;
 
         Ok(())
@@ -991,7 +969,6 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index == 15,
             node_index,
             key,
-            false,
             false,
             false,
             false,
@@ -1214,23 +1191,19 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
                             let mut is_leaf_s = false;
                             let mut is_leaf_c = false;
-                            let mut is_leaf_key_s = false;
-                            let mut is_leaf_key_c = false;
+                            let mut is_leaf_key = false;
                             if row[row.len() - 1] == 2 {
                                 is_leaf_s = true;
                             } else if row[row.len() - 1] == 3 {
                                 is_leaf_c = true;
                             } else if row[row.len() - 1] == 4 {
-                                is_leaf_key_s = true;
-                            } else if row[row.len() - 1] == 5 {
-                                is_leaf_key_c = true;
+                                is_leaf_key = true;
                             }
                             self.assign_leaf(
                                 &mut region,
                                 is_leaf_s,
                                 is_leaf_c,
-                                is_leaf_key_s,
-                                is_leaf_key_c,
+                                is_leaf_key,
                                 &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
@@ -1390,8 +1363,8 @@ mod tests {
         }
 
         // for debugging:
-        let path = "mpt/tests";
-        // let path = "tests";
+        // let path = "mpt/tests";
+        let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
