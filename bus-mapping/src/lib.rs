@@ -222,5 +222,6 @@ pub mod circuit_input_builder;
 #[macro_use]
 pub mod eth_types;
 pub mod mock;
+pub mod rpc;
 pub use error::Error;
 pub use exec_trace::BlockConstants;

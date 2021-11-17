@@ -134,7 +134,7 @@ impl<F: FieldExt> ToScalar<F> for Address {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 struct GethExecStepInternal {
     pc: ProgramCounter,
@@ -171,6 +171,48 @@ pub struct GethExecStep {
     pub storage: Storage,
 }
 
+impl From<GethExecStep> for GethExecStepInternal {
+    fn from(step: GethExecStep) -> Self {
+        GethExecStepInternal {
+            pc: step.pc,
+            op: step.op,
+            gas: step.gas,
+            gas_cost: step.gas_cost,
+            depth: step.depth,
+            stack: step
+                .stack
+                .0
+                .iter()
+                .map(|stack_elem| DebugU256(stack_elem.0))
+                .collect(),
+            memory: step
+                .memory
+                .0
+                .chunks(32)
+                .map(|word| DebugU256::from_big_endian(word))
+                .collect(),
+            storage: step
+                .storage
+                .0
+                .iter()
+                .map(|(k, v)| (DebugU256(k.0), DebugU256(v.0)))
+                .collect(),
+        }
+    }
+}
+
+// TODO: Tried `#[serde(into = "IntoType")]` feature but doesn't seem to work. Double check.
+impl Serialize for GethExecStep {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize as a `GethExecStepInternal`
+        let internal = GethExecStepInternal::from(self.clone());
+        internal.serialize(serializer)
+    }
+}
+
 impl<'de> Deserialize<'de> for GethExecStep {
     fn deserialize<D>(deserializer: D) -> Result<GethExecStep, D::Error>
     where
@@ -202,9 +244,23 @@ impl<'de> Deserialize<'de> for GethExecStep {
     }
 }
 
+/// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
+/// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[doc(hidden)]
+pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
+
+/// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
+/// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[doc(hidden)]
+pub(crate) struct ResultGethExecTrace {
+    pub(crate) result: GethExecTrace,
+}
+
 /// The execution trace type returned by geth RPC debug_trace* methods.  Corresponds to
 /// `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 pub struct GethExecTrace {
     pub gas: Gas,
