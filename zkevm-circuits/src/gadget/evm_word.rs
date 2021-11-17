@@ -200,7 +200,7 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let r = r();
 
-                let q_encode = meta.selector();
+                let q_encode = meta.complex_selector();
 
                 let bytes: [Column<Advice>; 32] = (0..32)
                     .map(|_| meta.advice_column())
