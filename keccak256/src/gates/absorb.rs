@@ -244,6 +244,25 @@ mod tests {
                     },
                 )?;
 
+                // Witness `in_state`.
+                let in_state: [(Cell, F); 25] = layouter.assign_region(
+                    || "Witness input state",
+                    |mut region| {
+                        let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                        for (idx, val) in self.in_state.iter().enumerate() {
+                            let cell = region.assign_advice(
+                                || "witness input state",
+                                config.state[idx],
+                                0,
+                                || Ok(*val),
+                            )?;
+                            state.push((cell, *val))
+                        }
+
+                        Ok(state.try_into().unwrap())
+                    },
+                )?;
+
                 layouter.assign_region(
                     || "assign input state",
                     |mut region| {
@@ -251,7 +270,7 @@ mod tests {
                         config.assign_state_and_next_inp_from_cell(
                             &mut region,
                             offset,
-                            self.in_state,
+                            in_state,
                             self.next_input,
                             flag,
                         )
