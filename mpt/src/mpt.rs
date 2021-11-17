@@ -693,10 +693,12 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_leaf_key_s, Rotation::cur());
 
             let is_odd = meta.query_advice(s_rlp1, Rotation::cur());
-            // let is_even = meta.query_advice(s_rlp2, Rotation::cur());
+            let is_even = meta.query_advice(s_rlp2, Rotation::cur());
 
             // TODO: is_odd, is_even are booleans
             // TODO: is_odd + is_even = 1
+
+            // TODO: check RLP meta data
 
             // Leaf S
             // first two bytes (s_rlp1, s_rlp2) are RLP meta data
@@ -719,7 +721,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let s_advices0_cur =
                 meta.query_advice(s_advices[0], Rotation::cur());
             constraints.push((
-                "foo",
+                "Key compression odd 1",
                 q_not_first.clone()
                     * is_leaf_key_s.clone()
                     * is_odd.clone()
@@ -738,7 +740,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     meta.query_advice(s_advices[2 * ind], Rotation::cur());
                 let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
                 constraints.push((
-                    "foo 1",
+                    "Key compression odd 2",
                     q_not_first.clone()
                         * is_leaf_key_s.clone()
                         * is_odd.clone()
@@ -752,7 +754,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let s_cur2 = meta.query_advice(c_rlp1, Rotation::cur());
             let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
             constraints.push((
-                "foo 2",
+                "Key compression odd 3",
                 q_not_first.clone()
                     * is_leaf_key_s.clone()
                     * is_odd.clone()
@@ -764,13 +766,12 @@ impl<F: FieldExt> MPTConfig<F> {
             let s_cur2 = meta.query_advice(c_advices[0], Rotation::cur());
             let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
             constraints.push((
-                "foo 3",
+                "Key compression odd 4",
                 q_not_first.clone()
                     * is_leaf_key_s.clone()
                     * is_odd.clone()
                     * expr,
             ));
-
             // we can check from i = 18
             for ind in 18..HASH_WIDTH {
                 let s_prev =
@@ -783,7 +784,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     .query_advice(c_advices[2 * (ind - 17)], Rotation::cur());
                 let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
                 constraints.push((
-                    "foo 4",
+                    "Key compression odd 5",
                     q_not_first.clone()
                         * is_leaf_key_s.clone()
                         * is_odd.clone()
@@ -793,7 +794,70 @@ impl<F: FieldExt> MPTConfig<F> {
 
             // TODO: can be in leaf S more than 32?
 
-            // if key length is even
+            // if key length is even, the first (of the rest) byte contains 32
+
+            let c32 = Expression::Constant(F::from_u64(32));
+            let s_advices0_prev =
+                meta.query_advice(s_advices[0], Rotation::prev());
+            constraints.push((
+                "Key compression even 1",
+                q_not_first.clone()
+                    * is_leaf_key_s.clone()
+                    * is_even.clone()
+                    * (s_advices0_prev - c32),
+            ));
+            // s_advices[i]_prev = s_advices[2*i - 1]_cur * 16 + s_advices[2*i]_cur
+            // we can go up to i = 16
+            for ind in 1..17 {
+                let s_prev =
+                    meta.query_advice(s_advices[ind], Rotation::prev());
+                let s_cur1 =
+                    meta.query_advice(s_advices[2 * ind - 2], Rotation::cur());
+                let s_cur2 =
+                    meta.query_advice(s_advices[2 * ind - 1], Rotation::cur());
+                let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+                constraints.push((
+                    "Key compression even 2",
+                    q_not_first.clone()
+                        * is_leaf_key_s.clone()
+                        * is_even.clone()
+                        * expr,
+                ));
+            }
+
+            // s_advices[17]_prev = c_rlp1_cur * 16 + c_rlp2_cur
+            let s_prev = meta.query_advice(s_advices[17], Rotation::prev());
+            let s_cur1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let s_cur2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+            constraints.push((
+                "Key compression even 3",
+                q_not_first.clone()
+                    * is_leaf_key_s.clone()
+                    * is_even.clone()
+                    * expr,
+            ));
+            // we can check from i = 18
+            for ind in 18..HASH_WIDTH {
+                let s_prev =
+                    meta.query_advice(s_advices[ind], Rotation::prev());
+                let s_cur1 = meta.query_advice(
+                    c_advices[2 * (ind - 17) - 2],
+                    Rotation::cur(),
+                );
+                let s_cur2 = meta.query_advice(
+                    c_advices[2 * (ind - 17) - 1],
+                    Rotation::cur(),
+                );
+                let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+                constraints.push((
+                    "Key compression even 4",
+                    q_not_first.clone()
+                        * is_leaf_key_s.clone()
+                        * is_even.clone()
+                        * expr,
+                ));
+            }
 
             constraints
         });
