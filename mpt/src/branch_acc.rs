@@ -11,10 +11,7 @@ use std::{marker::PhantomData, u64};
 use crate::param::HASH_WIDTH;
 
 #[derive(Clone, Debug)]
-pub(crate) struct BranchAccConfig {
-    range_table: Column<Fixed>,
-    advices: [Column<Advice>; HASH_WIDTH],
-}
+pub(crate) struct BranchAccConfig {}
 
 // BranchAccChip verifies the random linear combination for the branch.
 pub(crate) struct BranchAccChip<F> {
@@ -34,10 +31,7 @@ impl<F: FieldExt> BranchAccChip<F> {
     ) -> BranchAccConfig {
         let range_table = meta.fixed_column();
 
-        let config = BranchAccConfig {
-            range_table,
-            advices,
-        };
+        let config = BranchAccConfig {};
 
         meta.create_gate("branch acc", |meta| {
             let q_enable = q_enable(meta);

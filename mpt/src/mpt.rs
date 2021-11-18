@@ -374,7 +374,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
             let mut constraints = vec![];
 
-            // TODO: RLP length can also be 3 or 4
             // check branch accumulator S in row 0
             let branch_acc_s_cur =
                 meta.query_advice(branch_acc_s, Rotation::cur());
@@ -385,41 +384,102 @@ impl<F: FieldExt> MPTConfig<F> {
             let branch_mult_c_cur =
                 meta.query_advice(branch_mult_c, Rotation::cur());
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let c_rlp1 = meta.query_advice(s_advices[0], Rotation::cur());
-            let c_rlp2 = meta.query_advice(s_advices[1], Rotation::cur());
+            let two_rlp_bytes = meta.query_advice(s_rlp1, Rotation::cur());
+            let three_rlp_bytes = meta.query_advice(s_rlp2, Rotation::cur());
 
-            let acc_s = s_rlp1 + s_rlp2 * branch_acc_r;
+            // TODO: two_rlp_bytes and three_rlp_bytes are bools
+            // TODO: two_rlp_bytes + three_rlp_bytes = 1
+
+            // TODO: remove mult_s and mult_c by having big endian
+
+            let s_rlp1 = meta.query_advice(s_advices[0], Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_advices[1], Rotation::cur());
+            let s_rlp3 = meta.query_advice(s_advices[2], Rotation::cur());
+
+            let c_rlp1 = meta.query_advice(s_advices[3], Rotation::cur());
+            let c_rlp2 = meta.query_advice(s_advices[4], Rotation::cur());
+            let c_rlp3 = meta.query_advice(s_advices[5], Rotation::cur());
+
+            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * branch_acc_r;
             constraints.push((
                 "branch accumulator S row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * (acc_s - branch_acc_s_cur),
+                    * two_rlp_bytes.clone()
+                    * (acc_s_two - branch_acc_s_cur.clone()),
             ));
 
-            let mult_s = Expression::Constant(branch_acc_r * branch_acc_r);
+            let mult_s_two = Expression::Constant(branch_acc_r * branch_acc_r);
             constraints.push((
                 "branch mult S row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * (mult_s - branch_mult_s_cur),
+                    * two_rlp_bytes.clone()
+                    * (mult_s_two - branch_mult_s_cur.clone()),
             ));
 
-            let acc_c = c_rlp1 + c_rlp2 * branch_acc_r;
+            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * branch_acc_r;
             constraints.push((
                 "branch accumulator C row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * (acc_c - branch_acc_c_cur),
+                    * two_rlp_bytes.clone()
+                    * (acc_c_two - branch_acc_c_cur.clone()),
             ));
 
-            let mult_c = Expression::Constant(branch_acc_r * branch_acc_r);
+            let mult_c_two = Expression::Constant(branch_acc_r * branch_acc_r);
             constraints.push((
                 "branch mult C row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * (mult_c - branch_mult_c_cur),
+                    * two_rlp_bytes
+                    * (mult_c_two - branch_mult_c_cur.clone()),
+            ));
+
+            //
+
+            let acc_s_three = s_rlp1
+                + s_rlp2 * branch_acc_r
+                + s_rlp3 * branch_acc_r * branch_acc_r;
+            constraints.push((
+                "branch accumulator S row 0 (3)",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * three_rlp_bytes.clone()
+                    * (acc_s_three - branch_acc_s_cur),
+            ));
+
+            let mult_s_three = Expression::Constant(
+                branch_acc_r * branch_acc_r * branch_acc_r,
+            );
+            constraints.push((
+                "branch mult S row 0 (3)",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * three_rlp_bytes.clone()
+                    * (mult_s_three - branch_mult_s_cur),
+            ));
+
+            let acc_c_three = c_rlp1
+                + c_rlp2 * branch_acc_r
+                + c_rlp3 * branch_acc_r * branch_acc_r;
+            constraints.push((
+                "branch accumulator C row 0 (3)",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * three_rlp_bytes.clone()
+                    * (acc_c_three - branch_acc_c_cur),
+            ));
+
+            let mult_c_three = Expression::Constant(
+                branch_acc_r * branch_acc_r * branch_acc_r,
+            );
+            constraints.push((
+                "branch mult C row 0 (3)",
+                q_enable.clone()
+                    * is_branch_init_cur.clone()
+                    * three_rlp_bytes
+                    * (mult_c_three - branch_mult_c_cur),
             ));
 
             constraints
@@ -1077,7 +1137,12 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             // reassign (it was assigned to 0 in assign_row) branch_acc and branch_mult to proper values
 
-                            // TODO: depends on how much positions RLP occupies
+                            // Branch (length 83) with two bytes of RLP meta data
+                            // [248,81,128,128,...
+
+                            // Branch (length 340) with three bytes of RLP meta data
+                            // [249,1,81,128,16,...
+
                             branch_acc_s =
                                 F::from_u64(row[BRANCH_0_S_START] as u64)
                                     + F::from_u64(
@@ -1085,6 +1150,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                     ) * self.branch_acc_r;
                             branch_mult_s =
                                 self.branch_acc_r * self.branch_acc_r;
+
+                            if row[BRANCH_0_S_START] == 249 {
+                                branch_acc_s += F::from_u64(
+                                    row[BRANCH_0_S_START + 2] as u64,
+                                ) * branch_mult_s;
+                                branch_mult_s *= self.branch_acc_r;
+                            }
+
                             branch_acc_c =
                                 F::from_u64(row[BRANCH_0_C_START] as u64)
                                     + F::from_u64(
@@ -1092,6 +1165,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                     ) * self.branch_acc_r;
                             branch_mult_c =
                                 self.branch_acc_r * self.branch_acc_r;
+
+                            if row[BRANCH_0_C_START] == 249 {
+                                branch_acc_c += F::from_u64(
+                                    row[BRANCH_0_C_START + 2] as u64,
+                                ) * branch_mult_c;
+                                branch_mult_c *= self.branch_acc_r;
+                            }
+
                             self.assign_branch_acc(
                                 &mut region,
                                 branch_acc_s,
@@ -1363,8 +1444,8 @@ mod tests {
         }
 
         // for debugging:
-        // let path = "mpt/tests";
-        let path = "tests";
+        let path = "mpt/tests";
+        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)

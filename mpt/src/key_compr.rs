@@ -11,9 +11,7 @@ use std::marker::PhantomData;
 use crate::param::HASH_WIDTH;
 
 #[derive(Clone, Debug)]
-pub(crate) struct KeyComprConfig {
-    range_table: Column<Fixed>,
-}
+pub(crate) struct KeyComprConfig {}
 
 // KeyComprChip verifies the compression of a leaf key from nibbles to hex.
 pub(crate) struct KeyComprChip<F> {
@@ -32,9 +30,7 @@ impl<F: FieldExt> KeyComprChip<F> {
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
     ) -> KeyComprConfig {
-        let range_table = meta.fixed_column();
-
-        let config = KeyComprConfig { range_table };
+        let config = KeyComprConfig {};
 
         meta.create_gate("Leaf key", |meta| {
             let q_enable = q_enable(meta);
