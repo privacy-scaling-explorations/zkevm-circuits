@@ -13,14 +13,19 @@ pub struct Bytecode {
 }
 
 impl Bytecode {
+    /// Get a reference to the generated code
+    pub fn code(&self) -> &[u8] {
+        &self.code
+    }
+
     /// Get the generated code
     pub fn to_bytes(&self) -> Vec<u8> {
         self.code.clone()
     }
 
     /// Append
-    pub fn append(&mut self, other: &mut Bytecode) {
-        self.code.append(&mut other.code);
+    pub fn append(&mut self, other: &Bytecode) {
+        self.code.extend_from_slice(&other.code);
         for (key, val) in other.markers.iter() {
             self.insert_marker(key, self.num_opcodes + val);
         }
@@ -89,7 +94,7 @@ impl Bytecode {
 
     /// Setup state
     pub fn setup_state(&mut self) -> &mut Self {
-        self.append(&mut crate::bytecode! {
+        self.append(&crate::bytecode! {
             PUSH1(0x80u64)
             PUSH1(0x40u64)
             MSTORE
@@ -109,7 +114,7 @@ impl Bytecode {
         mem_out: Word,
         mem_out_size: Word,
     ) -> &mut Self {
-        self.append(&mut crate::bytecode! {
+        self.append(&crate::bytecode! {
             PUSH32(mem_out_size)
             PUSH32(mem_out)
             PUSH32(mem_in_size)

@@ -28,6 +28,7 @@ fn main() {
         "./gethutil/asm.go",
         "./gethutil/trace.go",
         "./gethutil/util.go",
+        "./go.mod",
     ];
     for file in dep_files {
         println!("cargo:rerun-if-changed={}", file);

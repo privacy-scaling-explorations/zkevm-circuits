@@ -17,6 +17,7 @@ geth-utils = { path = "../geth-utils" }
 web3 = {version = "0.17", default-features = false}
 uint = "0.9.1"
 ethers-providers = "0.5.5"
+regex = "1.5.4"
 
 [dev-dependencies]
 url = "2.2.2"

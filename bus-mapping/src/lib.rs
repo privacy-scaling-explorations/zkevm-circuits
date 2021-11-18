@@ -223,6 +223,7 @@ pub mod bytecode;
 pub mod circuit_input_builder;
 #[macro_use]
 pub mod eth_types;
+pub(crate) mod geth_errors;
 pub mod mock;
 pub mod rpc;
 pub use error::Error;

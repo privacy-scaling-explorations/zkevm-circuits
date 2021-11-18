@@ -142,7 +142,8 @@ struct GethExecStepInternal {
     gas: Gas,
     #[serde(alias = "gasCost")]
     gas_cost: GasCost,
-    depth: u8,
+    depth: u16,
+    error: Option<String>,
     // stack is in hex 0x prefixed
     stack: Vec<DebugU256>,
     // memory is in chunks of 32 bytes, in hex
@@ -162,7 +163,8 @@ pub struct GethExecStep {
     pub op: OpcodeId,
     pub gas: Gas,
     pub gas_cost: GasCost,
-    pub depth: u8,
+    pub depth: u16,
+    pub error: Option<String>,
     // stack is in hex 0x prefixed
     pub stack: Stack,
     // memory is in chunks of 32 bytes, in hex
@@ -179,6 +181,7 @@ impl From<GethExecStep> for GethExecStepInternal {
             gas: step.gas,
             gas_cost: step.gas_cost,
             depth: step.depth,
+            error: step.error,
             stack: step
                 .stack
                 .0
@@ -226,6 +229,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
             gas: s.gas,
             gas_cost: s.gas_cost,
             depth: s.depth,
+            error: s.error,
             stack: Stack(
                 s.stack.iter().map(|dw| dw.to_word()).collect::<Vec<Word>>(),
             ),
@@ -368,6 +372,7 @@ mod tests {
                         gas: Gas(22705),
                         gas_cost: GasCost(3),
                         depth: 1,
+                        error: None,
                         stack: Stack::new(),
                         storage: Storage(word_map!()),
                         memory: Memory::new(),
@@ -378,6 +383,7 @@ mod tests {
                         gas: Gas(5217),
                         gas_cost: GasCost(2100),
                         depth: 1,
+                        error: None,
                         stack: Stack(vec![
                             word!("0x1003e2d2"),
                             word!("0x2a"),
