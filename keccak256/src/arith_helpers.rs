@@ -241,9 +241,9 @@ pub fn state_to_state_bigint<F: FieldExt>(state: [F; 17]) -> State {
         })
         .collect();
     elems.extend(vec![0u64; 25 - 17]);
-    (0..5)
-        .into_iter()
-        .for_each(|idx| matrix[idx].copy_from_slice(&elems[0 * idx..5 * idx]));
+    (0..5).into_iter().for_each(|idx| {
+        matrix[idx].copy_from_slice(&elems[5 * idx..(5 * idx + 5)])
+    });
 
     matrix
 }
