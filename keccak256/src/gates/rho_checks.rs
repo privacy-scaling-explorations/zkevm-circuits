@@ -289,8 +289,6 @@ impl RotatingVariables {
 
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
-    q_enable: Selector,
-    q_is_special: Selector,
     adv: RhoAdvices,
     chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
     special_chunk_config: SpecialChunkConfig<F>,
@@ -338,8 +336,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         );
 
         Self {
-            q_enable,
-            q_is_special,
             adv,
             chunk_rotate_convert_configs,
             special_chunk_config,
@@ -412,13 +408,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
 
 #[derive(Debug, Clone)]
 pub struct ChunkRotateConversionConfig<F> {
-    q_enable: Selector,
     adv: RhoAdvices,
     base_13_to_base_9_lookup: Base13toBase9TableConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
-    chunk_idx: u32,
-    rotation: u32,
-    step: u32,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
@@ -482,13 +474,9 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         );
 
         Self {
-            q_enable,
             adv,
             base_13_to_base_9_lookup,
             block_count_acc_config,
-            chunk_idx,
-            rotation,
-            step,
         }
     }
 
@@ -536,7 +524,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 pub struct SpecialChunkConfig<F> {
     q_enable: Selector,
     last_b9_coef: Column<Advice>,
-    rotation: u64,
     base_13_acc: Column<Advice>,
     base_9_acc: Column<Advice>,
     special_chunk_table_config: SpecialChunkTableConfig<F>,
@@ -575,7 +562,6 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         Self {
             q_enable,
             last_b9_coef,
-            rotation,
             base_13_acc,
             base_9_acc,
             special_chunk_table_config,
@@ -629,9 +615,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
 
 #[derive(Debug, Clone)]
 pub struct BlockCountAccConfig<F> {
-    q_enable: Selector,
     bc: BlockCountAdvices,
-    step: u32,
     _marker: PhantomData<F>,
 }
 
@@ -675,9 +659,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         });
 
         Self {
-            q_enable,
             bc,
-            step,
             _marker: PhantomData,
         }
     }

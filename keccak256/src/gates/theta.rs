@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct ThetaConfig<F> {
+    #[allow(dead_code)]
     q_enable: Selector,
     state: [Column<Advice>; 25],
     _marker: PhantomData<F>,

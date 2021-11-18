@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct IotaB9Config<F> {
+    #[allow(dead_code)]
     q_enable: Selector,
     state: [Column<Advice>; 25],
     round_ctant_b9: Column<Advice>,

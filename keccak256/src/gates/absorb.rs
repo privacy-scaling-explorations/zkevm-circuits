@@ -11,6 +11,7 @@ pub(crate) const ABSORB_NEXT_INPUTS: usize = 17;
 
 #[derive(Clone, Debug)]
 pub struct AbsorbConfig<F> {
+    #[allow(dead_code)]
     q_enable: Selector,
     state: [Column<Advice>; 25],
     next_input: [Column<Advice>; ABSORB_NEXT_INPUTS],
