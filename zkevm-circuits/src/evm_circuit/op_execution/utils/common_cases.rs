@@ -156,7 +156,8 @@ impl<F: FieldExt> RangeStackUnderflowCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // The stack index we have to access, deduced from the opcode and `start`
+        // The stack index we have to access, deduced from the opcode and
+        // `start`
         let stack_offset = state_curr.opcode.expr() - self.start.expr();
 
         // Stack underflow when

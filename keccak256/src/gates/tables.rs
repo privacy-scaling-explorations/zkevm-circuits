@@ -14,7 +14,6 @@ use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
-    q_enable: Selector,
     base13: Column<Fixed>,
     base9: Column<Fixed>,
     block_count: Column<Fixed>,
@@ -91,7 +90,6 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
             base13: fixed[0],
             base9: fixed[1],
             block_count: fixed[2],
-            q_enable,
             _marker: PhantomData,
         };
 
@@ -121,7 +119,6 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
 /// - The last output coef: `convert_b13_coef(high_value + low_value)`
 #[derive(Debug, Clone)]
 pub struct SpecialChunkTableConfig<F> {
-    q_enable: Selector,
     last_chunk: Column<Fixed>,
     output_coef: Column<Fixed>,
     _marker: PhantomData<F>,
@@ -179,7 +176,6 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         cols: [Column<Fixed>; 2],
     ) -> Self {
         let config = Self {
-            q_enable,
             last_chunk: cols[0],
             output_coef: cols[1],
             _marker: PhantomData,

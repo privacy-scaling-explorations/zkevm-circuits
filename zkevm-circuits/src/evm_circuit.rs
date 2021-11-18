@@ -547,9 +547,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         fixed_lookup_count += 1;
                     }
                     Lookup::BusMappingLookup(
-                        rw_lookup
-                        @
-                        (BusMappingLookup::Stack { .. }
+                        rw_lookup @ (BusMappingLookup::Stack { .. }
                         | BusMappingLookup::Memory { .. }
                         | BusMappingLookup::AccountStorage {
                             ..
@@ -904,7 +902,8 @@ impl<F: FieldExt> EvmCircuit<F> {
                 offset += 1;
 
                 for operation in operations.iter() {
-                    // TODO: Ensure we got a sorted by gc operation from bus-mapping
+                    // TODO: Ensure we got a sorted by gc operation from
+                    // bus-mapping
                     assert_eq!(
                         operation.gc, offset,
                         "global counter uniqueness assumption is broken"

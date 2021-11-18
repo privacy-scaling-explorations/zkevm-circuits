@@ -41,9 +41,11 @@
 //! `ExecutionTrace` instance from it. That will automatically fill all of the
 //! bus-mapping instances of each
 //! [`GethExecStep`](crate::eth_types::GethExecStep).  Then the
-//! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder) will fill in an
-//! [`OperationContainer`](crate::operation::container::OperationContainer) with all of the Memory,
-//! Stack and Storage ops performed by the provided trace.
+//! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder)
+//! will fill in an
+//! [`OperationContainer`](crate::operation::container::OperationContainer)
+//! with all of the Memory, Stack and Storage ops performed
+//! by the provided trace.
 //!
 //! ```rust
 //! use bus_mapping::{BlockConstants, Error};
@@ -187,8 +189,8 @@
 //! `global_counter`.
 //!
 //! - Iterate over the `ExecutionTrace` itself over
-//! each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
-//! This is also automatically done via the
+//! each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage
+//! operations are linked to each step. This is also automatically done via the
 //! [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
 //!
 //! ## Documentation

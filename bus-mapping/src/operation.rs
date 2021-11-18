@@ -49,8 +49,8 @@ pub enum Target {
 
 /// Trait used for Operation Kinds.
 pub trait Op: Eq + Ord {
-    /// Turn the Generic Op into an OpEnum so that we can match it into a particular Operation
-    /// Kind.
+    /// Turn the Generic Op into an OpEnum so that we can match it into a
+    /// particular Operation Kind.
     fn into_enum(self) -> OpEnum;
 }
 
@@ -307,8 +307,8 @@ impl<T: Op> Operation<T> {
         &self.op
     }
 
-    // /// Matches over an `Operation` returning the [`Target`] of the iternal op
-    // /// it stores inside.
+    // /// Matches over an `Operation` returning the [`Target`] of the iternal
+    // op /// it stores inside.
     // pub const fn target(&self) -> Target {
     //     self.op.target()
     // }

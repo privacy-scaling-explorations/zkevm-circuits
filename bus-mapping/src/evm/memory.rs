@@ -184,14 +184,16 @@ impl From<Vec<Word>> for Memory {
 impl Index<MemoryAddress> for Memory {
     type Output = u8;
     fn index(&self, index: MemoryAddress) -> &Self::Output {
-        // MemoryAddress is in base 16. Therefore since the vec is not, we need to shift the addr.
+        // MemoryAddress is in base 16. Therefore since the vec is not, we need
+        // to shift the addr.
         &self.0[index.0 >> 5]
     }
 }
 
 impl IndexMut<MemoryAddress> for Memory {
     fn index_mut(&mut self, index: MemoryAddress) -> &mut Self::Output {
-        // MemoryAddress is in base 16. Therefore since the vec is not, we need to shift the addr.
+        // MemoryAddress is in base 16. Therefore since the vec is not, we need
+        // to shift the addr.
         &mut self.0[index.0 >> 5]
     }
 }
@@ -219,10 +221,11 @@ impl Memory {
         self.0.len().into()
     }
 
-    /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`] `addr` and
-    /// finnishes at `addr + 32`.
+    /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
+    /// `addr` and finnishes at `addr + 32`.
     pub fn read_word(&self, addr: MemoryAddress) -> Result<Word, Error> {
-        // Ensure that the memory is big enough to have values in the range `[addr, addr+32)`.
+        // Ensure that the memory is big enough to have values in the range
+        // `[addr, addr+32)`.
         if self.0.len() < addr.0 + 32 {
             return Err(Error::InvalidMemoryPointer);
         }
@@ -287,7 +290,8 @@ mod memory_tests {
                 .collect(),
         );
 
-        // At this point at position [0x40, 0x80) we've allocated the `0x80` value.
+        // At this point at position [0x40, 0x80) we've allocated the `0x80`
+        // value.
 
         // If we read a word at addr `0x40` we should get `0x80`.
         assert_eq!(

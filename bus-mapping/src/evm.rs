@@ -90,7 +90,8 @@ impl GlobalCounter {
     }
 }
 
-/// Defines the gas left to perate in a [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// Defines the gas left to perate in a
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]

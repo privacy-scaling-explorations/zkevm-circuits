@@ -6,8 +6,8 @@ use crate::{
     Error,
 };
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// `OpcodeId::SWAP*` `OpcodeId`.
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the `OpcodeId::SWAP*` `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Swap<const N: usize>;
 

@@ -42,7 +42,8 @@ impl OperationContainer {
 
     /// Inserts an [`Operation`] into the  container returning a lightwheight
     /// reference to it in the form of an [`OperationRef`] which points to the
-    /// location of the inserted operation inside the corresponding container vector.
+    /// location of the inserted operation inside the corresponding container
+    /// vector.
     pub fn insert<T: Op>(&mut self, op: Operation<T>) -> OperationRef {
         let gc = op.gc();
         match op.op.into_enum() {

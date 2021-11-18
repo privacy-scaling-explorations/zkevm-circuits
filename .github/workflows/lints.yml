@@ -1,5 +1,5 @@
 
-name: Stable lints
+name: Lints
 
 # We only run these lints on trial-merges of PRs to reduce noise.
 on: 

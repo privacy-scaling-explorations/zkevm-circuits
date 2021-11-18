@@ -79,22 +79,26 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         let mut cb = ConstraintBuilder::default();
 
         // Generate the selectors.
-        // If any of the non-LSB bytes of the index word are non-zero we never need to do any changes.
-        // So just sum all the non-LSB byte values here and then check if it's non-zero
-        // so we can use that as an additional condition to enable the selector.
+        // If any of the non-LSB bytes of the index word are non-zero we never
+        // need to do any changes. So just sum all the non-LSB byte
+        // values here and then check if it's non-zero so we can use
+        // that as an additional condition to enable the selector.
         let is_msb_sum_zero = self
             .is_msb_sum_zero
             .constraints(&mut cb, sum::expr(&self.index.cells[1..32]));
-        // We need to find the byte we have to get the sign from so we can extend correctly.
-        // We go byte by byte and check if `idx == index[0]`.
-        // If they are equal (at most once) we add the byte value to the sum, else we add 0.
-        // We also generate the selectors, which we'll use to decide if we need to
+        // We need to find the byte we have to get the sign from so we can
+        // extend correctly. We go byte by byte and check if `idx ==
+        // index[0]`. If they are equal (at most once) we add the byte
+        // value to the sum, else we add 0. We also generate the
+        // selectors, which we'll use to decide if we need to
         // replace bytes with the sign byte.
-        // There is no need to check the MSB, even if the MSB is selected no bytes need to be changed.
+        // There is no need to check the MSB, even if the MSB is selected no
+        // bytes need to be changed.
         let mut selected_byte = 0.expr();
         for idx in 0..31 {
             // Check if this byte is selected
-            // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
+            // The additional condition for this is that none of the non-LSB
+            // bytes are non-zero (see above).
             let is_selected = and::expr(vec![
                 self.is_byte_selected[idx].constraints(
                     &mut cb,
@@ -109,11 +113,13 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
                 + (is_selected.clone() * self.value.cells[idx].expr());
 
             // Verify the selector.
-            // Cells are used here to store intermediate results, otherwise these sums
-            // are very long expressions.
-            // The selector for a byte position is enabled when its value needs to change to the sign byte.
-            // Once a byte was selected, all following bytes need to be replaced as well,
-            // so a selector is the sum of the current and all previous `is_selected` values.
+            // Cells are used here to store intermediate results, otherwise
+            // these sums are very long expressions.
+            // The selector for a byte position is enabled when its value needs
+            // to change to the sign byte. Once a byte was selected,
+            // all following bytes need to be replaced as well, so a
+            // selector is the sum of the current and all previous `is_selected`
+            // values.
             cb.require_equal(
                 is_selected.clone()
                     + if idx > 0 {
@@ -126,18 +132,19 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         }
 
         // Lookup the sign byte.
-        // This will use the most significant bit of the selected byte to return the sign byte,
-        // which is a byte with all its bits set to the sign of the selected byte.
+        // This will use the most significant bit of the selected byte to return
+        // the sign byte, which is a byte with all its bits set to the
+        // sign of the selected byte.
         cb.add_fixed_lookup(
             FixedLookup::SignByte,
             [selected_byte, self.sign_byte.expr(), 0.expr()],
         );
 
         // Verify the result.
-        // The LSB always remains the same, all other bytes with their selector enabled
-        // need to be changed to the sign byte.
-        // When a byte was selected all the **following** bytes need to be replaced
-        // (hence the `selectors[idx - 1]`).
+        // The LSB always remains the same, all other bytes with their selector
+        // enabled need to be changed to the sign byte.
+        // When a byte was selected all the **following** bytes need to be
+        // replaced (hence the `selectors[idx - 1]`).
         for idx in 0..32 {
             cb.require_equal(
                 self.result.cells[idx].expr(),
@@ -153,7 +160,8 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
             );
         }
 
-        // Pop the byte index and the value from the stack, push the result on the stack
+        // Pop the byte index and the value from the stack, push the result on
+        // the stack
         cb.stack_pop(self.index.expr());
         cb.stack_pop(self.value.expr());
         cb.stack_push(self.result.expr());

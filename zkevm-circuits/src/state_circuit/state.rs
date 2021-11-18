@@ -371,7 +371,8 @@ impl<
             ]
         });
 
-        // We don't require first stack op to be write as this is enforced by evm circuit.
+        // We don't require first stack op to be write as this is enforced by
+        // evm circuit.
 
         meta.create_gate("Stack operation", |meta| {
             let q_stack_not_first = q_stack_not_first(meta);
@@ -1412,7 +1413,8 @@ mod tests {
                 RW::READ,
                 MemoryAddress::from(0),
                 32,
-                // This should fail as it not the same value as in previous write op
+                /* This should fail as it not the same value as in previous
+                 * write op */
             ),
         );
 
@@ -1426,7 +1428,8 @@ mod tests {
                 RW::READ,
                 StackAddress::from(0),
                 Word::from(13),
-                // This should fail as it not the same value as in previous write op
+                /* This should fail as it not the same value as in previous
+                 * write op */
             ),
         );
 
@@ -1464,7 +1467,8 @@ mod tests {
         let storage_op_0 = Operation::new(
             GlobalCounter::from(17),
             StorageOp::new(
-                RW::READ, // Fails because the first storage op needs to be write.
+                RW::READ, /* Fails because the first storage op needs to be
+                           * write. */
                 address!("0x0000000000000000000000000000000000000002"),
                 Word::from(0x40),
                 Word::from(32),
@@ -1486,8 +1490,8 @@ mod tests {
         let storage_op_2 = Operation::new(
             GlobalCounter::from(19),
             StorageOp::new(
-                RW::READ, /* Fails because when address changes, the op needs to
-                           * be write. */
+                RW::READ, /* Fails because when address changes, the op
+                           * needs to be write. */
                 address!("0x0000000000000000000000000000000000000003"),
                 Word::from(0x40),
                 /* Intentionally different storage key as the last one in the previous ops to
@@ -1921,7 +1925,8 @@ mod tests {
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(0), /* Fails because not the same
-                                * as value in the previous row - note: this is WRITE. */
+                                * as value in the previous row - note: this
+                                * is WRITE. */
             ),
         );
         let storage_op_3 = Operation::new(
@@ -1932,7 +1937,8 @@ mod tests {
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(1), /* Fails because not the same
-                                * as value_prev in the previous row - note: this is READ. */
+                                * as value_prev in the previous row - note:
+                                * this is READ. */
             ),
         );
 
@@ -2022,7 +2028,8 @@ mod tests {
         ]
         "#;
 
-        // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.
+        // Here we have the ExecutionTrace completelly formed with all of the
+        // data to witness structured.
         let geth_steps: Vec<GethExecStep> =
             serde_json::from_str(input_trace).expect("Error on trace parsing");
         let block = mock::BlockData::new_single_tx_geth_steps(geth_steps);

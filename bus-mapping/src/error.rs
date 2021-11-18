@@ -23,7 +23,8 @@ pub enum Error {
     InvalidMemoryPointer,
     /// Error while trying to access an invalid/empty Storage key.
     InvalidStorageKey,
-    /// Error when an EvmWord is too big to be converted into a `MemoryAddress`.
+    /// Error when an EvmWord is too big to be converted into a
+    /// `MemoryAddress`.
     WordToMemAddr,
     /// Error while generating a trace.
     TracingError,

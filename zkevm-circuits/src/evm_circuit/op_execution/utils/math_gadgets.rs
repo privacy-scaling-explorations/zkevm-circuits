@@ -32,9 +32,11 @@ impl<F: FieldExt> IsZeroGadget<F> {
         value: Expression<F>,
     ) -> Expression<F> {
         let is_zero = 1.expr() - (value.clone() * self.inverse.expr());
-        // when `value != 0` check `inverse = a.invert()`: value * (1 - value * inverse)
+        // when `value != 0` check `inverse = a.invert()`:
+        // value * (1 - value * inverse)
         cb.add_expression(value * is_zero.clone());
-        // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value * inverse)`
+        // when `value == 0` check `inverse = 0`:
+        // `inverse * (1 - value * inverse)`
         cb.add_expression(self.inverse.expr() * is_zero.clone());
 
         is_zero
@@ -117,7 +119,8 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
         for part in self.parts.iter() {
             cb.require_in_range(part.expr(), Self::PART_SIZE);
         }
-        // Require that the reconstructed value from the parts equals the original value
+        // Require that the reconstructed value from the parts equals the
+        // original value
         cb.require_equal(value, from_bytes::expr(self.parts.to_vec()));
     }
 

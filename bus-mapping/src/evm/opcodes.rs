@@ -196,7 +196,8 @@ impl OpcodeId {
         }
     }
 
-    /// Generate the associated operations according to the particular [`OpcodeId`].
+    /// Generate the associated operations according to the particular
+    /// [`OpcodeId`].
     pub fn gen_associated_ops(
         &self,
         state: &mut CircuitInputStateRef,

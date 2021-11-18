@@ -6,8 +6,8 @@ use crate::{
     Error,
 };
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// `OpcodeId::DUP*` `OpcodeId`.
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the `OpcodeId::DUP*` `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Dup<const N: usize>;
 

@@ -6,8 +6,8 @@ use crate::{
     Error,
 };
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Pc;
 

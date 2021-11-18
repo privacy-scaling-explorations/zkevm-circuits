@@ -8,10 +8,11 @@ use crate::{
 };
 use core::convert::TryInto;
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD) `OpcodeId`.
-/// This is responsible of generating all of the associated [`StackOp`]s and [`MemoryOp`]s and place them
-/// inside the trace's [`OperationContainer`](crate::operation::OperationContainer).
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
+/// `OpcodeId`. This is responsible of generating all of the associated
+/// [`StackOp`]s and [`MemoryOp`]s and place them inside the trace's
+/// [`OperationContainer`](crate::operation::OperationContainer).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Mload;
 
@@ -118,7 +119,8 @@ mod mload_tests {
             Word::from(0x80),
         ));
 
-        // Add the 32 MemoryOp generated from the Memory read at addr 0x40<->0x80 for each byte.
+        // Add the 32 MemoryOp generated from the Memory read at addr
+        // 0x40<->0x80 for each byte.
         Word::from(0x80)
             .to_be_bytes()
             .iter()

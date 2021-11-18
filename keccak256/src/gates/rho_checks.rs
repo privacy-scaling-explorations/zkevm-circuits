@@ -10,72 +10,100 @@
 //!
 //! We call the a coefficient of the polynomial a chunk.
 //!
-//! The output chunks represent the output bits of the lane in binary, where b0 is the least significant bit and b63 is the most significant bit.
+//! The output chunks represent the output bits of the lane in binary, where b0
+//! is the least significant bit and b63 is the most significant bit.
 //!
-//! Note that the input lane is special because it's an output from the Theta step,
-//! so it has 65 chunks. It holds that `0 <= a0 + a64 < 13`. We refer a0 to be low value and a64 high value.
+//! Note that the input lane is special because it's an output from the Theta
+//! step, so it has 65 chunks. It holds that `0 <= a0 + a64 < 13`. We refer a0
+//! to be low value and a64 high value.
 //!
-//! In the Rho step we perform the **rotation** of chunk positions and the **convertion** from base 13 to base 9.
+//! In the Rho step we perform the **rotation** of chunk positions and the
+//! **convertion** from base 13 to base 9.
 //!
-//! More formally speaking, we have a transform `T`, where `bi = T(aj)` for some `i`, `j`, and `ai` is not special chunks.
+//! More formally speaking, we have a transform `T`, where `bi = T(aj)` for some
+//! `i`, `j`, and `ai` is not special chunks.
 //! For special chunk, `bi = T(a0 + a64)`.
 //!
-//! - The rotate means we perform the rotate left of the rotation specified in `ROTATION_CONSTANTS`. Say if our rotation is 3,
+//! - The rotate means we perform the rotate left of the rotation specified in
+//!   `ROTATION_CONSTANTS`. Say if our rotation is 3,
 //! The a1 will be contribute to b3, and a63 will go to b0.
 //!
-//! The convert `T` is the [`crate::arith_helpers::convert_b13_coef`], in the circuit we have to do a lookup check for that
+//! The convert `T` is the [`crate::arith_helpers::convert_b13_coef`], in the
+//! circuit we have to do a lookup check for that
 //!
-//! The lookup is more efficient when we lookup multiple([`crate::gates::rho_helpers::BASE_NUM_OF_CHUNKS`]) chunks at a time.
+//! The lookup is more efficient when we lookup
+//! multiple([`crate::gates::rho_helpers::BASE_NUM_OF_CHUNKS`]) chunks at a
+//! time.
 //!
 //! ## Checks
 //!
-//! The goal is to check the conversion from the base 13 input lane to the base 9 output lane is sound.
+//! The goal is to check the conversion from the base 13 input lane to the base
+//! 9 output lane is sound.
 //!
 //! ### The Essential
 //!
 //! For each lane, we split up the lane in slices of chunks.
-//! - We run down the input accumulator by subtracting each `input_coef * power_of_13`
+//! - We run down the input accumulator by subtracting each `input_coef *
+//!   power_of_13`
 //! - We run up the output accumulator by adding up `output_coef * power_of_9`
-//! - We lookup [`crate::gates::tables::Base13toBase9TableConfig`] and check the conversion between `input_coef` and `output_coef` is valid
+//! - We lookup [`crate::gates::tables::Base13toBase9TableConfig`] and check the
+//!   conversion between `input_coef` and `output_coef` is valid
 //!
-//! We have the copy constrain to glue input accumulator to input lane and the output accumulator to output lane
+//! We have the copy constrain to glue input accumulator to input lane and the
+//! output accumulator to output lane
 //!
 //! But we have special checks to do
 //!
 //! ### Sepcial Chunks
 //!
-//! The Theta step shifted left 1 chunk. So the base 13 input lane now has 65 chunks, where the 0th and the 64th input chunks contribute to the same output chunk.
-//! We call the 0th input chunk the `low_value` and the 64th input chunk the `high_value`.
-//! A the end of the running down input accumulator, the remaining value is `low_value + high_value * 13**64`
-//! We lookup [`crate::gates::tables::SpecialChunkTableConfig`] to convert it to `convert_b13_coef(low_value + high_value)`.
+//! The Theta step shifted left 1 chunk. So the base 13 input lane now has 65
+//! chunks, where the 0th and the 64th input chunks contribute to the same
+//! output chunk. We call the 0th input chunk the `low_value` and the 64th input
+//! chunk the `high_value`. A the end of the running down input accumulator, the
+//! remaining value is `low_value + high_value * 13**64` We lookup [`crate::
+//! gates::tables::SpecialChunkTableConfig`] to convert it to
+//! `convert_b13_coef(low_value + high_value)`.
 //!
 //! ### Overflow Checks
 //!
-//! The [`crate::gates::tables::Base13toBase9TableConfig`] table is built to lookup 4 chunks.
-//! But we have chunks that are step 1, step 2, and step 3, which means they suppose to have the last 1, 2, or 3 chunks to be 0.
-//! If a step 1 step is witnessed with 2, 3, or 4 non-zero input chunks, then it's a malicious overflow and we have to provent the prover from doing that.
+//! The [`crate::gates::tables::Base13toBase9TableConfig`] table is built to
+//! lookup 4 chunks. But we have chunks that are step 1, step 2, and step 3,
+//! which means they suppose to have the last 1, 2, or 3 chunks to be 0.
+//! If a step 1 step is witnessed with 2, 3, or 4 non-zero input chunks, then
+//! it's a malicious overflow and we have to provent the prover from doing that.
 //!
-//! Doing range check for each of non-4chunks steps would be inefficient, instead we use the following technique.
+//! Doing range check for each of non-4chunks steps would be inefficient,
+//! instead we use the following technique.
 //!
-//! We define the [`crate::gates::rho_helpers::OVERFLOW_TRANSFORM`] to map `step` to a value `block_count`.
-//! We also add a column in [`crate::gates::tables::Base13toBase9TableConfig`] to lookup `block_count`.
-//! We sum up all the block_counts across 25 lanes, for each step 1, step 2, and step 3.
-//! At the end of the Rho step we perform the final block count range check in [`BlockCountFinalConfig`].
+//! We define the [`crate::gates::rho_helpers::OVERFLOW_TRANSFORM`] to map
+//! `step` to a value `block_count`. We also add a column in
+//! [`crate::gates::tables::Base13toBase9TableConfig`] to lookup `block_count`.
+//! We sum up all the block_counts across 25 lanes, for each step 1, step 2, and
+//! step 3. At the end of the Rho step we perform the final block count range
+//! check in [`BlockCountFinalConfig`].
 //!
-//! The `OVERFLOW_TRANSFORM` maps step 1 to 0, step 2 to 1, step 3 to 13, and step 4 to 170.
-//! It is defined that any possible overflow would result the final block count check to fail.
+//! The `OVERFLOW_TRANSFORM` maps step 1 to 0, step 2 to 1, step 3 to 13, and
+//! step 4 to 170. It is defined that any possible overflow would result the
+//! final block count check to fail.
 //!
 //! It would be better explained if we enumerate all the possible cases:
 //!
 //! The sum of the step 1 should be 0.
-//! So that if prover witness any more than 1 non-zero chunks, the [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 1, 13, or 170 and fail the final sum check.
+//! So that if prover witness any more than 1 non-zero chunks, the
+//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 1,
+//! 13, or 170 and fail the final sum check.
 //!
-//! The sum of the step 2 should be less than or equal to 1 times all numbers of step 2, which can be counted at setup time to be 12.
-//! So that if prover witness any more than 2 non-zero chunks, the [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 13 or 170 and fail the final sum check.
+//! The sum of the step 2 should be less than or equal to 1 times all numbers of
+//! step 2, which can be counted at setup time to be 12. So that if prover
+//! witness any more than 2 non-zero chunks, the
+//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 13
+//! or 170 and fail the final sum check.
 //!
-//! The sum of the step 3 should be less than or equal to 13 times all numbers of step 3, which can be counted at setup time to be 13.
-//! So that if prover witness any more than 3 non-zero chunks, the [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 170 and fail the final sum check.
-//!
+//! The sum of the step 3 should be less than or equal to 13 times all numbers
+//! of step 3, which can be counted at setup time to be 13. So that if prover
+//! witness any more than 3 non-zero chunks, the
+//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 170
+//! and fail the final sum check.
 use crate::arith_helpers::*;
 use crate::common::{LANE_SIZE, ROTATION_CONSTANTS};
 use crate::gates::{
@@ -261,8 +289,6 @@ impl RotatingVariables {
 
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
-    q_enable: Selector,
-    q_is_special: Selector,
     adv: RhoAdvices,
     chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
     special_chunk_config: SpecialChunkConfig<F>,
@@ -310,8 +336,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         );
 
         Self {
-            q_enable,
-            q_is_special,
             adv,
             chunk_rotate_convert_configs,
             special_chunk_config,
@@ -384,13 +408,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
 
 #[derive(Debug, Clone)]
 pub struct ChunkRotateConversionConfig<F> {
-    q_enable: Selector,
     adv: RhoAdvices,
     base_13_to_base_9_lookup: Base13toBase9TableConfig<F>,
     block_count_acc_config: BlockCountAccConfig<F>,
-    chunk_idx: u32,
-    rotation: u32,
-    step: u32,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
@@ -423,9 +443,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             ]));
             let delta_acc = meta.query_advice(adv.input.acc, Rotation::next())
                 - meta.query_advice(adv.input.acc, Rotation::cur());
-
             vec![(
-                "delta_acc === - coef * power_of_base", // running down for input
+                "delta_acc === - coef * power_of_base",
                 q_enable * (delta_acc + coef * power_of_base),
             )]
         });
@@ -442,7 +461,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             let delta_acc = meta.query_advice(adv.output.acc, Rotation::next())
                 - meta.query_advice(adv.output.acc, Rotation::cur());
             vec![(
-                "delta_acc === coef * power_of_base", // running up for output
+                "delta_acc === coef * power_of_base",
                 q_enable * (delta_acc - coef * power_of_base),
             )]
         });
@@ -455,13 +474,9 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         );
 
         Self {
-            q_enable,
             adv,
             base_13_to_base_9_lookup,
             block_count_acc_config,
-            chunk_idx,
-            rotation,
-            step,
         }
     }
 
@@ -509,7 +524,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 pub struct SpecialChunkConfig<F> {
     q_enable: Selector,
     last_b9_coef: Column<Advice>,
-    rotation: u64,
     base_13_acc: Column<Advice>,
     base_9_acc: Column<Advice>,
     special_chunk_table_config: SpecialChunkTableConfig<F>,
@@ -548,7 +562,6 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         Self {
             q_enable,
             last_b9_coef,
-            rotation,
             base_13_acc,
             base_9_acc,
             special_chunk_table_config,
@@ -602,9 +615,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
 
 #[derive(Debug, Clone)]
 pub struct BlockCountAccConfig<F> {
-    q_enable: Selector,
     bc: BlockCountAdvices,
-    step: u32,
     _marker: PhantomData<F>,
 }
 
@@ -648,9 +659,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         });
 
         Self {
-            q_enable,
             bc,
-            step,
             _marker: PhantomData,
         }
     }

@@ -36,9 +36,9 @@ pub trait ToLittleEndian {
     fn to_le_bytes(&self) -> [u8; 32];
 }
 
-// We use our own declaration of another U256 in order to implement a custom deserializer that can
-// parse U256 when returned by structLogs fields in geth debug_trace* methods, which don't contain
-// the `0x` prefix.
+// We use our own declaration of another U256 in order to implement a custom
+// deserializer that can parse U256 when returned by structLogs fields in geth
+// debug_trace* methods, which don't contain the `0x` prefix.
 #[allow(clippy::all)]
 mod uint_types {
     uint::construct_uint! {
@@ -153,8 +153,8 @@ struct GethExecStepInternal {
     storage: HashMap<DebugU256, DebugU256>,
 }
 
-/// The execution step type returned by geth RPC debug_trace* methods.   Corresponds to
-/// `StructLogRes` in `go-ethereum/internal/ethapi/api.go`.
+/// The execution step type returned by geth RPC debug_trace* methods.
+/// Corresponds to `StructLogRes` in `go-ethereum/internal/ethapi/api.go`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[doc(hidden)]
 pub struct GethExecStep {
@@ -189,7 +189,7 @@ impl From<GethExecStep> for GethExecStepInternal {
                 .memory
                 .0
                 .chunks(32)
-                .map(|word| DebugU256::from_big_endian(word))
+                .map(DebugU256::from_big_endian)
                 .collect(),
             storage: step
                 .storage
@@ -201,7 +201,8 @@ impl From<GethExecStep> for GethExecStepInternal {
     }
 }
 
-// TODO: Tried `#[serde(into = "IntoType")]` feature but doesn't seem to work. Double check.
+// TODO: Tried `#[serde(into = "IntoType")]` feature but doesn't seem to work.
+// Double check.
 impl Serialize for GethExecStep {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -244,22 +245,24 @@ impl<'de> Deserialize<'de> for GethExecStep {
     }
 }
 
-/// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
-/// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
+/// Helper type built to deal with the weird `result` field added between
+/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
 
-/// Helper type built to deal with the weird `result` field added between `GethExecutionTrace`s in
-/// `debug_traceBlockByHash` and `debug_traceBlockByNumber` Geth JSON-RPC calls.
+/// Helper type built to deal with the weird `result` field added between
+/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 pub(crate) struct ResultGethExecTrace {
     pub(crate) result: GethExecTrace,
 }
 
-/// The execution trace type returned by geth RPC debug_trace* methods.  Corresponds to
-/// `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
+/// The execution trace type returned by geth RPC debug_trace* methods.
+/// Corresponds to `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[doc(hidden)]
 pub struct GethExecTrace {
@@ -290,7 +293,8 @@ macro_rules! word {
 }
 
 #[macro_export]
-/// Create a [`Word`] to [`Word`] HashMap from pairs of hex strings.  Panics on invalid input.
+/// Create a [`Word`] to [`Word`] HashMap from pairs of hex strings.  Panics on
+/// invalid input.
 macro_rules! word_map {
     () => {
         std::collections::HashMap::new()

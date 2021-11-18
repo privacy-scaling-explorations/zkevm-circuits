@@ -3,11 +3,12 @@ use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
 use crate::Error;
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP) `OpcodeId`.
-/// This is responsible of generating all of the associated operations and place them
-/// inside the trace's [`OperationContainer`](crate::operation::OperationContainer).
-/// In the case of STOP, it simply does not add anything.
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the [`OpcodeId::STOP`](crate::evm::OpcodeId::STOP)
+/// `OpcodeId`. This is responsible of generating all of the associated
+/// operations and place them inside the trace's
+/// [`OperationContainer`](crate::operation::OperationContainer). In the case of
+/// STOP, it simply does not add anything.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Stop;
 

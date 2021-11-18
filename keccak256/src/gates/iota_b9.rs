@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct IotaB9Config<F> {
+    #[allow(dead_code)]
     q_enable: Selector,
     state: [Column<Advice>; 25],
     round_ctant_b9: Column<Advice>,
@@ -28,8 +29,8 @@ impl<F: FieldExt> IotaB9Config<F> {
         meta.create_gate("iota_b9", |meta| {
             // def iota_b9(state: List[List[int], round_constant_base9: int):
             //     d = round_constant_base9
-            //     # state[0][0] has 2*a + b + 3*c already, now add 2*d to make it 2*a + b + 3*c + 2*d
-            //     # coefficient in 0~8
+            //     # state[0][0] has 2*a + b + 3*c already, now add 2*d to make
+            // it 2*a + b + 3*c + 2*d     # coefficient in 0~8
             //     state[0][0] += 2*d
             //     return state
             let state_00 = meta.query_advice(state[0], Rotation::cur())
@@ -64,10 +65,11 @@ impl<F: FieldExt> IotaB9Config<F> {
         Ok(state)
     }
 
-    /// Here we have reserved on an absolute perspective of the circuit the second column
-    /// for the round constants in base-9.
-    /// What we do is assign an advide column to them using copy constraints and that requires to
-    /// enable `meta.enable_equality()` when actually defining the chip.
+    /// Here we have reserved on an absolute perspective of the circuit the
+    /// second column for the round constants in base-9.
+    /// What we do is assign an advide column to them using copy constraints and
+    /// that requires to enable `meta.enable_equality()` when actually
+    /// defining the chip.
     pub fn assign_round_ctant_b9(
         &self,
         region: &mut Region<'_, F>,
@@ -75,7 +77,8 @@ impl<F: FieldExt> IotaB9Config<F> {
         round_ctant: usize,
     ) -> Result<(), Error> {
         region.assign_advice_from_instance(
-            // 1 is the absolute offset in the overall Region where the Column is laying.
+            // 1 is the absolute offset in the overall Region where the Column
+            // is laying.
             || format!("assign round_ctant_b9 {}", 1),
             self.round_constants,
             round_ctant,
@@ -109,7 +112,8 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            // This usize is indeed pointing the exact row of the ROUND_CTANTS_B9 we want to use.
+            // This usize is indeed pointing the exact row of the
+            // ROUND_CTANTS_B9 we want to use.
             round_ctant_b9: usize,
             _marker: PhantomData<F>,
         }
@@ -130,7 +134,8 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let round_ctant_b9 = meta.advice_column();
-                // Allocate space for the round constants in base-9 which is an instance column
+                // Allocate space for the round constants in base-9 which is an
+                // instance column
                 let round_ctants = meta.instance_column();
                 // Enable copy constraints over PI and the Advices.
                 meta.enable_equality(round_ctant_b9.into());
@@ -166,8 +171,9 @@ mod tests {
                             self.out_state,
                         )?;
                         let offset = 0;
-                        // Within the Region itself, we use the constant in the same offset
-                        // so at position (Rotation::curr()). Therefore we use `0` here.
+                        // Within the Region itself, we use the constant in the
+                        // same offset so at position
+                        // (Rotation::curr()). Therefore we use `0` here.
                         config.assign_round_ctant_b9(
                             &mut region,
                             offset,

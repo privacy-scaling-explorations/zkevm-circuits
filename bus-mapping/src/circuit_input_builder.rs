@@ -1,5 +1,5 @@
-//! This module contains the CircuitInputBuilder, which is an object that takes types from geth /
-//! web3 and outputs the circuit inputs.
+//! This module contains the CircuitInputBuilder, which is an object that takes
+//! types from geth / web3 and outputs the circuit inputs.
 use crate::eth_types::{self, Address, GethExecStep, GethExecTrace};
 use crate::evm::GlobalCounter;
 use crate::evm::OpcodeId;
@@ -88,7 +88,8 @@ impl Block {
 }
 
 #[derive(Debug)]
-/// Context of a Call during a [`Transaction`] which can mutate in an [`ExecStep`].
+/// Context of a Call during a [`Transaction`] which can mutate in an
+/// [`ExecStep`].
 pub struct CallContext {
     address: Address,
 }
@@ -133,7 +134,8 @@ impl Transaction {
     }
 }
 
-/// Reference to the internal state of the CircuitInputBuilder in a particular [`ExecStep`].
+/// Reference to the internal state of the CircuitInputBuilder in a particular
+/// [`ExecStep`].
 pub struct CircuitInputStateRef<'a> {
     /// Block
     pub block: &'a mut Block,
@@ -148,10 +150,10 @@ pub struct CircuitInputStateRef<'a> {
 }
 
 impl<'a> CircuitInputStateRef<'a> {
-    /// Push an [`Operation`] into the [`OperationContainer`] with the next [`GlobalCounter`] and
-    /// then adds a reference to the stored operation ([`OperationRef`]) inside the bus-mapping
-    /// instance of the current [`ExecStep`].  Then increase the block_ctx [`GlobalCounter`] by
-    /// one.
+    /// Push an [`Operation`] into the [`OperationContainer`] with the next
+    /// [`GlobalCounter`] and then adds a reference to the stored operation
+    /// ([`OperationRef`]) inside the bus-mapping instance of the current
+    /// [`ExecStep`].  Then increase the block_ctx [`GlobalCounter`] by one.
     pub fn push_op<T: Op>(&mut self, op: T) {
         let op_ref = self
             .block
@@ -162,22 +164,24 @@ impl<'a> CircuitInputStateRef<'a> {
 }
 
 #[derive(Debug)]
-/// Builder to generate a complete circuit input from data gathered from a geth instance.
-/// This structure is the centre of the crate and is intended to be the only
-/// entry point to it. The `CircuitInputBuilder` works in several steps:
+/// Builder to generate a complete circuit input from data gathered from a geth
+/// instance. This structure is the centre of the crate and is intended to be
+/// the only entry point to it. The `CircuitInputBuilder` works in several
+/// steps:
 ///
-/// 1. Take a [`eth_types::Block`] to build the circuit input associated with the block.
-/// 2. For each [`eth_types::Transaction`] in the block, take the [`eth_types::GethExecTrace`] to
-///    build the circuit input associated with each transaction, and the bus-mapping operations
-///    associated with each `eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
+/// 1. Take a [`eth_types::Block`] to build the circuit input associated with
+/// the block. 2. For each [`eth_types::Transaction`] in the block, take the
+/// [`eth_types::GethExecTrace`] to    build the circuit input associated with
+/// each transaction, and the bus-mapping operations    associated with each
+/// `eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,
 /// [`MemoryOp`](crate::operation::MemoryOp)s and
 /// [`StorageOp`](crate::operation::StorageOp), which correspond to each
-/// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that the State Proof
-/// witnesses are already generated on a structured manner and ready to be added into the State
-/// circuit.
+/// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
+/// the State Proof witnesses are already generated on a structured manner and
+/// ready to be added into the State circuit.
 pub struct CircuitInputBuilder {
     /// Block
     pub block: Block,
@@ -186,7 +190,8 @@ pub struct CircuitInputBuilder {
 }
 
 impl<'a> CircuitInputBuilder {
-    /// Create a new CircuitInputBuilder from the given `eth_block` and `constants`.
+    /// Create a new CircuitInputBuilder from the given `eth_block` and
+    /// `constants`.
     pub fn new<TX>(
         eth_block: eth_types::Block<TX>,
         constants: BlockConstants,
@@ -197,9 +202,9 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
-    /// Obtain a mutable reference to the state that the `CircuitInputBuilder` maintains,
-    /// contextualized to a particular transaction and a particular execution step in that
-    /// transaction.
+    /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
+    /// maintains, contextualized to a particular transaction and a
+    /// particular execution step in that transaction.
     pub fn state_ref(
         &'a mut self,
         tx: &'a mut Transaction,
@@ -215,9 +220,10 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
-    /// Handle a transaction with its corresponding execution trace to generate all the associated
-    /// operations.  Each operation is registered in `self.block.container`, and each step stores
-    /// the [`OperationRef`] to each of the generated operations.
+    /// Handle a transaction with its corresponding execution trace to generate
+    /// all the associated operations.  Each operation is registered in
+    /// `self.block.container`, and each step stores the [`OperationRef`] to
+    /// each of the generated operations.
     pub fn handle_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,

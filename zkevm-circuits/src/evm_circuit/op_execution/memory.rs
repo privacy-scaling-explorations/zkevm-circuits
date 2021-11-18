@@ -97,14 +97,15 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         // This in an MSTORE/MLOAD
         let is_not_mstore8 = 1.expr() - is_mstore8.clone();
 
-        // Not all address bytes are used to calculate the gas cost for the memory access,
-        // so make sure this success case is disabled if any of those address bytes
-        // are actually used.
+        // Not all address bytes are used to calculate the gas cost for the
+        // memory access, so make sure this success case is disabled if
+        // any of those address bytes are actually used.
         memory_gadgets::require_address_in_range(&mut cb, &self.address);
         // Get the capped address value we will use in the memory calculations
         let address = address_low::expr(&self.address);
 
-        // Calculate the next memory size and the gas cost for this memory access
+        // Calculate the next memory size and the gas cost for this memory
+        // access
         let (next_memory_size, memory_cost) =
             self.memory_expansion.constraints(
                 &mut cb,
@@ -127,9 +128,9 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         // We always read/write 32 bytes, but for MSTORE8 this will be
         // 32 lookups for the same LSB byte (at the same gc).
         for idx in 0..32 {
-            // For MSTORE8 we write the LSB of value 32x times to the same address
-            // For MLOAD and MSTORE we read/write all the bytes of value
-            // at an increasing address value.
+            // For MSTORE8 we write the LSB of value 32x times to the same
+            // address For MLOAD and MSTORE we read/write all the
+            // bytes of value at an increasing address value.
             let byte = if idx == 31 {
                 self.value.cells[0].expr()
             } else {
@@ -156,7 +157,8 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         }
 
         // State transitions
-        // - `gc_delta` needs to be increased by GC_DELTA_MLOAD_MSTORE/GC_DELTA_MSTORE8
+        // - `gc_delta` needs to be increased by
+        //   GC_DELTA_MLOAD_MSTORE/GC_DELTA_MSTORE8
         // - `sp_delta` needs to be increased by SP_DELTA_MLOAD/SP_DELTA_MSTORE
         // - `gas_delta` needs to be increased by `GAS + memory_cost`
         // - `next_memory_size` needs to be set to `next_memory_size`
@@ -293,7 +295,8 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         let address_in_range = self
             .address_in_range
             .constraints(&mut cb, address_high::expr(&self.address));
-        // Check if the amount of gas available is less than the amount of gas required
+        // Check if the amount of gas available is less than the amount of gas
+        // required
         let insufficient_gas = self.insufficient_gas.constraints(
             &mut cb,
             self.gas_available.expr(),
@@ -301,8 +304,8 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         );
 
         // Make sure we are out of gas
-        // Out of gas when either the address is too big and/or the amount of gas
-        // available is lower than what is required.
+        // Out of gas when either the address is too big and/or the amount of
+        // gas available is lower than what is required.
         cb.require_zero(address_in_range * (1.expr() - insufficient_gas));
 
         // Pop the address from the stack
