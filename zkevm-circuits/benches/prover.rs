@@ -1,4 +1,5 @@
 use bus_mapping::{
+    evm::{EthAddress, EvmWord},
     operation::{MemoryOp, Operation, StackOp, StorageOp},
     BlockConstants, ExecutionTrace,
 };
@@ -6,62 +7,20 @@ use criterion::criterion_main;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
-    pairing::bn256::{Bn256, Fr as Fp},
+    dev::MockProver,
+    pairing::bn256::Fr as Fp,
     plonk::*,
-    poly::commitment::Setup,
-    transcript::{Blake2bRead, Blake2bWrite, Challenge255},
 };
 use zkevm_circuits::state_circuit::state::Config;
 
 fn bus_mapping_prover() {
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
-
     let k = 14;
-    let public_inputs_size = 0;
-
-    let empty_circuit: StateCircuit<2000, 100, 2, 100, 1023, 1000> =
-        StateCircuit {
-            memory_ops: Vec::new(),
-            stack_ops: Vec::new(),
-            storage_ops: Vec::new(),
-        };
-
-    // Initialize the polynomial commitment parameters
-    let rng = XorShiftRng::from_seed([
-        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32,
-        0x54, 0x06, 0xbc, 0xe5,
-    ]);
-
-    let params = Setup::<Bn256>::new(k, rng);
-    let verifier_params =
-        Setup::<Bn256>::verifier_params(&params, public_inputs_size).unwrap();
-
-    // Initialize the proving key
-    let vk =
-        keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &empty_circuit)
-        .expect("keygen_pk should not fail");
-
     let circuit = get_circuit();
-
-    // Create a proof
-    let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-
-    use std::time::Instant;
-    let _dur = Instant::now();
-
-    create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
-        .expect("proof generation should not fail");
-
-    println!("proving period: {:?}", _dur.elapsed());
-
-    let proof = transcript.finalize();
-
-    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-    verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
-        .unwrap();
+    let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify(), Ok(()));
 }
+
+criterion_main!(bus_mapping_prover);
 
 fn get_circuit() -> StateCircuit<2000, 100, 2, 100, 1023, 1000> {
     let input_trace = r#"
@@ -111,18 +70,30 @@ fn get_circuit() -> StateCircuit<2000, 100, 2, 100, 1023, 1000> {
               }
         ]
         "#;
-    let block_ctants = BlockConstants::<Fp>::default();
+    let block_ctants = BlockConstants::new(
+        EvmWord::from(0u8),
+        EthAddress::zero(),
+        Fp::zero(),
+        Fp::zero(),
+        Fp::zero(),
+        Fp::zero(),
+        Fp::zero(),
+        Fp::zero(),
+    );
+
+    // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.
     let obtained_exec_trace =
         ExecutionTrace::from_trace_bytes(input_trace.as_bytes(), block_ctants)
-            .unwrap();
-    StateCircuit {
-        memory_ops: obtained_exec_trace.sorted_memory_ops(),
-        stack_ops: obtained_exec_trace.sorted_stack_ops(),
-        storage_ops: obtained_exec_trace.sorted_storage_ops(),
+            .expect("Error on trace generation");
+
+    let stack_ops = obtained_exec_trace.sorted_stack_ops();
+
+    StateCircuit::<2000, 100, 2, 100, 1023, 1000> {
+        memory_ops: vec![],
+        stack_ops: stack_ops,
+        storage_ops: vec![],
     }
 }
-
-criterion_main!(bus_mapping_prover);
 
 #[derive(Default)]
 struct StateCircuit<
