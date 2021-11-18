@@ -13,14 +13,14 @@ use halo2::{
 };
 use zkevm_circuits::state_circuit::state::Config;
 
-fn bus_mapping_prover() {
+fn state_circuit_prover() {
     let k = 14;
     let circuit = get_circuit();
     let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
 }
 
-criterion_main!(bus_mapping_prover);
+criterion_main!(state_circuit_prover);
 
 fn get_circuit() -> StateCircuit<2000, 100, 2, 100, 1023, 1000> {
     let input_trace = r#"
