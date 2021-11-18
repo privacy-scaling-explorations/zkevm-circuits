@@ -42,8 +42,9 @@
 //! bus-mapping instances of each
 //! [`GethExecStep`](crate::eth_types::GethExecStep).  Then the
 //! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder)
-//! will fill in an [`OperationContainer`](crate::operation::container::
-//! OperationContainer) with all of the Memory, Stack and Storage ops performed
+//! will fill in an
+//! [`OperationContainer`](crate::operation::container::OperationContainer)
+//! with all of the Memory, Stack and Storage ops performed
 //! by the provided trace.
 //!
 //! ```rust
