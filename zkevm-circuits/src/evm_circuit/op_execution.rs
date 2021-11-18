@@ -442,7 +442,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                                 // constraint qs_byte_lookup to 0 by default
                                 qs_byte_lookups[idx].expr()
                             } else {
-                                // constraint qs_byte_lookup to 1 to enable byte lookup
+                                // constraint qs_byte_lookup to 1 to enable byte
+                                // lookup
                                 1.expr() - qs_byte_lookups[idx].expr()
                             }
                         })

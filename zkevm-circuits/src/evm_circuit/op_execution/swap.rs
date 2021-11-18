@@ -63,8 +63,8 @@ impl<F: FieldExt> SwapSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // The stack index we have to peek, deduced from the 'x' value of 'swapx'
-        // The offset starts at 1 for SWAP1
+        // The stack index we have to peek, deduced from the 'x' value of
+        // 'swapx' The offset starts at 1 for SWAP1
         let offset =
             state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 

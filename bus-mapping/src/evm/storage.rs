@@ -36,7 +36,8 @@ impl Storage {
         self.0.get(key)
     }
 
-    /// Get the word for a given key in the EVM storage.  Returns error if key is not found.
+    /// Get the word for a given key in the EVM storage.  Returns error if key
+    /// is not found.
     pub fn get_or_err(&self, key: &Word) -> Result<Word, Error> {
         self.get(key).cloned().ok_or(Error::InvalidStorageKey)
     }

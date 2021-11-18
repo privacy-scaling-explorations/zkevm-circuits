@@ -58,8 +58,8 @@ pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
     }
 }
 
-/// BlockData is a type that contains all the information from a block required to build the
-/// circuit inputs.
+/// BlockData is a type that contains all the information from a block required
+/// to build the circuit inputs.
 pub struct BlockData {
     /// Block from geth
     pub eth_block: eth_types::Block<()>,
@@ -72,8 +72,9 @@ pub struct BlockData {
 }
 
 impl BlockData {
-    /// Create a new block with a single tx that executes the code passed by argument.  The trace
-    /// will be generated automatically with the external_tracer from the code.
+    /// Create a new block with a single tx that executes the code passed by
+    /// argument.  The trace will be generated automatically with the
+    /// external_tracer from the code.
     pub fn new_single_tx_trace_code(code: &Bytecode) -> Result<Self, Error> {
         let eth_block = new_block();
         let eth_tx = new_tx(&eth_block);
@@ -102,9 +103,10 @@ impl BlockData {
         })
     }
 
-    /// Create a new block with a single tx that executes the code passed by argument.  The trace
-    /// will be generated automatically with the external_tracer from the code.  The trace steps
-    /// will start at the "start" position as tagged in the code.
+    /// Create a new block with a single tx that executes the code passed by
+    /// argument.  The trace will be generated automatically with the
+    /// external_tracer from the code.  The trace steps will start at the
+    /// "start" position as tagged in the code.
     pub fn new_single_tx_trace_code_at_start(
         code: &Bytecode,
     ) -> Result<Self, Error> {
@@ -114,7 +116,8 @@ impl BlockData {
         Ok(mock)
     }
 
-    /// Create a new block with a single tx that leads to the geth_steps passed by argument.
+    /// Create a new block with a single tx that leads to the geth_steps passed
+    /// by argument.
     pub fn new_single_tx_geth_steps(
         geth_steps: Vec<eth_types::GethExecStep>,
     ) -> Self {
@@ -139,7 +142,8 @@ impl BlockData {
     }
 }
 
-/// Generate a new mock tracer Transaction with preloaded data, useful for tests.
+/// Generate a new mock tracer Transaction with preloaded data, useful for
+/// tests.
 pub fn new_tracer_tx() -> external_tracer::Transaction {
     external_tracer::Transaction {
         origin: address!("0x00000000000000000000000000000000c014ba5e"),

@@ -6,8 +6,9 @@ use crate::{
     Error,
 };
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to all the
-/// Stack only operations: take N words and return one.  The following cases exist in the EVM:
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to all the Stack only operations: take N words and return one.
+/// The following cases exist in the EVM:
 /// - N = 1: UnaryOpcode
 /// - N = 2: BinaryOpcode
 /// - N = 3: TernaryOpcode

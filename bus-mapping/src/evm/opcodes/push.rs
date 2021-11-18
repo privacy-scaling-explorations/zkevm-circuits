@@ -6,10 +6,11 @@ use crate::{
     Error,
 };
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// `OpcodeId::PUSH*` `OpcodeId`.
-/// This is responsible of generating all of the associated [`StackOp`]s and place them
-/// inside the trace's [`OperationContainer`](crate::operation::OperationContainer).
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the `OpcodeId::PUSH*` `OpcodeId`.
+/// This is responsible of generating all of the associated [`StackOp`]s and
+/// place them inside the trace's
+/// [`OperationContainer`](crate::operation::OperationContainer).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Push<const N: usize>;
 
@@ -21,7 +22,8 @@ impl<const N: usize> Opcode for Push<N> {
         let step = &steps[0];
         state.push_op(StackOp::new(
             RW::WRITE,
-            // Get the value and addr from the next step. Being the last position filled with an element in the stack
+            // Get the value and addr from the next step. Being the last
+            // position filled with an element in the stack
             step.stack.last_filled().map(|a| a - 1),
             steps[1].stack.last()?,
         ));

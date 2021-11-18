@@ -27,7 +27,8 @@ pub(crate) mod address_low {
     }
 }
 
-/// The sum of bytes of the address that are unused for most calculations on the address
+/// The sum of bytes of the address that are unused for most calculations on the
+/// address
 pub(crate) mod address_high {
     use super::super::super::Word;
     use crate::evm_circuit::{
@@ -52,8 +53,8 @@ pub(crate) fn require_address_in_range<F: FieldExt>(
     cb.require_zero(address_high::expr(address));
 }
 
-/// Calculates the memory size required for a memory access at the specified address.
-/// `memory_size = ceil(address/32) = floor((address + 31) / 32)`
+/// Calculates the memory size required for a memory access at the specified
+/// address. `memory_size = ceil(address/32) = floor((address + 31) / 32)`
 #[derive(Clone, Debug)]
 pub(crate) struct MemorySizeGadget<F> {
     memory_size: ConstantDivisionGadget<F, MAX_MEMORY_SIZE_IN_BYTES>,
@@ -140,7 +141,8 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `memory_gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
+    /// - `memory_gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
+    ///   256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn constraints(
         &self,
         cb: &mut ConstraintBuilder<F>,
@@ -162,7 +164,8 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
         );
 
         // Calculate the quad memory cost for the current and next memory size.
-        // These quad costs will also be range limited to `< 256**MAX_QUAD_COST_IN_BYTES`.
+        // These quad costs will also be range limited to `<
+        // 256**MAX_QUAD_COST_IN_BYTES`.
         let (curr_quad_memory_cost, _) =
             self.curr_quad_memory_cost.constraints(
                 cb,
@@ -175,8 +178,9 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
             );
 
         // Calculate the gas cost for the memory expansion.
-        // This gas cost is the difference between the next and current memory costs.
-        // `memory_gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
+        // This gas cost is the difference between the next and current memory
+        // costs. `memory_gas_cost <=
+        // GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
         let memory_gas_cost = (next_memory_size.clone() - curr_memory_size)
             * Self::GAS_MEM.expr()
             + (next_quad_memory_cost - curr_quad_memory_cost);

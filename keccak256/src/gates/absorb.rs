@@ -28,8 +28,8 @@ impl<F: FieldExt> AbsorbConfig<F> {
         // def absorb(state: List[List[int], next_input: List[List[int]):
         //     for x in range(5):
         //         for y in range(5):
-        //             # state[x][y] has 2*a + b + 3*c already, now add 2*d to make it 2*a + b + 3*c + 2*d
-        //             # coefficient in 0~8
+        //             # state[x][y] has 2*a + b + 3*c already, now add 2*d to
+        // make it 2*a + b + 3*c + 2*d             # coefficient in 0~8
         //             state[x][y] += 2 * next_input[x][y]
         //     return state
         meta.create_gate("absorb", |meta| {

@@ -100,7 +100,8 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            // This usize is indeed pointing the exact row of the ROUND_CTANTS_B13 we want to use.
+            // This usize is indeed pointing the exact row of the
+            // ROUND_CTANTS_B13 we want to use.
             round_ctant_b13: usize,
             _marker: PhantomData<F>,
         }

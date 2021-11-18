@@ -34,8 +34,9 @@ pub fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
 
 /// Slice the lane into chunk indices and steps
 ///
-/// We ask what's the current chunk index and the step we need to go to the next chunk index.
-/// We start chunk_idx from 1 because the 0th chunk is from the low value from the theta step.
+/// We ask what's the current chunk index and the step we need to go to the next
+/// chunk index. We start chunk_idx from 1 because the 0th chunk is from the low
+/// value from the theta step.
 pub fn slice_lane(rotation: u32) -> Vec<(u32, u32)> {
     let mut chunk_idx = 1;
     let mut output = vec![];
@@ -57,12 +58,14 @@ pub const STEP_COUNTS: [u32; 3] = [12, 12, 13];
 /// See tests for the derivation of the values
 pub const OVERFLOW_TRANSFORM: [u32; 5] = [0, 0, 1, 13, 170];
 
-/// The sum of the step 2 block counts across all 25 lanes should not greater than this value
+/// The sum of the step 2 block counts across all 25 lanes should not greater
+/// than this value
 ///
 /// See tests for the derivation of the values
 pub const STEP2_RANGE: u64 = 12;
 
-/// The sum of the step 3 block counts across all 25 lanes should not greater than this value
+/// The sum of the step 3 block counts across all 25 lanes should not greater
+/// than this value
 ///
 /// See tests for the derivation of the values
 pub const STEP3_RANGE: u64 = 169;
@@ -70,13 +73,15 @@ pub const STEP3_RANGE: u64 = 169;
 /// Get the block count from an input chunks
 ///
 /// The input is chunks of a base 13 number in descending order of signiticance.
-/// For example, if the input is `[1, 12, 3, 7]`, it represents a coefficient `1*13^3 + 12*13^2 + 3*13 + 7`.
-/// The example only happens when `step = 4`. If we have a `step = 3`, the first chunk must be 0.
-/// It could be the case that we have `step = 4`, but all of the chunks are 0.
-/// That would result our block count value to be 0.
+/// For example, if the input is `[1, 12, 3, 7]`, it represents a coefficient
+/// `1*13^3 + 12*13^2 + 3*13 + 7`. The example only happens when `step = 4`. If
+/// we have a `step = 3`, the first chunk must be 0. It could be the case that
+/// we have `step = 4`, but all of the chunks are 0. That would result our block
+/// count value to be 0.
 ///
-/// In the circuit, if we have a `step = 3`, but a non-zero first chunk is adviced.
-/// It would cause the non_zero_chunk_count to be 4, resulting the block count to be 170.
+/// In the circuit, if we have a `step = 3`, but a non-zero first chunk is
+/// adviced. It would cause the non_zero_chunk_count to be 4, resulting the
+/// block count to be 170.
 ///
 /// This would fail the final block count check.
 pub fn get_block_count(b13_chunks: [u64; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
@@ -123,16 +128,19 @@ mod tests {
                 }
             }
         }
-        // We know exactly at setup time there would be 12 step 1, 12 step 2 and 13 step 3.
+        // We know exactly at setup time there would be 12 step 1, 12 step 2 and
+        // 13 step 3.
         assert_eq!(counts, STEP_COUNTS);
 
-        // We define a mapping overflow g(x), it maps step to a block count value
-        // We first define g(0) = 0, g(1) = 0
+        // We define a mapping overflow g(x), it maps step to a block count
+        // value We first define g(0) = 0, g(1) = 0
         // Mapping from step 0 is meaningless, because we don't have step 0
         // Mapping step 1 to 0 as the base case.
         // Then we define `g(i+1) = g(i) * previous_step_count + 1`
-        // Because `g(i) * previous_step_count` is the max possible block count sum from previous step
-        // An overflow in previous step would get the `g(i+1)` value from the lookup table and fail the final block count sum check
+        // Because `g(i) * previous_step_count` is the max possible block count
+        // sum from previous step An overflow in previous step would get
+        // the `g(i+1)` value from the lookup table and fail the final block
+        // count sum check
         let mut overflow = vec![0, 0];
         for c in counts.iter() {
             let elem = overflow.last().cloned().unwrap();

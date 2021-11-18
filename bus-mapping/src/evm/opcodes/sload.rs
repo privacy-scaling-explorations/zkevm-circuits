@@ -7,8 +7,9 @@ use crate::{
     Error,
 };
 
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD) `OpcodeId`.
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD)
+/// `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Sload;
 

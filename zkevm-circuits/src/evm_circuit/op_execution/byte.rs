@@ -45,8 +45,9 @@ impl<F: FieldExt> ByteSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
         num_word: 2, // value + index
+        /* 1x is_msb_sum_zero + 32x * is_byte_selected */
         num_cell: IsZeroGadget::<F>::NUM_CELLS
-            + IsEqualGadget::<F>::NUM_CELLS * 32, // 1x is_msb_sum_zero + 32x is_byte_selected
+            + IsEqualGadget::<F>::NUM_CELLS * 32,
         will_halt: false,
     };
 
@@ -68,21 +69,24 @@ impl<F: FieldExt> ByteSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // If any of the non-LSB bytes of the index word are non-zero we never need to copy any bytes.
-        // So just sum all the non-LSB byte values here and then check if it's non-zero
-        // so we can use that as an additional condition when to copy the byte value.
+        // If any of the non-LSB bytes of the index word are non-zero we never
+        // need to copy any bytes. So just sum all the non-LSB byte
+        // values here and then check if it's non-zero so we can use
+        // that as an additional condition when to copy the byte value.
         let msb_sum_zero = self
             .is_msb_sum_zero
             .constraints(&mut cb, sum::expr(&self.index.cells[1..32]));
 
-        // Now we just need to check that `result[0]` is the sum of all copied bytes.
-        // We go byte by byte and check if `idx == index[0]`.
-        // If they are equal (at most once) we add the byte value to the sum, else we add 0.
-        // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
-        // At the end this sum needs to equal `result[0]`.
+        // Now we just need to check that `result[0]` is the sum of all copied
+        // bytes. We go byte by byte and check if `idx == index[0]`.
+        // If they are equal (at most once) we add the byte value to the sum,
+        // else we add 0. The additional condition for this is that none
+        // of the non-LSB bytes are non-zero (see above). At the end
+        // this sum needs to equal `result[0]`.
         let mut selected_byte = 0.expr();
         for idx in 0..32 {
-            // Check if this byte is selected looking only at the LSB of the index word
+            // Check if this byte is selected looking only at the LSB of the
+            // index word
             let is_selected = self.is_byte_selected[idx].constraints(
                 &mut cb,
                 self.index.cells[0].expr(),
