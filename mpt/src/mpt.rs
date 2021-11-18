@@ -934,7 +934,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign c_rlp1"),
             self.c_rlp1,
             offset,
-            || Ok(F::from_u64(row[WITNESS_ROW_WIDTH / 2] as u64)),
+            || Ok(F::from_u64(get_val(WITNESS_ROW_WIDTH / 2))),
         )?;
         region.assign_advice(
             || format!("assign c_rlp2"),

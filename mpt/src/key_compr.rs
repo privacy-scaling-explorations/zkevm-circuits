@@ -51,7 +51,7 @@ impl<F: FieldExt> KeyComprChip<F> {
             // compressed key is stored in s_advices
             // value is stored in c_rlp1
 
-            // Leaf key S
+            // Leaf key
             // first two positions tell whether key length (in hex) is odd [1, 0] or even [0, 1]
             // [1,0,11,8,10,6,10,4,6,6,9,11,10,2,5,0,13,2
 
@@ -59,6 +59,19 @@ impl<F: FieldExt> KeyComprChip<F> {
             // s_advices[0]_prev = 59 = 48 + s_advices[0]_cur = 48 + 11
             // s_advices[1]_prev = 138 = 8 * 16 + 10 = s_advices[1]_cur * 16 + s_advices[2]_cur
             // s_advices[2]_prev = 106 = 6 * 16 + 10 = s_advices[3]_cur * 16 + s_advices[4]_cur
+
+            let one = Expression::Constant(F::one());
+            let c128 = Expression::Constant(F::from_u64(128));
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
+
+            let key_len = s_rlp2 - c128;
+            let mut counter = Expression::Constant(F::zero());
+            let mut is_key = Expression::Constant(F::one());
+            // counter increases when we move through key bytes
+            // when counter reaches key_len, is_key becomes 0
+            // (that means we don't check equivalence between bytes and nibbles anymore)
+
+            is_key = is_key * (key_len.clone() - counter.clone());
 
             let c48 = Expression::Constant(F::from_u64(48));
             let s_advices0_prev =
@@ -69,6 +82,7 @@ impl<F: FieldExt> KeyComprChip<F> {
                 "Key compression odd 1",
                 q_enable.clone()
                     * is_odd.clone()
+                    * is_key.clone()
                     * (s_advices0_prev - s_advices0_cur - c48),
             ));
 
@@ -83,29 +97,42 @@ impl<F: FieldExt> KeyComprChip<F> {
                 let s_cur2 =
                     meta.query_advice(s_advices[2 * ind], Rotation::cur());
                 let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+                counter = counter + one.clone();
+                is_key = is_key * (key_len.clone() - counter.clone());
+
                 constraints.push((
                     "Key compression odd 2",
-                    q_enable.clone() * is_odd.clone() * expr,
+                    q_enable.clone() * is_odd.clone() * is_key.clone() * expr,
                 ));
             }
+
             // s_advices[16]_prev = s_advices[31]_cur * 16 + c_rlp1_cur
             let s_prev = meta.query_advice(s_advices[16], Rotation::prev());
             let s_cur1 =
                 meta.query_advice(s_advices[HASH_WIDTH - 1], Rotation::cur());
             let s_cur2 = meta.query_advice(c_rlp1, Rotation::cur());
             let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+            counter = counter + one.clone();
+            is_key = is_key * (key_len.clone() - counter.clone());
+
             constraints.push((
                 "Key compression odd 3",
-                q_enable.clone() * is_odd.clone() * expr,
+                q_enable.clone() * is_odd.clone() * is_key.clone() * expr,
             ));
             // s_advices[17]_prev = c_rlp2 * 16 + c_advices[0]
             let s_prev = meta.query_advice(s_advices[17], Rotation::prev());
             let s_cur1 = meta.query_advice(c_rlp2, Rotation::cur());
             let s_cur2 = meta.query_advice(c_advices[0], Rotation::cur());
             let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+            counter = counter + one.clone();
+            is_key = is_key * (key_len.clone() - counter.clone());
+
             constraints.push((
                 "Key compression odd 4",
-                q_enable.clone() * is_odd.clone() * expr,
+                q_enable.clone() * is_odd.clone() * is_key.clone() * expr,
             ));
             // we can check from i = 18
             for ind in 18..HASH_WIDTH {
@@ -118,22 +145,35 @@ impl<F: FieldExt> KeyComprChip<F> {
                 let s_cur2 = meta
                     .query_advice(c_advices[2 * (ind - 17)], Rotation::cur());
                 let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+                counter = counter + one.clone();
+                is_key = is_key * (key_len.clone() - counter.clone());
+
                 constraints.push((
                     "Key compression odd 5",
-                    q_enable.clone() * is_odd.clone() * expr,
+                    q_enable.clone() * is_odd.clone() * is_key.clone() * expr,
                 ));
             }
 
-            // TODO: can be leaf S (and leaf C) of different length than 32?
-
             // if key length is even, the first (of the rest) byte contains 32
+
+            let mut counter = Expression::Constant(F::zero());
+            let mut is_key = Expression::Constant(F::one());
+            // counter increases when we move through key bytes
+            // when counter reaches key_len, is_key becomes 0
+            // (that means we don't check equivalence between bytes and nibbles anymore)
+
+            is_key = is_key * (key_len.clone() - counter.clone());
 
             let c32 = Expression::Constant(F::from_u64(32));
             let s_advices0_prev =
                 meta.query_advice(s_advices[0], Rotation::prev());
             constraints.push((
                 "Key compression even 1",
-                q_enable.clone() * is_even.clone() * (s_advices0_prev - c32),
+                q_enable.clone()
+                    * is_even.clone()
+                    * is_key.clone()
+                    * (s_advices0_prev - c32),
             ));
             // s_advices[i]_prev = s_advices[2*i - 1]_cur * 16 + s_advices[2*i]_cur
             // we can go up to i = 16
@@ -145,9 +185,13 @@ impl<F: FieldExt> KeyComprChip<F> {
                 let s_cur2 =
                     meta.query_advice(s_advices[2 * ind - 1], Rotation::cur());
                 let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+                counter = counter + one.clone();
+                is_key = is_key * (key_len.clone() - counter.clone());
+
                 constraints.push((
                     "Key compression even 2",
-                    q_enable.clone() * is_even.clone() * expr,
+                    q_enable.clone() * is_even.clone() * is_key.clone() * expr,
                 ));
             }
 
@@ -156,9 +200,13 @@ impl<F: FieldExt> KeyComprChip<F> {
             let s_cur1 = meta.query_advice(c_rlp1, Rotation::cur());
             let s_cur2 = meta.query_advice(c_rlp2, Rotation::cur());
             let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+            counter = counter + one.clone();
+            is_key = is_key * (key_len.clone() - counter.clone());
+
             constraints.push((
                 "Key compression even 3",
-                q_enable.clone() * is_even.clone() * expr,
+                q_enable.clone() * is_even.clone() * is_key.clone() * expr,
             ));
             // we can check from i = 18
             for ind in 18..HASH_WIDTH {
@@ -173,9 +221,13 @@ impl<F: FieldExt> KeyComprChip<F> {
                     Rotation::cur(),
                 );
                 let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+                counter = counter + one.clone();
+                is_key = is_key * (key_len.clone() - counter.clone());
+
                 constraints.push((
                     "Key compression even 4",
-                    q_enable.clone() * is_even.clone() * expr,
+                    q_enable.clone() * is_even.clone() * is_key.clone() * expr,
                 ));
             }
 
