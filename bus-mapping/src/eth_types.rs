@@ -189,7 +189,7 @@ impl From<GethExecStep> for GethExecStepInternal {
                 .memory
                 .0
                 .chunks(32)
-                .map(|word| DebugU256::from_big_endian(word))
+                .map(DebugU256::from_big_endian)
                 .collect(),
             storage: step
                 .storage

@@ -41,13 +41,8 @@ impl Keccak {
     }
 }
 
+#[derive(Default)]
 pub struct KeccakF {}
-
-impl Default for KeccakF {
-    fn default() -> Self {
-        KeccakF {}
-    }
-}
 
 impl KeccakF {
     pub fn permutations(&self, a: &mut State) {
@@ -150,7 +145,7 @@ impl Sponge {
                     x = 0;
                 }
             }
-            self.keccak_f.permutations(&mut state);
+            self.keccak_f.permutations(state);
         }
     }
 
