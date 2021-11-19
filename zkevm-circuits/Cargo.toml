@@ -29,5 +29,9 @@ name = "binary_value"
 harness = false
 
 [[bench]]
-name = "prover"
+name = "evm_prover"
+harness = false
+
+[[bench]]
+name = "state_prover"
 harness = false

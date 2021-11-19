@@ -209,13 +209,13 @@ trait OpGadget<F: FieldExt> {
 }
 
 // Preset stores default values for each case of op gadget
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 struct Preset<F> {
     qs_byte_lookups: [F; CIRCUIT_HEIGHT],
     free_cells: Vec<(usize, F)>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct OpExecutionGadget<F> {
     r: F,
     qs_byte_lookups: Vec<Cell<F>>,
