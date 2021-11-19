@@ -25,7 +25,8 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     q_enable: Selector,
-    q_not_first: Column<Fixed>,
+    q_not_first: Column<Fixed>, // not first row
+    not_first_level: Column<Fixed>,
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
@@ -51,6 +52,8 @@ pub struct MPTConfig<F> {
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
     key_compr_chip: KeyComprConfig,
+    key_rlc_r: F,
+    key_rlc: Column<Advice>,
     keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     _marker: PhantomData<F>,
 }
@@ -59,8 +62,10 @@ impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
         let q_not_first = meta.fixed_column();
+        let not_first_level = meta.fixed_column();
 
         let branch_acc_r = F::rand(); // TODO: generate from commitments
+        let key_rlc_r = F::rand(); // TODO: generate from commitments
 
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
@@ -114,6 +119,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let branch_mult_s = meta.advice_column();
         let branch_acc_c = meta.advice_column();
         let branch_mult_c = meta.advice_column();
+        let key_rlc = meta.advice_column();
 
         let one = Expression::Constant(F::one());
 
@@ -251,6 +257,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
         meta.create_gate("branch children", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
 
             let mut constraints = vec![];
             let is_branch_child_prev =
@@ -351,7 +359,18 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * node_index_cur.clone() // ignore if node_index = 0
-                    * (key_cur - key_prev),
+                    * (key_cur.clone() - key_prev),
+            ));
+
+            // For the first branch node (node_index = 0), the key rlc needs to be:
+            // key_rlc = key_rlc::Rotation(-2) * key_rlc_r + key
+            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-2));
+            let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
+            constraints.push((
+                "first branch children key_rlc",
+                not_first_level.clone()
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_cur - key_rlc_prev * key_rlc_r - key_cur),
             ));
 
             // TODO:
@@ -762,6 +781,7 @@ impl<F: FieldExt> MPTConfig<F> {
         MPTConfig {
             q_enable,
             q_not_first,
+            not_first_level,
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
@@ -787,6 +807,8 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_acc_s_chip,
             branch_acc_c_chip,
             key_compr_chip,
+            key_rlc_r,
+            key_rlc,
             keccak_table,
             _marker: PhantomData,
         }
@@ -867,6 +889,13 @@ impl<F: FieldExt> MPTConfig<F> {
             self.key,
             offset,
             || Ok(F::from_u64(key as u64)),
+        )?;
+
+        region.assign_advice(
+            || format!("assign key rlc"),
+            self.key_rlc,
+            offset,
+            || Ok(F::zero()),
         )?;
 
         region.assign_advice(
@@ -999,6 +1028,7 @@ impl<F: FieldExt> MPTConfig<F> {
         region: &mut Region<'_, F>,
         node_index: u8,
         key: u8,
+        key_rlc: F,
         row: &Vec<u8>,
         s_words: &Vec<u64>,
         c_words: &Vec<u64>,
@@ -1033,6 +1063,13 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             false,
             offset,
+        )?;
+
+        region.assign_advice(
+            || "key rlc",
+            self.key_rlc,
+            offset,
+            || Ok(key_rlc),
         )?;
 
         Ok(())
@@ -1092,16 +1129,25 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key = 0;
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
-                    let mut branch_ind: u8 = 0;
+                    let mut node_index: u8 = 0;
                     let mut branch_acc_s = F::zero();
                     let mut branch_mult_s = F::zero();
                     let mut branch_acc_c = F::zero();
                     let mut branch_mult_c = F::zero();
+                    let mut key_rlc = F::zero();
+                    let mut not_first_level = F::zero();
                     for (ind, row) in witness.iter().enumerate() {
+                        region.assign_fixed(
+                            || "not first level",
+                            self.not_first_level,
+                            offset,
+                            || Ok(not_first_level),
+                        )?;
+
                         if row[row.len() - 1] == 0 {
                             // branch init
                             key = row[BRANCH_0_KEY_POS];
-                            branch_ind = 0;
+                            node_index = 0;
 
                             // Get the child that is being changed and convert it to words to enable lookups:
                             let s_hash = witness[ind + 1 + key as usize]
@@ -1192,10 +1238,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                                 || Ok(F::one()),
                             )?;
+
+                            if node_index == 0 {
+                                key_rlc = key_rlc * self.key_rlc_r
+                                    + F::from_u64(key as u64);
+                            }
+
                             self.assign_branch_row(
                                 &mut region,
-                                branch_ind,
+                                node_index,
                                 key,
+                                key_rlc,
                                 &row[0..row.len() - 1].to_vec(),
                                 &s_words,
                                 &c_words,
@@ -1256,7 +1309,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
 
                             offset += 1;
-                            branch_ind += 1;
+                            node_index += 1;
                         } else if row[row.len() - 1] == 2
                             || row[row.len() - 1] == 3
                             || row[row.len() - 1] == 4
@@ -1289,6 +1342,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
                             offset += 1;
+
+                            not_first_level = F::one();
                         }
                     }
 
