@@ -1,10 +1,20 @@
 version: '3'
 services:
-    prover:
+    state_prover:
       build:
         context: .
-        dockerfile: Prover
-      container_name: prover
+        dockerfile: STATE_PROVER
+      container_name: state_prover
+      tty: true
+      stdin_open:  true
+      volumes:
+        - .:/app
+        - /app/target
+    evm_prover:
+      build:
+        context: .
+        dockerfile: EVM_PROVER
+      container_name: evm_prover
       tty: true
       stdin_open:  true
       volumes:

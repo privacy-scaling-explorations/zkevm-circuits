@@ -15,4 +15,4 @@ WORKDIR zkevm-circuits
 
 RUN cargo bench --no-run
 
-CMD cargo bench --bench prover
+CMD cargo bench --bench state_prover
