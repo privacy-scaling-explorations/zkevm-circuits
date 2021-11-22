@@ -233,24 +233,24 @@ impl<F: FieldExt> KeyComprChip<F> {
                 ));
             }
 
-            let mut key_rlc = meta.query_advice(key_rlc, Rotation(-2));
+            // rlc is in the first branch node
+            // -18 = -1 (leaf c) - 1 (leaf s) - 16 (branch nodes)
+            let mut key_rlc_acc = meta.query_advice(key_rlc, Rotation(-18));
+
             for ind in 0..HASH_WIDTH {
                 let n = meta.query_advice(s_advices[ind], Rotation::cur());
-                key_rlc = key_rlc * key_rlc_r + n;
+                key_rlc_acc = key_rlc_acc * key_rlc_r + n;
             }
-            key_rlc = key_rlc * key_rlc_r + s_cur1; // c_rlp1
-            key_rlc = key_rlc * key_rlc_r + s_cur2; // c_rlp2
+            key_rlc_acc = key_rlc_acc * key_rlc_r + s_cur1; // c_rlp1
+            key_rlc_acc = key_rlc_acc * key_rlc_r + s_cur2; // c_rlp2
             for ind in 0..HASH_WIDTH {
                 let n = meta.query_advice(c_advices[ind], Rotation::cur());
-                key_rlc = key_rlc * key_rlc_r + n;
+                key_rlc_acc = key_rlc_acc * key_rlc_r + n; // TODO/FIX
             }
 
-            /*
-            constraints.push((
-                "Key RLC",
-                q_enable.clone() * ,
-            ));
-            */
+            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            constraints
+                .push(("Key RLC", q_enable.clone() * (key_rlc_acc - key_rlc)));
 
             // We need to make sure there are 0s after nibbles end
             // We have 2 * key_len nibbles, this is at most 64. We need to check
