@@ -1,0 +1,10 @@
+version: '3'
+services:
+    zkevm:
+        build: .
+        container_name: zkevm
+        tty: true
+        stdin_open: true
+        volumes:
+        - .:/app
+        - /app/target
