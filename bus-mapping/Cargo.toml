@@ -1,9 +1,8 @@
 [package]
 name = "bus-mapping"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 authors = ["CPerezz <c.perezbaro@gmail.com>"]
-
 
 [dependencies]
 ff = "0.11"
