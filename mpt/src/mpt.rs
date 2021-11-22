@@ -34,8 +34,8 @@ pub struct MPTConfig<F> {
     is_leaf_c: Column<Advice>,
     is_leaf_key: Column<Advice>,
     node_index: Column<Advice>,
-    is_modified: Column<Advice>, // whether this branch child is modified
-    key: Column<Advice>,
+    is_modified: Column<Advice>, // whether this branch node is modified
+    modified_node: Column<Advice>, // index of the modified node
     s_rlp1: Column<Advice>,
     s_rlp2: Column<Advice>,
     c_rlp1: Column<Advice>,
@@ -75,7 +75,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_leaf_key = meta.advice_column();
         let node_index = meta.advice_column();
         let is_modified = meta.advice_column();
-        let key = meta.advice_column();
+        let modified_node = meta.advice_column();
 
         let s_rlp1 = meta.advice_column();
         let s_rlp2 = meta.advice_column();
@@ -173,7 +173,8 @@ impl<F: FieldExt> MPTConfig<F> {
             // followed by is_leaf_key
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-            let key = meta.query_advice(key, Rotation::cur());
+            let modified_node =
+                meta.query_advice(modified_node, Rotation::cur());
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
@@ -212,14 +213,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable.clone()
                     * is_branch_child_cur.clone()
                     * (s_rlp1 - c_rlp1)
-                    * (node_index_cur.clone() - key.clone()),
+                    * (node_index_cur.clone() - modified_node.clone()),
             ));
             constraints.push((
                 "rlp 2",
                 q_enable.clone()
                     * is_branch_child_cur.clone()
                     * (s_rlp2 - c_rlp2)
-                    * (node_index_cur.clone() - key.clone()),
+                    * (node_index_cur.clone() - modified_node.clone()),
             ));
 
             let bool_check_is_modified =
@@ -237,7 +238,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable.clone()
                     * is_branch_child_cur.clone()
                     * is_modified
-                    * (node_index_cur.clone() - key.clone()),
+                    * (node_index_cur.clone() - modified_node.clone()),
             ));
 
             for (ind, col) in s_advices.iter().enumerate() {
@@ -248,7 +249,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     q_enable.clone()
                         * is_branch_child_cur.clone()
                         * (s - c)
-                        * (node_index_cur.clone() - key.clone()),
+                        * (node_index_cur.clone() - modified_node.clone()),
                 ));
             }
 
@@ -351,15 +352,17 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (node_index_cur.clone() - node_index_prev - one.clone()),
             ));
 
-            // key needs to be the same for all branch nodes
-            let key_prev = meta.query_advice(key, Rotation::prev());
-            let key_cur = meta.query_advice(key, Rotation::cur());
+            // modified_node needs to be the same for all branch nodes
+            let modified_node_prev =
+                meta.query_advice(modified_node, Rotation::prev());
+            let modified_node_cur =
+                meta.query_advice(modified_node, Rotation::cur());
             constraints.push((
-                "key the same for branch children",
+                "modified node the same for all branch children",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * node_index_cur.clone() // ignore if node_index = 0
-                    * (key_cur.clone() - key_prev),
+                    * (modified_node_cur.clone() - modified_node_prev),
             ));
 
             // For the first branch node (node_index = 0), the key rlc needs to be:
@@ -370,7 +373,9 @@ impl<F: FieldExt> MPTConfig<F> {
                 "first branch children key_rlc",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
-                    * (key_rlc_cur - key_rlc_prev * key_rlc_r - key_cur),
+                    * (key_rlc_cur
+                        - key_rlc_prev * key_rlc_r
+                        - modified_node_cur),
             ));
 
             // TODO:
@@ -792,7 +797,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_key,
             node_index,
             is_modified,
-            key,
+            modified_node,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -824,7 +829,7 @@ impl<F: FieldExt> MPTConfig<F> {
         is_branch_child: bool,
         is_last_branch_child: bool,
         node_index: u8,
-        key: u8,
+        modified_node: u8,
         is_leaf_s: bool,
         is_leaf_c: bool,
         is_leaf_key: bool,
@@ -887,10 +892,10 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         region.assign_advice(
-            || format!("assign key"),
-            self.key,
+            || format!("assign modified node"),
+            self.modified_node,
             offset,
-            || Ok(F::from_u64(key as u64)),
+            || Ok(F::from_u64(modified_node as u64)),
         )?;
 
         region.assign_advice(
@@ -904,7 +909,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign is_modified"),
             self.is_modified,
             offset,
-            || Ok(F::from_u64((key == node_index) as u64)),
+            || Ok(F::from_u64((modified_node == node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -1128,7 +1133,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 |mut region| {
                     let mut offset = 0;
 
-                    let mut key = 0;
+                    let mut modified_node = 0;
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut node_index: u8 = 0;
@@ -1148,14 +1153,16 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         if row[row.len() - 1] == 0 {
                             // branch init
-                            key = row[BRANCH_0_KEY_POS];
+                            modified_node = row[BRANCH_0_KEY_POS];
                             node_index = 0;
 
                             // Get the child that is being changed and convert it to words to enable lookups:
-                            let s_hash = witness[ind + 1 + key as usize]
+                            let s_hash = witness
+                                [ind + 1 + modified_node as usize]
                                 [S_START..S_START + HASH_WIDTH]
                                 .to_vec();
-                            let c_hash = witness[ind + 1 + key as usize]
+                            let c_hash = witness
+                                [ind + 1 + modified_node as usize]
                                 [C_START..C_START + HASH_WIDTH]
                                 .to_vec();
                             s_words = self.into_words(&s_hash);
@@ -1243,13 +1250,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             if node_index == 0 {
                                 key_rlc = key_rlc * self.key_rlc_r
-                                    + F::from_u64(key as u64);
+                                    + F::from_u64(modified_node as u64);
                             }
 
                             self.assign_branch_row(
                                 &mut region,
                                 node_index,
-                                key,
+                                modified_node,
                                 key_rlc,
                                 &row[0..row.len() - 1].to_vec(),
                                 &s_words,
@@ -1343,6 +1350,27 @@ impl<F: FieldExt> MPTConfig<F> {
                                 &row[0..row.len() - 1].to_vec(),
                                 offset,
                             )?;
+
+                            // debugging:
+                            let nibbles = [
+                                3, 8, 3, 9, 5, 12, 5, 13, 12, 14, 10, 13, 14,
+                                9, 6, 0, 3, 4, 7, 9, 11, 1, 7, 7, 11, 6, 8, 9,
+                                5, 9, 0, 4, 9, 4, 8, 5, 13, 15, 8, 10, 10, 9,
+                                7, 11, 3, 9, 15, 3, 5, 3, 3, 0, 3, 9, 10, 15,
+                                5, 15, 4, 5, 6, 1, 9, 9,
+                            ];
+                            let mut key_rlc = F::zero();
+                            for n in nibbles.iter() {
+                                key_rlc = key_rlc * self.key_rlc_r
+                                    + F::from_u64(*n as u64);
+                            }
+                            region.assign_advice(
+                                || "key_rlc",
+                                self.key_rlc,
+                                offset,
+                                || Ok(key_rlc),
+                            )?;
+
                             offset += 1;
 
                             not_first_level = F::one();
