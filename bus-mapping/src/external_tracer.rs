@@ -63,6 +63,6 @@ pub fn trace(
             .map_err(|_| Error::TracingError)?;
 
     let trace: Vec<GethExecStep> =
-        serde_json::from_str(&trace_string).map_err(|_| Error::TracingError)?;
+        serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     Ok(trace)
 }

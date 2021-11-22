@@ -132,7 +132,7 @@ impl<F: FieldExt> AddSuccessCase<F> {
         self.swap.assign(
             region,
             offset,
-            F::from_u64(step.opcode as u64),
+            F::from_u64(step.opcode.as_u64()),
             F::from_u64(OpcodeId::SUB.as_u64()),
             F::from_u64(OpcodeId::ADD.as_u64()),
         )?;

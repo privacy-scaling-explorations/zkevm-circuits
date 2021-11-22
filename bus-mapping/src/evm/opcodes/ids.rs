@@ -1,10 +1,12 @@
 use crate::error::Error;
 use core::fmt::Debug;
-use serde::{Deserialize, Serialize};
+use lazy_static::lazy_static;
+use regex::Regex;
+use serde::{de, Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,
@@ -229,8 +231,8 @@ pub enum OpcodeId {
     /// `REVERT`
     REVERT,
 
-    /// `INVALID`
-    INVALID,
+    /// Invalid opcode
+    INVALID(u8),
 
     // External opcodes
     /// `SHA3`
@@ -440,7 +442,7 @@ impl OpcodeId {
             OpcodeId::SWAP16 => 0x9fu8,
             OpcodeId::RETURN => 0xf3u8,
             OpcodeId::REVERT => 0xfdu8,
-            OpcodeId::INVALID => 0xfeu8,
+            OpcodeId::INVALID(b) => *b,
             OpcodeId::SHA3 => 0x20u8,
             OpcodeId::ADDRESS => 0x30u8,
             OpcodeId::BALANCE => 0x31u8,
@@ -597,7 +599,7 @@ impl FromStr for OpcodeId {
             "SWAP16" => OpcodeId::SWAP16,
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
-            "INVALID" => OpcodeId::INVALID,
+            "INVALID" => OpcodeId::INVALID(0xfe),
             "SHA3" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
@@ -634,7 +636,33 @@ impl FromStr for OpcodeId {
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
             "BASEFEE" => OpcodeId::BASEFEE,
-            _ => return Err(Error::OpcodeParsing),
+            _ => {
+                // Parse an invalid opcode value as reported by geth
+                lazy_static! {
+                    static ref RE: Regex =
+                        Regex::new("opcode 0x([[:xdigit:]]{1,2}) not defined")
+                            .expect("invalid regex");
+                }
+                if let Some(cap) = RE.captures(s) {
+                    if let Some(byte_hex) = cap.get(1).map(|m| m.as_str()) {
+                        return Ok(OpcodeId::INVALID(
+                            u8::from_str_radix(byte_hex, 16)
+                                .expect("invalid hex byte from regex"),
+                        ));
+                    }
+                }
+                return Err(Error::OpcodeParsing);
+            }
         })
+    }
+}
+
+impl<'de> Deserialize<'de> for OpcodeId {
+    fn deserialize<D>(deserializer: D) -> Result<OpcodeId, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        OpcodeId::from_str(&s).map_err(de::Error::custom)
     }
 }
