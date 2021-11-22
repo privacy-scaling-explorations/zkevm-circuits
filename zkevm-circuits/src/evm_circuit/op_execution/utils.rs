@@ -83,16 +83,6 @@ impl<F: FieldExt> StateTransitionExpressions<F> {
                 .unwrap_or_else(|| state_curr.memory_size.expr()),
         );
     }
-
-    // pub(crate) fn constraints(
-    //     &self,
-    //     cb: &mut ConstraintBuilder<F>,
-    //     state_curr: &OpExecutionState<F>,
-    //     state_next: &OpExecutionState<F>,
-    //     pc_dest: Expression<F>,
-    // ) {
-    //     self.constraints_condi(cb, state_curr, state_next, pc_dest);
-    // }
 }
 
 #[derive(Clone, Debug, Default)]
