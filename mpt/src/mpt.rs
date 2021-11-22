@@ -776,6 +776,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
+            key_rlc,
+            key_rlc_r,
         );
 
         MPTConfig {
@@ -1447,11 +1449,11 @@ mod tests {
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{
-            create_proof, keygen_pk, keygen_vk, Advice, Circuit, Column,
-            ConstraintSystem, Error,
+            create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit,
+            Column, ConstraintSystem, Error,
         },
         poly::commitment::Params,
-        transcript::{Blake2bWrite, Challenge255},
+        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
 
     use pasta_curves::{arithmetic::FieldExt, pallas, EqAffine};
@@ -1545,7 +1547,19 @@ mod tests {
                     .expect("proof generation should not fail");
                 let proof = transcript.finalize();
 
-                println!("{:?}", proof);
+                let msm = params.empty_msm();
+                let mut transcript =
+                    Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+                let guard = verify_proof(
+                    &params,
+                    pk.get_vk(),
+                    msm,
+                    &[],
+                    &mut transcript,
+                )
+                .unwrap();
+                let msm = guard.clone().use_challenges();
+                assert!(msm.eval());
                 */
             });
     }
