@@ -20,6 +20,7 @@ mod comparator;
 mod dup;
 mod jump;
 mod jumpdest;
+mod jumpi;
 mod memory;
 mod pc;
 mod pop;
@@ -37,6 +38,7 @@ use comparator::ComparatorGadget;
 use dup::DupGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
+use jumpi::JumpiGadget;
 use memory::MemoryGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -246,6 +248,7 @@ pub(crate) struct OpExecutionGadget<F> {
     and_gadget: AndGadget<F>,
     or_gadget: OrGadget<F>,
     xor_gadget: XorGadget<F>,
+    jumpi_gadget: JumpiGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -259,7 +262,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         state_curr: OpExecutionState<F>,
         state_next: OpExecutionState<F>,
         free_cells: Vec<Cell<F>>,
-        independent_lookups: &mut Vec<(Expression<F>, Vec<Lookup<F>>)>,
+        independent_lookups: &mut Vec<(
+            Expression<F>,
+            Vec<(Expression<F>, Lookup<F>)>,
+        )>,
     ) -> Self {
         let (qs_ops, free_cells) =
             free_cells.split_at(NUM_CELL_OP_GADGET_SELECTOR);
@@ -314,6 +320,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(or_gadget);
         construct_op_gadget!(xor_gadget);
         construct_op_gadget!(jump_gadget);
+        construct_op_gadget!(jumpi_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -364,6 +371,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             or_gadget,
             xor_gadget,
             jump_gadget,
+            jumpi_gadget,
         }
     }
 
@@ -680,6 +688,13 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
+            (_, _, _, OpcodeId::JUMPI) => self.jumpi_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+
                 _ => unimplemented!(),
             }
         }
