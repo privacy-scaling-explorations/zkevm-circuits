@@ -29,6 +29,8 @@ impl<F: FieldExt> KeyComprChip<F> {
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
+        key_rlc: Column<Advice>,
+        key_rlc_r: F,
     ) -> KeyComprConfig {
         let config = KeyComprConfig {};
 
@@ -199,7 +201,7 @@ impl<F: FieldExt> KeyComprChip<F> {
             let s_prev = meta.query_advice(s_advices[17], Rotation::prev());
             let s_cur1 = meta.query_advice(c_rlp1, Rotation::cur());
             let s_cur2 = meta.query_advice(c_rlp2, Rotation::cur());
-            let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+            let expr = s_prev - s_cur1.clone() * c16.clone() - s_cur2.clone();
 
             counter = counter + one.clone();
             is_key = is_key * (key_len.clone() - counter.clone());
@@ -228,6 +230,79 @@ impl<F: FieldExt> KeyComprChip<F> {
                 constraints.push((
                     "Key compression even 4",
                     q_enable.clone() * is_even.clone() * is_key.clone() * expr,
+                ));
+            }
+
+            let mut key_rlc = meta.query_advice(key_rlc, Rotation(-2));
+            for ind in 0..HASH_WIDTH {
+                let n = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc = key_rlc * key_rlc_r + n;
+            }
+            key_rlc = key_rlc * key_rlc_r + s_cur1; // c_rlp1
+            key_rlc = key_rlc * key_rlc_r + s_cur2; // c_rlp2
+            for ind in 0..HASH_WIDTH {
+                let n = meta.query_advice(c_advices[ind], Rotation::cur());
+                key_rlc = key_rlc * key_rlc_r + n;
+            }
+
+            /*
+            constraints.push((
+                "Key RLC",
+                q_enable.clone() * ,
+            ));
+            */
+
+            // We need to make sure there are 0s after nibbles end
+            // We have 2 * key_len nibbles, this is at most 64. We need to check
+            // s_advices, c_rlp1, c_rlp2, c_advices to be 0 after 2 * key_len nibbles.
+            // s_advices, c_rlp1, c_rlp2, c_advices are 32 + 2 + 32 = 66.
+
+            let nibble_len =
+                is_even * (key_len.clone() - one.clone()) * F::from_u64(2)
+                    + is_odd
+                        * ((key_len.clone() - one.clone()) * F::from_u64(2)
+                            + one.clone());
+            let c66 = Expression::Constant(F::from_u64(66));
+            let mut counter = Expression::Constant(F::zero());
+            let mut is_not_nibble = Expression::Constant(F::one());
+            // is_not_nibble becomes 0 in the positions where we have nibbles
+
+            for ind in (0..HASH_WIDTH).rev() {
+                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                constraints.push((
+                    "Not nibble c_advices",
+                    q_enable.clone() * is_not_nibble.clone() * c,
+                ));
+
+                counter = counter + one.clone();
+                is_not_nibble = is_not_nibble
+                    * (c66.clone() - nibble_len.clone() - counter.clone());
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            constraints.push((
+                "Not nibble c_rlp1",
+                q_enable.clone() * is_not_nibble.clone() * c_rlp1,
+            ));
+
+            counter = counter + one.clone();
+            is_not_nibble = is_not_nibble
+                * (c66.clone() - nibble_len.clone() - counter.clone());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            constraints.push((
+                "Not nibble c_rlp2",
+                q_enable.clone() * is_not_nibble.clone() * c_rlp2,
+            ));
+
+            for ind in (0..HASH_WIDTH).rev() {
+                counter = counter + one.clone();
+                is_not_nibble = is_not_nibble
+                    * (c66.clone() - nibble_len.clone() - counter.clone());
+
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                constraints.push((
+                    "Not nibble s_advices",
+                    q_enable.clone() * is_not_nibble.clone() * s,
                 ));
             }
 
