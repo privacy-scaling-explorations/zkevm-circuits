@@ -18,4 +18,6 @@ COPY --from=golang:1.16-alpine /usr/local/go/ /usr/local/go/
 
 COPY . .
 
-RUN cargo build
+RUN cargo bench --no-run
+
+CMD cargo bench --bench evm_prover

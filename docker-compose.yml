@@ -1,10 +1,22 @@
 version: '3'
 services:
-    zkevm:
-        build: .
-        container_name: zkevm
-        tty: true
-        stdin_open: true
-        volumes:
+    state_prover:
+      build:
+        context: .
+        dockerfile: STATE_PROVER
+      container_name: state_prover
+      tty: true
+      stdin_open:  true
+      volumes:
+        - .:/app
+        - /app/target
+    evm_prover:
+      build:
+        context: .
+        dockerfile: EVM_PROVER
+      container_name: evm_prover
+      tty: true
+      stdin_open:  true
+      volumes:
         - .:/app
         - /app/target
