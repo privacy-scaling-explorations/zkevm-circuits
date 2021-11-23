@@ -1,5 +1,6 @@
 //! Error module for the bus-mapping crate
 
+use crate::eth_types::{Address, GethExecStep, Word};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use ethers_providers::ProviderError;
 use std::error::Error as StdError;
@@ -32,6 +33,14 @@ pub enum Error {
     JSONRpcError(ProviderError),
     /// OpcodeId is not a call type.
     OpcodeIdNotCallType,
+    /// Account not found in the StateDB
+    AccountNotFound(Address),
+    /// Storage key not found in the StateDB
+    StorageKeyNotFound(Address, Word),
+    /// Unable to figure out error at a [`GethExecStep`]
+    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
+    /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
+    InvalidGethExecStep(&'static str, Box<GethExecStep>),
 }
 
 impl From<ProviderError> for Error {
