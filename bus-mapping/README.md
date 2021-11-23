@@ -49,7 +49,7 @@ all of the Memory, Stack and Storage ops performed by the provided trace.
 
 ```rust
 use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 
 let input_trace = r#"
 [
@@ -101,13 +101,13 @@ let input_trace = r#"
 
 let block_ctants = BlockConstants::new(
     Word::from(0),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
+    Fp::zero(),
+    Fp::zero(),
+    Fp::zero(),
+    Fp::zero(),
+    Fp::zero(),
+    Fp::zero(),
+    Fp::zero(),
 );
 
 // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.

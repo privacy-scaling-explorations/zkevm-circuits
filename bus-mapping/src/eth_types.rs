@@ -2,7 +2,7 @@
 
 use crate::evm::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm::{Gas, GasCost, OpcodeId, ProgramCounter};
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use serde::{de, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;

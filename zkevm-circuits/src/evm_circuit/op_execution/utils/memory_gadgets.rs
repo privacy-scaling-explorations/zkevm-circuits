@@ -6,7 +6,8 @@ use crate::evm_circuit::param::MAX_MEMORY_SIZE_IN_BYTES;
 use crate::util::Expr;
 use bus_mapping::evm::GasCost;
 use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2::{circuit::Region, plonk::Expression};
+use pairing::arithmetic::FieldExt;
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
@@ -206,8 +207,8 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
             .assign(
                 region,
                 offset,
-                F::from_u64(address_memory_size),
-                F::from_u64(curr_memory_size),
+                F::from(address_memory_size),
+                F::from(curr_memory_size),
             )?
             .get_lower_128() as MemorySize;
 

@@ -5,7 +5,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::array;
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
@@ -129,7 +129,7 @@ mod test {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     macro_rules! try_test_circuit {
@@ -139,12 +139,12 @@ mod test {
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
             let k = usize::BITS - $values.len().leading_zeros() + 2;
-            let circuit = TestCircuit::<Base> {
+            let circuit = TestCircuit::<Fp> {
                 values: Some($values),
                 checks: Some($checks),
                 _marker: PhantomData,
             };
-            let prover = MockProver::<Base>::run(k, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -185,7 +185,7 @@ mod test {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
@@ -238,7 +238,7 @@ mod test {
                     .values
                     .as_ref()
                     .map(|values| {
-                        values.iter().map(|value| F::from_u64(*value)).collect()
+                        values.iter().map(|value| F::from(*value)).collect()
                     })
                     .ok_or(Error::SynthesisError)?;
                 let checks =
@@ -264,7 +264,7 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from_u64(*check as u64)),
+                                || Ok(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value",
@@ -351,7 +351,7 @@ mod test {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
                 let (value_a, value_b) =
                     (meta.advice_column(), meta.advice_column());
                 let value_diff_inv = meta.advice_column();
@@ -409,7 +409,7 @@ mod test {
                         values
                             .iter()
                             .map(|(value_a, value_b)| {
-                                (F::from_u64(*value_a), F::from_u64(*value_b))
+                                (F::from(*value_a), F::from(*value_b))
                             })
                             .collect()
                     })
@@ -427,7 +427,7 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from_u64(*check as u64)),
+                                || Ok(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value_a",

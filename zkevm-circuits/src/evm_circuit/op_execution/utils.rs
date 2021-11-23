@@ -155,7 +155,7 @@ pub(crate) mod sum {
     pub(crate) fn value<F: FieldExt>(values: &[u8]) -> F {
         values
             .iter()
-            .fold(F::zero(), |acc, value| acc + F::from_u64(*value as u64))
+            .fold(F::zero(), |acc, value| acc + F::from(*value as u64))
     }
 }
 
@@ -227,7 +227,7 @@ pub(crate) mod from_bytes {
         let mut multiplier = F::one();
         for byte in bytes.iter() {
             value = value + byte.expr() * multiplier;
-            multiplier *= F::from_u64(256);
+            multiplier *= F::from(256);
         }
         value
     }
@@ -237,8 +237,8 @@ pub(crate) mod from_bytes {
         let mut value = F::zero();
         let mut multiplier = F::one();
         for byte in bytes.iter() {
-            value += F::from_u64(*byte as u64) * multiplier;
-            multiplier *= F::from_u64(256);
+            value += F::from(*byte as u64) * multiplier;
+            multiplier *= F::from(256);
         }
         value
     }
@@ -246,7 +246,7 @@ pub(crate) mod from_bytes {
 
 /// Returns 2**num_bits
 pub(crate) fn get_range<F: FieldExt>(num_bits: usize) -> F {
-    F::from_u64(2).pow(&[num_bits as u64, 0, 0, 0])
+    F::from(2).pow(&[num_bits as u64, 0, 0, 0])
 }
 
 pub(crate) fn require_opcode_in_set<F: FieldExt>(

@@ -120,7 +120,7 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
 
@@ -307,8 +307,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     ) -> Self {
         meta.enable_equality(adv.input.acc.into());
         meta.enable_equality(adv.output.acc.into());
-        let q_enable = meta.selector();
-        let q_is_special = meta.selector();
+        let q_enable = meta.complex_selector();
+        let q_is_special = meta.complex_selector();
         let rotation = ROTATION_CONSTANTS[lane_xy.0][lane_xy.1];
         let slices = slice_lane(rotation);
         let chunk_rotate_convert_configs = slices
@@ -545,7 +545,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                 - meta.query_advice(base_9_acc, Rotation::cur());
             let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
             let pow_of_9 =
-                Expression::Constant(F::from_u64(B9).pow(&[rotation, 0, 0, 0]));
+                Expression::Constant(F::from(B9).pow(&[rotation, 0, 0, 0]));
             vec![(
                 "delta_base_9_acc === (high_value + low_value) * 9**rotation",
                 meta.query_selector(q_enable)
@@ -671,8 +671,8 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         block_count: u32,
         block_count_acc: [u32; 2],
     ) -> Result<BlockCount2<F>, Error> {
-        let block_count = F::from_u64(block_count.into());
-        let acc = block_count_acc.map(|x| F::from_u64(x.into()));
+        let block_count = F::from(block_count.into());
+        let acc = block_count_acc.map(|x| F::from(x.into()));
         region.assign_advice(
             || "block_count",
             self.bc.block_count,
@@ -714,7 +714,7 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
         meta: &mut ConstraintSystem<F>,
         block_count_cols: [Column<Advice>; 2],
     ) -> Self {
-        let q_enable = meta.selector();
+        let q_enable = meta.complex_selector();
         for column in block_count_cols.iter() {
             meta.enable_equality((*column).into());
         }
