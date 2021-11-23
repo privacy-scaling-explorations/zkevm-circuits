@@ -162,27 +162,107 @@ impl Block {
     }
 }
 
-#[derive(Debug)]
+/// Type of a *CALL* Function.
+#[derive(Debug, PartialEq)]
+pub enum CallType {
+    /// Implicit call of a transaction
+    Root,
+    /// CALL
+    Call,
+    /// CALLCODE
+    CallCode,
+    /// DELEGATECALL
+    DelegateCall,
+    /// STATICCALL
+    StaticCall,
+    /// CREATE
+    Create,
+    /// CREATE2
+    Create2,
+}
+
+impl CallType {
+    fn is_create(&self) -> bool {
+        matches!(self, Self::Create | Self::Create2)
+    }
+}
+
+impl TryFrom<OpcodeId> for CallType {
+    type Error = Error;
+
+    fn try_from(op: OpcodeId) -> Result<Self, Self::Error> {
+        Ok(match op {
+            OpcodeId::CALL => CallType::Call,
+            OpcodeId::CALLCODE => CallType::CallCode,
+            OpcodeId::DELEGATECALL => CallType::DelegateCall,
+            OpcodeId::STATICCALL => CallType::StaticCall,
+            OpcodeId::CREATE => CallType::Create,
+            OpcodeId::CREATE2 => CallType::Create2,
+            _ => return Err(Error::OpcodeIdNotCallType),
+        })
+    }
+}
+
 /// Context of a Call during a [`Transaction`] which can mutate in an
 /// [`ExecStep`].
+#[derive(Debug)]
 pub struct CallContext {
-    address: Address,
+    /// Type of call
+    call: CallType,
+    /// This call is being executed without write access (STATIC)
+    is_static: bool,
+    /// This call is root call with tx.to == null, or op == CREATE or op ==
+    /// CREATE2
+    is_create: bool,
+    /// Address where this call is being executed
+    pub address: Address,
 }
 
 #[derive(Debug)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
-    call_ctxs: Vec<CallContext>,
+    call_stack: Vec<CallContext>,
 }
 
 impl TransactionContext {
     /// Create a new Self.
     pub fn new(eth_tx: &eth_types::Transaction) -> Self {
-        let mut call_ctxs = Vec::new();
-        if let Some(addr) = eth_tx.to {
-            call_ctxs.push(CallContext { address: addr });
+        let mut call_stack = Vec::new();
+        if let Some(address) = eth_tx.to {
+            call_stack.push(CallContext {
+                call: CallType::Root,
+                is_static: false,
+                is_create: false,
+                address,
+            });
+        } else {
+            call_stack.push(CallContext {
+                call: CallType::Root,
+                is_static: false,
+                is_create: true,
+                address: Address::zero(),
+            });
         }
-        Self { call_ctxs }
+        Self { call_stack }
+    }
+
+    /// Return a reference to the current call context (the last call context in
+    /// the call stack).
+    pub fn call_ctx(&self) -> &CallContext {
+        self.call_stack.last().expect("call_stack is empty")
+    }
+
+    /// Push a new call context into the call stack.
+    pub fn push_call_ctx(&mut self, call: CallType, address: Address) {
+        let is_static =
+            call == CallType::StaticCall || self.call_ctx().is_static;
+        let is_create = call.is_create();
+        self.call_stack.push(CallContext {
+            call,
+            is_static,
+            is_create,
+            address,
+        });
     }
 }
 
@@ -377,53 +457,73 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
             .unwrap_or_else(Word::zero);
 
-        // Return from a call with a failure, without calling RETURN
-        if step.op != OpcodeId::RETURN
-            && step.depth != next_depth
-            && next_result == Word::zero()
-        {
-            return Some(match step.op {
-                OpcodeId::REVERT => ExecError::ExecutionReverted,
-                OpcodeId::JUMP | OpcodeId::JUMPI => ExecError::InvalidJump,
-                OpcodeId::RETURNDATACOPY => ExecError::ReturnDataOutOfBounds,
-                _ => {
-                    panic!("Cannot figure out call failure error in {:?}", step)
+        // Return from a call with a failure
+        if step.depth != next_depth && next_result == Word::zero() {
+            if step.op != OpcodeId::RETURN {
+                // Without calling RETURN
+                return Some(match step.op {
+                    OpcodeId::REVERT => ExecError::ExecutionReverted,
+                    OpcodeId::JUMP | OpcodeId::JUMPI => ExecError::InvalidJump,
+                    OpcodeId::RETURNDATACOPY => {
+                        ExecError::ReturnDataOutOfBounds
+                    }
+                    _ => {
+                        panic!(
+                            "Cannot figure out call failure error in {:?}",
+                            step
+                        )
+                    }
+                });
+            } else {
+                // Calling RETURN
+                let call_ctx = self.tx_ctx.call_ctx();
+
+                // Return from a {CREATE, CREATE2} with a failure, via RETURN
+                if call_ctx.call != CallType::Root && call_ctx.is_create {
+                    let offset = step.stack.nth_last(0).unwrap();
+                    let length = step.stack.nth_last(1).unwrap();
+                    if length > Word::from(0x6000) {
+                        return Some(ExecError::MaxCodeSizeExceeded);
+                    } else if length > Word::zero()
+                        && !step.memory.0.is_empty()
+                        && step.memory.0.get(offset.low_u64() as usize)
+                            == Some(&0xef)
+                    {
+                        return Some(ExecError::InvalidCode);
+                    } else if Word::from(200) * length > Word::from(step.gas.0)
+                    {
+                        return Some(ExecError::CodeStoreOutOfGas);
+                    } else {
+                        panic!("Cannot figure out RETURN error in {:?}", step);
+                    }
+                } else {
+                    panic!("Cannot figure out RETURN error in {:?}", step);
                 }
-            });
+            }
         }
 
-        // Return from a {CREATE, CREATE2} with a failure, via RETURN
-        // TODO: if not self.tx_ctx.is_root and self.tx_ctx.is_create {
-        // https://github.com/appliedzkp/zkevm-circuits/issues/137
-        if step.op == OpcodeId::RETURN && next_result == Word::zero() {
-            let offset = step.stack.nth_last(0).unwrap();
-            let length = step.stack.nth_last(1).unwrap();
-            if length > Word::from(0x6000) {
-                return Some(ExecError::MaxCodeSizeExceeded);
-            } else if length > Word::zero()
-                && !step.memory.0.is_empty()
-                && step.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
-            {
-                return Some(ExecError::InvalidCode);
-            } else if Word::from(200) * length > Word::from(step.gas.0) {
-                return Some(ExecError::CodeStoreOutOfGas);
-            } else {
-                panic!("Cannot figure out RETURN error in {:?}", step);
-            }
+        // Return from a call via RETURN and having a success result is OK.
+
+        // Return from a call without calling RETURN and having success is
+        // unexpected.
+        if step.depth != next_depth
+            && next_result != Word::zero()
+            && step.op != OpcodeId::RETURN
+        {
+            panic!("Cannot figure out call failure error in {:?}", step);
         }
 
         // The *CALL* code was not executed
         let next_pc = next_step.map(|s| s.pc.0).unwrap_or(1);
-        if [
-            OpcodeId::CALL,
-            OpcodeId::CALLCODE,
-            OpcodeId::DELEGATECALL,
-            OpcodeId::STATICCALL,
-            OpcodeId::CREATE,
-            OpcodeId::CREATE2,
-        ]
-        .contains(&step.op)
-            && next_result == Word::zero()
+        if matches!(
+            step.op,
+            OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+                | OpcodeId::CREATE
+                | OpcodeId::CREATE2
+        ) && next_result == Word::zero()
             && next_pc != 0
         {
             if step.depth == 1025 {
@@ -431,10 +531,10 @@ impl<'a> CircuitInputStateRef<'a> {
             }
             // TODO: address_collision
             // https://github.com/appliedzkp/zkevm-circuits/issues/180
-            if step.op == OpcodeId::CREATE || step.op == OpcodeId::CREATE2 {
+            if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
                 // TODO: Calculate address
                 // https://github.com/appliedzkp/zkevm-circuits/issues/187
-                let _address = if step.op == OpcodeId::CREATE {
+                let _address = if matches!(step.op, OpcodeId::CREATE) {
                     // CREATE
                     let _value = step.stack.nth_last(0).unwrap();
                     let _offset = step.stack.nth_last(1).unwrap();
@@ -493,12 +593,13 @@ impl<'a> CircuitInputStateRef<'a> {
 mod tracer_tests {
     use super::*;
     use crate::{
-        bytecode,
+        address, bytecode,
         bytecode::Bytecode,
-        eth_types::Word,
+        eth_types::{ToWord, Word},
         evm::{stack::Stack, Gas, OpcodeId},
         mock, word,
     };
+    use lazy_static::lazy_static;
 
     // Helper struct that contains a CircuitInputBuilder, a particuar tx and a
     // particular execution step so that we can easily get a
@@ -533,6 +634,14 @@ mod tracer_tests {
         }
     }
 
+    lazy_static! {
+        static ref ADDR_A: Address = Address::zero();
+        static ref WORD_ADDR_A: Word = ADDR_A.to_word();
+        static ref ADDR_B: Address =
+            address!("0x0000000000000000000000000000000000000123");
+        static ref WORD_ADDR_B: Word = ADDR_B.to_word();
+    }
+
     //
     // Geth Errors ignored
     //
@@ -544,16 +653,15 @@ mod tracer_tests {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> bool {
-        [
-            OpcodeId::CALL,
-            OpcodeId::CALLCODE,
-            OpcodeId::DELEGATECALL,
-            OpcodeId::STATICCALL,
-            OpcodeId::CREATE,
-            OpcodeId::CREATE2,
-        ]
-        .contains(&step.op)
-            && step.error.is_none()
+        matches!(
+            step.op,
+            OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+                | OpcodeId::CREATE
+                | OpcodeId::CREATE2
+        ) && step.error.is_none()
             && result(next_step) == Word::zero()
             && step.depth == 1025
     }
@@ -567,7 +675,7 @@ mod tracer_tests {
                  PUSH1(0x0) // argsLength
                  PUSH1(0x0) // argsOffset
                  PUSH1(0x42) // value
-                 PUSH32(word!("0x0000000000000000000000000000000000000000")) // addr
+                 PUSH32(*WORD_ADDR_A) // addr
                  PUSH32(0x8_0000_0000_0000_u64) // gas
                  CALL
                  PUSH2(0xab)
@@ -625,7 +733,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH32(Word::from(0x1000)) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             CALL
 
@@ -700,7 +808,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH1(0x0) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             CALL
 
@@ -765,7 +873,6 @@ mod tracer_tests {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> bool {
-        // TODO: check CallContext is inside Create or Create2
         let length = step.stack.nth_last(1).unwrap();
         step.op == OpcodeId::RETURN
             && step.error.is_none()
@@ -794,7 +901,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH1(0x0) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             CALL
 
@@ -841,6 +948,7 @@ mod tracer_tests {
         assert!(check_err_code_store_out_of_gas(step, next_step));
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
+        builder.tx_ctx.push_call_ctx(CallType::Create, *ADDR_B);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step),
             Some(ExecError::CodeStoreOutOfGas)
@@ -851,7 +959,6 @@ mod tracer_tests {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> bool {
-        // TODO: check CallContext is inside Create or Create2
         let offset = step.stack.nth_last(0).unwrap();
         let length = step.stack.nth_last(1).unwrap();
         step.op == OpcodeId::RETURN
@@ -882,7 +989,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH1(0x0) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             CALL
 
@@ -929,6 +1036,7 @@ mod tracer_tests {
         assert!(check_err_invalid_code(step, next_step));
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
+        builder.tx_ctx.push_call_ctx(CallType::Create, *ADDR_B);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step),
             Some(ExecError::InvalidCode)
@@ -939,7 +1047,6 @@ mod tracer_tests {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> bool {
-        // TODO: check CallContext is inside Create or Create2
         let length = step.stack.nth_last(1).unwrap();
         step.op == OpcodeId::RETURN
             && step.error.is_none()
@@ -968,7 +1075,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH1(0x0) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x10_0000) // gas
             CALL
 
@@ -1015,6 +1122,7 @@ mod tracer_tests {
         assert!(check_err_max_code_size_exceeded(step, next_step));
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
+        builder.tx_ctx.push_call_ctx(CallType::Create, *ADDR_B);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step),
             Some(ExecError::MaxCodeSizeExceeded)
@@ -1039,7 +1147,7 @@ mod tracer_tests {
         next_step: Option<&GethExecStep>,
     ) -> bool {
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
-        [OpcodeId::JUMP, OpcodeId::JUMPI].contains(&step.op)
+        matches!(step.op, OpcodeId::JUMP | OpcodeId::JUMPI)
             && step.error.is_none()
             && result(next_step) == Word::zero()
             && step.depth != next_depth
@@ -1075,7 +1183,7 @@ mod tracer_tests {
             PUSH1(0x0) // retOffset
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             STATICCALL
 
@@ -1138,7 +1246,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH1(0x0) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             CALL
 
@@ -1179,7 +1287,7 @@ mod tracer_tests {
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
             PUSH1(0x0) // value
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             CALL
 
@@ -1285,7 +1393,7 @@ mod tracer_tests {
             PUSH1(0x0) // retOffset
             PUSH1(0x0) // argsLength
             PUSH1(0x0) // argsOffset
-            PUSH32(word!("0x0000000000000000000000000000000000000123")) // addr
+            PUSH32(*WORD_ADDR_B) // addr
             PUSH32(0x1_0000) // gas
             STATICCALL
 

@@ -28,8 +28,10 @@ pub enum Error {
     WordToMemAddr,
     /// Error while generating a trace.
     TracingError,
-    /// JSON-RPC related error
+    /// JSON-RPC related error.
     JSONRpcError(ProviderError),
+    /// OpcodeId is not a call type.
+    OpcodeIdNotCallType,
 }
 
 impl From<ProviderError> for Error {
