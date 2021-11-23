@@ -4,7 +4,7 @@ use bus_mapping::{
     mock::BlockData,
     operation::{MemoryOp, Operation, StackOp, StorageOp},
 };
-use criterion::criterion_main;
+use criterion::{criterion_group, criterion_main, Criterion};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
@@ -13,81 +13,6 @@ use halo2::{
     plonk::*,
 };
 use zkevm_circuits::state_circuit::state::Config;
-
-fn bus_mapping_prover() {
-    let k = 14;
-    let circuit = get_circuit();
-    let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-    assert_eq!(prover.verify(), Ok(()));
-}
-
-criterion_main!(bus_mapping_prover);
-
-fn get_circuit() -> StateCircuit<2000, 100, 2, 100, 1023, 1000> {
-    let input_trace = r#"
-        [
-            {
-                "pc": 5,
-                "op": "PUSH1",
-                "gas": 82,
-                "gasCost": 3,
-                "depth": 1,
-                "stack": [],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              },
-              {
-                "pc": 7,
-                "op": "MLOAD",
-                "gas": 79,
-                "gasCost": 3,
-                "depth": 1,
-                "stack": [
-                  "40"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              },
-              {
-                "pc": 8,
-                "op": "STOP",
-                "gas": 76,
-                "gasCost": 0,
-                "depth": 1,
-                "stack": [
-                  "80"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              }
-        ]
-        "#;
-    let geth_steps: Vec<GethExecStep> =
-        serde_json::from_str(input_trace).expect("Error on trace parsing");
-    let block = BlockData::new_single_tx_geth_steps(geth_steps);
-    let mut builder = CircuitInputBuilder::new(
-        block.eth_block.clone(),
-        block.block_ctants.clone(),
-    );
-    builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-    let stack_ops = builder.block.container.sorted_stack();
-
-    StateCircuit::<2000, 100, 2, 100, 1023, 1000> {
-        memory_ops: vec![],
-        stack_ops,
-        storage_ops: vec![],
-    }
-}
 
 #[derive(Default)]
 struct StateCircuit<
@@ -156,3 +81,83 @@ impl<
         Ok(())
     }
 }
+
+fn bus_mapping_benchmark(c: &mut Criterion) {
+    let k = 14;
+    let input_trace = r#"
+        [
+            {
+                "pc": 5,
+                "op": "PUSH1",
+                "gas": 82,
+                "gasCost": 3,
+                "depth": 1,
+                "stack": [],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000080"
+                ]
+              },
+              {
+                "pc": 7,
+                "op": "MLOAD",
+                "gas": 79,
+                "gasCost": 3,
+                "depth": 1,
+                "stack": [
+                  "40"
+                ],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000080"
+                ]
+              },
+              {
+                "pc": 8,
+                "op": "STOP",
+                "gas": 76,
+                "gasCost": 0,
+                "depth": 1,
+                "stack": [
+                  "80"
+                ],
+                "memory": [
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000000",
+                  "0000000000000000000000000000000000000000000000000000000000000080"
+                ]
+              }
+        ]
+        "#;
+    let geth_steps: Vec<GethExecStep> =
+        serde_json::from_str(input_trace).expect("Error on trace parsing");
+    let block = BlockData::new_single_tx_geth_steps(geth_steps);
+    let mut builder = CircuitInputBuilder::new(
+        block.eth_block.clone(),
+        block.block_ctants.clone(),
+    );
+    builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+
+    let stack_ops = builder.block.container.sorted_stack();
+
+    let circuit = StateCircuit::<2000, 100, 2, 100, 1023, 1000> {
+        memory_ops: vec![],
+        stack_ops,
+        storage_ops: vec![],
+    };
+    let description = format!("prove state circuit k = {}", k);
+    let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+    c.bench_function(description.as_str(), |b| {
+        b.iter(|| prover.verify().expect("failed to verify bench circuit"))
+    });
+}
+
+criterion_group! {
+    name = state_prover;
+    config = Criterion::default().sample_size(10);
+    targets = bus_mapping_benchmark
+}
+
+criterion_main!(state_prover);

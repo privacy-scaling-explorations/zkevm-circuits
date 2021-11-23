@@ -1,4 +1,4 @@
-use criterion::criterion_main;
+use criterion::{criterion_group, criterion_main, Criterion};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
@@ -7,19 +7,6 @@ use halo2::{
     plonk::*,
 };
 use zkevm_circuits::evm_circuit::{EvmCircuit, ExecutionStep, Operation};
-
-fn evm_circuit_prover() {
-    let k = 14;
-    let circuit = get_circuit();
-    let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-    assert_eq!(prover.verify(), Ok(()));
-}
-
-criterion_main!(evm_circuit_prover);
-
-fn get_circuit() -> TestCircuit<Fp> {
-    TestCircuit::default()
-}
 
 #[derive(Clone)]
 pub(crate) struct TestCircuitConfig<F: FieldExt> {
@@ -61,3 +48,21 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
             .assign(&mut layouter, &self.execution_steps)
     }
 }
+
+fn evm_circuit_benchmark(c: &mut Criterion) {
+    let k = 14;
+    let circuit = TestCircuit::default();
+    let description = format!("prove evm circuit k = {}", k);
+    let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+    c.bench_function(description.as_str(), |b| {
+        b.iter(|| prover.verify().expect("failed to verify bench circuit"))
+    });
+}
+
+criterion_group! {
+    name = evm_prover;
+    config = Criterion::default().sample_size(10);
+    targets = evm_circuit_benchmark
+}
+
+criterion_main!(evm_prover);
