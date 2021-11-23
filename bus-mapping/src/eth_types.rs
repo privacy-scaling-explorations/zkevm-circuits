@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use web3::types;
 pub use web3::types::{
-    AccessList, Address, Block, Bytes, Index, Transaction, H2048, H64, U256,
-    U64,
+    AccessList, Address, Block, Bytes, Index, Transaction, H2048, H256, H64,
+    U256, U64,
 };
 
 /// Trait used to define types that can be converted to a 256 bit scalar value.

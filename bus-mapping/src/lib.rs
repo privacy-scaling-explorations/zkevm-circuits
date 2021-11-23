@@ -226,5 +226,6 @@ pub mod eth_types;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod rpc;
+pub(crate) mod statedb;
 pub use error::Error;
 pub use exec_trace::BlockConstants;
