@@ -317,22 +317,27 @@ pub(crate) enum Case {
 }
 
 // TODO: use ExecutionStep from bus_mapping
-pub(crate) struct ExecutionStep {
+/// Test
+#[derive(Debug)]
+pub struct ExecutionStep {
     opcode: OpcodeId,
     case: Case,
     values: Vec<BigUint>,
 }
 
 // TODO: use Operation from bus_mapping
-pub(crate) struct Operation<F> {
+/// Test
+#[derive(Debug)]
+pub struct Operation<F> {
     gc: usize,
     target: Target,
     is_write: bool,
     values: [F; 4],
 }
 
-#[derive(Clone)]
-struct EvmCircuit<F> {
+/// evm circuit
+#[derive(Debug, Clone)]
+pub struct EvmCircuit<F> {
     q_step: Selector,
     qs_byte_lookup: Column<Advice>,
     fixed_table: [Column<Fixed>; 4],
@@ -341,7 +346,8 @@ struct EvmCircuit<F> {
 }
 
 impl<F: FieldExt> EvmCircuit<F> {
-    fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
+    /// configure
+    pub fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
         let q_step = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = (0..CIRCUIT_WIDTH)
@@ -684,7 +690,8 @@ impl<F: FieldExt> EvmCircuit<F> {
         }
     }
 
-    fn load_fixed_tables(
+    /// load fixed table
+    pub fn load_fixed_tables(
         &self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
@@ -881,7 +888,8 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
-    fn load_rw_tables(
+    /// load rw tables
+    pub fn load_rw_tables(
         &self,
         layouter: &mut impl Layouter<F>,
         operations: &[Operation<F>],
@@ -935,7 +943,8 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
-    fn assign(
+    /// assign
+    pub fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
         execution_steps: &[ExecutionStep],

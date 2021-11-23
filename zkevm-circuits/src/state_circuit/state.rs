@@ -71,7 +71,7 @@ Example bus mapping:
 /// TODO: The complete version of this mapping will involve storage, stack,
 /// and opcode details as well.
 #[derive(Clone, Debug)]
-pub(crate) struct BusMapping<F: FieldExt> {
+pub struct BusMapping<F: FieldExt> {
     global_counter: Variable<usize, F>,
     target: Variable<usize, F>,
     flag: Variable<bool, F>,
@@ -82,7 +82,8 @@ pub(crate) struct BusMapping<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<
+/// Config
+pub struct Config<
     F: FieldExt,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
@@ -132,7 +133,7 @@ impl<
     >
 {
     /// Set up custom gates and lookup arguments for this configuration.
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_target = meta.fixed_column();
         let address = meta.advice_column();
         let address_diff_inv = meta.advice_column();
@@ -612,10 +613,7 @@ impl<
     }
 
     /// Load lookup table / other fixed constants for this configuration.
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter
             .assign_region(
                 || "global counter table",
@@ -916,7 +914,7 @@ impl<
     }
 
     /// Assign cells.
-    pub(crate) fn assign(
+    pub fn assign(
         &self,
         mut layouter: impl Layouter<F>,
         memory_ops: Vec<Operation<MemoryOp>>,
@@ -1668,7 +1666,7 @@ mod tests {
             MemoryOp::new(
                 RW::WRITE,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
-                // This address is not in the allowed range
+                // This address is not in the allowed rang,
                 32,
             ),
         );

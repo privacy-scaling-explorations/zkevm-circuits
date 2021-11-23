@@ -28,3 +28,11 @@ num = "0.4"
 [[bench]]
 name = "binary_value"
 harness = false
+
+[[bench]]
+name = "evm_prover"
+harness = false
+
+[[bench]]
+name = "state_prover"
+harness = false
