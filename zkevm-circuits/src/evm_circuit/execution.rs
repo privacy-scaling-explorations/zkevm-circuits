@@ -21,6 +21,7 @@ mod add;
 mod byte;
 mod comparator;
 mod dup;
+mod error_oog_pure_memory;
 mod jumpdest;
 mod pc;
 mod pop;
@@ -32,6 +33,7 @@ use add::AddGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
+use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
 use jumpdest::JumpdestGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -231,6 +233,7 @@ pub(crate) struct ExecutionConfig<F> {
     byte_gadget: ByteGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
+    error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
@@ -329,6 +332,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             byte_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
+            error_oog_pure_memory_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
@@ -539,6 +543,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 .assign_exec_step(region, offset, exec_trace, step_idx)?,
             ExecutionResult::SWAP => self
                 .swap_gadget
+                .assign_exec_step(region, offset, exec_trace, step_idx)?,
+            ExecutionResult::ErrorOutOfGasPureMemory => self
+                .error_oog_pure_memory_gadget
                 .assign_exec_step(region, offset, exec_trace, step_idx)?,
             _ => unimplemented!(),
         }
