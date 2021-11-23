@@ -7,7 +7,7 @@ edition = "2018"
 dev-graph = ["halo2/dev-graph", "plotters"]
 
 [dependencies]
-halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "677e594443c9f8fb80b41e7aacc79f5f81f7bd2d" }
+halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "bc088ec9e842de7d7c5d88c015cdf2ecd6ec62a0" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"

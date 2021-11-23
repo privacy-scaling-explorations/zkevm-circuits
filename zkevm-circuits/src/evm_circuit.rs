@@ -638,7 +638,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure whole row lookups by qs_byte_lookup
         for column in advices {
-            meta.lookup2(|meta| {
+            meta.lookup_any(|meta| {
                 let tag = FixedLookup::Range256.expr();
                 let qs_byte_lookup =
                     meta.query_advice(qs_byte_lookup, Rotation::cur());
@@ -659,7 +659,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure fixed lookups
         for fixed_lookup in fixed_lookups.iter() {
-            meta.lookup2(|meta| {
+            meta.lookup_any(|meta| {
                 fixed_lookup
                     .iter()
                     .zip(fixed_table.iter())
@@ -675,7 +675,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure rw lookups
         for rw_lookup in rw_lookups.iter() {
-            meta.lookup2(|meta| {
+            meta.lookup_any(|meta| {
                 rw_lookup
                     .iter()
                     .zip(rw_table.iter())

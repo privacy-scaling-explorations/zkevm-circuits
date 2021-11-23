@@ -91,7 +91,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
             _marker: PhantomData,
         };
 
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
             let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
@@ -178,7 +178,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
             _marker: PhantomData,
         };
         // Lookup for special chunk conversion
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let last_chunk_advice =
                 meta.query_advice(last_chunk_advice, Rotation::cur());

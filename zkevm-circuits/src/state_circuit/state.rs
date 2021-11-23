@@ -398,7 +398,7 @@ impl<
         // global_counter monotonicity is checked for memory and stack when
         // address_cur == address_prev. (Recall that operations are
         // ordered first by address, and then by global_counter.)
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let global_counter_table =
                 meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
@@ -420,7 +420,7 @@ impl<
         });
 
         // Memory address is in the allowed range.
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let q_memory =
                 q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
@@ -431,7 +431,7 @@ impl<
         });
 
         // Stack address is in the allowed range.
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let q_stack =
                 q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
@@ -442,7 +442,7 @@ impl<
         });
 
         // global_counter is in the allowed range:
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
             let global_counter_table =
@@ -454,7 +454,7 @@ impl<
         // Memory value (for non-first rows) is in the allowed range.
         // Memory first row value doesn't need to be checked - it is checked
         // above where memory init row value has to be 0.
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let q_memory_not_first = q_memory_not_first_norm(meta);
             let value = meta.query_advice(value, Rotation::cur());
             let memory_value_table =
@@ -567,7 +567,7 @@ impl<
         // == address_prev and storage_key_cur = storage_key_prev.
         // (Recall that storage operations are ordered first by account address,
         // then by storage_key, and finally by global_counter.)
-        meta.lookup2(|meta| {
+        meta.lookup_any(|meta| {
             let global_counter_table =
                 meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =

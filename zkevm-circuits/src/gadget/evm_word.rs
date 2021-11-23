@@ -87,9 +87,9 @@ impl<F: FieldExt> WordConfig<F> {
         // range-constrain it to 8 bits.
         //
         // TODO: Understand why the `for` loop cannot be moved into
-        // the meta.lookup2() call.
+        // the meta.lookup_any() call.
         for byte in bytes.iter().rev() {
-            meta.lookup2(|meta| {
+            meta.lookup_any(|meta| {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
@@ -221,7 +221,7 @@ mod tests {
 
                 // Make sure each encoded word has been committed to in the
                 // public inputs.
-                meta.lookup2(|meta| {
+                meta.lookup_any(|meta| {
                     let q_encode = meta.query_selector(q_encode);
                     let pub_inputs =
                         meta.query_instance(pub_inputs, Rotation::cur());
