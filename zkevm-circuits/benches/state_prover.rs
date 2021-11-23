@@ -5,13 +5,18 @@ use bus_mapping::{
     operation::{MemoryOp, Operation, StackOp, StorageOp},
 };
 use criterion::{criterion_group, criterion_main, Criterion};
+use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     pairing::bn256::Fr as Fp,
     plonk::*,
+    poly::commitment::Setup,
 };
+use pairing::bn256::Bn256;
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
 use zkevm_circuits::state_circuit::state::Config;
 
 #[derive(Default)]
@@ -84,6 +89,25 @@ impl<
 
 fn bus_mapping_benchmark(c: &mut Criterion) {
     let k = 14;
+    let public_inputs_size = 0;
+    let empty_circuit =
+        StateCircuit::<2000, 100, 2, 100, 1023, 1000>::default();
+
+    // Initialize the polynomial commitment parameters
+    let rng = XorShiftRng::from_seed([
+        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32,
+        0x54, 0x06, 0xbc, 0xe5,
+    ]);
+    let params = Setup::<Bn256>::new(k, rng);
+    let verifier_params =
+        Setup::<Bn256>::verifier_params(&params, public_inputs_size).unwrap();
+
+    // Initialize the proving key
+    let vk =
+        keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
+    let pk = keygen_pk(&params, vk, &empty_circuit)
+        .expect("keygen_pk should not fail");
+
     let input_trace = r#"
         [
             {
@@ -140,17 +164,25 @@ fn bus_mapping_benchmark(c: &mut Criterion) {
     );
     builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-    let stack_ops = builder.block.container.sorted_stack();
-
     let circuit = StateCircuit::<2000, 100, 2, 100, 1023, 1000> {
-        memory_ops: vec![],
-        stack_ops,
-        storage_ops: vec![],
+        memory_ops: builder.block.container.sorted_memory(),
+        stack_ops: builder.block.container.sorted_stack(),
+        storage_ops: builder.block.container.sorted_storage(),
     };
+
+    // Create a proof
+    let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+    create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
+        .expect("proof generation should not fail");
+    let proof = transcript.finalize();
+    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+
     let description = format!("prove state circuit k = {}", k);
-    let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
     c.bench_function(description.as_str(), |b| {
-        b.iter(|| prover.verify().expect("failed to verify bench circuit"))
+        b.iter(|| {
+            verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
+                .expect("failed to verify bench circuit")
+        })
     });
 }
 
