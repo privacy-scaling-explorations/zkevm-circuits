@@ -30,6 +30,7 @@ impl<F: FieldExt> KeyComprChip<F> {
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
         key_rlc: Column<Advice>,
+        key_rlc_mult: Column<Advice>,
         key_rlc_r: F,
     ) -> KeyComprConfig {
         let config = KeyComprConfig {};
@@ -236,21 +237,31 @@ impl<F: FieldExt> KeyComprChip<F> {
             // rlc is in the first branch node
             // -18 = -1 (leaf c) - 1 (leaf s) - 16 (branch nodes)
             let mut key_rlc_acc = meta.query_advice(key_rlc, Rotation(-18));
+            let mut key_mult = meta.query_advice(key_rlc_mult, Rotation(-18));
 
             for ind in 0..HASH_WIDTH {
                 let n = meta.query_advice(s_advices[ind], Rotation::cur());
-                key_rlc_acc = key_rlc_acc * key_rlc_r + n;
+                key_rlc_acc = key_rlc_acc + n * key_mult.clone();
+                key_mult = key_mult * key_rlc_r;
             }
-            key_rlc_acc = key_rlc_acc * key_rlc_r + s_cur1; // c_rlp1
-            key_rlc_acc = key_rlc_acc * key_rlc_r + s_cur2; // c_rlp2
+            key_rlc_acc = key_rlc_acc + s_cur1 * key_mult.clone(); // c_rlp1
+            key_mult = key_mult * key_rlc_r;
+            key_rlc_acc = key_rlc_acc + s_cur2 * key_mult.clone(); // c_rlp2
+            key_mult = key_mult * key_rlc_r;
             for ind in 0..HASH_WIDTH {
                 let n = meta.query_advice(c_advices[ind], Rotation::cur());
-                key_rlc_acc = key_rlc_acc * key_rlc_r + n; // TODO/FIX
+                key_rlc_acc = key_rlc_acc + n * key_mult.clone();
+                key_mult = key_mult * key_rlc_r;
             }
 
+            // RLC of key nibbles are to be checked to verify that the proper key is used.
+            // TODO: enable this when key in mpt.rs is available. This is to ensure
+            // the node in trie has been modified that correspond to the key.
+            /*
             let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
             constraints
                 .push(("Key RLC", q_enable.clone() * (key_rlc_acc - key_rlc)));
+            */
 
             // We need to make sure there are 0s after nibbles end
             // We have 2 * key_len nibbles, this is at most 64. We need to check
