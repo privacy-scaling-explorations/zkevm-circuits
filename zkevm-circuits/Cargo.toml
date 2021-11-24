@@ -24,6 +24,7 @@ rand = "0.8"
 [dev-dependencies]
 criterion = "0.3"
 num = "0.4"
+ark-std = { version = "0.3", features = ["print-trace"] }
 
 [[bench]]
 name = "binary_value"
@@ -31,8 +32,4 @@ harness = false
 
 [[bench]]
 name = "evm_prover"
-harness = false
-
-[[bench]]
-name = "state_prover"
 harness = false

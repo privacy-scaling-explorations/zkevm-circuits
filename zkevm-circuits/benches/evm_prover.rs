@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
+use halo2::transcript::{self, Blake2bRead, Blake2bWrite, Challenge255};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
@@ -53,7 +53,7 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
 }
 
 fn evm_circuit_benchmark(c: &mut Criterion) {
-    let k = 14;
+    let k = 11;
     let public_inputs_size = 0;
     let circuit = TestCircuit::default();
 
@@ -76,19 +76,15 @@ fn evm_circuit_benchmark(c: &mut Criterion) {
     create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
         .expect("proof generation should not fail");
     let proof = transcript.finalize();
-    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
     // Bench
     let description = format!("prove evm circuit k = {}", k);
     c.bench_function(description.as_str(), |b| {
         b.iter(|| {
-            verify_proof(
-                &verifier_params,
-                pk.get_vk(),
-                &[&[]],
-                black_box(&mut transcript),
-            )
-            .expect("failed to verify bench circuit")
+            let mut transcript =
+                Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+            verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
+                .expect("failed to verify bench circuit")
         })
     });
 }
