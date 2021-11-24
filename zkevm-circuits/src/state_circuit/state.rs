@@ -2141,11 +2141,12 @@ mod tests {
             }
         }
 
-        const MEMORY_ROWS_MAX: usize = 1 << 24;
+        const DEGREE: u32 = 22;
+        const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
         const MEMORY_ADDRESS_MAX: usize = 2000;
-        const STACK_ROWS_MAX: usize = 100;
+        const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
         const STACK_ADDRESS_MAX: usize = 1023;
-        const STORAGE_ROWS_MAX: usize = 1000;
+        const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
         const GLOBAL_COUNTER_MAX: usize =
             MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
@@ -2186,7 +2187,7 @@ mod tests {
             storage_ops.push(storage_op);
         }
 
-        let k = 26;
+        let k = DEGREE;
         let public_inputs_size = 0;
         let empty_circuit = StateCircuit::<
             GLOBAL_COUNTER_MAX,
@@ -2205,9 +2206,9 @@ mod tests {
             STACK_ADDRESS_MAX,
             STORAGE_ROWS_MAX,
         > {
-            memory_ops: memory_ops,
-            stack_ops: stack_ops,
-            storage_ops: storage_ops,
+            memory_ops,
+            stack_ops,
+            storage_ops,
         };
 
         // Initialize the polynomial commitment parameters
@@ -2217,8 +2218,10 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let start1 = start_timer!(|| "Setup generation");
-        let params = Setup::<Bn256>::new(k, rng);
+        let setup_message =
+            format!("Setup generation with degree = {}", DEGREE).to_string();
+        let start1 = start_timer!(|| setup_message);
+        let params = Setup::<Bn256>::new(k.into(), rng);
         let verifier_params =
             Setup::<Bn256>::verifier_params(&params, public_inputs_size)
                 .unwrap();
@@ -2234,7 +2237,9 @@ mod tests {
             Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let start2 = start_timer!(|| "State Proof generation with 2^24 rows");
+        let proof_message =
+            format!("State Proof generation with {} rows", DEGREE).to_string();
+        let start2 = start_timer!(|| proof_message);
         create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
             .expect("proof generation should not fail");
         let proof = transcript.finalize();
