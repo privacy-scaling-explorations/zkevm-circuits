@@ -10,7 +10,7 @@ const LOOKUP_DEGREE: usize = 3;
 #[derive(Clone, Debug)]
 pub struct ConstraintBuilder<F> {
     pub expressions: Vec<Expression<F>>,
-    pub(crate) lookups: Vec<(Expression<F>, Lookup<F>)>,
+    pub(crate) lookups: Vec<Lookup<F>>,
     pub stack_offset: i32,
     pub gc_offset: usize,
     pub call_id: Option<Expression<F>>,
@@ -28,6 +28,12 @@ impl<F: FieldExt> ConstraintBuilder<F> {
 
     pub(crate) fn default() -> Self {
         Self::init(DEFAULT_MAX_DEGREE, None)
+    }
+
+    //TODO: add reset method:
+    pub(crate) fn reset_expression(&mut self) {
+        self.expressions = vec![];
+        self.lookups = vec![];
     }
 
     fn init(max_degree: usize, call_id: Option<Expression<F>>) -> Self {
@@ -209,22 +215,21 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         for expression in expressions.iter() {
             self.validate_lookup_expression(expression);
         }
-        self.add_lookup(1.expr(), Lookup::FixedLookup(table, expressions));
+        self.add_lookup(Lookup::FixedLookup(table, expressions));
     }
 
     pub(crate) fn add_bytecode_lookup(
         &mut self,
-        enable: Expression<F>,
         expressions: [Expression<F>; 4],
     ) {
         for expression in expressions.iter() {
             self.validate_lookup_expression(expression);
         }
-        self.add_lookup(enable, Lookup::BytecodeLookup(expressions));
+        self.add_lookup(Lookup::BytecodeLookup(expressions));
     }
 
-    fn add_lookup(&mut self, enable: Expression<F>, lookup: Lookup<F>) {
-        self.lookups.push((enable, lookup));
+    fn add_lookup(&mut self, lookup: Lookup<F>) {
+        self.lookups.push(lookup);
     }
 
     // Constraint
