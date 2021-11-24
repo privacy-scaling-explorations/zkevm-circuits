@@ -54,6 +54,7 @@ pub struct MPTConfig<F> {
     key_compr_chip: KeyComprConfig,
     key_rlc_r: F,
     key_rlc: Column<Advice>,
+    key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     _marker: PhantomData<F>,
 }
@@ -119,7 +120,28 @@ impl<F: FieldExt> MPTConfig<F> {
         let branch_mult_s = meta.advice_column();
         let branch_acc_c = meta.advice_column();
         let branch_mult_c = meta.advice_column();
+
+        // NOTE: branch_mult_s and branch_mult_c wouldn't be needed if we would have
+        // big endian instead of little endian. However, then it would be much more
+        // difficult to handle the accumulator when we iterate over the row.
+        // For example, big endian would mean to compute acc = acc * mult_r + row[i],
+        // but we don't want acc to be multiplied by mult_r when row[i] = 0 (consider
+        // for example row 0 0 128 0 0 0 ... 0).
+
         let key_rlc = meta.advice_column();
+        let key_rlc_mult = meta.advice_column();
+
+        // NOTE: key_rlc_mult wouldn't be needed if we would have
+        // big endian instead of little endian. However, then it would be much more
+        // difficult to handle the accumulator when we iterate over the row of key nibbles.
+        // At some point (but we don't know this point at compile time), key nibbles end
+        // and from there on the values in the row need to be 0s.
+        // However, if we are computing rlc using little endian:
+        // rlc = rlc + row[i] * key_rlc_r,
+        // rlc will stay the same once r[i] = 0.
+        // If big endian would be used:
+        // rlc = rlc * key_rlc_r + row[i],
+        // the rlc would be multiplied by key_rlc_r when row[i] = 0.
 
         let one = Expression::Constant(F::one());
 
@@ -366,16 +388,44 @@ impl<F: FieldExt> MPTConfig<F> {
             ));
 
             // For the first branch node (node_index = 0), the key rlc needs to be:
-            // key_rlc = key_rlc::Rotation(-2) * key_rlc_r + key
-            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-2));
+            // key_rlc = key_rlc::Rotation(-17) + modified_node * key_rlc_mult
+            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-17));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
+            let key_rlc_mult_prev =
+                meta.query_advice(key_rlc_mult, Rotation(-17));
+            let key_rlc_mult_cur =
+                meta.query_advice(key_rlc_mult, Rotation::cur());
             constraints.push((
                 "first branch children key_rlc",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
-                    * (key_rlc_cur
-                        - key_rlc_prev * key_rlc_r
-                        - modified_node_cur),
+                    * (key_rlc_cur.clone()
+                        - key_rlc_prev
+                        - modified_node_cur.clone()
+                            * key_rlc_mult_prev.clone()),
+            ));
+            constraints.push((
+                "first branch children key_rlc_mult",
+                not_first_level.clone()
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_mult_cur.clone()
+                        - key_rlc_mult_prev * key_rlc_r),
+            ));
+
+            // First level key_rlc
+            constraints.push((
+                "first level key_rlc",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_cur - modified_node_cur),
+            ));
+            constraints.push((
+                "first level key_rlc_mult",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_mult_cur - one.clone() * key_rlc_r),
             ));
 
             // TODO:
@@ -413,8 +463,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
             // TODO: two_rlp_bytes and three_rlp_bytes are bools
             // TODO: two_rlp_bytes + three_rlp_bytes = 1
-
-            // TODO: remove mult_s and mult_c by having big endian
 
             let s_rlp1 = meta.query_advice(s_advices[0], Rotation::cur());
             let s_rlp2 = meta.query_advice(s_advices[1], Rotation::cur());
@@ -782,6 +830,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             c_advices,
             key_rlc,
+            key_rlc_mult,
             key_rlc_r,
         );
 
@@ -816,6 +865,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_compr_chip,
             key_rlc_r,
             key_rlc,
+            key_rlc_mult,
             keccak_table,
             _marker: PhantomData,
         }
@@ -901,6 +951,13 @@ impl<F: FieldExt> MPTConfig<F> {
         region.assign_advice(
             || format!("assign key rlc"),
             self.key_rlc,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign key rlc mult"),
+            self.key_rlc_mult,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1036,6 +1093,7 @@ impl<F: FieldExt> MPTConfig<F> {
         node_index: u8,
         key: u8,
         key_rlc: F,
+        key_rlc_mult: F,
         row: &Vec<u8>,
         s_words: &Vec<u64>,
         c_words: &Vec<u64>,
@@ -1077,6 +1135,12 @@ impl<F: FieldExt> MPTConfig<F> {
             self.key_rlc,
             offset,
             || Ok(key_rlc),
+        )?;
+        region.assign_advice(
+            || "key rlc mult",
+            self.key_rlc_mult,
+            offset,
+            || Ok(key_rlc_mult),
         )?;
 
         Ok(())
@@ -1142,8 +1206,16 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut branch_acc_c = F::zero();
                     let mut branch_mult_c = F::zero();
                     let mut key_rlc = F::zero();
+                    let mut key_rlc_mult = F::one();
                     let mut not_first_level = F::zero();
                     for (ind, row) in witness.iter().enumerate() {
+                        // TODO: what if extension node
+                        if (ind == 17 as usize && row[row.len() - 1] == 0)
+                            || (ind == 20 as usize && row[row.len() - 1] == 0)
+                        {
+                            // when the first branch ends
+                            not_first_level = F::one();
+                        }
                         region.assign_fixed(
                             || "not first level",
                             self.not_first_level,
@@ -1249,20 +1321,38 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
 
                             if node_index == 0 {
-                                key_rlc = key_rlc * self.key_rlc_r
-                                    + F::from_u64(modified_node as u64);
+                                key_rlc = key_rlc
+                                    + F::from_u64(modified_node as u64)
+                                        * key_rlc_mult;
+                                key_rlc_mult = key_rlc_mult * self.key_rlc_r;
+                                self.assign_branch_row(
+                                    &mut region,
+                                    node_index,
+                                    modified_node,
+                                    key_rlc,
+                                    key_rlc_mult,
+                                    &row[0..row.len() - 1].to_vec(),
+                                    &s_words,
+                                    &c_words,
+                                    offset,
+                                )?;
+                            } else {
+                                // assigning key_rlc and key_rlc_mult to avoid the possibility
+                                // of bugs when wrong rotation would retrieve correct values
+                                // and these values wouldn't be checked with constraints
+                                // (constraints check only branch node with node_index=0)
+                                self.assign_branch_row(
+                                    &mut region,
+                                    node_index,
+                                    modified_node,
+                                    F::zero(),
+                                    F::zero(),
+                                    &row[0..row.len() - 1].to_vec(),
+                                    &s_words,
+                                    &c_words,
+                                    offset,
+                                )?;
                             }
-
-                            self.assign_branch_row(
-                                &mut region,
-                                node_index,
-                                modified_node,
-                                key_rlc,
-                                &row[0..row.len() - 1].to_vec(),
-                                &s_words,
-                                &c_words,
-                                offset,
-                            )?;
 
                             // reassign (it was assigned to 0 in assign_row) branch_acc and branch_mult to proper values
 
@@ -1322,7 +1412,6 @@ impl<F: FieldExt> MPTConfig<F> {
                         } else if row[row.len() - 1] == 2
                             || row[row.len() - 1] == 3
                             || row[row.len() - 1] == 4
-                            || row[row.len() - 1] == 5
                         {
                             // leaf s or leaf c or leaf key s or leaf key c
                             self.q_enable.enable(&mut region, offset)?;
@@ -1351,7 +1440,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            // debugging:
+                            /*
+                            // debugging key RLC
                             let nibbles = [
                                 3, 8, 3, 9, 5, 12, 5, 13, 12, 14, 10, 13, 14,
                                 9, 6, 0, 3, 4, 7, 9, 11, 1, 7, 7, 11, 6, 8, 9,
@@ -1360,9 +1450,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 5, 15, 4, 5, 6, 1, 9, 9,
                             ];
                             let mut key_rlc = F::zero();
+                            let mut key_mult = F::one();
                             for n in nibbles.iter() {
-                                key_rlc = key_rlc * self.key_rlc_r
-                                    + F::from_u64(*n as u64);
+                                key_rlc =
+                                    key_rlc + F::from_u64(*n as u64) * key_mult;
+                                key_mult = key_mult * self.key_rlc_r
                             }
                             region.assign_advice(
                                 || "key_rlc",
@@ -1370,10 +1462,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                                 || Ok(key_rlc),
                             )?;
+                            */
 
                             offset += 1;
-
-                            not_first_level = F::one();
                         }
                     }
 
