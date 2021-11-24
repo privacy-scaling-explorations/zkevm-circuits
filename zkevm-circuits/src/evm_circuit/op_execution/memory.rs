@@ -1,10 +1,11 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget};
-use super::utils::memory_gadgets::{
-    self, address_high, address_low, MemoryExpansionGadget,
+use super::utils::{
+    self,
+    constraint_builder::ConstraintBuilder,
+    math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget},
+    memory_gadgets::{self, address_high, address_low, MemoryExpansionGadget},
+    select, StateTransition, StateTransitionExpressions,
 };
-use super::utils::{select, StateTransition, StateTransitionExpressions};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -447,7 +448,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

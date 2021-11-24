@@ -872,9 +872,131 @@ impl<F: FieldExt> EvmCircuit<F> {
                     offset += 1;
                 }
 
-                // TODO: BitwiseAnd
-                // TODO: BitwiseOr
-                // TODO: BitwiseXor
+                // BitwiseAnd
+                for a in 0..256 {
+                    for b in 0..256 {
+                        let c = (a as u64) & (b as u64);
+                        region.assign_fixed(
+                            || "BitwiseAnd: tag",
+                            self.fixed_table[0],
+                            offset,
+                            || Ok(F::from_u64(FixedLookup::BitwiseAnd as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseAnd: a",
+                            self.fixed_table[1],
+                            offset,
+                            || Ok(F::from_u64(a)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseAnd: b",
+                            self.fixed_table[2],
+                            offset,
+                            || Ok(F::from_u64(b)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseAnd: a&b",
+                            self.fixed_table[3],
+                            offset,
+                            || Ok(F::from_u64(c)),
+                        )?;
+                        for (idx, column) in
+                            self.fixed_table[4..].iter().enumerate()
+                        {
+                            region.assign_fixed(
+                                || format!("BitwiseAnd: padding {}", idx),
+                                *column,
+                                offset,
+                                || Ok(F::zero()),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+
+                // BitwiseOr
+                for a in 0..256 {
+                    for b in 0..256 {
+                        let c = (a as u64) | (b as u64);
+                        region.assign_fixed(
+                            || "BitwiseOr: tag",
+                            self.fixed_table[0],
+                            offset,
+                            || Ok(F::from_u64(FixedLookup::BitwiseOr as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseOr: a",
+                            self.fixed_table[1],
+                            offset,
+                            || Ok(F::from_u64(a)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseOr: b",
+                            self.fixed_table[2],
+                            offset,
+                            || Ok(F::from_u64(b)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseOr: a|b",
+                            self.fixed_table[3],
+                            offset,
+                            || Ok(F::from_u64(c)),
+                        )?;
+                        for (idx, column) in
+                            self.fixed_table[4..].iter().enumerate()
+                        {
+                            region.assign_fixed(
+                                || format!("BitwiseOr: padding {}", idx),
+                                *column,
+                                offset,
+                                || Ok(F::zero()),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+
+                // BitwiseXor
+                for a in 0..256 {
+                    for b in 0..256 {
+                        let c = (a as u64) ^ (b as u64);
+                        region.assign_fixed(
+                            || "BitwiseXor: tag",
+                            self.fixed_table[0],
+                            offset,
+                            || Ok(F::from_u64(FixedLookup::BitwiseXor as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseXor: a",
+                            self.fixed_table[1],
+                            offset,
+                            || Ok(F::from_u64(a)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseXor: b",
+                            self.fixed_table[2],
+                            offset,
+                            || Ok(F::from_u64(b)),
+                        )?;
+                        region.assign_fixed(
+                            || "BitwiseXor: a^b",
+                            self.fixed_table[3],
+                            offset,
+                            || Ok(F::from_u64(c)),
+                        )?;
+                        for (idx, column) in
+                            self.fixed_table[4..].iter().enumerate()
+                        {
+                            region.assign_fixed(
+                                || format!("BitwiseXor: padding {}", idx),
+                                *column,
+                                offset,
+                                || Ok(F::zero()),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
 
                 Ok(())
             },

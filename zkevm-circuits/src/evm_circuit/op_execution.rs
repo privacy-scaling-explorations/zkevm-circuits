@@ -28,6 +28,9 @@ mod swap;
 mod utils;
 
 use arithmetic::AddGadget;
+use arithmetic::AndGadget;
+use arithmetic::OrGadget;
+use arithmetic::XorGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -237,6 +240,9 @@ pub(crate) struct OpExecutionGadget<F> {
     swap_gadget: SwapGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     memory_gadget: MemoryGadget<F>,
+    and_gadget: AndGadget<F>,
+    or_gadget: OrGadget<F>,
+    xor_gadget: XorGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -301,6 +307,9 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(swap_gadget);
         construct_op_gadget!(jumpdest_gadget);
         construct_op_gadget!(memory_gadget);
+        construct_op_gadget!(and_gadget);
+        construct_op_gadget!(or_gadget);
+        construct_op_gadget!(xor_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -347,6 +356,9 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             swap_gadget,
             jumpdest_gadget,
             memory_gadget,
+            and_gadget,
+            or_gadget,
+            xor_gadget,
         }
     }
 
@@ -621,7 +633,6 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 (_, _, _, OpcodeId::SIGNEXTEND) => self
                     .signextend_gadget
                     .assign(region, offset, core_state, execution_step)?,
-
                 (_, _, _, OpcodeId::JUMPDEST) => self.jumpdest_gadget.assign(
                     region,
                     offset,
@@ -634,6 +645,24 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     _,
                     OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8,
                 ) => self.memory_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, _, OpcodeId::AND) => self.and_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, _, OpcodeId::OR) => self.or_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, _, OpcodeId::XOR) => self.xor_gadget.assign(
                     region,
                     offset,
                     core_state,

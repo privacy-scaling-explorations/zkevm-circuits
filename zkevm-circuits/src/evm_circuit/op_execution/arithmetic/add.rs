@@ -1,11 +1,12 @@
-use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils::{
+use super::super::super::{Case, Cell, Constraint, ExecutionStep, Word};
+use super::super::utils::{
     self,
-    common_cases::{OutOfGasCase, RangeStackUnderflowCase},
+    common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
-    StateTransition,
+    math_gadgets::PairSelectGadget,
+    select, StateTransition,
 };
-use super::{
+use super::super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
 use crate::impl_op_gadget;
@@ -17,44 +18,53 @@ use halo2::{arithmetic::FieldExt, circuit::Region};
 use std::convert::TryInto;
 
 static STATE_TRANSITION: StateTransition = StateTransition {
-    gc_delta: Some(4), // 2 stack reads + 2 stack writes
+    gc_delta: Some(3), // 2 stack pops + 1 stack push
     pc_delta: Some(1),
-    sp_delta: Some(0),
+    sp_delta: Some(1),
     gas_delta: Some(GasCost::FASTEST.as_u64()),
     next_memory_size: None,
 };
+const NUM_POPPED: usize = 2;
 
 impl_op_gadget!(
-    #range
-    [
-        SWAP1,  SWAP2,  SWAP3,  SWAP4,  SWAP5,  SWAP6,  SWAP7,  SWAP8,
-        SWAP9, SWAP10, SWAP11, SWAP12, SWAP13, SWAP14, SWAP15, SWAP16,
-    ]
-    SwapGadget {
-        SwapSuccessCase(),
-        RangeStackUnderflowCase(OpcodeId::SWAP1, 16, 1),
+    #set[ADD, SUB]
+    AddGadget {
+        AddSuccessCase(),
+        StackUnderflowCase(NUM_POPPED),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
     }
 );
 
 #[derive(Clone, Debug)]
-struct SwapSuccessCase<F> {
+struct AddSuccessCase<F> {
     case_selector: Cell<F>,
-    values: [Word<F>; 2],
+    a: Word<F>,
+    b: Word<F>,
+    c: Word<F>,
+    carry: [Cell<F>; 32],
+    swap: PairSelectGadget<F>,
 }
 
-impl<F: FieldExt> SwapSuccessCase<F> {
+// AddGadget verifies ADD and SUB at the same time by an extra swap flag,
+// when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
+// when it's SUB, we annotate stack as [a, c, ...] and [b, ...].
+// Then we verify if a + b is equal to c.
+impl<F: FieldExt> AddSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 2, // values
-        num_cell: 0,
+        num_word: 3,                                     // a + b + c
+        num_cell: 32 + PairSelectGadget::<F>::NUM_CELLS, // 32 carry + swap
         will_halt: false,
     };
 
     pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            values: array_init(|_| alloc.words.pop().unwrap()),
+            a: alloc.words.pop().unwrap(),
+            b: alloc.words.pop().unwrap(),
+            c: alloc.words.pop().unwrap(),
+            carry: array_init(|_| alloc.cells.pop().unwrap()),
+            swap: PairSelectGadget::construct(alloc),
         }
     }
 
@@ -66,19 +76,38 @@ impl<F: FieldExt> SwapSuccessCase<F> {
     ) -> Constraint<F> {
         let mut cb = ConstraintBuilder::default();
 
-        // The stack index we have to peek, deduced from the 'x' value of
-        // 'swapx' The offset starts at 1 for SWAP1
-        let offset =
-            state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
+        // Swap b and c if it's SUB
+        let (swap, _) = self.swap.constraints(
+            &mut cb,
+            state_curr.opcode.expr(),
+            OpcodeId::SUB.expr(),
+            OpcodeId::ADD.expr(),
+        );
 
-        // Peek the value at `offset`
-        cb.stack_lookup(offset.clone(), self.values[0].expr(), false.expr());
-        // Peek the value at the top of the stack
-        cb.stack_lookup(0.expr(), self.values[1].expr(), false.expr());
-        // Write the value previously at the top of the stack to `swap_offset`
-        cb.stack_lookup(offset, self.values[1].expr(), true.expr());
-        // Write the value previously at `offset` to the top of the stack
-        cb.stack_lookup(0.expr(), self.values[0].expr(), true.expr());
+        // Do the addition per byte with carry
+        for idx in 0..32 {
+            // carry needs to be boolean
+            cb.require_boolean(self.carry[idx].expr());
+
+            // carry_out * 256 + c == a + b + carry_in
+            cb.require_equal(
+                self.carry[idx].expr() * 256.expr() + self.c.cells[idx].expr(),
+                self.a.cells[idx].expr()
+                    + self.b.cells[idx].expr()
+                    + if idx == 0 {
+                        // first carry_in is always 0
+                        0.expr()
+                    } else {
+                        self.carry[idx - 1].expr()
+                    },
+            );
+        }
+
+        // ADD: Pop a and b from the stack, push c on the stack
+        // SUB: Pop a and c from the stack, push b on the stack
+        cb.stack_pop(self.a.expr());
+        cb.stack_pop(select::expr(swap.clone(), self.c.expr(), self.b.expr()));
+        cb.stack_push(select::expr(swap, self.b.expr(), self.c.expr()));
 
         // State transitions
         STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
@@ -94,14 +123,31 @@ impl<F: FieldExt> SwapSuccessCase<F> {
         state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
-        // Inputs
-        for idx in 0..2 {
-            self.values[idx].assign(
-                region,
-                offset,
-                Some(step.values[idx].to_word()),
-            )?;
-        }
+        // Inputs and output
+        self.a
+            .assign(region, offset, Some(step.values[0].to_word()))?;
+        self.b
+            .assign(region, offset, Some(step.values[1].to_word()))?;
+        self.c
+            .assign(region, offset, Some(step.values[2].to_word()))?;
+
+        // Swap
+        self.swap.assign(
+            region,
+            offset,
+            F::from_u64(step.opcode.as_u64()),
+            F::from_u64(OpcodeId::SUB.as_u64()),
+            F::from_u64(OpcodeId::ADD.as_u64()),
+        )?;
+
+        // Generate carry values
+        self.carry
+            .iter()
+            .zip(step.values[3].to_word().iter())
+            .map(|(alloc, carry)| {
+                alloc.assign(region, offset, Some(F::from_u64(*carry as u64)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         // State transitions
         STATE_TRANSITION.assign(state);
@@ -112,7 +158,7 @@ impl<F: FieldExt> SwapSuccessCase<F> {
 
 #[cfg(test)]
 mod test {
-    use super::super::super::{
+    use super::super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
@@ -129,9 +175,12 @@ mod test {
         }};
     }
 
+    // TODO: use evm word
     // TODO: add failure cases
+
     #[test]
-    fn swap2_gadget() {
+    fn add_gadget() {
+        // ADD
         try_test_circuit!(
             vec![
                 ExecutionStep {
@@ -143,29 +192,23 @@ mod test {
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
+                    opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x05_04u64),
-                        BigUint::from(0x01_01u64)
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH1,
+                    opcode: OpcodeId::ADD,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x06u64),
-                        BigUint::from(0x01u64)
-                    ],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::SWAP2,
-                    case: Case::Success,
-                    values: vec![
+                        BigUint::from(0x06_05_04u64),
                         BigUint::from(0x03_02_01u64),
-                        BigUint::from(0x06u64),
+                        BigUint::from(0x09_07_05u64),
+                        BigUint::from(0u64) // carry
                     ],
-                },
+                }
             ],
             vec![
                 Operation {
@@ -177,7 +220,7 @@ mod test {
                         Base::from_u64(1023),
                         Base::from_u64(1 + 2 + 3),
                         Base::zero(),
-                    ],
+                    ]
                 },
                 Operation {
                     gc: 2,
@@ -186,22 +229,21 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(4 + 5),
+                        Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
                 },
                 Operation {
                     gc: 3,
                     target: Target::Stack,
-                    is_write: true,
+                    is_write: false,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1021),
-                        Base::from_u64(6),
+                        Base::from_u64(1022),
+                        Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
                 },
-                // swap1 1021 <=> 1023
                 Operation {
                     gc: 4,
                     target: Target::Stack,
@@ -216,70 +258,46 @@ mod test {
                 Operation {
                     gc: 5,
                     target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1021),
-                        Base::from_u64(6),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 6,
-                    target: Target::Stack,
                     is_write: true,
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(6),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 7,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1021),
-                        Base::from_u64(1 + 2 + 3),
+                        Base::from_u64(5 + 7 + 9),
                         Base::zero(),
                     ]
                 }
             ],
             Ok(())
         );
-    }
-
-    #[test]
-    fn swap1_gadget() {
-        // SWAP1
+        // SUB
         try_test_circuit!(
             vec![
                 ExecutionStep {
                     opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x03_02_01u64),
+                        BigUint::from(0x09_07_05u64),
                         BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
+                    opcode: OpcodeId::PUSH3,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x05_04u64),
-                        BigUint::from(0x01_01u64)
+                        BigUint::from(0x06_05_04u64),
+                        BigUint::from(0x01_01_01u64)
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::SWAP1,
+                    opcode: OpcodeId::SUB,
                     case: Case::Success,
                     values: vec![
+                        BigUint::from(0x06_05_04u64),
                         BigUint::from(0x03_02_01u64),
-                        BigUint::from(0x05_04u64),
+                        BigUint::from(0x09_07_05u64),
+                        BigUint::from(0u64) // carry
                     ],
-                },
+                }
             ],
             vec![
                 Operation {
@@ -289,9 +307,9 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
+                        Base::from_u64(5 + 7 + 9),
                         Base::zero(),
-                    ],
+                    ]
                 },
                 Operation {
                     gc: 2,
@@ -300,19 +318,18 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(4 + 5),
+                        Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
                 },
-                // swap1 1023 <=> 1022
                 Operation {
                     gc: 3,
                     target: Target::Stack,
                     is_write: false,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(1 + 2 + 3),
+                        Base::from_u64(1022),
+                        Base::from_u64(4 + 5 + 6),
                         Base::zero(),
                     ]
                 },
@@ -322,8 +339,8 @@ mod test {
                     is_write: false,
                     values: [
                         Base::zero(),
-                        Base::from_u64(1022),
-                        Base::from_u64(4 + 5),
+                        Base::from_u64(1023),
+                        Base::from_u64(5 + 7 + 9),
                         Base::zero(),
                     ]
                 },
@@ -334,17 +351,6 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(4 + 5),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 6,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
                         Base::from_u64(1 + 2 + 3),
                         Base::zero(),
                     ]

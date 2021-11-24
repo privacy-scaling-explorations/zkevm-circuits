@@ -1,10 +1,14 @@
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
-use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::math_gadgets::{ComparisonGadget, IsEqualGadget};
-use super::utils::{from_bytes, select, StateTransition};
+use super::utils::{
+    self,
+    common_cases::{OutOfGasCase, StackUnderflowCase},
+    constraint_builder::ConstraintBuilder,
+    from_bytes,
+    math_gadgets::{ComparisonGadget, IsEqualGadget},
+    select, StateTransition,
+};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -201,7 +205,7 @@ mod test {
         ($execution_step:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_step, $operations);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
