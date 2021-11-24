@@ -4,6 +4,8 @@ services:
       build:
         context: .
         dockerfile: BENCH
+        args:
+          BENCH_NAME: evm_prover
       container_name: bench
       tty: true
       stdin_open:  true

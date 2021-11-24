@@ -1,5 +1,7 @@
 FROM alpine:3.15
 
+ARG BENCH_NAME
+
 # go path
 ENV PATH=$PATH:/usr/local/go/bin
 
@@ -18,7 +20,7 @@ COPY --from=golang:1.16-alpine /usr/local/go/ /usr/local/go/
 
 COPY . .
 
-RUN RUSTFLAGS='-C target-cpu=native' cargo bench --no-run
+RUN RUSTFLAGS='-C target-cpu=native' cargo bench --no-run --bench state_prover &&\
+    RUSTFLAGS='-C target-cpu=native' cargo bench --no-run --bench evm_prover
 
-CMD RUSTFLAGS='-C target-cpu=native' cargo bench --bench evm_prover &&\
-    RUSTFLAGS='-C target-cpu=native' cargo bench --bench state_prover
+CMD RUSTFLAGS='-C target-cpu=native' cargo bench --bench $BENCH_NAME
