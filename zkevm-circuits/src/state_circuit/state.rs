@@ -2054,4 +2054,206 @@ mod tests {
             Ok(())
         );
     }
+
+    // To run this benchmark, comment the `ignore` flag and run the following
+    // command:
+    // `RUSTFLAGS='-C target-cpu=native' cargo test --profile bench
+    // bench_state_circuit_prover -- --nocapture`
+    #[ignore]
+    #[test]
+    fn bench_state_circuit_prover() {
+        use crate::state_circuit::state::Config;
+        use ark_std::{end_timer, start_timer};
+        use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
+        use halo2::{
+            arithmetic::FieldExt,
+            circuit::{Layouter, SimpleFloorPlanner},
+            plonk::*,
+            poly::commitment::Setup,
+        };
+        use pairing::bn256::Bn256;
+        use rand::SeedableRng;
+        use rand_xorshift::XorShiftRng;
+
+        #[derive(Default)]
+        struct StateCircuit<
+            const GLOBAL_COUNTER_MAX: usize,
+            const MEMORY_ROWS_MAX: usize,
+            const MEMORY_ADDRESS_MAX: usize,
+            const STACK_ROWS_MAX: usize,
+            const STACK_ADDRESS_MAX: usize,
+            const STORAGE_ROWS_MAX: usize,
+        > {
+            memory_ops: Vec<Operation<MemoryOp>>,
+            stack_ops: Vec<Operation<StackOp>>,
+            storage_ops: Vec<Operation<StorageOp>>,
+        }
+
+        impl<
+                F: FieldExt,
+                const GLOBAL_COUNTER_MAX: usize,
+                const MEMORY_ROWS_MAX: usize,
+                const MEMORY_ADDRESS_MAX: usize,
+                const STACK_ROWS_MAX: usize,
+                const STACK_ADDRESS_MAX: usize,
+                const STORAGE_ROWS_MAX: usize,
+            > Circuit<F>
+            for StateCircuit<
+                GLOBAL_COUNTER_MAX,
+                MEMORY_ROWS_MAX,
+                MEMORY_ADDRESS_MAX,
+                STACK_ROWS_MAX,
+                STACK_ADDRESS_MAX,
+                STORAGE_ROWS_MAX,
+            >
+        {
+            type Config = Config<
+                F,
+                GLOBAL_COUNTER_MAX,
+                MEMORY_ROWS_MAX,
+                MEMORY_ADDRESS_MAX,
+                STACK_ROWS_MAX,
+                STACK_ADDRESS_MAX,
+                STORAGE_ROWS_MAX,
+            >;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                Config::configure(meta)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<F>,
+            ) -> Result<(), Error> {
+                config.load(&mut layouter)?;
+                config.assign(
+                    layouter,
+                    self.memory_ops.clone(),
+                    self.stack_ops.clone(),
+                    self.storage_ops.clone(),
+                )?;
+
+                Ok(())
+            }
+        }
+
+        const DEGREE: u32 = 22;
+        const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
+        const MEMORY_ADDRESS_MAX: usize = 2000;
+        const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
+        const STACK_ADDRESS_MAX: usize = 1023;
+        const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
+        const GLOBAL_COUNTER_MAX: usize =
+            MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+
+        let mut memory_ops = vec![];
+        for i in 0..MEMORY_ROWS_MAX - 1 {
+            let memory_op = Operation::new(
+                GlobalCounter::from(1 + i),
+                MemoryOp::new(RW::WRITE, MemoryAddress::from(0usize), 32),
+            );
+            memory_ops.push(memory_op);
+        }
+
+        let mut stack_ops = vec![];
+        for i in 0..STACK_ROWS_MAX - 1 {
+            let stack_op = Operation::new(
+                GlobalCounter::from(16 + i),
+                StackOp::new(
+                    RW::WRITE,
+                    StackAddress::from(1usize),
+                    Word::from(32usize),
+                ),
+            );
+            stack_ops.push(stack_op);
+        }
+
+        let mut storage_ops = vec![];
+        for i in 0..STORAGE_ROWS_MAX - 1 {
+            let storage_op = Operation::new(
+                GlobalCounter::from(17 + i),
+                StorageOp::new(
+                    RW::WRITE,
+                    address!("0x0000000000000000000000000000000000000001"),
+                    Word::from(0x40usize),
+                    Word::from(0usize),
+                    Word::from(0usize),
+                ),
+            );
+            storage_ops.push(storage_op);
+        }
+
+        let k = DEGREE;
+        let public_inputs_size = 0;
+        let empty_circuit = StateCircuit::<
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >::default();
+
+        let circuit = StateCircuit::<
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        > {
+            memory_ops,
+            stack_ops,
+            storage_ops,
+        };
+
+        // Initialize the polynomial commitment parameters
+        let rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
+            0x32, 0x54, 0x06, 0xbc, 0xe5,
+        ]);
+
+        // Bench setup generation
+        let setup_message =
+            format!("Setup generation with degree = {}", DEGREE).to_string();
+        let start1 = start_timer!(|| setup_message);
+        let params = Setup::<Bn256>::new(k.into(), rng);
+        let verifier_params =
+            Setup::<Bn256>::verifier_params(&params, public_inputs_size)
+                .unwrap();
+        end_timer!(start1);
+
+        // Initialize the proving key
+        let vk = keygen_vk(&params, &empty_circuit)
+            .expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit)
+            .expect("keygen_pk should not fail");
+        // Create a proof
+        let mut transcript =
+            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+
+        // Bench proof generation time
+        let proof_message =
+            format!("State Proof generation with {} rows", DEGREE).to_string();
+        let start2 = start_timer!(|| proof_message);
+        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
+            .expect("proof generation should not fail");
+        let proof = transcript.finalize();
+        end_timer!(start2);
+
+        // Bench verification time
+        let start3 = start_timer!(|| "State Proof verification");
+        let mut transcript =
+            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+
+        verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
+            .expect("failed to verify bench circuit");
+        end_timer!(start3);
+    }
 }
