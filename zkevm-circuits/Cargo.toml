@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 ff = "0.11"
-halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "bc088ec9e842de7d7c5d88c015cdf2ecd6ec62a0" }
-pairing = { git = 'https://github.com/NoCtrlZ/pairing', package = "pairing_bn256" }
+halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "d93c031c127a1d06b228653fafafdb8bb54bb4d2" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"

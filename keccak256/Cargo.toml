@@ -7,9 +7,9 @@ edition = "2018"
 dev-graph = ["halo2/dev-graph", "plotters"]
 
 [dependencies]
-halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "bc088ec9e842de7d7c5d88c015cdf2ecd6ec62a0" }
+halo2 = { git = "https://github.com/NoCtrlZ/halo2", rev = "d93c031c127a1d06b228653fafafdb8bb54bb4d2" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"
-pairing = { git = 'https://github.com/NoCtrlZ/pairing', package = "pairing_bn256" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 plotters = { version = "0.3.0", optional = true }
