@@ -55,7 +55,7 @@ pub struct MPTConfig<F> {
     key_rlc_r: F,
     key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
-    keccak_table: [Column<Advice>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+    keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     _marker: PhantomData<F>,
 }
 
@@ -65,7 +65,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.fixed_column();
 
-        let branch_acc_r = F::rand(); // TODO: generate from commitments
+        let branch_acc_r = F::one(); // F::rand(); // TODO: generate from commitments
         let key_rlc_r = F::rand(); // TODO: generate from commitments
 
         let is_branch_init = meta.advice_column();
@@ -94,10 +94,10 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let keccak_table: [Column<Advice>;
+        let keccak_table: [Column<Fixed>;
             KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0..KECCAK_INPUT_WIDTH
             + KECCAK_OUTPUT_WIDTH)
-            .map(|_| meta.advice_column())
+            .map(|_| meta.fixed_column())
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
@@ -661,67 +661,85 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        // TODO: check transition from compact to keccak leaf (compact leaf as keccak input - 17 cells)
+        // TODO: first level branch hash for S and C
 
-        /*
-        // Lookup into RLP circuit for S branch: (accumulated_rlp, hash1, hash2, hash3, hash4)
+        // Check if (accumulated_s_rlp, hash1, hash2, hash3, hash4) is in keccak table.
+        // hash1, hash2, hash3, hash4 are stored in the previous branch.
         meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
-            // Rotation(-17) can be avoided by inverting the accumulator - having the final
-            // value in the branch init (thus only Rotation(-1) would be needed).
             let branch_acc_s = meta.query_advice(branch_acc_s, Rotation::cur());
 
+            // TODO: branch_acc_s currently doesn't have branch ValueNode info (which 128 if nil)
+            let c128 = Expression::Constant(F::from_u64(128));
+            let mult_s = meta.query_advice(branch_mult_s, Rotation::cur());
+            let branch_acc_s1 = branch_acc_s + c128 * mult_s;
+
             let mut constraints = vec![];
             constraints.push((
-                q_enable.clone() * is_last_branch_child.clone(),
-                branch_acc_s,
+                not_first_level.clone()
+                    * is_last_branch_child.clone()
+                    * branch_acc_s1, // TODO: replace with branch_acc_s once ValueNode is added
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-
-            for column in s_keccak.iter() {
+            for (ind, column) in s_keccak.iter().enumerate() {
                 let s_keccak = meta.query_advice(*column, Rotation(-17));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
-                    q_enable.clone() * is_last_branch_child.clone(),
-                    s_keccak,
+                    not_first_level.clone()
+                        * is_last_branch_child.clone()
+                        * s_keccak,
+                    keccak_table_i,
                 ));
             }
 
             constraints
         });
 
-        // Lookup into RLP circuit for C branch: (accumulated_rlp, hash1, hash2, hash3, hash4)
+        // Check if (accumulated_c_rlp, hash1, hash2, hash3, hash4) is in keccak table.
+        // hash1, hash2, hash3, hash4 are stored in the previous branch.
         meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
-            // Rotation(-17) can be avoided by inverting the accumulator - having the final
-            // value in the branch init (thus only Rotation(-1) would be needed).
             let branch_acc_c = meta.query_advice(branch_acc_c, Rotation::cur());
+
+            // TODO: branch_acc_c currently doesn't have branch ValueNode info (which 128 if nil)
+            let c128 = Expression::Constant(F::from_u64(128));
+            let mult_c = meta.query_advice(branch_mult_c, Rotation::cur());
+            let branch_acc_c1 = branch_acc_c + c128 * mult_c;
 
             let mut constraints = vec![];
             constraints.push((
-                q_enable.clone() * is_last_branch_child.clone(),
-                branch_acc_c,
+                not_first_level.clone()
+                    * is_last_branch_child.clone()
+                    * branch_acc_c1, // TODO: replace with branch_acc_c once ValueNode is added
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-
-            for column in c_keccak.iter() {
+            for (ind, column) in c_keccak.iter().enumerate() {
                 let c_keccak = meta.query_advice(*column, Rotation(-17));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
-                    q_enable.clone() * is_last_branch_child.clone(),
-                    c_keccak,
+                    not_first_level.clone()
+                        * is_last_branch_child.clone()
+                        * c_keccak,
+                    keccak_table_i,
                 ));
             }
 
             constraints
         });
-        */
 
         let branch_acc_s_chip = BranchAccChip::<F>::configure(
             meta,
@@ -761,16 +779,15 @@ impl<F: FieldExt> MPTConfig<F> {
         // hash of leaf s is in the parent branch
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
-            let is_leaf_s =
-                meta.query_advice(is_leaf_s, Rotation::cur());
+            let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
 
             // lookup using (RLC for leaf_s, s_keccak::prev(-2)[0], ..., s_keccak::prev(-2)[3])
 
             let mut constraints = vec![];
             constraints.push((
-                    q_enable.clone() * is_leaf_s.clone() * rlc,
-                    keccak_table_i,
-                ))
+                q_enable.clone() * is_leaf_s.clone() * rlc,
+                keccak_table_i,
+            ));
             for i in 0..KECCAK_OUTPUT_WIDTH {
                 let k = meta.query_advice(s_keccak[i], Rotation(-2));
                 let keccak_table_i =
@@ -1208,7 +1225,12 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc = F::zero();
                     let mut key_rlc_mult = F::one();
                     let mut not_first_level = F::zero();
-                    for (ind, row) in witness.iter().enumerate() {
+                    // filter out rows that are just to be hashed
+                    for (ind, row) in witness
+                        .iter()
+                        .filter(|r| r[r.len() - 1] != 5)
+                        .enumerate()
+                    {
                         // TODO: what if extension node
                         if (ind == 17 as usize && row[row.len() - 1] == 0)
                             || (ind == 20 as usize && row[row.len() - 1] == 0)
@@ -1386,6 +1408,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     }
                                 };
 
+                            // TODO: add branch ValueNode info
+
                             compute_acc_and_mult(
                                 &mut branch_acc_s,
                                 &mut branch_mult_s,
@@ -1484,23 +1508,6 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
-    fn pad(&self, input: &[u8]) -> Vec<u8> {
-        let rate = 136;
-        let padding_total = rate - (input.len() % rate);
-        let mut padding: Vec<u8>;
-
-        if padding_total == 1 {
-            padding = vec![0x81];
-        } else {
-            padding = vec![0x01];
-            padding.resize(padding_total - 1, 0x00);
-            padding.push(0x80);
-        }
-
-        let message = [input, &padding].concat();
-        message
-    }
-
     // see bits_to_u64_words_le
     fn into_words(&self, message: &[u8]) -> Vec<u64> {
         let words_total = message.len() / 8;
@@ -1533,18 +1540,28 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 for t in to_be_hashed.iter() {
                     let hash = self.compute_keccak(t);
-                    let padded = self.pad(t);
-                    let keccak_input = self.into_words(&padded);
+
+                    let mut rlc = F::zero();
+                    let mut mult = F::one();
+                    for i in t.iter() {
+                        rlc = rlc + F::from_u64(*i as u64) * mult;
+                        mult = mult * self.branch_acc_r;
+                    }
+                    region.assign_fixed(
+                        || "Keccak table",
+                        self.keccak_table[0],
+                        offset,
+                        || Ok(rlc),
+                    )?;
+
                     let keccak_output = self.into_words(&hash);
 
                     for (ind, column) in self.keccak_table.iter().enumerate() {
-                        let val: u64;
-                        if ind < KECCAK_INPUT_WIDTH {
-                            val = keccak_input[ind];
-                        } else {
-                            val = keccak_output[ind - KECCAK_INPUT_WIDTH];
+                        if ind == 0 {
+                            continue;
                         }
-                        region.assign_advice(
+                        let val = keccak_output[ind - KECCAK_INPUT_WIDTH];
+                        region.assign_fixed(
                             || "Keccak table",
                             *column,
                             offset,
@@ -1606,8 +1623,11 @@ mod tests {
                 let mut to_be_hashed = vec![];
 
                 for row in self.witness.iter() {
-                    if row[row.len() - 1] == 2 || row[row.len() - 1] == 3 {
-                        // compact leaf or branch RLP
+                    if row[row.len() - 1] == 2
+                        || row[row.len() - 1] == 3
+                        || row[row.len() - 1] == 5
+                    {
+                        // leaf S or leaf C or branch RLP
                         to_be_hashed.push(row[0..row.len() - 1].to_vec());
                     }
                 }
@@ -1647,7 +1667,7 @@ mod tests {
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*
-                const K: u32 = 6;
+                const K: u32 = 4;
                 let params: Params<EqAffine> = Params::new(K);
                 let empty_circuit = MyCircuit::<pallas::Base> {
                     _marker: PhantomData,
