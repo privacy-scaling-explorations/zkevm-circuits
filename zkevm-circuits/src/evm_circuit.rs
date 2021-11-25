@@ -157,7 +157,6 @@ impl<F: FieldExt> Expr<F> for FixedLookup {
     }
 }
 
-
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
