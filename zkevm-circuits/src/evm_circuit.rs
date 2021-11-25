@@ -164,8 +164,8 @@ impl<F: FieldExt> Expr<F> for FixedLookup {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
-    Fixedlookup_any(FixedLookup, [Expression<F>; 3]),
-    BusMappinglookup_any(BusMappingLookup<F>),
+    FixedlookupAny(FixedLookup, [Expression<F>; 3]),
+    BusMappinglookupAny(BusMappingLookup<F>),
 }
 
 #[derive(Clone, Debug)]
@@ -525,7 +525,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
             for lookup in lookups {
                 match lookup {
-                    Lookup::Fixedlookup_any(tag, exprs) => {
+                    Lookup::FixedlookupAny(tag, exprs) => {
                         let exprs = iter::once(tag.expr()).chain(exprs.clone());
 
                         if fixed_lookups.len() == fixed_lookup_count {
@@ -546,7 +546,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         }
                         fixed_lookup_count += 1;
                     }
-                    Lookup::BusMappinglookup_any(
+                    Lookup::BusMappinglookupAny(
                         rw_lookup @ (BusMappingLookup::Stack { .. }
                         | BusMappingLookup::Memory { .. }
                         | BusMappingLookup::AccountStorage {

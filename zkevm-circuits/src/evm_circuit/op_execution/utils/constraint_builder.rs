@@ -126,7 +126,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.validate_lookup_expression(&value);
         self.validate_lookup_expression(&is_write);
         self.validate_lookup_expression(&gc_offset);
-        self.add_lookup_any(Lookup::BusMappinglookup_any(
+        self.add_lookup_any(Lookup::BusMappinglookupAny(
             BusMappingLookup::Stack {
                 index_offset,
                 value,
@@ -160,7 +160,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.validate_lookup_expression(&byte);
         self.validate_lookup_expression(&is_write);
         self.validate_lookup_expression(&gc_offset);
-        self.add_lookup_any(Lookup::BusMappinglookup_any(
+        self.add_lookup_any(Lookup::BusMappinglookupAny(
             BusMappingLookup::Memory {
                 call_id: self.call_id.clone().unwrap(),
                 index: address,
@@ -214,7 +214,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         for expression in expressions.iter() {
             self.validate_lookup_expression(expression);
         }
-        self.add_lookup_any(Lookup::Fixedlookup_any(table, expressions));
+        self.add_lookup_any(Lookup::FixedlookupAny(table, expressions));
     }
 
     fn add_lookup_any(&mut self, lookup: Lookup<F>) {
