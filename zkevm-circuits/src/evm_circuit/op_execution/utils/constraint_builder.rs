@@ -73,7 +73,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             512 => FixedLookup::Range512,
             _ => unimplemented!(),
         };
-        self.add_fixed_lookup(table, [value, 0.expr(), 0.expr()]);
+        self.add_fixed_lookup_any(table, [value, 0.expr(), 0.expr()]);
     }
 
     pub(crate) fn require_in_set(
@@ -91,16 +91,16 @@ impl<F: FieldExt> ConstraintBuilder<F> {
     // Stack
 
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
-        self.stack_lookup(self.stack_offset.expr(), value, false.expr());
+        self.stack_lookup_any(self.stack_offset.expr(), value, false.expr());
         self.stack_offset += 1;
     }
 
     pub(crate) fn stack_push(&mut self, value: Expression<F>) {
         self.stack_offset -= 1;
-        self.stack_lookup(self.stack_offset.expr(), value, true.expr());
+        self.stack_lookup_any(self.stack_offset.expr(), value, true.expr());
     }
 
-    pub(crate) fn stack_lookup(
+    pub(crate) fn stack_lookup_any(
         &mut self,
         index_offset: Expression<F>,
         value: Expression<F>,
@@ -126,17 +126,19 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.validate_lookup_expression(&value);
         self.validate_lookup_expression(&is_write);
         self.validate_lookup_expression(&gc_offset);
-        self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
-            index_offset,
-            value,
-            is_write,
-            gc_offset,
-        }));
+        self.add_lookup_any(Lookup::BusMappinglookup_any(
+            BusMappingLookup::Stack {
+                index_offset,
+                value,
+                is_write,
+                gc_offset,
+            },
+        ));
     }
 
     // Memory
 
-    pub(crate) fn memory_lookup(
+    pub(crate) fn memory_lookup_any(
         &mut self,
         address: Expression<F>,
         byte: Expression<F>,
@@ -158,13 +160,15 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.validate_lookup_expression(&byte);
         self.validate_lookup_expression(&is_write);
         self.validate_lookup_expression(&gc_offset);
-        self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Memory {
-            call_id: self.call_id.clone().unwrap(),
-            index: address,
-            value: byte,
-            is_write,
-            gc_offset,
-        }));
+        self.add_lookup_any(Lookup::BusMappinglookup_any(
+            BusMappingLookup::Memory {
+                call_id: self.call_id.clone().unwrap(),
+                index: address,
+                value: byte,
+                is_write,
+                gc_offset,
+            },
+        ));
     }
 
     // Validation
@@ -202,7 +206,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn add_fixed_lookup(
+    pub(crate) fn add_fixed_lookup_any(
         &mut self,
         table: FixedLookup,
         expressions: [Expression<F>; 3],
@@ -210,10 +214,10 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         for expression in expressions.iter() {
             self.validate_lookup_expression(expression);
         }
-        self.add_lookup(Lookup::FixedLookup(table, expressions));
+        self.add_lookup_any(Lookup::Fixedlookup_any(table, expressions));
     }
 
-    fn add_lookup(&mut self, lookup: Lookup<F>) {
+    fn add_lookup_any(&mut self, lookup: Lookup<F>) {
         self.lookups.push(lookup);
     }
 

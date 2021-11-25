@@ -1,6 +1,6 @@
 use halo2::{circuit::Cell, plonk::Error};
 use num_bigint::BigUint;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 
 #[derive(Debug, Clone)]
 pub struct Lane<F> {

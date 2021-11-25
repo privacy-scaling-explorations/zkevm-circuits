@@ -6,7 +6,7 @@ authors = ["CPerezz <c.perezbaro@gmail.com>"]
 
 [dependencies]
 ff = "0.11"
-pasta_curves = "0.1"
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 itertools = "0.10"
 serde = {version = "1.0.130", features = ["derive"] }
 lazy_static = "1.4"

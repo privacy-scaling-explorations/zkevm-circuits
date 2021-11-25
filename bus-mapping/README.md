@@ -49,7 +49,7 @@ all of the Memory, Stack and Storage ops performed by the provided trace.
 
 ```rust
 use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 
 let input_trace = r#"
 [

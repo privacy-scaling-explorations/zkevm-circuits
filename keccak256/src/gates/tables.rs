@@ -39,7 +39,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.base13,
                         i,
                         || {
-                            Ok(F::from_u64(
+                            Ok(F::from(
                                 b13_chunks
                                     .iter()
                                     .fold(0, |acc, x| acc * B13 + *x),
@@ -52,11 +52,9 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.base9,
                         i,
                         || {
-                            Ok(F::from_u64(
-                                b13_chunks.iter().fold(0, |acc, x| {
-                                    acc * B9 + convert_b13_coef(*x)
-                                }),
-                            ))
+                            Ok(F::from(b13_chunks.iter().fold(0, |acc, x| {
+                                acc * B9 + convert_b13_coef(*x)
+                            })))
                         },
                     )?;
                     region.assign_fixed(
@@ -64,7 +62,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.block_count,
                         i,
                         || {
-                            Ok(F::from_u64(
+                            Ok(F::from(
                                 get_block_count(
                                     b13_chunks.clone().try_into().unwrap(),
                                 )
@@ -93,7 +91,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
             _marker: PhantomData,
         };
 
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
             let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
@@ -138,16 +136,15 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
                 for i in 0..B13 {
                     for j in 0..(B13 - i) {
                         let (low, high) = (i, j);
-                        let last_chunk = F::from_u64(low)
-                            + F::from_u64(high)
-                                * F::from_u64(B13).pow(&[
+                        let last_chunk = F::from(low)
+                            + F::from(high)
+                                * F::from(B13).pow(&[
                                     LANE_SIZE as u64,
                                     0,
                                     0,
                                     0,
                                 ]);
-                        let output_coef =
-                            F::from_u64(convert_b13_coef(low + high));
+                        let output_coef = F::from(convert_b13_coef(low + high));
                         region.assign_fixed(
                             || "last chunk",
                             self.last_chunk,
@@ -181,7 +178,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
             _marker: PhantomData,
         };
         // Lookup for special chunk conversion
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let last_chunk_advice =
                 meta.query_advice(last_chunk_advice, Rotation::cur());
