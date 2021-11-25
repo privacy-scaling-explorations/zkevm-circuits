@@ -3,9 +3,9 @@ use super::super::{
 };
 use super::utils::{
     self,
+    common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
     math_gadgets::IsZeroGadget,
-    common_cases::{OutOfGasCase, StackUnderflowCase},
     sum, StateTransition, StateTransitionExpressions,
 };
 
@@ -86,7 +86,7 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
                 * (st.clone().pc_delta.unwrap() - 1.expr()),
         );
 
-         // is_cond_met == 1 --> cond != 0, pc = `dest`
+        // is_cond_met == 1 --> cond != 0, pc = `dest`
         cb.require_zero(
             is_cond_met.clone()
                 * (st.clone().pc_delta.unwrap()
@@ -100,7 +100,7 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
 
         // Generate the constraint
         let mut constrains = Vec::<Constraint<F>>::new();
-        // 1. `cond` is zero constraint (is_cond_met = 0 ) 
+        // 1. `cond` is zero constraint (is_cond_met = 0 )
         constrains.push(cb.constraint(
             self.case_selector.expr() * (1.expr() - is_cond_met.clone()),
             name,
@@ -292,12 +292,12 @@ mod test {
                         BigUint::from(0x00u64), // cond
                     ],
                 },
-                // ExecutionStep {
-                //     // JUMPDEST
-                //     opcode: OpcodeId::JUMPDEST,
-                //     case: Case::Success,
-                //     values: vec![],
-                // }
+                /* ExecutionStep {
+                 *     // JUMPDEST
+                 *     opcode: OpcodeId::JUMPDEST,
+                 *     case: Case::Success,
+                 *     values: vec![],
+                 * } */
             ],
             vec![
                 Operation {

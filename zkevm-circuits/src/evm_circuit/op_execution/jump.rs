@@ -3,8 +3,8 @@ use super::super::{
 };
 use super::utils::{
     self,
-    constraint_builder::ConstraintBuilder,
     common_cases::{OutOfGasCase, StackUnderflowCase},
+    constraint_builder::ConstraintBuilder,
     StateTransition, StateTransitionExpressions,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};

@@ -497,9 +497,9 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 .into_iter()
                 .map(|mut constraint| {
                     // assert!(
-                    //     matches!(constraint.selector, Expression::Advice{ .. }),
-                    //     "constraint selector of case should be a queried advice"
-                    // );
+                    //     matches!(constraint.selector, Expression::Advice{ ..
+                    // }),     "constraint selector of case
+                    // should be a queried advice" );
 
                     constraint.selector =
                         qs_op.expr() * constraint.selector.clone();
@@ -678,14 +678,14 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-            
-            (_, _, _, OpcodeId::JUMP) => self.jump_gadget.assign(
+
+                (_, _, _, OpcodeId::JUMP) => self.jump_gadget.assign(
                     region,
                     offset,
                     core_state,
                     execution_step,
                 )?,
-            (_, _, _, OpcodeId::JUMPI) => self.jumpi_gadget.assign(
+                (_, _, _, OpcodeId::JUMPI) => self.jumpi_gadget.assign(
                     region,
                     offset,
                     core_state,
