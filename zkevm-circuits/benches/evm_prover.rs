@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use halo2::transcript::{self, Blake2bRead, Blake2bWrite, Challenge255};
+use criterion::{criterion_group, criterion_main, Criterion};
+use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},

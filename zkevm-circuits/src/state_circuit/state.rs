@@ -1157,7 +1157,7 @@ mod tests {
     use bus_mapping::circuit_input_builder::CircuitInputBuilder;
     use bus_mapping::eth_types::{GethExecStep, Word};
     use bus_mapping::evm::{GlobalCounter, MemoryAddress, StackAddress};
-    use bus_mapping::mock::{self, BlockData};
+    use bus_mapping::mock::{self};
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
     use halo2::{

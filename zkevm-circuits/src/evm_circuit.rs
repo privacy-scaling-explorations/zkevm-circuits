@@ -990,8 +990,10 @@ mod test {
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use pairing::bn256::Fr as Fp;
 
     #[derive(Clone)]
     pub(crate) struct TestCircuitConfig<F> {
@@ -1044,5 +1046,13 @@ mod test {
                 .evm_circuit
                 .assign(&mut layouter, &self.execution_steps)
         }
+    }
+
+    #[test]
+    fn evm_circuit() {
+        let k = 10;
+        let circuit = TestCircuit::default();
+        let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
     }
 }
