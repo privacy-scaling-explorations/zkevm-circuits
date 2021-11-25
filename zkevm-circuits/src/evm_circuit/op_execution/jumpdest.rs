@@ -1,7 +1,8 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep};
-use super::utils::common_cases::OutOfGasCase;
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::StateTransition;
+use super::utils::{
+    self, common_cases::OutOfGasCase, constraint_builder::ConstraintBuilder,
+    StateTransition,
+};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -88,8 +89,9 @@ mod test {
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
-            let prover = MockProver::<Fp>::run(11, &circuit, vec![]).unwrap();
+            let circuit =
+                TestCircuit::<Fp>::new($execution_steps, $operations);
+            let prover = MockProver::<Fp>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

@@ -1,10 +1,11 @@
 use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget};
-use super::utils::memory_gadgets::{
-    self, address_high, address_low, MemoryExpansionGadget,
+use super::utils::{
+    self,
+    constraint_builder::ConstraintBuilder,
+    math_gadgets::{IsEqualGadget, IsZeroGadget, LtGadget},
+    memory_gadgets::{self, address_high, address_low, MemoryExpansionGadget},
+    select, StateTransition, StateTransitionExpressions,
 };
-use super::utils::{select, StateTransition, StateTransitionExpressions};
 use super::{
     CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
 };
@@ -357,7 +358,9 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(state.gas_counter + GAS.as_u64() + (memory_cost as u64)),
+            F::from(
+                state.gas_counter + GAS.as_u64() + (memory_cost as u64),
+            ),
             F::from_bytes(&step.values[1].to_word()).unwrap(),
         )?;
 
@@ -435,17 +438,17 @@ mod test {
     use super::super::super::{
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
-    use super::*;
     use crate::{gadget::evm_word::encode, util::ToWord};
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::dev::MockProver;
+    use halo2::{arithmetic::FieldExt, dev::MockProver};
     use num::BigUint;
     use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
-            let prover = MockProver::<Fp>::run(11, &circuit, vec![]).unwrap();
+            let circuit =
+                TestCircuit::<Fp>::new($execution_steps, $operations);
+            let prover = MockProver::<Fp>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -592,7 +595,9 @@ mod test {
                             .to_word(),
                     )
                     .unwrap(),
-                    Fp::from(value.to_bytes_le()[31 - idx as usize] as u64),
+                    Fp::from(
+                        value.to_bytes_le()[31 - idx as usize] as u64,
+                    ),
                     Fp::zero(),
                 ],
             });

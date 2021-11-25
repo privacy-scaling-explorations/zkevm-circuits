@@ -2,7 +2,6 @@ use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
 use crate::{
-    eth_types::Address,
     operation::{StackOp, StorageOp, RW},
     Error,
 };
@@ -31,7 +30,7 @@ impl Opcode for Sload {
         let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
         state.push_op(StorageOp::new(
             RW::READ,
-            Address::from([0u8; 20]), // TODO: Fill with the correct value
+            state.tx_ctx.call_ctx().address,
             stack_value_read,
             storage_value_read,
             storage_value_read,
@@ -56,7 +55,7 @@ mod sload_tests {
         circuit_input_builder::{
             CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
         },
-        eth_types::Word,
+        eth_types::{Address, Word},
         evm::StackAddress,
         mock,
     };
@@ -110,7 +109,7 @@ mod sload_tests {
         // Add StorageOp associated to the storage read.
         state_ref.push_op(StorageOp::new(
             RW::READ,
-            Address::from([0u8; 20]), // TODO: Fill with the correct value
+            Address::from([0u8; 20]),
             Word::from(0x0u32),
             Word::from(0x6fu32),
             Word::from(0x6fu32),
