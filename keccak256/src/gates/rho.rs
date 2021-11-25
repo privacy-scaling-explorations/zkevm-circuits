@@ -248,18 +248,19 @@ mod tests {
             in_state,
             out_state,
         };
-        // #[cfg(feature = "dev-graph")]
-        // {
-        //     use plotters::prelude::*;
-        //     let root =
-        //         BitMapBackend::new("rho-test-circuit.png", (4096, 65536))
-        //             .into_drawing_area();
-        //     root.fill(&WHITE).unwrap();
-        //     let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
-        //     halo2::dev::CircuitLayout::default()
-        //         .render(&circuit, &root)
-        //         .unwrap();
-        // }
+        #[cfg(feature = "dev-graph")]
+        {
+            use plotters::prelude::*;
+            let k = 15;
+            let root =
+                BitMapBackend::new("rho-test-circuit.png", (4096, 65536))
+                    .into_drawing_area();
+            root.fill(&WHITE).unwrap();
+            let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
+            halo2::dev::CircuitLayout::default()
+                .render(k, &circuit, &root)
+                .unwrap();
+        }
         // Test without public inputs
         let prover = MockProver::<Fp>::run(15, &circuit, vec![]).unwrap();
 
