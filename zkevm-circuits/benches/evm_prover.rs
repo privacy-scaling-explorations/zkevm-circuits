@@ -53,7 +53,7 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
 }
 
 fn evm_circuit_benchmark(c: &mut Criterion) {
-    let k = 11;
+    let k = 18;
     let public_inputs_size = 0;
     let circuit = TestCircuit::default();
 
@@ -83,8 +83,13 @@ fn evm_circuit_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut transcript =
                 Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-            verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
-                .expect("failed to verify bench circuit")
+            verify_proof(
+                &verifier_params,
+                pk.get_vk(),
+                &[&[]],
+                &mut transcript,
+            )
+            .expect("failed to verify bench circuit");
         })
     });
 }

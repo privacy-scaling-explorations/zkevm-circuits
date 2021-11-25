@@ -1171,8 +1171,8 @@ mod test {
     }
 
     #[test]
-    fn evm_circuit() {
-        let k = 10;
+    fn circuit_evm() {
+        let k = 18;
         let circuit = TestCircuit::default();
         let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
