@@ -171,7 +171,7 @@ mod tests {
         arithmetic::Field,
         arithmetic::FieldExt,
         circuit::SimpleFloorPlanner,
-        // dev::{MockProver, VerifyFailure},
+        dev::{MockProver, VerifyFailure},
         plonk::{Circuit, Instance},
     };
     use pairing::bn256::Fr as Fp;
@@ -179,6 +179,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::marker::PhantomData;
 
+    #[ignore]
     #[test]
     fn evm_word() {
         #[derive(Default)]
@@ -260,7 +261,7 @@ mod tests {
                 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
             ]);
             let word = Fp::random(rng);
-            let _circuit = MyCircuit::<Fp> {
+            let circuit = MyCircuit::<Fp> {
                 word: word
                     .to_bytes()
                     .iter()
@@ -272,23 +273,23 @@ mod tests {
             };
 
             // Test without public inputs
-            // let prover =
-            //     MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
-            // assert_eq!(
-            //     prover.verify(),
-            //     Err(vec![VerifyFailure::Lookup {
-            //         lookup_index: 32,
-            //         row: 0
-            //     }])
-            // );
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
+            assert_eq!(
+                prover.verify(),
+                Err(vec![VerifyFailure::Lookup {
+                    lookup_index: 32,
+                    row: 0
+                }])
+            );
 
             // Calculate word commitment and use it as public input.
-            // let encoded: Fp =
-            //     encode(word.to_bytes().iter().rev().cloned(), r());
-            // let prover =
-            //     MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]])
-            //         .unwrap();
-            // assert_eq!(prover.verify(), Ok(()))
+            let encoded: Fp =
+                encode(word.to_bytes().iter().rev().cloned(), r());
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]])
+                    .unwrap();
+            assert_eq!(prover.verify(), Ok(()))
         }
     }
 }
