@@ -447,8 +447,8 @@ mod test {
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
+                TestCircuit::<Base>::new($execution_steps, $operations, false);
+            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
