@@ -1,12 +1,24 @@
 version: '3'
 services:
-    bench:
+    evm_prover:
       build:
         context: .
         dockerfile: BENCH
         args:
-          BENCH_NAME: evm_prover
-      container_name: bench
+          BENCH_NAME: bench --no-run --bench evm_prover
+      container_name: evm_prover
+      tty: true
+      stdin_open:  true
+      volumes:
+        - .:/app
+        - /app/target
+    state_prover:
+      build:
+        context: .
+        dockerfile: BENCH
+        args:
+          BENCH_NAME: test --profile bench bench_state_circuit_prover -- --nocapture
+      container_name: state_prover
       tty: true
       stdin_open:  true
       volumes:
