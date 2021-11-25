@@ -162,14 +162,13 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::dev::MockProver;
     use num::BigUint;
     use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
-            let circuit =
-                TestCircuit::<Fp>::new($execution_steps, $operations);
+            let circuit = TestCircuit::<Fp>::new($execution_steps, $operations);
             let prover = MockProver::<Fp>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
