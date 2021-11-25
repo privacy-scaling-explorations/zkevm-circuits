@@ -1,10 +1,8 @@
-use crate::common::ROUND_CONSTANTS;
-use crate::{arith_helpers::*, keccak_arith::*};
 use halo2::circuit::Cell;
-use halo2::plonk::{Expression, Instance};
+use halo2::plonk::{Expression, Instance, Selector};
 use halo2::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -12,8 +10,10 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct IotaB13Config<F> {
+    q_mixing: Selector,
     state: [Column<Advice>; 25],
-    // Last element contains the is_mixing flag
+    // Contains `is_mixing` flag at Rotation::next() and ROUND_CTANT_B13 at
+    // Rotation::cur()
     round_ctant_b13: Column<Advice>,
     round_constants: Column<Instance>,
     _marker: PhantomData<F>,
@@ -27,18 +27,42 @@ impl<F: FieldExt> IotaB13Config<F> {
         round_ctant_b13: Column<Advice>,
         round_constants: Column<Instance>,
     ) -> IotaB13Config<F> {
-        meta.create_gate("iota_b13", |meta| {
-            // def iota_b13(state: List[List[int], round_constant_base13: int):
-            // state[0][0] += round_constant_base13
-            // return state
-            let is_mixing =
-                meta.query_advice(round_ctant_b13, Rotation::next());
+        // def iota_b13(state: List[List[int], round_constant_base13: int):
+        // state[0][0] += round_constant_base13
+        // return state
+
+        // Declare the q_mixing.
+        let q_mixing = meta.selector();
+        // Enable copy constraints over PI and the Advices.
+        meta.enable_equality(round_ctant_b13.into());
+        meta.enable_equality(round_constants.into());
+
+        meta.create_gate("iota_b13 gate", |meta| {
+            // We do a trick which consists on multiplying an internal selector
+            // which is always active by the actual `is_mixing` flag
+            // which will then enable or disable the gate.
+            let q_enable = {
+                // We query the flag value from the`round_ctant_b13` `Advice`
+                // column at rotation next and multiply to it
+                // the active selector so that we avoid the
+                // `PoisonedConstraints` and each gate equation
+                // can be satisfied while enforcing the correct gate logic.
+                let flag = Expression::Constant(F::one())
+                    - meta.query_advice(round_ctant_b13, Rotation::next());
+                // Note also that we want to enable the gate when `is_mixing` is
+                // false. (flag = 0). Therefore, we need to do
+                // `1-flag` in order to enforce this.
+                meta.query_selector(q_mixing) * flag
+            };
+
             let state_00 = meta.query_advice(state[0], Rotation::cur())
                 + meta.query_advice(round_ctant_b13, Rotation::cur());
             let next_lane = meta.query_advice(state[0], Rotation::next());
-            vec![is_mixing * (state_00 - next_lane)]
+            vec![q_enable * (state_00 - next_lane)]
         });
+
         IotaB13Config {
+            q_mixing,
             state,
             round_ctant_b13,
             round_constants,
@@ -46,16 +70,76 @@ impl<F: FieldExt> IotaB13Config<F> {
         }
     }
 
-    // We need to enable q_enable outside in parallel to the call to this!
-    pub fn assign_state_and_round_ctant(
+    /// Doc this
+    pub fn copy_state_flag_and_assing_rc(
+        &self,
+        region: &mut Region<'_, F>,
+        mut offset: usize,
+        state: [(Cell, F); 25],
+        out_state: [F; 25],
+        absolute_row: usize,
+        flag: (Cell, F),
+    ) -> Result<(), Error> {
+        // Enable `q_mixing`.
+        self.q_mixing.enable(region, offset)?;
+        // Copy state at offset + 0
+        self.copy_state(region, offset, state)?;
+        // Assign round_ctant at offset + 0.
+        self.assign_round_ctant_b13(region, offset, absolute_row)?;
+
+        offset += 1;
+        // Copy flag at `round_ctant_b9` at offset + 1
+        self.copy_flag(region, offset, flag)?;
+        // Assign out state at offset + 1
+        self.assign_state(region, offset, out_state)
+    }
+
+    /// Copies the `[(Cell,F);25]` to the `state` Advice column.
+    fn copy_state(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        in_state: [(Cell, F); 25],
+    ) -> Result<(), Error> {
+        for (idx, (cell, value)) in in_state.iter().enumerate() {
+            let new_cell = region.assign_advice(
+                || format!("copy in_state {}", idx),
+                self.state[idx],
+                offset,
+                || Ok(*value),
+            )?;
+
+            region.constrain_equal(*cell, new_cell)?;
+        }
+
+        Ok(())
+    }
+
+    /// Copies the `is_mixing` flag to the `round_ctant_b13` Advice column.
+    fn copy_flag(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        flag: (Cell, F),
+    ) -> Result<(), Error> {
+        let obtained_cell = region.assign_advice(
+            || format!("assign is_mixing flag {:?}", flag.1),
+            self.round_ctant_b13,
+            offset,
+            || Ok(flag.1),
+        )?;
+        region.constrain_equal(flag.0, obtained_cell)?;
+
+        Ok(())
+    }
+
+    // Assign `[F;25]` at `state` `Advice` column at the provided offset.
+    fn assign_state(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
-        round: usize,
-        absolute_row: usize,
-        is_mixing: (Cell, F),
-    ) -> Result<([F; 25], usize), Error> {
+    ) -> Result<(), Error> {
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -64,49 +148,19 @@ impl<F: FieldExt> IotaB13Config<F> {
                 || Ok(*lane),
             )?;
         }
-
-        let offset =
-            self.assign_round_ctant_b13(&mut region, offset, absolute_row)?;
-
-        // Apply iota_b9 outside circuit
-        let out_state = KeccakFArith::iota_b13(
-            &state_to_biguint(state),
-            ROUND_CONSTANTS[round],
-        );
-        let out_state = state_bigint_to_pallas(out_state);
-
-        for (idx, lane) in out_state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-        }
-
-        let obtained_cell = region.assign_advice(
-            || format!("assign is_mixing_flag {:?}", is_mixing.1),
-            self.round_ctant_b13,
-            offset,
-            || Ok(is_mixing.1),
-        )?;
-
-        region.constrain_equal(is_mixing.0, obtained_cell)?;
-
-        Ok((out_state, offset + 1))
+        Ok(())
     }
 
-    /// Assigns the ROUND_CONSTANTS_BASE_13to the `absolute_row` passed asn an
-    /// absolute instance column.
-    fn assign_round_ctant_b13(
+    /// Assigns the ROUND_CONSTANTS_BASE_13 to the `absolute_row` passed as an
+    /// absolute instance column. Returns the new offset after the
+    /// assigment.
+    pub fn assign_round_ctant_b13(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         absolute_row: usize,
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         region.assign_advice_from_instance(
-            // `absolute_row` is the absolute offset in the overall Region
-            // where the Column is laying.
             || format!("assign round_ctant_b13 {}", absolute_row),
             self.round_constants,
             absolute_row,
@@ -114,24 +168,21 @@ impl<F: FieldExt> IotaB13Config<F> {
             offset,
         )?;
 
-        Ok(offset + 1)
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::*;
+    use crate::{arith_helpers::*, common::*, keccak_arith::*};
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{
-        circuit::SimpleFloorPlanner,
-        dev::MockProver,
-        plonk::{Circuit, Selector},
-    };
+    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
+    use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -140,10 +191,12 @@ mod tests {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
-            is_mixing: bool,
+            out_state: [F; 25],
             // This usize is indeed pointing the exact row of the
             // ROUND_CTANTS_B13 we want to use.
-            round_ctant_b13: usize,
+            round_ctant: usize,
+            // The flag acts like a selector that turns ON/OFF the gate
+            flag: bool,
             _marker: PhantomData<F>,
         }
 
@@ -157,18 +210,22 @@ mod tests {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let column = meta.advice_column();
+                        meta.enable_equality(column.into());
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let round_ctant_b13 = meta.advice_column();
+                let round_ctant_b9 = meta.advice_column();
+                // Allocate space for the round constants in base-13 which is an
+                // instance column
                 let round_ctants = meta.instance_column();
-                meta.enable_equality(round_ctant_b13.into());
-                meta.enable_equality(round_ctants.into());
                 IotaB13Config::configure(
                     meta,
                     state,
-                    round_ctant_b13,
+                    round_ctant_b9,
                     round_ctants,
                 )
             }
@@ -178,39 +235,49 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let val: F = self.is_mixing.into();
-                let flag: (Cell, F) = layouter.assign_region(
-                    || "witness_is_mixing_flag",
+                let offset: usize = 0;
+
+                let val: F = self.flag.into();
+                layouter.assign_region(
+                    || "Wittnes & assignation",
                     |mut region| {
-                        let offset = 0;
+                        // Witness `is_missing` flag
                         let cell = region.assign_advice(
-                            || "assign is_mising",
+                            || "witness is_missing",
                             config.round_ctant_b13,
-                            offset,
+                            offset + 1,
                             || Ok(val),
                         )?;
-                        Ok((cell, val))
-                    },
-                )?;
+                        let flag = (cell, val);
 
-                // TODO: Review with YT: Missing state assignation no?
+                        // Witness `state`
+                        let in_state: [(Cell, F); 25] = {
+                            let mut state: Vec<(Cell, F)> =
+                                Vec::with_capacity(25);
+                            for (idx, val) in self.in_state.iter().enumerate() {
+                                let cell = region.assign_advice(
+                                    || "witness input state",
+                                    config.state[idx],
+                                    offset,
+                                    || Ok(*val),
+                                )?;
+                                state.push((cell, *val))
+                            }
+                            state.try_into().unwrap()
+                        };
 
-                layouter.assign_region(
-                    || "assign input & output state + constant in same region",
-                    |mut region| {
-                        let offset = 0;
-                        config.assign_state_and_round_ctant(
+                        // Assign `in_state`, `out_state`, round and flag
+                        config.copy_state_flag_and_assing_rc(
                             &mut region,
                             offset,
-                            self.in_state,
-                            0,
-                            self.round_ctant_b13,
+                            in_state,
+                            self.out_state,
+                            self.round_ctant,
                             flag,
-                        )
+                        )?;
+                        Ok(())
                     },
-                )?;
-
-                Ok(())
+                )
             }
         }
 
@@ -228,23 +295,74 @@ mod tests {
             in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
         }
-        let s1_arith = KeccakFArith::iota_b13(&in_biguint, ROUND_CONSTANTS[0]);
 
-        let circuit = MyCircuit::<pallas::Base> {
-            in_state,
-            round_ctant_b13: 0,
-            is_mixing: true,
-            _marker: PhantomData,
-        };
+        let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
+        // Compute out state
+        let s1_arith = KeccakFArith::iota_b13(&in_biguint, round_ctant);
+        let out_state = state_bigint_to_pallas::<pallas::Base, 25>(s1_arith);
 
-        let constants = ROUND_CONSTANTS
+        let constants: Vec<pallas::Base> = ROUND_CONSTANTS
             .iter()
             .map(|num| big_uint_to_pallas(&convert_b2_to_b13(*num)))
             .collect();
-        // Test without public inputs
-        let prover =
-            MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
-        assert_eq!(prover.verify(), Ok(()));
+        // With flag set to false, the gate should trigger.
+        {
+            // With the correct input and output witnesses, the proof should
+            // pass.
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state,
+                round_ctant: PERMUTATION - 1,
+                flag: false,
+                _marker: PhantomData,
+            };
+
+            let prover = MockProver::<pallas::Base>::run(
+                9,
+                &circuit,
+                vec![constants.clone()],
+            )
+            .unwrap();
+
+            assert_eq!(prover.verify(), Ok(()));
+
+            // With wrong input and/or output witnesses, the proof should fail
+            // to be verified.
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state: in_state,
+                round_ctant: PERMUTATION - 1,
+                flag: false,
+                _marker: PhantomData,
+            };
+
+            let prover = MockProver::<pallas::Base>::run(
+                9,
+                &circuit,
+                vec![constants.clone()],
+            )
+            .unwrap();
+
+            assert!(prover.verify().is_err());
+        }
+
+        // With flag set to `true`, the gate shouldn't trigger. And so we can
+        // pass any witness data and the proof should pass.
+        {
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state: in_state,
+                round_ctant: PERMUTATION - 1,
+                flag: true,
+                _marker: PhantomData,
+            };
+
+            let prover =
+                MockProver::<pallas::Base>::run(9, &circuit, vec![constants])
+                    .unwrap();
+
+            assert_eq!(prover.verify(), Ok(()));
+        }
     }
 }
