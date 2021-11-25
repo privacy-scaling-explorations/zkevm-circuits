@@ -1,14 +1,8 @@
-use crate::arith_helpers::*;
-use crate::common::{PERMUTATION, ROUND_CONSTANTS};
-use crate::keccak_arith::KeccakFArith;
 use halo2::circuit::Cell;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Selector,
-        VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -205,12 +199,12 @@ impl<F: FieldExt> IotaB9Config<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::PERMUTATION;
     use super::*;
+    use crate::arith_helpers::*;
     use crate::common::*;
+    use crate::common::{PERMUTATION, ROUND_CONSTANTS};
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
-    use halo2::plonk::Selector;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
@@ -302,7 +296,7 @@ mod tests {
                                 )?;
                                 state.push((cell, *val))
                             }
-                            state.try_into().expect("try_into err")
+                            state.try_into().unwrap()
                         };
 
                         // Assign `in_state`, `out_state`, round and flag
@@ -347,23 +341,49 @@ mod tests {
             .map(|num| big_uint_to_pallas(&convert_b2_to_b9(*num)))
             .collect();
 
-        // (flag = 1)
-        let circuit = MyCircuit::<pallas::Base> {
-            in_state,
-            out_state,
-            round_ctant: PERMUTATION - 1,
-            flag: true,
-            _marker: PhantomData,
-        };
+        // (flag = 1) -> Out state is checked as constraints are applied.
+        // Providing the correct `out_state` should pass the verification.
+        {
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state,
+                round_ctant: PERMUTATION - 1,
+                flag: true,
+                _marker: PhantomData,
+            };
 
-        let prover = MockProver::<pallas::Base>::run(
-            9,
-            &circuit,
-            vec![constants.clone()],
-        )
-        .unwrap();
+            let prover = MockProver::<pallas::Base>::run(
+                9,
+                &circuit,
+                vec![constants.clone()],
+            )
+            .unwrap();
 
-        assert_eq!(prover.verify(), Ok(()));
+            assert_eq!(prover.verify(), Ok(()));
+        }
+
+        // (flag = 1) -> Out state is checked as constraints are applied.
+        // Providing the wrong `out_state` should make the verification fail.
+        {
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                // Add wrong out_state that should cause the verification to
+                // fail.
+                out_state: in_state,
+                round_ctant: PERMUTATION - 1,
+                flag: true,
+                _marker: PhantomData,
+            };
+
+            let prover = MockProver::<pallas::Base>::run(
+                9,
+                &circuit,
+                vec![constants.clone()],
+            )
+            .unwrap();
+
+            let _ = prover.verify().is_err();
+        }
 
         // (flag = 0)
         let circuit = MyCircuit::<pallas::Base> {
