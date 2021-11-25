@@ -1,10 +1,14 @@
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
-use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::math_gadgets::IsZeroGadget;
-use super::utils::{sum, StateTransition, StateTransitionExpressions};
+use super::utils::{
+    self,
+    constraint_builder::ConstraintBuilder,
+    math_gadgets::IsZeroGadget,
+    common_cases::{OutOfGasCase, StackUnderflowCase},
+    sum, StateTransition, StateTransitionExpressions,
+};
+
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -19,7 +23,8 @@ static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(2),
     pc_delta: Some(1), // pc is dynamic for jumpi, just set 1 for initialization
     sp_delta: Some(2),
-    gas_delta: Some(GasCost::SLOW.as_usize()),
+    gas_delta: Some(GasCost::SLOW.as_u64()),
+    next_memory_size: None,
 };
 
 const NUM_POPPED: usize = 2;
@@ -166,7 +171,7 @@ mod test {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
-            let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }

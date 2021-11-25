@@ -348,7 +348,7 @@ macro_rules! impl_op_gadget {
                         state_curr.opcode.expr(),
                         vec![$(OpcodeId::$op),*],
                     );
-                    super::utils::batch_add_expressions(
+                    utils::batch_add_expressions(
                         case_constrains,
                         cb.expressions,
                         cb.lookups,

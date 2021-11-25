@@ -1,9 +1,12 @@
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
-use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
-use super::utils::constraint_builder::ConstraintBuilder;
-use super::utils::{StateTransition, StateTransitionExpressions};
+use super::utils::{
+    self,
+    constraint_builder::ConstraintBuilder,
+    common_cases::{OutOfGasCase, StackUnderflowCase},
+    StateTransition, StateTransitionExpressions,
+};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
@@ -17,7 +20,8 @@ static STATE_TRANSITION: StateTransition = StateTransition {
     gc_delta: Some(1),
     pc_delta: Some(0), // TODO: pc is dynamic for jump
     sp_delta: Some(1),
-    gas_delta: Some(GasCost::MID.as_usize()),
+    gas_delta: Some(GasCost::MID.as_u64()),
+    next_memory_size: None,
 };
 
 const NUM_POPPED: usize = 1;

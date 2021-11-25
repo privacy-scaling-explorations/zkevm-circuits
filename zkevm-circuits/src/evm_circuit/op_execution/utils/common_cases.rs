@@ -109,10 +109,7 @@ impl<F: FieldExt> StackUnderflowCase<F> {
             .collect();
         let mut cb = ConstraintBuilder::default();
         cb.require_in_set(state_curr.stack_pointer.expr(), set);
-        //cb.constraint(self.case_selector.expr(), name)
-        let mut constrains = Vec::<Constraint<F>>::new();
-        constrains.push(cb.constraint(self.case_selector.expr(), name));
-        constrains
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     pub(crate) fn assign(
@@ -177,10 +174,7 @@ impl<F: FieldExt> RangeStackUnderflowCase<F> {
         );
 
         // Generate the constraint
-        //cb.constraint(self.case_selector.expr(), name)
-        let mut constrains = Vec::<Constraint<F>>::new();
-        constrains.push(cb.constraint(self.case_selector.expr(), name));
-        constrains
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     pub(crate) fn assign(
@@ -227,10 +221,7 @@ impl<F: FieldExt> StackOverflowCase<F> {
         let set = (0..self.num_pushed).map(|i| i.expr()).collect();
         let mut cb = ConstraintBuilder::default();
         cb.require_in_set(state_curr.stack_pointer.expr(), set);
-        //cb.constraint(self.case_selector.expr(), name)
-        let mut constrains = Vec::<Constraint<F>>::new();
-        constrains.push(cb.constraint(self.case_selector.expr(), name));
-        constrains
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     pub(crate) fn assign(
