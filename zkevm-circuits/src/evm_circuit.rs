@@ -157,6 +157,8 @@ impl<F: FieldExt> Expr<F> for FixedLookup {
     }
 }
 
+
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
     FixedLookup(FixedLookup, [Expression<F>; 3]),
@@ -511,6 +513,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
         qs_byte_lookup: Column<Advice>,
@@ -1219,7 +1222,7 @@ mod test {
         execution_steps: &[ExecutionStep],
     ) -> Vec<[u32; 4]> {
         // TODO: add keccak hash (byte_codes)
-        let code_hash = 0 as u32;
+        let code_hash = 0_u32;
         let mut i = 0;
         let mut bytecode_table = Vec::<[u32; 4]>::new();
 
@@ -1242,7 +1245,7 @@ mod test {
             }
         }
 
-        return bytecode_table;
+        bytecode_table
     }
 
     #[derive(Default)]

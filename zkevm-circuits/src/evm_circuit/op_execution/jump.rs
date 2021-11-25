@@ -169,7 +169,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(03),
+                        Base::from_u64(3u64),
                         Base::zero(),
                     ]
                 },
@@ -180,7 +180,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(03),
+                        Base::from_u64(3u64),
                         Base::zero(),
                     ]
                 }

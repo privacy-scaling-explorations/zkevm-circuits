@@ -71,6 +71,7 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
         state_next: &OpExecutionState<F>,
         name: &'static str,
     ) -> Vec<Constraint<F>> {
+        let mut constrains = Vec::<Constraint<F>>::new();
         let mut cb = ConstraintBuilder::default();
 
         let is_cond_met = 1.expr()
@@ -99,7 +100,6 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
         cb.stack_pop(self.cond.expr());
 
         // Generate the constraint
-        let mut constrains = Vec::<Constraint<F>>::new();
         // 1. `cond` is zero constraint (is_cond_met = 0 )
         constrains.push(cb.constraint(
             self.case_selector.expr() * (1.expr() - is_cond_met.clone()),
@@ -221,7 +221,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(01),
+                        Base::from_u64(1u64),
                         Base::zero(),
                     ]
                 },
@@ -232,7 +232,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(05),
+                        Base::from_u64(5u64),
                         Base::zero(),
                     ]
                 },
@@ -243,7 +243,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(05),
+                        Base::from_u64(5u64),
                         Base::zero(),
                     ]
                 },
@@ -254,7 +254,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(01),
+                        Base::from_u64(1u64),
                         Base::zero(),
                     ]
                 }
@@ -318,7 +318,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(05),
+                        Base::from_u64(5u64),
                         Base::zero(),
                     ]
                 },
@@ -329,7 +329,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1022),
-                        Base::from_u64(05),
+                        Base::from_u64(5u64),
                         Base::zero(),
                     ]
                 },
@@ -340,7 +340,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(0),
+                        Base::from_u64(0u64),
                         Base::zero(),
                     ]
                 }
