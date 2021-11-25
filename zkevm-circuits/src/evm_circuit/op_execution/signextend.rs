@@ -138,7 +138,7 @@ impl<F: FieldExt> SignextendSuccessCase<F> {
         // This will use the most significant bit of the selected byte to return
         // the sign byte, which is a byte with all its bits set to the
         // sign of the selected byte.
-        cb.add_fixed_lookup_any(
+        cb.add_fixed_lookup(
             FixedLookup::SignByte,
             [selected_byte, self.sign_byte.expr(), 0.expr()],
         );

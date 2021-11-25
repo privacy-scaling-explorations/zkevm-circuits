@@ -122,7 +122,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         // For MLOAD push the value to the stack
         // FOR MSTORE pop the value from the stack
         let stack_offset = cb.stack_offset.expr() - is_mload.clone();
-        cb.stack_lookup_any(stack_offset, self.value.expr(), is_mload);
+        cb.stack_lookup(stack_offset, self.value.expr(), is_mload);
 
         /* Memory operations */
         // Read/Write the value from memory at the specified address

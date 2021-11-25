@@ -72,17 +72,13 @@ impl<F: FieldExt> SwapSuccessCase<F> {
             state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 
         // Peek the value at `offset`
-        cb.stack_lookup_any(
-            offset.clone(),
-            self.values[0].expr(),
-            false.expr(),
-        );
+        cb.stack_lookup(offset.clone(), self.values[0].expr(), false.expr());
         // Peek the value at the top of the stack
-        cb.stack_lookup_any(0.expr(), self.values[1].expr(), false.expr());
+        cb.stack_lookup(0.expr(), self.values[1].expr(), false.expr());
         // Write the value previously at the top of the stack to `swap_offset`
-        cb.stack_lookup_any(offset, self.values[1].expr(), true.expr());
+        cb.stack_lookup(offset, self.values[1].expr(), true.expr());
         // Write the value previously at `offset` to the top of the stack
-        cb.stack_lookup_any(0.expr(), self.values[0].expr(), true.expr());
+        cb.stack_lookup(0.expr(), self.values[0].expr(), true.expr());
 
         // State transitions
         STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);

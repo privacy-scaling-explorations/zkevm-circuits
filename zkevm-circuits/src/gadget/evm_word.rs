@@ -30,8 +30,8 @@ pub(crate) fn r<F: FieldExt>() -> F {
         hasher.process(&[byte]);
     }
     let mut r = [0; 64];
-     r[..32].copy_from_slice(hasher.fixed_result().as_slice());
-     F::from_bytes_wide(&r)
+    r[..32].copy_from_slice(hasher.fixed_result().as_slice());
+    F::from_bytes_wide(&r)
 }
 
 // Returns encoding of big-endian representation of a 256-bit word.

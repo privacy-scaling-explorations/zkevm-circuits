@@ -72,7 +72,7 @@ impl<F: FieldExt> DupSuccessCase<F> {
         let dup_offset = state_curr.opcode.expr() - OpcodeId::DUP1.expr();
 
         // Peek the value at `dup_offset` and push the value on the stack
-        cb.stack_lookup_any(dup_offset, self.value.expr(), false.expr());
+        cb.stack_lookup(dup_offset, self.value.expr(), false.expr());
         cb.stack_push(self.value.expr());
 
         // State transitions

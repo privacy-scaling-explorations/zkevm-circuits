@@ -80,7 +80,7 @@ macro_rules! impl_bitwise_op_gadget {
                     let mut cb = ConstraintBuilder::default();
 
                     for idx in 0..32 {
-                        cb.add_fixed_lookup_any(
+                        cb.add_fixed_lookup(
                             FixedLookup::[<Bitwise $op>],
                             [
                                 self.a.cells[idx].expr(),
