@@ -1,10 +1,12 @@
 FROM shinsaku0523/zkevm:latest
 
-ARG BENCH_CMD
+ARG BENCH_NAME
+
+WORKDIR /app
 
 COPY . .
 
 RUN RUSTFLAGS='-C target-cpu=native' cargo test --no-run --profile bench bench_evm_circuit_prover &&\
     RUSTFLAGS='-C target-cpu=native' cargo test --no-run --profile bench bench_state_circuit_prover
 
-CMD RUSTFLAGS='-C target-cpu=native' cargo $BENCH_CMD
+CMD RUSTFLAGS='-C target-cpu=native' cargo test --profile bench $BENCH_NAME -- --nocapture
