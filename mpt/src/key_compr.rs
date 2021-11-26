@@ -14,6 +14,7 @@ use crate::param::HASH_WIDTH;
 pub(crate) struct KeyComprConfig {}
 
 // KeyComprChip verifies the compression of a leaf key from nibbles to hex.
+// TODO: it checks (to be enabled) also the path in trie corresponds to the storage key (rename chip too)
 pub(crate) struct KeyComprChip<F> {
     config: KeyComprConfig,
     _marker: PhantomData<F>,
