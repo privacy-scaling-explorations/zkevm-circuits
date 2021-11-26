@@ -1210,7 +1210,7 @@ mod test {
         let public_inputs_size = 0;
         let empty_circuit = TestCircuit::default();
 
-        let circuit = TestCircuit::new(execution_steps, operations, false);
+        let circuit = TestCircuit::new(execution_steps, operations, true);
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
