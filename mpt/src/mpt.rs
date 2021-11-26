@@ -10,7 +10,10 @@ use pasta_curves::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
 use crate::{
-    branch_acc::BranchAccChip, key_compr::KeyComprChip, param::LAYOUT_OFFSET,
+    branch_acc::BranchAccChip,
+    key_compr::KeyComprChip,
+    leaf_hash::{LeafHashChip, LeafHashConfig},
+    param::LAYOUT_OFFSET,
 };
 use crate::{branch_acc::BranchAccConfig, param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -56,6 +59,8 @@ pub struct MPTConfig<F> {
     key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+    leaf_hash_s_chip: LeafHashConfig,
+    leaf_hash_c_chip: LeafHashConfig,
     _marker: PhantomData<F>,
 }
 
@@ -775,120 +780,43 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_mult_c,
         );
 
-        // hash of leaf S is in the parent branch
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
+        let leaf_hash_s_chip = LeafHashChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_enable = meta.query_selector(q_enable);
+                let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
 
-            let mut rlc = Expression::Constant(F::zero());
-            let mut mult = Expression::Constant(F::one());
+                q_enable * is_leaf_s
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            branch_acc_r,
+            s_keccak,
+            keccak_table,
+        );
 
-            // TODO: check that from some point on (depends on the rlp meta data)
-            // the values are zero (as in key_compr), could be a chip just for this check
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            rlc = rlc + s_rlp1 * mult.clone();
-            mult = mult * branch_acc_r;
+        let leaf_hash_c_chip = LeafHashChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_enable = meta.query_selector(q_enable);
+                let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
 
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            rlc = rlc + s_rlp2 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                rlc = rlc + s * mult.clone();
-                mult = mult * branch_acc_r;
-            }
-
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            rlc = rlc + c_rlp1 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-            rlc = rlc + c_rlp2 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            for col in c_advices.iter() {
-                let c = meta.query_advice(*col, Rotation::cur());
-                rlc = rlc + c * mult.clone();
-                mult = mult * branch_acc_r;
-            }
-
-            let mut constraints = vec![];
-            constraints.push((
-                q_enable.clone() * is_leaf_s.clone() * rlc,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
-            // NOTE: Rotation -2 can be used here (as in C leaf), because
-            // s_keccak and c_keccak have the same value in all branch rows
-            for (ind, column) in s_keccak.iter().enumerate() {
-                let s_keccak = meta.query_advice(*column, Rotation(-2));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_enable.clone() * is_leaf_s.clone() * s_keccak,
-                    keccak_table_i,
-                ));
-            }
-
-            constraints
-        });
-
-        // TODO: a chip for these checks for leaf S and C
-        // hash of leaf C is in the parent branch
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
-
-            let mut rlc = Expression::Constant(F::zero());
-            let mut mult = Expression::Constant(F::one());
-
-            // TODO: check that from some point on (depends on the rlp meta data)
-            // the values are zero (as in key_compr), could be a chip just for this check
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            rlc = rlc + s_rlp1 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            rlc = rlc + s_rlp2 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                rlc = rlc + s * mult.clone();
-                mult = mult * branch_acc_r;
-            }
-
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            rlc = rlc + c_rlp1 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-            rlc = rlc + c_rlp2 * mult.clone();
-            mult = mult * branch_acc_r;
-
-            for col in c_advices.iter() {
-                let c = meta.query_advice(*col, Rotation::cur());
-                rlc = rlc + c * mult.clone();
-                mult = mult * branch_acc_r;
-            }
-
-            let mut constraints = vec![];
-            constraints.push((
-                q_enable.clone() * is_leaf_c.clone() * rlc,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
-            for (ind, column) in c_keccak.iter().enumerate() {
-                let c_keccak = meta.query_advice(*column, Rotation(-2));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_enable.clone() * is_leaf_c.clone() * c_keccak,
-                    keccak_table_i,
-                ));
-            }
-
-            constraints
-        });
+                q_enable * is_leaf_c
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            branch_acc_r,
+            c_keccak,
+            keccak_table,
+        );
 
         let key_compr_chip = KeyComprChip::<F>::configure(
             meta,
@@ -944,6 +872,8 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             keccak_table,
+            leaf_hash_s_chip,
+            leaf_hash_c_chip,
             _marker: PhantomData,
         }
     }
