@@ -1102,7 +1102,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
 #[cfg(test)]
 mod test {
-    use super::{EvmCircuit, ExecutionStep, Operation};
+    use super::*;
     use ark_std::{end_timer, start_timer};
     use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
     use halo2::{
@@ -1111,7 +1111,7 @@ mod test {
         plonk::*,
         poly::commitment::Setup,
     };
-    use pairing::bn256::Bn256;
+    use pairing::bn256::{Bn256, Fr as Fp};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -1182,10 +1182,35 @@ mod test {
     #[test]
     fn bench_evm_circuit_prover() {
         const DEGREE: u32 = 22;
+        const EXECUTION_STEPS_ROWS_MAX: usize = 1 << (DEGREE - 2);
+        const OPERATIONS_ROWS_MAX: usize = 1 << (DEGREE - 2);
+
+        let mut execution_steps = vec![];
+        for _ in 0..EXECUTION_STEPS_ROWS_MAX - 1 {
+            let execution_step = ExecutionStep {
+                opcode: OpcodeId::ADD,
+                case: Case::Success,
+                values: vec![BigUint::new(vec![0])],
+            };
+            execution_steps.push(execution_step);
+        }
+
+        let mut operations = vec![];
+        for i in 0..OPERATIONS_ROWS_MAX - 1 {
+            let operation = Operation::<Fp> {
+                gc: i as usize,
+                target: Target::Memory,
+                is_write: true,
+                values: [Fp::zero(); 4],
+            };
+            operations.push(operation);
+        }
 
         let k = DEGREE;
         let public_inputs_size = 0;
         let empty_circuit = TestCircuit::default();
+
+        let circuit = TestCircuit::new(execution_steps, operations, false);
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
@@ -1211,7 +1236,6 @@ mod test {
         // Create a proof
         let mut transcript =
             Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        let circuit = TestCircuit::default();
 
         // Bench proof generation time
         let proof_message =
