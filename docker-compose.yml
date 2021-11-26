@@ -5,7 +5,7 @@ services:
         context: .
         dockerfile: BENCH
         args:
-          BENCH_NAME: test --profile bench bench_evm_circuit_prover -- --nocapture
+          BENCH_NAME: bench_evm_circuit_prover
       container_name: evm_prover
       tty: true
       stdin_open:  true
@@ -17,7 +17,7 @@ services:
         context: .
         dockerfile: BENCH
         args:
-          BENCH_NAME: test --profile bench bench_state_circuit_prover -- --nocapture
+          BENCH_NAME: bench_state_circuit_prover
       container_name: state_prover
       tty: true
       stdin_open:  true
