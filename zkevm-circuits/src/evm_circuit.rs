@@ -1103,11 +1103,17 @@ impl<F: FieldExt> EvmCircuit<F> {
 #[cfg(test)]
 mod test {
     use super::{EvmCircuit, ExecutionStep, Operation};
+    use ark_std::{end_timer, start_timer};
+    use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, ConstraintSystem, Error},
+        plonk::*,
+        poly::commitment::Setup,
     };
+    use pairing::bn256::Bn256;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
 
     #[derive(Clone)]
     pub(crate) struct TestCircuitConfig<F> {
@@ -1166,5 +1172,64 @@ mod test {
                 .evm_circuit
                 .assign(&mut layouter, &self.execution_steps)
         }
+    }
+
+    // To run this benchmark, comment the `ignore` flag and run the following
+    // command:
+    // `RUSTFLAGS='-C target-cpu=native' cargo test --profile bench
+    // bench_evm_circuit_prover -- --nocapture`
+    #[ignore]
+    #[test]
+    fn bench_evm_circuit_prover() {
+        const DEGREE: u32 = 22;
+
+        let k = DEGREE;
+        let public_inputs_size = 0;
+        let empty_circuit = TestCircuit::default();
+
+        // Initialize the polynomial commitment parameters
+        let rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
+            0x32, 0x54, 0x06, 0xbc, 0xe5,
+        ]);
+
+        // Bench setup generation
+        let setup_message =
+            format!("Setup generation with degree = {}", DEGREE).to_string();
+        let start1 = start_timer!(|| setup_message);
+        let params = Setup::<Bn256>::new(k.into(), rng);
+        let verifier_params =
+            Setup::<Bn256>::verifier_params(&params, public_inputs_size)
+                .unwrap();
+        end_timer!(start1);
+
+        // Initialize the proving key
+        let vk = keygen_vk(&params, &empty_circuit)
+            .expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit)
+            .expect("keygen_pk should not fail");
+        // Create a proof
+        let mut transcript =
+            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let circuit = TestCircuit::default();
+
+        // Bench proof generation time
+        let proof_message =
+            format!("EVM Proof generation with {} rows", DEGREE).to_string();
+        let start2 = start_timer!(|| proof_message);
+
+        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
+            .expect("proof generation should not fail");
+        let proof = transcript.finalize();
+        end_timer!(start2);
+
+        // Bench verification time
+        let start3 = start_timer!(|| "EVM Proof verification");
+        let mut transcript =
+            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+
+        verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
+            .expect("failed to verify bench circuit");
+        end_timer!(start3);
     }
 }
