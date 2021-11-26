@@ -6,7 +6,7 @@ use super::utils::{
     common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
     math_gadgets::IsZeroGadget,
-    sum, StateTransition, StateTransitionExpressions,
+    select, sum, StateTransition, StateTransitionExpressions,
 };
 
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
@@ -80,19 +80,15 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
                 .constraints(&mut cb, sum::expr(&self.cond.cells));
 
         // State transitions
-        let st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
+        let mut st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
         // is_cond_met == 0 --> cond = 0, pc + 1
-        cb.require_zero(
-            (1.expr() - is_cond_met.clone())
-                * (st.clone().pc_delta.unwrap() - 1.expr()),
-        );
-
         // is_cond_met == 1 --> cond != 0, pc = `dest`
-        cb.require_zero(
-            is_cond_met.clone()
-                * (st.clone().pc_delta.unwrap()
-                    - (self.dest.expr() - state_curr.program_counter.expr())),
-        );
+        st.pc_delta = Some(select::expr(
+            is_cond_met.clone(),
+            self.dest.expr() - state_curr.program_counter.expr(),
+            1.expr(),
+        ));
+
         st.constraints(&mut cb, state_curr, state_next);
 
         // Pop the 'dest' and 'cond' from the stack
