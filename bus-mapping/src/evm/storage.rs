@@ -1,16 +1,25 @@
 //! Doc this
-use crate::eth_types::Word;
+use crate::eth_types::{DebugWord, Word};
 use crate::Error;
 use std::collections::HashMap;
+use std::fmt;
 
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Storage(pub(crate) HashMap<Word, Word>);
 
 impl<T: Into<HashMap<Word, Word>>> From<T> for Storage {
     fn from(map: T) -> Self {
         Self(map.into())
+    }
+}
+
+impl fmt::Debug for Storage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(self.0.iter().map(|(k, v)| (DebugWord(k), DebugWord(v))))
+            .finish()
     }
 }
 

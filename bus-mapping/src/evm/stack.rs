@@ -1,8 +1,9 @@
 //! Doc this
-use crate::eth_types::Word;
+use crate::eth_types::{DebugWord, Word};
 use crate::Error;
 use core::str::FromStr;
 use serde::Deserialize;
+use std::fmt;
 
 /// Represents a `StackAddress` of the EVM.
 /// The address range goes `TOP -> DOWN (1024, 0]`.
@@ -50,8 +51,16 @@ impl FromStr for StackAddress {
 
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Deserialize)]
 pub struct Stack(pub(crate) Vec<Word>);
+
+impl fmt::Debug for Stack {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(DebugWord))
+            .finish()
+    }
+}
 
 impl<T: Into<Vec<Word>>> From<T> for Stack {
     fn from(words: T) -> Self {

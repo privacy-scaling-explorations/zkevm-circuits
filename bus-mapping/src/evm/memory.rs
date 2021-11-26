@@ -1,11 +1,12 @@
 //! Doc this
-use crate::eth_types::{ToBigEndian, Word};
+use crate::eth_types::{DebugByte, ToBigEndian, Word};
 use crate::Error;
 use core::convert::TryFrom;
 use core::ops::{
     Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign,
 };
 use core::str::FromStr;
+use std::fmt;
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -160,8 +161,42 @@ define_mul_assign_variants!(LHS = MemoryAddress, RHS = MemoryAddress);
 
 /// Represents a snapshot of the EVM memory state at a certain
 /// execution step height.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Memory(pub(crate) Vec<u8>);
+
+impl fmt::Debug for Memory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            // When formatting with "{:#?}" provide a pretty hex dump
+            f.write_str("[\n")?;
+            for (index, b) in self.0.chunks(16).enumerate() {
+                f.write_fmt(format_args!("\t{:08x}  ", index * 16))?;
+                f.write_fmt(format_args!(
+                    "{:02x} {:02x} {:02x} {:02x} ",
+                    b[0], b[1], b[2], b[3]
+                ))?;
+                f.write_fmt(format_args!(
+                    "{:02x} {:02x} {:02x} {:02x}  ",
+                    b[4], b[5], b[6], b[7]
+                ))?;
+                f.write_fmt(format_args!(
+                    "{:02x} {:02x} {:02x} {:02x} ",
+                    b[8], b[9], b[10], b[11]
+                ))?;
+                f.write_fmt(format_args!(
+                    "{:02x} {:02x} {:02x} {:02x} ",
+                    b[12], b[13], b[14], b[15]
+                ))?;
+                f.write_str("\n")?;
+            }
+            f.write_str("]")
+        } else {
+            f.debug_list()
+                .entries(self.0.iter().map(|b| DebugByte(*b)))
+                .finish()
+        }
+    }
+}
 
 impl Default for Memory {
     fn default() -> Self {
