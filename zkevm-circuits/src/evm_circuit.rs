@@ -1349,9 +1349,9 @@ mod test {
 
         // Bench setup generation
         let setup_message =
-            format!("Setup generation with degree = {}", DEGREE).to_string();
+            format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let params = Setup::<Bn256>::new(k.into(), rng);
+        let params = Setup::<Bn256>::new(k, rng);
         let verifier_params =
             Setup::<Bn256>::verifier_params(&params, public_inputs_size)
                 .unwrap();
@@ -1368,7 +1368,7 @@ mod test {
 
         // Bench proof generation time
         let proof_message =
-            format!("EVM Proof generation with {} rows", DEGREE).to_string();
+            format!("EVM Proof generation with {} rows", DEGREE);
         let start2 = start_timer!(|| proof_message);
 
         create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
