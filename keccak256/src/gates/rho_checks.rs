@@ -367,11 +367,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     .chunk_rotate_convert_configs
                     .iter()
                     .map(|config| {
-                        let block_counts = config.assign_region(
-                            &mut region,
-                            offset,
-                            &mut rv,
-                        )?;
+                        let block_counts =
+                            config.assign_region(&mut region, offset, &rv)?;
                         offset += 1;
                         rv = rv.next();
                         Ok(block_counts)
@@ -436,6 +433,10 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
 
         let power_of_b13 = F::from(B13).pow(&[chunk_idx.into(), 0, 0, 0]);
 
+        // | coef | 13**x | acc       |
+        // |------|-------|-----------|
+        // |  a   |  b    | c         |
+        // |  ... | ...   | c - a * b |
         meta.create_gate("Running down input", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let coef = meta.query_advice(adv.input.coef, Rotation::cur());
@@ -456,7 +457,10 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             0,
             0,
         ]);
-
+        // | coef | 9**x  |    acc |
+        // |------|-------|--------|
+        // |  a   |  b    |      0 |
+        // |  ... | ...   |  a * b |
         meta.create_gate("Running up for output", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let q_is_first = meta.query_selector(q_is_first);
@@ -638,6 +642,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
     }
 }
 
+/// Gates to check if block counts are accumulated correctly
 #[derive(Debug, Clone)]
 pub struct BlockCountAccConfig<F> {
     bc: BlockCountAdvices,
@@ -684,7 +689,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
             }]
         });
 
-        meta.create_gate("accumulate block count", |meta| {
+        meta.create_gate("Running up block count", |meta| {
             let q_rest = meta.query_selector(q_rest);
             let block_count =
                 meta.query_advice(bc.block_count, Rotation::cur());
@@ -698,21 +703,21 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
             let step2_poly = {
                 if step == 2 {
                     (
-                        "delta_step2 = block_count",
+                        "delta_step2 === block_count",
                         step2_acc - step2_acc_prev - block_count.clone(),
                     )
                 } else {
-                    ("delta_step2 = 0", step2_acc - step2_acc_prev)
+                    ("delta_step2 === 0", step2_acc - step2_acc_prev)
                 }
             };
             let step3_poly = {
                 if step == 3 {
                     (
-                        "delta_step3 = block_count",
+                        "delta_step3 === block_count",
                         step3_acc - step3_acc_prev - block_count,
                     )
                 } else {
-                    ("delta_step3 = 0", step3_acc - step3_acc_prev)
+                    ("delta_step3 === 0", step3_acc - step3_acc_prev)
                 }
             };
 
