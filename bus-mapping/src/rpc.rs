@@ -119,6 +119,17 @@ impl<P: JsonRpcClient> GethClient<P> {
             .map_err(|e| Error::JSONRpcError(e.into()))?;
         Ok(resp.0.into_iter().map(|step| step.result).collect())
     }
+
+    /// Calls `eth_getCode` via JSON-RPC returning a contract code
+    pub async fn get_code_by_address(
+        &self,
+        contract_address: String,
+    ) -> Result<String, Error> {
+        self.0
+            .request("eth_getCode", [contract_address, "0x2".to_string()])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))
+    }
 }
 
 #[cfg(test)]
@@ -198,5 +209,18 @@ mod rpc_tests {
                 == trace_by_hash[1].struct_logs.len()
         );
         assert!(!trace_by_hash[0].struct_logs.is_empty());
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_get_contract_code() {
+        let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
+        let prov = GethClient::new(transport);
+        let contract_address =
+            "0xD5F110B3E81dE87F22Fa8c5e668a5Fc541c54E3d".to_string();
+        let contract_code = "0x608060405234801561001057600080fd5b50600436106100415760003560e01c8063445df0ac146100465780638da5cb5b14610064578063fdacd576146100ae575b600080fd5b61004e6100dc565b6040518082815260200191505060405180910390f35b61006c6100e2565b604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b6100da600480360360208110156100c457600080fd5b8101908080359060200190929190505050610107565b005b60015481565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1681565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff16146101ac576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260338152602001806101b76033913960400191505060405180910390fd5b806001819055505056fe546869732066756e6374696f6e206973207265737472696374656420746f2074686520636f6e74726163742773206f776e6572a265627a7a7231582007302f208a10686769509b529e1878bda1859883778d70dedd1844fe790c9bde64736f6c63430005100032".to_string();
+        let gotten_contract_code =
+            prov.get_code_by_address(contract_address).await.unwrap();
+        assert_eq!(contract_code, gotten_contract_code);
     }
 }
