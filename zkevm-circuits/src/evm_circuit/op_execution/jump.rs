@@ -5,7 +5,7 @@ use super::utils::{
     self,
     common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
-    StateTransition, StateTransitionExpressions,
+    from_bytes, StateTransition, StateTransitionExpressions,
 };
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
@@ -69,8 +69,10 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         // State transitions
         // `pc` needs to be `dest` value
         let mut st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
-        st.pc_delta =
-            Some(self.dest.expr() - state_curr.program_counter.expr());
+        st.pc_delta = Some(
+            from_bytes::expr(self.dest.cells[..3].to_vec())
+                - state_curr.program_counter.expr(),
+        );
         st.constraints(&mut cb, state_curr, state_next);
 
         // Pop the value from the stack

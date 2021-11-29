@@ -5,6 +5,7 @@ use super::utils::{
     self,
     common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
+    from_bytes,
     math_gadgets::IsZeroGadget,
     select, sum, StateTransition, StateTransitionExpressions,
 };
@@ -85,7 +86,8 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
         // is_cond_met == 1 --> cond != 0, pc = `dest`
         st.pc_delta = Some(select::expr(
             is_cond_met.clone(),
-            self.dest.expr() - state_curr.program_counter.expr(),
+            from_bytes::expr(self.dest.cells[..3].to_vec())
+                - state_curr.program_counter.expr(),
             1.expr(),
         ));
 
