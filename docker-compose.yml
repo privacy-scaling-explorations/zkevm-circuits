@@ -1,0 +1,20 @@
+version: '3'
+services:
+    ganache:
+      build:
+        context: ganache
+        dockerfile: Ganache
+      container_name: ganache
+      tty: true
+      stdin_open: true
+      ports:
+        - 8545:8545
+    deployer:
+      build: ganache
+      container_name: deployer
+      tty: true
+      stdin_open: true
+      volumes:
+        - ./ganache:/app
+        - /app/node_modules
+        - /app/build

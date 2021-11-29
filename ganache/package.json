@@ -1,0 +1,17 @@
+{
+  "name": "ganache",
+  "version": "1.0.0",
+  "description": "",
+  "main": "truffle-config.js",
+  "scripts": {
+    "migrate": "truffle migrate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ganache": "^6.4.5",
+    "global": "^4.4.0",
+    "truffle": "^5.4.22"
+  }
+}
