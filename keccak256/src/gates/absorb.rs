@@ -1,10 +1,15 @@
+use crate::arith_helpers::*;
+use crate::common::*;
+use crate::keccak_arith::*;
+use halo2::circuit::Cell;
 use halo2::{
-    circuit::{Cell, Region},
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
-use std::marker::PhantomData;
+use itertools::Itertools;
+use pasta_curves::{arithmetic::FieldExt, pallas};
+use std::{convert::TryInto, marker::PhantomData};
 
 /// The number of next_inputs that are used inside the `absorb` circuit.
 pub(crate) const ABSORB_NEXT_INPUTS: usize = 17;
@@ -92,7 +97,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         out_state: [F; 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
         flag: (Cell, F),
-    ) -> Result<(), Error> {
+    ) -> Result<([(Cell, F); 25], (Cell, F)), Error> {
         let mut state_array = [F::zero(); 25];
 
         // State at offset + 0
@@ -132,16 +137,56 @@ impl<F: FieldExt> AbsorbConfig<F> {
 
         offset += 1;
         // Assign out_state at offset + 2
+        let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
         for (idx, lane) in out_state.iter().enumerate() {
-            region.assign_advice(
+            let cell = region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
                 offset,
                 || Ok(*lane),
             )?;
+            state.push((cell, *lane));
+        }
+        let out_state: [(Cell, F); 25] = state
+            .try_into()
+            .expect("Unexpected into_slice conversion err");
+
+        Ok((out_state, (obtained_cell, flag.1)))
+    }
+
+    /// Given a [`State`] and the `next_inputs` returns the `init_state` and `out_state` ready to be added
+    /// as circuit witnesses applying `Absorb` to the input to get the output.
+    ///
+    /// It also returns `next_inputs` ready to be used in the circuit.
+    pub(crate) fn compute_circ_states(
+        state: State,
+        next_input: State,
+    ) -> ([F; 25], [F; 25], [F; ABSORB_NEXT_INPUTS]) {
+        let mut in_biguint = StateBigInt::default();
+        let mut next_biguint = StateBigInt::default();
+
+        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut in_next_input_25: [pallas::Base; 25] =
+            [pallas::Base::zero(); 25];
+
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            in_biguint[(x, y)] = convert_b2_to_b9(state[x][y]);
+            next_biguint[(x, y)] = convert_b2_to_b9(next_input[x][y]);
+            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_next_input_25[5 * x + y] =
+                big_uint_to_pallas(&next_biguint[(x, y)]);
         }
 
-        Ok(())
+        let mut in_next_input_17 = [pallas::Base::zero(); ABSORB_NEXT_INPUTS];
+        in_next_input_17
+            .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
+        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
+        let next_input = state_to_biguint(in_next_input_25);
+        (
+            state_bigint_to_pallas::<F, 25>(in_biguint),
+            state_bigint_to_pallas::<F, 25>(s1_arith),
+            state_bigint_to_pallas::<F, ABSORB_NEXT_INPUTS>(next_input),
+        )
     }
 }
 
@@ -149,11 +194,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
 mod tests {
     use super::*;
     use crate::common::State;
-    use crate::{arith_helpers::*, keccak_arith::*};
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use itertools::Itertools;
     use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
     use pretty_assertions::assert_eq;
@@ -266,30 +309,8 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
 
-        let mut in_biguint = StateBigInt::default();
-        let mut next_biguint = StateBigInt::default();
-
-        let mut in_state: [Fp; 25] = [Fp::zero(); 25];
-        let mut in_next_input_25: [Fp; 25] = [Fp::zero(); 25];
-
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
-            next_biguint[(x, y)] = convert_b2_to_b9(next_input[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
-            in_next_input_25[5 * x + y] =
-                big_uint_to_pallas(&next_biguint[(x, y)]);
-        }
-
-        let mut in_next_input_17 = [Fp::zero(); ABSORB_NEXT_INPUTS];
-        in_next_input_17
-            .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
-        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
-        let next_input = state_to_biguint(in_next_input_25);
-        let next_input = state_bigint_to_pallas::<
-            pallas::Base,
-            ABSORB_NEXT_INPUTS,
-        >(next_input);
-        let out_state = state_bigint_to_pallas::<pallas::Base, 25>(s1_arith);
+        let (in_state, out_state, next_input) =
+            AbsorbConfig::compute_circ_states(input1, next_input);
 
         // With flag set to false, the gate should trigger.
         {

@@ -1,3 +1,6 @@
+use crate::arith_helpers::*;
+use crate::common::*;
+use crate::keccak_arith::*;
 use halo2::circuit::Cell;
 use halo2::plonk::Instance;
 use halo2::{
@@ -5,7 +8,8 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
+use itertools::Itertools;
+use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -177,7 +181,7 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed as an
     /// absolute instance column. Returns the new offset after the
     /// assigment.
-    pub fn assign_round_ctant_b9(
+    fn assign_round_ctant_b9(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -195,19 +199,32 @@ impl<F: FieldExt> IotaB9Config<F> {
 
         Ok(())
     }
+
+    /// Given a [`State`] returns the `init_state` and `out_state` ready to be added
+    /// as circuit witnesses applying `IotaB9` to the input to get the output.
+    pub(crate) fn compute_circ_states(state: State) -> ([F; 25], [F; 25]) {
+        let mut in_biguint = StateBigInt::default();
+        let mut in_state: [F; 25] = [F::zero(); 25];
+
+        for (x, y) in (0..5).cartesian_product(0..5) {
+            in_biguint[(x, y)] = convert_b2_to_b9(state[x][y]);
+            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+        }
+
+        // Compute out state
+        let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
+        let s1_arith = KeccakFArith::iota_b9(&in_biguint, round_ctant);
+        (in_state, state_bigint_to_pallas::<F, 25>(s1_arith))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::*;
-    use crate::common::*;
     use crate::common::{PERMUTATION, ROUND_CONSTANTS};
-    use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use itertools::Itertools;
     use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
     use pretty_assertions::assert_eq;
@@ -321,20 +338,7 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let mut in_biguint = StateBigInt::default();
-        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
-
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
-        }
-
-        // Test for final rounds
-        // Compute out state
-
-        let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
-        let s1_arith = KeccakFArith::iota_b9(&in_biguint, round_ctant);
-        let out_state = state_bigint_to_pallas::<pallas::Base, 25>(s1_arith);
+        let (in_state, out_state) = IotaB9Config::compute_circ_states(input1);
 
         let constants: Vec<pallas::Base> = ROUND_CONSTANTS
             .iter()
