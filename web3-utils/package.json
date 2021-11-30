@@ -2,7 +2,7 @@
   "name": "ganache",
   "version": "1.0.0",
   "description": "",
-  "main": "truffle-config.js",
+  "main": "index.js",
   "scripts": {
     "deploy": "ts-node utils/deploy.ts",
     "migrate": "truffle migrate"

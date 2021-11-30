@@ -1,33 +1,13 @@
 version: '3'
 services:
-    # ganache:
-    #   build:
-    #     context: ganache
-    #     dockerfile: Ganache
-    #   container_name: ganache
-    #   tty: true
-    #   stdin_open: true
-    #   ports:
-    #     - 8545:8545
-    deployer:
-      build: geth
-      container_name: deployer
-      tty: true
-      stdin_open: true
-      volumes:
-        - ./geth:/app
-        - /app/node_modules
-        - /app/build
-    geth:
-      build:
-        context: geth
-        dockerfile: Geth
-      container_name: geth
-      tty: true
-      stdin_open: true
-      ports:
-        - 8545:8545
-      command: --dev --dev.period 0 --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,txpool,miner,debug" --verbosity 6 --datadir data
-      volumes:
-        - ./geth:/app
-        - /app/data/geth
+  deployer:
+    build: web3-utils
+    container_name: deployer
+    volumes:
+      - ./web3-output:/app/output
+  geth:
+    image: "ethereum/client-go:stable"
+    container_name: geth
+    ports:
+      - 8545:8545
+    command: --dev --vmdebug --http --http.addr 0.0.0.0 --http.port 8545 --http.vhosts "*" --http.corsdomain "*" --http.api "eth,net,web3,personal,txpool,miner,debug" --verbosity 6
