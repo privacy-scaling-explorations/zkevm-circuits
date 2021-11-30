@@ -10,6 +10,7 @@ use pasta_curves::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
 use crate::{
+    account_leaf_key::{AccountLeafKeyChip, AccountLeafKeyConfig},
     branch_acc::BranchAccChip,
     key_compr::KeyComprChip,
     leaf_hash::{LeafHashChip, LeafHashConfig},
@@ -54,14 +55,15 @@ pub struct MPTConfig<F> {
     c_advices: [Column<Advice>; HASH_WIDTH],
     s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-    branch_acc_s: Column<Advice>,
-    branch_mult_s: Column<Advice>,
-    branch_acc_c: Column<Advice>,
-    branch_mult_c: Column<Advice>,
-    branch_acc_r: F,
+    acc_s: Column<Advice>, // for branch s and accout leaf
+    acc_mult_s: Column<Advice>, // for branch s and accout leaf
+    acc_c: Column<Advice>, // for branch c
+    acc_mult_c: Column<Advice>, // for branch c
+    acc_r: F,
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
     key_compr_chip: KeyComprConfig,
+    account_leaf_key_chip: AccountLeafKeyConfig,
     key_rlc_r: F,
     key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
@@ -77,7 +79,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.fixed_column();
 
-        let branch_acc_r = F::one(); // F::rand(); // TODO: generate from commitments
+        let acc_r = F::rand(); // TODO: generate from commitments
         let key_rlc_r = F::rand(); // TODO: generate from commitments
 
         let is_branch_init = meta.advice_column();
@@ -137,12 +139,12 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let branch_acc_s = meta.advice_column();
-        let branch_mult_s = meta.advice_column();
-        let branch_acc_c = meta.advice_column();
-        let branch_mult_c = meta.advice_column();
+        let acc_s = meta.advice_column();
+        let acc_mult_s = meta.advice_column();
+        let acc_c = meta.advice_column();
+        let acc_mult_c = meta.advice_column();
 
-        // NOTE: branch_mult_s and branch_mult_c wouldn't be needed if we would have
+        // NOTE: acc_mult_s and acc_mult_c wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
         // difficult to handle the accumulator when we iterate over the row.
         // For example, big endian would mean to compute acc = acc * mult_r + row[i],
@@ -548,14 +550,12 @@ impl<F: FieldExt> MPTConfig<F> {
             let mut constraints = vec![];
 
             // check branch accumulator S in row 0
-            let branch_acc_s_cur =
-                meta.query_advice(branch_acc_s, Rotation::cur());
-            let branch_acc_c_cur =
-                meta.query_advice(branch_acc_c, Rotation::cur());
+            let branch_acc_s_cur = meta.query_advice(acc_s, Rotation::cur());
+            let branch_acc_c_cur = meta.query_advice(acc_c, Rotation::cur());
             let branch_mult_s_cur =
-                meta.query_advice(branch_mult_s, Rotation::cur());
+                meta.query_advice(acc_mult_s, Rotation::cur());
             let branch_mult_c_cur =
-                meta.query_advice(branch_mult_c, Rotation::cur());
+                meta.query_advice(acc_mult_c, Rotation::cur());
 
             let two_rlp_bytes = meta.query_advice(s_rlp1, Rotation::cur());
             let three_rlp_bytes = meta.query_advice(s_rlp2, Rotation::cur());
@@ -571,7 +571,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let c_rlp2 = meta.query_advice(s_advices[4], Rotation::cur());
             let c_rlp3 = meta.query_advice(s_advices[5], Rotation::cur());
 
-            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * branch_acc_r;
+            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;
             constraints.push((
                 "branch accumulator S row 0",
                 q_enable.clone()
@@ -580,7 +580,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (acc_s_two - branch_acc_s_cur.clone()),
             ));
 
-            let mult_s_two = Expression::Constant(branch_acc_r * branch_acc_r);
+            let mult_s_two = Expression::Constant(acc_r * acc_r);
             constraints.push((
                 "branch mult S row 0",
                 q_enable.clone()
@@ -589,7 +589,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (mult_s_two - branch_mult_s_cur.clone()),
             ));
 
-            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * branch_acc_r;
+            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * acc_r;
             constraints.push((
                 "branch accumulator C row 0",
                 q_enable.clone()
@@ -598,7 +598,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (acc_c_two - branch_acc_c_cur.clone()),
             ));
 
-            let mult_c_two = Expression::Constant(branch_acc_r * branch_acc_r);
+            let mult_c_two = Expression::Constant(acc_r * acc_r);
             constraints.push((
                 "branch mult C row 0",
                 q_enable.clone()
@@ -609,9 +609,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
             //
 
-            let acc_s_three = s_rlp1
-                + s_rlp2 * branch_acc_r
-                + s_rlp3 * branch_acc_r * branch_acc_r;
+            let acc_s_three = s_rlp1 + s_rlp2 * acc_r + s_rlp3 * acc_r * acc_r;
             constraints.push((
                 "branch accumulator S row 0 (3)",
                 q_enable.clone()
@@ -620,9 +618,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (acc_s_three - branch_acc_s_cur),
             ));
 
-            let mult_s_three = Expression::Constant(
-                branch_acc_r * branch_acc_r * branch_acc_r,
-            );
+            let mult_s_three = Expression::Constant(acc_r * acc_r * acc_r);
             constraints.push((
                 "branch mult S row 0 (3)",
                 q_enable.clone()
@@ -631,9 +627,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (mult_s_three - branch_mult_s_cur),
             ));
 
-            let acc_c_three = c_rlp1
-                + c_rlp2 * branch_acc_r
-                + c_rlp3 * branch_acc_r * branch_acc_r;
+            let acc_c_three = c_rlp1 + c_rlp2 * acc_r + c_rlp3 * acc_r * acc_r;
             constraints.push((
                 "branch accumulator C row 0 (3)",
                 q_enable.clone()
@@ -642,9 +636,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (acc_c_three - branch_acc_c_cur),
             ));
 
-            let mult_c_three = Expression::Constant(
-                branch_acc_r * branch_acc_r * branch_acc_r,
-            );
+            let mult_c_three = Expression::Constant(acc_r * acc_r * acc_r);
             constraints.push((
                 "branch mult C row 0 (3)",
                 q_enable.clone()
@@ -772,18 +764,18 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
-            let branch_acc_s = meta.query_advice(branch_acc_s, Rotation::cur());
+            let acc_s = meta.query_advice(acc_s, Rotation::cur());
 
-            // TODO: branch_acc_s currently doesn't have branch ValueNode info (which 128 if nil)
+            // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
             let c128 = Expression::Constant(F::from_u64(128));
-            let mult_s = meta.query_advice(branch_mult_s, Rotation::cur());
-            let branch_acc_s1 = branch_acc_s + c128 * mult_s;
+            let mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
+            let branch_acc_s1 = acc_s + c128 * mult_s;
 
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
-                    * branch_acc_s1, // TODO: replace with branch_acc_s once ValueNode is added
+                    * branch_acc_s1, // TODO: replace with acc_s once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             for (ind, column) in s_keccak.iter().enumerate() {
@@ -811,18 +803,18 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
-            let branch_acc_c = meta.query_advice(branch_acc_c, Rotation::cur());
+            let acc_c = meta.query_advice(acc_c, Rotation::cur());
 
-            // TODO: branch_acc_c currently doesn't have branch ValueNode info (which 128 if nil)
+            // TODO: acc_c currently doesn't have branch ValueNode info (which 128 if nil)
             let c128 = Expression::Constant(F::from_u64(128));
-            let mult_c = meta.query_advice(branch_mult_c, Rotation::cur());
-            let branch_acc_c1 = branch_acc_c + c128 * mult_c;
+            let mult_c = meta.query_advice(acc_mult_c, Rotation::cur());
+            let branch_acc_c1 = acc_c + c128 * mult_c;
 
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
-                    * branch_acc_c1, // TODO: replace with branch_acc_c once ValueNode is added
+                    * branch_acc_c1, // TODO: replace with acc_c once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             for (ind, column) in c_keccak.iter().enumerate() {
@@ -850,11 +842,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            branch_acc_r,
+            acc_r,
             s_rlp2,
             s_advices,
-            branch_acc_s,
-            branch_mult_s,
+            acc_s,
+            acc_mult_s,
         );
 
         let branch_acc_c_chip = BranchAccChip::<F>::configure(
@@ -867,11 +859,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            branch_acc_r,
+            acc_r,
             c_rlp2,
             c_advices,
-            branch_acc_c,
-            branch_mult_c,
+            acc_c,
+            acc_mult_c,
         );
 
         let leaf_hash_s_chip = LeafHashChip::<F>::configure(
@@ -888,7 +880,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
-            branch_acc_r,
+            acc_r,
             s_keccak,
             keccak_table,
         );
@@ -907,7 +899,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
-            branch_acc_r,
+            acc_r,
             c_keccak,
             keccak_table,
         );
@@ -931,6 +923,27 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             key_rlc_r,
+        );
+
+        let account_leaf_key_chip = AccountLeafKeyChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_account_leaf_key_s =
+                    meta.query_advice(is_account_leaf_key_s, Rotation::cur());
+                let is_account_leaf_key_c =
+                    meta.query_advice(is_account_leaf_key_c, Rotation::cur());
+
+                q_not_first * (is_account_leaf_key_s + is_account_leaf_key_c)
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            s_advices,
+            acc_r,
+            acc_s,
+            acc_mult_s,
         );
 
         MPTConfig {
@@ -961,14 +974,15 @@ impl<F: FieldExt> MPTConfig<F> {
             c_advices,
             s_keccak,
             c_keccak,
-            branch_acc_s,
-            branch_mult_s,
-            branch_acc_c,
-            branch_mult_c,
-            branch_acc_r,
+            acc_s,
+            acc_mult_s,
+            acc_c,
+            acc_mult_c,
+            acc_r,
             branch_acc_s_chip,
             branch_acc_c_chip,
             key_compr_chip,
+            account_leaf_key_chip,
             key_rlc_r,
             key_rlc,
             key_rlc_mult,
@@ -1015,29 +1029,29 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         region.assign_advice(
-            || format!("assign branch_acc_s"),
-            self.branch_acc_s,
+            || format!("assign acc_s"),
+            self.acc_s,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
-            || format!("assign branch_mult_s"),
-            self.branch_mult_s,
+            || format!("assign acc_mult_s"),
+            self.acc_mult_s,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
-            || format!("assign branch_acc_c"),
-            self.branch_acc_c,
+            || format!("assign acc_c"),
+            self.acc_c,
             offset,
             || Ok(F::zero()),
         )?;
 
         region.assign_advice(
-            || format!("assign branch_mult_c"),
-            self.branch_mult_c,
+            || format!("assign acc_mult_c"),
+            self.acc_mult_c,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1287,41 +1301,41 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
-    fn assign_branch_acc(
+    fn assign_acc(
         &self,
         region: &mut Region<'_, F>,
         acc_s: F,
-        branch_mult_s: F,
+        acc_mult_s: F,
         acc_c: F,
-        branch_mult_c: F,
+        acc_mult_c: F,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
-            || format!("assign branch_acc_s"),
-            self.branch_acc_s,
+            || format!("assign acc_s"),
+            self.acc_s,
             offset,
             || Ok(acc_s),
         )?;
 
         region.assign_advice(
-            || format!("assign branch_mult_s"),
-            self.branch_mult_s,
+            || format!("assign acc_mult_s"),
+            self.acc_mult_s,
             offset,
-            || Ok(branch_mult_s),
+            || Ok(acc_mult_s),
         )?;
 
         region.assign_advice(
-            || format!("assign branch_acc_c"),
-            self.branch_acc_c,
+            || format!("assign acc_c"),
+            self.acc_c,
             offset,
             || Ok(acc_c),
         )?;
 
         region.assign_advice(
-            || format!("assign branch_mult_c"),
-            self.branch_mult_c,
+            || format!("assign acc_mult_c"),
+            self.acc_mult_c,
             offset,
-            || Ok(branch_mult_c),
+            || Ok(acc_mult_c),
         )?;
 
         Ok(())
@@ -1342,10 +1356,10 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
                     let mut node_index: u8 = 0;
-                    let mut branch_acc_s = F::zero();
-                    let mut branch_mult_s = F::zero();
-                    let mut branch_acc_c = F::zero();
-                    let mut branch_mult_c = F::zero();
+                    let mut acc_s = F::zero();
+                    let mut acc_mult_s = F::zero();
+                    let mut acc_c = F::zero();
+                    let mut acc_mult_c = F::zero();
                     let mut key_rlc = F::zero();
                     let mut key_rlc_mult = F::one();
                     let mut not_first_level = F::zero();
@@ -1416,42 +1430,36 @@ impl<F: FieldExt> MPTConfig<F> {
                             // Branch (length 340) with three bytes of RLP meta data
                             // [249,1,81,128,16,...
 
-                            branch_acc_s =
-                                F::from_u64(row[BRANCH_0_S_START] as u64)
-                                    + F::from_u64(
-                                        row[BRANCH_0_S_START + 1] as u64,
-                                    ) * self.branch_acc_r;
-                            branch_mult_s =
-                                self.branch_acc_r * self.branch_acc_r;
+                            acc_s = F::from_u64(row[BRANCH_0_S_START] as u64)
+                                + F::from_u64(row[BRANCH_0_S_START + 1] as u64)
+                                    * self.acc_r;
+                            acc_mult_s = self.acc_r * self.acc_r;
 
                             if row[BRANCH_0_S_START] == 249 {
-                                branch_acc_s += F::from_u64(
+                                acc_s += F::from_u64(
                                     row[BRANCH_0_S_START + 2] as u64,
-                                ) * branch_mult_s;
-                                branch_mult_s *= self.branch_acc_r;
+                                ) * acc_mult_s;
+                                acc_mult_s *= self.acc_r;
                             }
 
-                            branch_acc_c =
-                                F::from_u64(row[BRANCH_0_C_START] as u64)
-                                    + F::from_u64(
-                                        row[BRANCH_0_C_START + 1] as u64,
-                                    ) * self.branch_acc_r;
-                            branch_mult_c =
-                                self.branch_acc_r * self.branch_acc_r;
+                            acc_c = F::from_u64(row[BRANCH_0_C_START] as u64)
+                                + F::from_u64(row[BRANCH_0_C_START + 1] as u64)
+                                    * self.acc_r;
+                            acc_mult_c = self.acc_r * self.acc_r;
 
                             if row[BRANCH_0_C_START] == 249 {
-                                branch_acc_c += F::from_u64(
+                                acc_c += F::from_u64(
                                     row[BRANCH_0_C_START + 2] as u64,
-                                ) * branch_mult_c;
-                                branch_mult_c *= self.branch_acc_r;
+                                ) * acc_mult_c;
+                                acc_mult_c *= self.acc_r;
                             }
 
-                            self.assign_branch_acc(
+                            self.assign_acc(
                                 &mut region,
-                                branch_acc_s,
-                                branch_mult_s,
-                                branch_acc_c,
-                                branch_mult_c,
+                                acc_s,
+                                acc_mult_s,
+                                acc_c,
+                                acc_mult_c,
                                 offset,
                             )?;
 
@@ -1517,17 +1525,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                     if row[rlp_start + 1] == 0 {
                                         *branch_acc += c128 * *branch_mult;
                                         *branch_mult =
-                                            *branch_mult * self.branch_acc_r;
+                                            *branch_mult * self.acc_r;
                                     } else {
                                         *branch_acc += c160 * *branch_mult;
                                         *branch_mult =
-                                            *branch_mult * self.branch_acc_r;
+                                            *branch_mult * self.acc_r;
                                         for i in 0..HASH_WIDTH {
                                             *branch_acc += F::from_u64(
                                                 row[start + i] as u64,
                                             ) * *branch_mult;
-                                            *branch_mult = *branch_mult
-                                                * self.branch_acc_r;
+                                            *branch_mult =
+                                                *branch_mult * self.acc_r;
                                         }
                                     }
                                 };
@@ -1535,23 +1543,23 @@ impl<F: FieldExt> MPTConfig<F> {
                             // TODO: add branch ValueNode info
 
                             compute_acc_and_mult(
-                                &mut branch_acc_s,
-                                &mut branch_mult_s,
+                                &mut acc_s,
+                                &mut acc_mult_s,
                                 S_RLP_START,
                                 S_START,
                             );
                             compute_acc_and_mult(
-                                &mut branch_acc_c,
-                                &mut branch_mult_c,
+                                &mut acc_c,
+                                &mut acc_mult_c,
                                 C_RLP_START,
                                 C_START,
                             );
-                            self.assign_branch_acc(
+                            self.assign_acc(
                                 &mut region,
-                                branch_acc_s,
-                                branch_mult_s,
-                                branch_acc_c,
-                                branch_mult_c,
+                                acc_s,
+                                acc_mult_s,
+                                acc_c,
+                                acc_mult_c,
                                 offset,
                             )?;
 
@@ -1632,6 +1640,92 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_key_nibbles,
                                 offset,
                             )?;
+
+                            // assign leaf accumulator that will be used as keccak input
+                            let compute_acc_and_mult =
+                                |acc: &mut F,
+                                 mult: &mut F,
+                                 start: usize,
+                                 len: usize| {
+                                    for i in 0..len {
+                                        *acc +=
+                                            F::from_u64(row[start + i] as u64)
+                                                * *mult;
+                                        *mult = *mult * self.acc_r;
+                                    }
+                                };
+
+                            if row[row.len() - 1] == 6
+                                || row[row.len() - 1] == 9
+                            {
+                                acc_s = F::zero();
+                                acc_mult_s = F::one();
+                                // 35 = 2 (leaf rlp) + 1 (key rlp) + 32 (key), doesn't really matter, just don't
+                                // include the last byte (row type) in the acc (others are 0)
+                                for i in 0..35 {
+                                    acc_s +=
+                                        F::from_u64(row[i] as u64) * acc_mult_s;
+                                    acc_mult_s = acc_mult_s * self.acc_r;
+                                }
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
+                            } else if row[row.len() - 1] == 7
+                                || row[row.len() - 1] == 10
+                            {
+                                // nonce
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    S_START,
+                                    HASH_WIDTH,
+                                );
+                                // balance
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    C_START,
+                                    HASH_WIDTH,
+                                );
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
+                            } else if row[row.len() - 1] == 8
+                                || row[row.len() - 1] == 11
+                            {
+                                // storage
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    S_START - 1,
+                                    HASH_WIDTH + 1,
+                                );
+                                // code hash
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    C_START - 1,
+                                    HASH_WIDTH + 1,
+                                );
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
+                            }
 
                             /*
                             // debugging key RLC
@@ -1714,7 +1808,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut mult = F::one();
                     for i in t.iter() {
                         rlc = rlc + F::from_u64(*i as u64) * mult;
-                        mult = mult * self.branch_acc_r;
+                        mult = mult * self.acc_r;
                     }
                     region.assign_fixed(
                         || "Keccak table",
