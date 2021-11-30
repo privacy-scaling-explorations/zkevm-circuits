@@ -27,4 +27,7 @@ services:
       stdin_open: true
       ports:
         - 8545:8545
-      command: --dev --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api="eth,net,web3,personal,txpool,miner,debug"
+      command: --dev --dev.period 0 --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api "eth,net,web3,personal,txpool,miner,debug" --verbosity 6 --datadir data
+      volumes:
+        - ./geth:/app
+        - /app/data/geth

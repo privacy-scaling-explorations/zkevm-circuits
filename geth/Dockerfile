@@ -5,6 +5,6 @@ WORKDIR /app
 COPY package.json .
 
 RUN apk add git &&\
-    yarn add global truffle
+    yarn
 
-ENTRYPOINT yarn migrate
+# ENTRYPOINT yarn deploy

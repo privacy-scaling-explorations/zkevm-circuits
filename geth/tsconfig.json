@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+      "target": "ES2020",
+      "module": "commonjs",
+      "strict": true,
+      "importHelpers": true,
+      "moduleResolution": "node",
+      "allowJs": true,
+      "esModuleInterop": true,
+      "allowSyntheticDefaultImports": true,
+      "outDir": "dist",
+      "resolveJsonModule": true,
+      "sourceMap": true
+    },
+}

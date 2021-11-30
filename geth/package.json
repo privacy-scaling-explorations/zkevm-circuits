@@ -4,6 +4,7 @@
   "description": "",
   "main": "truffle-config.js",
   "scripts": {
+    "deploy": "ts-node utils/deploy.ts",
     "migrate": "truffle migrate"
   },
   "keywords": [],
@@ -12,6 +13,9 @@
   "dependencies": {
     "ganache": "^6.4.5",
     "global": "^4.4.0",
-    "truffle": "^5.4.22"
+    "truffle": "^5.4.22",
+    "ts-node": "^10.4.0",
+    "typescript": "^4.5.2",
+    "web3": "^1.6.1"
   }
 }

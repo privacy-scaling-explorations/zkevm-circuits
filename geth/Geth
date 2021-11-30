@@ -1,5 +1,7 @@
 FROM ethereum/client-go:latest
 
+WORKDIR /app
+
 COPY config .
 
 RUN geth init --datadir data genesis.json
