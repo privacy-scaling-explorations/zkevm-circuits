@@ -49,9 +49,11 @@ impl<F: FieldExt> IotaB13Config<F> {
                 // can be satisfied while enforcing the correct gate logic.
                 let flag = Expression::Constant(F::one())
                     - meta.query_advice(round_ctant_b13, Rotation::next());
+
                 // Note also that we want to enable the gate when `is_mixing` is
-                // false. (flag = 0). Therefore, we need to do
-                // `1-flag` in order to enforce this.
+                // false. (flag = 0). Therefore, we are doing
+                // `1-flag` in order to enforce this. (See the flag computation
+                // above).
                 meta.query_selector(q_mixing) * flag
             };
 

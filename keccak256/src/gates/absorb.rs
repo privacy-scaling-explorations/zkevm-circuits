@@ -1,6 +1,5 @@
-use crate::{arith_helpers::*, keccak_arith::*};
 use halo2::{
-    circuit::{layouter::RegionLayouter, Cell, Region},
+    circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -12,6 +11,7 @@ pub(crate) const ABSORB_NEXT_INPUTS: usize = 17;
 
 #[derive(Clone, Debug)]
 pub struct AbsorbConfig<F> {
+    q_mixing: Selector,
     state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
@@ -19,10 +19,9 @@ pub struct AbsorbConfig<F> {
 impl<F: FieldExt> AbsorbConfig<F> {
     // We assume state is recieved in base-9.
     // Rows are assigned as:
-    // 1) STATE (25 columns) (offset +2)
-    // 2) NEXT_INPUTS (17 columns) + is_mixing flag (1 column) (offset +1)
-    // (current rotation) 3) OUT_STATE (25 columns) (offset +2)
-    // TODO: Review with YT!
+    // 1) STATE (25 columns) (offset -1)
+    // 2) NEXT_INPUTS (17 columns) + is_mixing flag (1 column) (offset +0)
+    // (current rotation) 3) OUT_STATE (25 columns) (offset +1)
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
@@ -34,11 +33,35 @@ impl<F: FieldExt> AbsorbConfig<F> {
         // make it 2*a + b + 3*c + 2*d             # coefficient in 0~8
         //             state[x][y] += 2 * next_input[x][y]
         //     return state
+
+        // Declare the q_mixing.
+        let q_mixing = meta.selector();
+        state
+            .iter()
+            .for_each(|column| meta.enable_equality((*column).into()));
+
         meta.create_gate("absorb", |meta| {
-            // Query is_mixing flag and multiply it at each round as the
-            // selector!
-            let is_mixing = meta
-                .query_advice(state[ABSORB_NEXT_INPUTS + 1], Rotation::cur());
+            // We do a trick which consists on multiplying an internal selector
+            // which is always active by the actual `is_mixing` flag
+            // which will then enable or disable the gate.
+            let q_enable = {
+                // We query the flag value from the `state` `Advice` column at
+                // rotation curr and position = `ABSORB_NEXT_INPUTS + 1`
+                // and multiply to it the active selector so that we avoid the
+                // `PoisonedConstraints` and each gate equation
+                // can be satisfied while enforcing the correct gate logic.
+                let flag = Expression::Constant(F::one())
+                    - meta.query_advice(
+                        state[ABSORB_NEXT_INPUTS],
+                        Rotation::cur(),
+                    );
+                // Note also that we want to enable the gate when `is_mixing` is
+                // false. (flag = 0). Therefore, we are doing
+                // `1-flag` in order to enforce this. (See the flag computation
+                // above).
+                meta.query_selector(q_mixing) * flag
+            };
+
             (0..ABSORB_NEXT_INPUTS)
                 .map(|idx| {
                     let val = meta.query_advice(state[idx], Rotation::prev())
@@ -48,30 +71,32 @@ impl<F: FieldExt> AbsorbConfig<F> {
                     let next_lane =
                         meta.query_advice(state[idx], Rotation::next());
 
-                    is_mixing * (val - next_lane)
+                    q_enable.clone() * (val - next_lane)
                 })
                 .collect::<Vec<_>>()
         });
 
         AbsorbConfig {
+            q_mixing,
             state,
             _marker: PhantomData,
         }
     }
 
-    // TODO: Review with YT!
-    pub fn assign_state_and_next_inp_from_cell(
+    /// Doc this
+    pub fn copy_state_flag_next_inputs(
         &self,
         region: &mut Region<'_, F>,
-        offset: usize,
-        state: [(Cell, F); 25],
+        mut offset: usize,
+        in_state: [(Cell, F); 25],
+        out_state: [F; 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
         flag: (Cell, F),
-    ) -> Result<([F; 25], usize), Error> {
+    ) -> Result<(), Error> {
         let mut state_array = [F::zero(); 25];
 
         // State at offset + 0
-        for (idx, (cell, value)) in state.iter().enumerate() {
+        for (idx, (cell, value)) in in_state.iter().enumerate() {
             // Copy value into state_array
             state_array[idx] = *value;
             let new_cell = region.assign_advice(
@@ -84,55 +109,30 @@ impl<F: FieldExt> AbsorbConfig<F> {
             region.constrain_equal(*cell, new_cell)?;
         }
 
+        offset += 1;
+        // Enable `q_mixing` at `offset + 1`
+        self.q_mixing.enable(region, offset)?;
         // Assign next_mixing at offset + 1
         for (idx, lane) in next_input.iter().enumerate() {
             region.assign_advice(
                 || format!("assign next_input {}", idx),
                 self.state[idx],
-                offset + 1,
+                offset,
                 || Ok(*lane),
             )?;
         }
-        // Assign flag at last column(18th) of the offset + 1 row.
+        // Assign flag at last column(17th) of the offset + 1 row.
         let obtained_cell = region.assign_advice(
-            || format!("assign next_input {}", ABSORB_NEXT_INPUTS + 1),
-            self.state[ABSORB_NEXT_INPUTS + 1],
-            offset + 1,
+            || format!("assign next_input {}", ABSORB_NEXT_INPUTS),
+            self.state[ABSORB_NEXT_INPUTS],
+            offset,
             || Ok(flag.1),
         )?;
         region.constrain_equal(flag.0, obtained_cell)?;
 
-        // Apply absorb outside circuit
-        let out_state = KeccakFArith::absorb(
-            &state_to_biguint(state_array),
-            &state_to_state_bigint(next_input),
-        );
-        let out_state = state_bigint_to_pallas(out_state);
-
+        offset += 1;
         // Assign out_state at offset + 2
         for (idx, lane) in out_state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset + 2,
-                || Ok(*lane),
-            )?;
-        }
-
-        Ok((out_state, offset + 2))
-    }
-
-    // TODO: Review with YT!
-    pub fn assign_state_next_inp_and_flag(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        state: [F; 25],
-        next_input: [F; ABSORB_NEXT_INPUTS],
-        flag: bool,
-    ) -> Result<([F; 25], usize), Error> {
-        // Assign current state at offset + 0
-        for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
@@ -141,55 +141,22 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        // Assign next_mixing at offset + 1
-        for (idx, lane) in next_input.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign next_input {}", idx),
-                self.state[idx],
-                offset + 1,
-                || Ok(*lane),
-            )?;
-        }
-        // Assign flag at last column of the offset + 1 row.
-        let flag: F = flag.into();
-        region.assign_advice(
-            || format!("assign next_input {}", ABSORB_NEXT_INPUTS + 1),
-            self.state[ABSORB_NEXT_INPUTS + 1],
-            offset + 1,
-            || Ok(flag),
-        )?;
-
-        // Apply absorb outside circuit
-        let out_state = KeccakFArith::absorb(
-            &state_to_biguint(state),
-            &state_to_state_bigint(next_input),
-        );
-        let out_state = state_bigint_to_pallas(out_state);
-
-        // Assign out_state at offset + 2
-        for (idx, lane) in out_state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset + 2,
-                || Ok(*lane),
-            )?;
-        }
-
-        Ok((out_state, offset + 2))
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::*;
+    use crate::common::State;
+    use crate::{arith_helpers::*, keccak_arith::*};
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use pasta_curves::arithmetic::FieldExt;
     use pasta_curves::pallas;
+    use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -197,9 +164,8 @@ mod tests {
     fn test_absorb_gate() {
         #[derive(Default)]
         struct MyCircuit<F> {
-            // TODO: Review with YT the idea of state being already [(Cell,
-            // F;25)] since will always come from copied cells.
             in_state: [F; 25],
+            out_state: [F; 25],
             next_input: [F; ABSORB_NEXT_INPUTS],
             is_mixing: bool,
             _marker: PhantomData<F>,
@@ -213,10 +179,12 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.complex_selector();
-
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let column = meta.advice_column();
+                        meta.enable_equality(column.into());
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
@@ -267,10 +235,11 @@ mod tests {
                     || "assign input state",
                     |mut region| {
                         let offset = 0;
-                        config.assign_state_and_next_inp_from_cell(
+                        config.copy_state_flag_next_inputs(
                             &mut region,
                             offset,
                             in_state,
+                            self.out_state,
                             self.next_input,
                             flag,
                         )
@@ -315,17 +284,61 @@ mod tests {
         in_next_input_17
             .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
         let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
+        let next_input = state_to_biguint(in_next_input_25);
+        let next_input = state_bigint_to_pallas::<
+            pallas::Base,
+            ABSORB_NEXT_INPUTS,
+        >(next_input);
+        let out_state = state_bigint_to_pallas::<pallas::Base, 25>(s1_arith);
 
-        let circuit = MyCircuit::<pallas::Base> {
-            is_mixing: false,
-            in_state,
-            next_input: in_next_input_17,
-            _marker: PhantomData,
-        };
+        // With flag set to false, the gate should trigger.
+        {
+            // With the correct input and output witnesses, the proof should
+            // pass.
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state,
+                next_input,
+                is_mixing: false,
+                _marker: PhantomData,
+            };
 
-        // Test without public inputs
-        let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
+            let prover =
+                MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
 
-        assert_eq!(prover.verify(), Ok(()));
+            assert_eq!(prover.verify(), Ok(()));
+
+            // With wrong input and/or output witnesses, the proof should fail
+            // to be verified.
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state: in_state,
+                next_input,
+                is_mixing: false,
+                _marker: PhantomData,
+            };
+
+            let prover =
+                MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+
+            assert!(prover.verify().is_err());
+        }
+
+        // With flag set to `true`, the gate shouldn't trigger.
+        // And so we can pass any witness data and the proof should pass.
+        {
+            let circuit = MyCircuit::<pallas::Base> {
+                in_state,
+                out_state: in_state,
+                next_input,
+                is_mixing: true,
+                _marker: PhantomData,
+            };
+
+            let prover =
+                MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+
+            assert_eq!(prover.verify(), Ok(()));
+        }
     }
 }
