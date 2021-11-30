@@ -41,6 +41,8 @@ impl<F: FieldExt> KeyComprChip<F> {
 
             let mut constraints = vec![];
 
+            // TODO: when value is long so long that RLP is longer than 55 bytes
+
             let is_odd = meta.query_advice(s_rlp1, Rotation::cur());
             let is_even = meta.query_advice(s_rlp2, Rotation::cur());
 

@@ -29,8 +29,6 @@ impl<F: FieldExt> BranchAccChip<F> {
         branch_acc: Column<Advice>,
         branch_mult: Column<Advice>,
     ) -> BranchAccConfig {
-        let range_table = meta.fixed_column();
-
         let config = BranchAccConfig {};
 
         meta.create_gate("branch acc", |meta| {
@@ -54,7 +52,7 @@ impl<F: FieldExt> BranchAccChip<F> {
             constraints.push((
                 "branch acc empty",
                 q_enable.clone()
-                    * (c160.clone() - rlp2.clone()) // rlp2 is 160 when non-empty and 0 when empty (field modulus is not divisible by 160, so this should be secure)
+                    * (c160.clone() - rlp2.clone())
                     * (branch_acc_cur.clone()
                         - branch_acc_prev.clone()
                         - c128.clone() * branch_mult_prev.clone()),
@@ -62,7 +60,7 @@ impl<F: FieldExt> BranchAccChip<F> {
             constraints.push((
                 "branch acc mult empty",
                 q_enable.clone()
-                    * (c160.clone() - rlp2.clone()) // rlp2 is 160 when non-empty and 0 when empty (field modulus is not divisible by 160, so this should be secure)
+                    * (c160.clone() - rlp2.clone())
                     * (branch_mult_cur.clone()
                         - branch_mult_prev.clone() * branch_acc_r),
             ));
@@ -80,13 +78,13 @@ impl<F: FieldExt> BranchAccChip<F> {
             constraints.push((
                 "branch acc non-empty",
                 q_enable.clone()
-                    * rlp2.clone() // rlp2 is 0 when empty and 160 when non-empty (field modulus is not divisible by 160, so this should be secure)
+                    * rlp2.clone()
                     * (branch_acc_cur.clone() - branch_acc_prev.clone() - expr),
             ));
             constraints.push((
                 "branch acc mult non-empty",
                 q_enable.clone()
-                    * rlp2.clone() // rlp2 is 0 when empty and 160 when non-empty (field modulus is not divisible by 160, so this should be secure)
+                    * rlp2.clone()
                     * (branch_mult_cur.clone() - curr_r),
             ));
 
