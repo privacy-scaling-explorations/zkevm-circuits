@@ -1,4 +1,4 @@
-use crate::{common::State, gates::absorb::ABSORB_NEXT_INPUTS};
+use crate::common::State;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -32,6 +32,17 @@ impl Default for StateBigInt {
         for _ in 0..25 {
             xy.push(Zero::zero());
         }
+        Self { xy }
+    }
+}
+
+impl From<State> for StateBigInt {
+    fn from(state: State) -> Self {
+        let xy = state
+            .iter()
+            .flatten()
+            .map(|num| BigUint::from(*num))
+            .collect();
         Self { xy }
     }
 }
@@ -186,7 +197,7 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .unwrap_or(0)
 }
 
-pub fn big_uint_to_pallas(a: &BigUint) -> pallas::Base {
+pub fn big_uint_to_pallas<F: FieldExt>(a: &BigUint) -> F {
     let mut b: [u64; 4] = [0; 4];
     let mut iter = a.iter_u64_digits();
 
@@ -197,7 +208,8 @@ pub fn big_uint_to_pallas(a: &BigUint) -> pallas::Base {
         };
     }
 
-    pallas::Base::from_raw(b)
+    // Workarround since `FieldExt` does not impl `from_raw`.
+    F::from_bytes(&pallas::Base::from_raw(b).to_bytes()).unwrap()
 }
 
 /// This function allows us to inpect coefficients of big-numbers in different
@@ -226,7 +238,9 @@ pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
     }
 }
 
-pub fn state_to_state_bigint<F: FieldExt>(state: [F; 17]) -> State {
+pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
+    state: [F; N],
+) -> State {
     let mut matrix = [[0u64; 5]; 5];
 
     let mut elems: Vec<u64> = state
@@ -240,7 +254,7 @@ pub fn state_to_state_bigint<F: FieldExt>(state: [F; 17]) -> State {
             u64::from_le_bytes(arr)
         })
         .collect();
-    elems.extend(vec![0u64; 25 - 17]);
+    elems.extend(vec![0u64; 25 - N]);
     (0..5).into_iter().for_each(|idx| {
         matrix[idx].copy_from_slice(&elems[5 * idx..(5 * idx + 5)])
     });

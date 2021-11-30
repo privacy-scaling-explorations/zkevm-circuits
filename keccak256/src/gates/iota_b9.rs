@@ -10,6 +10,7 @@ use halo2::{
 };
 use itertools::Itertools;
 use pasta_curves::arithmetic::FieldExt;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -202,12 +203,16 @@ impl<F: FieldExt> IotaB9Config<F> {
 
     /// Given a [`State`] returns the `init_state` and `out_state` ready to be added
     /// as circuit witnesses applying `IotaB9` to the input to get the output.
-    pub(crate) fn compute_circ_states(state: State) -> ([F; 25], [F; 25]) {
+    pub(crate) fn compute_circ_states(
+        state: StateBigInt,
+    ) -> ([F; 25], [F; 25]) {
         let mut in_biguint = StateBigInt::default();
         let mut in_state: [F; 25] = [F::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b9(state[x][y]);
+            in_biguint[(x, y)] = convert_b2_to_b9(
+                state[(x, y)].clone().try_into().expect("Conversion err"),
+            );
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
         }
 
@@ -338,7 +343,8 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let (in_state, out_state) = IotaB9Config::compute_circ_states(input1);
+        let (in_state, out_state) =
+            IotaB9Config::compute_circ_states(input1.into());
 
         let constants: Vec<pallas::Base> = ROUND_CONSTANTS
             .iter()

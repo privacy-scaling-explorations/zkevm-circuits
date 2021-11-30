@@ -159,7 +159,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
     ///
     /// It also returns `next_inputs` ready to be used in the circuit.
     pub(crate) fn compute_circ_states(
-        state: State,
+        state: StateBigInt,
         next_input: State,
     ) -> ([F; 25], [F; 25], [F; ABSORB_NEXT_INPUTS]) {
         let mut in_biguint = StateBigInt::default();
@@ -170,7 +170,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
             [pallas::Base::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b9(state[x][y]);
+            in_biguint[(x, y)] = convert_b2_to_b9(
+                state[(x, y)].clone().try_into().expect("Conversion err"),
+            );
             next_biguint[(x, y)] = convert_b2_to_b9(next_input[x][y]);
             in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
             in_next_input_25[5 * x + y] =
@@ -180,7 +182,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         let mut in_next_input_17 = [pallas::Base::zero(); ABSORB_NEXT_INPUTS];
         in_next_input_17
             .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
-        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
+        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input.into());
         let next_input = state_to_biguint(in_next_input_25);
         (
             state_bigint_to_pallas::<F, 25>(in_biguint),
@@ -310,7 +312,7 @@ mod tests {
         ];
 
         let (in_state, out_state, next_input) =
-            AbsorbConfig::compute_circ_states(input1, next_input);
+            AbsorbConfig::compute_circ_states(input1.into(), next_input);
 
         // With flag set to false, the gate should trigger.
         {
