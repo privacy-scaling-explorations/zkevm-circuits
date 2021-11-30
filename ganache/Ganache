@@ -1,7 +1,0 @@
-FROM node:14-alpine
-
-RUN npm i -g ganache-cli
-
-ENTRYPOINT ganache-cli --host=0.0.0.0 -m="zkevm" --networkId=5777 -p 8545 -l 80000000000
-
-EXPOSE 8545

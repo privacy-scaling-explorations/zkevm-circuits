@@ -1,20 +1,30 @@
 version: '3'
 services:
-    ganache:
-      build:
-        context: ganache
-        dockerfile: Ganache
-      container_name: ganache
-      tty: true
-      stdin_open: true
-      ports:
-        - 8545:8545
+    # ganache:
+    #   build:
+    #     context: ganache
+    #     dockerfile: Ganache
+    #   container_name: ganache
+    #   tty: true
+    #   stdin_open: true
+    #   ports:
+    #     - 8545:8545
     deployer:
-      build: ganache
+      build: geth
       container_name: deployer
       tty: true
       stdin_open: true
       volumes:
-        - ./ganache:/app
+        - ./geth:/app
         - /app/node_modules
         - /app/build
+    geth:
+      build:
+        context: geth
+        dockerfile: Geth
+      container_name: geth
+      tty: true
+      stdin_open: true
+      ports:
+        - 8545:8545
+      command: --dev --http --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*" --http.api="eth,net,web3,personal,txpool,miner,debug"
