@@ -46,7 +46,7 @@ pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
         from: Some(address!("0x00000000000000000000000000000000c014ba5e")),
         to: Some(Address::zero()),
         value: Word::from([0u8; 32]),
-        gas_price: Word::from([0u8; 32]),
+        gas_price: Some(Word::from([0u8; 32])),
         gas: Word::from(1_000_000u64),
         input: Bytes(Vec::new()),
         v: Some(U64([0u64])),
@@ -55,6 +55,8 @@ pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
         raw: Some(Bytes(Vec::new())),
         transaction_type: Some(U64([0u64])),
         access_list: None,
+        max_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
     }
 }
 
