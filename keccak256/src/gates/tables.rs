@@ -105,8 +105,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                 meta.query_fixed(config.block_count, Rotation::cur());
 
             vec![
-                (q_enable.clone() * base9_coef, base13),
-                (q_enable.clone() * base13_coef, base9),
+                (q_enable.clone() * base13_coef, base13),
+                (q_enable.clone() * base9_coef, base9),
                 (q_enable * bc, block_count),
             ]
         });
