@@ -18,7 +18,9 @@ mod arithmetic;
 mod byte;
 mod comparator;
 mod dup;
+mod jump;
 mod jumpdest;
+mod jumpi;
 mod memory;
 mod pc;
 mod pop;
@@ -34,7 +36,9 @@ use arithmetic::XorGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
+use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
+use jumpi::JumpiGadget;
 use memory::MemoryGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -238,11 +242,13 @@ pub(crate) struct OpExecutionGadget<F> {
     pc_gadget: PcGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     swap_gadget: SwapGadget<F>,
+    jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     memory_gadget: MemoryGadget<F>,
     and_gadget: AndGadget<F>,
     or_gadget: OrGadget<F>,
     xor_gadget: XorGadget<F>,
+    jumpi_gadget: JumpiGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -310,6 +316,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(and_gadget);
         construct_op_gadget!(or_gadget);
         construct_op_gadget!(xor_gadget);
+        construct_op_gadget!(jump_gadget);
+        construct_op_gadget!(jumpi_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -359,6 +367,8 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             and_gadget,
             or_gadget,
             xor_gadget,
+            jump_gadget,
+            jumpi_gadget,
         }
     }
 
@@ -486,10 +496,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 .constraints(state_curr, state_next)
                 .into_iter()
                 .map(|mut constraint| {
-                    assert!(
-                        matches!(constraint.selector, Expression::Advice{ .. }),
-                        "constraint selector of case should be a queried advice"
-                    );
+                    // assert!(
+                    //     matches!(constraint.selector, Expression::Advice{ ..
+                    // }),     "constraint selector of case
+                    // should be a queried advice" );
 
                     constraint.selector =
                         qs_op.expr() * constraint.selector.clone();
@@ -668,6 +678,20 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
+
+                (_, _, _, OpcodeId::JUMP) => self.jump_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, _, OpcodeId::JUMPI) => self.jumpi_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+
                 _ => unimplemented!(),
             }
         }

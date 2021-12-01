@@ -63,7 +63,7 @@ impl<F: FieldExt> SwapSuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // The stack index we have to peek, deduced from the 'x' value of
@@ -84,7 +84,7 @@ impl<F: FieldExt> SwapSuccessCase<F> {
         STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     fn assign(
