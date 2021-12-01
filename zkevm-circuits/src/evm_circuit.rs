@@ -201,7 +201,7 @@ impl<F: FieldExt> Cell<F> {
             },
             self.column,
             offset + self.rotation,
-            || value.ok_or(Error::SynthesisError),
+            || value.ok_or(Error::Synthesis),
         )
     }
 }
@@ -239,7 +239,7 @@ impl<F: FieldExt> Word<F> {
         offset: usize,
         word: Option<[u8; 32]>,
     ) -> Result<Vec<circuit::Cell>, Error> {
-        word.map_or(Err(Error::SynthesisError), |word| {
+        word.map_or(Err(Error::Synthesis), |word| {
             self.cells
                 .iter()
                 .zip(word.iter())

@@ -207,7 +207,8 @@ mod tests {
             prover.verify(),
             Err(vec![VerifyFailure::ConstraintNotSatisfied {
                 constraint: ((0, "theta").into(), 0, "").into(),
-                row: 0
+                row: 0,
+                cell_values: vec![]
             }])
         );
     }

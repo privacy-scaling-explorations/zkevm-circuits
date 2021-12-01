@@ -363,8 +363,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 offset += 1;
 
                 let mut rv = RotatingVariables::from(
-                    f_to_biguint(lane_base_13.value)
-                        .ok_or(Error::SynthesisError)?,
+                    f_to_biguint(lane_base_13.value).ok_or(Error::Synthesis)?,
                     self.rotation,
                 )?;
                 let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
@@ -383,7 +382,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     .collect();
                 let all_block_counts = all_block_counts?;
                 let block_counts =
-                    all_block_counts.last().ok_or(Error::SynthesisError)?;
+                    all_block_counts.last().ok_or(Error::Synthesis)?;
                 let lane = self.special_chunk_config.assign_region(
                     &mut region,
                     offset,
@@ -513,7 +512,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         let block_counts = self.block_count_acc_config.assign_region(
             region,
             offset,
-            rv.block_count.ok_or(Error::SynthesisError)?,
+            rv.block_count.ok_or(Error::Synthesis)?,
             rv.block_count_acc,
         )?;
         Ok(block_counts)
@@ -574,7 +573,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         rv: &RotatingVariables,
     ) -> Result<Lane<F>, Error> {
         self.q_enable.enable(region, offset)?;
-        rv.high_value.ok_or(Error::SynthesisError).unwrap();
+        rv.high_value.ok_or(Error::Synthesis).unwrap();
         region.assign_advice(
             || "input_acc",
             self.base_13_acc,

@@ -251,7 +251,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 || "global counter",
                 self.global_counter,
                 offset,
-                || field_elem.ok_or(Error::SynthesisError),
+                || field_elem.ok_or(Error::Synthesis),
             )
             .ok();
 
@@ -262,7 +262,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 || "value",
                 self.value,
                 offset,
-                || value.ok_or(Error::SynthesisError),
+                || value.ok_or(Error::Synthesis),
             )
             .ok();
 
@@ -273,7 +273,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                 || "flag",
                 self.flag,
                 offset,
-                || field_elem.ok_or(Error::SynthesisError),
+                || field_elem.ok_or(Error::Synthesis),
             )
             .ok();
     }

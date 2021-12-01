@@ -1270,6 +1270,7 @@ mod tests {
         ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
             row,
+            cell_values: vec![],
         }
     }
 

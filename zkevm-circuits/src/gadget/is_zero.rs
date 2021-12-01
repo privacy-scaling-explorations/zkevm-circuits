@@ -99,7 +99,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
             || "witness inverse of value",
             config.value_inv,
             offset,
-            || value_invert.ok_or(Error::SynthesisError),
+            || value_invert.ok_or(Error::Synthesis),
         )?;
 
         Ok(())
@@ -154,6 +154,7 @@ mod test {
             ConstraintNotSatisfied {
                 constraint: ((1, "check is_zero").into(), 0, "").into(),
                 row: $row,
+                cell_values: vec![],
             }
         };
     }
@@ -240,9 +241,8 @@ mod test {
                     .map(|values| {
                         values.iter().map(|value| F::from(*value)).collect()
                     })
-                    .ok_or(Error::SynthesisError)?;
-                let checks =
-                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                    .ok_or(Error::Synthesis)?;
+                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
                 let (first_value, values) = values.split_at(1);
                 let first_value = first_value[0];
 
@@ -413,9 +413,8 @@ mod test {
                             })
                             .collect()
                     })
-                    .ok_or(Error::SynthesisError)?;
-                let checks =
-                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                    .ok_or(Error::Synthesis)?;
+                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
 
                 layouter.assign_region(
                     || "witness",
