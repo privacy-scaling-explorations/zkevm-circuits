@@ -76,7 +76,7 @@ macro_rules! impl_bitwise_op_gadget {
                     state_curr: &OpExecutionState<F>,
                     state_next: &OpExecutionState<F>,
                     name: &'static str,
-                ) -> Constraint<F> {
+                ) -> Vec<Constraint<F>> {
                     let mut cb = ConstraintBuilder::default();
 
                     for idx in 0..32 {
@@ -96,7 +96,7 @@ macro_rules! impl_bitwise_op_gadget {
 
                     STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
-                    cb.constraint(self.case_selector.expr(), name)
+                    vec![cb.constraint(self.case_selector.expr(), name)]
                 }
 
                 fn assign(
