@@ -102,6 +102,7 @@ pub enum ExecutionResult {
     ErrorReturnDataOutOfBound,
     ErrorOutOfGasConstant,
     ErrorOutOfGasPureMemory,
+    ErrorOutOfGasCodeStore,
     ErrorOutOfGasSHA3,
     ErrorOutOfGasCALLDATACOPY,
     ErrorOutOfGasCODECOPY,
