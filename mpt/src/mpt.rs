@@ -1660,9 +1660,9 @@ impl<F: FieldExt> MPTConfig<F> {
                             {
                                 acc_s = F::zero();
                                 acc_mult_s = F::one();
-                                // 35 = 2 (leaf rlp) + 1 (key rlp) + 32 (key), doesn't really matter, just don't
-                                // include the last byte (row type) in the acc (others are 0)
-                                for i in 0..35 {
+                                // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
+                                let key_len = (row[2] - 128) as usize;
+                                for i in 0..3 + key_len {
                                     acc_s +=
                                         F::from_u64(row[i] as u64) * acc_mult_s;
                                     acc_mult_s = acc_mult_s * self.acc_r;
