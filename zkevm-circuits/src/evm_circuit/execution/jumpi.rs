@@ -137,7 +137,7 @@ mod test {
     use pairing::bn256::Fr as Fp;
 
     fn test_ok(destination: usize, condition: Word) {
-        assert!((34..(1 << 24) - 1).contains(&destination));
+        assert!((68..(1 << 24) - 1).contains(&destination));
         let should_jump = !condition.is_zero();
 
         let randomness = Fp::rand();
@@ -241,15 +241,29 @@ mod test {
     fn jumpi_gadget_simple() {
         test_ok(68, 1.into());
         test_ok(100, 1.into());
-        test_ok(0x5ffe, 1.into());
+        test_ok(1 << 11, 1.into());
         test_ok(68, 0.into());
         test_ok(100, 0.into());
+        test_ok(1 << 11, 0.into());
+    }
+
+    #[test]
+    #[ignore]
+    fn jumpi_gadget_huge_bytecode() {
+        test_ok(0x5ffe, 1.into());
         test_ok(0x5ffe, 0.into());
     }
 
     #[test]
     fn jumpi_gadget_rand() {
-        test_ok(rand_range(34..0x6000), 0.into());
-        test_ok(rand_range(34..0x6000), rand_word());
+        test_ok(rand_range(68..1 << 11), 0.into());
+        test_ok(rand_range(68..1 << 11), rand_word());
+    }
+
+    #[test]
+    #[ignore]
+    fn jumpi_gadget_rand_huge_bytecode() {
+        test_ok(rand_range(1 << 11..0x5fff), 0.into());
+        test_ok(rand_range(1 << 11..0x5fff), rand_word());
     }
 }

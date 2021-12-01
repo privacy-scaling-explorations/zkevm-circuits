@@ -180,11 +180,22 @@ mod test {
     fn jump_gadget_simple() {
         test_ok(34);
         test_ok(100);
+    }
+
+    #[test]
+    #[ignore]
+    fn jump_gadget_huge_bytecode() {
         test_ok(0x5ffe);
     }
 
     #[test]
     fn jump_gadget_rand() {
-        test_ok(rand_range(34..0x6000));
+        test_ok(rand_range(34..1 << 11));
+    }
+
+    #[test]
+    #[ignore]
+    fn jump_gadget_rand_huge_bytecode() {
+        test_ok(rand_range(1 << 11..0x5fff));
     }
 }
