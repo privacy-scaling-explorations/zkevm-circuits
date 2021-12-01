@@ -266,14 +266,4 @@ mod tests {
 
         assert_eq!(prover.verify(), Ok(()));
     }
-
-    pub fn assign_state(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        state: [F; 25],
-        out_state: [F; 25],
-    ) -> Result<[F; 25], Error> {
-        unimplemented!()
-    }
 }
