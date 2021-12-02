@@ -1,48 +1,51 @@
-use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
+use super::super::{
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
+};
 use super::utils::{
     self,
     common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
-    StateTransition,
+    from_bytes, StateTransition, StateTransitionExpressions,
 };
-use super::{
-    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
-};
+use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
+use num::ToPrimitive;
 use std::convert::TryInto;
 
 static STATE_TRANSITION: StateTransition = StateTransition {
-    gc_delta: Some(1), // 1 stack pop
-    pc_delta: Some(1),
+    gc_delta: Some(1),
+    pc_delta: Some(0), // TODO: pc is dynamic for jump
     sp_delta: Some(1),
-    gas_delta: Some(GasCost::QUICK.as_u64()),
+    gas_delta: Some(GasCost::MID.as_u64()),
     next_memory_size: None,
 };
-const NUM_POPPED: usize = 1;
 
+const NUM_POPPED: usize = 1;
 impl_op_gadget!(
-    #set[POP]
-    PopGadget {
-        PopSuccessCase(),
-        StackUnderflowCase(NUM_POPPED),
+    #set[JUMP]
+    JumpGadget {
+        JumpSuccessCase(),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
+        StackUnderflowCase(NUM_POPPED),
+        //TODO: ErrJumpcase
     }
 );
 
 #[derive(Clone, Debug)]
-struct PopSuccessCase<F> {
+struct JumpSuccessCase<F> {
     case_selector: Cell<F>,
-    value: Word<F>,
+    code_hash: Word<F>,
+    dest: Word<F>,
 }
 
-impl<F: FieldExt> PopSuccessCase<F> {
+impl<F: FieldExt> JumpSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 1,
+        num_word: 2, // top stack value as pc, hash of contract
         num_cell: 0,
         will_halt: false,
     };
@@ -50,7 +53,8 @@ impl<F: FieldExt> PopSuccessCase<F> {
     pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            value: alloc.words.pop().unwrap(),
+            code_hash: alloc.words.pop().unwrap(),
+            dest: alloc.words.pop().unwrap(),
         }
     }
 
@@ -62,11 +66,24 @@ impl<F: FieldExt> PopSuccessCase<F> {
     ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
-        // Pop the value from the stack
-        cb.stack_pop(self.value.expr());
-
         // State transitions
-        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
+        // `pc` needs to be `dest` value
+        let mut st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
+        st.pc_delta = Some(
+            from_bytes::expr(self.dest.cells[..3].to_vec())
+                - state_curr.program_counter.expr(),
+        );
+        st.constraints(&mut cb, state_curr, state_next);
+
+        // Pop the value from the stack
+        cb.stack_pop(self.dest.expr());
+        // lookup byte code table to ensure 'dest' is valid( jumpdest & is_code)
+        cb.add_bytecode_lookup([
+            self.code_hash.expr(),
+            self.dest.expr(),
+            1.expr(),
+            OpcodeId::JUMPDEST.as_u8().expr(),
+        ]);
 
         // Generate the constraint
         vec![cb.constraint(self.case_selector.expr(), name)]
@@ -79,13 +96,22 @@ impl<F: FieldExt> PopSuccessCase<F> {
         state: &mut CoreStateInstance,
         step: &ExecutionStep,
     ) -> Result<(), Error> {
-        // Input
-        self.value
-            .assign(region, offset, Some(step.values[0].to_word()))?;
+        // Inputs
+
+        self.code_hash.assign(
+            region,
+            offset,
+            Some(step.values[0].to_word()),
+        )?;
+
+        self.dest
+            .assign(region, offset, Some(step.values[1].to_word()))?;
 
         // State transitions
-        STATE_TRANSITION.assign(state);
-
+        let st = STATE_TRANSITION.clone();
+        st.assign(state);
+        // other than normal op code, jump change pc specially, adjust here
+        state.program_counter = step.values[1].to_usize().unwrap();
         Ok(())
     }
 }
@@ -110,29 +136,31 @@ mod test {
     }
 
     #[test]
-    fn pop_gadget() {
+    fn jump_gadget() {
         try_test_circuit!(
             vec![
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
+                    opcode: OpcodeId::PUSH1,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x02_03u64),
-                        BigUint::from(0x01_01u64),
+                        BigUint::from(0x03u64),
+                        BigUint::from(0x01u64),
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::POP,
-                    case: Case::Success,
-                    values: vec![BigUint::from(0x02_03u64)],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
+                    // Jump
+                    opcode: OpcodeId::JUMP,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x06_05_04u64),
-                        BigUint::from(0x01_01_01u64)
+                        BigUint::from(0x00u64), // code hash
+                        BigUint::from(0x03u64), // dest value
                     ],
+                },
+                ExecutionStep {
+                    // JUMPDEST
+                    opcode: OpcodeId::JUMPDEST,
+                    case: Case::Success,
+                    values: vec![],
                 }
             ],
             vec![
@@ -143,7 +171,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(2 + 3),
+                        Base::from_u64(3u64),
                         Base::zero(),
                     ]
                 },
@@ -154,18 +182,7 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
-                        Base::from_u64(2 + 3),
-                        Base::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 3,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
-                        Base::from_u64(4 + 5 + 6),
+                        Base::from_u64(3u64),
                         Base::zero(),
                     ]
                 }

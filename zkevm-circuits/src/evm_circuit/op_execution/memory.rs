@@ -78,7 +78,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::with_call_id(state_curr.call_id.expr());
 
         // Check if this is an MLOAD
@@ -172,7 +172,7 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         st.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     fn assign(
@@ -272,7 +272,7 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         state_curr: &OpExecutionState<F>,
         _state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // Check if this is an MSTORE8
@@ -314,7 +314,7 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         cb.stack_pop(self.address.expr());
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     fn assign(
@@ -394,7 +394,7 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
         state_curr: &OpExecutionState<F>,
         _state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // Check if this is an MLOAD or an MSTORE/MSTORE8
@@ -412,7 +412,7 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
         cb.require_in_set(state_curr.stack_pointer.expr(), set);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     pub(crate) fn assign(

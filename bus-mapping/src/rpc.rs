@@ -2,8 +2,8 @@
 //! query a Geth node in order to get a Block, Tx or Trace info.
 
 use crate::eth_types::{
-    Address, Block, GethExecTrace, Hash, Proof, ResultGethExecTraces,
-    Transaction, Word, U64,
+    Address, Block, EIP1186ProofResponse, GethExecTrace, Hash,
+    ResultGethExecTraces, Transaction, Word, U64,
 };
 use crate::Error;
 use ethers_providers::JsonRpcClient;
@@ -121,7 +121,7 @@ impl<P: JsonRpcClient> GethClient<P> {
         Ok(resp.0.into_iter().map(|step| step.result).collect())
     }
 
-    /// Calls `eth_getProof` via JSON-RPC returning a [`Proof`]
+    /// Calls `eth_getProof` via JSON-RPC returning a [`EIP1186ProofResponse`]
     /// returning the account and storage-values of the specified
     /// account including the Merkle-proof.
     pub async fn get_proof(
@@ -129,7 +129,7 @@ impl<P: JsonRpcClient> GethClient<P> {
         account: Address,
         keys: Vec<Word>,
         block_num: BlockNumber,
-    ) -> Result<Proof, Error> {
+    ) -> Result<EIP1186ProofResponse, Error> {
         let account = serialize(&account);
         let keys = serialize(&keys);
         let num = block_num.serialize();
@@ -228,7 +228,6 @@ mod rpc_tests {
         let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
         let prov = GethClient::new(transport);
 
-        // taken from RPC docs https://eips.ethereum.org/EIPS/eip-1186
         let address =
             Address::from_str("0x7F0d15C7FAae65896648C8273B6d7E43f58Fa842")
                 .unwrap();
@@ -237,13 +236,10 @@ mod rpc_tests {
             .get_proof(address, keys, BlockNumber::Latest)
             .await
             .unwrap();
-        const EXAMPLE_PROOF: &str = r#"{
+        const TARGET_PROOF: &str = r#"{
+            "address": "0x7f0d15c7faae65896648c8273b6d7e43f58fa842",
             "accountProof": [
-                "0xf90211a...0701bc80",
-                "0xf90211a...0d832380",
-                "0xf90211a...5fb20c80",
-                "0xf90211a...0675b80",
-                "0xf90151a0...ca08080"
+                "0xf873a12050fb4d3174ec89ef969c09fd4391602169760fb005ad516f5d172cbffb80e955b84ff84d8089056bc75e2d63100000a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a0c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
             ],
             "balance": "0x0",
             "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
@@ -252,14 +248,14 @@ mod rpc_tests {
             "storageProof": [
                 {
                     "key": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-                    "proof": [
-                    "0xf90211a...0701bc80",
-                    "0xf90211a...0d832380"
-                    ],
-                    "value": "0x1"
+                    "value": "0x0",
+                    "proof": []
                 }
-                ]
+            ]
         }"#;
-        assert!(serde_json::from_str::<Proof>(EXAMPLE_PROOF).unwrap() == proof);
+        assert!(
+            serde_json::from_str::<EIP1186ProofResponse>(TARGET_PROOF).unwrap()
+                == proof
+        );
     }
 }
