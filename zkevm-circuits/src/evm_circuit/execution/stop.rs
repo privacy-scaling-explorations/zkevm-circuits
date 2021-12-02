@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::{
-        execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
+        execution::{
+            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+            ExecutionGadget,
+        },
         step::ExecutionResult,
         util::{constraint_builder::ConstraintBuilder, Cell},
     },
@@ -32,11 +35,11 @@ impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        _: &Block<F>,
+        _: &Transaction<F>,
+        _: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Some(F::from(opcode.as_u64())))?;
