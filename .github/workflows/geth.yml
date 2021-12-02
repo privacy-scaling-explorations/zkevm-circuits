@@ -10,7 +10,4 @@ jobs:
     steps:
     - name: Geth and bus-mapping test
       uses: actions/checkout@v2
-    - run: docker-compose build
-    - run: cargo test --no-run -- --ignored
-    - run: docker-compose up -d deployer geth
     - run: sh web3-utils/script/geth.sh
