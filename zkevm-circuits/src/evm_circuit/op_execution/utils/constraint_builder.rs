@@ -126,7 +126,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.validate_lookup_expression(&value);
         self.validate_lookup_expression(&is_write);
         self.validate_lookup_expression(&gc_offset);
-        self.add_lookup(Lookup::BusMappinglookup(BusMappingLookup::Stack {
+        self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Stack {
             index_offset,
             value,
             is_write,
@@ -158,7 +158,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.validate_lookup_expression(&byte);
         self.validate_lookup_expression(&is_write);
         self.validate_lookup_expression(&gc_offset);
-        self.add_lookup(Lookup::BusMappinglookup(BusMappingLookup::Memory {
+        self.add_lookup(Lookup::BusMappingLookup(BusMappingLookup::Memory {
             call_id: self.call_id.clone().unwrap(),
             index: address,
             value: byte,

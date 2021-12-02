@@ -557,7 +557,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                         }
                         fixed_lookup_count += 1;
                     }
-                    Lookup::BusMappinglookup(
+                    Lookup::BusMappingLookup(
                         rw_lookup @ (BusMappingLookup::Stack { .. }
                         | BusMappingLookup::Memory { .. }
                         | BusMappingLookup::AccountStorage {
@@ -702,7 +702,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         // Configure byte code lookups
         for bytecode_lookup in bytecode_lookups.iter() {
-            meta.lookup(|meta| {
+            meta.lookup_any(|meta| {
                 bytecode_lookup
                     .iter()
                     .zip(bytecode_table.iter())
@@ -1136,7 +1136,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                             || "bytecode table",
                             *column,
                             offset,
-                            || Ok(F::from_u64(*value as u64)),
+                            || Ok(F::from(*value as u64)),
                         )?;
                     }
                     offset += 1;
