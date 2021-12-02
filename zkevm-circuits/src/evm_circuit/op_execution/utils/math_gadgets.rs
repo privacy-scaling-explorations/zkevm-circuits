@@ -50,7 +50,11 @@ impl<F: FieldExt> IsZeroGadget<F> {
     ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::zero());
         self.inverse.assign(region, offset, Some(inverse))?;
-        Ok(if value.is_zero() { F::one() } else { F::zero() })
+        Ok(if value.is_zero().into() {
+            F::one()
+        } else {
+            F::zero()
+        })
     }
 }
 
@@ -132,7 +136,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
     ) -> Result<(), Error> {
         let bytes = value.to_bytes();
         for (idx, part) in self.parts.iter().enumerate() {
-            part.assign(region, offset, Some(F::from_u64(bytes[idx] as u64)))?;
+            part.assign(region, offset, Some(F::from(bytes[idx] as u64)))?;
         }
         Ok(())
     }
@@ -200,18 +204,14 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         self.lt.assign(
             region,
             offset,
-            Some(F::from_u64(if lt { 1 } else { 0 })),
+            Some(F::from(if lt { 1 } else { 0 })),
         )?;
 
         // Set the bytes of diff
         let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
         let diff_bytes = diff.to_bytes();
         for (idx, diff) in self.diff.iter().enumerate() {
-            diff.assign(
-                region,
-                offset,
-                Some(F::from_u64(diff_bytes[idx] as u64)),
-            )?;
+            diff.assign(region, offset, Some(F::from(diff_bytes[idx] as u64)))?;
         }
 
         Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))

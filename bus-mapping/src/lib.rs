@@ -53,7 +53,7 @@
 //! use bus_mapping::mock;
 //! use bus_mapping::eth_types::{self, Address, Word, Hash, U64, GethExecTrace, GethExecStep};
 //! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
-//! use pasta_curves::arithmetic::FieldExt;
+//! use pairing::arithmetic::FieldExt;
 //!
 //! let input_trace = r#"
 //! [

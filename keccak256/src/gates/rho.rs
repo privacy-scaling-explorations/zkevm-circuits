@@ -10,7 +10,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
 #[derive(Clone)]
@@ -122,8 +122,8 @@ mod tests {
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pairing::arithmetic::FieldExt;
+    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     #[test]
     fn test_rho_gate() {
@@ -230,7 +230,7 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
         let mut in_biguint = StateBigInt::default();
-        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut in_state: [Fp; 25] = [Fp::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
@@ -240,29 +240,29 @@ mod tests {
             in_state[5 * x + y] = biguint_to_f(&s0_arith[(x, y)]).unwrap();
         }
         let s1_arith = KeccakFArith::rho(&s0_arith);
-        let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out_state[5 * x + y] = biguint_to_f(&s1_arith[(x, y)]).unwrap();
         }
-        let circuit = MyCircuit::<pallas::Base> {
+        let circuit = MyCircuit::<Fp> {
             in_state,
             out_state,
         };
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
+            let k = 15;
             let root =
                 BitMapBackend::new("rho-test-circuit.png", (4096, 65536))
                     .into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
             halo2::dev::CircuitLayout::default()
-                .render(&circuit, &root)
+                .render(k, &circuit, &root)
                 .unwrap();
         }
         // Test without public inputs
-        let prover =
-            MockProver::<pallas::Base>::run(15, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(15, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }

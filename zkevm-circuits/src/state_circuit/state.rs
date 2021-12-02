@@ -13,7 +13,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 
 /*
 Example state table:
@@ -149,9 +149,9 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let one = Expression::Constant(F::one());
-        let two = Expression::Constant(F::from_u64(2));
-        let three = Expression::Constant(F::from_u64(3));
-        let four = Expression::Constant(F::from_u64(4));
+        let two = Expression::Constant(F::from(2));
+        let three = Expression::Constant(F::from(3));
+        let four = Expression::Constant(F::from(4));
 
         let q_memory_first = |meta: &mut VirtualCells<F>| {
             // For first memory row it holds q_target_cur = 1 and q_target_next
@@ -174,7 +174,7 @@ impl<
             let e = q_memory_first(meta);
             // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
             // 2, we use 1/12 to normalize the value
-            let inv = F::from_u64(12_u64).invert().unwrap();
+            let inv = F::from(12_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -193,7 +193,7 @@ impl<
             let e = q_memory_not_first(meta);
             // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize
             // the value
-            let inv = F::from_u64(4_u64).invert().unwrap();
+            let inv = F::from(4_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -214,7 +214,7 @@ impl<
         let q_stack_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_stack_first(meta);
             // q_stack_first is 12, we use 1/12 to normalize the value
-            let inv = F::from_u64(12_u64).invert().unwrap();
+            let inv = F::from(12_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -233,7 +233,7 @@ impl<
             let e = q_stack_not_first(meta);
             // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize
             // the value
-            let inv = F::from_u64(6_u64).invert().unwrap();
+            let inv = F::from(6_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -251,7 +251,7 @@ impl<
             let e = q_storage_not_first(meta);
             // q_storage_not_first is 24 when target is 4, we use 1/24 to
             // normalize the value
-            let inv = F::from_u64(24_u64).invert().unwrap();
+            let inv = F::from(24_u64).invert().unwrap();
             let i = Expression::Constant(inv);
 
             e * i
@@ -397,7 +397,7 @@ impl<
         // global_counter monotonicity is checked for memory and stack when
         // address_cur == address_prev. (Recall that operations are
         // ordered first by address, and then by global_counter.)
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let global_counter_table =
                 meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
@@ -419,7 +419,7 @@ impl<
         });
 
         // Memory address is in the allowed range.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_memory =
                 q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
@@ -430,7 +430,7 @@ impl<
         });
 
         // Stack address is in the allowed range.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_stack =
                 q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
@@ -441,7 +441,7 @@ impl<
         });
 
         // global_counter is in the allowed range:
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
             let global_counter_table =
@@ -453,7 +453,7 @@ impl<
         // Memory value (for non-first rows) is in the allowed range.
         // Memory first row value doesn't need to be checked - it is checked
         // above where memory init row value has to be 0.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_memory_not_first = q_memory_not_first_norm(meta);
             let value = meta.query_advice(value, Rotation::cur());
             let memory_value_table =
@@ -566,7 +566,7 @@ impl<
         // == address_prev and storage_key_cur = storage_key_prev.
         // (Recall that storage operations are ordered first by account address,
         // then by storage_key, and finally by global_counter.)
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let global_counter_table =
                 meta.query_fixed(global_counter_table, Rotation::cur());
             let global_counter_prev =
@@ -625,7 +625,7 @@ impl<
                             || "global counter table",
                             self.global_counter_table,
                             idx,
-                            || Ok(F::from_u64(idx as u64)),
+                            || Ok(F::from(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -642,7 +642,7 @@ impl<
                             || "memory value table",
                             self.memory_value_table,
                             idx,
-                            || Ok(F::from_u64(idx as u64)),
+                            || Ok(F::from(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -659,7 +659,7 @@ impl<
                             || "address table with zero",
                             self.memory_address_table_zero,
                             idx,
-                            || Ok(F::from_u64(idx as u64)),
+                            || Ok(F::from(idx as u64)),
                         )?;
                     }
                     Ok(())
@@ -675,7 +675,7 @@ impl<
                         || "stack address table with zero",
                         self.stack_address_table_zero,
                         idx,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                 }
                 Ok(())
@@ -769,7 +769,7 @@ impl<
         let mut offset = MEMORY_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
-            let address = F::from_u64(usize::from(*op.address()) as u64);
+            let address = F::from(usize::from(*op.address()) as u64);
             let gc = usize::from(oper.gc());
             let val = op.value().to_scalar().unwrap();
 
@@ -900,7 +900,7 @@ impl<
                     || "target",
                     self.q_target,
                     i,
-                    || Ok(F::from_u64(target as u64)),
+                    || Ok(F::from(target as u64)),
                 )?;
             }
             region.assign_advice(
@@ -1013,7 +1013,7 @@ impl<
             || "target",
             self.q_target,
             offset,
-            || Ok(F::from_u64(target as u64)),
+            || Ok(F::from(target as u64)),
         )?;
 
         Ok(())
@@ -1047,7 +1047,7 @@ impl<
         };
 
         let global_counter = {
-            let field_elem = F::from_u64(global_counter as u64);
+            let field_elem = F::from(global_counter as u64);
 
             let cell = region.assign_advice(
                 || "global counter",
@@ -1109,7 +1109,7 @@ impl<
         };
 
         let flag = {
-            let field_elem = F::from_u64(flag as u64);
+            let field_elem = F::from(flag as u64);
             let cell = region.assign_advice(
                 || "flag",
                 self.flag,
@@ -1126,12 +1126,12 @@ impl<
 
         let target = {
             let value = Some(target);
-            let field_elem = Some(F::from_u64(target as u64));
+            let field_elem = Some(F::from(target as u64));
             let cell = region.assign_fixed(
                 || "target",
                 self.q_target,
                 offset,
-                || Ok(F::from_u64(target as u64)),
+                || Ok(F::from(target as u64)),
             )?;
             Variable::<usize, F> {
                 cell,
@@ -1171,78 +1171,77 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+    #[derive(Default)]
+    struct StateCircuit<
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    > {
+        memory_ops: Vec<Operation<MemoryOp>>,
+        stack_ops: Vec<Operation<StackOp>>,
+        storage_ops: Vec<Operation<StorageOp>>,
+    }
+
+    impl<
+            F: FieldExt,
+            const GLOBAL_COUNTER_MAX: usize,
+            const MEMORY_ROWS_MAX: usize,
+            const MEMORY_ADDRESS_MAX: usize,
+            const STACK_ROWS_MAX: usize,
+            const STACK_ADDRESS_MAX: usize,
+            const STORAGE_ROWS_MAX: usize,
+        > Circuit<F>
+        for StateCircuit<
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >
+    {
+        type Config = Config<
+            F,
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            Config::configure(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.load(&mut layouter)?;
+            config.assign(
+                layouter,
+                self.memory_ops.clone(),
+                self.stack_ops.clone(),
+                self.storage_ops.clone(),
+            )?;
+
+            Ok(())
+        }
+    }
 
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
-            #[derive(Default)]
-            struct StateCircuit<
-                const GLOBAL_COUNTER_MAX: usize,
-                const MEMORY_ROWS_MAX: usize,
-                const MEMORY_ADDRESS_MAX: usize,
-                const STACK_ROWS_MAX: usize,
-                const STACK_ADDRESS_MAX: usize,
-                const STORAGE_ROWS_MAX: usize,
-            > {
-                memory_ops: Vec<Operation<MemoryOp>>,
-                stack_ops: Vec<Operation<StackOp>>,
-                storage_ops: Vec<Operation<StorageOp>>,
-            }
-
-            impl<
-                    F: FieldExt,
-                    const GLOBAL_COUNTER_MAX: usize,
-                    const MEMORY_ROWS_MAX: usize,
-                    const MEMORY_ADDRESS_MAX: usize,
-                    const STACK_ROWS_MAX: usize,
-                    const STACK_ADDRESS_MAX: usize,
-                    const STORAGE_ROWS_MAX: usize,
-                > Circuit<F>
-                for StateCircuit<
-                    GLOBAL_COUNTER_MAX,
-                    MEMORY_ROWS_MAX,
-                    MEMORY_ADDRESS_MAX,
-                    STACK_ROWS_MAX,
-                    STACK_ADDRESS_MAX,
-                    STORAGE_ROWS_MAX,
-                >
-            {
-                type Config = Config<
-                    F,
-                    GLOBAL_COUNTER_MAX,
-                    MEMORY_ROWS_MAX,
-                    MEMORY_ADDRESS_MAX,
-                    STACK_ROWS_MAX,
-                    STACK_ADDRESS_MAX,
-                    STORAGE_ROWS_MAX,
-                >;
-                type FloorPlanner = SimpleFloorPlanner;
-
-                fn without_witnesses(&self) -> Self {
-                    Self::default()
-                }
-
-                fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                    Config::configure(meta)
-                }
-
-                fn synthesize(
-                    &self,
-                    config: Self::Config,
-                    mut layouter: impl Layouter<F>,
-                ) -> Result<(), Error> {
-                    config.load(&mut layouter)?;
-                    config.assign(
-                        layouter,
-                        self.memory_ops.clone(),
-                        self.stack_ops.clone(),
-                        self.storage_ops.clone(),
-                    )?;
-
-                    Ok(())
-                }
-            }
-
             let circuit = StateCircuit::<
                 $global_counter_max,
                 $memory_rows_max,
@@ -1256,9 +1255,28 @@ mod tests {
                 storage_ops: $storage_ops,
             };
 
-            let prover =
-                MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run($k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
+        }};
+    }
+
+    macro_rules! test_state_circuit_error {
+        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
+            let circuit = StateCircuit::<
+                $global_counter_max,
+                $memory_rows_max,
+                $memory_address_max,
+                $stack_rows_max,
+                $stack_address_max,
+                $storage_rows_max,
+            > {
+                memory_ops: $memory_ops,
+                stack_ops: $stack_ops,
+                storage_ops: $storage_ops,
+            };
+
+            let prover = MockProver::<Fp>::run($k, &circuit, vec![]).unwrap();
+            assert!(prover.verify().is_err());
         }};
     }
 
@@ -1271,6 +1289,7 @@ mod tests {
         ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
             row,
+            cell_values: vec![],
         }
     }
 
@@ -1434,7 +1453,7 @@ mod tests {
         );
 
         const MEMORY_ROWS_MAX: usize = 7;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             2000,
             MEMORY_ROWS_MAX,
@@ -1444,16 +1463,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0, stack_op_1],
-            vec![],
-            Err(vec![
-                constraint_not_satisfied(2, 2, "Memory operation + padding", 4),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + 1,
-                    3,
-                    "Stack operation",
-                    1
-                )
-            ])
+            vec![]
         );
     }
 
@@ -1503,7 +1513,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             2000,
             MEMORY_ROWS_MAX,
@@ -1513,33 +1523,7 @@ mod tests {
             1000,
             vec![],
             vec![stack_op_0],
-            vec![storage_op_0, storage_op_1, storage_op_2],
-            Err(vec![
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX,
-                    5,
-                    "First storage row operation",
-                    0
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
-                    6,
-                    "Storage operation",
-                    1
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    6,
-                    "Storage operation",
-                    0
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    6,
-                    "Storage operation",
-                    1
-                ),
-            ])
+            vec![storage_op_0, storage_op_1, storage_op_2]
         );
     }
 
@@ -1631,7 +1615,7 @@ mod tests {
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
-        test_state_circuit!(
+        test_state_circuit_error!(
             16,
             GLOBAL_COUNTER_MAX,
             MEMORY_ROWS_MAX,
@@ -1647,16 +1631,7 @@ mod tests {
                 memory_op_4
             ],
             vec![stack_op_0, stack_op_1, stack_op_2, stack_op_3],
-            vec![],
-            Err(vec![
-                lookup_fail(4, 3),
-                lookup_fail(5, 3),
-                lookup_fail(6, 3),
-                lookup_fail(9, 4),
-                lookup_fail(10, 4),
-                lookup_fail(3, 5),
-                lookup_fail(10, 5)
-            ])
+            vec![]
         );
     }
 
@@ -1701,7 +1676,7 @@ mod tests {
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
-        test_state_circuit!(
+        test_state_circuit_error!(
             16,
             GLOBAL_COUNTER_MAX,
             MEMORY_ROWS_MAX,
@@ -1711,13 +1686,7 @@ mod tests {
             STORAGE_ROWS_MAX,
             vec![memory_op_0],
             vec![stack_op_0, stack_op_1],
-            vec![],
-            Err(vec![
-                lookup_fail(0, 3),
-                lookup_fail(1, 3),
-                lookup_fail(2, 4),
-                lookup_fail(3, 4),
-            ])
+            vec![]
         );
     }
 
@@ -1813,7 +1782,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 100;
         const STACK_ROWS_MAX: usize = 100;
-        test_state_circuit!(
+        test_state_circuit_error!(
             15,
             10000,
             MEMORY_ROWS_MAX,
@@ -1829,14 +1798,7 @@ mod tests {
                 storage_op_2,
                 storage_op_3,
                 storage_op_4
-            ],
-            Err(vec![
-                lookup_fail(2, 2),
-                lookup_fail(3, 2),
-                lookup_fail(MEMORY_ROWS_MAX + 1, 2),
-                lookup_fail(MEMORY_ROWS_MAX + 2, 2),
-                lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 7),
-            ])
+            ]
         );
     }
 
@@ -1877,7 +1839,7 @@ mod tests {
         );
 
         const MEMORY_ROWS_MAX: usize = 10;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             10000,
             MEMORY_ROWS_MAX,
@@ -1887,8 +1849,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1, memory_op_2],
             vec![stack_op_0, stack_op_1, stack_op_2],
-            vec![],
-            Err(vec![lookup_fail(4, 0), lookup_fail(MEMORY_ROWS_MAX + 2, 0)])
+            vec![]
         );
     }
 
@@ -1944,7 +1905,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             2000,
             MEMORY_ROWS_MAX,
@@ -1954,27 +1915,7 @@ mod tests {
             1000,
             vec![],
             vec![],
-            vec![storage_op_0, storage_op_1, storage_op_2, storage_op_3],
-            Err(vec![
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
-                    6,
-                    "Storage operation",
-                    3
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    6,
-                    "Storage operation",
-                    4
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 3,
-                    6,
-                    "Storage operation",
-                    5
-                ),
-            ])
+            vec![storage_op_0, storage_op_1, storage_op_2, storage_op_3]
         );
     }
 
