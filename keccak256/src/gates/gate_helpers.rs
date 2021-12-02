@@ -3,6 +3,13 @@ use num_bigint::BigUint;
 use pairing::arithmetic::FieldExt;
 
 #[derive(Debug, Clone)]
+pub struct CellF<F> {
+    pub cell: Cell,
+    pub value: F,
+}
+
+
+#[derive(Debug, Clone)]
 pub struct Lane<F> {
     pub cell: Cell,
     pub value: F,

@@ -12,4 +12,5 @@ pub mod rho_checks;
 pub mod rho_helpers;
 pub mod tables;
 pub mod theta;
+pub mod utils;
 pub mod xi;
