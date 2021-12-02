@@ -206,8 +206,8 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
             .assign(
                 region,
                 offset,
-                F::from_u64(address_memory_size),
-                F::from_u64(curr_memory_size),
+                F::from(address_memory_size),
+                F::from(curr_memory_size),
             )?
             .get_lower_128() as MemorySize;
 

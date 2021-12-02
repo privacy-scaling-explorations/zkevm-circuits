@@ -6,7 +6,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::{marker::PhantomData, u64};
 
 #[derive(Clone, Debug)]
@@ -41,7 +41,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
 
         let config = MonotoneConfig { range_table, value };
 
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
             let range_table =
                 meta.query_fixed(config.range_table, Rotation::cur());
@@ -57,7 +57,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
 
             // If strict monotone, we subtract diff by one
             // to make sure zero lookup fail
-            let min_diff = Expression::Constant(F::from_u64(STRICT as u64));
+            let min_diff = Expression::Constant(F::from(STRICT as u64));
 
             vec![(q_enable * (value_diff - min_diff), range_table)]
         });
@@ -76,7 +76,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
                         || "range_table_value",
                         self.config.range_table,
                         idx,
-                        || Ok(F::from_u64(idx as u64)),
+                        || Ok(F::from(idx as u64)),
                     )?;
                 }
 
@@ -120,7 +120,7 @@ mod test {
         },
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     #[derive(Clone, Debug)]
@@ -156,7 +156,7 @@ mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let q_enable = meta.selector();
+            let q_enable = meta.complex_selector();
             let value = meta.advice_column();
 
             let mono_incr = MonotoneChip::<F, RANGE, INCR, STRICT>::configure(
@@ -188,9 +188,9 @@ mod test {
                 .values
                 .as_ref()
                 .map(|values| {
-                    values.iter().map(|value| F::from_u64(*value)).collect()
+                    values.iter().map(|value| F::from(*value)).collect()
                 })
-                .ok_or(Error::SynthesisError)?;
+                .ok_or(Error::Synthesis)?;
 
             layouter.assign_region(
                 || "witness",
@@ -219,11 +219,11 @@ mod test {
                 values: Vec<u64>,
                 result: Result<(), Vec<VerifyFailure>>,
             ) {
-                let circuit = TestCircuit::<Base, $range, $incr, $strict> {
+                let circuit = TestCircuit::<Fp, $range, $incr, $strict> {
                     values: Some(values),
                     _marker: PhantomData,
                 };
-                let prover = MockProver::<Base>::run(
+                let prover = MockProver::<Fp>::run(
                     usize::BITS - ($range as usize).leading_zeros(),
                     &circuit,
                     vec![],

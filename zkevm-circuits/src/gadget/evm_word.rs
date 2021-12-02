@@ -15,7 +15,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
@@ -29,14 +29,15 @@ pub(crate) fn r<F: FieldExt>() -> F {
     for byte in 0..=u8::MAX {
         hasher.process(&[byte]);
     }
-    let r: [u8; 32] = hasher.fixed_result().as_slice().try_into().unwrap();
-    F::from_bytes(&r).unwrap()
+    let mut r = [0; 64];
+    r[..32].copy_from_slice(hasher.fixed_result().as_slice());
+    F::from_bytes_wide(&r)
 }
 
 // Returns encoding of big-endian representation of a 256-bit word.
 pub(crate) fn encode<F: FieldExt>(vals: impl Iterator<Item = u8>, r: F) -> F {
     vals.fold(F::zero(), |acc, val| {
-        let byte = F::from_u64(val as u64);
+        let byte = F::from(val as u64);
         acc * r + byte
     })
 }
@@ -87,9 +88,9 @@ impl<F: FieldExt> WordConfig<F> {
         // range-constrain it to 8 bits.
         //
         // TODO: Understand why the `for` loop cannot be moved into
-        // the meta.lookup() call.
+        // the meta.lookup_any() call.
         for byte in bytes.iter().rev() {
-            meta.lookup(|meta| {
+            meta.lookup_any(|meta| {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
@@ -125,7 +126,7 @@ impl<F: FieldExt> WordConfig<F> {
                         || format!("load {}", byte),
                         self.byte_lookup,
                         byte.into(),
-                        || Ok(F::from_u64(byte as u64)),
+                        || Ok(F::from(byte as u64)),
                     )?;
                 }
 
@@ -149,12 +150,12 @@ impl<F: FieldExt> WordConfig<F> {
             // TODO: We will likely enable this selector outside of the helper.
             self.q_encode.enable(region, offset)?;
 
-            let byte_field_elem = byte.map(|byte| F::from_u64(byte as u64));
+            let byte_field_elem = byte.map(|byte| F::from(byte as u64));
             let cell = region.assign_advice(
                 || format!("assign byte {}", idx),
                 *column,
                 offset,
-                || byte_field_elem.ok_or(Error::SynthesisError),
+                || byte_field_elem.ok_or(Error::Synthesis),
             )?;
 
             bytes.push(Variable::new(cell, byte_field_elem, *byte));
@@ -168,11 +169,15 @@ impl<F: FieldExt> WordConfig<F> {
 mod tests {
     use super::*;
     use halo2::{
+        arithmetic::Field,
+        arithmetic::FieldExt,
         circuit::SimpleFloorPlanner,
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, Instance},
     };
-    use pasta_curves::pallas;
+    use pairing::bn256::Fr as Fp;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
     use std::marker::PhantomData;
 
     #[test]
@@ -197,7 +202,7 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let r = r();
 
-                let q_encode = meta.selector();
+                let q_encode = meta.complex_selector();
 
                 let bytes: [Column<Advice>; 32] = (0..32)
                     .map(|_| meta.advice_column())
@@ -218,7 +223,7 @@ mod tests {
 
                 // Make sure each encoded word has been committed to in the
                 // public inputs.
-                meta.lookup(|meta| {
+                meta.lookup_any(|meta| {
                     let q_encode = meta.query_selector(q_encode);
                     let pub_inputs =
                         meta.query_instance(pub_inputs, Rotation::cur());
@@ -251,8 +256,12 @@ mod tests {
         }
 
         {
-            let word = pallas::Base::rand();
-            let circuit = MyCircuit::<pallas::Base> {
+            let rng = XorShiftRng::from_seed([
+                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb,
+                0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
+            ]);
+            let word = Fp::random(rng);
+            let circuit = MyCircuit::<Fp> {
                 word: word
                     .to_bytes()
                     .iter()
@@ -265,8 +274,7 @@ mod tests {
 
             // Test without public inputs
             let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![vec![]])
-                    .unwrap();
+                MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
@@ -276,14 +284,11 @@ mod tests {
             );
 
             // Calculate word commitment and use it as public input.
-            let encoded: pallas::Base =
+            let encoded: Fp =
                 encode(word.to_bytes().iter().rev().cloned(), r());
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![vec![encoded]],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]])
+                    .unwrap();
             assert_eq!(prover.verify(), Ok(()))
         }
     }

@@ -5,7 +5,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::array;
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
@@ -99,7 +99,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
             || "witness inverse of value",
             config.value_inv,
             offset,
-            || value_invert.ok_or(Error::SynthesisError),
+            || value_invert.ok_or(Error::Synthesis),
         )?;
 
         Ok(())
@@ -125,11 +125,11 @@ mod test {
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure::ConstraintNotSatisfied},
+        dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     macro_rules! try_test_circuit {
@@ -139,23 +139,31 @@ mod test {
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
             let k = usize::BITS - $values.len().leading_zeros() + 2;
-            let circuit = TestCircuit::<Base> {
+            let circuit = TestCircuit::<Fp> {
                 values: Some($values),
                 checks: Some($checks),
                 _marker: PhantomData,
             };
-            let prover = MockProver::<Base>::run(k, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
 
-    macro_rules! error_constraint_at_row {
-        ($row:expr) => {
-            ConstraintNotSatisfied {
-                constraint: ((1, "check is_zero").into(), 0, "").into(),
-                row: $row,
-            }
-        };
+    macro_rules! try_test_circuit_error {
+        ($values:expr, $checks:expr) => {{
+            // let k = usize::BITS - $values.len().leading_zeros();
+
+            // TODO: remove zk blinding factors in halo2 to restore the
+            // correct k (without the extra + 2).
+            let k = usize::BITS - $values.len().leading_zeros() + 2;
+            let circuit = TestCircuit::<Fp> {
+                values: Some($values),
+                checks: Some($checks),
+                _marker: PhantomData,
+            };
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+            assert!(prover.verify().is_err());
+        }};
     }
 
     #[test]
@@ -185,7 +193,7 @@ mod test {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
@@ -238,11 +246,10 @@ mod test {
                     .values
                     .as_ref()
                     .map(|values| {
-                        values.iter().map(|value| F::from_u64(*value)).collect()
+                        values.iter().map(|value| F::from(*value)).collect()
                     })
-                    .ok_or(Error::SynthesisError)?;
-                let checks =
-                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                    .ok_or(Error::Synthesis)?;
+                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
                 let (first_value, values) = values.split_at(1);
                 let first_value = first_value[0];
 
@@ -264,7 +271,7 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from_u64(*check as u64)),
+                                || Ok(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value",
@@ -301,25 +308,13 @@ mod test {
             Ok(())
         );
         // error
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![1, 2, 3, 4, 5],
-            vec![true, true, true, true],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-                error_constraint_at_row!(4)
-            ])
+            vec![true, true, true, true]
         );
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![1, 2, 2, 3, 3],
-            vec![true, false, true, false],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-                error_constraint_at_row!(4)
-            ])
+            vec![true, false, true, false]
         );
     }
 
@@ -351,7 +346,7 @@ mod test {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
                 let (value_a, value_b) =
                     (meta.advice_column(), meta.advice_column());
                 let value_diff_inv = meta.advice_column();
@@ -409,13 +404,12 @@ mod test {
                         values
                             .iter()
                             .map(|(value_a, value_b)| {
-                                (F::from_u64(*value_a), F::from_u64(*value_b))
+                                (F::from(*value_a), F::from(*value_b))
                             })
                             .collect()
                     })
-                    .ok_or(Error::SynthesisError)?;
-                let checks =
-                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                    .ok_or(Error::Synthesis)?;
+                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
 
                 layouter.assign_region(
                     || "witness",
@@ -427,7 +421,7 @@ mod test {
                                 || "check",
                                 config.check,
                                 idx + 1,
-                                || Ok(F::from_u64(*check as u64)),
+                                || Ok(F::from(*check as u64)),
                             )?;
                             region.assign_advice(
                                 || "value_a",
@@ -468,23 +462,13 @@ mod test {
             Ok(())
         );
         // error
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![(1, 2), (3, 4), (5, 6)],
-            vec![true, true, true],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-            ])
+            vec![true, true, true]
         );
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![(1, 1), (3, 4), (6, 6)],
-            vec![false, true, false],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-            ])
+            vec![false, true, false]
         );
     }
 }

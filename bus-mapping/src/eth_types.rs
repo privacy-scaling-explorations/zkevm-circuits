@@ -4,10 +4,10 @@ use crate::evm::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::types::{
-    transaction::response::Transaction, Address, Block, Bytes, H160, H256,
-    U256, U64,
+    transaction::response::Transaction, Address, Block, Bytes,
+    EIP1186ProofResponse, H160, H256, U256, U64,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use serde::{de, Deserialize};
 use std::collections::HashMap;
 use std::str::FromStr;

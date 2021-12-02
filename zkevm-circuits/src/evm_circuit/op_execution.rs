@@ -419,7 +419,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 for idx in 0..case_configs.len() {
                     preset
                         .free_cells
-                        .push((idx, F::from_u64((idx == q_case_idx) as u64)));
+                        .push((idx, F::from((idx == q_case_idx) as u64)));
                 }
 
                 let (word_ranges, cell_idxs, unused_idxs) =
@@ -460,7 +460,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                         .iter()
                         .enumerate()
                         .map(|(idx, value)| {
-                            if value.is_zero() {
+                            if value.is_zero().into() {
                                 // constraint qs_byte_lookup to 0 by default
                                 qs_byte_lookups[idx].expr()
                             } else {
@@ -526,39 +526,39 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         self.state_curr.global_counter.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.global_counter as u64)),
+            Some(F::from(core_state.global_counter as u64)),
         )?;
         self.state_curr.call_id.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.call_id as u64)),
+            Some(F::from(core_state.call_id as u64)),
         )?;
         self.state_curr.program_counter.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.program_counter as u64)),
+            Some(F::from(core_state.program_counter as u64)),
         )?;
         self.state_curr.stack_pointer.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.stack_pointer as u64)),
+            Some(F::from(core_state.stack_pointer as u64)),
         )?;
         self.state_curr.gas_counter.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.gas_counter as u64)),
+            Some(F::from(core_state.gas_counter as u64)),
         )?;
         self.state_curr.memory_size.assign(
             region,
             offset,
-            Some(F::from_u64(core_state.memory_size as u64)),
+            Some(F::from(core_state.memory_size as u64)),
         )?;
 
         if let Some(execution_step) = execution_step {
             self.state_curr.opcode.assign(
                 region,
                 offset,
-                Some(F::from_u64(execution_step.opcode.as_u8() as u64)),
+                Some(F::from(execution_step.opcode.as_u8() as u64)),
             )?;
 
             let &qs_op_idx = self
@@ -569,7 +569,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 q_op.assign(
                     region,
                     offset,
-                    Some(F::from_u64((idx == qs_op_idx) as u64)),
+                    Some(F::from((idx == qs_op_idx) as u64)),
                 )?;
             }
 
