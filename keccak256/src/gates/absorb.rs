@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 /// The number of next_inputs that are used inside the `absorb` circuit.
@@ -105,8 +105,8 @@ mod tests {
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use num_bigint::BigUint;
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pairing::arithmetic::FieldExt;
+    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -128,7 +128,7 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
 
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| meta.advice_column())
@@ -174,7 +174,7 @@ mod tests {
                 Ok(())
             }
         }
-        fn big_uint_to_pallas(a: &BigUint) -> pallas::Base {
+        fn big_uint_to_pallas(a: &BigUint) -> Fp {
             let mut b: [u64; 4] = [0; 4];
             let mut iter = a.iter_u64_digits();
 
@@ -185,7 +185,7 @@ mod tests {
                 };
             }
 
-            pallas::Base::from_raw(b)
+            Fp::from_raw(b)
         }
 
         let input1: State = [
@@ -207,9 +207,8 @@ mod tests {
         let mut in_biguint = StateBigInt::default();
         let mut next_biguint = StateBigInt::default();
 
-        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
-        let mut in_next_input_25: [pallas::Base; 25] =
-            [pallas::Base::zero(); 25];
+        let mut in_state: [Fp; 25] = [Fp::zero(); 25];
+        let mut in_next_input_25: [Fp; 25] = [Fp::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
@@ -219,15 +218,15 @@ mod tests {
                 big_uint_to_pallas(&next_biguint[(x, y)]);
         }
 
-        let mut in_next_input_17 = [pallas::Base::zero(); ABSORB_NEXT_INPUTS];
+        let mut in_next_input_17 = [Fp::zero(); ABSORB_NEXT_INPUTS];
         in_next_input_17
             .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
         let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
-        let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
         }
-        let circuit = MyCircuit::<pallas::Base> {
+        let circuit = MyCircuit::<Fp> {
             in_state,
             next_input: in_next_input_17,
             out_state,
@@ -235,8 +234,7 @@ mod tests {
         };
 
         // Test without public inputs
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }

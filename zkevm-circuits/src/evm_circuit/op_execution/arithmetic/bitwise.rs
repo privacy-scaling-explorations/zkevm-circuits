@@ -144,21 +144,21 @@ mod test {
     };
     use crate::{gadget::evm_word::encode, util::ToWord};
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::dev::MockProver;
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations, true);
-            let prover = MockProver::<Base>::run(18, &circuit, vec![]).unwrap();
+                TestCircuit::<Fp>::new($execution_steps, $operations, true);
+            let prover = MockProver::<Fp>::run(18, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
 
-    fn compress(value: BigUint) -> Base {
-        let r = Base::from_u64(1);
+    fn compress(value: BigUint) -> Fp {
+        let r = Fp::from(1);
         encode(value.to_word().to_vec().into_iter().rev(), r)
     }
 
@@ -188,10 +188,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(b.clone()),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -199,10 +199,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
+                        Fp::zero(),
+                        Fp::from(1022),
                         compress(a.clone()),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -210,10 +210,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1022),
+                        Fp::zero(),
+                        Fp::from(1022),
                         compress(a),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -221,10 +221,10 @@ mod test {
                     target: Target::Stack,
                     is_write: false,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(b),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 },
                 Operation {
@@ -232,10 +232,10 @@ mod test {
                     target: Target::Stack,
                     is_write: true,
                     values: [
-                        Base::zero(),
-                        Base::from_u64(1023),
+                        Fp::zero(),
+                        Fp::from(1023),
                         compress(c),
-                        Base::zero(),
+                        Fp::zero(),
                     ]
                 }
             ],

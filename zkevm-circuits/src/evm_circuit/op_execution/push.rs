@@ -131,7 +131,7 @@ impl<F: FieldExt> PushSuccessCase<F> {
             .iter()
             .zip(step.values[1].to_word().iter())
             .map(|(alloc, bit)| {
-                alloc.assign(region, offset, Some(F::from_u64(*bit as u64)))
+                alloc.assign(region, offset, Some(F::from(*bit as u64)))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -150,15 +150,15 @@ mod test {
         test::TestCircuit, Case, ExecutionStep, Operation,
     };
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::dev::MockProver;
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations, false);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+                TestCircuit::<Fp>::new($execution_steps, $operations, false);
+            let prover = MockProver::<Fp>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -182,10 +182,10 @@ mod test {
                 target: Target::Stack,
                 is_write: true,
                 values: [
-                    Base::zero(),
-                    Base::from_u64(1023),
-                    Base::from_u64(2 + 3),
-                    Base::zero(),
+                    Fp::zero(),
+                    Fp::from(1023),
+                    Fp::from(2 + 3),
+                    Fp::zero(),
                 ]
             }],
             Ok(())

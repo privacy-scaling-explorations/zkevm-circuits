@@ -192,15 +192,15 @@ impl<F: FieldExt> MemorySuccessCase<F> {
         let is_mload = self.is_mload.assign(
             region,
             offset,
-            F::from_u64(step.opcode.as_u8() as u64),
-            F::from_u64(OpcodeId::MLOAD.as_u8() as u64),
+            F::from(step.opcode.as_u8() as u64),
+            F::from(OpcodeId::MLOAD.as_u8() as u64),
         )?;
         // Check if this is an MSTORE8
         let is_mstore8 = self.is_mstore8.assign(
             region,
             offset,
-            F::from_u64(step.opcode.as_u8() as u64),
-            F::from_u64(OpcodeId::MSTORE8.as_u8() as u64),
+            F::from(step.opcode.as_u8() as u64),
+            F::from(OpcodeId::MSTORE8.as_u8() as u64),
         )?;
 
         // Memory expansion
@@ -332,8 +332,8 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         let is_mstore8 = self.is_mstore8.assign(
             region,
             offset,
-            F::from_u64(step.opcode.as_u8() as u64),
-            F::from_u64(OpcodeId::MSTORE8.as_u8() as u64),
+            F::from(step.opcode.as_u8() as u64),
+            F::from(OpcodeId::MSTORE8.as_u8() as u64),
         )?;
 
         // Address in range check
@@ -358,9 +358,7 @@ impl<F: FieldExt> MemoryOutOfGasCase<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from_u64(
-                state.gas_counter + GAS.as_u64() + (memory_cost as u64),
-            ),
+            F::from(state.gas_counter + GAS.as_u64() + (memory_cost as u64)),
             F::from_bytes(&step.values[1].to_word()).unwrap(),
         )?;
 
@@ -426,8 +424,8 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
         self.is_mload.assign(
             region,
             offset,
-            F::from_u64(step.opcode.as_u8() as u64),
-            F::from_u64(OpcodeId::MLOAD.as_u8() as u64),
+            F::from(step.opcode.as_u8() as u64),
+            F::from(OpcodeId::MLOAD.as_u8() as u64),
         )?;
         Ok(())
     }
@@ -436,19 +434,19 @@ impl<F: FieldExt> MemoryStackUnderflowCase<F> {
 #[cfg(test)]
 mod test {
     use super::super::super::{
-        test::TestCircuit, Case, ExecutionStep, Operation,
+        test::TestCircuit, Case, ExecutionStep, FieldExt, Operation,
     };
     use crate::{gadget::evm_word::encode, util::ToWord};
     use bus_mapping::{evm::OpcodeId, operation::Target};
-    use halo2::{arithmetic::FieldExt, dev::MockProver};
+    use halo2::dev::MockProver;
     use num::BigUint;
-    use pasta_curves::pallas::Base;
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! try_test_circuit {
         ($execution_steps:expr, $operations:expr, $result:expr) => {{
             let circuit =
-                TestCircuit::<Base>::new($execution_steps, $operations, false);
-            let prover = MockProver::<Base>::run(11, &circuit, vec![]).unwrap();
+                TestCircuit::<Fp>::new($execution_steps, $operations, false);
+            let prover = MockProver::<Fp>::run(11, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -465,13 +463,13 @@ mod test {
         }};
     }
 
-    fn compress(value: BigUint) -> Base {
-        let r = Base::from_u64(1);
+    fn compress(value: BigUint) -> Fp {
+        let r = Fp::from(1);
         encode(value.to_word().to_vec().into_iter().rev(), r)
     }
 
     fn mstore_ops(
-        operations: &mut Vec<Operation<Base>>,
+        operations: &mut Vec<Operation<Fp>>,
         gc: &mut usize,
         stack_index: u64,
         address: BigUint,
@@ -483,10 +481,10 @@ mod test {
             target: Target::Stack,
             is_write: true,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index),
+                Fp::zero(),
+                Fp::from(stack_index),
                 compress(value.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         operations.push(Operation {
@@ -494,10 +492,10 @@ mod test {
             target: Target::Stack,
             is_write: true,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index - 1),
+                Fp::zero(),
+                Fp::from(stack_index - 1),
                 compress(address.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         operations.push(Operation {
@@ -505,10 +503,10 @@ mod test {
             target: Target::Stack,
             is_write: false,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index - 1),
+                Fp::zero(),
+                Fp::from(stack_index - 1),
                 compress(address.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         operations.push(Operation {
@@ -516,10 +514,10 @@ mod test {
             target: Target::Stack,
             is_write: false,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index),
+                Fp::zero(),
+                Fp::from(stack_index),
                 compress(value.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         for idx in 0..count {
@@ -528,23 +526,23 @@ mod test {
                 target: Target::Memory,
                 is_write: true,
                 values: [
-                    Base::zero(),
-                    Base::from_bytes(
+                    Fp::zero(),
+                    Fp::from_bytes(
                         &(address.clone() + BigUint::from(idx as u64))
                             .to_word(),
                     )
                     .unwrap(),
-                    Base::from_u64(
+                    Fp::from(
                         value.to_bytes_le()[count - 1 - idx as usize] as u64,
                     ),
-                    Base::zero(),
+                    Fp::zero(),
                 ],
             });
         }
     }
 
     fn mload_ops(
-        operations: &mut Vec<Operation<Base>>,
+        operations: &mut Vec<Operation<Fp>>,
         gc: &mut usize,
         stack_index: u64,
         address: BigUint,
@@ -555,10 +553,10 @@ mod test {
             target: Target::Stack,
             is_write: true,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index),
+                Fp::zero(),
+                Fp::from(stack_index),
                 compress(address.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         operations.push(Operation {
@@ -566,10 +564,10 @@ mod test {
             target: Target::Stack,
             is_write: false,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index),
+                Fp::zero(),
+                Fp::from(stack_index),
                 compress(address.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         operations.push(Operation {
@@ -577,10 +575,10 @@ mod test {
             target: Target::Stack,
             is_write: true,
             values: [
-                Base::zero(),
-                Base::from_u64(stack_index),
+                Fp::zero(),
+                Fp::from(stack_index),
                 compress(value.clone()),
-                Base::zero(),
+                Fp::zero(),
             ],
         });
         for idx in 0..32 {
@@ -589,16 +587,14 @@ mod test {
                 target: Target::Memory,
                 is_write: false,
                 values: [
-                    Base::zero(),
-                    Base::from_bytes(
+                    Fp::zero(),
+                    Fp::from_bytes(
                         &(address.clone() + BigUint::from(idx as u64))
                             .to_word(),
                     )
                     .unwrap(),
-                    Base::from_u64(
-                        value.to_bytes_le()[31 - idx as usize] as u64,
-                    ),
-                    Base::zero(),
+                    Fp::from(value.to_bytes_le()[31 - idx as usize] as u64),
+                    Fp::zero(),
                 ],
             });
         }

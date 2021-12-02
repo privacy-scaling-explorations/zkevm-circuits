@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 ff = "0.11"
-halo2 = "0.0"
-pasta_curves = "0.1"
+halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79d287032f1b5f94beb661b3fb42" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"
@@ -18,6 +18,8 @@ array-init = "2.0.0"
 paste = "1.0"
 bus-mapping = { path = "../bus-mapping"}
 serde_json = "1.0.66"
+rand_xorshift = "0.3"
+rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.3"
