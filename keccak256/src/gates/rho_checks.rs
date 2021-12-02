@@ -307,7 +307,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     ) -> Self {
         meta.enable_equality(adv.input.acc.into());
         meta.enable_equality(adv.output.acc.into());
-        let q_enable = meta.complex_selector();
         let q_is_special = meta.complex_selector();
         let rotation = ROTATION_CONSTANTS[lane_xy.0][lane_xy.1];
         let slices = slice_lane(rotation);
@@ -420,8 +419,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         rotation: u32,
         step: u32,
     ) -> Self {
-        let q_enable = meta.selector();
-        let q_is_first = meta.selector();
+        let q_enable = meta.complex_selector();
+        let q_is_first = meta.complex_selector();
         let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
             meta,
             q_enable,
@@ -659,8 +658,8 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         bc: BlockCountAdvices,
         step: u32,
     ) -> Self {
-        let q_first = meta.selector();
-        let q_rest = meta.selector();
+        let q_first = meta.complex_selector();
+        let q_rest = meta.complex_selector();
         if step == 1 {
             meta.create_gate("block count step 1", |meta| {
                 let q_all = meta.query_selector(q_all);

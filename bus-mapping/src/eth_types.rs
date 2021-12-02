@@ -8,7 +8,7 @@ pub use ethers_core::types::{
     U256, U64,
 };
 use pairing::arithmetic::FieldExt;
-use serde::{de, Deserialize, Serialize};
+use serde::{de, Deserialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
