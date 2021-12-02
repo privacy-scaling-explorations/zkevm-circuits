@@ -749,8 +749,8 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
             self.q_rest.enable(region, offset)?;
         }
 
-        let block_count = F::from_u64(block_count.into());
-        let acc = block_count_acc.map(|x| F::from_u64(x.into()));
+        let block_count = F::from(block_count.into());
+        let acc = block_count_acc.map(|x| F::from(x.into()));
         region.assign_advice(
             || format!("block count step{}", self.step),
             self.bc.block_count,
