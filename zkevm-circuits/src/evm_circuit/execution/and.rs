@@ -113,11 +113,11 @@ mod test {
         eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::OpcodeId,
     };
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr as Fp;
 
     fn test_ok(a: Word, b: Word, c_and: Word, c_or: Word, c_xor: Word) {
-        let randomness = Base::rand();
+        let randomness = Fp::rand();
         let bytecode = Bytecode::new(
             [
                 vec![OpcodeId::PUSH32.as_u8()],

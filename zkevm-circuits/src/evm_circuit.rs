@@ -34,7 +34,7 @@ impl<F: FieldExt> EvmCircuit<F> {
     where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
-        BytecodeTable: LookupTable<F, 3>,
+        BytecodeTable: LookupTable<F, 4>,
     {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
 
@@ -102,17 +102,27 @@ mod test {
         execution::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         param::STEP_HEIGHT,
         table::FixedTableTag,
-        util::RandomLinearCombination,
         EvmCircuit,
     };
-    use bus_mapping::eth_types::{ToLittleEndian, Word};
+    use bus_mapping::eth_types::Word;
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
-    use rand::random;
+    use rand::{
+        distributions::uniform::{SampleRange, SampleUniform},
+        random, thread_rng, Rng,
+    };
+
+    pub(crate) fn rand_range<T, R>(range: R) -> T
+    where
+        T: SampleUniform,
+        R: SampleRange<T>,
+    {
+        thread_rng().gen_range(range)
+    }
 
     pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
         vec![random(); n]
@@ -130,7 +140,7 @@ mod test {
     pub(crate) struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
         rw_table: [Column<Advice>; 8],
-        bytecode_table: [Column<Advice>; 3],
+        bytecode_table: [Column<Advice>; 4],
         evm_circuit: EvmCircuit<F>,
     }
 
@@ -235,18 +245,9 @@ mod test {
                     offset += 1;
 
                     for bytecode in bytecodes.iter() {
-                        let hash =
-                            RandomLinearCombination::random_linear_combine(
-                                bytecode.hash.to_le_bytes(),
-                                randomness,
-                            );
-                        for (idx, byte) in bytecode.bytes.iter().enumerate() {
+                        for row in bytecode.table_assignments(randomness) {
                             for (column, value) in
-                                self.bytecode_table.iter().zip([
-                                    hash,
-                                    F::from(idx as u64),
-                                    F::from(*byte as u64),
-                                ])
+                                self.bytecode_table.iter().zip(row)
                             {
                                 region.assign_advice(
                                     || format!("bytecode table row {}", offset),
@@ -293,7 +294,7 @@ mod test {
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
             let rw_table = [(); 8].map(|_| meta.advice_column());
-            let bytecode_table = [(); 3].map(|_| meta.advice_column());
+            let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let randomness = meta.instance_column();
 
             Self::Config {
@@ -342,12 +343,21 @@ mod test {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let k = u32::BITS
-            - (1 + fixed_table_tags
+        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros();
+
+        let k = log2_ceil(
+            1 + fixed_table_tags
                 .iter()
-                .map(|tag| tag.build::<F>().count() as u32)
-                .sum::<u32>())
-            .leading_zeros();
+                .map(|tag| tag.build::<Base>().count())
+                .sum::<usize>(),
+        );
+        let k = k.max(log2_ceil(
+            1 + block
+                .bytecodes
+                .iter()
+                .map(|bytecode| bytecode.bytes.len())
+                .sum::<usize>(),
+        ));
 
         let randomness =
             vec![

@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         step::{ExecutionResult, Preset, Step},
-        table::{FixedTableTag, Lookup, RwTableTag, TxContextFieldTag},
+        table::{FixedTableTag, Lookup, RwTableTag},
         util::{Cell, Word},
     },
     util::Expr,
@@ -346,11 +346,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Opcode
 
-    pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>) {
+    pub(crate) fn opcode_lookup(
+        &mut self,
+        opcode: Expression<F>,
+        is_code: Expression<F>,
+    ) {
         self.opcode_lookup_at(
             self.curr.state.program_counter.expr()
                 + self.program_counter_offset.expr(),
             opcode,
+            is_code,
         );
         self.program_counter_offset += 1;
     }
@@ -359,23 +364,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         index: Expression<F>,
         opcode: Expression<F>,
+        is_code: Expression<F>,
     ) {
         let is_root_create =
             self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        self.add_lookup(
-            Lookup::Tx {
-                id: self.curr.state.opcode_source.expr(),
-                tag: TxContextFieldTag::Calldata.expr(),
-                index: index.clone(),
-                value: opcode.clone(),
-            }
-            .conditional(is_root_create.clone()),
+        self.add_constraint(
+            "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
+            is_root_create.clone(),
         );
         self.add_lookup(
             Lookup::Bytecode {
                 hash: self.curr.state.opcode_source.expr(),
                 index,
                 value: opcode,
+                is_code,
             }
             .conditional(1.expr() - is_root_create),
         );

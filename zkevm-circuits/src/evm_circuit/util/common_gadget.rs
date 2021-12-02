@@ -35,7 +35,7 @@ impl<F: FieldExt> SameContextGadget<F> {
         mut state_transition: StateTransition<F>,
         dynamic_gas_cost: Option<Expression<F>>,
     ) -> Self {
-        cb.opcode_lookup(opcode.expr());
+        cb.opcode_lookup(opcode.expr(), 1.expr());
         cb.add_lookup(Lookup::Fixed {
             tag: FixedTableTag::ResponsibleOpcode.expr(),
             values: [
@@ -49,7 +49,7 @@ impl<F: FieldExt> SameContextGadget<F> {
             .execution_result()
             .responsible_opcodes()
             .first()
-            .expect("Execution result in OpcodeStepGadget should be responsible to some opcodes")
+            .expect("Execution result in SameContextGadget should be responsible to some opcodes")
             .constant_gas_cost()
             .as_u64()
             .expr();
@@ -65,7 +65,9 @@ impl<F: FieldExt> SameContextGadget<F> {
         );
 
         // Set state transition of gas_left if it's default value
-        if matches!(state_transition.gas_left, Transition::Persistent) {
+        if matches!(state_transition.gas_left, Transition::Persistent)
+            && !matches!(gas_cost, Expression::Constant(constant) if constant.is_zero())
+        {
             state_transition.gas_left = Transition::Delta(-gas_cost);
         }
 

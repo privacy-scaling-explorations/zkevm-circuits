@@ -23,7 +23,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
+        cb.opcode_lookup(opcode.expr(), 1.expr());
 
         // Other constraints are ignored now for STOP to serve as a mocking
         // terminator

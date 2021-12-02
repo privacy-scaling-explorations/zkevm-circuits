@@ -55,10 +55,10 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
                 - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
             let byte = cb.query_cell();
             if idx == 0 {
-                cb.opcode_lookup_at(index, byte.expr())
+                cb.opcode_lookup_at(index, byte.expr(), 0.expr())
             } else {
                 cb.condition(selectors[idx - 1].expr(), |cb| {
-                    cb.opcode_lookup_at(index, byte.expr())
+                    cb.opcode_lookup_at(index, byte.expr(), 0.expr())
                 });
             }
             byte

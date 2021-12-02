@@ -213,8 +213,8 @@ mod test {
         eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::{GasCost, OpcodeId},
     };
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr as Fp;
     use std::iter;
 
     fn test_ok(
@@ -227,7 +227,7 @@ mod test {
         let is_mload = opcode == OpcodeId::MLOAD;
         let is_mstore8 = opcode == OpcodeId::MSTORE8;
 
-        let randomness = Base::rand();
+        let randomness = Fp::rand();
         let bytecode = Bytecode::new(
             [
                 vec![OpcodeId::PUSH32.as_u8()],
