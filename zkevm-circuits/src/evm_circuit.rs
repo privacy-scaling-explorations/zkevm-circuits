@@ -343,16 +343,18 @@ mod test {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros();
+        let log2_ceil = |n| {
+            u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
+        };
 
         let k = log2_ceil(
-            1 + fixed_table_tags
+            64 + fixed_table_tags
                 .iter()
-                .map(|tag| tag.build::<Base>().count())
+                .map(|tag| tag.build::<F>().count())
                 .sum::<usize>(),
         );
         let k = k.max(log2_ceil(
-            1 + block
+            64 + block
                 .bytecodes
                 .iter()
                 .map(|bytecode| bytecode.bytes.len())

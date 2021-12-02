@@ -422,7 +422,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
     {
-        let q_step = meta.selector();
+        let q_step = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
