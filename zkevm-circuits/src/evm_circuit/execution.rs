@@ -91,20 +91,20 @@ pub mod bus_mapping_tmp {
             [
                 vec![
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::Nonce as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::Nonce as u64),
                         F::zero(),
-                        F::from_u64(self.nonce),
+                        F::from(self.nonce),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::Gas as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::Gas as u64),
                         F::zero(),
-                        F::from_u64(self.gas),
+                        F::from(self.gas),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::GasTipCap as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::GasTipCap as u64),
                         F::zero(),
                         RandomLinearCombination::random_linear_combine(
                             self.gas_tip_cap.to_le_bytes(),
@@ -112,8 +112,8 @@ pub mod bus_mapping_tmp {
                         ),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::GasFeeCap as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::GasFeeCap as u64),
                         F::zero(),
                         RandomLinearCombination::random_linear_combine(
                             self.gas_fee_cap.to_le_bytes(),
@@ -121,26 +121,26 @@ pub mod bus_mapping_tmp {
                         ),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::CallerAddress as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::CallerAddress as u64),
                         F::zero(),
                         self.caller_address.to_scalar().unwrap(),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::CalleeAddress as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::CalleeAddress as u64),
                         F::zero(),
                         self.callee_address.to_scalar().unwrap(),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::IsCreate as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::IsCreate as u64),
                         F::zero(),
-                        F::from_u64(self.is_create as u64),
+                        F::from(self.is_create as u64),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::Value as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::Value as u64),
                         F::zero(),
                         RandomLinearCombination::random_linear_combine(
                             self.value.to_le_bytes(),
@@ -148,10 +148,10 @@ pub mod bus_mapping_tmp {
                         ),
                     ],
                     [
-                        F::from_u64(self.id as u64),
-                        F::from_u64(TxContextFieldTag::CalldataLength as u64),
+                        F::from(self.id as u64),
+                        F::from(TxContextFieldTag::CalldataLength as u64),
                         F::zero(),
-                        F::from_u64(self.calldata_length as u64),
+                        F::from(self.calldata_length as u64),
                     ],
                 ],
                 self.calldata
@@ -159,10 +159,10 @@ pub mod bus_mapping_tmp {
                     .enumerate()
                     .map(|(idx, byte)| {
                         [
-                            F::from_u64(self.id as u64),
-                            F::from_u64(TxContextFieldTag::Calldata as u64),
-                            F::from_u64(idx as u64),
-                            F::from_u64(*byte as u64),
+                            F::from(self.id as u64),
+                            F::from(TxContextFieldTag::Calldata as u64),
+                            F::from(idx as u64),
+                            F::from(*byte as u64),
                         ]
                     })
                     .collect(),

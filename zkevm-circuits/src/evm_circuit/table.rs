@@ -51,23 +51,31 @@ impl FixedTableTag {
         .copied()
     }
 
-    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = Vec<F>>> {
+    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
-            Self::Range16 => Box::new((0..16).map(move |value| {
-                vec![tag, F::from(value), F::zero(), F::zero()]
-            })),
-            Self::Range32 => Box::new((0..32).map(move |value| {
-                vec![tag, F::from(value), F::zero(), F::zero()]
-            })),
-            Self::Range256 => Box::new((0..256).map(move |value| {
-                vec![tag, F::from(value), F::zero(), F::zero()]
-            })),
-            Self::Range512 => Box::new((0..512).map(move |value| {
-                vec![tag, F::from(value), F::zero(), F::zero()]
-            })),
+            Self::Range16 => {
+                Box::new((0..16).map(move |value| {
+                    [tag, F::from(value), F::zero(), F::zero()]
+                }))
+            }
+            Self::Range32 => {
+                Box::new((0..32).map(move |value| {
+                    [tag, F::from(value), F::zero(), F::zero()]
+                }))
+            }
+            Self::Range256 => {
+                Box::new((0..256).map(move |value| {
+                    [tag, F::from(value), F::zero(), F::zero()]
+                }))
+            }
+            Self::Range512 => {
+                Box::new((0..512).map(move |value| {
+                    [tag, F::from(value), F::zero(), F::zero()]
+                }))
+            }
             Self::SignByte => Box::new((0..256).map(move |value| {
-                vec![
+                [
                     tag,
                     F::from(value),
                     F::from((value >> 7) * 0xFFu64),
@@ -76,24 +84,24 @@ impl FixedTableTag {
             })),
             Self::BitwiseAnd => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    vec![tag, F::from(lhs), F::from(rhs), F::from(lhs & rhs)]
+                    [tag, F::from(lhs), F::from(rhs), F::from(lhs & rhs)]
                 })
             })),
             Self::BitwiseOr => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    vec![tag, F::from(lhs), F::from(rhs), F::from(lhs | rhs)]
+                    [tag, F::from(lhs), F::from(rhs), F::from(lhs | rhs)]
                 })
             })),
             Self::BitwiseXor => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    vec![tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)]
+                    [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)]
                 })
             })),
             Self::ResponsibleOpcode => Box::new(
                 ExecutionResult::iterator().flat_map(move |execution_result| {
                     execution_result.responsible_opcodes().into_iter().map(
                         move |opcode| {
-                            vec![
+                            [
                                 tag,
                                 F::from(execution_result.as_u64()),
                                 F::from(opcode.as_u64()),
@@ -108,7 +116,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum TxContextFieldTag {
+pub enum TxContextFieldTag {
     Nonce = 1,
     Gas,
     GasTipCap,
@@ -122,7 +130,7 @@ pub(crate) enum TxContextFieldTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum RwTableTag {
+pub enum RwTableTag {
     TxAccessListAccount = 1,
     TxAccessListStorageSlot,
     TxRefund,
@@ -135,14 +143,14 @@ pub(crate) enum RwTableTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum AccountFieldTag {
+pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
     CodeHash,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CallContextFieldTag {
+pub enum CallContextFieldTag {
     RWCounterEndOfReversion = 1,
     CallerCallId,
     TxId,
