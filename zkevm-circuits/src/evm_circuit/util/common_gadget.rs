@@ -85,16 +85,13 @@ impl<F: FieldExt> SameContextGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
+        self.opcode
+            .assign(region, offset, Some(F::from(opcode.as_u64())))?;
 
         self.sufficient_gas_left.assign(
             region,
             offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
+            F::from((step.gas_left - step.gas_cost) as u64),
         )?;
 
         Ok(())

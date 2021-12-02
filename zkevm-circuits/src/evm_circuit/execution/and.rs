@@ -5,55 +5,59 @@ use crate::{
             ExecutionGadget,
         },
         step::ExecutionResult,
+        table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::{PairSelectGadget, WordAdditionGadget},
-            select,
+            Word,
         },
     },
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-// AddGadget verifies ADD and SUB at the same time by an extra swap flag,
-// when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
-// when it's SUB, we annotate stack as [c, b, ...] and [a, ...].
-// Then we verify if a + b is equal to c.
 #[derive(Clone, Debug)]
-pub(crate) struct AddGadget<F> {
+pub(crate) struct AndGadget<F> {
     same_context: SameContextGadget<F>,
-    word_addition: WordAdditionGadget<F>,
-    is_sub: PairSelectGadget<F>,
+    a: Word<F>,
+    b: Word<F>,
+    c: Word<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
-    const NAME: &'static str = "ADD";
+impl<F: FieldExt> ExecutionGadget<F> for AndGadget<F> {
+    const NAME: &'static str = "AND";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::ADD;
+    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::AND;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let word_addition = WordAdditionGadget::construct(cb);
+        let a = cb.query_word();
+        let b = cb.query_word();
+        let c = cb.query_word();
 
-        // Swap b and c if it's SUB
-        let is_sub = PairSelectGadget::construct(
-            cb,
-            opcode.expr(),
-            OpcodeId::SUB.expr(),
-            OpcodeId::ADD.expr(),
-        );
-
-        // ADD: Pop a and b from the stack, push c on the stack
-        // SUB: Pop c and b from the stack, push a on the stack
-        let WordAdditionGadget { a, b, c, .. } = &word_addition;
-        cb.stack_pop(select::expr(is_sub.expr().0, c.expr(), a.expr()));
+        cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
-        cb.stack_push(select::expr(is_sub.expr().0, a.expr(), c.expr()));
+        cb.stack_push(c.expr());
+
+        // Because opcode AND, OR, and XOR are continuous, so we can make the
+        // FixedTableTag of them also continuous, and use the opcode delta from
+        // OpcodeId::AND as the delta to FixedTableTag::BitwiseAnd.
+        let tag = FixedTableTag::BitwiseAnd.expr()
+            + (opcode.expr() - OpcodeId::AND.as_u64().expr());
+        for idx in 0..32 {
+            cb.add_lookup(Lookup::Fixed {
+                tag: tag.clone(),
+                values: [
+                    a.cells[idx].expr(),
+                    b.cells[idx].expr(),
+                    c.cells[idx].expr(),
+                ],
+            });
+        }
 
         // State transition
         let state_transition = StateTransition {
@@ -67,8 +71,9 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
         Self {
             same_context,
-            word_addition,
-            is_sub,
+            a,
+            b,
+            c,
         }
     }
 
@@ -83,21 +88,12 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
-        let indices = if opcode == OpcodeId::SUB {
-            [step.rw_indices[2], step.rw_indices[1], step.rw_indices[0]]
-        } else {
+        let [a, b, c] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-        };
-        let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
-        self.word_addition.assign(region, offset, a, b, c)?;
-        self.is_sub.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::SUB.as_u64()),
-            F::from(OpcodeId::ADD.as_u64()),
-        )?;
+                .map(|idx| block.rws[idx].stack_value());
+        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+        self.c.assign(region, offset, Some(c.to_le_bytes()))?;
 
         Ok(())
     }
@@ -110,18 +106,18 @@ mod test {
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
         step::ExecutionResult,
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
+        test::{rand_word, run_test_circuit_complete_fixed_table},
         util::RandomLinearCombination,
     };
     use bus_mapping::{
         eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::OpcodeId,
     };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use halo2::arithmetic::FieldExt;
+    use pasta_curves::pallas::Base;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word, c: Word) {
-        let randomness = Fp::rand();
+        let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
                 vec![OpcodeId::PUSH32.as_u8()],
@@ -148,7 +144,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionResult::ADD,
+                        execution_result: ExecutionResult::AND,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,
@@ -193,30 +189,38 @@ mod test {
             ],
             bytecodes: vec![bytecode],
         };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit_complete_fixed_table(block), Ok(()));
     }
 
     #[test]
-    fn add_gadget_simple() {
+    fn and_gadget_simple() {
         test_ok(
-            OpcodeId::ADD,
-            0x030201.into(),
-            0x060504.into(),
-            0x090705.into(),
+            OpcodeId::AND,
+            0x12_34_56.into(),
+            0x78_9A_BC.into(),
+            0x10_10_14.into(),
         );
         test_ok(
-            OpcodeId::SUB,
-            0x090705.into(),
-            0x060504.into(),
-            0x030201.into(),
+            OpcodeId::OR,
+            0x12_34_56.into(),
+            0x78_9A_BC.into(),
+            0x7A_BE_FE.into(),
+        );
+        test_ok(
+            OpcodeId::XOR,
+            0x12_34_56.into(),
+            0x78_9A_BC.into(),
+            0x6A_AE_EA.into(),
         );
     }
 
     #[test]
-    fn add_gadget_rand() {
+    #[ignore]
+    fn and_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
-        test_ok(OpcodeId::ADD, a, b, a.overflowing_add(b).0);
-        test_ok(OpcodeId::SUB, a, b, a.overflowing_sub(b).0);
+        test_ok(OpcodeId::AND, a, b, a & b);
+        test_ok(OpcodeId::OR, a, b, a | b);
+        test_ok(OpcodeId::XOR, a, b, a ^ b);
     }
 }

@@ -119,8 +119,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         let is_mstore8 = self.is_mstore8.assign(
             region,
             offset,
-            F::from_u64(opcode.as_u64()),
-            F::from_u64(OpcodeId::MSTORE8.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::MSTORE8.as_u64()),
         )?;
 
         // Address in range check
@@ -145,8 +145,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from_u64(step.gas_left),
-            F::from_u64(step.gas_cost),
+            F::from(step.gas_left),
+            F::from(step.gas_cost),
         )?;
 
         Ok(())
