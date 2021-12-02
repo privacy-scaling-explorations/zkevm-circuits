@@ -190,7 +190,7 @@ mod test {
                 .map(|values| {
                     values.iter().map(|value| F::from(*value)).collect()
                 })
-                .ok_or(Error::SynthesisError)?;
+                .ok_or(Error::Synthesis)?;
 
             layouter.assign_region(
                 || "witness",

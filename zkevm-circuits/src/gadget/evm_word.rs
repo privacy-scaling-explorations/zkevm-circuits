@@ -155,7 +155,7 @@ impl<F: FieldExt> WordConfig<F> {
                 || format!("assign byte {}", idx),
                 *column,
                 offset,
-                || byte_field_elem.ok_or(Error::SynthesisError),
+                || byte_field_elem.ok_or(Error::Synthesis),
             )?;
 
             bytes.push(Variable::new(cell, byte_field_elem, *byte));

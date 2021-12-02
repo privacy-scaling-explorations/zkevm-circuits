@@ -22,7 +22,7 @@ pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> Result<F, Error> {
     let len = x_bytes.len();
     assert!(len <= 32, "expect len <=32 but got {}", len);
     word[..len].clone_from_slice(&x_bytes[..len]);
-    Option::from(F::from_bytes(&word)).ok_or(Error::SynthesisError)
+    Option::from(F::from_bytes(&word)).ok_or(Error::Synthesis)
 }
 
 pub fn f_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {

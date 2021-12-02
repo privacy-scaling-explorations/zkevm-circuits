@@ -53,14 +53,14 @@ impl<F: FieldExt> JumpdestSuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // State transitions
         STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     fn assign(

@@ -99,7 +99,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
             || "witness inverse of value",
             config.value_inv,
             offset,
-            || value_invert.ok_or(Error::SynthesisError),
+            || value_invert.ok_or(Error::Synthesis),
         )?;
 
         Ok(())
@@ -125,7 +125,7 @@ mod test {
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure::ConstraintNotSatisfied},
+        dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
@@ -149,13 +149,21 @@ mod test {
         }};
     }
 
-    macro_rules! error_constraint_at_row {
-        ($row:expr) => {
-            ConstraintNotSatisfied {
-                constraint: ((1, "check is_zero").into(), 0, "").into(),
-                row: $row,
-            }
-        };
+    macro_rules! try_test_circuit_error {
+        ($values:expr, $checks:expr) => {{
+            // let k = usize::BITS - $values.len().leading_zeros();
+
+            // TODO: remove zk blinding factors in halo2 to restore the
+            // correct k (without the extra + 2).
+            let k = usize::BITS - $values.len().leading_zeros() + 2;
+            let circuit = TestCircuit::<Fp> {
+                values: Some($values),
+                checks: Some($checks),
+                _marker: PhantomData,
+            };
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+            assert!(prover.verify().is_err());
+        }};
     }
 
     #[test]
@@ -240,9 +248,8 @@ mod test {
                     .map(|values| {
                         values.iter().map(|value| F::from(*value)).collect()
                     })
-                    .ok_or(Error::SynthesisError)?;
-                let checks =
-                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                    .ok_or(Error::Synthesis)?;
+                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
                 let (first_value, values) = values.split_at(1);
                 let first_value = first_value[0];
 
@@ -301,25 +308,13 @@ mod test {
             Ok(())
         );
         // error
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![1, 2, 3, 4, 5],
-            vec![true, true, true, true],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-                error_constraint_at_row!(4)
-            ])
+            vec![true, true, true, true]
         );
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![1, 2, 2, 3, 3],
-            vec![true, false, true, false],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-                error_constraint_at_row!(4)
-            ])
+            vec![true, false, true, false]
         );
     }
 
@@ -413,9 +408,8 @@ mod test {
                             })
                             .collect()
                     })
-                    .ok_or(Error::SynthesisError)?;
-                let checks =
-                    self.checks.as_ref().ok_or(Error::SynthesisError)?;
+                    .ok_or(Error::Synthesis)?;
+                let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
 
                 layouter.assign_region(
                     || "witness",
@@ -468,23 +462,13 @@ mod test {
             Ok(())
         );
         // error
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![(1, 2), (3, 4), (5, 6)],
-            vec![true, true, true],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-            ])
+            vec![true, true, true]
         );
-        try_test_circuit!(
+        try_test_circuit_error!(
             vec![(1, 1), (3, 4), (6, 6)],
-            vec![false, true, false],
-            Err(vec![
-                error_constraint_at_row!(1),
-                error_constraint_at_row!(2),
-                error_constraint_at_row!(3),
-            ])
+            vec![false, true, false]
         );
     }
 }

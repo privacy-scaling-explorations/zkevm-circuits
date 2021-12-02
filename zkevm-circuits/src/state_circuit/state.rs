@@ -1172,77 +1172,76 @@ mod tests {
     };
 
     use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+    #[derive(Default)]
+    struct StateCircuit<
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    > {
+        memory_ops: Vec<Operation<MemoryOp>>,
+        stack_ops: Vec<Operation<StackOp>>,
+        storage_ops: Vec<Operation<StorageOp>>,
+    }
+
+    impl<
+            F: FieldExt,
+            const GLOBAL_COUNTER_MAX: usize,
+            const MEMORY_ROWS_MAX: usize,
+            const MEMORY_ADDRESS_MAX: usize,
+            const STACK_ROWS_MAX: usize,
+            const STACK_ADDRESS_MAX: usize,
+            const STORAGE_ROWS_MAX: usize,
+        > Circuit<F>
+        for StateCircuit<
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >
+    {
+        type Config = Config<
+            F,
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            Config::configure(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.load(&mut layouter)?;
+            config.assign(
+                layouter,
+                self.memory_ops.clone(),
+                self.stack_ops.clone(),
+                self.storage_ops.clone(),
+            )?;
+
+            Ok(())
+        }
+    }
 
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
-            #[derive(Default)]
-            struct StateCircuit<
-                const GLOBAL_COUNTER_MAX: usize,
-                const MEMORY_ROWS_MAX: usize,
-                const MEMORY_ADDRESS_MAX: usize,
-                const STACK_ROWS_MAX: usize,
-                const STACK_ADDRESS_MAX: usize,
-                const STORAGE_ROWS_MAX: usize,
-            > {
-                memory_ops: Vec<Operation<MemoryOp>>,
-                stack_ops: Vec<Operation<StackOp>>,
-                storage_ops: Vec<Operation<StorageOp>>,
-            }
-
-            impl<
-                    F: FieldExt,
-                    const GLOBAL_COUNTER_MAX: usize,
-                    const MEMORY_ROWS_MAX: usize,
-                    const MEMORY_ADDRESS_MAX: usize,
-                    const STACK_ROWS_MAX: usize,
-                    const STACK_ADDRESS_MAX: usize,
-                    const STORAGE_ROWS_MAX: usize,
-                > Circuit<F>
-                for StateCircuit<
-                    GLOBAL_COUNTER_MAX,
-                    MEMORY_ROWS_MAX,
-                    MEMORY_ADDRESS_MAX,
-                    STACK_ROWS_MAX,
-                    STACK_ADDRESS_MAX,
-                    STORAGE_ROWS_MAX,
-                >
-            {
-                type Config = Config<
-                    F,
-                    GLOBAL_COUNTER_MAX,
-                    MEMORY_ROWS_MAX,
-                    MEMORY_ADDRESS_MAX,
-                    STACK_ROWS_MAX,
-                    STACK_ADDRESS_MAX,
-                    STORAGE_ROWS_MAX,
-                >;
-                type FloorPlanner = SimpleFloorPlanner;
-
-                fn without_witnesses(&self) -> Self {
-                    Self::default()
-                }
-
-                fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                    Config::configure(meta)
-                }
-
-                fn synthesize(
-                    &self,
-                    config: Self::Config,
-                    mut layouter: impl Layouter<F>,
-                ) -> Result<(), Error> {
-                    config.load(&mut layouter)?;
-                    config.assign(
-                        layouter,
-                        self.memory_ops.clone(),
-                        self.stack_ops.clone(),
-                        self.storage_ops.clone(),
-                    )?;
-
-                    Ok(())
-                }
-            }
-
             let circuit = StateCircuit::<
                 $global_counter_max,
                 $memory_rows_max,
@@ -1261,6 +1260,26 @@ mod tests {
         }};
     }
 
+    macro_rules! test_state_circuit_error {
+        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
+            let circuit = StateCircuit::<
+                $global_counter_max,
+                $memory_rows_max,
+                $memory_address_max,
+                $stack_rows_max,
+                $stack_address_max,
+                $storage_rows_max,
+            > {
+                memory_ops: $memory_ops,
+                stack_ops: $stack_ops,
+                storage_ops: $storage_ops,
+            };
+
+            let prover = MockProver::<Fp>::run($k, &circuit, vec![]).unwrap();
+            assert!(prover.verify().is_err());
+        }};
+    }
+
     fn constraint_not_satisfied(
         row: usize,
         gate_index: usize,
@@ -1270,6 +1289,7 @@ mod tests {
         ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
             row,
+            cell_values: vec![],
         }
     }
 
@@ -1433,7 +1453,7 @@ mod tests {
         );
 
         const MEMORY_ROWS_MAX: usize = 7;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             2000,
             MEMORY_ROWS_MAX,
@@ -1443,16 +1463,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1],
             vec![stack_op_0, stack_op_1],
-            vec![],
-            Err(vec![
-                constraint_not_satisfied(2, 2, "Memory operation + padding", 4),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + 1,
-                    3,
-                    "Stack operation",
-                    1
-                )
-            ])
+            vec![]
         );
     }
 
@@ -1502,7 +1513,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             2000,
             MEMORY_ROWS_MAX,
@@ -1512,33 +1523,7 @@ mod tests {
             1000,
             vec![],
             vec![stack_op_0],
-            vec![storage_op_0, storage_op_1, storage_op_2],
-            Err(vec![
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX,
-                    5,
-                    "First storage row operation",
-                    0
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
-                    6,
-                    "Storage operation",
-                    1
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    6,
-                    "Storage operation",
-                    0
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    6,
-                    "Storage operation",
-                    1
-                ),
-            ])
+            vec![storage_op_0, storage_op_1, storage_op_2]
         );
     }
 
@@ -1630,7 +1615,7 @@ mod tests {
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
-        test_state_circuit!(
+        test_state_circuit_error!(
             16,
             GLOBAL_COUNTER_MAX,
             MEMORY_ROWS_MAX,
@@ -1646,16 +1631,7 @@ mod tests {
                 memory_op_4
             ],
             vec![stack_op_0, stack_op_1, stack_op_2, stack_op_3],
-            vec![],
-            Err(vec![
-                lookup_fail(4, 3),
-                lookup_fail(5, 3),
-                lookup_fail(6, 3),
-                lookup_fail(9, 4),
-                lookup_fail(10, 4),
-                lookup_fail(3, 5),
-                lookup_fail(10, 5)
-            ])
+            vec![]
         );
     }
 
@@ -1700,7 +1676,7 @@ mod tests {
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
-        test_state_circuit!(
+        test_state_circuit_error!(
             16,
             GLOBAL_COUNTER_MAX,
             MEMORY_ROWS_MAX,
@@ -1710,13 +1686,7 @@ mod tests {
             STORAGE_ROWS_MAX,
             vec![memory_op_0],
             vec![stack_op_0, stack_op_1],
-            vec![],
-            Err(vec![
-                lookup_fail(0, 3),
-                lookup_fail(1, 3),
-                lookup_fail(2, 4),
-                lookup_fail(3, 4),
-            ])
+            vec![]
         );
     }
 
@@ -1812,7 +1782,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 100;
         const STACK_ROWS_MAX: usize = 100;
-        test_state_circuit!(
+        test_state_circuit_error!(
             15,
             10000,
             MEMORY_ROWS_MAX,
@@ -1828,14 +1798,7 @@ mod tests {
                 storage_op_2,
                 storage_op_3,
                 storage_op_4
-            ],
-            Err(vec![
-                lookup_fail(2, 2),
-                lookup_fail(3, 2),
-                lookup_fail(MEMORY_ROWS_MAX + 1, 2),
-                lookup_fail(MEMORY_ROWS_MAX + 2, 2),
-                lookup_fail(MEMORY_ROWS_MAX + STACK_ROWS_MAX + 2, 7),
-            ])
+            ]
         );
     }
 
@@ -1876,7 +1839,7 @@ mod tests {
         );
 
         const MEMORY_ROWS_MAX: usize = 10;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             10000,
             MEMORY_ROWS_MAX,
@@ -1886,8 +1849,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1, memory_op_2],
             vec![stack_op_0, stack_op_1, stack_op_2],
-            vec![],
-            Err(vec![lookup_fail(4, 0), lookup_fail(MEMORY_ROWS_MAX + 2, 0)])
+            vec![]
         );
     }
 
@@ -1943,7 +1905,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
-        test_state_circuit!(
+        test_state_circuit_error!(
             14,
             2000,
             MEMORY_ROWS_MAX,
@@ -1953,27 +1915,7 @@ mod tests {
             1000,
             vec![],
             vec![],
-            vec![storage_op_0, storage_op_1, storage_op_2, storage_op_3],
-            Err(vec![
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 1,
-                    6,
-                    "Storage operation",
-                    3
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 2,
-                    6,
-                    "Storage operation",
-                    4
-                ),
-                constraint_not_satisfied(
-                    MEMORY_ROWS_MAX + STORAGE_ROWS_MAX + 3,
-                    6,
-                    "Storage operation",
-                    5
-                ),
-            ])
+            vec![storage_op_0, storage_op_1, storage_op_2, storage_op_3]
         );
     }
 

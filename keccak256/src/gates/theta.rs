@@ -88,7 +88,7 @@ mod tests {
     use crate::keccak_arith::*;
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
+        dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
@@ -203,12 +203,6 @@ mod tests {
         };
 
         let prover = MockProver::<Fp>::run(9, &circuit2, vec![]).unwrap();
-        assert_eq!(
-            prover.verify(),
-            Err(vec![VerifyFailure::ConstraintNotSatisfied {
-                constraint: ((0, "theta").into(), 0, "").into(),
-                row: 0
-            }])
-        );
+        assert!(prover.verify().is_err());
     }
 }

@@ -1,60 +1,68 @@
-use super::super::{Case, Cell, Constraint, ExecutionStep, Word};
+use super::super::{
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
+};
 use super::utils::{
     self,
-    common_cases::{OutOfGasCase, RangeStackUnderflowCase},
+    common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
-    StateTransition,
+    from_bytes,
+    math_gadgets::IsZeroGadget,
+    select, sum, StateTransition, StateTransitionExpressions,
 };
-use super::{
-    CaseAllocation, CaseConfig, CoreStateInstance, OpExecutionState, OpGadget,
-};
+
+use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
 use crate::impl_op_gadget;
 use crate::util::{Expr, ToWord};
-use array_init::array_init;
 use bus_mapping::evm::{GasCost, OpcodeId};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region};
+use num::BigUint;
+use num::ToPrimitive;
 use std::convert::TryInto;
 
 static STATE_TRANSITION: StateTransition = StateTransition {
-    gc_delta: Some(4), // 2 stack reads + 2 stack writes
-    pc_delta: Some(1),
-    sp_delta: Some(0),
-    gas_delta: Some(GasCost::FASTEST.as_u64()),
+    gc_delta: Some(2),
+    pc_delta: Some(1), // pc is dynamic for jumpi, just set 1 for initialization
+    sp_delta: Some(2),
+    gas_delta: Some(GasCost::SLOW.as_u64()),
     next_memory_size: None,
 };
 
+const NUM_POPPED: usize = 2;
 impl_op_gadget!(
-    #range
-    [
-        SWAP1,  SWAP2,  SWAP3,  SWAP4,  SWAP5,  SWAP6,  SWAP7,  SWAP8,
-        SWAP9, SWAP10, SWAP11, SWAP12, SWAP13, SWAP14, SWAP15, SWAP16,
-    ]
-    SwapGadget {
-        SwapSuccessCase(),
-        RangeStackUnderflowCase(OpcodeId::SWAP1, 16, 1),
+    #set[JUMPI]
+    JumpiGadget {
+        JumpiSuccessCase(),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
+        StackUnderflowCase(NUM_POPPED),
+        //TODO: ErrJumpcase
     }
 );
 
 #[derive(Clone, Debug)]
-struct SwapSuccessCase<F> {
+struct JumpiSuccessCase<F> {
     case_selector: Cell<F>,
-    values: [Word<F>; 2],
+    code_hash: Word<F>,
+    dest: Word<F>,
+    cond: Word<F>,
+    is_cond_zero: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt> SwapSuccessCase<F> {
+impl<F: FieldExt> JumpiSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 2, // values
-        num_cell: 0,
+        num_word: 3, // two stack values + code_hash of contract
+        num_cell: IsZeroGadget::<F>::NUM_CELLS,
         will_halt: false,
     };
 
     pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
         Self {
             case_selector: alloc.selector.clone(),
-            values: array_init(|_| alloc.words.pop().unwrap()),
+            code_hash: alloc.words.pop().unwrap(),
+            dest: alloc.words.pop().unwrap(),
+            cond: alloc.words.pop().unwrap(),
+            is_cond_zero: IsZeroGadget::construct(alloc),
         }
     }
 
@@ -64,27 +72,48 @@ impl<F: FieldExt> SwapSuccessCase<F> {
         state_next: &OpExecutionState<F>,
         name: &'static str,
     ) -> Vec<Constraint<F>> {
+        let mut constrains = Vec::<Constraint<F>>::new();
         let mut cb = ConstraintBuilder::default();
 
-        // The stack index we have to peek, deduced from the 'x' value of
-        // 'swapx' The offset starts at 1 for SWAP1
-        let offset =
-            state_curr.opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
-
-        // Peek the value at `offset`
-        cb.stack_lookup(offset.clone(), self.values[0].expr(), false.expr());
-        // Peek the value at the top of the stack
-        cb.stack_lookup(0.expr(), self.values[1].expr(), false.expr());
-        // Write the value previously at the top of the stack to `swap_offset`
-        cb.stack_lookup(offset, self.values[1].expr(), true.expr());
-        // Write the value previously at `offset` to the top of the stack
-        cb.stack_lookup(0.expr(), self.values[0].expr(), true.expr());
+        let is_cond_met = 1.expr()
+            - self
+                .is_cond_zero
+                .constraints(&mut cb, sum::expr(&self.cond.cells));
 
         // State transitions
-        STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
+        let mut st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
+        // is_cond_met == 0 --> cond = 0, pc + 1
+        // is_cond_met == 1 --> cond != 0, pc = `dest`
+        st.pc_delta = Some(select::expr(
+            is_cond_met.clone(),
+            from_bytes::expr(self.dest.cells[..3].to_vec())
+                - state_curr.program_counter.expr(),
+            1.expr(),
+        ));
+
+        st.constraints(&mut cb, state_curr, state_next);
+
+        // Pop the 'dest' and 'cond' from the stack
+        cb.stack_pop(self.dest.expr());
+        cb.stack_pop(self.cond.expr());
 
         // Generate the constraint
-        vec![cb.constraint(self.case_selector.expr(), name)]
+        // 1. `cond` is zero constraint (is_cond_met = 0 )
+        constrains.push(cb.constraint(
+            self.case_selector.expr() * (1.expr() - is_cond_met.clone()),
+            name,
+        ));
+        // 2. `cond` is non-zero constraint (is_cond_met = 1 )
+        // lookup byte code table to ensure 'dest' is valid( jumpdest & is_code)
+        cb.add_bytecode_lookup([
+            self.code_hash.expr(),
+            self.dest.expr(),
+            1.expr(),
+            OpcodeId::JUMPDEST.as_u8().expr(),
+        ]);
+        constrains
+            .push(cb.constraint(self.case_selector.expr() * is_cond_met, name));
+        constrains
     }
 
     fn assign(
@@ -95,16 +124,32 @@ impl<F: FieldExt> SwapSuccessCase<F> {
         step: &ExecutionStep,
     ) -> Result<(), Error> {
         // Inputs
-        for idx in 0..2 {
-            self.values[idx].assign(
-                region,
-                offset,
-                Some(step.values[idx].to_word()),
-            )?;
-        }
+
+        self.code_hash.assign(
+            region,
+            offset,
+            Some(step.values[0].to_word()),
+        )?;
+
+        self.dest
+            .assign(region, offset, Some(step.values[1].to_word()))?;
+
+        self.cond
+            .assign(region, offset, Some(step.values[2].to_word()))?;
+
+        self.is_cond_zero.assign(
+            region,
+            offset,
+            sum::value(&step.values[2].to_word()),
+        )?;
 
         // State transitions
-        STATE_TRANSITION.assign(state);
+        let st = STATE_TRANSITION.clone();
+        st.assign(state);
+        // other than normal op code, jumpi change pc specially, adjust here
+        if step.values[2] != BigUint::from(0x00u64) {
+            state.program_counter = step.values[1].to_usize().unwrap();
+        }
 
         Ok(())
     }
@@ -129,43 +174,42 @@ mod test {
         }};
     }
 
-    // TODO: add failure cases
     #[test]
-    fn swap2_gadget() {
+    fn jumpi_gadget_with_nonzero_cond() {
         try_test_circuit!(
             vec![
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
+                    opcode: OpcodeId::PUSH1,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x03_02_01u64),
-                        BigUint::from(0x01_01_01u64)
-                    ],
-                },
-                ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
-                    case: Case::Success,
-                    values: vec![
-                        BigUint::from(0x05_04u64),
-                        BigUint::from(0x01_01u64)
+                        BigUint::from(0x01u64),
+                        BigUint::from(0x01u64),
                     ],
                 },
                 ExecutionStep {
                     opcode: OpcodeId::PUSH1,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x06u64),
-                        BigUint::from(0x01u64)
+                        BigUint::from(0x05u64),
+                        BigUint::from(0x01u64),
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::SWAP2,
+                    // Jumpi
+                    opcode: OpcodeId::JUMPI,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x03_02_01u64),
-                        BigUint::from(0x06u64),
+                        BigUint::from(0x00u64), // code hash
+                        BigUint::from(0x05u64), // dest
+                        BigUint::from(0x01u64), // cond
                     ],
                 },
+                ExecutionStep {
+                    // JUMPDEST
+                    opcode: OpcodeId::JUMPDEST,
+                    case: Case::Success,
+                    values: vec![],
+                }
             ],
             vec![
                 Operation {
@@ -175,9 +219,9 @@ mod test {
                     values: [
                         Fp::zero(),
                         Fp::from(1023),
-                        Fp::from(1 + 2 + 3),
+                        Fp::from(1u64),
                         Fp::zero(),
-                    ],
+                    ]
                 },
                 Operation {
                     gc: 2,
@@ -186,22 +230,21 @@ mod test {
                     values: [
                         Fp::zero(),
                         Fp::from(1022),
-                        Fp::from(4 + 5),
+                        Fp::from(5u64),
                         Fp::zero(),
                     ]
                 },
                 Operation {
                     gc: 3,
                     target: Target::Stack,
-                    is_write: true,
+                    is_write: false,
                     values: [
                         Fp::zero(),
-                        Fp::from(1021),
-                        Fp::from(6),
+                        Fp::from(1022),
+                        Fp::from(5u64),
                         Fp::zero(),
                     ]
                 },
-                // swap1 1021 <=> 1023
                 Operation {
                     gc: 4,
                     target: Target::Stack,
@@ -209,40 +252,7 @@ mod test {
                     values: [
                         Fp::zero(),
                         Fp::from(1023),
-                        Fp::from(1 + 2 + 3),
-                        Fp::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: false,
-                    values: [
-                        Fp::zero(),
-                        Fp::from(1021),
-                        Fp::from(6),
-                        Fp::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 6,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Fp::zero(),
-                        Fp::from(1023),
-                        Fp::from(6),
-                        Fp::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 7,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Fp::zero(),
-                        Fp::from(1021),
-                        Fp::from(1 + 2 + 3),
+                        Fp::from(1u64),
                         Fp::zero(),
                     ]
                 }
@@ -250,36 +260,42 @@ mod test {
             Ok(())
         );
     }
-
     #[test]
-    fn swap1_gadget() {
-        // SWAP1
+    fn jumpi_gadget_with_zero_cond() {
         try_test_circuit!(
             vec![
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH3,
+                    opcode: OpcodeId::PUSH1,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x03_02_01u64),
-                        BigUint::from(0x01_01_01u64)
+                        BigUint::from(0x00u64),
+                        BigUint::from(0x01u64),
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::PUSH2,
+                    opcode: OpcodeId::PUSH1,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x05_04u64),
-                        BigUint::from(0x01_01u64)
+                        BigUint::from(0x05u64),
+                        BigUint::from(0x01u64),
                     ],
                 },
                 ExecutionStep {
-                    opcode: OpcodeId::SWAP1,
+                    // Jumpi
+                    opcode: OpcodeId::JUMPI,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x03_02_01u64),
-                        BigUint::from(0x05_04u64),
+                        BigUint::from(0x00u64), // code hash
+                        BigUint::from(0x05u64), // dest
+                        BigUint::from(0x00u64), // cond
                     ],
                 },
+                /* ExecutionStep {
+                 *     // JUMPDEST
+                 *     opcode: OpcodeId::JUMPDEST,
+                 *     case: Case::Success,
+                 *     values: vec![],
+                 * } */
             ],
             vec![
                 Operation {
@@ -289,9 +305,9 @@ mod test {
                     values: [
                         Fp::zero(),
                         Fp::from(1023),
-                        Fp::from(1 + 2 + 3),
+                        Fp::from(0),
                         Fp::zero(),
-                    ],
+                    ]
                 },
                 Operation {
                     gc: 2,
@@ -300,19 +316,18 @@ mod test {
                     values: [
                         Fp::zero(),
                         Fp::from(1022),
-                        Fp::from(4 + 5),
+                        Fp::from(5u64),
                         Fp::zero(),
                     ]
                 },
-                // swap1 1023 <=> 1022
                 Operation {
                     gc: 3,
                     target: Target::Stack,
                     is_write: false,
                     values: [
                         Fp::zero(),
-                        Fp::from(1023),
-                        Fp::from(1 + 2 + 3),
+                        Fp::from(1022),
+                        Fp::from(5u64),
                         Fp::zero(),
                     ]
                 },
@@ -322,30 +337,8 @@ mod test {
                     is_write: false,
                     values: [
                         Fp::zero(),
-                        Fp::from(1022),
-                        Fp::from(4 + 5),
-                        Fp::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 5,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Fp::zero(),
                         Fp::from(1023),
-                        Fp::from(4 + 5),
-                        Fp::zero(),
-                    ]
-                },
-                Operation {
-                    gc: 6,
-                    target: Target::Stack,
-                    is_write: true,
-                    values: [
-                        Fp::zero(),
-                        Fp::from(1022),
-                        Fp::from(1 + 2 + 3),
+                        Fp::from(0u64),
                         Fp::zero(),
                     ]
                 }
