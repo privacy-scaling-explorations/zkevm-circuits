@@ -5,8 +5,8 @@ use crate::eth_types::{
     Address, Block, GethExecTrace, Hash, ResultGethExecTraces, Transaction, U64,
 };
 use crate::Error;
-use ethers_providers::JsonRpcClient;
 use ethers_core::types::Bytes;
+use ethers_providers::JsonRpcClient;
 
 /// Serialize a type.
 ///

@@ -1,0 +1,16 @@
+name: Node.js CI
+
+on:
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Geth and bus-mapping test
+      uses: actions/checkout@v2
+    - run: docker-compose build
+    - run: cargo test --no-run -- --ignored
+    - run: docker-compose up -d deployer geth
+    - run: cargo test -- --ignored
