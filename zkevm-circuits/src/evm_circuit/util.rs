@@ -6,6 +6,7 @@ use halo2::{
     poly::Rotation,
 };
 
+pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;

@@ -95,6 +95,8 @@ impl<F: FieldExt> IsEqualGadget<F> {
     }
 }
 
+/// Construction of 2 256-bit words addition and result, which is useful for
+/// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]
 pub(crate) struct WordAdditionGadget<F> {
     pub(crate) a: util::Word<F>,
