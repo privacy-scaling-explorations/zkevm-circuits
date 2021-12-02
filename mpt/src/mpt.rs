@@ -11,6 +11,9 @@ use std::{convert::TryInto, marker::PhantomData};
 
 use crate::{
     account_leaf_key::{AccountLeafKeyChip, AccountLeafKeyConfig},
+    account_leaf_nonce_balance::{
+        AccountLeafNonceBalanceChip, AccountLeafNonceBalanceConfig,
+    },
     branch_acc::BranchAccChip,
     key_compr::KeyComprChip,
     leaf_hash::{LeafHashChip, LeafHashConfig},
@@ -64,6 +67,7 @@ pub struct MPTConfig<F> {
     branch_acc_c_chip: BranchAccConfig,
     key_compr_chip: KeyComprConfig,
     account_leaf_key_chip: AccountLeafKeyConfig,
+    account_leaf_nonce_balance_chip: AccountLeafNonceBalanceConfig,
     key_rlc_r: F,
     key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
@@ -148,8 +152,8 @@ impl<F: FieldExt> MPTConfig<F> {
         // big endian instead of little endian. However, then it would be much more
         // difficult to handle the accumulator when we iterate over the row.
         // For example, big endian would mean to compute acc = acc * mult_r + row[i],
-        // but we don't want acc to be multiplied by mult_r when row[i] = 0 (consider
-        // for example row 0 0 128 0 0 0 ... 0).
+        // but we don't want acc to be multiplied by mult_r when row[i] = 0 where
+        // the stream already ended and 0s are only to fulfill the row.
 
         let key_rlc = meta.advice_column();
         let key_rlc_mult = meta.advice_column();
@@ -946,6 +950,33 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
         );
 
+        let account_leaf_nonce_balance_chip =
+            AccountLeafNonceBalanceChip::<F>::configure(
+                meta,
+                |meta| {
+                    let q_not_first =
+                        meta.query_fixed(q_not_first, Rotation::cur());
+                    let is_account_leaf_nonce_balance_s = meta.query_advice(
+                        is_account_leaf_nonce_balance_s,
+                        Rotation::cur(),
+                    );
+                    let is_account_leaf_nonce_balance_c = meta.query_advice(
+                        is_account_leaf_nonce_balance_c,
+                        Rotation::cur(),
+                    );
+
+                    q_not_first
+                        * (is_account_leaf_nonce_balance_s
+                            + is_account_leaf_nonce_balance_c)
+                },
+                s_advices,
+                c_advices,
+                acc_r,
+                acc_s,
+                acc_mult_s,
+                acc_mult_c,
+            );
+
         MPTConfig {
             q_enable,
             q_not_first,
@@ -983,6 +1014,7 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_acc_c_chip,
             key_compr_chip,
             account_leaf_key_chip,
+            account_leaf_nonce_balance_chip,
             key_rlc_r,
             key_rlc,
             key_rlc_mult,
@@ -1683,21 +1715,24 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     S_START,
-                                    HASH_WIDTH,
+                                    row[S_START] as usize - 128 + 1, // +1 for byte with length info
                                 );
+                                // It's easier to constrain (in account_leaf_nonce_balance.rs)
+                                // the multiplier if we store acc_mult after nonce and after balance.
+                                let acc_mult_tmp = acc_mult_s.clone();
                                 // balance
                                 compute_acc_and_mult(
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     C_START,
-                                    HASH_WIDTH,
+                                    row[C_START] as usize - 128 + 1, // +1 for byte with length info
                                 );
                                 self.assign_acc(
                                     &mut region,
                                     acc_s,
                                     acc_mult_s,
                                     F::zero(),
-                                    F::zero(),
+                                    acc_mult_tmp,
                                     offset,
                                 )?;
                             } else if row[row.len() - 1] == 8

@@ -55,8 +55,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             curr_r = curr_r * acc_r;
             r_table.push(curr_r.clone());
 
-            // TODO: from key_len on there are 0s
-
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 expr = expr + s * curr_r.clone();
