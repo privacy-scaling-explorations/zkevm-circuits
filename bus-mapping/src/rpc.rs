@@ -126,12 +126,11 @@ impl<P: JsonRpcClient> GethClient<P> {
         &self,
         contract_address: Address,
     ) -> Result<Vec<u8>, Error> {
+        let address = serialize(&contract_address);
+        let id = serialize(&"0x2".to_string());
         let code: Bytes = self
             .0
-            .request(
-                "eth_getCode",
-                ["0xd5f110b3e81de87f22fa8c5e668a5fc541c54e3d", "0x2"],
-            )
+            .request("eth_getCode", [address, id])
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))
             .unwrap();
