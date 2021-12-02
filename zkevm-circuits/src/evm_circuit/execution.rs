@@ -72,7 +72,7 @@ pub(crate) mod bus_mapping_tmp {
         pub(crate) stack_pointer: usize,
         pub(crate) gas_left: u64,
         pub(crate) gas_cost: u64,
-        pub(crate) memory_size: usize,
+        pub(crate) memory_size: u64,
         pub(crate) state_write_counter: usize,
         pub(crate) opcode: Option<OpcodeId>,
     }
@@ -105,48 +105,48 @@ pub(crate) mod bus_mapping_tmp {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub(crate) enum Rw {
         TxAccessListAccount {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         TxAccessListStorageSlot {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         TxRefund {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         Account {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         AccountStorage {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         AccountDestructed {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         CallContext {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         Stack {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
             call_id: usize,
             stack_pointer: usize,
             value: Word,
         },
         Memory {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
             call_id: usize,
-            memory_address: usize,
+            memory_address: u64,
             byte: u8,
         },
     }
@@ -165,13 +165,13 @@ pub(crate) mod bus_mapping_tmp {
         ) -> [F; 8] {
             match self {
                 Self::Stack {
-                    counter,
+                    rw_counter,
                     is_write,
                     call_id,
                     stack_pointer,
                     value,
                 } => [
-                    F::from(*counter as u64),
+                    F::from(*rw_counter as u64),
                     F::from(*is_write as u64),
                     F::from(RwTableTag::Stack as u64),
                     F::from(*call_id as u64),
@@ -184,17 +184,17 @@ pub(crate) mod bus_mapping_tmp {
                     F::zero(),
                 ],
                 Self::Memory {
-                    counter,
+                    rw_counter,
                     is_write,
                     call_id,
                     memory_address,
                     byte,
                 } => [
-                    F::from(*counter as u64),
+                    F::from(*rw_counter as u64),
                     F::from(*is_write as u64),
-                    F::from(RwTableTag::Stack as u64),
+                    F::from(RwTableTag::Memory as u64),
                     F::from(*call_id as u64),
-                    F::from(*memory_address as u64),
+                    F::from(*memory_address),
                     F::from(*byte as u64),
                     F::zero(),
                     F::zero(),
@@ -207,6 +207,8 @@ pub(crate) mod bus_mapping_tmp {
 use bus_mapping_tmp::ExecTrace;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
+    const NAME: &'static str;
+
     const EXECUTION_RESULT: ExecutionResult;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self;
@@ -373,11 +375,16 @@ impl<F: FieldExt> ExecutionConfig<F> {
         );
 
         if !constraints.is_empty() {
-            meta.create_gate("ExecutionGadget constraint", |meta| {
+            meta.create_gate(G::NAME, |meta| {
                 let q_step = meta.query_selector(q_step);
                 let q_execution_result = q_execution_result.clone();
-                constraints.into_iter().map(move |constraint| {
-                    q_step.clone() * q_execution_result.clone() * constraint
+                constraints.into_iter().map(move |(name, constraint)| {
+                    (
+                        name,
+                        q_step.clone()
+                            * q_execution_result.clone()
+                            * constraint,
+                    )
                 })
             });
         }
@@ -521,6 +528,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 .assign_exec_step(region, offset, exec_trace, step_idx)?,
             ExecutionResult::POP => self
                 .pop_gadget
+                .assign_exec_step(region, offset, exec_trace, step_idx)?,
+            ExecutionResult::MLOAD => self
+                .memory_gadget
                 .assign_exec_step(region, offset, exec_trace, step_idx)?,
             ExecutionResult::PC => self
                 .pc_gadget

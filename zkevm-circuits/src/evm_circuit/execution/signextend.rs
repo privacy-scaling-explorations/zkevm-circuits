@@ -31,6 +31,8 @@ pub(crate) struct SignextendGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
+    const NAME: &'static str = "SIGNEXTEND";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::SIGNEXTEND;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -90,6 +92,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             // selector is the sum of the current and all previous `is_selected`
             // values.
             cb.require_equal(
+                "Constrain selector == 1 when is_selected == 1 || previous selector == 1", 
                 is_selected.clone()
                     + if idx > 0 {
                         selectors[idx - 1].expr()
@@ -286,21 +289,21 @@ mod test {
             }],
             rws: vec![
                 Rw::Stack {
-                    counter: 1,
+                    rw_counter: 1,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1022,
                     value: index,
                 },
                 Rw::Stack {
-                    counter: 2,
+                    rw_counter: 2,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1023,
                     value,
                 },
                 Rw::Stack {
-                    counter: 3,
+                    rw_counter: 3,
                     is_write: true,
                     call_id: 1,
                     stack_pointer: 1023,

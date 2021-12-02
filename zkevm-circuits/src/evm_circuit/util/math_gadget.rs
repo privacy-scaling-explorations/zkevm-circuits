@@ -29,10 +29,16 @@ impl<F: FieldExt> IsZeroGadget<F> {
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
-        cb.add_constraint(value * is_zero.clone());
+        cb.add_constraint(
+            "value ⋅ (1 - value ⋅ value_inv)",
+            value * is_zero.clone(),
+        );
         // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
         // inverse)`
-        cb.add_constraint(inverse.expr() * is_zero.clone());
+        cb.add_constraint(
+            "value_inv ⋅ (1 - value ⋅ value_inv)",
+            inverse.expr() * is_zero.clone(),
+        );
 
         Self { inverse, is_zero }
     }
@@ -114,10 +120,12 @@ impl<F: FieldExt> WordAdditionGadget<F> {
         let c_hi = from_bytes::expr(c.cells[16..].to_vec());
 
         cb.require_equal(
+            "a_lo + b_lo == c_lo + carry_lo ⋅ 2^128",
             a_lo + b_lo,
             c_lo + carry_lo.expr() * Expression::Constant(get_range(128)),
         );
         cb.require_equal(
+            "a_hi + b_hi + carry_lo == c_hi + carry_hi ⋅ 2^128",
             a_hi + b_hi + carry_lo.expr(),
             c_hi + carry_hi.expr() * Expression::Constant(get_range(128)),
         );
@@ -177,7 +185,11 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
         let parts = cb.query_bytes();
         // Require that the reconstructed value from the parts equals the
         // original value
-        cb.require_equal(value, from_bytes::expr(parts.to_vec()));
+        cb.require_equal(
+            "Constrain bytes recomposited to value",
+            value,
+            from_bytes::expr(parts.to_vec()),
+        );
 
         Self { parts }
     }
@@ -227,6 +239,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
 
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(
+            "lhs - rhs == diff - (lt ⋅ range)",
             lhs - rhs,
             from_bytes::expr(diff.to_vec()) - (lt.expr() * range),
         );
@@ -337,9 +350,15 @@ impl<F: FieldExt> PairSelectGadget<F> {
         let is_b = 1.expr() - is_a.expr();
 
         // Force `is_a` to be `0` when `value != a`
-        cb.add_constraint(is_a.expr() * (value.clone() - a));
+        cb.add_constraint(
+            "is_a ⋅ (value - a)",
+            is_a.expr() * (value.clone() - a),
+        );
         // Force `1 - is_a` to be `0` when `value != b`
-        cb.add_constraint(is_b.clone() * (value - b));
+        cb.add_constraint(
+            "(1 - is_a) ⋅ (value - b)",
+            is_b.clone() * (value - b),
+        );
 
         Self { is_a, is_b }
     }
@@ -396,6 +415,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
 
         // Check if the division was done correctly
         cb.require_equal(
+            "lhnumerator - remainder == quotient ⋅ divisor",
             numerator - remainder.expr(),
             quotient.expr() * divisor.expr(),
         );
