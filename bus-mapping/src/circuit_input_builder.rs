@@ -106,8 +106,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The global counter when this step was executed.
     pub gc: GlobalCounter,
-    /// State Write Counter.  Counter of state write operations that haven't
-    /// ben reverted up to this step.
+    /// State Write Counter.  Counter of state write operations in the call
+    /// that haven't been reverted yet up to this step.
     pub swc: usize,
     /// The list of references to Operations in the container
     pub bus_mapping_instance: Vec<OperationRef>,
@@ -246,9 +246,6 @@ pub struct Call {
     kind: CallKind,
     /// This call is being executed without write access (STATIC)
     is_static: bool,
-    /// This call is root call with tx.to == null, or op == CREATE or op ==
-    /// CREATE2
-    is_create: bool,
     /// This call generated implicity by a Transaction.
     is_root: bool,
     /// Address where this call is being executed
@@ -257,34 +254,67 @@ pub struct Call {
     code_hash: H256,
 }
 
+impl Call {
+    /// This call is root call with tx.to == null, or op == CREATE or op ==
+    /// CREATE2
+    pub fn is_create(&self) -> bool {
+        self.kind.is_create()
+    }
+}
+
+/// Context of a [`Call`].
+#[derive(Debug)]
+pub struct CallContext {
+    /// State Write Counter tracks the count of state write operations in the
+    /// call.  When a subcall in this call succeeds, the `swc` increases by the
+    /// number of successful state writes in the subcall.
+    pub swc: usize,
+}
+
 #[derive(Debug)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
-    /// Call Stack by indices.
-    /// The call_stack will always have a fixed elemnt at index 0 which
+    /// Call Stack by indices with CallContext.
+    /// The call_stack will always have a fixed element at index 0 which
     /// corresponds to the call implicitly created by the transaction.
-    call_stack: Vec<usize>,
-    /// State Write Counter
-    swc: usize,
+    call_stack: Vec<(usize, CallContext)>,
 }
 
 impl TransactionContext {
     /// Create a new Self.
     pub fn new(_eth_tx: &eth_types::Transaction) -> Self {
         Self {
-            call_stack: vec![0],
-            swc: 0,
+            call_stack: vec![(0, CallContext { swc: 0 })],
         }
     }
 
-    /// Return the index of the current call (the last call in the call stack).
+    /// Return the index and context of the current call (the last call in the
+    /// call stack).
     fn call_index(&self) -> usize {
-        *self.call_stack.last().expect("call_stack is empty")
+        let (index, _) = self.call_stack.last().expect("call_stack is empty");
+        *index
     }
 
-    /// Push a new call index into the call stack.
-    fn push_call_index(&mut self, index: usize) {
-        self.call_stack.push(index);
+    fn call_ctx(&self) -> &CallContext {
+        let (_, call_ctx) =
+            self.call_stack.last().expect("call_stack is empty");
+        call_ctx
+    }
+
+    fn call_ctx_mut(&mut self) -> &mut CallContext {
+        let (_, ref mut call_ctx) =
+            self.call_stack.last_mut().expect("call_stack is empty");
+        call_ctx
+    }
+
+    /// Push a new call index and context into the call stack.
+    fn push_call_index_ctx(&mut self, index: usize, call_ctx: CallContext) {
+        self.call_stack.push((index, call_ctx));
+    }
+
+    /// Pop the last entry in the call stack.
+    fn pop_call_index_ctx(&mut self) -> Option<(usize, CallContext)> {
+        self.call_stack.pop()
     }
 }
 
@@ -317,7 +347,6 @@ impl Transaction {
                 kind: CallKind::Call,
                 is_static: false,
                 is_root: true,
-                is_create: false,
                 address,
                 code_hash,
             });
@@ -326,7 +355,6 @@ impl Transaction {
                 kind: CallKind::Create,
                 is_static: false,
                 is_root: true,
-                is_create: true,
                 address: Address::zero(),
                 code_hash,
             });
@@ -346,7 +374,7 @@ impl Transaction {
 
     /// Wether this [`Transaction`] is a create one
     pub fn is_create(&self) -> bool {
-        self.calls[0].is_create
+        self.calls[0].is_create()
     }
 
     /// Return the list of execution steps of this transaction.
@@ -367,12 +395,10 @@ impl Transaction {
     ) -> usize {
         let is_static =
             kind == CallKind::StaticCall || self.calls[parent_index].is_static;
-        let is_create = kind.is_create();
         let code_hash = H256::zero();
         self.calls.push(Call {
             kind,
             is_static,
-            is_create,
             is_root: false,
             address,
             code_hash,
@@ -398,6 +424,18 @@ pub struct CircuitInputStateRef<'a> {
     pub step: &'a mut ExecStep,
 }
 
+/// Helper function to push a call into a Transaction and TransactionContext
+fn push_call(
+    tx: &mut Transaction,
+    tx_ctx: &mut TransactionContext,
+    kind: CallKind,
+    address: Address,
+) {
+    let parent_index = tx_ctx.call_index();
+    let index = tx.push_call(parent_index, kind, address);
+    tx_ctx.push_call_index_ctx(index, CallContext { swc: 0 });
+}
+
 impl<'a> CircuitInputStateRef<'a> {
     /// Push an [`Operation`] into the [`OperationContainer`] with the next
     /// [`GlobalCounter`] and then adds a reference to the stored operation
@@ -416,17 +454,20 @@ impl<'a> CircuitInputStateRef<'a> {
         &self.tx.calls[self.tx_ctx.call_index()]
     }
 
+    /// Reference to the current CallContext
+    pub fn call_ctx(&self) -> &CallContext {
+        self.tx_ctx.call_ctx()
+    }
+
     /// Mutable reference to the current Call
     pub fn call_mut(&mut self) -> &mut Call {
         &mut self.tx.calls[self.tx_ctx.call_index()]
     }
 
-    /// Push a new call into the [`Transaction`], and add it's index in the
-    /// `call_stack` of the [`TransactionContext`]
+    /// Push a new [`Call`] into the [`Transaction`], and add its index and
+    /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
     pub fn push_call(&mut self, kind: CallKind, address: Address) {
-        let parent_index = self.tx_ctx.call_index();
-        let index = self.tx.push_call(parent_index, kind, address);
-        self.tx_ctx.push_call_index(index);
+        push_call(self.tx, self.tx_ctx, kind, address)
     }
 }
 
@@ -503,11 +544,22 @@ impl<'a> CircuitInputBuilder {
         let mut tx = Transaction::new(eth_tx);
         let mut tx_ctx = TransactionContext::new(eth_tx);
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
+            if index != 0 {
+                let geth_prev_step = &geth_trace.struct_logs[index - 1];
+                // Handle *CALL*
+                if geth_step.depth == geth_prev_step.depth + 1 {
+                    // TODO: Set the proper address according to the call kind.
+                    let address = Address::zero();
+                    let kind = CallKind::try_from(geth_step.op)?;
+                    push_call(&mut tx, &mut tx_ctx, kind, address);
+                }
+            }
+
             let mut step = ExecStep::new(
                 geth_step,
                 tx_ctx.call_index(),
                 self.block_ctx.gc,
-                tx_ctx.swc,
+                tx_ctx.call_ctx().swc,
             );
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx, &mut step);
             geth_step.op.gen_associated_ops(
@@ -515,6 +567,25 @@ impl<'a> CircuitInputBuilder {
                 &geth_trace.struct_logs[index..],
             )?;
             tx.steps.push(step);
+
+            if let Some(geth_next_step) = geth_trace.struct_logs.get(index + 1)
+            {
+                // Handle *CALL* return
+                if geth_step.depth == geth_next_step.depth - 1 {
+                    let (_, call_ctx) =
+                        tx_ctx.pop_call_index_ctx().ok_or_else(|| {
+                            Error::InvalidGethExecStep(
+                                "*CALL* return with empty call stack",
+                                Box::new(geth_step.clone()),
+                            )
+                        })?;
+                    // If the return was successful, accumulate the swc from the
+                    // subcall.
+                    if !geth_next_step.stack.last()?.is_zero() {
+                        tx_ctx.call_ctx_mut().swc += call_ctx.swc;
+                    }
+                }
+            }
         }
         self.block.txs.push(tx);
         Ok(())
@@ -563,6 +634,14 @@ fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
     }
 }
 
+/// Retreive the init_code from memory for {CREATE, CREATE2}
+pub fn get_create_init_code(step: &GethExecStep) -> Result<&[u8], Error> {
+    let offset = step.stack.nth_last(1)?;
+    let length = step.stack.nth_last(2)?;
+    Ok(&step.memory.0[offset.low_u64() as usize
+        ..(offset.low_u64() + length.low_u64()) as usize])
+}
+
 impl<'a> CircuitInputStateRef<'a> {
     fn create_address(&self) -> Result<Address, Error> {
         let sender = self.call().address;
@@ -574,11 +653,8 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
-        let offset = step.stack.nth_last(1)?;
-        let length = step.stack.nth_last(2)?;
         let salt = step.stack.nth_last(3)?;
-        let init_code = &step.memory.0[offset.low_u64() as usize
-            ..(offset.low_u64() + length.low_u64()) as usize];
+        let init_code = get_create_init_code(step)?;
         Ok(get_create2_address(
             self.call().address,
             salt.to_be_bytes().to_vec(),
@@ -618,10 +694,10 @@ impl<'a> CircuitInputStateRef<'a> {
                         ExecError::ReturnDataOutOfBounds
                     }
                     _ => {
-                        panic!(
-                            "Cannot figure out call failure error in {:?}",
-                            step
-                        )
+                        return Err(Error::UnexpectedExecStepError(
+                            "call failure without return",
+                            Box::new(step.clone()),
+                        ));
                     }
                 }));
             } else {
@@ -629,7 +705,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 let call = self.call();
 
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
-                if !call.is_root && call.is_create {
+                if !call.is_root && call.is_create() {
                     let offset = step.stack.nth_last(0)?;
                     let length = step.stack.nth_last(1)?;
                     if length > Word::from(0x6000u64) {
@@ -645,10 +721,16 @@ impl<'a> CircuitInputStateRef<'a> {
                     {
                         return Ok(Some(ExecError::CodeStoreOutOfGas));
                     } else {
-                        panic!("Cannot figure out RETURN error in {:?}", step);
+                        return Err(Error::UnexpectedExecStepError(
+                            "failure in RETURN from {CREATE, CREATE2}",
+                            Box::new(step.clone()),
+                        ));
                     }
                 } else {
-                    panic!("Cannot figure out RETURN error in {:?}", step);
+                    return Err(Error::UnexpectedExecStepError(
+                        "failure in RETURN",
+                        Box::new(step.clone()),
+                    ));
                 }
             }
         }
@@ -662,7 +744,10 @@ impl<'a> CircuitInputStateRef<'a> {
             && next_result != Word::zero()
             && !matches!(step.op, OpcodeId::RETURN | OpcodeId::STOP)
         {
-            panic!("Cannot figure out call failure error in {:?}", step);
+            return Err(Error::UnexpectedExecStepError(
+                "success result without {RETURN, STOP}",
+                Box::new(step.clone()),
+            ));
         }
 
         // The *CALL* code was not executed
@@ -714,10 +799,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
-            panic!(
-                "Cannot figure out *CALL* code not executed error in {:?}",
-                step
-            );
+            return Err(Error::UnexpectedExecStepError(
+                "*CALL* code not executed",
+                Box::new(step.clone()),
+            ));
         }
 
         Ok(None)

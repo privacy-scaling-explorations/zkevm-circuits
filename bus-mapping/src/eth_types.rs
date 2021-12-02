@@ -8,7 +8,7 @@ pub use ethers_core::types::{
     U256, U64,
 };
 use pasta_curves::arithmetic::FieldExt;
-use serde::{de, Deserialize, Serialize};
+use serde::{de, Deserialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -55,20 +55,6 @@ impl<'de> Deserialize<'de> for DebugU256 {
     {
         let s = String::deserialize(deserializer)?;
         DebugU256::from_str(&s).map_err(de::Error::custom)
-    }
-}
-
-impl Serialize for DebugU256 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let s = format!("{:#x}", self);
-        if s == "0x00" {
-            serializer.serialize_str("0x0")
-        } else {
-            serializer.serialize_str(&s)
-        }
     }
 }
 
@@ -134,7 +120,7 @@ impl<F: FieldExt> ToScalar<F> for Address {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 struct GethExecStepInternal {
     pc: ProgramCounter,
@@ -173,50 +159,6 @@ pub struct GethExecStep {
     pub storage: Storage,
 }
 
-impl From<GethExecStep> for GethExecStepInternal {
-    fn from(step: GethExecStep) -> Self {
-        GethExecStepInternal {
-            pc: step.pc,
-            op: step.op,
-            gas: step.gas,
-            gas_cost: step.gas_cost,
-            depth: step.depth,
-            error: step.error,
-            stack: step
-                .stack
-                .0
-                .iter()
-                .map(|stack_elem| DebugU256(stack_elem.0))
-                .collect(),
-            memory: step
-                .memory
-                .0
-                .chunks(32)
-                .map(DebugU256::from_big_endian)
-                .collect(),
-            storage: step
-                .storage
-                .0
-                .iter()
-                .map(|(k, v)| (DebugU256(k.0), DebugU256(v.0)))
-                .collect(),
-        }
-    }
-}
-
-// TODO: Tried `#[serde(into = "IntoType")]` feature but doesn't seem to work.
-// Double check.
-impl Serialize for GethExecStep {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Serialize as a `GethExecStepInternal`
-        let internal = GethExecStepInternal::from(self.clone());
-        internal.serialize(serializer)
-    }
-}
-
 impl<'de> Deserialize<'de> for GethExecStep {
     fn deserialize<D>(deserializer: D) -> Result<GethExecStep, D::Error>
     where
@@ -252,14 +194,14 @@ impl<'de> Deserialize<'de> for GethExecStep {
 /// Helper type built to deal with the weird `result` field added between
 /// `GethExecutionTrace`s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
 /// `GethExecutionTrace`s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub(crate) struct ResultGethExecTrace {
     pub(crate) result: GethExecTrace,
@@ -267,7 +209,7 @@ pub(crate) struct ResultGethExecTrace {
 
 /// The execution trace type returned by geth RPC debug_trace* methods.
 /// Corresponds to `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct GethExecTrace {
     pub gas: Gas,

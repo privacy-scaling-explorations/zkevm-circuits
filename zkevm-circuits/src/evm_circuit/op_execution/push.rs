@@ -69,7 +69,7 @@ impl<F: FieldExt> PushSuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // Deduce the number of bytes to push from the 'x' value of 'pushx'
@@ -109,7 +109,7 @@ impl<F: FieldExt> PushSuccessCase<F> {
         st.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     fn assign(

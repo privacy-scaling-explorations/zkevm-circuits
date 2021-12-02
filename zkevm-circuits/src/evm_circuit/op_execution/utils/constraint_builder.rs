@@ -4,7 +4,7 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 // Default max degree allowed in all expressions passing through the
 // ConstraintBuilder.
-const DEFAULT_MAX_DEGREE: usize = 2usize.pow(3) + 1;
+const DEFAULT_MAX_DEGREE: usize = 2usize.pow(4) + 1;
 // Degree added for expressions used in lookups.
 const LOOKUP_DEGREE: usize = 3;
 
@@ -211,6 +211,16 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             self.validate_lookup_expression(expression);
         }
         self.add_lookup(Lookup::FixedLookup(table, expressions));
+    }
+
+    pub(crate) fn add_bytecode_lookup(
+        &mut self,
+        expressions: [Expression<F>; 4],
+    ) {
+        for expression in expressions.iter() {
+            self.validate_lookup_expression(expression);
+        }
+        self.add_lookup(Lookup::BytecodeLookup(expressions));
     }
 
     fn add_lookup(&mut self, lookup: Lookup<F>) {
