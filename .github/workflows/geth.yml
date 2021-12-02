@@ -1,4 +1,4 @@
-name: Node.js CI
+name: Geth Interaction
 
 on:
   pull_request:
@@ -13,4 +13,4 @@ jobs:
     - run: docker-compose build
     - run: cargo test --no-run -- --ignored
     - run: docker-compose up -d deployer geth
-    - run: cargo test -- --ignored
+    - run: sh web3-utils/script/geth.sh
