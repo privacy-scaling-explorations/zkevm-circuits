@@ -193,9 +193,9 @@ const NUM_OF_BINARY_CHUNKS: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
-    base2: TableColumn,
-    base9: TableColumn,
-    base13: TableColumn,
+    pub base2: TableColumn,
+    pub base9: TableColumn,
+    pub base13: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -256,35 +256,13 @@ impl<F: FieldExt> FromBinaryTableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        base2_coef: Column<Advice>,
-        base13_coef: Column<Advice>,
-        base9_coef: Column<Advice>,
-        fixed: [TableColumn; 3],
-    ) -> Self {
-        let config = Self {
-            base2: fixed[0],
-            base9: fixed[1],
-            base13: fixed[2],
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            base2: meta.lookup_table_column(),
+            base9: meta.lookup_table_column(),
+            base13: meta.lookup_table_column(),
             _marker: PhantomData,
-        };
-
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-
-            let base2_coef = meta.query_advice(base2_coef, Rotation::cur());
-            let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
-            let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * base2_coef, config.base2),
-                (q_enable.clone() * base9_coef, config.base9),
-                (q_enable.clone() * base13_coef, config.base13),
-            ]
-        });
-        config
+        }
     }
 }
 

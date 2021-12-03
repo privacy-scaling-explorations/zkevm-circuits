@@ -16,11 +16,30 @@ pub struct RunningSum<F> {
     _marker: PhantomData<F>,
 }
 
+/// Perform Running Sum
+///
+/// Copy cells from an input column
+/// Enforce a cell in an output column to be the sum of the input cells.
+///
+/// |offset | x |  acc|
+/// |-------|---|-----|
+/// |0      | _ |  0  |
+/// |1      | 3 |  3  |
+/// |2      | 5 |  8  |
+/// |3      | 1 |  9  |
 impl<F: FieldExt> RunningSum<F> {
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        input: Column<Advice>,
+        output: Column<Advice>,
+    ) -> Self {
         let q_enable = meta.selector();
         let x = meta.advice_column();
         let acc = meta.advice_column();
+        meta.enable_equality(input.into());
+        meta.enable_equality(output.into());
+        meta.enable_equality(x.into());
+        meta.enable_equality(acc.into());
 
         meta.create_gate("Running sum", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -39,7 +58,7 @@ impl<F: FieldExt> RunningSum<F> {
         }
     }
 
-    fn assign_region(
+    pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
         initial: Option<CellF<F>>,
@@ -76,7 +95,7 @@ impl<F: FieldExt> RunningSum<F> {
                             offset,
                             || Ok(x.value),
                         )?;
-                        // region.constrain_equal(x.cell, x_cell)?;
+                        region.constrain_equal(x.cell, x_cell)?;
                         self.q_enable.enable(&mut region, offset)?;
 
                         let value = acc_cell.value + x.value;
@@ -101,9 +120,11 @@ impl<F: FieldExt> RunningSum<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Expression};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+    };
     use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
@@ -122,7 +143,7 @@ mod tests {
                 input: Column<Advice>,
                 output: Column<Advice>,
             ) -> Self {
-                let running_sum = RunningSum::configure(meta);
+                let running_sum = RunningSum::configure(meta, input, output);
                 Self {
                     input,
                     output,
@@ -131,7 +152,7 @@ mod tests {
             }
             fn assign_region(
                 &self,
-                mut layouter: impl Layouter<F>,
+                layouter: &mut impl Layouter<F>,
                 values: Vec<F>,
             ) -> Result<(F, F), Error> {
                 let cells = layouter.assign_region(
@@ -156,11 +177,8 @@ mod tests {
                         Ok(cells)
                     },
                 )?;
-                let (initial, sum) = self.running_sum.assign_region(
-                    &mut layouter,
-                    None,
-                    cells,
-                )?;
+                let (initial, sum) =
+                    self.running_sum.assign_region(layouter, None, cells)?;
                 layouter.assign_region(
                     || "assign output",
                     |mut region| {
@@ -175,7 +193,7 @@ mod tests {
                                     .fold(F::zero(), |acc, &x| acc + x))
                             },
                         )?;
-                        // region.constrain_equal(cell, sum.cell)?;
+                        region.constrain_equal(cell, sum.cell)?;
                         Ok(())
                     },
                 )?;
@@ -206,8 +224,7 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                config.assign_region(layouter, self.values.clone())?;
-                // println!("region {:?}", region);
+                config.assign_region(&mut layouter, self.values.clone())?;
                 Ok(())
             }
         }
@@ -221,21 +238,7 @@ mod tests {
                 Fp::from(5),
             ],
         };
-
-        #[cfg(feature = "dev-graph")]
-        {
-            use plotters::prelude::*;
-            let k = 15;
-            let root = BitMapBackend::new("running_sum.png", (1024, 1024))
-                .into_drawing_area();
-            root.fill(&WHITE).unwrap();
-            let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
-            halo2::dev::CircuitLayout::default()
-                .render(k, &circuit, &root)
-                .unwrap();
-        }
         let prover = MockProver::<Fp>::run(5, &circuit, vec![]).unwrap();
-
         assert_eq!(prover.verify(), Ok(()));
     }
 }

@@ -2,6 +2,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 pub mod absorb;
+pub mod base_conversion;
 pub mod gate_helpers;
 pub mod iota_b13;
 pub mod iota_b9;
