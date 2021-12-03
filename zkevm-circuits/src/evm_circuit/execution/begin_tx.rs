@@ -284,7 +284,7 @@ mod test {
     use crate::evm_circuit::{
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag},
-        test::{rand_range, run_test_circuit_incomplete_fixed_table},
+        test::{rand_fp, rand_range, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
@@ -293,8 +293,6 @@ mod test {
         eth_types::{self, Address, ToLittleEndian, ToWord, Word},
         evm::OpcodeId,
     };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
 
     fn test_ok(tx: eth_types::Transaction) {
         let gas_fee = tx.gas * tx.max_fee_per_gas.unwrap_or_else(Word::zero);
@@ -305,7 +303,7 @@ mod test {
         let from_balance = from_balance_prev - tx.value - gas_fee;
         let to_balance = to_balance_prev + tx.value;
 
-        let randomness = Fp::rand();
+        let randomness = rand_fp();
         let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
         let block = Block {
             randomness,

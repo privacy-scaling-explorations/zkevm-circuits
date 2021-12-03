@@ -106,11 +106,12 @@ mod test {
     };
     use bus_mapping::eth_types::Word;
     use halo2::{
-        arithmetic::FieldExt,
+        arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
+    use pairing::bn256::Fr as Fp;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -134,6 +135,10 @@ mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
+    }
+
+    pub(crate) fn rand_fp() -> Fp {
+        Fp::rand()
     }
 
     #[derive(Clone)]
