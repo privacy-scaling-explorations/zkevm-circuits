@@ -138,6 +138,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 q_enable.clone() * c_rlp1 * is_not_key.clone(),
             ));
 
+            // TODO: integrate this in for loop above (query_advice)
             // is_not_key becomes 0 in the positions where we have key
             for ind in (1..HASH_WIDTH).rev() {
                 k_counter = k_counter - one.clone();
