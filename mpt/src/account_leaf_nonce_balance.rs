@@ -21,6 +21,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        s_rlp1: Column<Advice>,
+        s_rlp2: Column<Advice>,
+        c_rlp1: Column<Advice>,
+        c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
         acc_r: F,
@@ -43,18 +47,42 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             // TODO: RLP properties
 
+            // Nonce, balance, storage, codehash are string in RLP: s_rlp1 and s_rlp2
+            // contains the length of this string, for example 184 80 means the second
+            // part is of length 1 (183 + 1 = 184) and there are 80 bytes in this string.
+            // Then there is a list rlp meta data 248 78 where (this is stored in c_rlp1 and c_rlp2)
+            // 78 = 3 nonce, 9 balance, 33 storage, 33 codehash.
             // We have nonce in s_advices and balance in c_advices.
 
             let one = Expression::Constant(F::one());
             let c128 = Expression::Constant(F::from_u64(128));
+            let c248 = Expression::Constant(F::from_u64(248));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
+            let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
             let mut curr_r = acc_mult_prev.clone();
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
             let nonce_len = s_advices0.clone() - c128.clone();
 
-            let mut expr =
-                acc_prev.clone() + s_advices0.clone() * curr_r.clone();
+            let mut expr = acc_prev.clone()
+                + meta.query_advice(s_rlp1, Rotation::cur()) * curr_r.clone();
+            curr_r = curr_r * acc_r;
+            expr = expr
+                + meta.query_advice(s_rlp2, Rotation::cur()) * curr_r.clone();
+            curr_r = curr_r * acc_r;
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            constraints.push((
+                "leaf nonce balance c_rlp1",
+                q_enable.clone() * (c_rlp1.clone() - c248),
+            ));
+            expr = expr + c_rlp1 * curr_r.clone();
+            curr_r = curr_r * acc_r;
+            expr = expr
+                + meta.query_advice(c_rlp2, Rotation::cur()) * curr_r.clone();
+            curr_r = curr_r * acc_r;
+
+            expr = expr + s_advices0.clone() * curr_r.clone();
             curr_r = curr_r * acc_r;
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
@@ -62,7 +90,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 curr_r = curr_r * acc_r;
             }
 
-            let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
             curr_r = acc_mult_tmp.clone();
 
             let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
@@ -81,6 +108,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 q_enable.clone() * (expr.clone() - acc),
             ));
 
+            /*
             // nonzero_table has some nonzero values at the positions where we still have nonce bytes
             // and zeros after nonce bytes end
             let mut nonzero_table = vec![];
@@ -171,6 +199,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     q_enable.clone() * c * is_not_balance.clone(),
                 ));
             }
+            */
 
             constraints
         });

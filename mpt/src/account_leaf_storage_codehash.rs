@@ -42,11 +42,22 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
             // We have codehash in c_advices.
 
+            let c160 = Expression::Constant(F::from_u64(160));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult, Rotation::prev());
             let mut curr_r = acc_mult_prev.clone();
-            let mut expr = acc_prev.clone()
-                + meta.query_advice(s_rlp2, Rotation::cur()) * curr_r.clone();
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            constraints.push((
+                "account leaf storage codehash s_rlp2",
+                q_enable.clone() * (s_rlp2.clone() - c160.clone()),
+            ));
+            constraints.push((
+                "account leaf storage codehash c_rlp2",
+                q_enable.clone() * (c_rlp2.clone() - c160),
+            ));
+
+            let mut expr = acc_prev.clone() + s_rlp2.clone() * curr_r.clone();
             curr_r = curr_r * acc_r;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
@@ -54,8 +65,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 curr_r = curr_r * acc_r;
             }
 
-            expr = expr
-                + meta.query_advice(c_rlp2, Rotation::cur()) * curr_r.clone();
+            expr = expr + c_rlp2 * curr_r.clone();
             curr_r = curr_r * acc_r;
             for col in c_advices.iter() {
                 let c = meta.query_advice(*col, Rotation::cur());
