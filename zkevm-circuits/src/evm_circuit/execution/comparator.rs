@@ -36,9 +36,9 @@ pub(crate) struct ComparatorGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
-    const NAME: &'static str = "LT";
+    const NAME: &'static str = "CMP";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::LT;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::CMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -97,8 +97,12 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context =
-            SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            step_state_transition,
+            None,
+        );
 
         Self {
             same_context,
@@ -216,7 +220,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_state: ExecutionState::LT,
+                        execution_state: ExecutionState::CMP,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,

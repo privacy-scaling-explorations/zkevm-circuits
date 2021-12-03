@@ -35,9 +35,9 @@ pub(crate) struct MemoryGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
-    const NAME: &'static str = "MLOAD";
+    const NAME: &'static str = "MEMORY";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::MLOAD;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::MEMORY;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -254,7 +254,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1],
-                        execution_state: ExecutionState::MLOAD,
+                        execution_state: ExecutionState::MEMORY,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,

@@ -18,7 +18,7 @@ use halo2::{
 use std::collections::HashMap;
 
 mod add;
-mod and;
+mod bitwise;
 mod byte;
 mod comparator;
 mod dup;
@@ -34,7 +34,7 @@ mod signextend;
 mod stop;
 mod swap;
 use add::AddGadget;
-use and::AndGadget;
+use bitwise::BitwiseGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -391,7 +391,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     add_gadget: AddGadget<F>,
-    and_gadget: AndGadget<F>,
+    and_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -699,14 +699,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
         match step.execution_state {
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::ADD => assign_exec_step!(self.add_gadget),
-            ExecutionState::AND => assign_exec_step!(self.and_gadget),
+            ExecutionState::BITWISE => assign_exec_step!(self.and_gadget),
             ExecutionState::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }
-            ExecutionState::LT => assign_exec_step!(self.comparator_gadget),
+            ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
-            ExecutionState::MLOAD => assign_exec_step!(self.memory_gadget),
+            ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),

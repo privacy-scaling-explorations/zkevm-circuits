@@ -29,10 +29,10 @@ pub enum ExecutionState {
     MULMOD,
     EXP,
     SIGNEXTEND,
-    LT,  // LT, GT, EQ
-    SLT, // SLT, SGT
+    CMP,  // LT, GT, EQ
+    SCMP, // SLT, SGT
     ISZERO,
-    AND, // AND, OR, XOR
+    BITWISE, // AND, OR, XOR
     NOT,
     BYTE,
     SHL,
@@ -65,7 +65,7 @@ pub enum ExecutionState {
     SELFBALANCE,
     BASEFEE,
     POP,
-    MLOAD, // MLOAD, MSTORE, MSTORE8
+    MEMORY, // MLOAD, MSTORE, MSTORE8
     SLOAD,
     SSTORE,
     JUMP,
@@ -141,10 +141,10 @@ impl ExecutionState {
             Self::MULMOD,
             Self::EXP,
             Self::SIGNEXTEND,
-            Self::LT,
-            Self::SLT,
+            Self::CMP,
+            Self::SCMP,
             Self::ISZERO,
-            Self::AND,
+            Self::BITWISE,
             Self::NOT,
             Self::BYTE,
             Self::SHL,
@@ -177,7 +177,7 @@ impl ExecutionState {
             Self::SELFBALANCE,
             Self::BASEFEE,
             Self::POP,
-            Self::MLOAD,
+            Self::MEMORY,
             Self::SLOAD,
             Self::SSTORE,
             Self::JUMP,
@@ -247,10 +247,10 @@ impl ExecutionState {
             Self::MULMOD => vec![OpcodeId::MULMOD],
             Self::EXP => vec![OpcodeId::EXP],
             Self::SIGNEXTEND => vec![OpcodeId::SIGNEXTEND],
-            Self::LT => vec![OpcodeId::LT, OpcodeId::GT, OpcodeId::EQ],
-            Self::SLT => vec![OpcodeId::SLT, OpcodeId::SGT],
+            Self::CMP => vec![OpcodeId::LT, OpcodeId::GT, OpcodeId::EQ],
+            Self::SCMP => vec![OpcodeId::SLT, OpcodeId::SGT],
             Self::ISZERO => vec![OpcodeId::ISZERO],
-            Self::AND => vec![OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR],
+            Self::BITWISE => vec![OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR],
             Self::NOT => vec![OpcodeId::NOT],
             Self::BYTE => vec![OpcodeId::BYTE],
             Self::SHL => vec![OpcodeId::SHL],
@@ -283,7 +283,7 @@ impl ExecutionState {
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::BASEFEE => vec![OpcodeId::BASEFEE],
             Self::POP => vec![OpcodeId::POP],
-            Self::MLOAD => {
+            Self::MEMORY => {
                 vec![OpcodeId::MLOAD, OpcodeId::MSTORE, OpcodeId::MSTORE8]
             }
             Self::SLOAD => vec![OpcodeId::SLOAD],

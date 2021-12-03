@@ -20,17 +20,17 @@ use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
-pub(crate) struct AndGadget<F> {
+pub(crate) struct BitwiseGadget<F> {
     same_context: SameContextGadget<F>,
     a: Word<F>,
     b: Word<F>,
     c: Word<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for AndGadget<F> {
-    const NAME: &'static str = "AND";
+impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
+    const NAME: &'static str = "BITWISE";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::AND;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::BITWISE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -163,7 +163,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_state: ExecutionState::AND,
+                        execution_state: ExecutionState::BITWISE,
                         rw_counter: 1,
                         program_counter: 198,
                         stack_pointer: 1018,
@@ -185,7 +185,7 @@ mod test {
                     },
                     ExecStep {
                         rw_indices: vec![4, 5, 6],
-                        execution_state: ExecutionState::AND,
+                        execution_state: ExecutionState::BITWISE,
                         rw_counter: 5,
                         program_counter: 200,
                         stack_pointer: 1020,
@@ -207,7 +207,7 @@ mod test {
                     },
                     ExecStep {
                         rw_indices: vec![8, 9, 10],
-                        execution_state: ExecutionState::AND,
+                        execution_state: ExecutionState::BITWISE,
                         rw_counter: 9,
                         program_counter: 202,
                         stack_pointer: 1022,
@@ -313,7 +313,7 @@ mod test {
     }
 
     #[test]
-    fn and_gadget_simple() {
+    fn bitwise_gadget_simple() {
         test_ok(
             0x12_34_56.into(),
             0x78_9A_BC.into(),
@@ -324,7 +324,7 @@ mod test {
     }
 
     #[test]
-    fn and_gadget_rand() {
+    fn bitwise_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
         test_ok(a, b, a & b, a | b, a ^ b);
