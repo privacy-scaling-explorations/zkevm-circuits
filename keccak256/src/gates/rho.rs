@@ -13,7 +13,7 @@ use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RhoConfig<F> {
     state: [Column<Advice>; 25],
     state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
