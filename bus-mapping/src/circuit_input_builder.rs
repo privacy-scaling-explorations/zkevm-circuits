@@ -1,18 +1,20 @@
 //! This module contains the CircuitInputBuilder, which is an object that takes
 //! types from geth / web3 and outputs the circuit inputs.
 use crate::eth_types::{
-    self, Address, GethExecStep, GethExecTrace, ToBigEndian, Word, H256,
+    self, Address, GethExecStep, GethExecTrace, ToAddress, ToBigEndian, Word,
+    H256,
 };
 use crate::evm::{Gas, GasCost, GlobalCounter, OpcodeId, ProgramCounter};
 use crate::exec_trace::OperationRef;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
+use crate::operation::RW;
 use crate::operation::{Op, Operation};
 use crate::state_db::StateDB;
 use crate::{BlockConstants, Error};
 use core::fmt::Debug;
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 /// Out of Gas errors by opcode
 #[derive(Debug, PartialEq)]
@@ -544,17 +546,6 @@ impl<'a> CircuitInputBuilder {
         let mut tx = Transaction::new(eth_tx);
         let mut tx_ctx = TransactionContext::new(eth_tx);
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-            if index != 0 {
-                let geth_prev_step = &geth_trace.struct_logs[index - 1];
-                // Handle *CALL*
-                if geth_step.depth == geth_prev_step.depth + 1 {
-                    // TODO: Set the proper address according to the call kind.
-                    let address = Address::zero();
-                    let kind = CallKind::try_from(geth_step.op)?;
-                    push_call(&mut tx, &mut tx_ctx, kind, address);
-                }
-            }
-
             let mut step = ExecStep::new(
                 geth_step,
                 tx_ctx.call_index(),
@@ -570,15 +561,23 @@ impl<'a> CircuitInputBuilder {
 
             if let Some(geth_next_step) = geth_trace.struct_logs.get(index + 1)
             {
-                // Handle *CALL* return
-                if geth_step.depth == geth_next_step.depth - 1 {
-                    let (_, call_ctx) =
-                        tx_ctx.pop_call_index_ctx().ok_or_else(|| {
-                            Error::InvalidGethExecStep(
-                                "*CALL* return with empty call stack",
-                                Box::new(geth_step.clone()),
-                            )
-                        })?;
+                if geth_step.depth + 1 == geth_next_step.depth {
+                    // Handle *CALL*
+                    // TODO: Set the proper address according to the call kind.
+                    let address = Address::zero();
+                    let kind = CallKind::try_from(geth_step.op)?;
+                    push_call(&mut tx, &mut tx_ctx, kind, address);
+                } else if geth_step.depth - 1 == geth_next_step.depth {
+                    // Handle *CALL* return
+                    if tx_ctx.call_stack.len() == 1 {
+                        return Err(Error::InvalidGethExecStep(
+                            "handle_tx: call stack will be empty",
+                            Box::new(geth_step.clone()),
+                        ));
+                    }
+                    let (_, call_ctx) = tx_ctx
+                        .pop_call_index_ctx()
+                        .expect("call stack is empty");
                     // If the return was successful, accumulate the swc from the
                     // subcall.
                     if !geth_next_step.stack.last()?.is_zero() {
@@ -684,7 +683,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .unwrap_or_else(Word::zero);
 
         // Return from a call with a failure
-        if step.depth != next_depth && next_result == Word::zero() {
+        if step.depth != next_depth && next_result.is_zero() {
             if !matches!(step.op, OpcodeId::RETURN) {
                 // Without calling RETURN
                 return Ok(Some(match step.op {
@@ -760,7 +759,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 | OpcodeId::STATICCALL
                 | OpcodeId::CREATE
                 | OpcodeId::CREATE2
-        ) && next_result == Word::zero()
+        ) && next_result.is_zero()
             && next_pc != 0
         {
             if step.depth == 1025 {
@@ -809,6 +808,210 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 }
 
+/// State and Code Access with "keys/index" used in the access operation.
+#[derive(Debug, PartialEq)]
+enum AccessValue {
+    Account { address: Address },
+    Storage { address: Address, key: Word },
+    Code { address: Address },
+}
+
+/// State Access caused by a transaction or an execution step
+#[derive(Debug, PartialEq)]
+struct Access {
+    step_index: Option<usize>,
+    rw: RW,
+    value: AccessValue,
+}
+
+impl Access {
+    fn new(step_index: Option<usize>, rw: RW, value: AccessValue) -> Self {
+        Self {
+            step_index,
+            rw,
+            value,
+        }
+    }
+}
+
+/// Given a trace and assuming that the first step is a *CALL* kind opcode,
+/// return the result if found.
+fn get_call_result(trace: &[GethExecStep]) -> Option<Word> {
+    let depth = trace[0].depth;
+    trace[1..]
+        .iter()
+        .find(|s| s.depth == depth)
+        .map(|s| s.stack.nth_last(0).ok())
+        .flatten()
+}
+
+/// State and Code Access set.
+#[derive(Debug, PartialEq)]
+struct AccessSet {
+    state: HashMap<Address, HashSet<Word>>,
+    code: HashSet<Address>,
+}
+
+impl From<Vec<Access>> for AccessSet {
+    fn from(list: Vec<Access>) -> Self {
+        let mut state: HashMap<Address, HashSet<Word>> = HashMap::new();
+        let mut code: HashSet<Address> = HashSet::new();
+        for access in list {
+            match access.value {
+                AccessValue::Account { address } => {
+                    state.entry(address).or_insert_with(HashSet::new);
+                }
+                AccessValue::Storage { address, key } => {
+                    match state.entry(address) {
+                        Entry::Vacant(entry) => {
+                            let mut storage = HashSet::new();
+                            storage.insert(key);
+                            entry.insert(storage);
+                        }
+                        Entry::Occupied(mut entry) => {
+                            entry.get_mut().insert(key);
+                        }
+                    }
+                }
+                AccessValue::Code { address } => {
+                    code.insert(address);
+                }
+            }
+        }
+        Self { state, code }
+    }
+}
+
+/// Generate the State Access trace from the given trace.  All state read/write
+/// accesses are reported, without distinguishing those that happen in revert
+/// sections.
+fn gen_state_access_trace<TX>(
+    _block: &eth_types::Block<TX>,
+    tx: &eth_types::Transaction,
+    geth_trace: &GethExecTrace,
+) -> Result<Vec<Access>, Error> {
+    use AccessValue::{Account, Code, Storage};
+    use RW::{READ, WRITE};
+
+    let mut call_address_stack = vec![tx.from];
+    let mut accs = vec![Access::new(None, WRITE, Account { address: tx.from })];
+    if let Some(to) = tx.to {
+        accs.push(Access::new(None, WRITE, Account { address: to }));
+        // Code may be null if the account is not a contract
+        accs.push(Access::new(None, READ, Code { address: to }));
+    } else {
+        let address = get_contract_address(tx.from, tx.nonce);
+        accs.push(Access::new(None, WRITE, Account { address }));
+        accs.push(Access::new(None, WRITE, Code { address }));
+    }
+
+    for (index, step) in geth_trace.struct_logs.iter().enumerate() {
+        let next_step = geth_trace.struct_logs.get(index + 1);
+        let i = Some(index);
+        let sender = call_address_stack[call_address_stack.len() - 1];
+        match step.op {
+            OpcodeId::SSTORE => {
+                let address = sender;
+                let key = step.stack.nth_last(0)?;
+                accs.push(Access::new(i, WRITE, Storage { address, key }));
+            }
+            OpcodeId::SLOAD => {
+                let address = sender;
+                let key = step.stack.nth_last(0)?;
+                accs.push(Access::new(i, READ, Storage { address, key }));
+            }
+            OpcodeId::SELFBALANCE => {
+                accs.push(Access::new(i, READ, Account { address: sender }));
+            }
+            OpcodeId::CODESIZE => {
+                accs.push(Access::new(i, READ, Code { address: sender }));
+            }
+            OpcodeId::CODECOPY => {
+                accs.push(Access::new(i, READ, Code { address: sender }));
+            }
+            OpcodeId::BALANCE => {
+                let address = step.stack.nth_last(0)?.to_address();
+                accs.push(Access::new(i, READ, Account { address }));
+            }
+            OpcodeId::EXTCODEHASH => {
+                let address = step.stack.nth_last(0)?.to_address();
+                accs.push(Access::new(i, READ, Account { address }));
+            }
+            OpcodeId::EXTCODESIZE => {
+                let address = step.stack.nth_last(0)?.to_address();
+                accs.push(Access::new(i, READ, Code { address }));
+            }
+            OpcodeId::EXTCODECOPY => {
+                let address = step.stack.nth_last(0)?.to_address();
+                accs.push(Access::new(i, READ, Code { address }));
+            }
+            OpcodeId::SELFDESTRUCT => {
+                accs.push(Access::new(i, WRITE, Account { address: sender }));
+                let address = step.stack.nth_last(0)?.to_address();
+                accs.push(Access::new(i, WRITE, Account { address }));
+            }
+            OpcodeId::CREATE => {
+                // Find CREATE result
+                let address = get_call_result(&geth_trace.struct_logs[index..])
+                    .unwrap_or_else(Word::zero)
+                    .to_address();
+                if !address.is_zero() {
+                    accs.push(Access::new(i, WRITE, Account { address }));
+                    accs.push(Access::new(i, WRITE, Code { address }));
+                }
+            }
+            OpcodeId::CREATE2 => {
+                // Find CREATE2 result
+                let address = get_call_result(&geth_trace.struct_logs[index..])
+                    .unwrap_or_else(Word::zero)
+                    .to_address();
+                if !address.is_zero() {
+                    accs.push(Access::new(i, WRITE, Account { address }));
+                    accs.push(Access::new(i, WRITE, Code { address }));
+                }
+            }
+            OpcodeId::CALL => {
+                accs.push(Access::new(i, WRITE, Account { address: sender }));
+                let address = step.stack.nth_last(1)?.to_address();
+                accs.push(Access::new(i, WRITE, Account { address }));
+                accs.push(Access::new(i, READ, Code { address }));
+                call_address_stack.push(address);
+            }
+            OpcodeId::CALLCODE => {
+                accs.push(Access::new(i, WRITE, Account { address: sender }));
+                let address = step.stack.nth_last(1)?.to_address();
+                accs.push(Access::new(i, WRITE, Account { address }));
+                accs.push(Access::new(i, READ, Code { address }));
+                call_address_stack.push(address);
+            }
+            OpcodeId::DELEGATECALL => {
+                let address = step.stack.nth_last(1)?.to_address();
+                accs.push(Access::new(i, READ, Code { address }));
+                call_address_stack.push(sender);
+            }
+            OpcodeId::STATICCALL => {
+                let address = step.stack.nth_last(1)?.to_address();
+                accs.push(Access::new(i, READ, Code { address }));
+                call_address_stack.push(address);
+            }
+            _ => {}
+        }
+        if let Some(next_step) = next_step {
+            // return from a *CALL*
+            if step.depth - 1 == next_step.depth {
+                if call_address_stack.len() == 1 {
+                    return Err(Error::InvalidGethExecStep(
+                        "gen_state_access_trace: call stack will be empty",
+                        Box::new(step.clone()),
+                    ));
+                }
+                call_address_stack.pop().expect("call stack is empty");
+            }
+        }
+    }
+    Ok(accs)
+}
+
 #[cfg(test)]
 mod tracer_tests {
     use super::*;
@@ -822,6 +1025,8 @@ mod tracer_tests {
         word,
     };
     use lazy_static::lazy_static;
+    use pretty_assertions::assert_eq;
+    use std::iter::FromIterator;
 
     // Helper struct that contains a CircuitInputBuilder, a particuar tx and a
     // particular execution step so that we can easily get a
@@ -884,7 +1089,7 @@ mod tracer_tests {
                 | OpcodeId::CREATE
                 | OpcodeId::CREATE2
         ) && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && step.depth == 1025
     }
 
@@ -937,14 +1142,6 @@ mod tracer_tests {
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::Depth)
         );
-    }
-
-    // TODO
-    fn check_err_insufficient_balance(
-        _step: &GethExecStep,
-        _next_step: Option<&GethExecStep>,
-    ) -> bool {
-        unimplemented!()
     }
 
     #[test]
@@ -1001,21 +1198,6 @@ mod tracer_tests {
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::InsufficientBalance)
         );
-    }
-
-    fn check_err_address_collision(
-        step: &GethExecStep,
-        next_step: Option<&GethExecStep>,
-    ) -> bool {
-        // TODO: calculate address and check it against existing addresses in
-        // the state trie
-        let _value = step.stack.nth_last(0).unwrap();
-        let _offset = step.stack.nth_last(1).unwrap();
-        let _length = step.stack.nth_last(2).unwrap();
-        step.op == OpcodeId::CREATE2
-            && step.error.is_none()
-            && next_step.map(|s| s.pc.0).unwrap_or(1) != 0
-            && result(next_step) == Word::zero()
     }
 
     #[test]
@@ -1090,7 +1272,6 @@ mod tracer_tests {
             .find(|(_, s)| s.op == OpcodeId::CREATE2)
             .unwrap();
         let next_step = block.geth_trace.struct_logs.get(index + 1);
-        assert!(check_err_address_collision(step, next_step));
 
         let create2_address: Address = {
             // get first RETURN
@@ -1103,7 +1284,7 @@ mod tracer_tests {
                 .unwrap();
             let next_step = block.geth_trace.struct_logs.get(index + 1);
             let addr_word = next_step.unwrap().stack.last().unwrap();
-            Address::from_slice(&addr_word.to_be_bytes()[12..])
+            addr_word.to_address()
         };
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
@@ -1142,7 +1323,7 @@ mod tracer_tests {
         let length = step.stack.nth_last(1).unwrap();
         step.op == OpcodeId::RETURN
             && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && Word::from(200) * length > Word::from(step.gas.0)
     }
 
@@ -1230,7 +1411,7 @@ mod tracer_tests {
         let length = step.stack.nth_last(1).unwrap();
         step.op == OpcodeId::RETURN
             && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && length > Word::zero()
             && !step.memory.0.is_empty()
             && step.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
@@ -1318,7 +1499,7 @@ mod tracer_tests {
         let length = step.stack.nth_last(1).unwrap();
         step.op == OpcodeId::RETURN
             && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && length > Word::from(0x6000)
     }
 
@@ -1490,7 +1671,7 @@ mod tracer_tests {
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
         matches!(step.op, OpcodeId::JUMP | OpcodeId::JUMPI)
             && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && step.depth != next_depth
     }
 
@@ -1551,7 +1732,7 @@ mod tracer_tests {
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
         step.op == OpcodeId::REVERT
             && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && step.depth != next_depth
     }
 
@@ -1651,7 +1832,7 @@ mod tracer_tests {
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
         step.op == OpcodeId::RETURNDATACOPY
             && step.error.is_none()
-            && result(next_step) == Word::zero()
+            && result(next_step).is_zero()
             && step.depth != next_depth
     }
 
@@ -2044,5 +2225,115 @@ mod tracer_tests {
         let addr = builder.state_ref().create_address().unwrap();
 
         assert_eq!(addr.to_word(), addr_expect);
+    }
+
+    #[test]
+    fn test_gen_access_trace() {
+        use AccessValue::{Account, Code, Storage};
+        use RW::{READ, WRITE};
+        let ADDR_0 = address!("0x00000000000000000000000000000000c014ba5e");
+
+        // code_a calls code_b via static call, which tries to SSTORE and fails.
+        let code_a = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(*WORD_ADDR_B) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+
+            PUSH2(0xaa)
+        };
+        let code_b = bytecode! {
+            PUSH32(word!("0x1234567890000000000000000000abcdef000000000000000000112233445566")) // value
+            PUSH1(0x01) // offset
+            MSTORE
+            PUSH1(0x01) // value
+            PUSH1(0x02) // key
+            SSTORE
+            PUSH1(0x03) // key
+            SLOAD
+
+            PUSH3(0xbb)
+        };
+        let block =
+            mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b)
+                .unwrap();
+        let access_trace = gen_state_access_trace(
+            &block.eth_block,
+            &block.eth_tx,
+            &block.geth_trace,
+        )
+        .unwrap();
+
+        assert_eq!(
+            access_trace,
+            vec![
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: ADDR_0 }
+                },
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: *ADDR_A }
+                },
+                Access {
+                    step_index: None,
+                    rw: READ,
+                    value: Code { address: *ADDR_A }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: ADDR_0 }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: READ,
+                    value: Code { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(13),
+                    rw: WRITE,
+                    value: Storage {
+                        address: *ADDR_B,
+                        key: Word::from(2),
+                    }
+                },
+                Access {
+                    step_index: Some(15),
+                    rw: READ,
+                    value: Storage {
+                        address: *ADDR_B,
+                        key: Word::from(3),
+                    }
+                },
+            ]
+        );
+
+        let access_set = AccessSet::from(access_trace);
+        assert_eq!(
+            access_set,
+            AccessSet {
+                state: HashMap::from_iter([
+                    (ADDR_0, HashSet::new()),
+                    (*ADDR_A, HashSet::new()),
+                    (
+                        *ADDR_B,
+                        HashSet::from_iter([Word::from(2), Word::from(3)])
+                    )
+                ]),
+                code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
+            }
+        )
     }
 }

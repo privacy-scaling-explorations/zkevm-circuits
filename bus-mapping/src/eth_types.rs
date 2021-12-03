@@ -10,6 +10,7 @@ pub use ethers_core::types::{
 use pairing::arithmetic::FieldExt;
 use serde::{de, Deserialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::str::FromStr;
 
 /// Trait used to define types that can be converted to a 256 bit scalar value.
@@ -22,6 +23,12 @@ pub trait ToScalar<F: FieldExt> {
 pub trait ToWord {
     /// Convert the type to a [`Word`].
     fn to_word(&self) -> Word;
+}
+
+/// Trait used to convert a type to a [`Address`].
+pub trait ToAddress {
+    /// Convert the type to a [`Address`].
+    fn to_address(&self) -> Address;
 }
 
 /// Trait uset do convert a scalar value to a 32 byte array in big endian.
@@ -101,6 +108,12 @@ impl<F: FieldExt> ToScalar<F> for U256 {
     }
 }
 
+impl ToAddress for U256 {
+    fn to_address(&self) -> Address {
+        Address::from_slice(&self.to_be_bytes()[12..])
+    }
+}
+
 /// Ethereum Hash (160 bits).
 pub type Hash = types::H256;
 
@@ -142,7 +155,7 @@ struct GethExecStepInternal {
 
 /// The execution step type returned by geth RPC debug_trace* methods.
 /// Corresponds to `StructLogRes` in `go-ethereum/internal/ethapi/api.go`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[doc(hidden)]
 pub struct GethExecStep {
     pub pc: ProgramCounter,
@@ -157,6 +170,41 @@ pub struct GethExecStep {
     pub memory: Memory,
     // storage is hex -> hex
     pub storage: Storage,
+}
+
+// Wrapper over u8 that provides formats the byte in hex for [`fmt::Debug`].
+pub(crate) struct DebugByte(pub(crate) u8);
+
+impl fmt::Debug for DebugByte {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{:02x}", self.0))
+    }
+}
+
+// Wrapper over Word reference that provides formats the word in hex for
+// [`fmt::Debug`].
+pub(crate) struct DebugWord<'a>(pub(crate) &'a Word);
+
+impl<'a> fmt::Debug for DebugWord<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("0x{:x}", self.0))
+    }
+}
+
+impl fmt::Debug for GethExecStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Step")
+            .field("pc", &format_args!("0x{:04x}", self.pc.0))
+            .field("op", &self.op)
+            .field("gas", &format_args!("{}", self.gas.0))
+            .field("gas_cost", &format_args!("{}", self.gas_cost.0))
+            .field("depth", &self.depth)
+            .field("error", &self.error)
+            .field("stack", &self.stack)
+            .field("memory", &self.memory)
+            .field("storage", &self.storage)
+            .finish()
+    }
 }
 
 impl<'de> Deserialize<'de> for GethExecStep {
