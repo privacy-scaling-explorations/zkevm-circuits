@@ -165,7 +165,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             stack_pointer: To(1024.expr()),
             gas_left: To(gas_left),
             memory_size: To(0.expr()),
-            state_write_counter: To(0.expr()),
+            state_write_counter: To(2.expr()),
         });
 
         Self {
@@ -294,11 +294,13 @@ mod test {
         evm::OpcodeId,
     };
 
-    fn test_ok(tx: eth_types::Transaction) {
+    fn test_ok(tx: eth_types::Transaction, result: bool) {
+        let rw_counter_end_of_reversion = if result { 0 } else { 20 };
+
         let gas_fee = tx.gas * tx.max_fee_per_gas.unwrap_or_else(Word::zero);
         let intrinsic_gas_cost = if tx.to.is_none() { 53000 } else { 21000 };
 
-        let from_balance_prev = Word::from(10).pow(18.into());
+        let from_balance_prev = Word::from(10).pow(20.into());
         let to_balance_prev = Word::zero();
         let from_balance = from_balance_prev - tx.value - gas_fee;
         let to_balance = to_balance_prev + tx.value;
@@ -330,12 +332,15 @@ mod test {
                             bytecode.hash.to_le_bytes(),
                             randomness,
                         ),
-                    is_persistent: true,
+                    result: Word::from(result as usize),
+                    rw_counter_end_of_reversion,
+                    is_persistent: result,
                     ..Default::default()
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: (0..16).collect(),
+                        rw_indices: (0..16 + if result { 0 } else { 2 })
+                            .collect(),
                         execution_state: ExecutionState::BeginTx,
                         rw_counter: 1,
                         gas_cost: intrinsic_gas_cost,
@@ -348,170 +353,214 @@ mod test {
                         stack_pointer: 1024,
                         gas_left: tx.gas.low_u64() - intrinsic_gas_cost,
                         opcode: Some(OpcodeId::STOP),
+                        state_write_counter: 2,
                         ..Default::default()
                     },
                 ],
             }],
-            rws: vec![
-                Rw::CallContext {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::TxId,
-                    value: Word::one(),
+            rws: [
+                vec![
+                    Rw::CallContext {
+                        rw_counter: 1,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::TxId,
+                        value: Word::one(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 2,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+                        value: Word::from(rw_counter_end_of_reversion),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 3,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::IsPersistent,
+                        value: Word::from(result as u64),
+                    },
+                    Rw::Account {
+                        rw_counter: 4,
+                        is_write: true,
+                        account_address: tx.from,
+                        field_tag: AccountFieldTag::Nonce,
+                        value: tx.nonce + Word::one(),
+                        value_prev: tx.nonce,
+                    },
+                    Rw::TxAccessListAccount {
+                        rw_counter: 5,
+                        is_write: true,
+                        tx_id: 1,
+                        account_address: tx.from,
+                        value: true,
+                        value_prev: false,
+                    },
+                    Rw::TxAccessListAccount {
+                        rw_counter: 6,
+                        is_write: true,
+                        tx_id: 1,
+                        account_address: tx.to.unwrap(),
+                        value: true,
+                        value_prev: false,
+                    },
+                    Rw::Account {
+                        rw_counter: 7,
+                        is_write: true,
+                        account_address: tx.from,
+                        field_tag: AccountFieldTag::Balance,
+                        value: from_balance,
+                        value_prev: from_balance_prev,
+                    },
+                    Rw::Account {
+                        rw_counter: 8,
+                        is_write: true,
+                        account_address: tx.to.unwrap_or_else(Address::zero),
+                        field_tag: AccountFieldTag::Balance,
+                        value: to_balance,
+                        value_prev: to_balance_prev,
+                    },
+                    Rw::Account {
+                        rw_counter: 9,
+                        is_write: false,
+                        account_address: tx.to.unwrap_or_else(Address::zero),
+                        field_tag: AccountFieldTag::CodeHash,
+                        value: bytecode.hash,
+                        value_prev: bytecode.hash,
+                    },
+                    Rw::CallContext {
+                        rw_counter: 10,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::Depth,
+                        value: Word::one(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 11,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::CallerAddress,
+                        value: tx.from.to_word(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 12,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::CalleeAddress,
+                        value: tx.to.unwrap_or_else(Address::zero).to_word(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 13,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::CallDataOffset,
+                        value: Word::zero(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 14,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::CallDataLength,
+                        value: tx.input.0.len().into(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 15,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::Value,
+                        value: tx.value,
+                    },
+                    Rw::CallContext {
+                        rw_counter: 16,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::IsStatic,
+                        value: Word::zero(),
+                    },
+                ],
+                if result {
+                    vec![]
+                } else {
+                    vec![
+                        Rw::Account {
+                            rw_counter: 19,
+                            is_write: true,
+                            account_address: tx
+                                .to
+                                .unwrap_or_else(Address::zero),
+                            field_tag: AccountFieldTag::Balance,
+                            value: to_balance_prev,
+                            value_prev: to_balance,
+                        },
+                        Rw::Account {
+                            rw_counter: 20,
+                            is_write: true,
+                            account_address: tx.from,
+                            field_tag: AccountFieldTag::Balance,
+                            value: from_balance_prev,
+                            value_prev: from_balance,
+                        },
+                    ]
                 },
-                Rw::CallContext {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::RwCounterEndOfReversion,
-                    value: Word::zero(),
-                },
-                Rw::CallContext {
-                    rw_counter: 3,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::IsPersistent,
-                    value: Word::one(),
-                },
-                Rw::Account {
-                    rw_counter: 4,
-                    is_write: true,
-                    account_address: tx.from,
-                    field_tag: AccountFieldTag::Nonce,
-                    value: tx.nonce + Word::one(),
-                    value_prev: tx.nonce,
-                },
-                Rw::TxAccessListAccount {
-                    rw_counter: 5,
-                    is_write: true,
-                    tx_id: 1,
-                    account_address: tx.from,
-                    value: true,
-                    value_prev: false,
-                },
-                Rw::TxAccessListAccount {
-                    rw_counter: 6,
-                    is_write: true,
-                    tx_id: 1,
-                    account_address: tx.to.unwrap(),
-                    value: true,
-                    value_prev: false,
-                },
-                Rw::Account {
-                    rw_counter: 7,
-                    is_write: true,
-                    account_address: tx.from,
-                    field_tag: AccountFieldTag::Balance,
-                    value: from_balance,
-                    value_prev: from_balance_prev,
-                },
-                Rw::Account {
-                    rw_counter: 8,
-                    is_write: true,
-                    account_address: tx.to.unwrap_or_else(Address::zero),
-                    field_tag: AccountFieldTag::Balance,
-                    value: to_balance,
-                    value_prev: to_balance_prev,
-                },
-                Rw::Account {
-                    rw_counter: 9,
-                    is_write: false,
-                    account_address: tx.to.unwrap_or_else(Address::zero),
-                    field_tag: AccountFieldTag::CodeHash,
-                    value: bytecode.hash,
-                    value_prev: bytecode.hash,
-                },
-                Rw::CallContext {
-                    rw_counter: 10,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::Depth,
-                    value: Word::one(),
-                },
-                Rw::CallContext {
-                    rw_counter: 11,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::CallerAddress,
-                    value: tx.from.to_word(),
-                },
-                Rw::CallContext {
-                    rw_counter: 12,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::CalleeAddress,
-                    value: tx.to.unwrap_or_else(Address::zero).to_word(),
-                },
-                Rw::CallContext {
-                    rw_counter: 13,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::CallDataOffset,
-                    value: Word::zero(),
-                },
-                Rw::CallContext {
-                    rw_counter: 14,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::CallDataLength,
-                    value: tx.input.0.len().into(),
-                },
-                Rw::CallContext {
-                    rw_counter: 15,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::Value,
-                    value: tx.value,
-                },
-                Rw::CallContext {
-                    rw_counter: 16,
-                    is_write: false,
-                    call_id: 1,
-                    field_tag: CallContextFieldTag::IsStatic,
-                    value: Word::zero(),
-                },
-            ],
+            ]
+            .concat(),
             bytecodes: vec![bytecode],
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
+    fn mock_tx(
+        value: Option<Word>,
+        max_fee_per_gas: Option<Word>,
+    ) -> eth_types::Transaction {
+        let from = address!("0x00000000000000000000000000000000000000fe");
+        let to = address!("0x00000000000000000000000000000000000000ff");
+        let one_ether = Word::from(10).pow(18.into());
+        let two_gwei = Word::from(2_000_000_000);
+        eth_types::Transaction {
+            from,
+            to: Some(to),
+            value: value.unwrap_or(one_ether),
+            gas: 21000.into(),
+            max_fee_per_gas: max_fee_per_gas.or(Some(two_gwei)),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn begin_tx_gadget_simple() {
-        test_ok(eth_types::Transaction {
-            nonce: Word::zero(),
-            from: address!("0x00000000000000000000000000000000000000fe"),
-            to: Some(address!("0x00000000000000000000000000000000000000ff")),
-            value: Word::from(10).pow(17.into()),
-            gas: 21000.into(),
-            max_fee_per_gas: Some(Word::from(2_000_000_000)),
-            input: Vec::new().into(),
-            ..Default::default()
-        });
+        // Transaction succeeds
+        test_ok(mock_tx(None, None), true);
+
+        // Transaction fails
+        test_ok(mock_tx(None, None), false);
     }
 
     #[test]
     fn begin_tx_gadget_rand() {
-        test_ok(eth_types::Transaction {
-            nonce: Word::from(rand_range(0..u64::MAX)),
-            from: address!("0x00000000000000000000000000000000000000fe"),
-            to: Some(address!("0x00000000000000000000000000000000000000ff")),
-            value: Word::from(rand_range(0..=10u64.pow(18))),
-            gas: 21000.into(),
-            max_fee_per_gas: Some(Word::from(2_000_000_000)),
-            input: Vec::new().into(),
-            ..Default::default()
-        });
-        test_ok(eth_types::Transaction {
-            nonce: Word::from(rand_range(0..u64::MAX)),
-            from: address!("0x00000000000000000000000000000000000000fe"),
-            to: Some(address!("0x00000000000000000000000000000000000000ff")),
-            value: Word::from(10).pow(17.into()),
-            gas: 21000.into(),
-            max_fee_per_gas: Some(Word::from(rand_range(0..42857142857143u64))),
-            input: Vec::new().into(),
-            ..Default::default()
-        });
+        // Transaction succeeds
+        // random value
+        test_ok(
+            mock_tx(Some(Word::from(rand_range(0..=10u64.pow(20)))), None),
+            true,
+        );
+        // random gas_fee
+        test_ok(
+            mock_tx(None, Some(Word::from(rand_range(0..42857142857143u64)))),
+            true,
+        );
+
+        // Transaction fails
+        // random value
+        test_ok(
+            mock_tx(Some(Word::from(rand_range(0..=10u64.pow(20)))), None),
+            false,
+        );
+        // random gas_fee
+        test_ok(
+            mock_tx(None, Some(Word::from(rand_range(0..42857142857143u64)))),
+            false,
+        );
     }
 }

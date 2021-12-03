@@ -437,13 +437,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         counter: Expression<F>,
         is_write: Expression<F>,
-        tag: Expression<F>,
+        tag: RwTableTag,
         values: [Expression<F>; 5],
     ) {
         self.add_lookup(Lookup::Rw {
             counter,
             is_write,
-            tag,
+            tag: tag.expr(),
             values,
         });
     }
@@ -453,7 +453,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     fn rw_lookup(
         &mut self,
         is_write: Expression<F>,
-        tag: Expression<F>,
+        tag: RwTableTag,
         values: [Expression<F>; 5],
     ) {
         self.rw_lookup_with_counter(
@@ -463,6 +463,41 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             values,
         );
         self.rw_counter_offset += 1;
+    }
+
+    fn state_write_with_reversion(
+        &mut self,
+        tag: RwTableTag,
+        mut values: [Expression<F>; 5],
+        is_persistent: Expression<F>,
+        rw_counter_end_of_reversion: Expression<F>,
+    ) {
+        self.rw_lookup(true.expr(), tag, values.clone());
+
+        // Revert if is_persistent is 0
+        self.condition(1.expr() - is_persistent, |cb| {
+            // Calculate state_write_counter so far
+            let state_write_counter = cb.curr.state.state_write_counter.expr()
+                + cb.state_write_counter_offset.expr();
+            // Swap value and value_prev respect to tag
+            match tag {
+                RwTableTag::TxAccessListAccount => values.swap(2, 3),
+                RwTableTag::TxAccessListStorageSlot => values.swap(3, 4),
+                RwTableTag::Account => values.swap(2, 3),
+                RwTableTag::AccountStorage => values.swap(3, 4),
+                RwTableTag::AccountDestructed => values.swap(2, 3),
+                _ => {}
+            }
+
+            cb.rw_lookup_with_counter(
+                rw_counter_end_of_reversion - state_write_counter,
+                true.expr(),
+                tag,
+                values,
+            )
+        });
+
+        self.state_write_counter_offset += 1;
     }
 
     // Access list
@@ -476,7 +511,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             true.expr(),
-            RwTableTag::TxAccessListAccount.expr(),
+            RwTableTag::TxAccessListAccount,
             [tx_id, account_address, value, value_prev, 0.expr()],
         );
     }
@@ -491,7 +526,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             false.expr(),
-            RwTableTag::Account.expr(),
+            RwTableTag::Account,
             [
                 account_address,
                 field_tag.expr(),
@@ -511,7 +546,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             true.expr(),
-            RwTableTag::Account.expr(),
+            RwTableTag::Account,
             [
                 account_address,
                 field_tag.expr(),
@@ -531,34 +566,18 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) {
-        self.rw_lookup(
-            true.expr(),
-            RwTableTag::Account.expr(),
+        self.state_write_with_reversion(
+            RwTableTag::Account,
             [
-                account_address.clone(),
+                account_address,
                 field_tag.expr(),
-                value.clone(),
-                value_prev.clone(),
+                value,
+                value_prev,
                 0.expr(),
             ],
+            is_persistent,
+            rw_counter_end_of_reversion,
         );
-        self.condition(1.expr() - is_persistent, |cb| {
-            let state_write_counter = cb.curr.state.state_write_counter.expr()
-                + cb.state_write_counter_offset.expr();
-            cb.rw_lookup_with_counter(
-                rw_counter_end_of_reversion - state_write_counter,
-                true.expr(),
-                RwTableTag::Account.expr(),
-                [
-                    account_address,
-                    field_tag.expr(),
-                    value_prev,
-                    value,
-                    0.expr(),
-                ],
-            )
-        });
-        self.state_write_counter_offset += 1;
     }
 
     // Call context
@@ -579,7 +598,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             false.expr(),
-            RwTableTag::CallContext.expr(),
+            RwTableTag::CallContext,
             [
                 self.curr.state.call_id.expr(),
                 field_tag.expr(),
@@ -614,7 +633,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             is_write,
-            RwTableTag::Stack.expr(),
+            RwTableTag::Stack,
             [
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
@@ -635,7 +654,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             is_write,
-            RwTableTag::Memory.expr(),
+            RwTableTag::Memory,
             [
                 self.curr.state.call_id.expr(),
                 memory_address,
@@ -656,7 +675,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.rw_lookup_with_counter(
             rw_counter,
             is_write,
-            RwTableTag::Memory.expr(),
+            RwTableTag::Memory,
             [
                 self.curr.state.call_id.expr(),
                 memory_address,
