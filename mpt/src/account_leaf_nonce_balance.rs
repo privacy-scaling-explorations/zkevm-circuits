@@ -45,22 +45,27 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // We have nonce in s_advices and balance in c_advices.
 
             let one = Expression::Constant(F::one());
-            let c128 = Expression::Constant(F::from_u64(128));
             let mut r_table = vec![];
+            let mut r = one.clone();
+            for _ in 0..HASH_WIDTH {
+                r_table.push(r.clone());
+                r = r * acc_r;
+            }
+
+            let c128 = Expression::Constant(F::from_u64(128));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
-            let mut curr_r = meta.query_advice(acc_mult_s, Rotation::prev());
+            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
+            let mut curr_r = acc_mult_prev.clone();
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
             let nonce_len = s_advices0.clone() - c128.clone();
 
             let mut expr =
                 acc_prev.clone() + s_advices0.clone() * curr_r.clone();
             curr_r = curr_r * acc_r;
-            r_table.push(curr_r.clone());
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
                 expr = expr + s * curr_r.clone();
                 curr_r = curr_r * acc_r;
-                r_table.push(curr_r.clone());
             }
 
             let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
@@ -70,12 +75,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let balance_len = c_advices0.clone() - c128.clone();
             expr = expr + c_advices0 * curr_r.clone();
             curr_r = curr_r * acc_r;
-            r_table.push(curr_r.clone());
             for ind in 1..HASH_WIDTH {
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
                 expr = expr + c * curr_r.clone();
                 curr_r = curr_r * acc_r;
-                r_table.push(curr_r.clone());
             }
 
             let acc = meta.query_advice(acc, Rotation::cur());
@@ -100,14 +103,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let mut counter = c32.clone() - nonce_len.clone() + one.clone();
             let mut is_trailing_zero_or_last_key = one.clone();
 
-            // Final acc_mult is in acc_mult_s.
-            let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
-
-            let mut foo = acc_prev.clone();
-            for _ in 0..3 {
-                foo = foo * acc_r.clone();
-            }
-            // constraints.push(("foo", q_enable.clone() * foo));
+            let acc_mult_final = meta.query_advice(acc_mult_s, Rotation::cur());
 
             for ind in (1..HASH_WIDTH).rev() {
                 counter = counter - one.clone();
@@ -116,17 +112,43 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 // Either is_trailing_zero_or_last nonce is 0 (bytes before the last nonce byte) or
                 // nonzero_table[ind] is 0 (bytes after the last key byte).
                 // Except at the position of last nonce byte - there neither of these two is zero.
-                let check = (r_table[ind].clone() * acc_r
-                    - acc_mult_tmp.clone())
-                    * nonzero_table[ind].clone()
-                    * is_trailing_zero_or_last_key.clone();
+                let check =
+                    (r_table[ind].clone() * acc_mult_prev.clone() * acc_r
+                        - acc_mult_tmp.clone())
+                        * nonzero_table[ind].clone()
+                        * is_trailing_zero_or_last_key.clone();
 
-                /*
-                constraints.push((
-                    "leaf nonce balance acc mult s_advices",
-                    q_enable.clone() * check,
-                ));
-                */
+                constraints
+                    .push(("leaf nonce acc mult", q_enable.clone() * check));
+            }
+
+            // Balance mult:
+
+            nonzero_table = vec![];
+            nonzero_table.push(one.clone()); // c_advices[0]
+            z_counter = balance_len.clone();
+            z_expr = one.clone();
+            for _ in 0..HASH_WIDTH {
+                nonzero_table.push(z_expr.clone());
+                z_counter = z_counter - one.clone();
+                z_expr = z_expr * z_counter.clone();
+            }
+
+            counter = c32.clone() - balance_len.clone() + one.clone();
+            is_trailing_zero_or_last_key = one.clone();
+
+            for ind in (1..HASH_WIDTH).rev() {
+                counter = counter - one.clone();
+                is_trailing_zero_or_last_key =
+                    is_trailing_zero_or_last_key * counter.clone();
+                let check =
+                    (r_table[ind].clone() * acc_mult_tmp.clone() * acc_r
+                        - acc_mult_final.clone())
+                        * nonzero_table[ind].clone()
+                        * is_trailing_zero_or_last_key.clone();
+
+                constraints
+                    .push(("leaf balance acc mult", q_enable.clone() * check));
             }
 
             constraints
