@@ -473,7 +473,7 @@ impl<F: FieldExt> Step<F> {
         Self { state, rows }
     }
 
-    pub(crate) fn q_execution_state(
+    pub(crate) fn execution_state_selector(
         &self,
         execution_state: ExecutionState,
     ) -> Expression<F> {

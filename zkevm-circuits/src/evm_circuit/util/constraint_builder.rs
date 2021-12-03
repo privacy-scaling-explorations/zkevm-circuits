@@ -118,19 +118,21 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ));
         }
 
-        let q_execution_state =
-            self.curr.q_execution_state(self.execution_state);
+        let execution_state_selector =
+            self.curr.execution_state_selector(self.execution_state);
 
         (
             constraints
                 .into_iter()
                 .map(|(name, constraint)| {
-                    (name, q_execution_state.clone() * constraint)
+                    (name, execution_state_selector.clone() * constraint)
                 })
                 .collect(),
             self.lookups
                 .into_iter()
-                .map(|lookup| lookup.conditional(q_execution_state.clone()))
+                .map(|lookup| {
+                    lookup.conditional(execution_state_selector.clone())
+                })
                 .collect(),
             presets,
         )
