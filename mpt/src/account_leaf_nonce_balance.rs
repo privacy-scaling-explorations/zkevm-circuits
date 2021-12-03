@@ -151,6 +151,33 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     .push(("leaf balance acc mult", q_enable.clone() * check));
             }
 
+            // TODO: integrate this in for loops above with query_advices
+            // Now we need to ensure after nonce there are only 0s in s_advices.
+            let mut k_counter = c32.clone() - nonce_len.clone();
+            let mut is_not_balance = k_counter.clone();
+            // is_not_nonce becomes 0 in the positions where we have nonce
+            for ind in (0..HASH_WIDTH).rev() {
+                k_counter = k_counter - one.clone();
+                is_not_balance = is_not_balance * k_counter.clone();
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                constraints.push((
+                    "account leaf nonce zeros",
+                    q_enable.clone() * s * is_not_balance.clone(),
+                ));
+            }
+            k_counter = c32 - balance_len.clone();
+            is_not_balance = k_counter.clone();
+            // is_not_balance becomes 0 in the positions where we have balance
+            for ind in (0..HASH_WIDTH).rev() {
+                k_counter = k_counter - one.clone();
+                is_not_balance = is_not_balance * k_counter.clone();
+                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                constraints.push((
+                    "account leaf balance zeros",
+                    q_enable.clone() * c * is_not_balance.clone(),
+                ));
+            }
+
             constraints
         });
 
