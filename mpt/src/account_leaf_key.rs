@@ -28,6 +28,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         acc_r: F,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        r_table: Vec<Expression<F>>,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
 
@@ -44,27 +45,21 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             // TODO: RLP properties
 
             let one = Expression::Constant(F::one());
-            let mut r_table = vec![];
             let mut curr_r = Expression::Constant(F::one());
-            r_table.push(curr_r.clone());
             let mut expr = meta.query_advice(s_rlp1, Rotation::cur());
             curr_r = curr_r * acc_r;
-            r_table.push(curr_r.clone());
             expr = expr
                 + meta.query_advice(s_rlp2, Rotation::cur()) * curr_r.clone();
             curr_r = curr_r * acc_r;
-            r_table.push(curr_r.clone());
 
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 expr = expr + s * curr_r.clone();
                 curr_r = curr_r * acc_r;
-                r_table.push(curr_r.clone());
             }
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             expr = expr + c_rlp1.clone() * curr_r.clone();
             curr_r = curr_r * acc_r;
-            r_table.push(curr_r.clone());
 
             // Key can't go further than c_rlp1.
 
@@ -104,10 +99,11 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let mut counter = c32.clone() - key_len.clone() + one.clone();
             let mut is_trailing_zero_or_last_key = one.clone();
 
-            let check = (r_table[HASH_WIDTH + 2].clone() * acc_r
-                - acc_mult.clone())
-                * nonzero_table[HASH_WIDTH + 2].clone()
-                * is_trailing_zero_or_last_key.clone();
+            let check =
+                (r_table[HASH_WIDTH - 1].clone() * r_table[3].clone() * acc_r
+                    - acc_mult.clone())
+                    * nonzero_table[HASH_WIDTH + 2].clone()
+                    * is_trailing_zero_or_last_key.clone();
             constraints
                 .push(("leaf key acc mult c_rlp1", q_enable.clone() * check));
 
@@ -118,7 +114,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 // Either is_trailing_zero_or_last key is 0 (bytes before the last key byte) or
                 // nonzero_table[ind+2] is 0 (bytes after the last key byte).
                 // Except at the position of last key byte - there neither of these two is zero.
-                let check = (r_table[ind + 2].clone() * acc_r
+                let check = (r_table[ind].clone() * r_table[2].clone() * acc_r
                     - acc_mult.clone())
                     * nonzero_table[ind + 2].clone()
                     * is_trailing_zero_or_last_key.clone();

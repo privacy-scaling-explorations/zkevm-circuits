@@ -63,12 +63,12 @@ pub struct MPTConfig<F> {
     acc_c: Column<Advice>, // for branch c
     acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
+    r_table: Vec<Expression<F>>,
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
     key_compr_chip: KeyComprConfig,
     account_leaf_key_chip: AccountLeafKeyConfig,
     account_leaf_nonce_balance_chip: AccountLeafNonceBalanceConfig,
-    key_rlc_r: F,
     key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -84,7 +84,16 @@ impl<F: FieldExt> MPTConfig<F> {
         let not_first_level = meta.fixed_column();
 
         let acc_r = F::rand(); // TODO: generate from commitments
-        let key_rlc_r = F::rand(); // TODO: generate from commitments
+
+        let one = Expression::Constant(F::one());
+        let mut r_table = vec![];
+        let mut r = one.clone();
+        for _ in 0..HASH_WIDTH {
+            r_table.push(r.clone());
+            r = r * acc_r;
+        }
+
+        // TODO: r_table constraints
 
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
@@ -164,13 +173,11 @@ impl<F: FieldExt> MPTConfig<F> {
         // At some point (but we don't know this point at compile time), key nibbles end
         // and from there on the values in the row need to be 0s.
         // However, if we are computing rlc using little endian:
-        // rlc = rlc + row[i] * key_rlc_r,
+        // rlc = rlc + row[i] * acc_r,
         // rlc will stay the same once r[i] = 0.
         // If big endian would be used:
-        // rlc = rlc * key_rlc_r + row[i],
-        // the rlc would be multiplied by key_rlc_r when row[i] = 0.
-
-        let one = Expression::Constant(F::one());
+        // rlc = rlc * acc_r + row[i],
+        // the rlc would be multiplied by acc_r when row[i] = 0.
 
         // Turn 32 hash cells into 4 cells containing keccak words.
         let into_words_expr = |hash: Vec<Expression<F>>| {
@@ -513,8 +520,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "first branch children key_rlc_mult",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur.clone()
-                        - key_rlc_mult_prev * key_rlc_r),
+                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * acc_r),
             ));
 
             // First level key_rlc
@@ -530,7 +536,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * (one.clone() - not_first_level.clone())
                     * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur - one.clone() * key_rlc_r),
+                    * (key_rlc_mult_cur - one.clone() * acc_r),
             ));
 
             // TODO:
@@ -926,7 +932,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_advices,
             key_rlc,
             key_rlc_mult,
-            key_rlc_r,
+            acc_r,
         );
 
         let account_leaf_key_chip = AccountLeafKeyChip::<F>::configure(
@@ -948,6 +954,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
             acc_s,
             acc_mult_s,
+            r_table.clone(),
         );
 
         let account_leaf_nonce_balance_chip =
@@ -975,6 +982,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 acc_s,
                 acc_mult_s,
                 acc_mult_c,
+                r_table.clone(),
             );
 
         MPTConfig {
@@ -1010,12 +1018,12 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             acc_r,
+            r_table,
             branch_acc_s_chip,
             branch_acc_c_chip,
             key_compr_chip,
             account_leaf_key_chip,
             account_leaf_nonce_balance_chip,
-            key_rlc_r,
             key_rlc,
             key_rlc_mult,
             keccak_table,
@@ -1510,7 +1518,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 key_rlc = key_rlc
                                     + F::from_u64(modified_node as u64)
                                         * key_rlc_mult;
-                                key_rlc_mult = key_rlc_mult * self.key_rlc_r;
+                                key_rlc_mult = key_rlc_mult * self.acc_r;
                                 self.assign_branch_row(
                                     &mut region,
                                     node_index,
@@ -1776,7 +1784,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             for n in nibbles.iter() {
                                 key_rlc =
                                     key_rlc + F::from_u64(*n as u64) * key_mult;
-                                key_mult = key_mult * self.key_rlc_r
+                                key_mult = key_mult * self.acc_r
                             }
                             region.assign_advice(
                                 || "key_rlc",

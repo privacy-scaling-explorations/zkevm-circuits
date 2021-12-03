@@ -27,6 +27,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         acc: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_mult_c: Column<Advice>,
+        r_table: Vec<Expression<F>>,
     ) -> AccountLeafNonceBalanceConfig {
         let config = AccountLeafNonceBalanceConfig {};
 
@@ -45,13 +46,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // We have nonce in s_advices and balance in c_advices.
 
             let one = Expression::Constant(F::one());
-            let mut r_table = vec![];
-            let mut r = one.clone();
-            for _ in 0..HASH_WIDTH {
-                r_table.push(r.clone());
-                r = r * acc_r;
-            }
-
             let c128 = Expression::Constant(F::from_u64(128));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
