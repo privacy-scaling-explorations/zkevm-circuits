@@ -1,7 +1,9 @@
 # `shinsaku0523/zkevm` base image of zkevm
 # rust: nightly-2021-11-17
 # go:   1.16
-FROM alpine:3.15
+FROM ubuntu:16.04
+
+WORKDIR /app
 
 # go path
 ENV PATH=$PATH:/usr/local/go/bin
@@ -9,10 +11,13 @@ ENV PATH=$PATH:/usr/local/go/bin
 # rust path
 ENV PATH=$PATH:/root/.cargo/bin
 
-RUN apk add alpine-sdk --update
+RUN apt-get update -y &&\
+    apt-get install build-essential curl wget -y
 
 # enable rust
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly-2021-11-17
 
 # enable go
-COPY --from=golang:1.16-alpine /usr/local/go/ /usr/local/go/
+RUN wget https://dl.google.com/go/go1.16.linux-amd64.tar.gz &&\
+    tar -C /usr/local -xzf go1.16.linux-amd64.tar.gz &&\
+    rm go1.16.linux-amd64.tar.gz
