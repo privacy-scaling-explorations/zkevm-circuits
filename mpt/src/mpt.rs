@@ -14,6 +14,9 @@ use crate::{
     account_leaf_nonce_balance::{
         AccountLeafNonceBalanceChip, AccountLeafNonceBalanceConfig,
     },
+    account_leaf_storage_codehash::{
+        AccountLeafStorageCodehashChip, AccountLeafStorageCodehashConfig,
+    },
     branch_acc::BranchAccChip,
     key_compr::KeyComprChip,
     leaf_hash::{LeafHashChip, LeafHashConfig},
@@ -69,6 +72,7 @@ pub struct MPTConfig<F> {
     key_compr_chip: KeyComprConfig,
     account_leaf_key_chip: AccountLeafKeyConfig,
     account_leaf_nonce_balance_chip: AccountLeafNonceBalanceConfig,
+    account_leaf_storage_codehash_chip: AccountLeafStorageCodehashConfig,
     key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -985,6 +989,34 @@ impl<F: FieldExt> MPTConfig<F> {
                 r_table.clone(),
             );
 
+        let account_leaf_storage_codehash_chip =
+            AccountLeafStorageCodehashChip::<F>::configure(
+                meta,
+                |meta| {
+                    let q_not_first =
+                        meta.query_fixed(q_not_first, Rotation::cur());
+                    let is_account_leaf_storage_codehash_s = meta.query_advice(
+                        is_account_leaf_storage_codehash_s,
+                        Rotation::cur(),
+                    );
+                    let is_account_leaf_storage_codehash_c = meta.query_advice(
+                        is_account_leaf_storage_codehash_c,
+                        Rotation::cur(),
+                    );
+
+                    q_not_first
+                        * (is_account_leaf_storage_codehash_s
+                            + is_account_leaf_storage_codehash_c)
+                },
+                s_rlp2,
+                c_rlp2,
+                s_advices,
+                c_advices,
+                acc_r,
+                acc_s,
+                acc_mult_s,
+            );
+
         MPTConfig {
             q_enable,
             q_not_first,
@@ -1024,6 +1056,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_compr_chip,
             account_leaf_key_chip,
             account_leaf_nonce_balance_chip,
+            account_leaf_storage_codehash_chip,
             key_rlc,
             key_rlc_mult,
             keccak_table,
