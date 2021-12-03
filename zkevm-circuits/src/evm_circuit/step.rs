@@ -15,7 +15,7 @@ use halo2::{
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ExecutionResult {
+pub enum ExecutionState {
     BeginTx,
     // Opcode successful cases
     STOP,
@@ -116,13 +116,13 @@ pub enum ExecutionResult {
     ErrorOutOfGasSTATICCALL,
 }
 
-impl Default for ExecutionResult {
+impl Default for ExecutionState {
     fn default() -> Self {
         Self::STOP
     }
 }
 
-impl ExecutionResult {
+impl ExecutionState {
     pub(crate) const fn as_u64(&self) -> u64 {
         *self as u64
     }
@@ -421,7 +421,7 @@ impl<F: FieldExt> Step<F> {
     ) -> Self {
         let state = {
             let mut cells = VecDeque::with_capacity(
-                ExecutionResult::amount() + NUM_CELLS_STEP_STATE,
+                ExecutionState::amount() + NUM_CELLS_STEP_STATE,
             );
             meta.create_gate("Query state for step", |meta| {
                 for idx in 0..cells.capacity() {
@@ -440,7 +440,7 @@ impl<F: FieldExt> Step<F> {
 
             StepState {
                 execution_result: cells
-                    .drain(..ExecutionResult::amount())
+                    .drain(..ExecutionState::amount())
                     .collect(),
                 rw_counter: cells.pop_front().unwrap(),
                 call_id: cells.pop_front().unwrap(),
@@ -475,7 +475,7 @@ impl<F: FieldExt> Step<F> {
 
     pub(crate) fn q_execution_result(
         &self,
-        execution_result: ExecutionResult,
+        execution_result: ExecutionState,
     ) -> Expression<F> {
         self.state.execution_result[execution_result as usize].expr()
     }

@@ -4,7 +4,7 @@ use crate::{
             bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
             ExecutionGadget,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -38,7 +38,7 @@ pub(crate) struct ComparatorGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
     const NAME: &'static str = "LT";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::LT;
+    const EXECUTION_RESULT: ExecutionState = ExecutionState::LT;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -177,7 +177,7 @@ mod test {
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
     };
@@ -216,7 +216,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionResult::LT,
+                        execution_result: ExecutionState::LT,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,
@@ -226,7 +226,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionResult::STOP,
+                        execution_result: ExecutionState::STOP,
                         rw_counter: 4,
                         program_counter: 67,
                         stack_pointer: 1023,

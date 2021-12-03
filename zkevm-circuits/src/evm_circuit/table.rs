@@ -1,4 +1,4 @@
-use crate::{evm_circuit::step::ExecutionResult, impl_expr};
+use crate::{evm_circuit::step::ExecutionState, impl_expr};
 use halo2::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
@@ -98,7 +98,7 @@ impl FixedTableTag {
                 })
             })),
             Self::ResponsibleOpcode => Box::new(
-                ExecutionResult::iterator().flat_map(move |execution_result| {
+                ExecutionState::iterator().flat_map(move |execution_result| {
                     execution_result.responsible_opcodes().into_iter().map(
                         move |opcode| {
                             [

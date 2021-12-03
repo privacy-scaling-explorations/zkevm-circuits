@@ -4,7 +4,7 @@ use crate::{
             bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
             ExecutionGadget,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -27,7 +27,7 @@ pub(crate) struct PcGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
     const NAME: &'static str = "PC";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::PC;
+    const EXECUTION_RESULT: ExecutionState = ExecutionState::PC;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // program_counter is limited to 64 bits so we only consider 8 bytes
@@ -86,7 +86,7 @@ mod test {
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         test::run_test_circuit_incomplete_fixed_table,
         util::RandomLinearCombination,
     };
@@ -124,7 +124,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0],
-                        execution_result: ExecutionResult::PC,
+                        execution_result: ExecutionState::PC,
                         rw_counter: 1,
                         program_counter: 33,
                         stack_pointer: 1023,
@@ -134,7 +134,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionResult::STOP,
+                        execution_result: ExecutionState::STOP,
                         rw_counter: 2,
                         program_counter: 34,
                         stack_pointer: 1022,

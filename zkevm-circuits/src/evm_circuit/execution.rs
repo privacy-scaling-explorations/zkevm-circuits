@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         param::{STEP_HEIGHT, STEP_WIDTH},
-        step::{ExecutionResult, Preset, Step},
+        step::{ExecutionState, Preset, Step},
         table::{FixedTableTag, Lookup, LookupTable, Table},
         util::constraint_builder::ConstraintBuilder,
     },
@@ -53,7 +53,7 @@ use swap::SwapGadget;
 #[allow(missing_docs)]
 pub mod bus_mapping_tmp {
     use crate::evm_circuit::{
-        step::ExecutionResult,
+        step::ExecutionState,
         table::{RwTableTag, TxContextFieldTag},
         util::RandomLinearCombination,
     };
@@ -189,7 +189,7 @@ pub mod bus_mapping_tmp {
     pub struct ExecStep {
         pub call_idx: usize,
         pub rw_indices: Vec<usize>,
-        pub execution_result: ExecutionResult,
+        pub execution_result: ExecutionState,
         pub rw_counter: usize,
         pub program_counter: u64,
         pub stack_pointer: usize,
@@ -370,7 +370,7 @@ use bus_mapping_tmp::{Block, Call, ExecStep, Transaction};
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
 
-    const EXECUTION_RESULT: ExecutionResult;
+    const EXECUTION_RESULT: ExecutionState;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self;
 
@@ -389,7 +389,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 pub(crate) struct ExecutionConfig<F> {
     q_step: Selector,
     step: Step<F>,
-    presets_map: HashMap<ExecutionResult, Vec<Preset<F>>>,
+    presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     add_gadget: AddGadget<F>,
     and_gadget: AndGadget<F>,
     byte_gadget: ByteGadget<F>,
@@ -533,7 +533,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         step_curr: &Step<F>,
         step_next: &Step<F>,
         independent_lookups: &mut Vec<Vec<Lookup<F>>>,
-        presets_map: &mut HashMap<ExecutionResult, Vec<Preset<F>>>,
+        presets_map: &mut HashMap<ExecutionState, Vec<Preset<F>>>,
     ) -> G {
         let mut cb = ConstraintBuilder::new(
             step_curr,
@@ -697,26 +697,26 @@ impl<F: FieldExt> ExecutionConfig<F> {
         }
 
         match step.execution_result {
-            ExecutionResult::STOP => assign_exec_step!(self.stop_gadget),
-            ExecutionResult::ADD => assign_exec_step!(self.add_gadget),
-            ExecutionResult::AND => assign_exec_step!(self.and_gadget),
-            ExecutionResult::SIGNEXTEND => {
+            ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
+            ExecutionState::ADD => assign_exec_step!(self.add_gadget),
+            ExecutionState::AND => assign_exec_step!(self.and_gadget),
+            ExecutionState::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }
-            ExecutionResult::LT => assign_exec_step!(self.comparator_gadget),
-            ExecutionResult::BYTE => assign_exec_step!(self.byte_gadget),
-            ExecutionResult::POP => assign_exec_step!(self.pop_gadget),
-            ExecutionResult::MLOAD => assign_exec_step!(self.memory_gadget),
-            ExecutionResult::PC => assign_exec_step!(self.pc_gadget),
-            ExecutionResult::JUMP => assign_exec_step!(self.jump_gadget),
-            ExecutionResult::JUMPI => assign_exec_step!(self.jumpi_gadget),
-            ExecutionResult::JUMPDEST => {
+            ExecutionState::LT => assign_exec_step!(self.comparator_gadget),
+            ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
+            ExecutionState::POP => assign_exec_step!(self.pop_gadget),
+            ExecutionState::MLOAD => assign_exec_step!(self.memory_gadget),
+            ExecutionState::PC => assign_exec_step!(self.pc_gadget),
+            ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
+            ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
+            ExecutionState::JUMPDEST => {
                 assign_exec_step!(self.jumpdest_gadget)
             }
-            ExecutionResult::PUSH => assign_exec_step!(self.push_gadget),
-            ExecutionResult::DUP => assign_exec_step!(self.dup_gadget),
-            ExecutionResult::SWAP => assign_exec_step!(self.swap_gadget),
-            ExecutionResult::ErrorOutOfGasPureMemory => {
+            ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
+            ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
             _ => unimplemented!(),

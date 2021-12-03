@@ -5,7 +5,7 @@ use crate::{
             ExecutionGadget,
         },
         param::MAX_CODE_SIZE_IN_BYTES,
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -30,7 +30,7 @@ pub(crate) struct JumpGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
     const NAME: &'static str = "JUMP";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::JUMP;
+    const EXECUTION_RESULT: ExecutionState = ExecutionState::JUMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let destination =
@@ -91,7 +91,7 @@ mod test {
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         test::{rand_range, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
     };
@@ -133,7 +133,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1],
-                        execution_result: ExecutionResult::JUMP,
+                        execution_result: ExecutionState::JUMP,
                         rw_counter: 1,
                         program_counter: 33,
                         stack_pointer: 1022,
@@ -143,7 +143,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionResult::JUMPDEST,
+                        execution_result: ExecutionState::JUMPDEST,
                         rw_counter: 2,
                         program_counter: destination as u64,
                         stack_pointer: 1023,
@@ -153,7 +153,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionResult::STOP,
+                        execution_result: ExecutionState::STOP,
                         rw_counter: 2,
                         program_counter: destination as u64 + 1,
                         stack_pointer: 1023,

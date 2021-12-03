@@ -4,7 +4,7 @@ use crate::{
             bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
             ExecutionGadget,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -27,7 +27,7 @@ pub(crate) struct SwapGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
     const NAME: &'static str = "SWAP";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::SWAP;
+    const EXECUTION_RESULT: ExecutionState = ExecutionState::SWAP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -98,7 +98,7 @@ mod test {
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
     };
@@ -139,7 +139,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1],
-                        execution_result: ExecutionResult::SWAP,
+                        execution_result: ExecutionState::SWAP,
                         rw_counter: 1,
                         program_counter: (65 + n) as u64,
                         stack_pointer: 1024 - n - 1,
@@ -149,7 +149,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionResult::STOP,
+                        execution_result: ExecutionState::STOP,
                         rw_counter: 5,
                         program_counter: (66 + n) as u64,
                         stack_pointer: 1024 - n - 1,

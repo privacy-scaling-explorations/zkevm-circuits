@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        step::{ExecutionResult, Preset, Step},
+        step::{ExecutionState, Preset, Step},
         table::{FixedTableTag, Lookup, RwTableTag},
         util::{Cell, Word},
     },
@@ -50,7 +50,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
     randomness: Expression<F>,
-    execution_result: ExecutionResult,
+    execution_result: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<Lookup<F>>,
     row_usages: Vec<StepRowUsage>,
@@ -66,7 +66,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         curr: &'a Step<F>,
         next: &'a Step<F>,
         randomness: Expression<F>,
-        execution_result: ExecutionResult,
+        execution_result: ExecutionState,
     ) -> Self {
         Self {
             curr,
@@ -140,7 +140,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.randomness.clone()
     }
 
-    pub(crate) fn execution_result(&self) -> ExecutionResult {
+    pub(crate) fn execution_result(&self) -> ExecutionState {
         self.execution_result
     }
 

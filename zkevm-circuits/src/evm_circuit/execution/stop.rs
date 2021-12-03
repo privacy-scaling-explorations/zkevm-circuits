@@ -4,7 +4,7 @@ use crate::{
             bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
             ExecutionGadget,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{constraint_builder::ConstraintBuilder, Cell},
     },
     util::Expr,
@@ -19,7 +19,7 @@ pub(crate) struct StopGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
     const NAME: &'static str = "STOP";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::STOP;
+    const EXECUTION_RESULT: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();

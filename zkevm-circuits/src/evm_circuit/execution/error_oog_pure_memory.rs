@@ -5,7 +5,7 @@ use crate::{
             ExecutionGadget,
         },
         param::MAX_MEMORY_SIZE_IN_BYTES,
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{
             constraint_builder::ConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
@@ -35,8 +35,8 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
     const NAME: &'static str = "ErrorOutOfGasPureMemory";
 
-    const EXECUTION_RESULT: ExecutionResult =
-        ExecutionResult::ErrorOutOfGasPureMemory;
+    const EXECUTION_RESULT: ExecutionState =
+        ExecutionState::ErrorOutOfGasPureMemory;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {

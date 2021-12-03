@@ -4,7 +4,7 @@ use crate::{
             bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
             ExecutionGadget,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -24,7 +24,7 @@ pub(crate) struct JumpdestGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
     const NAME: &'static str = "JUMPDEST";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::JUMPDEST;
+    const EXECUTION_RESULT: ExecutionState = ExecutionState::JUMPDEST;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // State transition
@@ -58,7 +58,7 @@ mod test {
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Transaction,
         },
-        step::ExecutionResult,
+        step::ExecutionState,
         test::run_test_circuit_incomplete_fixed_table,
         util::RandomLinearCombination,
     };
@@ -87,7 +87,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![],
-                        execution_result: ExecutionResult::JUMPDEST,
+                        execution_result: ExecutionState::JUMPDEST,
                         rw_counter: 1,
                         program_counter: 0,
                         stack_pointer: 1024,
@@ -97,7 +97,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionResult::STOP,
+                        execution_result: ExecutionState::STOP,
                         rw_counter: 1,
                         program_counter: 1,
                         stack_pointer: 1024,
