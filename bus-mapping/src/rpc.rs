@@ -2,12 +2,13 @@
 //! query a Geth node in order to get a Block, Tx or Trace info.
 
 use crate::eth_types::{
-    Address, Block, EIP1186ProofResponse, GethExecTrace, Hash,
-    ResultGethExecTraces, Transaction, Word, U64,
+    Address, Block, GethExecTrace, Hash, ResultGethExecTraces, Transaction,
+    Word, H256, U256, U64,
 };
 use crate::Error;
 use ethers_core::types::Bytes;
 use ethers_providers::JsonRpcClient;
+use serde::{Deserialize, Serialize};
 
 /// Serialize a type.
 ///
@@ -49,6 +50,24 @@ impl BlockNumber {
             BlockNumber::Pending => serialize(&"pending"),
         }
     }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+struct StorageProof {
+    key: H256,
+    proof: Vec<Bytes>,
+    value: U256,
+}
+
+/// Struct used to define the result of `eth_getProof` call
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+pub struct EIP1186CustomProofResponse {
+    balance: U256,
+    codeHash: H256,
+    nonce: U256,
+    storageHash: H256,
+    accountProof: Vec<Bytes>,
+    storageProof: Vec<StorageProof>,
 }
 
 /// Placeholder structure designed to contain the methods that the BusMapping
@@ -136,16 +155,17 @@ impl<P: JsonRpcClient> GethClient<P> {
             .map_err(|e| Error::JSONRpcError(e.into()))
             .unwrap();
         Ok(code.to_vec())
+    }
 
-    /// Calls `eth_getProof` via JSON-RPC returning a [`EIP1186ProofResponse`]
-    /// returning the account and storage-values of the specified
-    /// account including the Merkle-proof.
+    /// Calls `eth_getProof` via JSON-RPC returning a
+    /// [`EIP1186CustomProofResponse`] returning the account and
+    /// storage-values of the specified account including the Merkle-proof.
     pub async fn get_proof(
         &self,
         account: Address,
         keys: Vec<Word>,
         block_num: BlockNumber,
-    ) -> Result<EIP1186ProofResponse, Error> {
+    ) -> Result<EIP1186CustomProofResponse, Error> {
         let account = serialize(&account);
         let keys = serialize(&keys);
         let num = block_num.serialize();
@@ -161,6 +181,7 @@ mod rpc_tests {
     use super::*;
     use crate::evm::ProgramCounter;
     use ethers_providers::Http;
+    use std::str::FromStr;
     use url::Url;
 
     // The test is ignored as the values used depend on the Geth instance used
@@ -195,6 +216,9 @@ mod rpc_tests {
         assert!(block_by_hash.hash == block_by_hash.hash);
     }
 
+    // The test is ignored as the values used depend on the Geth instance used
+    // each time you run the tests. And we can't assume that everyone will
+    // have a Geth client synced with mainnet to have unified "test-vectors".
     #[ignore]
     #[tokio::test]
     async fn test_get_contract_code() {
@@ -250,6 +274,51 @@ mod rpc_tests {
         );
     }
 
+    // The test is ignored as the values used depend on the Geth instance used
+    // each time you run the tests. And we can't assume that everyone will
+    // have a Geth client synced with mainnet to have unified "test-vectors".
+    #[ignore]
+    #[tokio::test]
+    async fn test_get_proof() {
+        let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
+        let prov = GethClient::new(transport);
+
+        let address =
+            Address::from_str("0x7F0d15C7FAae65896648C8273B6d7E43f58Fa842")
+                .unwrap();
+        let keys = vec![Word::from_str("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").unwrap()];
+        let proof = prov
+            .get_proof(address, keys, BlockNumber::Latest)
+            .await
+            .unwrap();
+        const TARGET_PROOF: &str = r#"{
+            "address": "0x7f0d15c7faae65896648c8273b6d7e43f58fa842",
+            "accountProof": [
+                "0xf9011180a0ab8cdb808c8303bb61fb48e276217be9770fa83ecf3f90f2234d558885f5abf18080a01a697e814758281972fcd13bc9707dbcd2f195986b05463d7b78426508445a04a01f5061d0eb56546aa17ec23486841e6cf073d98069c4b41c3fc9a0dc1cab0c89a0929ef457bb59f8a38d431af8d917ce82a8b608bd50edfc2b4a04f8b7bd7c583580a02e0d86c3befd177f574a20ac63804532889077e955320c9361cd10b7cc6f580980a064b03ddf9f38fbbf8d0cf12171626ed809fcc99d85e30fe6a2cca7a0ee7475178080a01b7779e149cadf24d4ffb77ca7e11314b8db7097e4d70b2a173493153ca2e5a0a066a7662811491b3d352e969506b420d269e8b51a224f574b3b38b3463f43f0098080",
+                "0xf851a070ebfba8dc7e9dd75891224e8cce5b757c74f9879d7d4a2665e7e422aa0aed4480808080808080808080a0e61e567237b49c44d8f906ceea49027260b4010c10a547b38d8b131b9d3b6f848080808080"
+            ],
+            "balance": "0x0",
+            "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+            "nonce": "0x0",
+            "storageHash": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "storageProof": [
+                {
+                    "key": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                    "value": "0x0",
+                    "proof": []
+                }
+            ]
+        }"#;
+        let target_proof =
+            serde_json::from_str::<EIP1186CustomProofResponse>(TARGET_PROOF)
+                .unwrap();
+        assert_eq!(proof.balance, target_proof.balance);
+        assert_eq!(proof.codeHash, target_proof.codeHash);
+        assert_eq!(proof.nonce, target_proof.nonce);
+        assert_eq!(proof.storageHash, target_proof.storageHash);
+        assert_eq!(proof.storageProof, target_proof.storageProof);
+    }
+
     fn get_provider() -> GethClient<Http> {
         let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
         GethClient::new(transport)
@@ -294,45 +363,5 @@ mod rpc_tests {
             120, 189, 161, 133, 152, 131, 119, 141, 112, 222, 221, 24, 68, 254,
             121, 12, 155, 222, 100, 115, 111, 108, 99, 67, 0, 5, 16, 0, 50,
         ]
-    }
-
-    // The test is ignored as the values used depend on the Geth instance used
-    // each time you run the tests. And we can't assume that everyone will
-    // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
-    #[tokio::test]
-    async fn test_get_proof() {
-        let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
-        let prov = GethClient::new(transport);
-
-        let address =
-            Address::from_str("0x7F0d15C7FAae65896648C8273B6d7E43f58Fa842")
-                .unwrap();
-        let keys = vec![Word::from_str("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").unwrap()];
-        let proof = prov
-            .get_proof(address, keys, BlockNumber::Latest)
-            .await
-            .unwrap();
-        const TARGET_PROOF: &str = r#"{
-            "address": "0x7f0d15c7faae65896648c8273b6d7e43f58fa842",
-            "accountProof": [
-                "0xf873a12050fb4d3174ec89ef969c09fd4391602169760fb005ad516f5d172cbffb80e955b84ff84d8089056bc75e2d63100000a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a0c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
-            ],
-            "balance": "0x0",
-            "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-            "nonce": "0x0",
-            "storageHash": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "storageProof": [
-                {
-                    "key": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-                    "value": "0x0",
-                    "proof": []
-                }
-            ]
-        }"#;
-        assert!(
-            serde_json::from_str::<EIP1186ProofResponse>(TARGET_PROOF).unwrap()
-                == proof
-        );
     }
 }
