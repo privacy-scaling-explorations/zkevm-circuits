@@ -5,11 +5,9 @@ use super::{
 };
 use crate::arith_helpers::*;
 use crate::common::*;
-use crate::keccak_arith::*;
 use halo2::{
     circuit::{Cell, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Instance},
-    poly::Rotation,
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use pasta_curves::arithmetic::FieldExt;
 
@@ -73,43 +71,52 @@ impl<F: FieldExt> MixingConfig<F> {
         offset: usize,
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
-        flag: (Cell, F),
+        flag: bool,
         next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
         absolute_row_b9: usize,
         absolute_row_b13: usize,
     ) -> Result<(), Error> {
-        if next_mixing.is_none() {
-            // If we mix,
-            self.iota_b9_config.last_round(
+        // Witness the mixing flag.
+        let val: F = flag.into();
+        // Witness `is_mixing` flag.
+        let cell = region.assign_advice(
+            || "witness is_mixing",
+            self.flag,
+            offset,
+            || Ok(val),
+        )?;
+        let flag = (cell, val);
+
+        // If we mix,
+        self.iota_b9_config.last_round(
+            region,
+            offset,
+            in_state,
+            out_state,
+            absolute_row_b9,
+            flag,
+        )?;
+
+        let (out_state_absorb_cells, flag) =
+            self.absorb_config.copy_state_flag_next_inputs(
                 region,
-                offset,
+                offset, //+ whatever is IotaB9 offset,
                 in_state,
                 out_state,
-                absolute_row_b9,
+                next_mixing.unwrap_or_default(),
                 flag,
-            )
-        } else {
-            let (out_state_absorb_cells, flag) =
-                self.absorb_config.copy_state_flag_next_inputs(
-                    region,
-                    offset,
-                    in_state,
-                    out_state,
-                    next_mixing.unwrap_or_default(),
-                    flag,
-                )?;
+            )?;
 
-            // Base conversion assign
+        // Base conversion assign
 
-            self.iota_b13_config.copy_state_flag_and_assing_rc(
-                region,
-                offset + 3,
-                out_state_absorb_cells,
-                out_state,
-                absolute_row_b13,
-                flag,
-            )
-        }
+        self.iota_b13_config.copy_state_flag_and_assing_rc(
+            region,
+            offset + 3,
+            out_state_absorb_cells,
+            out_state,
+            absolute_row_b13,
+            flag,
+        )
     }
 
     /// Given an `in_state` as [`State`] and `next_inputs` as [`Option<State>`],
@@ -198,16 +205,6 @@ mod tests {
                 layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
-                        let val: F = self.is_mixing.into();
-                        // Witness `is_mixing` flag.
-                        let cell = region.assign_advice(
-                            || "witness is_mixing",
-                            config.flag,
-                            offset,
-                            || Ok(val),
-                        )?;
-                        let flag = (cell, val);
-
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
                             let mut state: Vec<(Cell, F)> =
@@ -229,7 +226,7 @@ mod tests {
                             offset,
                             in_state,
                             self.out_state,
-                            flag,
+                            self.is_mixing,
                             self.next_mixing,
                             self.round_ctant_b9,
                             self.round_ctant_b13,
