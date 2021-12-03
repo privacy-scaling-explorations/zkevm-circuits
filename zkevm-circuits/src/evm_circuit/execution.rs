@@ -391,7 +391,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     add_gadget: AddGadget<F>,
-    and_gadget: BitwiseGadget<F>,
+    bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -494,7 +494,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let config = Self {
             q_step,
             add_gadget: configure_gadget!(),
-            and_gadget: configure_gadget!(),
+            bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -699,7 +699,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         match step.execution_state {
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::ADD => assign_exec_step!(self.add_gadget),
-            ExecutionState::BITWISE => assign_exec_step!(self.and_gadget),
+            ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }
