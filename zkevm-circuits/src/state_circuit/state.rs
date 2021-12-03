@@ -2004,86 +2004,12 @@ mod tests {
     #[ignore]
     #[test]
     fn bench_state_circuit_prover() {
-        use crate::state_circuit::state::Config;
         use ark_std::{end_timer, start_timer};
         use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-        use halo2::{
-            arithmetic::FieldExt,
-            circuit::{Layouter, SimpleFloorPlanner},
-            plonk::*,
-            poly::commitment::Setup,
-        };
+        use halo2::{plonk::*, poly::commitment::Setup};
         use pairing::bn256::Bn256;
         use rand::SeedableRng;
         use rand_xorshift::XorShiftRng;
-
-        #[derive(Default)]
-        struct StateCircuit<
-            const GLOBAL_COUNTER_MAX: usize,
-            const MEMORY_ROWS_MAX: usize,
-            const MEMORY_ADDRESS_MAX: usize,
-            const STACK_ROWS_MAX: usize,
-            const STACK_ADDRESS_MAX: usize,
-            const STORAGE_ROWS_MAX: usize,
-        > {
-            memory_ops: Vec<Operation<MemoryOp>>,
-            stack_ops: Vec<Operation<StackOp>>,
-            storage_ops: Vec<Operation<StorageOp>>,
-        }
-
-        impl<
-                F: FieldExt,
-                const GLOBAL_COUNTER_MAX: usize,
-                const MEMORY_ROWS_MAX: usize,
-                const MEMORY_ADDRESS_MAX: usize,
-                const STACK_ROWS_MAX: usize,
-                const STACK_ADDRESS_MAX: usize,
-                const STORAGE_ROWS_MAX: usize,
-            > Circuit<F>
-            for StateCircuit<
-                GLOBAL_COUNTER_MAX,
-                MEMORY_ROWS_MAX,
-                MEMORY_ADDRESS_MAX,
-                STACK_ROWS_MAX,
-                STACK_ADDRESS_MAX,
-                STORAGE_ROWS_MAX,
-            >
-        {
-            type Config = Config<
-                F,
-                GLOBAL_COUNTER_MAX,
-                MEMORY_ROWS_MAX,
-                MEMORY_ADDRESS_MAX,
-                STACK_ROWS_MAX,
-                STACK_ADDRESS_MAX,
-                STORAGE_ROWS_MAX,
-            >;
-            type FloorPlanner = SimpleFloorPlanner;
-
-            fn without_witnesses(&self) -> Self {
-                Self::default()
-            }
-
-            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                Config::configure(meta)
-            }
-
-            fn synthesize(
-                &self,
-                config: Self::Config,
-                mut layouter: impl Layouter<F>,
-            ) -> Result<(), Error> {
-                config.load(&mut layouter)?;
-                config.assign(
-                    layouter,
-                    self.memory_ops.clone(),
-                    self.stack_ops.clone(),
-                    self.storage_ops.clone(),
-                )?;
-
-                Ok(())
-            }
-        }
 
         const DEGREE: u32 = 22;
         const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
