@@ -5,7 +5,7 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
-                ConstraintBuilder, StateTransition, Transition,
+                ConstraintBuilder, StepStateTransition, Transition,
             },
             math_gadget::RangeCheckGadget,
             Cell,
@@ -32,7 +32,7 @@ impl<F: FieldExt> SameContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         opcode: Cell<F>,
-        mut state_transition: StateTransition<F>,
+        mut step_state_transition: StepStateTransition<F>,
         dynamic_gas_cost: Option<Expression<F>>,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
@@ -65,14 +65,14 @@ impl<F: FieldExt> SameContextGadget<F> {
         );
 
         // Set state transition of gas_left if it's default value
-        if matches!(state_transition.gas_left, Transition::Persistent)
+        if matches!(step_state_transition.gas_left, Transition::Persistent)
             && !matches!(gas_cost, Expression::Constant(constant) if constant.is_zero_vartime())
         {
-            state_transition.gas_left = Transition::Delta(-gas_cost);
+            step_state_transition.gas_left = Transition::Delta(-gas_cost);
         }
 
         // State transition
-        cb.require_state_transition(state_transition);
+        cb.require_step_state_transition(step_state_transition);
 
         Self {
             opcode,

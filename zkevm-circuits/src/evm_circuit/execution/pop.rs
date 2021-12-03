@@ -8,7 +8,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StateTransition, Transition::Delta,
+                ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             Cell, Word,
         },
@@ -36,15 +36,19 @@ impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
         cb.stack_pop(value.expr());
 
         // State transition
-        let state_transition = StateTransition {
+        let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context =
-            SameContextGadget::construct(cb, opcode, state_transition, None);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            step_state_transition,
+            None,
+        );
 
         Self {
             same_context,

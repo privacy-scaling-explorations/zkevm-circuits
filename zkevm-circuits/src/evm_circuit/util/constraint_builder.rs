@@ -33,7 +33,7 @@ impl<F> Default for Transition<F> {
 }
 
 #[derive(Default)]
-pub(crate) struct StateTransition<F: FieldExt> {
+pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) rw_counter: Transition<Expression<F>>,
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
@@ -250,70 +250,70 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn require_state_transition(
+    pub(crate) fn require_step_state_transition(
         &mut self,
-        state_transition: StateTransition<F>,
+        step_state_transition: StepStateTransition<F>,
     ) {
         for (name, curr, next, transition) in vec![
             (
                 "State transition constrain of rw_counter",
                 &self.curr.state.rw_counter,
                 &self.next.state.rw_counter,
-                state_transition.rw_counter,
+                step_state_transition.rw_counter,
             ),
             (
                 "State transition constrain of call_id",
                 &self.curr.state.call_id,
                 &self.next.state.call_id,
-                state_transition.call_id,
+                step_state_transition.call_id,
             ),
             (
                 "State transition constrain of is_root",
                 &self.curr.state.is_root,
                 &self.next.state.is_root,
-                state_transition.is_root,
+                step_state_transition.is_root,
             ),
             (
                 "State transition constrain of is_create",
                 &self.curr.state.is_create,
                 &self.next.state.is_create,
-                state_transition.is_create,
+                step_state_transition.is_create,
             ),
             (
                 "State transition constrain of opcode_source",
                 &self.curr.state.opcode_source,
                 &self.next.state.opcode_source,
-                state_transition.opcode_source,
+                step_state_transition.opcode_source,
             ),
             (
                 "State transition constrain of program_counter",
                 &self.curr.state.program_counter,
                 &self.next.state.program_counter,
-                state_transition.program_counter,
+                step_state_transition.program_counter,
             ),
             (
                 "State transition constrain of stack_pointer",
                 &self.curr.state.stack_pointer,
                 &self.next.state.stack_pointer,
-                state_transition.stack_pointer,
+                step_state_transition.stack_pointer,
             ),
             (
                 "State transition constrain of gas_left",
                 &self.curr.state.gas_left,
                 &self.next.state.gas_left,
-                state_transition.gas_left,
+                step_state_transition.gas_left,
             ),
             (
                 "State transition constrain of memory_size",
                 &self.curr.state.memory_size,
                 &self.next.state.memory_size,
-                state_transition.memory_size,
+                step_state_transition.memory_size,
             ),
             (
                 "State transition constrain of state_write_counter",
                 &self.curr.state.state_write_counter,
                 &self.next.state.state_write_counter,
-                state_transition.state_write_counter,
+                step_state_transition.state_write_counter,
             ),
         ] {
             match transition {

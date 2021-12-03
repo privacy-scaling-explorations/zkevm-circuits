@@ -8,7 +8,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StateTransition, Transition::Delta,
+                ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
         },
     },
@@ -28,13 +28,17 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // State transition
-        let state_transition = StateTransition {
+        let step_state_transition = StepStateTransition {
             program_counter: Delta(1.expr()),
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context =
-            SameContextGadget::construct(cb, opcode, state_transition, None);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            step_state_transition,
+            None,
+        );
 
         Self { same_context }
     }

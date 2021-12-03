@@ -9,7 +9,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StateTransition,
+                ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -69,14 +69,18 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
 
         // State transition
         let opcode = cb.query_cell();
-        let state_transition = StateTransition {
+        let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
             program_counter: To(next_program_counter),
             stack_pointer: Delta(2.expr()),
             ..Default::default()
         };
-        let same_context =
-            SameContextGadget::construct(cb, opcode, state_transition, None);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            step_state_transition,
+            None,
+        );
 
         Self {
             same_context,

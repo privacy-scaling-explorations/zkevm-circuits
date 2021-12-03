@@ -9,7 +9,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StateTransition,
+                ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -124,7 +124,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         // - `stack_pointer` needs to be increased by 2 when is_store, otherwise
         //   to be persistent
         // - `memory_size` needs to be set to `next_memory_size`
-        let state_transition = StateTransition {
+        let step_state_transition = StepStateTransition {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
@@ -134,7 +134,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         let same_context = SameContextGadget::construct(
             cb,
             opcode,
-            state_transition,
+            step_state_transition,
             Some(memory_gas_cost),
         );
 
