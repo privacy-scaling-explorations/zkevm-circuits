@@ -794,6 +794,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             for (ind, column) in s_keccak.iter().enumerate() {
+                // Any rotation that lands into branch can be used instead of -17.
                 let s_keccak = meta.query_advice(*column, Rotation(-17));
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
@@ -834,6 +835,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             for (ind, column) in c_keccak.iter().enumerate() {
+                // Any rotation that lands into branch can be used instead of -17.
                 let c_keccak = meta.query_advice(*column, Rotation(-17));
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
@@ -866,8 +868,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     * acc_s,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            /*
             for (ind, column) in s_keccak.iter().enumerate() {
+                // Any rotation that lands into branch can be used instead of -17.
                 let s_keccak = meta.query_advice(*column, Rotation(-17));
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
@@ -878,7 +880,41 @@ impl<F: FieldExt> MPTConfig<F> {
                     keccak_table_i,
                 ));
             }
-            */
+
+            constraints
+        });
+
+        meta.lookup(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            let is_account_leaf_storage_codehash_c = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation::cur(),
+            );
+
+            // Accumulated in s (not in c):
+            let acc_s = meta.query_advice(acc_s, Rotation::cur());
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_account_leaf_storage_codehash_c.clone()
+                    * acc_s,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            for (ind, column) in c_keccak.iter().enumerate() {
+                // Any rotation that lands into branch can be used instead of -17.
+                let c_keccak = meta.query_advice(*column, Rotation(-17));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_account_leaf_storage_codehash_c.clone()
+                        * c_keccak,
+                    keccak_table_i,
+                ));
+            }
 
             constraints
         });

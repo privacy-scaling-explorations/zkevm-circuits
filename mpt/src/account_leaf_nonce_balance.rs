@@ -54,6 +54,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // 78 = 3 nonce, 9 balance, 33 storage, 33 codehash.
             // We have nonce in s_advices and balance in c_advices.
 
+            // TODO: nonce and balance compared to the input
+
             let one = Expression::Constant(F::one());
             let c128 = Expression::Constant(F::from_u64(128));
             let c248 = Expression::Constant(F::from_u64(248));
@@ -108,7 +110,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 q_enable.clone() * (expr.clone() - acc),
             ));
 
-            /*
             // nonzero_table has some nonzero values at the positions where we still have nonce bytes
             // and zeros after nonce bytes end
             let mut nonzero_table = vec![];
@@ -134,11 +135,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 // Either is_trailing_zero_or_last nonce is 0 (bytes before the last nonce byte) or
                 // nonzero_table[ind] is 0 (bytes after the last key byte).
                 // Except at the position of last nonce byte - there neither of these two is zero.
-                let check =
-                    (r_table[ind].clone() * acc_mult_prev.clone() * acc_r
-                        - acc_mult_tmp.clone())
-                        * nonzero_table[ind].clone()
-                        * is_trailing_zero_or_last_key.clone();
+                let check = (r_table[ind].clone()
+                    * acc_mult_prev.clone()
+                    * r_table[4].clone() // s_rlp1, s_rlp2, c_rlp1, c_rlp2
+                    * acc_r
+                    - acc_mult_tmp.clone())
+                    * nonzero_table[ind].clone()
+                    * is_trailing_zero_or_last_key.clone();
 
                 constraints
                     .push(("leaf nonce acc mult", q_enable.clone() * check));
@@ -199,7 +202,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     q_enable.clone() * c * is_not_balance.clone(),
                 ));
             }
-            */
 
             constraints
         });
