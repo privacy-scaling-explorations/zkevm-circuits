@@ -42,6 +42,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
             // We have codehash in c_advices.
 
+            // TODO: storage root and codehash compared to the input
+
             let c160 = Expression::Constant(F::from_u64(160));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult, Rotation::prev());
