@@ -1,6 +1,7 @@
 // Step dimension
 pub const STEP_WIDTH: usize = 32;
 pub const STEP_HEIGHT: usize = 10;
+pub const NUM_CELLS_STEP_STATE: usize = 10;
 
 /// The maximum number of bytes that a field element
 /// can be broken down into without causing the value it

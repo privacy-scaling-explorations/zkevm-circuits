@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::bus_mapping_tmp::{Call, ExecStep},
-        param::{STEP_HEIGHT, STEP_WIDTH},
+        param::{NUM_CELLS_STEP_STATE, STEP_HEIGHT, STEP_WIDTH},
         util::Cell,
     },
     util::Expr,
@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExecutionResult {
     BeginTx,
-    // Opcodes
+    // Opcode successful cases
     STOP,
     ADD, // ADD, SUB
     MUL,
@@ -87,7 +87,7 @@ pub enum ExecutionResult {
     STATICCALL,
     REVERT,
     SELFDESTRUCT,
-    // Errors
+    // Error cases
     ErrorInvalidOpcode,
     ErrorStackOverflow,
     ErrorStackUnderflow,
@@ -213,6 +213,7 @@ impl ExecutionResult {
             Self::ErrorReturnDataOutOfBound,
             Self::ErrorOutOfGasConstant,
             Self::ErrorOutOfGasPureMemory,
+            Self::ErrorOutOfGasCodeStore,
             Self::ErrorOutOfGasSHA3,
             Self::ErrorOutOfGasCALLDATACOPY,
             Self::ErrorOutOfGasCODECOPY,
@@ -419,8 +420,9 @@ impl<F: FieldExt> Step<F> {
         is_next_step: bool,
     ) -> Self {
         let state = {
-            let mut cells =
-                VecDeque::with_capacity(ExecutionResult::amount() + 10);
+            let mut cells = VecDeque::with_capacity(
+                ExecutionResult::amount() + NUM_CELLS_STEP_STATE,
+            );
             meta.create_gate("Query state for step", |meta| {
                 for idx in 0..cells.capacity() {
                     let column_idx = idx % STEP_WIDTH;
