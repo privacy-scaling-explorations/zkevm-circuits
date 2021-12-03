@@ -766,10 +766,11 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        // TODO: first level branch hash for S and C
+        // TODO: first level branch hash for S and C - compared to root
 
-        // Check if (accumulated_s_rlp, hash1, hash2, hash3, hash4) is in keccak table.
-        // hash1, hash2, hash3, hash4 are stored in the previous branch.
+        // Check if (accumulated_s_rlc, hash1, hash2, hash3, hash4) is in keccak table,
+        // where hash1, hash2, hash3, hash4 are stored in the previous branch and
+        // accumulated_s_rlc presents the branch RLC.
         meta.lookup(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
@@ -807,8 +808,9 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        // Check if (accumulated_c_rlp, hash1, hash2, hash3, hash4) is in keccak table.
-        // hash1, hash2, hash3, hash4 are stored in the previous branch.
+        // Check if (accumulated_c_rlc, hash1, hash2, hash3, hash4) is in keccak table,
+        // where hash1, hash2, hash3, hash4 are stored in the previous branch and
+        // accumulated_c_rlc presents the branch RLC.
         meta.lookup(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
@@ -842,6 +844,41 @@ impl<F: FieldExt> MPTConfig<F> {
                     keccak_table_i,
                 ));
             }
+
+            constraints
+        });
+
+        meta.lookup(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            let is_account_leaf_storage_codehash_s = meta.query_advice(
+                is_account_leaf_storage_codehash_s,
+                Rotation::cur(),
+            );
+
+            let acc_s = meta.query_advice(acc_s, Rotation::cur());
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_account_leaf_storage_codehash_s.clone()
+                    * acc_s,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            /*
+            for (ind, column) in s_keccak.iter().enumerate() {
+                let s_keccak = meta.query_advice(*column, Rotation(-17));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_account_leaf_storage_codehash_s.clone()
+                        * s_keccak,
+                    keccak_table_i,
+                ));
+            }
+            */
 
             constraints
         });
@@ -980,6 +1017,10 @@ impl<F: FieldExt> MPTConfig<F> {
                         * (is_account_leaf_nonce_balance_s
                             + is_account_leaf_nonce_balance_c)
                 },
+                s_rlp1,
+                s_rlp2,
+                c_rlp1,
+                c_rlp2,
                 s_advices,
                 c_advices,
                 acc_r,
@@ -1751,6 +1792,20 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row[row.len() - 1] == 7
                                 || row[row.len() - 1] == 10
                             {
+                                // s_rlp1, s_rlp2
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    S_START - 2,
+                                    2,
+                                );
+                                // c_rlp1, c_rlp2
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    C_START - 2,
+                                    2,
+                                );
                                 // nonce
                                 compute_acc_and_mult(
                                     &mut acc_s,
@@ -1759,7 +1814,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row[S_START] as usize - 128 + 1, // +1 for byte with length info
                                 );
                                 // It's easier to constrain (in account_leaf_nonce_balance.rs)
-                                // the multiplier if we store acc_mult after nonce and after balance.
+                                // the multiplier if we store acc_mult both after nonce and after balance.
                                 let acc_mult_tmp = acc_mult_s.clone();
                                 // balance
                                 compute_acc_and_mult(
@@ -1768,6 +1823,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     C_START,
                                     row[C_START] as usize - 128 + 1, // +1 for byte with length info
                                 );
+
                                 self.assign_acc(
                                     &mut region,
                                     acc_s,
@@ -1879,7 +1935,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 for t in to_be_hashed.iter() {
                     let hash = self.compute_keccak(t);
-
                     let mut rlc = F::zero();
                     let mut mult = F::one();
                     for i in t.iter() {
