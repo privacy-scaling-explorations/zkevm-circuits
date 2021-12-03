@@ -24,7 +24,7 @@ pub(crate) struct JumpdestGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
     const NAME: &'static str = "JUMPDEST";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::JUMPDEST;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPDEST;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // State transition
@@ -87,7 +87,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![],
-                        execution_result: ExecutionState::JUMPDEST,
+                        execution_state: ExecutionState::JUMPDEST,
                         rw_counter: 1,
                         program_counter: 0,
                         stack_pointer: 1024,
@@ -97,7 +97,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 1,
                         program_counter: 1,
                         stack_pointer: 1024,

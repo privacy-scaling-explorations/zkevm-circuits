@@ -35,7 +35,7 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
     const NAME: &'static str = "ErrorOutOfGasPureMemory";
 
-    const EXECUTION_RESULT: ExecutionState =
+    const EXECUTION_STATE: ExecutionState =
         ExecutionState::ErrorOutOfGasPureMemory;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT

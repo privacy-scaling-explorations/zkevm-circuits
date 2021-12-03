@@ -27,7 +27,7 @@ pub(crate) struct DupGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
     const NAME: &'static str = "DUP";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::DUP;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::DUP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -128,7 +128,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1],
-                        execution_result: ExecutionState::DUP,
+                        execution_state: ExecutionState::DUP,
                         rw_counter: 1,
                         program_counter: (33 + n - 1) as u64,
                         stack_pointer: 1024 - n,
@@ -138,7 +138,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 3,
                         program_counter: (33 + n) as u64,
                         stack_pointer: 1023 - n,

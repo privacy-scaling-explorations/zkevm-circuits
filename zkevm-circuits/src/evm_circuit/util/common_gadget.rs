@@ -39,14 +39,14 @@ impl<F: FieldExt> SameContextGadget<F> {
         cb.add_lookup(Lookup::Fixed {
             tag: FixedTableTag::ResponsibleOpcode.expr(),
             values: [
-                cb.execution_result().as_u64().expr(),
+                cb.execution_state().as_u64().expr(),
                 opcode.expr(),
                 0.expr(),
             ],
         });
 
         let mut gas_cost = cb
-            .execution_result()
+            .execution_state()
             .responsible_opcodes()
             .first()
             .expect("Execution result in SameContextGadget should be responsible to some opcodes")

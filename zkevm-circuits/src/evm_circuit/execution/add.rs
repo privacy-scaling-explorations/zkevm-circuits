@@ -33,7 +33,7 @@ pub(crate) struct AddGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
     const NAME: &'static str = "ADD";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::ADD;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -150,7 +150,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionState::ADD,
+                        execution_state: ExecutionState::ADD,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,
@@ -160,7 +160,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 4,
                         program_counter: 67,
                         stack_pointer: 1023,

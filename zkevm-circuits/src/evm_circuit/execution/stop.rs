@@ -19,7 +19,7 @@ pub(crate) struct StopGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
     const NAME: &'static str = "STOP";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::STOP;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();

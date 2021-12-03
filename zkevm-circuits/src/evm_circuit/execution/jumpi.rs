@@ -34,7 +34,7 @@ pub(crate) struct JumpiGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
     const NAME: &'static str = "JUMPI";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::JUMPI;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let destination =
@@ -170,7 +170,7 @@ mod test {
                 steps: [
                     vec![ExecStep {
                         rw_indices: vec![0, 1],
-                        execution_result: ExecutionState::JUMPI,
+                        execution_state: ExecutionState::JUMPI,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,
@@ -182,7 +182,7 @@ mod test {
                     if should_jump {
                         vec![
                             ExecStep {
-                                execution_result: ExecutionState::JUMPDEST,
+                                execution_state: ExecutionState::JUMPDEST,
                                 rw_counter: 3,
                                 program_counter: destination as u64,
                                 stack_pointer: 1024,
@@ -192,7 +192,7 @@ mod test {
                                 ..Default::default()
                             },
                             ExecStep {
-                                execution_result: ExecutionState::STOP,
+                                execution_state: ExecutionState::STOP,
                                 rw_counter: 3,
                                 program_counter: destination as u64 + 1,
                                 stack_pointer: 1024,
@@ -203,7 +203,7 @@ mod test {
                         ]
                     } else {
                         vec![ExecStep {
-                            execution_result: ExecutionState::STOP,
+                            execution_state: ExecutionState::STOP,
                             rw_counter: 3,
                             program_counter: 67,
                             stack_pointer: 1024,

@@ -29,7 +29,7 @@ pub(crate) struct PushGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
     const NAME: &'static str = "PUSH";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::PUSH;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::PUSH;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -198,7 +198,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0],
-                        execution_result: ExecutionState::PUSH,
+                        execution_state: ExecutionState::PUSH,
                         rw_counter: 1,
                         program_counter: 0,
                         stack_pointer: 1024,
@@ -208,7 +208,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 2,
                         program_counter: (bytes.len() + 1) as u64,
                         stack_pointer: 1023,

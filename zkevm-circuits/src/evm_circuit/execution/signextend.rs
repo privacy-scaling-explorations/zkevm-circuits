@@ -36,7 +36,7 @@ pub(crate) struct SignextendGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
     const NAME: &'static str = "SIGNEXTEND";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::SIGNEXTEND;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::SIGNEXTEND;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let index = cb.query_word();
@@ -256,7 +256,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionState::SIGNEXTEND,
+                        execution_state: ExecutionState::SIGNEXTEND,
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: 1022,
@@ -266,7 +266,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 4,
                         program_counter: 67,
                         stack_pointer: 1023,

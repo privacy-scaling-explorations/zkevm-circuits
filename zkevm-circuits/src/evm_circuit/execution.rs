@@ -189,7 +189,7 @@ pub mod bus_mapping_tmp {
     pub struct ExecStep {
         pub call_idx: usize,
         pub rw_indices: Vec<usize>,
-        pub execution_result: ExecutionState,
+        pub execution_state: ExecutionState,
         pub rw_counter: usize,
         pub program_counter: u64,
         pub stack_pointer: usize,
@@ -370,7 +370,7 @@ use bus_mapping_tmp::{Block, Call, ExecStep, Transaction};
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
 
-    const EXECUTION_RESULT: ExecutionState;
+    const EXECUTION_STATE: ExecutionState;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self;
 
@@ -444,12 +444,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
             let q_step = meta.query_selector(q_step);
             let sum_to_one = step_curr
                 .state
-                .execution_result
+                .execution_state
                 .iter()
                 .fold(1.expr(), |acc, cell| acc - cell.expr());
             let bool_checks = step_curr
                 .state
-                .execution_result
+                .execution_state
                 .iter()
                 .map(|cell| cell.expr() * (1.expr() - cell.expr()));
 
@@ -539,14 +539,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
             step_curr,
             step_next,
             randomness.clone(),
-            G::EXECUTION_RESULT,
+            G::EXECUTION_STATE,
         );
 
         let gadget = G::configure(&mut cb);
 
         let (constraints, lookups, presets) = cb.build();
         assert!(
-            presets_map.insert(G::EXECUTION_RESULT, presets).is_none(),
+            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution result already configured"
         );
 
@@ -677,7 +677,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         for (cell, value) in self
             .presets_map
-            .get(&step.execution_result)
+            .get(&step.execution_state)
             .expect("not implemented")
         {
             cell.assign(region, offset, Some(*value))?;
@@ -696,7 +696,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             };
         }
 
-        match step.execution_result {
+        match step.execution_state {
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::ADD => assign_exec_step!(self.add_gadget),
             ExecutionState::AND => assign_exec_step!(self.and_gadget),

@@ -27,7 +27,7 @@ pub(crate) struct PcGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
     const NAME: &'static str = "PC";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::PC;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::PC;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // program_counter is limited to 64 bits so we only consider 8 bytes
@@ -124,7 +124,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0],
-                        execution_result: ExecutionState::PC,
+                        execution_state: ExecutionState::PC,
                         rw_counter: 1,
                         program_counter: 33,
                         stack_pointer: 1023,
@@ -134,7 +134,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 2,
                         program_counter: 34,
                         stack_pointer: 1022,

@@ -98,12 +98,12 @@ impl FixedTableTag {
                 })
             })),
             Self::ResponsibleOpcode => Box::new(
-                ExecutionState::iterator().flat_map(move |execution_result| {
-                    execution_result.responsible_opcodes().into_iter().map(
+                ExecutionState::iterator().flat_map(move |execution_state| {
+                    execution_state.responsible_opcodes().into_iter().map(
                         move |opcode| {
                             [
                                 tag,
-                                F::from(execution_result.as_u64()),
+                                F::from(execution_state.as_u64()),
                                 F::from(opcode.as_u64()),
                                 F::zero(),
                             ]

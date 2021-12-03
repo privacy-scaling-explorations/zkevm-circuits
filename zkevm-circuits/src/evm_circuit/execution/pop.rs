@@ -27,7 +27,7 @@ pub(crate) struct PopGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
     const NAME: &'static str = "POP";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::POP;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::POP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let value = cb.query_cell();
@@ -121,7 +121,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0],
-                        execution_result: ExecutionState::POP,
+                        execution_state: ExecutionState::POP,
                         rw_counter: 1,
                         program_counter: 33,
                         stack_pointer: 1023,
@@ -131,7 +131,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 2,
                         program_counter: 34,
                         stack_pointer: 1024,

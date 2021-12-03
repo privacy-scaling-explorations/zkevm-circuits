@@ -27,7 +27,7 @@ pub(crate) struct SwapGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
     const NAME: &'static str = "SWAP";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::SWAP;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::SWAP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -139,7 +139,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1],
-                        execution_result: ExecutionState::SWAP,
+                        execution_state: ExecutionState::SWAP,
                         rw_counter: 1,
                         program_counter: (65 + n) as u64,
                         stack_pointer: 1024 - n - 1,
@@ -149,7 +149,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 5,
                         program_counter: (66 + n) as u64,
                         stack_pointer: 1024 - n - 1,

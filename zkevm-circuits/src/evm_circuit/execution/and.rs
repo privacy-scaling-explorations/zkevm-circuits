@@ -30,7 +30,7 @@ pub(crate) struct AndGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for AndGadget<F> {
     const NAME: &'static str = "AND";
 
-    const EXECUTION_RESULT: ExecutionState = ExecutionState::AND;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::AND;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -159,7 +159,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionState::AND,
+                        execution_state: ExecutionState::AND,
                         rw_counter: 1,
                         program_counter: 198,
                         stack_pointer: 1018,
@@ -170,7 +170,7 @@ mod test {
                     },
                     ExecStep {
                         rw_indices: vec![3],
-                        execution_result: ExecutionState::POP,
+                        execution_state: ExecutionState::POP,
                         rw_counter: 4,
                         program_counter: 199,
                         stack_pointer: 1019,
@@ -181,7 +181,7 @@ mod test {
                     },
                     ExecStep {
                         rw_indices: vec![4, 5, 6],
-                        execution_result: ExecutionState::AND,
+                        execution_state: ExecutionState::AND,
                         rw_counter: 5,
                         program_counter: 200,
                         stack_pointer: 1020,
@@ -192,7 +192,7 @@ mod test {
                     },
                     ExecStep {
                         rw_indices: vec![7],
-                        execution_result: ExecutionState::POP,
+                        execution_state: ExecutionState::POP,
                         rw_counter: 8,
                         program_counter: 201,
                         stack_pointer: 1021,
@@ -203,7 +203,7 @@ mod test {
                     },
                     ExecStep {
                         rw_indices: vec![8, 9, 10],
-                        execution_result: ExecutionState::AND,
+                        execution_state: ExecutionState::AND,
                         rw_counter: 9,
                         program_counter: 202,
                         stack_pointer: 1022,
@@ -213,7 +213,7 @@ mod test {
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_result: ExecutionState::STOP,
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 12,
                         program_counter: 203,
                         stack_pointer: 1023,

@@ -387,7 +387,7 @@ impl ExecutionState {
 
 #[derive(Clone, Debug)]
 pub(crate) struct StepState<F> {
-    pub(crate) execution_result: Vec<Cell<F>>,
+    pub(crate) execution_state: Vec<Cell<F>>,
     pub(crate) rw_counter: Cell<F>,
     pub(crate) call_id: Cell<F>,
     pub(crate) is_root: Cell<F>,
@@ -439,7 +439,7 @@ impl<F: FieldExt> Step<F> {
             });
 
             StepState {
-                execution_result: cells
+                execution_state: cells
                     .drain(..ExecutionState::amount())
                     .collect(),
                 rw_counter: cells.pop_front().unwrap(),
@@ -473,11 +473,11 @@ impl<F: FieldExt> Step<F> {
         Self { state, rows }
     }
 
-    pub(crate) fn q_execution_result(
+    pub(crate) fn q_execution_state(
         &self,
-        execution_result: ExecutionState,
+        execution_state: ExecutionState,
     ) -> Expression<F> {
-        self.state.execution_result[execution_result as usize].expr()
+        self.state.execution_state[execution_state as usize].expr()
     }
 
     pub(crate) fn assign_exec_step(
@@ -487,11 +487,11 @@ impl<F: FieldExt> Step<F> {
         call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        for (idx, cell) in self.state.execution_result.iter().enumerate() {
+        for (idx, cell) in self.state.execution_state.iter().enumerate() {
             cell.assign(
                 region,
                 offset,
-                Some(if idx == step.execution_result as usize {
+                Some(if idx == step.execution_state as usize {
                     F::one()
                 } else {
                     F::zero()

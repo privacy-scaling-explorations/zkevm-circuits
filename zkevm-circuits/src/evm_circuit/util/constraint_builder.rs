@@ -50,7 +50,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
     randomness: Expression<F>,
-    execution_result: ExecutionState,
+    execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<Lookup<F>>,
     row_usages: Vec<StepRowUsage>,
@@ -66,13 +66,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         curr: &'a Step<F>,
         next: &'a Step<F>,
         randomness: Expression<F>,
-        execution_result: ExecutionState,
+        execution_state: ExecutionState,
     ) -> Self {
         Self {
             curr,
             next,
             randomness,
-            execution_result,
+            execution_state,
             constraints: Vec::new(),
             lookups: Vec::new(),
             row_usages: vec![StepRowUsage::default(); curr.rows.len()],
@@ -118,19 +118,19 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ));
         }
 
-        let q_execution_result =
-            self.curr.q_execution_result(self.execution_result);
+        let q_execution_state =
+            self.curr.q_execution_state(self.execution_state);
 
         (
             constraints
                 .into_iter()
                 .map(|(name, constraint)| {
-                    (name, q_execution_result.clone() * constraint)
+                    (name, q_execution_state.clone() * constraint)
                 })
                 .collect(),
             self.lookups
                 .into_iter()
-                .map(|lookup| lookup.conditional(q_execution_result.clone()))
+                .map(|lookup| lookup.conditional(q_execution_state.clone()))
                 .collect(),
             presets,
         )
@@ -140,8 +140,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.randomness.clone()
     }
 
-    pub(crate) fn execution_result(&self) -> ExecutionState {
-        self.execution_result
+    pub(crate) fn execution_state(&self) -> ExecutionState {
+        self.execution_state
     }
 
     pub(crate) fn rw_counter_offset(&self) -> usize {
