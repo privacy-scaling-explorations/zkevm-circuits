@@ -1,7 +1,7 @@
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 32;
 /// Step height
-pub const STEP_HEIGHT: usize = 10;
+pub const STEP_HEIGHT: usize = 14;
 pub(crate) const NUM_CELLS_STEP_STATE: usize = 10;
 
 // The number of bytes an u64 has.

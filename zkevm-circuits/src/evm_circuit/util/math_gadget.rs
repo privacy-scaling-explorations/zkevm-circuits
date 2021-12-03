@@ -388,6 +388,110 @@ impl<F: FieldExt> MulWordsGadget<F> {
     }
 }
 
+/// Construction of 256-bit product by 256-bit multiplicand * 64-bit multiplier.
+#[derive(Clone, Debug)]
+pub(crate) struct MulWordByU64Gadget<F> {
+    multiplicand: util::Word<F>,
+    multiplier: util::Cell<F>,
+    product: util::Word<F>,
+    carry_lo: [util::Cell<F>; 8],
+    carry_hi: [util::Cell<F>; 8],
+}
+
+impl<F: FieldExt> MulWordByU64Gadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        multiplicand: util::Word<F>,
+        multiplier: util::Cell<F>,
+        check_overflow: bool,
+    ) -> Self {
+        let gadget = Self {
+            multiplicand,
+            multiplier,
+            product: cb.query_word(),
+            carry_lo: cb.query_bytes(),
+            carry_hi: cb.query_bytes(),
+        };
+
+        let multiplicand_lo =
+            from_bytes::expr(&gadget.multiplicand.cells[..16]);
+        let multiplicand_hi =
+            from_bytes::expr(&gadget.multiplicand.cells[16..]);
+
+        let product_lo = from_bytes::expr(&gadget.product.cells[..16]);
+        let product_hi = from_bytes::expr(&gadget.product.cells[16..]);
+
+        let carry_lo = from_bytes::expr(&gadget.carry_lo[..8]);
+        let carry_hi = from_bytes::expr(&gadget.carry_hi[8..]);
+
+        cb.require_equal(
+            "multiplicand_lo ⋅ multiplier == carry_lo ⋅ 2^128 + product_lo",
+            multiplicand_lo * gadget.multiplier.expr(),
+            carry_lo.clone() * pow_of_two_expr(128) + product_lo,
+        );
+
+        cb.require_equal(
+            "multiplicand_hi ⋅ multiplier + carry_lo == carry_hi ⋅ 2^128 + product_hi",
+            multiplicand_hi * gadget.multiplier.expr() + carry_lo,
+            carry_hi.clone() * pow_of_two_expr(128) + product_hi,
+        );
+
+        if check_overflow {
+            cb.require_zero("carry_hi == 0", carry_hi);
+        }
+
+        gadget
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        multiplicand: Word,
+        multiplier: u64,
+        product: Word,
+    ) -> Result<(), Error> {
+        self.multiplicand.assign(
+            region,
+            offset,
+            Some(multiplicand.to_le_bytes()),
+        )?;
+        self.product
+            .assign(region, offset, Some(product.to_le_bytes()))?;
+        self.multiplier
+            .assign(region, offset, Some(multiplier.into()))?;
+
+        let (multiplicand_lo, multiplicand_hi) = split_u256(&multiplicand);
+        let (product_lo, product_hi) = split_u256(&product);
+
+        let mut assign_quotient =
+            |cells: &[Cell<F>], value: Word| -> Result<(), Error> {
+                for (cell, byte) in
+                    cells.iter().zip(value.low_u64().to_le_bytes().iter())
+                {
+                    cell.assign(region, offset, Some(F::from(*byte as u64)))?;
+                }
+                Ok(())
+            };
+
+        let carry_lo = (multiplicand_lo * multiplier - product_lo) >> 128;
+        let carry_hi =
+            (multiplicand_hi * multiplier - product_hi + carry_lo) >> 128;
+        assign_quotient(&self.carry_lo, carry_lo)?;
+        assign_quotient(&self.carry_hi, carry_hi)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn product(&self) -> &util::Word<F> {
+        &self.product
+    }
+
+    pub(crate) fn carry(&self) -> &[util::Cell<F>; 8] {
+        &self.carry_hi
+    }
+}
+
 /// Requires that the passed in value is within the specified range.
 /// `NUM_BYTES` is required to be `<= 31`.
 #[derive(Clone, Debug)]

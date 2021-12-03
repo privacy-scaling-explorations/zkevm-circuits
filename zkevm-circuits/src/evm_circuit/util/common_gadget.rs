@@ -1,18 +1,19 @@
 use crate::{
     evm_circuit::{
         param::MAX_GAS_SIZE_IN_BYTES,
-        table::{FixedTableTag, Lookup},
+        table::{AccountFieldTag, FixedTableTag, Lookup},
         util::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition,
             },
-            math_gadget::RangeCheckGadget,
-            Cell,
+            math_gadget::{AddWordsGadget, RangeCheckGadget},
+            Cell, Word,
         },
         witness::ExecStep,
     },
     util::Expr,
 };
+use bus_mapping::eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -96,6 +97,94 @@ impl<F: FieldExt> SameContextGadget<F> {
             F::from((step.gas_left - step.gas_cost) as u64),
         )?;
 
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TransferWithGasFeeGadget<F> {
+    sub_sender_balance: AddWordsGadget<F, 3>,
+    add_receiver_balance: AddWordsGadget<F, 2>,
+}
+
+impl<F: FieldExt> TransferWithGasFeeGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        receiver_address: Expression<F>,
+        value: Word<F>,
+        gas_fee: Word<F>,
+        is_persistent: Expression<F>,
+        rw_counter_end_of_reversion: Expression<F>,
+    ) -> Self {
+        let sender_balance = cb.query_word();
+        let receiver_balance_prev = cb.query_word();
+
+        // Subtract sender balance by value and gas_fee
+        let sub_sender_balance = AddWordsGadget::construct(
+            cb,
+            [sender_balance.clone(), value.clone(), gas_fee],
+        );
+        cb.require_zero(
+            "Sender has sufficient balance",
+            sub_sender_balance.carry().expr(),
+        );
+
+        // Add receiver balance by value
+        let add_receiver_balance = AddWordsGadget::construct(
+            cb,
+            [receiver_balance_prev.clone(), value],
+        );
+        cb.require_zero(
+            "Receiver has too much balance",
+            add_receiver_balance.carry().expr(),
+        );
+
+        let sender_balance_prev = sub_sender_balance.sum();
+        let receiver_balance = add_receiver_balance.sum();
+
+        // Write with possible reversion
+        for (address, balance, balance_prev) in [
+            (sender_address, &sender_balance, sender_balance_prev),
+            (receiver_address, receiver_balance, &receiver_balance_prev),
+        ] {
+            cb.account_write_with_reversion(
+                address,
+                AccountFieldTag::Balance,
+                balance.expr(),
+                balance_prev.expr(),
+                is_persistent.clone(),
+                rw_counter_end_of_reversion.clone(),
+            );
+        }
+
+        Self {
+            sub_sender_balance,
+            add_receiver_balance,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        (sender_balance, sender_balance_prev): (U256, U256),
+        (receiver_balance, receiver_balance_prev): (U256, U256),
+        value: U256,
+        gas_fee: U256,
+    ) -> Result<(), Error> {
+        self.sub_sender_balance.assign(
+            region,
+            offset,
+            [sender_balance, value, gas_fee],
+            sender_balance_prev,
+        )?;
+        self.add_receiver_balance.assign(
+            region,
+            offset,
+            [receiver_balance_prev, value],
+            receiver_balance,
+        )?;
         Ok(())
     }
 }

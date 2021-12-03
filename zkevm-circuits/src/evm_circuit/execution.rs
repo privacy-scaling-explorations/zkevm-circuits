@@ -19,6 +19,7 @@ use halo2::{
 use std::collections::HashMap;
 
 mod add;
+mod begin_tx;
 mod bitwise;
 mod byte;
 mod comparator;
@@ -37,6 +38,7 @@ mod signextend;
 mod stop;
 mod swap;
 use add::AddGadget;
+use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
@@ -81,6 +83,7 @@ pub(crate) struct ExecutionConfig<F> {
     add_gadget: AddGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
+    begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -195,6 +198,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
+            begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -406,6 +410,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         }
 
         match step.execution_state {
+            ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::ADD => assign_exec_step!(self.add_gadget),
             ExecutionState::MUL => assign_exec_step!(self.mul_gadget),

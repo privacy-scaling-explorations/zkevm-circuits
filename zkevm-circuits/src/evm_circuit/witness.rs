@@ -1,7 +1,9 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
     step::ExecutionState,
-    table::{RwTableTag, TxContextFieldTag},
+    table::{
+        AccountFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+    },
     util::RandomLinearCombination,
 };
 use bus_mapping::{
@@ -24,7 +26,6 @@ pub struct Block<F> {
 
 #[derive(Debug, Default)]
 pub struct Transaction<F> {
-    // Context
     pub id: usize,
     pub nonce: u64,
     pub gas: u64,
@@ -36,7 +37,6 @@ pub struct Transaction<F> {
     pub value: Word,
     pub call_data_length: usize,
     pub call_data: Vec<u8>,
-
     pub calls: Vec<Call<F>>,
     pub steps: Vec<ExecStep>,
 }
@@ -132,6 +132,19 @@ pub struct Call<F> {
     pub is_root: bool,
     pub is_create: bool,
     pub opcode_source: F,
+    pub rw_counter_end_of_reversion: usize,
+    pub caller_call_id: usize,
+    pub depth: usize,
+    pub caller_address: Address,
+    pub callee_address: Address,
+    pub call_data_offset: usize,
+    pub call_data_length: usize,
+    pub return_data_offset: usize,
+    pub return_data_length: usize,
+    pub value: Word,
+    pub result: Word,
+    pub is_persistent: bool,
+    pub is_static: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -224,6 +237,10 @@ pub enum Rw {
     TxAccessListAccount {
         rw_counter: usize,
         is_write: bool,
+        tx_id: usize,
+        account_address: Address,
+        value: bool,
+        value_prev: bool,
     },
     TxAccessListStorageSlot {
         rw_counter: usize,
@@ -236,6 +253,10 @@ pub enum Rw {
     Account {
         rw_counter: usize,
         is_write: bool,
+        account_address: Address,
+        field_tag: AccountFieldTag,
+        value: Word,
+        value_prev: Word,
     },
     AccountStorage {
         rw_counter: usize,
@@ -248,6 +269,9 @@ pub enum Rw {
     CallContext {
         rw_counter: usize,
         is_write: bool,
+        call_id: usize,
+        field_tag: CallContextFieldTag,
+        value: Word,
     },
     Stack {
         rw_counter: usize,
@@ -266,6 +290,15 @@ pub enum Rw {
 }
 
 impl Rw {
+    pub fn account_value_pair(&self) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
@@ -275,6 +308,77 @@ impl Rw {
 
     pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 8] {
         match self {
+            Self::TxAccessListAccount {
+                rw_counter,
+                is_write,
+                tx_id,
+                account_address,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxAccessListAccount as u64),
+                F::from(*tx_id as u64),
+                account_address.to_scalar().unwrap(),
+                F::from(*value as u64),
+                F::from(*value_prev as u64),
+                F::zero(),
+            ],
+            Self::Account {
+                rw_counter,
+                is_write,
+                account_address,
+                field_tag,
+                value,
+                value_prev,
+            } => {
+                let to_scalar = |value: &Word| match field_tag {
+                    AccountFieldTag::Nonce => F::from(value.low_u64()),
+                    _ => RandomLinearCombination::random_linear_combine(
+                        value.to_le_bytes(),
+                        randomness,
+                    ),
+                };
+                [
+                    F::from(*rw_counter as u64),
+                    F::from(*is_write as u64),
+                    F::from(RwTableTag::Account as u64),
+                    account_address.to_scalar().unwrap(),
+                    F::from(*field_tag as u64),
+                    to_scalar(value),
+                    to_scalar(value_prev),
+                    F::zero(),
+                ]
+            }
+            Self::CallContext {
+                rw_counter,
+                is_write,
+                call_id,
+                field_tag,
+                value,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::CallContext as u64),
+                F::from(*call_id as u64),
+                F::from(*field_tag as u64),
+                match field_tag {
+                    CallContextFieldTag::OpcodeSource
+                    | CallContextFieldTag::Value => {
+                        RandomLinearCombination::random_linear_combine(
+                            value.to_le_bytes(),
+                            randomness,
+                        )
+                    }
+                    CallContextFieldTag::CallerAddress
+                    | CallContextFieldTag::CalleeAddress
+                    | CallContextFieldTag::Result => value.to_scalar().unwrap(),
+                    _ => F::from(value.low_u64()),
+                },
+                F::zero(),
+                F::zero(),
+            ],
             Self::Stack {
                 rw_counter,
                 is_write,
@@ -414,6 +518,7 @@ fn tx_convert(
                 bytecode.hash.to_le_bytes(),
                 randomness,
             ),
+            ..Default::default()
         }],
         steps: tx
             .steps()
