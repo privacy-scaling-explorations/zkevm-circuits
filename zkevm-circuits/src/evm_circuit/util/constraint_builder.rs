@@ -21,14 +21,14 @@ struct StepRowUsage {
 }
 
 pub(crate) enum Transition<T> {
-    Persistent,
+    Same,
     Delta(T),
     To(T),
 }
 
 impl<F> Default for Transition<F> {
     fn default() -> Self {
-        Self::Persistent
+        Self::Same
     }
 }
 
@@ -319,7 +319,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ),
         ] {
             match transition {
-                Transition::Persistent => {
+                Transition::Same => {
                     self.require_equal(name, next.expr(), curr.expr())
                 }
                 Transition::Delta(delta) => {

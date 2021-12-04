@@ -125,8 +125,8 @@ pub enum TxContextFieldTag {
     CalleeAddress,
     IsCreate,
     Value,
-    CalldataLength,
-    Calldata,
+    CallDataLength,
+    CallData,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -157,10 +157,10 @@ pub enum CallContextFieldTag {
     Depth,
     CallerAddress,
     CalleeAddress,
-    CalldataOffset,
-    CalldataLength,
-    ReturndataOffset,
-    ReturndataLength,
+    CallDataOffset,
+    CallDataLength,
+    ReturnDataOffset,
+    ReturnDataLength,
     Value,
     Result,
     IsPersistent,

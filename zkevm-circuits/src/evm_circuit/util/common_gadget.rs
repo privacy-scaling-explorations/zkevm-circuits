@@ -65,7 +65,7 @@ impl<F: FieldExt> SameContextGadget<F> {
         );
 
         // Set state transition of gas_left if it's default value
-        if matches!(step_state_transition.gas_left, Transition::Persistent)
+        if matches!(step_state_transition.gas_left, Transition::Same)
             && !matches!(gas_cost, Expression::Constant(constant) if constant.is_zero_vartime())
         {
             step_state_transition.gas_left = Transition::Delta(-gas_cost);

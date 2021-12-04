@@ -392,6 +392,14 @@ pub(crate) struct StepState<F> {
     pub(crate) call_id: Cell<F>,
     pub(crate) is_root: Cell<F>,
     pub(crate) is_create: Cell<F>,
+    // This is the identifier of current executed bytecode, which is used to
+    // lookup current executed opcode and used to do code copy. In most time,
+    // it would be bytecode_hash, but when it comes to root creation call, the
+    // executed bytecode is actually from transaction calldata, so it might be
+    // tx_id if we decide to lookup different table.
+    // However, how to handle root creation call is yet to be determined, see
+    // issue https://github.com/appliedzkp/zkevm-specs/issues/73 for more
+    // discussion.
     pub(crate) opcode_source: Cell<F>,
     pub(crate) program_counter: Cell<F>,
     pub(crate) stack_pointer: Cell<F>,

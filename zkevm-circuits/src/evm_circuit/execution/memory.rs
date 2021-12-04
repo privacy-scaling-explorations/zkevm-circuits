@@ -122,7 +122,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         //   otherwise to be increased by 31
         // - `program_counter` needs to be increased by 1
         // - `stack_pointer` needs to be increased by 2 when is_store, otherwise
-        //   to be persistent
+        //   to be same
         // - `memory_size` needs to be set to `next_memory_size`
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),

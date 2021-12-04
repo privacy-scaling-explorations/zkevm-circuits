@@ -85,8 +85,8 @@ pub mod bus_mapping_tmp {
         pub callee_address: Address,
         pub is_create: bool,
         pub value: Word,
-        pub calldata_length: usize,
-        pub calldata: Vec<u8>,
+        pub call_data_length: usize,
+        pub call_data: Vec<u8>,
 
         pub calls: Vec<Call<F>>,
         pub steps: Vec<ExecStep>,
@@ -155,18 +155,18 @@ pub mod bus_mapping_tmp {
                     ],
                     [
                         F::from(self.id as u64),
-                        F::from(TxContextFieldTag::CalldataLength as u64),
+                        F::from(TxContextFieldTag::CallDataLength as u64),
                         F::zero(),
-                        F::from(self.calldata_length as u64),
+                        F::from(self.call_data_length as u64),
                     ],
                 ],
-                self.calldata
+                self.call_data
                     .iter()
                     .enumerate()
                     .map(|(idx, byte)| {
                         [
                             F::from(self.id as u64),
-                            F::from(TxContextFieldTag::Calldata as u64),
+                            F::from(TxContextFieldTag::CallData as u64),
                             F::from(idx as u64),
                             F::from(*byte as u64),
                         ]
