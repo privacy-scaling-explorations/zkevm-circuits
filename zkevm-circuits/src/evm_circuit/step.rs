@@ -419,12 +419,12 @@ impl<F: FieldExt> Step<F> {
         advices: [Column<Advice>; STEP_WIDTH],
         is_next_step: bool,
     ) -> Self {
+        let num_state_cells = ExecutionState::amount() + NUM_CELLS_STEP_STATE;
+
         let state = {
-            let mut cells = VecDeque::with_capacity(
-                ExecutionState::amount() + NUM_CELLS_STEP_STATE,
-            );
+            let mut cells = VecDeque::with_capacity(num_state_cells);
             meta.create_gate("Query state for step", |meta| {
-                for idx in 0..cells.capacity() {
+                for idx in 0..num_state_cells {
                     let column_idx = idx % STEP_WIDTH;
                     let rotation = idx / STEP_WIDTH
                         + if is_next_step { STEP_HEIGHT } else { 0 };
@@ -455,9 +455,11 @@ impl<F: FieldExt> Step<F> {
             }
         };
 
-        let mut rows = Vec::with_capacity(STEP_HEIGHT - 4);
+        let rotation_offset = num_state_cells / STEP_WIDTH
+            + (num_state_cells % STEP_WIDTH != 0) as usize;
+        let mut rows = Vec::with_capacity(STEP_HEIGHT - rotation_offset);
         meta.create_gate("Query rows for step", |meta| {
-            for rotation in 4..STEP_HEIGHT {
+            for rotation in rotation_offset..STEP_HEIGHT {
                 let rotation =
                     rotation + if is_next_step { STEP_HEIGHT } else { 0 };
                 rows.push(StepRow {
