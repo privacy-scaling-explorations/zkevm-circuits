@@ -8,10 +8,11 @@ mod param;
 mod step;
 mod table;
 mod util;
+pub mod witness;
 
-pub use execution::bus_mapping_tmp;
-use execution::{bus_mapping_tmp::Block, ExecutionConfig};
+use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
+use witness::Block;
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
@@ -97,9 +98,9 @@ impl<F: FieldExt> EvmCircuit<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         param::STEP_HEIGHT,
         table::FixedTableTag,
+        witness::{Block, Bytecode, Rw, Transaction},
         EvmCircuit,
     };
     use bus_mapping::eth_types::Word;
