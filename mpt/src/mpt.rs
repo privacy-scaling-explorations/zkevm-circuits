@@ -17,6 +17,7 @@ use crate::{
     account_leaf_storage_codehash::{
         AccountLeafStorageCodehashChip, AccountLeafStorageCodehashConfig,
     },
+    address_compr::{AddressComprChip, AddressComprConfig},
     branch_acc::BranchAccChip,
     key_compr::KeyComprChip,
     leaf_hash::{LeafHashChip, LeafHashConfig},
@@ -69,7 +70,8 @@ pub struct MPTConfig<F> {
     r_table: Vec<Expression<F>>,
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
-    key_compr_chip: KeyComprConfig,
+    storage_key_compr_chip: KeyComprConfig,
+    account_address_compr_chip: AddressComprConfig,
     account_leaf_key_chip: AccountLeafKeyConfig,
     account_leaf_nonce_balance_chip: AccountLeafNonceBalanceConfig,
     account_leaf_storage_codehash_chip: AccountLeafStorageCodehashConfig,
@@ -800,6 +802,7 @@ impl<F: FieldExt> MPTConfig<F> {
         });
 
         // Storage first level branch hash for S - root in last account leaf.
+        // TODO: S and C can be in the same lookup, but it's easier to debug if we have two.
         meta.lookup(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
@@ -820,7 +823,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let branch_acc_s1 = acc_s + c128 * mult_s;
 
             let mut s_hash = vec![];
-            for (ind, column) in s_advices.iter().enumerate() {
+            for column in s_advices.iter() {
                 // s (account leaf) key (-23), s nonce balance (-22), s storage codehash (-21),
                 // c (account leaf) key (-20), c nonce balance (-19), c storage codehash (-18),
                 // account leaf nibbles (-17)
@@ -834,6 +837,59 @@ impl<F: FieldExt> MPTConfig<F> {
                     * is_last_branch_child.clone()
                     * is_account_leaf_key_nibbles_prev.clone()
                     * branch_acc_s1, // TODO: replace with acc_s once ValueNode is added
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            for (ind, word) in storage_root_words.iter().enumerate() {
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_last_branch_child.clone()
+                        * is_account_leaf_key_nibbles_prev.clone()
+                        * word.clone(),
+                    keccak_table_i,
+                ));
+            }
+
+            constraints
+        });
+
+        // Storage first level branch hash for C - root in last account leaf.
+        meta.lookup(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            // -17 because we are in the last branch child (-16 takes us to branch init)
+            let is_account_leaf_key_nibbles_prev =
+                meta.query_advice(is_account_leaf_key_nibbles, Rotation(-17));
+
+            // We need to do the lookup only if we are in the last branch child.
+            let is_last_branch_child =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
+
+            let acc_c = meta.query_advice(acc_c, Rotation::cur());
+
+            // TODO: acc_c currently doesn't have branch ValueNode info (which 128 if nil)
+            let c128 = Expression::Constant(F::from_u64(128));
+            let mult_c = meta.query_advice(acc_mult_c, Rotation::cur());
+            let branch_acc_c1 = acc_c + c128 * mult_c;
+
+            let mut c_hash = vec![];
+            // storage root is always in s_advices
+            for column in s_advices.iter() {
+                // s (account leaf) key (-23), s nonce balance (-22), s storage codehash (-21),
+                // c (account leaf) key (-20), c nonce balance (-19), c storage codehash (-18),
+                // account leaf nibbles (-17)
+                c_hash.push(meta.query_advice(*column, Rotation(-18)));
+            }
+            let storage_root_words = into_words_expr(c_hash);
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_last_branch_child.clone()
+                    * is_account_leaf_key_nibbles_prev.clone()
+                    * branch_acc_c1, // TODO: replace with acc_s once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             for (ind, word) in storage_root_words.iter().enumerate() {
@@ -1090,13 +1146,37 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
         );
 
-        let key_compr_chip = KeyComprChip::<F>::configure(
+        // TODO: account address the same in S and C leaf
+        // TODO: storage key the same in S and C leaf
+
+        let storage_key_compr_chip = KeyComprChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first =
                     meta.query_fixed(q_not_first, Rotation::cur());
                 let is_leaf_key_nibbles =
                     meta.query_advice(is_leaf_key_nibbles, Rotation::cur());
+
+                q_not_first * is_leaf_key_nibbles
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            key_rlc,
+            key_rlc_mult,
+            acc_r,
+        );
+
+        let account_address_compr_chip = AddressComprChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_leaf_key_nibbles = meta
+                    .query_advice(is_account_leaf_key_nibbles, Rotation::cur());
 
                 q_not_first * is_leaf_key_nibbles
             },
@@ -1231,7 +1311,8 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table,
             branch_acc_s_chip,
             branch_acc_c_chip,
-            key_compr_chip,
+            storage_key_compr_chip,
+            account_address_compr_chip,
             account_leaf_key_chip,
             account_leaf_nonce_balance_chip,
             account_leaf_storage_codehash_chip,
