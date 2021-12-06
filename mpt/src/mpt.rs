@@ -799,8 +799,59 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
+        // Storage first level branch hash for S - root in last account leaf.
+        meta.lookup(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            // -17 because we are in the last branch child (-16 takes us to branch init)
+            let is_account_leaf_key_nibbles_prev =
+                meta.query_advice(is_account_leaf_key_nibbles, Rotation(-17));
+
+            // We need to do the lookup only if we are in the last branch child.
+            let is_last_branch_child =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
+
+            let acc_s = meta.query_advice(acc_s, Rotation::cur());
+
+            // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
+            let c128 = Expression::Constant(F::from_u64(128));
+            let mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
+            let branch_acc_s1 = acc_s + c128 * mult_s;
+
+            let mut s_hash = vec![];
+            for (ind, column) in s_advices.iter().enumerate() {
+                // s (account leaf) key (-23), s nonce balance (-22), s storage codehash (-21),
+                // c (account leaf) key (-20), c nonce balance (-19), c storage codehash (-18),
+                // account leaf nibbles (-17)
+                s_hash.push(meta.query_advice(*column, Rotation(-21)));
+            }
+            let storage_root_words = into_words_expr(s_hash);
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_last_branch_child.clone()
+                    * is_account_leaf_key_nibbles_prev.clone()
+                    * branch_acc_s1, // TODO: replace with acc_s once ValueNode is added
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            for (ind, word) in storage_root_words.iter().enumerate() {
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_last_branch_child.clone()
+                        * is_account_leaf_key_nibbles_prev.clone()
+                        * word.clone(),
+                    keccak_table_i,
+                ));
+            }
+
+            constraints
+        });
+
         // TODO: account first level branch hash for S and C - compared to root
-        // TODO: storage first level branch hash for S and C - root in last account leaf
 
         // Check if (accumulated_s_rlc, hash1, hash2, hash3, hash4) is in keccak table,
         // where hash1, hash2, hash3, hash4 are stored in the previous branch and
