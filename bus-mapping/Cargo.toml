@@ -22,3 +22,6 @@ regex = "1.5.4"
 url = "2.2.2"
 tokio = { version = "1.13", features = ["macros"] }
 pretty_assertions = "1.0.0"
+
+[features]
+geth_rpc_test = []

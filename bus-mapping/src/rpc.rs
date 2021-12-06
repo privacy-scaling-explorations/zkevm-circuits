@@ -21,7 +21,7 @@ pub fn serialize<T: serde::Serialize>(t: &T) -> serde_json::Value {
 
 /// Struct used to define the input that you want to provide to the
 /// `eth_getBlockByNumber` call as it mixes numbers with string literals.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum BlockNumber {
     /// Specific block number
     Num(U64),
@@ -52,8 +52,9 @@ impl BlockNumber {
     }
 }
 
+/// Struct used to define the storage proof
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
-struct StorageProof {
+pub struct StorageProof {
     key: H256,
     proof: Vec<Bytes>,
     value: U256,
@@ -61,13 +62,19 @@ struct StorageProof {
 
 /// Struct used to define the result of `eth_getProof` call
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
-pub struct EIP1186CustomProofResponse {
-    balance: U256,
-    codeHash: H256,
-    nonce: U256,
-    storageHash: H256,
-    accountProof: Vec<Bytes>,
-    storageProof: Vec<StorageProof>,
+pub struct EIP1186ProofResponse {
+    /// The balance of the account
+    pub balance: U256,
+    /// The hash of the code of the account
+    pub codeHash: H256,
+    /// The nonce of the account
+    pub nonce: U256,
+    /// SHA3 of the StorageRoot
+    pub storageHash: H256,
+    /// Array of rlp-serialized MerkleTree-Nodes
+    pub accountProof: Vec<Bytes>,
+    /// Array of storage-entries as requested
+    pub storageProof: Vec<StorageProof>,
 }
 
 /// Placeholder structure designed to contain the methods that the BusMapping
@@ -145,27 +152,27 @@ impl<P: JsonRpcClient> GethClient<P> {
     pub async fn get_code_by_address(
         &self,
         contract_address: Address,
+        block_num: BlockNumber,
     ) -> Result<Vec<u8>, Error> {
         let address = serialize(&contract_address);
-        let id = serialize(&"0x2".to_string());
-        let code: Bytes = self
+        let num = block_num.serialize();
+        let resp: Bytes = self
             .0
-            .request("eth_getCode", [address, id])
+            .request("eth_getCode", [address, num])
             .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
-            .unwrap();
-        Ok(code.to_vec())
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+        Ok(resp.to_vec())
     }
 
     /// Calls `eth_getProof` via JSON-RPC returning a
-    /// [`EIP1186CustomProofResponse`] returning the account and
+    /// [`EIP1186ProofResponse`] returning the account and
     /// storage-values of the specified account including the Merkle-proof.
     pub async fn get_proof(
         &self,
         account: Address,
         keys: Vec<Word>,
         block_num: BlockNumber,
-    ) -> Result<EIP1186CustomProofResponse, Error> {
+    ) -> Result<EIP1186ProofResponse, Error> {
         let account = serialize(&account);
         let keys = serialize(&keys);
         let num = block_num.serialize();
@@ -176,6 +183,7 @@ impl<P: JsonRpcClient> GethClient<P> {
     }
 }
 
+#[cfg(feature = "geth_rpc_test")]
 #[cfg(test)]
 mod rpc_tests {
     use super::*;
@@ -187,7 +195,6 @@ mod rpc_tests {
     // The test is ignored as the values used depend on the Geth instance used
     // each time you run the tests. And we can't assume that everyone will
     // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
     #[tokio::test]
     async fn test_get_block_by_number() {
         let prov = get_provider();
@@ -203,7 +210,6 @@ mod rpc_tests {
     // The test is ignored as the values used depend on the Geth instance used
     // each time you run the tests. And we can't assume that everyone will
     // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
     #[tokio::test]
     async fn test_get_block_by_hash() {
         let prov = get_provider();
@@ -213,28 +219,28 @@ mod rpc_tests {
             .get_block_by_hash(block_by_num_latest.hash.unwrap())
             .await
             .unwrap();
-        assert!(block_by_hash.hash == block_by_hash.hash);
+        assert!(block_by_num_latest.hash == block_by_hash.hash);
     }
 
     // The test is ignored as the values used depend on the Geth instance used
     // each time you run the tests. And we can't assume that everyone will
     // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
     #[tokio::test]
     async fn test_get_contract_code() {
         let prov = get_provider();
         let contract_address =
             address!("0xd5f110b3e81de87f22fa8c5e668a5fc541c54e3d");
-        let contract_code = Bytes::from(get_contract_vec_u8());
-        let gotten_contract_code =
-            prov.get_code_by_address(contract_address).await.unwrap();
-        assert_eq!(contract_code.to_vec(), gotten_contract_code);
+        let contract_code = get_contract_vec_u8();
+        let gotten_contract_code = prov
+            .get_code_by_address(contract_address, BlockNumber::Latest)
+            .await
+            .unwrap();
+        assert_eq!(contract_code, gotten_contract_code);
     }
 
     // The test is ignored as the values used depend on the Geth instance used
     // each time you run the tests. And we can't assume that everyone will
     // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
     #[tokio::test]
     async fn test_trace_block_by_hash() {
         let prov = get_provider();
@@ -249,35 +255,36 @@ mod rpc_tests {
             .await
             .unwrap();
         assert!(!trace_by_hash[0].struct_logs.is_empty());
-        assert_eq!(trace_by_hash[0].struct_logs.len(), 38);
+        assert_eq!(trace_by_hash[0].struct_logs.len(), 116);
         assert_eq!(
             trace_by_hash[0].struct_logs.last().unwrap().pc,
-            ProgramCounter::from(94)
+            ProgramCounter::from(180)
         );
     }
 
     // The test is ignored as the values used depend on the Geth instance used
     // each time you run the tests. And we can't assume that everyone will
     // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
     #[tokio::test]
     async fn test_trace_block_by_number() {
         let prov = get_provider();
-        let trace_by_hash = prov.trace_block_by_number(2.into()).await.unwrap();
+        let trace_by_hash = prov
+            .trace_block_by_number(BlockNumber::Latest)
+            .await
+            .unwrap();
         // Since we called in the test block the same transaction twice the len
         // should be the same and != 0.
         assert!(!trace_by_hash[0].struct_logs.is_empty());
-        assert_eq!(trace_by_hash[0].struct_logs.len(), 38);
+        assert_eq!(trace_by_hash[0].struct_logs.len(), 116);
         assert_eq!(
             trace_by_hash[0].struct_logs.last().unwrap().pc,
-            ProgramCounter::from(94)
+            ProgramCounter::from(180)
         );
     }
 
     // The test is ignored as the values used depend on the Geth instance used
     // each time you run the tests. And we can't assume that everyone will
     // have a Geth client synced with mainnet to have unified "test-vectors".
-    #[ignore]
     #[tokio::test]
     async fn test_get_proof() {
         let transport = Http::new(Url::parse("http://localhost:8545").unwrap());
@@ -310,8 +317,7 @@ mod rpc_tests {
             ]
         }"#;
         let target_proof =
-            serde_json::from_str::<EIP1186CustomProofResponse>(TARGET_PROOF)
-                .unwrap();
+            serde_json::from_str::<EIP1186ProofResponse>(TARGET_PROOF).unwrap();
         assert_eq!(proof.balance, target_proof.balance);
         assert_eq!(proof.codeHash, target_proof.codeHash);
         assert_eq!(proof.nonce, target_proof.nonce);
@@ -327,41 +333,34 @@ mod rpc_tests {
     fn get_contract_vec_u8() -> Vec<u8> {
         vec![
             96, 128, 96, 64, 82, 52, 128, 21, 97, 0, 16, 87, 96, 0, 128, 253,
-            91, 80, 96, 4, 54, 16, 97, 0, 65, 87, 96, 0, 53, 96, 224, 28, 128,
-            99, 68, 93, 240, 172, 20, 97, 0, 70, 87, 128, 99, 141, 165, 203,
-            91, 20, 97, 0, 100, 87, 128, 99, 253, 172, 213, 118, 20, 97, 0,
-            174, 87, 91, 96, 0, 128, 253, 91, 97, 0, 78, 97, 0, 220, 86, 91,
-            96, 64, 81, 128, 130, 129, 82, 96, 32, 1, 145, 80, 80, 96, 64, 81,
-            128, 145, 3, 144, 243, 91, 97, 0, 108, 97, 0, 226, 86, 91, 96, 64,
-            81, 128, 130, 115, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 22, 115,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 22, 129, 82, 96, 32, 1, 145, 80,
-            80, 96, 64, 81, 128, 145, 3, 144, 243, 91, 97, 0, 218, 96, 4, 128,
-            54, 3, 96, 32, 129, 16, 21, 97, 0, 196, 87, 96, 0, 128, 253, 91,
-            129, 1, 144, 128, 128, 53, 144, 96, 32, 1, 144, 146, 145, 144, 80,
-            80, 80, 97, 1, 7, 86, 91, 0, 91, 96, 1, 84, 129, 86, 91, 96, 0,
-            128, 144, 84, 144, 97, 1, 0, 10, 144, 4, 115, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 22, 129, 86, 91, 96, 0, 128, 144, 84, 144, 97, 1, 0,
-            10, 144, 4, 115, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 22, 115, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 22, 51, 115, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 22, 20, 97, 1, 172, 87, 96, 64, 81, 127, 8, 195, 121,
-            160, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 129, 82, 96, 4, 1, 128, 128, 96, 32, 1, 130,
-            129, 3, 130, 82, 96, 51, 129, 82, 96, 32, 1, 128, 97, 1, 183, 96,
-            51, 145, 57, 96, 64, 1, 145, 80, 80, 96, 64, 81, 128, 145, 3, 144,
-            253, 91, 128, 96, 1, 129, 144, 85, 80, 80, 86, 254, 84, 104, 105,
-            115, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 105, 115, 32,
-            114, 101, 115, 116, 114, 105, 99, 116, 101, 100, 32, 116, 111, 32,
-            116, 104, 101, 32, 99, 111, 110, 116, 114, 97, 99, 116, 39, 115,
-            32, 111, 119, 110, 101, 114, 162, 101, 98, 122, 122, 114, 49, 88,
-            32, 7, 48, 47, 32, 138, 16, 104, 103, 105, 80, 155, 82, 158, 24,
-            120, 189, 161, 133, 152, 131, 119, 141, 112, 222, 221, 24, 68, 254,
-            121, 12, 155, 222, 100, 115, 111, 108, 99, 67, 0, 5, 16, 0, 50,
+            91, 80, 96, 4, 54, 16, 97, 0, 76, 87, 96, 0, 53, 96, 224, 28, 128,
+            99, 33, 132, 140, 70, 20, 97, 0, 81, 87, 128, 99, 46, 100, 206,
+            193, 20, 97, 0, 109, 87, 128, 99, 176, 242, 183, 42, 20, 97, 0,
+            139, 87, 128, 99, 243, 65, 118, 115, 20, 97, 0, 167, 87, 91, 96, 0,
+            128, 253, 91, 97, 0, 107, 96, 4, 128, 54, 3, 129, 1, 144, 97, 0,
+            102, 145, 144, 97, 1, 60, 86, 91, 97, 0, 197, 86, 91, 0, 91, 97, 0,
+            117, 97, 0, 218, 86, 91, 96, 64, 81, 97, 0, 130, 145, 144, 97, 1,
+            120, 86, 91, 96, 64, 81, 128, 145, 3, 144, 243, 91, 97, 0, 165, 96,
+            4, 128, 54, 3, 129, 1, 144, 97, 0, 160, 145, 144, 97, 1, 60, 86,
+            91, 97, 0, 227, 86, 91, 0, 91, 97, 0, 175, 97, 0, 237, 86, 91, 96,
+            64, 81, 97, 0, 188, 145, 144, 97, 1, 120, 86, 91, 96, 64, 81, 128,
+            145, 3, 144, 243, 91, 128, 96, 0, 129, 144, 85, 80, 96, 0, 97, 0,
+            215, 87, 96, 0, 128, 253, 91, 80, 86, 91, 96, 0, 128, 84, 144, 80,
+            144, 86, 91, 128, 96, 0, 129, 144, 85, 80, 80, 86, 91, 96, 0, 128,
+            97, 0, 249, 87, 96, 0, 128, 253, 91, 96, 0, 84, 144, 80, 144, 86,
+            91, 96, 0, 128, 253, 91, 96, 0, 129, 144, 80, 145, 144, 80, 86, 91,
+            97, 1, 25, 129, 97, 1, 6, 86, 91, 129, 20, 97, 1, 36, 87, 96, 0,
+            128, 253, 91, 80, 86, 91, 96, 0, 129, 53, 144, 80, 97, 1, 54, 129,
+            97, 1, 16, 86, 91, 146, 145, 80, 80, 86, 91, 96, 0, 96, 32, 130,
+            132, 3, 18, 21, 97, 1, 82, 87, 97, 1, 81, 97, 1, 1, 86, 91, 91, 96,
+            0, 97, 1, 96, 132, 130, 133, 1, 97, 1, 39, 86, 91, 145, 80, 80,
+            146, 145, 80, 80, 86, 91, 97, 1, 114, 129, 97, 1, 6, 86, 91, 130,
+            82, 80, 80, 86, 91, 96, 0, 96, 32, 130, 1, 144, 80, 97, 1, 141, 96,
+            0, 131, 1, 132, 97, 1, 105, 86, 91, 146, 145, 80, 80, 86, 254, 162,
+            100, 105, 112, 102, 115, 88, 34, 18, 32, 198, 65, 17, 183, 105,
+            192, 24, 239, 185, 163, 114, 200, 208, 240, 163, 224, 232, 124,
+            166, 82, 153, 136, 202, 171, 161, 44, 117, 159, 44, 234, 223, 52,
+            100, 115, 111, 108, 99, 67, 0, 8, 10, 0, 51,
         ]
     }
 }

@@ -1,8 +1,8 @@
 docker-compose build
 docker pull ethereum/client-go:stable
 docker-compose up -d deployer geth
-cargo test --no-run -- --ignored
 cd bus-mapping
+cargo test --no-run --features geth_rpc_test
 
 GethBlock=`curl localhost:8545 -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'`
 
@@ -12,4 +12,9 @@ do
     GethBlock=`curl localhost:8545 -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'`
 done
 
-cargo test -- --ignored
+cargo test test_get_block_by_number --features geth_rpc_test
+cargo test test_get_block_by_hash --features geth_rpc_test
+cargo test test_get_contract_code --features geth_rpc_test
+cargo test test_trace_block_by_hash --features geth_rpc_test
+cargo test test_trace_block_by_number --features geth_rpc_test
+cargo test test_get_proof --features geth_rpc_test

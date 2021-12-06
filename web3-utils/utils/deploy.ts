@@ -1,22 +1,43 @@
 import Web3 from 'web3'
-import contract from "../build/contracts/Migrations.json"
 import { AbiItem } from "web3-utils"
 import { address, privateKey, url } from "../config"
+import path from 'path'
 import fs from 'fs'
+const solc =  require('solc')
 
-const bytecode = contract.bytecode
-const abi = contract.abi as AbiItem[]
+const contractFolder = "../contracts";
 const web3 = new Web3(url)
 
 interface Receipt {
   rawTransaction: string;
 }
 
-const deploy = async() => {
-  const contractInfo = new web3.eth.Contract(abi)
-  const txObject = contractInfo.deploy({
-    data: bytecode
-  })
+const deploy = async(contractName: string) => {
+  const contractPath = path.resolve(__dirname, contractFolder, contractName)
+  const contract = fs.readFileSync(contractPath, 'utf8')
+  var input = {
+    language: 'Solidity',
+    sources: {
+      target: {
+        content: contract
+      }
+    },
+    settings: {
+      outputSelection: {
+        '*': {
+          '*': ['*']
+        }
+      }
+    }
+  };
+  var output = JSON.parse(solc.compile(JSON.stringify(input)))
+  const {abi, evm} = output.contracts.target.Greeter
+  const contractInfo = new web3.eth.Contract(abi as AbiItem[])
+  const object = {
+    data: evm.bytecode.object,
+    arguments: [5],
+  }
+  const txObject = contractInfo.deploy(object)
   const txReceipt = <Receipt> await web3.eth.accounts.signTransaction({
     from: address,
     data: txObject.encodeABI(),
@@ -27,13 +48,14 @@ const deploy = async() => {
   let res = await web3.eth.sendSignedTransaction(
     txReceipt.rawTransaction
   );
-  console.log("Contract deployed: ", res)
   return res
 }
 
 async function main() {
-  console.log("Deploying Migrations contract...")
-  const receipt = await deploy()
+  const contractName = `${process.argv[2]}.sol`
+  console.log(`Deploying ${contractName}...`)
+  const receipt = await deploy(contractName)
+  console.log("Contract deployed: ", receipt)
 
   const data = JSON.stringify({
     deployMigrationsReceipt: receipt,

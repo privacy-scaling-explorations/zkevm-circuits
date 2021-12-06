@@ -1,4 +1,4 @@
-name: Geth Interaction
+name: Integration Test
 
 on:
   pull_request:

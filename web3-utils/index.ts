@@ -1,6 +1,6 @@
 import Web3 from 'web3'
 
-import { address, privateKey, url } from "./config"
+import { address, url } from "./config"
 const web3 = new Web3(url)
 
 function sleep(ms: number) {
