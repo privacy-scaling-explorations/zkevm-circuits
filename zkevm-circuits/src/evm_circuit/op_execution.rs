@@ -22,6 +22,7 @@ mod jump;
 mod jumpdest;
 mod jumpi;
 mod memory;
+mod mul;
 mod pc;
 mod pop;
 mod push;
@@ -40,6 +41,7 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
+use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -249,6 +251,7 @@ pub(crate) struct OpExecutionGadget<F> {
     or_gadget: OrGadget<F>,
     xor_gadget: XorGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    mul_gadget: MulGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -318,6 +321,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(xor_gadget);
         construct_op_gadget!(jump_gadget);
         construct_op_gadget!(jumpi_gadget);
+        construct_op_gadget!(mul_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -369,6 +373,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             xor_gadget,
             jump_gadget,
             jumpi_gadget,
+            mul_gadget,
         }
     }
 
@@ -691,7 +696,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-
+                (_, _, _, OpcodeId::MUL) => self.mul_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step
+                )?,
                 _ => unimplemented!(),
             }
         }
