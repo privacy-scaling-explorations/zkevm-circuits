@@ -1190,17 +1190,11 @@ impl<F: FieldExt> EvmCircuit<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ark_std::{end_timer, start_timer};
-    use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::*,
-        poly::commitment::Setup,
     };
-    use pairing::bn256::{Bn256, Fr as Fp};
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
 
     extern crate num;
     use bus_mapping::evm::OpcodeId;
@@ -1306,40 +1300,28 @@ mod test {
     // To run this benchmark, comment the `ignore` flag and run the following
     // command:
     // `RUSTFLAGS='-C target-cpu=native' cargo test --profile bench
-    // bench_evm_circuit_prover -- --nocapture`
-    #[ignore]
+    // bench_evm_circuit_prover --features prover_bench  -- --nocapture`
+    #[cfg(feature = "prover_bench")]
     #[test]
     fn bench_evm_circuit_prover() {
+        use ark_std::{end_timer, start_timer};
+        use halo2::{
+            poly::commitment::Setup,
+            transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+        };
+        use pairing::bn256::Bn256;
+        use rand::SeedableRng;
+        use rand_xorshift::XorShiftRng;
+
         const DEGREE: u32 = 22;
-        const EXECUTION_STEPS_ROWS_MAX: usize = 1 << (DEGREE - 2);
-        const OPERATIONS_ROWS_MAX: usize = 1 << (DEGREE - 2);
-
-        let mut execution_steps = vec![];
-        for _ in 0..EXECUTION_STEPS_ROWS_MAX - 1 {
-            let execution_step = ExecutionStep {
-                opcode: OpcodeId::ADD,
-                case: Case::Success,
-                values: vec![BigUint::new(vec![0])],
-            };
-            execution_steps.push(execution_step);
-        }
-
-        let mut operations = vec![];
-        for i in 0..OPERATIONS_ROWS_MAX - 1 {
-            let operation = Operation::<Fp> {
-                gc: i as usize,
-                target: Target::Memory,
-                is_write: true,
-                values: [Fp::zero(); 4],
-            };
-            operations.push(operation);
-        }
+        const EXECUTION_STEPS_ROWS_MAX: usize = 1 << (DEGREE - 1);
+        const OPERATIONS_ROWS_MAX: usize = 1 << (DEGREE - 1);
 
         let k = DEGREE;
         let public_inputs_size = 0;
         let empty_circuit = TestCircuit::default();
 
-        let circuit = TestCircuit::new(execution_steps, operations, true);
+        let circuit = TestCircuit::new(vec![], vec![], true);
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([

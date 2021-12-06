@@ -26,6 +26,9 @@ criterion = "0.3"
 num = "0.4"
 ark-std = { version = "0.3", features = ["print-trace"] }
 
+[features]
+prover_bench = []
+
 [[bench]]
 name = "binary_value"
 harness = false

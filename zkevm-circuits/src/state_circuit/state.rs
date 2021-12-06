@@ -2000,8 +2000,8 @@ mod tests {
     // To run this benchmark, comment the `ignore` flag and run the following
     // command:
     // `RUSTFLAGS='-C target-cpu=native' cargo test --profile bench
-    // bench_state_circuit_prover -- --nocapture`
-    #[ignore]
+    // bench_state_circuit_prover --features prover_bench -- --nocapture`
+    #[cfg(feature = "prover_bench")]
     #[test]
     fn bench_state_circuit_prover() {
         use ark_std::{end_timer, start_timer};
@@ -2011,7 +2011,7 @@ mod tests {
         use rand::SeedableRng;
         use rand_xorshift::XorShiftRng;
 
-        const DEGREE: u32 = 22;
+        const DEGREE: u32 = 16;
         const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
         const MEMORY_ADDRESS_MAX: usize = 2000;
         const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);

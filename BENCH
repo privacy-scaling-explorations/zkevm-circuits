@@ -8,4 +8,4 @@ COPY . .
 
 RUN RUSTFLAGS='-C target-cpu=native' cargo test --no-run --profile bench
 
-CMD RUSTFLAGS='-C target-cpu=native' cargo test --profile bench $BENCH_NAME -- --nocapture --ignored
+CMD RUSTFLAGS='-C target-cpu=native' cargo test --profile bench $BENCH_NAME --features prover_bench -- --nocapture
