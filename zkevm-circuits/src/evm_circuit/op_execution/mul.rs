@@ -3,7 +3,7 @@ use super::super::{
 };
 use super::utils::{
     self,
-    common_cases::{OutOfGasCase, StackOverflowCase},
+    common_cases::{OutOfGasCase, StackUnderflowCase},
     constraint_builder::ConstraintBuilder,
     StateTransition,
 };
