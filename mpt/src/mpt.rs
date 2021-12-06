@@ -35,8 +35,8 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     q_enable: Selector,
-    q_not_first: Column<Fixed>, // not first row
-    not_first_level: Column<Fixed>,
+    q_not_first: Column<Fixed>,     // not first row
+    not_first_level: Column<Fixed>, // to avoid rotating back when in the first branch (for key rlc)
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
@@ -73,7 +73,7 @@ pub struct MPTConfig<F> {
     account_leaf_key_chip: AccountLeafKeyConfig,
     account_leaf_nonce_balance_chip: AccountLeafNonceBalanceConfig,
     account_leaf_storage_codehash_chip: AccountLeafStorageCodehashConfig,
-    key_rlc: Column<Advice>,
+    key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     leaf_hash_s_chip: LeafHashConfig,
@@ -279,7 +279,11 @@ impl<F: FieldExt> MPTConfig<F> {
             // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
             // followed by is_leaf_key_nibbles
 
-            // TODO: account leaf constraints (order ...)
+            // TODO: account leaf constraints (order and also that account leaf selectors
+            // are truea only in account proof part & normal leaf selectors are true only
+            // in storage part, for this we also need account proof selector and storage
+            // proof selector - bool and strictly increasing for example. Also, is_account_leaf_key_nibbles
+            // needs to be 1 in the previous row when the account/storage selector changes.
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let modified_node =
@@ -419,6 +423,9 @@ impl<F: FieldExt> MPTConfig<F> {
             // There are already constraints "is last branch child 1 and 2" below
             // to make sure that is_last_branch_child is 1 only when node_index = 15.
 
+            // TODO: not_first_level constraints (needs to be 0 or 1 and needs to
+            // be strictly decreasing)
+
             // if we have branch child, we can only have branch child or branch init in the previous row
             constraints.push((
                 "before branch children",
@@ -505,6 +512,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
             // For the first branch node (node_index = 0), the key rlc needs to be:
             // key_rlc = key_rlc::Rotation(-17) + modified_node * key_rlc_mult
+
+            // We need to check whether we are in the first storage level, we can do this
+            // by checking whether is_account_leaf_key_nibbles is true in the previous row.
+
+            // -2 because we are in the first branch child and there is branch init row in between
+            let is_account_leaf_key_nibbles_prev =
+                meta.query_advice(is_account_leaf_key_nibbles, Rotation(-2));
+
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-17));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
             let key_rlc_mult_prev =
@@ -515,6 +530,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "first branch children key_rlc",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
+                    * (one.clone() - is_account_leaf_key_nibbles_prev.clone()) // When this is 0, we check as for the first level key rlc.
                     * (key_rlc_cur.clone()
                         - key_rlc_prev
                         - modified_node_cur.clone()
@@ -524,21 +540,38 @@ impl<F: FieldExt> MPTConfig<F> {
                 "first branch children key_rlc_mult",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
+                    * (one.clone() - is_account_leaf_key_nibbles_prev.clone()) // When this is 0, we check as for the first level key rlc.
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * acc_r),
             ));
 
-            // First level key_rlc
+            // Key (which actually means account address) in first level in account proof.
             constraints.push((
-                "first level key_rlc",
+                "account first level key_rlc",
                 q_not_first.clone()
                     * (one.clone() - not_first_level.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_cur.clone() - modified_node_cur.clone()),
+            ));
+            constraints.push((
+                "account first level key_rlc_mult",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_mult_cur.clone() - one.clone() * acc_r),
+            ));
+
+            // First storage level.
+            constraints.push((
+                "storage first level key_rlc",
+                q_not_first.clone()
+                    * is_account_leaf_key_nibbles_prev.clone()
                     * is_branch_init_prev.clone()
                     * (key_rlc_cur - modified_node_cur),
             ));
             constraints.push((
-                "first level key_rlc_mult",
+                "storage first level key_rlc_mult",
                 q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
+                    * is_account_leaf_key_nibbles_prev.clone()
                     * is_branch_init_prev.clone()
                     * (key_rlc_mult_cur - one.clone() * acc_r),
             ));
@@ -766,7 +799,8 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        // TODO: first level branch hash for S and C - compared to root
+        // TODO: account first level branch hash for S and C - compared to root
+        // TODO: storage first level branch hash for S and C - root in last account leaf
 
         // Check if (accumulated_s_rlc, hash1, hash2, hash3, hash4) is in keccak table,
         // where hash1, hash2, hash3, hash4 are stored in the previous branch and
@@ -774,6 +808,10 @@ impl<F: FieldExt> MPTConfig<F> {
         meta.lookup(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
+
+            // -17 because we are in the last branch child (-16 takes us to branch init)
+            let is_account_leaf_key_nibbles_prev =
+                meta.query_advice(is_account_leaf_key_nibbles, Rotation(-17));
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
@@ -790,6 +828,7 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
+                    * (one.clone() - is_account_leaf_key_nibbles_prev.clone()) // we don't check this in the first storage level
                     * branch_acc_s1, // TODO: replace with acc_s once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -801,6 +840,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 constraints.push((
                     not_first_level.clone()
                         * is_last_branch_child.clone()
+                        * (one.clone()
+                            - is_account_leaf_key_nibbles_prev.clone()) // we don't check this in the first storage level
                         * s_keccak,
                     keccak_table_i,
                 ));
@@ -815,6 +856,10 @@ impl<F: FieldExt> MPTConfig<F> {
         meta.lookup(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
+
+            // -17 because we are in the last branch child (-16 takes us to branch init)
+            let is_account_leaf_key_nibbles_prev =
+                meta.query_advice(is_account_leaf_key_nibbles, Rotation(-17));
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
@@ -831,6 +876,7 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
+                    * (one.clone() - is_account_leaf_key_nibbles_prev.clone()) // we don't check this in the first storage level
                     * branch_acc_c1, // TODO: replace with acc_c once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -842,6 +888,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 constraints.push((
                     not_first_level.clone()
                         * is_last_branch_child.clone()
+                        * (one.clone() - is_account_leaf_key_nibbles_prev.clone()) // we don't check this in the first storage level
                         * c_keccak,
                     keccak_table_i,
                 ));
@@ -850,6 +897,7 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
+        // Check hash of a leaf.
         meta.lookup(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
@@ -1066,6 +1114,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 r_table.clone(),
             );
 
+        // NOTE: storage leaf chip (LeafHashChip) checks the keccak, while
+        // account leaf chip doesn't do this internally, the lookup is in mpt.rs
         let account_leaf_storage_codehash_chip =
             AccountLeafStorageCodehashChip::<F>::configure(
                 meta,
@@ -1510,7 +1560,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut acc_mult_s = F::zero();
                     let mut acc_c = F::zero();
                     let mut acc_mult_c = F::zero();
-                    let mut key_rlc = F::zero();
+                    let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
@@ -1768,6 +1818,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_storage_codehash_c = true;
                             } else if row[row.len() - 1] == 12 {
                                 is_account_leaf_key_nibbles = true;
+                                key_rlc = F::zero(); // storage key from here on
+                                key_rlc_mult = F::one();
                             }
 
                             self.assign_row(
