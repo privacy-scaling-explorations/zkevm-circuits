@@ -444,13 +444,17 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let mut independent_lookups = Vec::new();
         let mut presets_map = HashMap::new();
 
-        meta.create_gate("Constrain execution result", |meta| {
+        meta.create_gate("Constrain execution state", |meta| {
             let q_step = meta.query_selector(q_step);
+
+            // Only one of execution_state should be enabled
             let sum_to_one = step_curr
                 .state
                 .execution_state
                 .iter()
                 .fold(1.expr(), |acc, cell| acc - cell.expr());
+
+            // Cells representation for execution_state should be bool.
             let bool_checks = step_curr
                 .state
                 .execution_state
@@ -462,6 +466,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 .map(move |poly| q_step.clone() * poly)
         });
 
+        // TODO: ExecutionState transition needs to be constraint to avoid
+        // transition from non-terminator to BeginTx.
+
+        // Use qs_byte_lookup as selector to do byte range lookup on each advice
+        // column. In this way, ExecutionGadget could enable the byte range
+        // lookup by enable qs_byte_lookup.
         for advice in advices {
             meta.lookup_any(|meta| {
                 let advice = meta.query_advice(advice, Rotation::cur());
@@ -551,7 +561,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let (constraints, lookups, presets) = cb.build();
         assert!(
             presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
-            "execution result already configured"
+            "execution state already configured"
         );
 
         if !constraints.is_empty() {
@@ -564,6 +574,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
             });
         }
 
+        // Push lookups of this ExecutionState to independent_lookups for
+        // further configuration in configure_lookup.
         independent_lookups.push(lookups);
 
         gadget
@@ -582,21 +594,28 @@ impl<F: FieldExt> ExecutionConfig<F> {
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
     {
-        let mut input_exprs_map = HashMap::new();
+        // Because we constraint one and only one ExecutionState will be enabled
+        // at a step, we then know only one of independent_lookups will be
+        // enabled at a step, so we can add up them together to reduce the
+        // amount of lookup arguments.
+        // This map holds all added up independent lookups as accumulated
+        // lookups, and will be used in configuring lookup arguments later.
+        let mut acc_lookups_of_table = HashMap::new();
 
         for lookups in independent_lookups {
-            let mut index_map = HashMap::new();
+            let mut index_of_table = HashMap::new();
 
             for lookup in lookups {
                 let table = lookup.table();
-                let input_exprs =
-                    input_exprs_map.entry(table).or_insert_with(Vec::new);
-                let index = index_map.entry(table).or_insert(0);
+                let acc_lookups =
+                    acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
+                let index = index_of_table.entry(table).or_insert(0);
 
-                if *index == input_exprs.len() {
-                    input_exprs.push(lookup.input_exprs());
+                if *index == acc_lookups.len() {
+                    acc_lookups.push(lookup.input_exprs());
                 } else {
-                    for (acc, expr) in input_exprs[*index]
+                    // Add up independent lookup together
+                    for (acc, expr) in acc_lookups[*index]
                         .iter_mut()
                         .zip(lookup.input_exprs().into_iter())
                     {
@@ -609,8 +628,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         macro_rules! lookup {
             ($id:path, $table:ident) => {
-                if let Some(input_exprs) = input_exprs_map.remove(&$id) {
-                    for input_exprs in input_exprs {
+                if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
+                    for input_exprs in acc_lookups {
                         meta.lookup_any(|meta| {
                             let q_step = meta.query_selector(q_step);
                             input_exprs

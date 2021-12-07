@@ -187,16 +187,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
         let mut cells = Vec::with_capacity(N);
 
+        // Iterate rows to find cell that matches the is_byte requirement.
         for (row, usage) in
             self.curr.rows.iter().zip(self.row_usages.iter_mut())
         {
-            if usage.is_byte_lookup_enabled != is_byte {
-                if usage.next_idx > 0 || usage.next_idx == row.cells.len() {
-                    continue;
-                }
-                if is_byte {
-                    usage.is_byte_lookup_enabled = true;
-                }
+            // If this row doesn't match the is_byte requirement and is already
+            // used, skip this row.
+            if usage.is_byte_lookup_enabled != is_byte && usage.next_idx > 0 {
+                continue;
+            }
+
+            // Enable the byte range lookup for this row if queried cells are
+            // required to be bytes.
+            if usage.next_idx == 0 && is_byte {
+                usage.is_byte_lookup_enabled = true;
             }
 
             let n = row.cells.len().min(usage.next_idx + N - cells.len());

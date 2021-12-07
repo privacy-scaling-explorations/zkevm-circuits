@@ -19,8 +19,8 @@ use halo2::{
     plonk::{Error, Expression},
 };
 
-/// Construction of execution result that stays in the same call context, which
-/// lookups the opcode and verifies the execution result is responsible for it,
+/// Construction of execution state that stays in the same call context, which
+/// lookups the opcode and verifies the execution state is responsible for it,
 /// then calculates the gas_cost and constrain the state transition.
 #[derive(Clone, Debug)]
 pub(crate) struct SameContextGadget<F> {
@@ -49,7 +49,7 @@ impl<F: FieldExt> SameContextGadget<F> {
             .execution_state()
             .responsible_opcodes()
             .first()
-            .expect("Execution result in SameContextGadget should be responsible to some opcodes")
+            .expect("Execution state in SameContextGadget should be responsible to some opcodes")
             .constant_gas_cost()
             .as_u64()
             .expr();
