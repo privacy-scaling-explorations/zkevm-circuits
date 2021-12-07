@@ -14,8 +14,10 @@ use crate::param::HASH_WIDTH;
 pub(crate) struct AddressComprConfig {}
 
 // AddressComprChip verifies the compression of account leaf key from nibbles to hex.
-// This chip is very similar to KeyComprChip, the difference is that the key is moved
-// by one position (nibbles start at the same position).
+// This chip is similar to KeyComprChip, the difference is that the RLP is here always longer
+// than 55 bytes which means key length is always at s_advices[0] and thus we don't need to handle
+// two cases (key length at s_rlp2 or s_advices[0]) separately.
+
 // TODO: it checks (to be enabled) also the path in trie corresponds to the address (rename chip too)
 pub(crate) struct AddressComprChip<F> {
     config: AddressComprConfig,
@@ -207,9 +209,10 @@ impl<F: FieldExt> AddressComprChip<F> {
 
             // s_advices[18]_prev = c_rlp1_cur * 16 + c_rlp2_cur
             let s_prev = meta.query_advice(s_advices[18], Rotation(rotation));
-            let s_cur1 = meta.query_advice(c_rlp1, Rotation::cur());
-            let s_cur2 = meta.query_advice(c_rlp2, Rotation::cur());
-            let expr = s_prev - s_cur1.clone() * c16.clone() - s_cur2.clone();
+            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2_cur = meta.query_advice(c_rlp2, Rotation::cur());
+            let expr =
+                s_prev - c_rlp1_cur.clone() * c16.clone() - c_rlp2_cur.clone();
 
             counter = counter + one.clone();
             is_key = is_key * (key_len.clone() - counter.clone());
@@ -252,24 +255,23 @@ impl<F: FieldExt> AddressComprChip<F> {
             is_key = is_key * (key_len.clone() - counter.clone());
 
             constraints.push((
-                "Key compression even 4",
+                "Key compression even 5",
                 q_enable.clone() * is_even.clone() * is_key.clone() * expr,
             ));
 
-            /*
             // rlc is in the first branch node
-            // -18 = -1 (leaf c) - 1 (leaf s) - 16 (branch nodes)
-            let mut key_rlc_acc = meta.query_advice(key_rlc, Rotation(-18));
-            let mut key_mult = meta.query_advice(key_rlc_mult, Rotation(-18));
+            // -24 = -3 (leaf c) - 3 (leaf s) - 16 (branch nodes)
+            let mut key_rlc_acc = meta.query_advice(key_rlc, Rotation(-24));
+            let mut key_mult = meta.query_advice(key_rlc_mult, Rotation(-24));
 
             for ind in 0..HASH_WIDTH {
                 let n = meta.query_advice(s_advices[ind], Rotation::cur());
                 key_rlc_acc = key_rlc_acc + n * key_mult.clone();
                 key_mult = key_mult * key_rlc_r;
             }
-            key_rlc_acc = key_rlc_acc + s_cur1 * key_mult.clone(); // c_rlp1
+            key_rlc_acc = key_rlc_acc + c_rlp1_cur * key_mult.clone(); // c_rlp1
             key_mult = key_mult * key_rlc_r;
-            key_rlc_acc = key_rlc_acc + s_cur2 * key_mult.clone(); // c_rlp2
+            key_rlc_acc = key_rlc_acc + c_rlp2_cur * key_mult.clone(); // c_rlp2
             key_mult = key_mult * key_rlc_r;
             for ind in 0..HASH_WIDTH {
                 let n = meta.query_advice(c_advices[ind], Rotation::cur());
@@ -339,7 +341,6 @@ impl<F: FieldExt> AddressComprChip<F> {
                     q_enable.clone() * is_not_nibble.clone() * s,
                 ));
             }
-            */
 
             constraints
         });
