@@ -118,6 +118,7 @@ impl<F: FieldExt> AddressComprChip<F> {
                 "Key compression odd 3",
                 q_enable.clone() * is_odd.clone() * is_key.clone() * expr,
             ));
+
             // s_advices[18]_prev = c_rlp2 * 16 + c_advices[0]
             let s_prev = meta.query_advice(s_advices[18], Rotation(rotation));
             let s_cur1 = meta.query_advice(c_rlp2, Rotation::cur());
@@ -259,35 +260,6 @@ impl<F: FieldExt> AddressComprChip<F> {
                 q_enable.clone() * is_even.clone() * is_key.clone() * expr,
             ));
 
-            // rlc is in the first branch node
-            // -24 = -3 (leaf c) - 3 (leaf s) - 16 (branch nodes)
-            let mut key_rlc_acc = meta.query_advice(key_rlc, Rotation(-24));
-            let mut key_mult = meta.query_advice(key_rlc_mult, Rotation(-24));
-
-            for ind in 0..HASH_WIDTH {
-                let n = meta.query_advice(s_advices[ind], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + n * key_mult.clone();
-                key_mult = key_mult * key_rlc_r;
-            }
-            key_rlc_acc = key_rlc_acc + c_rlp1_cur * key_mult.clone(); // c_rlp1
-            key_mult = key_mult * key_rlc_r;
-            key_rlc_acc = key_rlc_acc + c_rlp2_cur * key_mult.clone(); // c_rlp2
-            key_mult = key_mult * key_rlc_r;
-            for ind in 0..HASH_WIDTH {
-                let n = meta.query_advice(c_advices[ind], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + n * key_mult.clone();
-                key_mult = key_mult * key_rlc_r;
-            }
-
-            // RLC of key nibbles are to be checked to verify that the proper key is used.
-            // TODO: enable this when key in mpt.rs is available. This is to ensure
-            // the node in trie has been modified that correspond to the key.
-            /*
-            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
-            constraints
-                .push(("Key RLC", q_enable.clone() * (key_rlc_acc - key_rlc)));
-            */
-
             // We need to make sure there are 0s after nibbles end
             // We have 2 * key_len nibbles, this is at most 64. We need to check
             // s_advices, c_rlp1, c_rlp2, c_advices to be 0 after 2 * key_len nibbles.
@@ -341,6 +313,35 @@ impl<F: FieldExt> AddressComprChip<F> {
                     q_enable.clone() * is_not_nibble.clone() * s,
                 ));
             }
+
+            // rlc is in the first branch node
+            // -24 = -3 (leaf c) - 3 (leaf s) - 16 (branch nodes)
+            let mut key_rlc_acc = meta.query_advice(key_rlc, Rotation(-24));
+            let mut key_mult = meta.query_advice(key_rlc_mult, Rotation(-24));
+
+            for ind in 0..HASH_WIDTH {
+                let n = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + n * key_mult.clone();
+                key_mult = key_mult * key_rlc_r;
+            }
+            key_rlc_acc = key_rlc_acc + c_rlp1_cur * key_mult.clone(); // c_rlp1
+            key_mult = key_mult * key_rlc_r;
+            key_rlc_acc = key_rlc_acc + c_rlp2_cur * key_mult.clone(); // c_rlp2
+            key_mult = key_mult * key_rlc_r;
+            for ind in 0..HASH_WIDTH {
+                let n = meta.query_advice(c_advices[ind], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + n * key_mult.clone();
+                key_mult = key_mult * key_rlc_r;
+            }
+
+            // RLC of key nibbles are to be checked to verify that the proper key is used.
+            // TODO: enable this when key in mpt.rs is available. This is to ensure
+            // the node in trie has been modified that correspond to the key.
+            /*
+            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            constraints
+                .push(("Key RLC", q_enable.clone() * (key_rlc_acc - key_rlc)));
+            */
 
             constraints
         });

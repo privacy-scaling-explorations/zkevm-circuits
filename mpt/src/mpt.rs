@@ -215,7 +215,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(is_last_branch_child, Rotation::cur());
             let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
             let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
-            let is_leaf_key_s =
+            let is_leaf_key_nibbles =
                 meta.query_advice(is_leaf_key_nibbles, Rotation::cur());
 
             let is_account_leaf_key_s =
@@ -250,8 +250,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_leaf_s.clone() * (one.clone() - is_leaf_s.clone());
             let bool_check_is_leaf_c =
                 is_leaf_c.clone() * (one.clone() - is_leaf_c.clone());
-            let bool_check_is_leaf_key =
-                is_leaf_key_s.clone() * (one.clone() - is_leaf_key_s.clone());
+            let bool_check_is_leaf_key = is_leaf_key_nibbles.clone()
+                * (one.clone() - is_leaf_key_nibbles.clone());
             let bool_check_is_account_leaf_key_nibbles =
                 is_account_leaf_key_nibbles.clone()
                     * (one.clone() - is_account_leaf_key_nibbles.clone());
@@ -1165,6 +1165,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
+            acc_s,
+            acc_c,
             key_rlc,
             key_rlc_mult,
             acc_r,
@@ -1443,7 +1445,7 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(F::from_u64(is_leaf_c as u64)),
         )?;
         region.assign_advice(
-            || format!("assign is_leaf_key_s"),
+            || format!("assign is_leaf_key_nibbles"),
             self.is_leaf_key_nibbles,
             offset,
             || Ok(F::from_u64(is_leaf_key as u64)),
@@ -1950,7 +1952,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_storage_codehash_c = true;
                             } else if row[row.len() - 1] == 12 {
                                 is_account_leaf_key_nibbles = true;
-                                key_rlc = F::zero(); // storage key from here on
+                                key_rlc = F::zero(); // account address until here, storage key from here on
                                 key_rlc_mult = F::one();
                             }
 
@@ -1974,6 +1976,30 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_key_nibbles,
                                 offset,
                             )?;
+
+                            // Leaf key nibbles
+                            if row[row.len() - 1] == 4 {
+                                // Info whether leaf rlp is long or short.
+                                let mut is_short = false;
+                                let mut is_long = false;
+                                if witness[ind - 1][0] == 248 {
+                                    is_long = true;
+                                } else {
+                                    is_short = true;
+                                }
+                                region.assign_advice(
+                                    || format!("assign acc_s"),
+                                    self.acc_s,
+                                    offset,
+                                    || Ok(F::from_u64(is_long as u64)),
+                                )?;
+                                region.assign_advice(
+                                    || format!("assign acc_c"),
+                                    self.acc_c,
+                                    offset,
+                                    || Ok(F::from_u64(is_short as u64)),
+                                )?;
+                            }
 
                             // assign leaf accumulator that will be used as keccak input
                             let compute_acc_and_mult =
