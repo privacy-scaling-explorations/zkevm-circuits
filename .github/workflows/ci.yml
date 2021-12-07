@@ -1,10 +1,10 @@
 name: CI checks
 
-on: 
+on:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
 
-## `actions-rs/toolchain@v1` overwrite set to false so that 
+## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --all-features
+          args: --verbose --release --all --all-features --exclude integration-tests
 
   build:
     if: github.event.pull_request.draft == false
@@ -98,7 +98,7 @@ jobs:
 
   fmt:
     if: github.event.pull_request.draft == false
-    
+
     name: Rustfmt
     timeout-minutes: 30
     runs-on: ubuntu-latest
