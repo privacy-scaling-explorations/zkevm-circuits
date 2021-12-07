@@ -242,8 +242,12 @@ pub mod bus_mapping_tmp {
                     if self.push_data_left > 0 {
                         is_code = false;
                         self.push_data_left -= 1;
-                    } else if (0x60..0x80).contains(&byte) {
-                        self.push_data_left = byte as usize - 0x60 + 1;
+                    } else if (OpcodeId::PUSH1.as_u8()
+                        ..=OpcodeId::PUSH32.as_u8())
+                        .contains(&byte)
+                    {
+                        self.push_data_left = byte as usize
+                            - (OpcodeId::PUSH1.as_u8() - 1) as usize;
                     }
 
                     self.idx += 1;
