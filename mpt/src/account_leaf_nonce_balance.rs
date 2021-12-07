@@ -51,7 +51,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // contains the length of this string, for example 184 80 means the second
             // part is of length 1 (183 + 1 = 184) and there are 80 bytes in this string.
             // Then there is a list rlp meta data 248 78 where (this is stored in c_rlp1 and c_rlp2)
-            // 78 = 3 nonce, 9 balance, 33 storage, 33 codehash.
+            // 78 = 3 (nonce) + 9 (balance) + 33 (storage) + 33 (codehash).
             // We have nonce in s_advices and balance in c_advices.
 
             // TODO: nonce and balance compared to the input
@@ -115,7 +115,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let mut nonzero_table = vec![];
             nonzero_table.push(one.clone()); // s_advices[0]
             let mut z_counter = nonce_len.clone();
-            let mut z_expr = one.clone();
+            let mut z_expr = z_counter.clone(); // nonce_len can be 0 too
             for _ in 0..HASH_WIDTH {
                 nonzero_table.push(z_expr.clone());
                 z_counter = z_counter - one.clone();
@@ -152,7 +152,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             nonzero_table = vec![];
             nonzero_table.push(one.clone()); // c_advices[0]
             z_counter = balance_len.clone();
-            z_expr = one.clone();
+            z_expr = balance_len.clone(); // balance_len can be 0 too
             for _ in 0..HASH_WIDTH {
                 nonzero_table.push(z_expr.clone());
                 z_counter = z_counter - one.clone();
