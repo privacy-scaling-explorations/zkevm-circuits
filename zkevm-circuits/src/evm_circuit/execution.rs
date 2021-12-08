@@ -594,10 +594,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
     {
-        // Because we constraint one and only one ExecutionState will be enabled
-        // at a step, we then know only one of independent_lookups will be
-        // enabled at a step, so we can add up them together to reduce the
-        // amount of lookup arguments.
+        // Because one and only one ExecutionState is enabled at a step, we then
+        // know only one of independent_lookups will be enabled at a step, so we
+        // can add up them together to reduce the amount of lookup arguments.
         // This map holds all added up independent lookups as accumulated
         // lookups, and will be used in configuring lookup arguments later.
         let mut acc_lookups_of_table = HashMap::new();
