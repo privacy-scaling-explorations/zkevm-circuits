@@ -30,8 +30,8 @@ impl<F: FieldExt> KeyComprChip<F> {
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
-        acc_s: Column<Advice>, // to see whether it's long or short RLP
-        acc_c: Column<Advice>, // to see whether it's long or short RLP
+        s_keccak0: Column<Advice>, // to see whether it's long or short RLP
+        s_keccak1: Column<Advice>, // to see whether it's long or short RLP
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         key_rlc_r: F,
@@ -47,9 +47,11 @@ impl<F: FieldExt> KeyComprChip<F> {
             let is_even = meta.query_advice(s_rlp2, Rotation::cur());
 
             // NOTE: is_long and is_short constraints are in leaf_hash
-            // Rotation -1 or -2 can be used.
-            let is_long = meta.query_advice(acc_s, Rotation(-1));
-            let is_short = meta.query_advice(acc_c, Rotation(-1));
+            // Rotation -2 or -4 can be used (we are in nibbles, -1 is leaf c value,
+            // -2 is leaf c key, -3 is leaf s value, -4 is leaf s key)
+            let rotation = -2;
+            let is_long = meta.query_advice(s_keccak0, Rotation(rotation));
+            let is_short = meta.query_advice(s_keccak1, Rotation(rotation));
 
             // TODO: is_odd, is_even are booleans
             // TODO: is_odd + is_even = 1
@@ -59,7 +61,7 @@ impl<F: FieldExt> KeyComprChip<F> {
             // TODO: key is the same for S and C (note that the RLP length can be different
             // and thus one might be long RLP and one short RLP)
 
-            // TODO: check value is the same as the one given from outside
+            // TODO: check value is the same as the one given from outside - in leaf_s_value and leaf_c_value
 
             // TODO: refactor to avoid repeated queries
 
@@ -83,10 +85,8 @@ impl<F: FieldExt> KeyComprChip<F> {
             // s_advices[1]_prev = 138 = 8 * 16 + 10 = s_advices[1]_cur * 16 + s_advices[2]_cur
             // s_advices[2]_prev = 106 = 6 * 16 + 10 = s_advices[3]_cur * 16 + s_advices[4]_cur
 
-            let rotation = -1;
             let one = Expression::Constant(F::one());
             let c128 = Expression::Constant(F::from_u64(128));
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rotation));
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rotation));
 
             let key_len = s_rlp2 - c128.clone();
