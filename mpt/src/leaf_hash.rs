@@ -29,8 +29,10 @@ impl<F: FieldExt> LeafHashChip<F> {
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
-        acc_s: Column<Advice>, // to see whether it's long or short RLP
-        acc_c: Column<Advice>, // to see whether it's long or short RLP
+        s_keccak0: Column<Advice>, // to see whether it's long or short RLP
+        s_keccak1: Column<Advice>, // to see whether it's long or short RLP
+        acc: Column<Advice>,
+        acc_mult: Column<Advice>,
         acc_r: F,
         sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -43,7 +45,7 @@ impl<F: FieldExt> LeafHashChip<F> {
 
             let c248 = Expression::Constant(F::from_u64(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let is_long = meta.query_advice(acc_s, Rotation::cur());
+            let is_long = meta.query_advice(s_keccak0, Rotation::cur());
             // let is_short = meta.query_advice(acc_c, Rotation::cur());
             constraints.push((
                 "is long",
@@ -59,14 +61,14 @@ impl<F: FieldExt> LeafHashChip<F> {
         meta.lookup(|meta| {
             let q_enable = q_enable(meta);
 
-            // let is_long = meta.query_advice(acc_s, Rotation::cur());
-            // let is_short = meta.query_advice(acc_c, Rotation::cur());
+            // let is_long = meta.query_advice(s_keccak0, Rotation::cur());
+            // let is_short = meta.query_advice(s_keccak1, Rotation::cur());
 
             let mut rlc = Expression::Constant(F::zero());
             let mut mult = Expression::Constant(F::one());
 
             // TODO: check that from some point on (depends on the rlp meta data)
-            // the values are zero (as in key_compr) - but consider it can be long or short RLP
+            // the values are zero (as in key_compr) - but take into account it can be long or short RLP
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             rlc = rlc + s_rlp1 * mult.clone();
