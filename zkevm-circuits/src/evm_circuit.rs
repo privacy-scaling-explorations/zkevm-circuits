@@ -62,14 +62,14 @@ impl<F: FieldExt> EvmCircuit<F> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
-                for (offset, row) in std::iter::once([
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                ])
-                .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
-                .enumerate()
+                for (offset, row) in std::iter::once([F::zero(); 4])
+                    .chain(
+                        fixed_table_tags
+                            .iter()
+                            .map(|tag| tag.build())
+                            .flatten(),
+                    )
+                    .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip(row) {
                         region.assign_fixed(
