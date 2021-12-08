@@ -1150,8 +1150,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_r,
-            s_keccak,
-            keccak_table,
         );
 
         let leaf_hash_c_chip = LeafHashChip::<F>::configure(
@@ -1173,8 +1171,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_r,
-            c_keccak,
-            keccak_table,
         );
 
         // TODO: account address the same in S and C leaf
@@ -2098,6 +2094,29 @@ impl<F: FieldExt> MPTConfig<F> {
                             {
                                 // Info whether leaf rlp is long or short.
                                 assign_long_short(witness[ind][0] == 248);
+
+                                acc_s = F::zero();
+                                acc_mult_s = F::one();
+                                let len: usize;
+                                if row[0] == 248 {
+                                    len = (row[2] - 128) as usize + 3;
+                                } else {
+                                    len = (row[1] - 128) as usize + 2;
+                                }
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    0,
+                                    len,
+                                );
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
                             }
 
                             if row[row.len() - 1] == 6
