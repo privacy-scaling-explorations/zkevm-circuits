@@ -34,8 +34,6 @@ impl<F: FieldExt> LeafHashChip<F> {
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         acc_r: F,
-        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> LeafHashConfig {
         let config = LeafHashConfig {};
 
@@ -49,15 +47,55 @@ impl<F: FieldExt> LeafHashChip<F> {
             // let is_short = meta.query_advice(acc_c, Rotation::cur());
             constraints.push((
                 "is long",
-                q_enable.clone() * is_long.clone() * (s_rlp1 - c248),
+                q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
             ));
 
             // TODO: is_long, is_short are booleans
             // TODO: is_long + is_short = 1
 
+            let mut rlc = Expression::Constant(F::zero());
+            let mut mult = Expression::Constant(F::one());
+
+            // TODO: check that from some point on (depends on the rlp meta data)
+            // the values are zero (as in key_compr) - but take into account it can be long or short RLP
+
+            // TODO: check acc_mult as in key_compr
+
+            rlc = rlc + s_rlp1 * mult.clone();
+            mult = mult * acc_r;
+
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            rlc = rlc + s_rlp2 * mult.clone();
+            mult = mult * acc_r;
+
+            for col in s_advices.iter() {
+                let s = meta.query_advice(*col, Rotation::cur());
+                rlc = rlc + s * mult.clone();
+                mult = mult * acc_r;
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            rlc = rlc + c_rlp1 * mult.clone();
+            mult = mult * acc_r;
+
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            rlc = rlc + c_rlp2 * mult.clone();
+            mult = mult * acc_r;
+
+            for col in c_advices.iter() {
+                let c = meta.query_advice(*col, Rotation::cur());
+                rlc = rlc + c * mult.clone();
+                mult = mult * acc_r;
+            }
+
+            let acc = meta.query_advice(acc, Rotation::cur());
+            constraints.push(("Leaf key acc", q_enable.clone() * (rlc - acc)));
+
             constraints
         });
 
+        // TODO: add chip for this lookup for is_key_s_value and is_key_c_value
+        /*
         meta.lookup(|meta| {
             let q_enable = q_enable(meta);
 
@@ -116,6 +154,7 @@ impl<F: FieldExt> LeafHashChip<F> {
 
             constraints
         });
+        */
 
         config
     }
