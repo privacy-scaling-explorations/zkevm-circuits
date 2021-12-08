@@ -30,8 +30,8 @@ impl<F: FieldExt> KeyComprChip<F> {
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
-        acc_s: Column<Advice>,
-        acc_c: Column<Advice>,
+        acc_s: Column<Advice>, // to see whether it's long or short RLP
+        acc_c: Column<Advice>, // to see whether it's long or short RLP
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         key_rlc_r: F,
@@ -46,18 +46,22 @@ impl<F: FieldExt> KeyComprChip<F> {
             let is_odd = meta.query_advice(s_rlp1, Rotation::cur());
             let is_even = meta.query_advice(s_rlp2, Rotation::cur());
 
-            let is_long = meta.query_advice(acc_s, Rotation::cur());
-            let is_short = meta.query_advice(acc_c, Rotation::cur());
+            // NOTE: is_long and is_short constraints are in leaf_hash
+            // Rotation -1 or -2 can be used.
+            let is_long = meta.query_advice(acc_s, Rotation(-1));
+            let is_short = meta.query_advice(acc_c, Rotation(-1));
 
             // TODO: is_odd, is_even are booleans
             // TODO: is_odd + is_even = 1
 
-            // TODO: is_long, is_short are booleans
-            // TODO: is_long + is_short = 1
-
             // TODO: check RLP meta data
 
+            // TODO: key is the same for S and C (note that the RLP length can be different
+            // and thus one might be long RLP and one short RLP)
+
             // TODO: check value is the same as the one given from outside
+
+            // TODO: refactor to avoid repeated queries
 
             // If RLP is shorter than 55 bytes
             // Leaf
@@ -82,16 +86,10 @@ impl<F: FieldExt> KeyComprChip<F> {
             let rotation = -1;
             let one = Expression::Constant(F::one());
             let c128 = Expression::Constant(F::from_u64(128));
-            let c248 = Expression::Constant(F::from_u64(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rotation));
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rotation));
 
-            constraints.push((
-                "Key compression is long",
-                q_enable.clone() * is_long.clone() * (s_rlp1 - c248),
-            ));
-
-            let key_len = s_rlp2 - c128;
+            let key_len = s_rlp2 - c128.clone();
             let mut counter = Expression::Constant(F::zero());
             let mut is_key = Expression::Constant(F::one());
             // counter increases when we move through key bytes
@@ -111,7 +109,7 @@ impl<F: FieldExt> KeyComprChip<F> {
                     * is_odd.clone()
                     * is_short.clone()
                     * is_key.clone()
-                    * (s_advices0_prev - s_advices0_cur - c48),
+                    * (s_advices0_prev - s_advices0_cur.clone() - c48),
             ));
 
             let c16 = Expression::Constant(F::from_u64(16));
@@ -293,11 +291,12 @@ impl<F: FieldExt> KeyComprChip<F> {
             // s_advices, c_rlp1, c_rlp2, c_advices to be 0 after 2 * key_len nibbles.
             // s_advices, c_rlp1, c_rlp2, c_advices are 32 + 2 + 32 = 66.
 
-            let nibble_len =
-                is_even * (key_len.clone() - one.clone()) * F::from_u64(2)
-                    + is_odd.clone()
-                        * ((key_len.clone() - one.clone()) * F::from_u64(2)
-                            + one.clone());
+            let nibble_len = is_even.clone()
+                * (key_len.clone() - one.clone())
+                * F::from_u64(2)
+                + is_odd.clone()
+                    * ((key_len.clone() - one.clone()) * F::from_u64(2)
+                        + one.clone());
             let c66 = Expression::Constant(F::from_u64(66));
             let mut counter = Expression::Constant(F::zero());
             let mut is_not_nibble = Expression::Constant(F::one());
@@ -358,8 +357,7 @@ impl<F: FieldExt> KeyComprChip<F> {
             let s_advices0 =
                 meta.query_advice(s_advices[0], Rotation(rotation));
 
-            let c128 = Expression::Constant(F::from_u64(128));
-            let key_len = s_advices0 - c128;
+            let key_len = s_advices0 - c128.clone();
             counter = Expression::Constant(F::zero());
             let mut is_key = Expression::Constant(F::one());
             // counter increases when we move through key bytes
@@ -488,7 +486,180 @@ impl<F: FieldExt> KeyComprChip<F> {
                     * expr,
             ));
 
-            // TODO: even
+            // if key length is even, the first (of the rest) byte contains 32
+
+            let mut counter = Expression::Constant(F::zero());
+            let mut is_key = Expression::Constant(F::one());
+            // counter increases when we move through key bytes
+            // when counter reaches key_len, is_key becomes 0
+            // (that means we don't check equivalence between bytes and nibbles anymore)
+
+            is_key = is_key * (key_len.clone() - counter.clone());
+
+            let c32 = Expression::Constant(F::from_u64(32));
+            let s_advices0_prev =
+                meta.query_advice(s_advices[1], Rotation(rotation));
+            constraints.push((
+                "Key compression even 1 (long)",
+                q_enable.clone()
+                    * is_even.clone()
+                    * is_long.clone()
+                    * is_key.clone()
+                    * (s_advices0_prev - c32),
+            ));
+
+            // s_advices[i+1]_prev = s_advices[2*i - 1]_cur * 16 + s_advices[2*i]_cur
+            // we can go up to i = 16
+            for ind in 1..17 {
+                let s_prev =
+                    meta.query_advice(s_advices[ind + 1], Rotation(rotation));
+                let s_cur1 =
+                    meta.query_advice(s_advices[2 * ind - 2], Rotation::cur());
+                let s_cur2 =
+                    meta.query_advice(s_advices[2 * ind - 1], Rotation::cur());
+                let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+                counter = counter + one.clone();
+                is_key = is_key * (key_len.clone() - counter.clone());
+
+                constraints.push((
+                    "Key compression even 2 (long)",
+                    q_enable.clone()
+                        * is_even.clone()
+                        * is_long.clone()
+                        * is_key.clone()
+                        * expr,
+                ));
+            }
+
+            // s_advices[18]_prev = c_rlp1_cur * 16 + c_rlp2_cur
+            let s_prev = meta.query_advice(s_advices[18], Rotation(rotation));
+            let expr =
+                s_prev - c_rlp1_cur.clone() * c16.clone() - c_rlp2_cur.clone();
+
+            counter = counter + one.clone();
+            is_key = is_key * (key_len.clone() - counter.clone());
+
+            constraints.push((
+                "Key compression even 3 (long)",
+                q_enable.clone()
+                    * is_even.clone()
+                    * is_long.clone()
+                    * is_key.clone()
+                    * expr,
+            ));
+
+            // we can check from i = 19
+            for ind in 19..HASH_WIDTH {
+                let s_prev =
+                    meta.query_advice(s_advices[ind], Rotation(rotation));
+                let s_cur1 = meta.query_advice(
+                    c_advices[2 * (ind - 18) - 2],
+                    Rotation::cur(),
+                );
+                let s_cur2 = meta.query_advice(
+                    c_advices[2 * (ind - 18) - 1],
+                    Rotation::cur(),
+                );
+                let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+                counter = counter + one.clone();
+                is_key = is_key * (key_len.clone() - counter.clone());
+
+                constraints.push((
+                    "Key compression even 4 (long)",
+                    q_enable.clone()
+                        * is_even.clone()
+                        * is_long.clone()
+                        * is_key.clone()
+                        * expr,
+                ));
+            }
+
+            let s_prev = meta.query_advice(c_rlp1, Rotation(rotation));
+            let s_cur1 = meta
+                .query_advice(c_advices[2 * (32 - 18) - 2], Rotation::cur());
+            let s_cur2 = meta
+                .query_advice(c_advices[2 * (32 - 18) - 1], Rotation::cur());
+            let expr = s_prev - s_cur1 * c16.clone() - s_cur2;
+
+            counter = counter + one.clone();
+            is_key = is_key * (key_len.clone() - counter.clone());
+
+            constraints.push((
+                "Key compression even 5 (long)",
+                q_enable.clone()
+                    * is_even.clone()
+                    * is_long.clone()
+                    * is_key.clone()
+                    * expr,
+            ));
+
+            // We need to make sure there are 0s after nibbles end
+            // We have 2 * key_len nibbles, this is at most 64. We need to check
+            // s_advices, c_rlp1, c_rlp2, c_advices to be 0 after 2 * key_len nibbles.
+            // s_advices, c_rlp1, c_rlp2, c_advices are 32 + 2 + 32 = 66.
+
+            let nibble_len =
+                is_even * (key_len.clone() - one.clone()) * F::from_u64(2)
+                    + is_odd
+                        * ((key_len.clone() - one.clone()) * F::from_u64(2)
+                            + one.clone());
+            let c66 = Expression::Constant(F::from_u64(66));
+            let mut counter = Expression::Constant(F::zero());
+            let mut is_not_nibble = Expression::Constant(F::one());
+            // is_not_nibble becomes 0 in the positions where we have nibbles
+
+            for ind in (0..HASH_WIDTH).rev() {
+                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                constraints.push((
+                    "Not nibble c_advices (long)",
+                    q_enable.clone()
+                        * is_long.clone()
+                        * is_not_nibble.clone()
+                        * c,
+                ));
+
+                counter = counter + one.clone();
+                is_not_nibble = is_not_nibble
+                    * (c66.clone() - nibble_len.clone() - counter.clone());
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            constraints.push((
+                "Not nibble c_rlp1 (long)",
+                q_enable.clone()
+                    * is_long.clone()
+                    * is_not_nibble.clone()
+                    * c_rlp1,
+            ));
+
+            counter = counter + one.clone();
+            is_not_nibble = is_not_nibble
+                * (c66.clone() - nibble_len.clone() - counter.clone());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            constraints.push((
+                "Not nibble c_rlp2 (long)",
+                q_enable.clone()
+                    * is_long.clone()
+                    * is_not_nibble.clone()
+                    * c_rlp2,
+            ));
+
+            for ind in (0..HASH_WIDTH).rev() {
+                counter = counter + one.clone();
+                is_not_nibble = is_not_nibble
+                    * (c66.clone() - nibble_len.clone() - counter.clone());
+
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                constraints.push((
+                    "Not nibble s_advices (long)",
+                    q_enable.clone()
+                        * is_long.clone()
+                        * is_not_nibble.clone()
+                        * s,
+                ));
+            }
 
             // End long RLP
 

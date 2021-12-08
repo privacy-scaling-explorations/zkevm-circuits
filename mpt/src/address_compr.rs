@@ -188,6 +188,7 @@ impl<F: FieldExt> AddressComprChip<F> {
                     * is_key.clone()
                     * (s_advices0_prev - c32),
             ));
+
             // s_advices[i+1]_prev = s_advices[2*i - 1]_cur * 16 + s_advices[2*i]_cur
             // we can go up to i = 16
             for ind in 1..17 {
@@ -222,6 +223,7 @@ impl<F: FieldExt> AddressComprChip<F> {
                 "Key compression even 3",
                 q_enable.clone() * is_even.clone() * is_key.clone() * expr,
             ));
+
             // we can check from i = 19
             for ind in 19..HASH_WIDTH {
                 let s_prev =

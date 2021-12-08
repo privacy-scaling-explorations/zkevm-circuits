@@ -1122,6 +1122,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
+            acc_s,
+            acc_c,
             acc_r,
             s_keccak,
             keccak_table,
@@ -1141,6 +1143,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
+            acc_s,
+            acc_c,
             acc_r,
             c_keccak,
             keccak_table,
@@ -1920,7 +1924,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
                             let mut is_leaf_s = false;
                             let mut is_leaf_c = false;
-                            let mut is_leaf_key = false;
+                            let mut is_leaf_key_nibbles = false;
 
                             let mut is_account_leaf_key_s = false;
                             let mut is_account_leaf_nonce_balance_s = false;
@@ -1937,7 +1941,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row[row.len() - 1] == 3 {
                                 is_leaf_c = true;
                             } else if row[row.len() - 1] == 4 {
-                                is_leaf_key = true;
+                                is_leaf_key_nibbles = true;
                             } else if row[row.len() - 1] == 6 {
                                 is_account_leaf_key_s = true;
                             } else if row[row.len() - 1] == 7 {
@@ -1966,7 +1970,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 0,
                                 is_leaf_s,
                                 is_leaf_c,
-                                is_leaf_key,
+                                is_leaf_key_nibbles,
                                 is_account_leaf_key_s,
                                 is_account_leaf_nonce_balance_s,
                                 is_account_leaf_storage_codehash_s,
@@ -1977,28 +1981,38 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            // Leaf key nibbles
-                            if row[row.len() - 1] == 4 {
-                                // Info whether leaf rlp is long or short.
+                            let mut assign_long_short = |long: bool| {
                                 let mut is_short = false;
                                 let mut is_long = false;
-                                if witness[ind - 1][0] == 248 {
+                                if long {
                                     is_long = true;
                                 } else {
                                     is_short = true;
                                 }
-                                region.assign_advice(
-                                    || format!("assign acc_s"),
-                                    self.acc_s,
-                                    offset,
-                                    || Ok(F::from_u64(is_long as u64)),
-                                )?;
-                                region.assign_advice(
-                                    || format!("assign acc_c"),
-                                    self.acc_c,
-                                    offset,
-                                    || Ok(F::from_u64(is_short as u64)),
-                                )?;
+                                region
+                                    .assign_advice(
+                                        || format!("assign acc_s"),
+                                        self.acc_s,
+                                        offset,
+                                        || Ok(F::from_u64(is_long as u64)),
+                                    )
+                                    .ok();
+                                region
+                                    .assign_advice(
+                                        || format!("assign acc_c"),
+                                        self.acc_c,
+                                        offset,
+                                        || Ok(F::from_u64(is_short as u64)),
+                                    )
+                                    .ok();
+                            };
+
+                            // Leaf key nibbles
+                            if row[row.len() - 1] == 2
+                                || row[row.len() - 1] == 3
+                            {
+                                // Info whether leaf rlp is long or short.
+                                assign_long_short(witness[ind][0] == 248);
                             }
 
                             // assign leaf accumulator that will be used as keccak input
@@ -2144,7 +2158,7 @@ impl<F: FieldExt> MPTConfig<F> {
         _layouter: &mut impl Layouter<F>,
         to_be_hashed: Vec<Vec<u8>>,
     ) -> Result<(), Error> {
-        self.load_keccak_table(_layouter, to_be_hashed);
+        self.load_keccak_table(_layouter, to_be_hashed).ok();
 
         Ok(())
     }
