@@ -200,6 +200,9 @@ pub struct FromBinaryTableConfig<F> {
 }
 
 impl<F: FieldExt> FromBinaryTableConfig<F> {
+    pub fn num_chunks(&self) -> usize {
+        NUM_OF_BINARY_CHUNKS
+    }
     pub(crate) fn load(
         &self,
         layouter: &mut impl Layouter<F>,
