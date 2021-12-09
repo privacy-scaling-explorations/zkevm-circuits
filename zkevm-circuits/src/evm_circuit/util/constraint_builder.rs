@@ -391,7 +391,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Rw
 
-    fn rw_lookup_inner(
+    /// Add a Lookup::Rw without increasing the rw_counter_offset, which is
+    /// useful for state reversion or dummuy lookup.
+    fn rw_lookup_with_counter(
         &mut self,
         counter: Expression<F>,
         is_write: Expression<F>,
@@ -406,13 +408,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         });
     }
 
+    /// Add a Lookup::Rw and increase the rw_counter_offset, useful in normal
+    /// cases.
     fn rw_lookup(
         &mut self,
         is_write: Expression<F>,
         tag: Expression<F>,
         values: [Expression<F>; 5],
     ) {
-        self.rw_lookup_inner(
+        self.rw_lookup_with_counter(
             self.curr.state.rw_counter.expr() + self.rw_counter_offset.expr(),
             is_write,
             tag,
@@ -477,14 +481,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn memory_lookup_inner(
+    pub(crate) fn memory_lookup_with_counter(
         &mut self,
         rw_counter: Expression<F>,
         is_write: Expression<F>,
         memory_address: Expression<F>,
         byte: Expression<F>,
     ) {
-        self.rw_lookup_inner(
+        self.rw_lookup_with_counter(
             rw_counter,
             is_write,
             RwTableTag::Memory.expr(),

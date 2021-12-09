@@ -107,7 +107,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             } else {
                 is_not_mstore8.clone() * idx.expr()
             };
-            cb.memory_lookup_inner(
+            cb.memory_lookup_with_counter(
                 cb.curr.state.rw_counter.expr()
                     + cb.rw_counter_offset().expr()
                     + offset.clone(),
