@@ -4,6 +4,7 @@ pub mod account_leaf_storage_codehash;
 pub mod address_compr;
 pub mod branch_acc;
 pub mod key_compr;
-pub mod leaf_hash;
+pub mod leaf_key;
+pub mod leaf_value;
 pub mod mpt;
 pub mod param;
