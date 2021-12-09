@@ -192,28 +192,54 @@ pub(crate) enum Table {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
+    /// Lookup to fixed table, which contains serveral pre-built tables such as
+    /// range tables or bitwise tables.
     Fixed {
+        /// Tag to specify which table to lookup.
         tag: Expression<F>,
+        /// Values that must satisfy the pre-built relationship.
         values: [Expression<F>; 3],
     },
+    /// Lookup to tx table, which contains transactions of this block.
     Tx {
+        /// Id of transaction, the first transaction has id = 1.
         id: Expression<F>,
-        tag: Expression<F>,
+        /// Tag to specify which field to read.
+        field_tag: Expression<F>,
+        /// Index to specify which byte of calldata, which is only used when
+        /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
+        /// Value of the field.
         value: Expression<F>,
     },
+    /// Lookup to read-write table, which contains read-write access records of
+    /// time-aware data.
     Rw {
+        /// Counter for how much read-write have been done, which stands for
+        /// the sequential timestamp.
         counter: Expression<F>,
+        /// A boolean value to specify if the access record is a read or write.
         is_write: Expression<F>,
+        /// Tag to specify which read-write data to access, see RwTableTag for
+        /// all tags.
         tag: Expression<F>,
+        /// Values corresponding to the tag.
         values: [Expression<F>; 5],
     },
+    /// Lookup to bytecode table, which contains all used creation code and
+    /// contract code.
     Bytecode {
+        /// Hash to specify which code to read.
         hash: Expression<F>,
+        /// Index to specify which byte of bytecode.
         index: Expression<F>,
+        /// Value of the index.
         value: Expression<F>,
+        /// A boolean value to specify if the value is executable opcode or the
+        /// data portion of PUSH* operations.
         is_code: Expression<F>,
     },
+    /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
 
@@ -239,10 +265,15 @@ impl<F: FieldExt> Lookup<F> {
             }
             Self::Tx {
                 id,
-                tag,
+                field_tag,
                 index,
                 value,
-            } => vec![id.clone(), tag.clone(), index.clone(), value.clone()],
+            } => vec![
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.clone(),
+            ],
             Self::Rw {
                 counter,
                 is_write,

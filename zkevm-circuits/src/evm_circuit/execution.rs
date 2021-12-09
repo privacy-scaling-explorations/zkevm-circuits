@@ -486,7 +486,6 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 ]
                 .into_iter()
                 .zip(fixed_table.table_exprs(meta).to_vec().into_iter())
-                .map(|(input, table)| (input, table))
                 .collect::<Vec<_>>()
             });
         }
