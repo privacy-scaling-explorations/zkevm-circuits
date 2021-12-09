@@ -20,7 +20,8 @@ use crate::{
     address_compr::{AddressComprChip, AddressComprConfig},
     branch_acc::BranchAccChip,
     key_compr::KeyComprChip,
-    leaf_hash::{LeafHashChip, LeafHashConfig},
+    leaf_key::{LeafKeyChip, LeafKeyConfig},
+    leaf_value::{LeafValueChip, LeafValueConfig},
     param::LAYOUT_OFFSET,
 };
 use crate::{branch_acc::BranchAccConfig, param::WITNESS_ROW_WIDTH};
@@ -80,8 +81,9 @@ pub struct MPTConfig<F> {
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    leaf_hash_s_chip: LeafHashConfig,
-    leaf_hash_c_chip: LeafHashConfig,
+    leaf_key_chip: LeafKeyConfig,
+    leaf_s_value_chip: LeafValueConfig,
+    leaf_c_value_chip: LeafValueConfig,
     _marker: PhantomData<F>,
 }
 
@@ -1131,20 +1133,19 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_c,
         );
 
-        let leaf_hash_s_chip = LeafHashChip::<F>::configure(
+        let leaf_key_chip = LeafKeyChip::<F>::configure(
             meta,
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
                 let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
+                let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
 
-                q_enable * is_leaf_s
+                q_enable * (is_leaf_s + is_leaf_c)
             },
             s_rlp1,
             s_rlp2,
             c_rlp1,
-            c_rlp2,
             s_advices,
-            c_advices,
             s_keccak[0],
             s_keccak[1],
             acc_s,
@@ -1152,22 +1153,39 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        let leaf_hash_c_chip = LeafHashChip::<F>::configure(
+        let leaf_s_value_chip = LeafValueChip::<F>::configure(
             meta,
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
-                let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
+                let is_leaf_s_value =
+                    meta.query_advice(is_leaf_s_value, Rotation::cur());
 
-                q_enable * is_leaf_c
+                q_enable * is_leaf_s_value
             },
             s_rlp1,
             s_rlp2,
-            c_rlp1,
-            c_rlp2,
             s_advices,
-            c_advices,
-            s_keccak[0],
-            s_keccak[1],
+            s_keccak,
+            keccak_table,
+            acc_s,
+            acc_mult_s,
+            acc_r,
+        );
+
+        let leaf_c_value_chip = LeafValueChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_enable = meta.query_selector(q_enable);
+                let is_leaf_c_value =
+                    meta.query_advice(is_leaf_c_value, Rotation::cur());
+
+                q_enable * is_leaf_c_value
+            },
+            s_rlp1,
+            s_rlp2,
+            s_advices,
+            c_keccak,
+            keccak_table,
             acc_s,
             acc_mult_s,
             acc_r,
@@ -1192,8 +1210,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
-            acc_s,
-            acc_c,
+            s_keccak[0],
+            s_keccak[1],
             key_rlc,
             key_rlc_mult,
             acc_r,
@@ -1350,8 +1368,9 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             keccak_table,
-            leaf_hash_s_chip,
-            leaf_hash_c_chip,
+            leaf_key_chip,
+            leaf_s_value_chip,
+            leaf_c_value_chip,
             _marker: PhantomData,
         }
     }
@@ -2109,6 +2128,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     0,
                                     len,
                                 );
+
                                 self.assign_acc(
                                     &mut region,
                                     acc_s,
@@ -2287,6 +2307,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let hash = self.compute_keccak(t);
                     let mut rlc = F::zero();
                     let mut mult = F::one();
+
                     for i in t.iter() {
                         rlc = rlc + F::from_u64(*i as u64) * mult;
                         mult = mult * self.acc_r;
@@ -2367,11 +2388,8 @@ mod tests {
                 let mut to_be_hashed = vec![];
 
                 for row in self.witness.iter() {
-                    if row[row.len() - 1] == 2
-                        || row[row.len() - 1] == 3
-                        || row[row.len() - 1] == 5
-                    {
-                        // leaf S or leaf C or branch RLP
+                    if row[row.len() - 1] == 5 {
+                        // leaves or branch RLP
                         to_be_hashed.push(row[0..row.len() - 1].to_vec());
                     }
                 }
