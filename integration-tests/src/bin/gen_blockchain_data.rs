@@ -9,9 +9,10 @@ use ethers::{
     solc::Solc,
 };
 use integration_tests::{
-    get_provider, get_wallet, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH,
+    get_provider, get_wallet, log_init, CompiledContract, GenDataOutput,
+    CONTRACTS, CONTRACTS_PATH,
 };
+use log::{debug, info};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
@@ -28,7 +29,7 @@ where
     T: Tokenize,
     M: Middleware,
 {
-    println!("Deploying {}...", compiled.name);
+    info!("Deploying {}...", compiled.name);
     let factory =
         ContractFactory::new(compiled.abi.clone(), compiled.bin.clone(), prov);
     factory
@@ -42,7 +43,9 @@ where
 
 #[tokio::main]
 async fn main() {
+    log_init();
     // Compile contracts
+    info!("Compiling contracts...");
     let mut contracts = HashMap::new();
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
@@ -90,11 +93,11 @@ async fn main() {
     loop {
         match prov.client_version().await {
             Ok(version) => {
-                println!("Geth online: {}", version);
+                info!("Geth online: {}", version);
                 break;
             }
             Err(err) => {
-                println!("Geth not available: {:?}", err);
+                debug!("Geth not available: {:?}", err);
                 sleep(Duration::from_millis(500));
             }
         }
@@ -114,9 +117,10 @@ async fn main() {
 
     let accounts = prov.get_accounts().await.expect("cannot get accounts");
     let wallet0 = get_wallet(0);
-    println!("wallet0: {:x}", wallet0.address());
+    info!("wallet0: {:x}", wallet0.address());
 
     // Transfer funds to our account.
+    info!("Transferring funds from coinbase...");
     let tx = TransactionRequest::new()
         .to(wallet0.address())
         .value(WEI_IN_ETHER) // send 1 ETH

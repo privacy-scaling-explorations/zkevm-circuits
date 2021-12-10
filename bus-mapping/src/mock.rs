@@ -1,11 +1,29 @@
 //! Mock types and functions to generate mock data useful for tests
 use crate::address;
 use crate::bytecode::Bytecode;
-use crate::eth_types::{self, Address, Bytes, Hash, Word, U64};
+use crate::eth_types::{self, Address, Bytes, ChainConstants, Hash, Word, U64};
 use crate::evm::Gas;
 use crate::external_tracer;
-use crate::BlockConstants;
+use crate::external_tracer::BlockConstants;
 use crate::Error;
+use lazy_static::lazy_static;
+
+/// Mock chain ID
+pub const CHAIN_ID: u64 = 1338;
+
+lazy_static! {
+    /// Mock coinbase value
+    pub static ref COINBASE: Address =
+        address!("0x00000000000000000000000000000000c014ba5e");
+}
+
+/// Generate a new mock chain constants, useful for tests.
+pub fn new_chain_constants() -> eth_types::ChainConstants {
+    ChainConstants {
+        chain_id: CHAIN_ID,
+        coinbase: *COINBASE,
+    }
+}
 
 /// Generate a new mock block with preloaded data, useful for tests.
 pub fn new_block() -> eth_types::Block<()> {
@@ -43,7 +61,7 @@ pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
         block_hash: block.hash,
         block_number: block.number,
         transaction_index: Some(U64::zero()),
-        from: address!("0x00000000000000000000000000000000c014ba5e"),
+        from: *COINBASE,
         to: Some(Address::zero()),
         value: Word::zero(),
         gas_price: Some(Word::zero()),
@@ -56,7 +74,7 @@ pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
         access_list: None,
         max_priority_fee_per_gas: Some(Word::zero()),
         max_fee_per_gas: Some(Word::zero()),
-        chain_id: Some(Word::zero()),
+        chain_id: Some(Word::from(CHAIN_ID)),
     }
 }
 
@@ -68,8 +86,8 @@ pub struct BlockData {
     pub eth_block: eth_types::Block<()>,
     /// Transaction from geth
     pub eth_tx: eth_types::Transaction,
-    /// Block Constants
-    pub block_ctants: BlockConstants,
+    /// Constants
+    pub ctants: ChainConstants,
     /// Execution Trace from geth
     pub geth_trace: eth_types::GethExecTrace,
 }
@@ -87,10 +105,11 @@ impl BlockData {
         let eth_block = new_block();
         let mut eth_tx = new_tx(&eth_block);
         eth_tx.gas = Word::from(gas.0);
+        let ctants = new_chain_constants();
         let block_ctants = BlockConstants::from_eth_block(
             &eth_block,
-            &eth_types::Word::one(),
-            &address!("0x00000000000000000000000000000000c014ba5e"),
+            &Word::from(ctants.chain_id),
+            &ctants.coinbase,
         );
         let tracer_tx = external_tracer::Transaction::from_eth_tx(&eth_tx);
         let geth_trace = eth_types::GethExecTrace {
@@ -106,7 +125,7 @@ impl BlockData {
         Ok(Self {
             eth_block,
             eth_tx,
-            block_ctants,
+            ctants,
             geth_trace,
         })
     }
@@ -177,11 +196,7 @@ impl BlockData {
     ) -> Self {
         let eth_block = new_block();
         let eth_tx = new_tx(&eth_block);
-        let block_ctants = BlockConstants::from_eth_block(
-            &eth_block,
-            &eth_types::Word::one(),
-            &crate::address!("0x00000000000000000000000000000000c014ba5e"),
-        );
+        let ctants = new_chain_constants();
         let geth_trace = eth_types::GethExecTrace {
             gas: Gas(eth_tx.gas.as_u64()),
             failed: false,
@@ -190,7 +205,7 @@ impl BlockData {
         Self {
             eth_block,
             eth_tx,
-            block_ctants,
+            ctants,
             geth_trace,
         }
     }
@@ -200,7 +215,7 @@ impl BlockData {
 /// tests.
 pub fn new_tracer_tx() -> external_tracer::Transaction {
     external_tracer::Transaction {
-        origin: address!("0x00000000000000000000000000000000c014ba5e"),
+        origin: *COINBASE,
         gas_limit: Word::from(1_000_000u64),
         target: Address::zero(),
     }

@@ -69,16 +69,12 @@ mod stackonlyop_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder = CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder = CircuitInputBuilder::new(
-            block.eth_block,
-            block.block_ctants.clone(),
-        );
+        let mut test_builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
@@ -135,16 +131,12 @@ mod stackonlyop_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder = CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder = CircuitInputBuilder::new(
-            block.eth_block,
-            block.block_ctants.clone(),
-        );
+        let mut test_builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
@@ -215,16 +207,12 @@ mod stackonlyop_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder = CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder = CircuitInputBuilder::new(
-            block.eth_block,
-            block.block_ctants.clone(),
-        );
+        let mut test_builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 

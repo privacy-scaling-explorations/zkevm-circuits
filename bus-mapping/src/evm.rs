@@ -6,6 +6,7 @@ pub mod stack;
 pub mod storage;
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
     opcodes::{ids::OpcodeId, Opcode},
@@ -15,9 +16,15 @@ pub use {
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
+    Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
 )]
 pub struct ProgramCounter(pub(crate) usize);
+
+impl fmt::Debug for ProgramCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("0x{:06x}", self.0))
+    }
+}
 
 impl From<ProgramCounter> for usize {
     fn from(addr: ProgramCounter) -> usize {
@@ -50,8 +57,14 @@ impl ProgramCounter {
 /// [`Operation`](crate::operation::Operation). The purpose of the
 /// `GlobalCounter` is to enforce that each Opcode/Instruction and Operation is
 /// unique and just executed once.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct GlobalCounter(pub(crate) usize);
+
+impl fmt::Debug for GlobalCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
 
 impl From<GlobalCounter> for usize {
     fn from(addr: GlobalCounter) -> usize {
@@ -93,16 +106,28 @@ impl GlobalCounter {
 /// Defines the gas left to perate in a
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
+    Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
 pub struct Gas(pub u64);
+
+impl fmt::Debug for Gas {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
 
 /// Defines the gas consumed by an
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
+    Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
 pub struct GasCost(pub(crate) u64);
+
+impl fmt::Debug for GasCost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
 
 impl GasCost {
     /// Constant cost for free step

@@ -1971,10 +1971,8 @@ mod tests {
         let geth_steps: Vec<GethExecStep> =
             serde_json::from_str(input_trace).expect("Error on trace parsing");
         let block = mock::BlockData::new_single_tx_geth_steps(geth_steps);
-        let mut builder = CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let stack_ops = builder.block.container.sorted_stack();

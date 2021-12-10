@@ -1,14 +1,21 @@
-use crate::eth_types::{Address, Word, H256};
+//! Implementation of an in-memory key-value database to represent the
+//! Ethereum State Trie.
+
+use crate::eth_types::{Address, Hash, Word};
 use std::collections::HashMap;
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value
 /// database that represents the Account Storage Trie.
 #[derive(Debug, PartialEq)]
 pub struct Account {
+    /// Nonce
     pub nonce: Word,
+    /// Balance
     pub balance: Word,
+    /// Storage key-value map
     pub storage: HashMap<Word, Word>,
-    pub codeHash: H256,
+    /// Code hash
+    pub code_hash: Hash,
 }
 
 impl Account {
@@ -17,7 +24,7 @@ impl Account {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
-            codeHash: H256::zero(),
+            code_hash: Hash::zero(),
         }
     }
 }
