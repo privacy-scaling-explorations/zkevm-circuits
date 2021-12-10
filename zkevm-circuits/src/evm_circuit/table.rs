@@ -140,6 +140,7 @@ pub enum RwTableTag {
     CallContext,
     Stack,
     Memory,
+    Storage,
 }
 
 #[derive(Clone, Copy, Debug)]

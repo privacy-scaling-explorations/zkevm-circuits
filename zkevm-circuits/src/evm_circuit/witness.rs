@@ -348,6 +348,8 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::MSTORE8 => ExecutionState::MEMORY,
             OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
             OpcodeId::PC => ExecutionState::PC,
+            OpcodeId::SLOAD => ExecutionState::STORAGE,
+            OpcodeId::SSTORE => ExecutionState::STORAGE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -485,7 +487,7 @@ pub fn block_convert(
         ),
         byte: s.op().value(),
     }));
-    // TODO add storage ops
+    // TODO: add storage ops
 
     block
 }

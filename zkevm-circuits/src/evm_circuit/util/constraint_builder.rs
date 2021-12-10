@@ -502,6 +502,31 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // Storage
+
+    pub(crate) fn storage_lookup_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        is_write: Expression<F>,
+        address_low: Expression<F>,
+        address_high: Expression<F>,
+        offset: Expression<F>,
+        byte: Expression<F>,
+    ) {
+        self.rw_lookup_with_counter(
+            rw_counter,
+            is_write,
+            RwTableTag::Memory.expr(),
+            [
+                self.curr.state.call_id.expr(),
+                address_low,
+                address_high,
+                offset,
+                byte,
+            ],
+        );
+    }
+
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize) {
