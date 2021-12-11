@@ -12,6 +12,9 @@ use std::marker::PhantomData;
 
 use itertools::Itertools;
 
+use crate::arith_helpers::mod_u64;
+use crate::gates::gate_helpers::f_to_biguint;
+
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
     base13: TableColumn,
@@ -189,20 +192,91 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct BaseInfo<F> {
+    input_base: u64,
+    output_base: u64,
+    num_chunks: usize,
+    pub input_tc: TableColumn,
+    pub output_tc: TableColumn,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> BaseInfo<F> {
+    pub fn input_pob(&self) -> F {
+        F::from(self.input_base.pow(self.num_chunks as u32))
+    }
+    pub fn output_pob(&self) -> F {
+        F::from(self.output_base.pow(self.num_chunks as u32))
+    }
+
+    pub fn compute_coefs(
+        &self,
+        input: F,
+    ) -> Result<(Vec<F>, Vec<F>, F), Error> {
+        // big-endian
+        let input_chunks: Vec<u64> = {
+            let mut raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
+            // little endian
+            let mut input_chunks: Vec<u64> = (0..64)
+                .map(|_| {
+                    let remainder: u64 = mod_u64(&raw, self.input_base);
+                    raw /= self.input_base;
+                    remainder
+                })
+                .collect();
+            // big endian
+            input_chunks.reverse();
+            input_chunks
+        };
+        let input_coefs: Vec<F> = input_chunks
+            .chunks(self.num_chunks)
+            .map(|chunks| {
+                let coef = chunks
+                    .iter()
+                    // big endian
+                    .fold(0, |acc, &x| acc * self.input_base + x);
+                F::from(coef)
+            })
+            .collect();
+
+        let convert_chunk = match self.input_base {
+            B2 => |x| x,
+            B13 => convert_b13_coef,
+            B9 => convert_b9_coef,
+            _ => unreachable!(),
+        };
+        let output: F = {
+            let output_base = F::from(self.output_base);
+            input_chunks.iter().fold(F::zero(), |acc, &x| {
+                acc * output_base + F::from(convert_chunk(x))
+            })
+        };
+
+        let output_coefs: Vec<F> = input_chunks
+            .chunks(self.num_chunks)
+            .map(|chunks| {
+                let coef = chunks.iter().fold(0, |acc, &x| {
+                    acc * self.output_base + convert_chunk(x)
+                });
+                F::from(coef)
+            })
+            .collect();
+        Ok((input_coefs, output_coefs, output))
+    }
+}
+
 const NUM_OF_BINARY_CHUNKS: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
-    pub base2: TableColumn,
-    pub base9: TableColumn,
-    pub base13: TableColumn,
+    base2: TableColumn,
+    base9: TableColumn,
+    base13: TableColumn,
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> FromBinaryTableConfig<F> {
-    pub fn num_chunks(&self) -> usize {
-        NUM_OF_BINARY_CHUNKS
-    }
     pub(crate) fn load(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -264,6 +338,17 @@ impl<F: FieldExt> FromBinaryTableConfig<F> {
             base2: meta.lookup_table_column(),
             base9: meta.lookup_table_column(),
             base13: meta.lookup_table_column(),
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn get_base_info(&self, output_b9: bool) -> BaseInfo<F> {
+        BaseInfo {
+            input_base: B2,
+            output_base: if output_b9 { B9 } else { B13 },
+            num_chunks: NUM_OF_BINARY_CHUNKS,
+            input_tc: self.base2,
+            output_tc: if output_b9 { self.base9 } else { self.base13 },
             _marker: PhantomData,
         }
     }
@@ -360,5 +445,16 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
             ]
         });
         config
+    }
+
+    pub fn get_base_info(&self, output_b2: bool) -> BaseInfo<F> {
+        BaseInfo {
+            input_base: B9,
+            output_base: if output_b2 { B2 } else { B13 },
+            num_chunks: NUM_OF_B9_CHUNKS,
+            input_tc: self.base2,
+            output_tc: if output_b2 { self.base2 } else { self.base13 },
+            _marker: PhantomData,
+        }
     }
 }

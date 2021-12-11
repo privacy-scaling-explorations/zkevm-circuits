@@ -1,47 +1,36 @@
 use halo2::{
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
-use crate::arith_helpers::{convert_b2_to_b13, mod_u64};
 use crate::gates::base_eval::BaseEvaluationConfig;
-use crate::gates::gate_helpers::f_to_biguint;
 use crate::gates::gate_helpers::CellF;
+use crate::gates::tables::BaseInfo;
 use pairing::arithmetic::FieldExt;
 
 #[derive(Clone, Debug)]
-struct BaseConversionConfig<F> {
+pub struct BaseConversionConfig<F> {
     q_enable: Selector,
-    num_chunks: usize,
-    input_base: u64,
-    output_base: u64,
-    input_table_col: TableColumn,
-    output_table_col: TableColumn,
+    bi: BaseInfo<F>,
+    lane: Column<Advice>,
     input_eval: BaseEvaluationConfig<F>,
     output_eval: BaseEvaluationConfig<F>,
 }
 
 impl<F: FieldExt> BaseConversionConfig<F> {
     /// Side effect: input_lane and output_lane are equality enabled
-    fn configure(
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        num_chunks: usize,
-        input_base: u64,
-        output_base: u64,
-        input_table_col: TableColumn,
-        output_table_col: TableColumn,
-        input_lane: Column<Advice>,
-        output_lane: Column<Advice>,
+        bi: BaseInfo<F>,
+        lane: Column<Advice>,
     ) -> Self {
         let q_enable = meta.complex_selector();
-        let input_pob = F::from(input_base.pow(num_chunks as u32));
-        let output_pob = F::from(output_base.pow(num_chunks as u32));
 
         let input_eval =
-            BaseEvaluationConfig::configure(meta, input_pob, input_lane);
+            BaseEvaluationConfig::configure(meta, bi.input_pob(), lane);
         let output_eval =
-            BaseEvaluationConfig::configure(meta, output_pob, output_lane);
+            BaseEvaluationConfig::configure(meta, bi.output_pob(), lane);
 
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -50,74 +39,53 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             let output_slices =
                 meta.query_advice(output_eval.coef, Rotation::cur());
             vec![
-                (q_enable.clone() * input_slices, input_table_col),
-                (q_enable * output_slices, output_table_col),
+                (q_enable.clone() * input_slices, bi.input_tc),
+                (q_enable * output_slices, bi.output_tc),
             ]
         });
 
         Self {
             q_enable,
-            num_chunks,
-            input_base,
-            output_base,
-            input_table_col,
-            output_table_col,
+            bi,
+            lane,
             input_eval,
             output_eval,
         }
     }
 
-    fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>), Error> {
-        // big-endian
-        let input_chunks: Vec<u64> = {
-            let mut raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
-            // little endian
-            let mut input_chunks: Vec<u64> = (0..64)
-                .map(|_| {
-                    let remainder: u64 = mod_u64(&raw, self.input_base);
-                    raw /= self.input_base;
-                    remainder
-                })
-                .collect();
-            // big endian
-            input_chunks.reverse();
-            input_chunks
-        };
-        let input_coefs: Vec<F> = input_chunks
-            .chunks(self.num_chunks)
-            .map(|chunks| {
-                let coef = chunks
-                    .iter()
-                    // big endian
-                    .fold(0, |acc, &x| acc * self.input_base + x);
-                F::from(coef)
-            })
-            .collect();
-
-        let output_coefs: Vec<F> = input_chunks
-            .chunks(self.num_chunks)
-            .map(|chunks| {
-                let coef =
-                    chunks.iter().fold(0, |acc, &x| acc * self.output_base + x);
-                F::from(coef)
-            })
-            .collect();
-        Ok((input_coefs, output_coefs))
-    }
-
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        input_lane: CellF<F>,
-        output_lane: CellF<F>,
-    ) -> Result<(), Error> {
-        let (input_coefs, output_coefs) =
-            self.compute_coefs(input_lane.value)?;
+        input: F,
+    ) -> Result<F, Error> {
+        let (input_coefs, output_coefs, output) =
+            self.bi.compute_coefs(input)?;
+
+        let (input_cell, output_cell) = layouter.assign_region(
+            || "lane",
+            |mut region| {
+                let input_cell = region.assign_advice(
+                    || "lane input",
+                    self.lane,
+                    0,
+                    || Ok(input),
+                )?;
+                let output_cell = region.assign_advice(
+                    || "lane output",
+                    self.lane,
+                    1,
+                    || Ok(output),
+                )?;
+                Ok((input_cell, output_cell))
+            },
+        )?;
+
         self.input_eval
-            .assign_region(layouter, input_lane, &input_coefs)?;
+            .assign_region(layouter, input_cell, &input_coefs)?;
+
         self.output_eval
-            .assign_region(layouter, output_lane, &output_coefs)?;
-        Ok(())
+            .assign_region(layouter, output_cell, &output_coefs)?;
+        Ok(output)
     }
 }
 
@@ -138,34 +106,23 @@ mod tests {
     use pretty_assertions::assert_eq;
     #[test]
     fn test_base_conversion() {
-        const INPUT_BASE: u64 = 2;
-        const OUTPUT_BASE: u64 = 13;
-
+        // We have to use a MyConfig because:
+        // We need to load the table
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
-            input_lane: Column<Advice>,
-            output_lane: Column<Advice>,
+            lane: Column<Advice>,
             table: FromBinaryTableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
         impl<F: FieldExt> MyConfig<F> {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
-                let input_lane = meta.advice_column();
-                let output_lane = meta.advice_column();
-                let conversion = BaseConversionConfig::configure(
-                    meta,
-                    table.num_chunks(),
-                    INPUT_BASE,
-                    OUTPUT_BASE,
-                    table.base2,
-                    table.base13,
-                    input_lane,
-                    output_lane,
-                );
+                let lane = meta.advice_column();
+                let bi = table.get_base_info(false);
+                let conversion =
+                    BaseConversionConfig::configure(meta, bi, lane);
                 Self {
-                    input_lane,
-                    output_lane,
+                    lane,
                     table,
                     conversion,
                 }
@@ -181,43 +138,10 @@ mod tests {
             pub fn assign_region(
                 &self,
                 layouter: &mut impl Layouter<F>,
-                input_value: F,
-                output_value: F,
-            ) -> Result<(), Error> {
-                let (input_lane, output_lane) = layouter.assign_region(
-                    || "I/O values",
-                    |mut region| {
-                        let input_lane = region.assign_advice(
-                            || "input lane",
-                            self.input_lane,
-                            0,
-                            || Ok(input_value),
-                        )?;
-                        let output_lane = region.assign_advice(
-                            || "output lane",
-                            self.output_lane,
-                            0,
-                            || Ok(output_value),
-                        )?;
-
-                        Ok((
-                            CellF {
-                                cell: input_lane,
-                                value: input_value,
-                            },
-                            CellF {
-                                cell: output_lane,
-                                value: output_value,
-                            },
-                        ))
-                    },
-                )?;
-                self.conversion.assign_region(
-                    layouter,
-                    input_lane,
-                    output_lane,
-                )?;
-                Ok(())
+                input: F,
+            ) -> Result<F, Error> {
+                let output = self.conversion.assign_region(layouter, input)?;
+                Ok(output)
             }
         }
 
@@ -244,11 +168,9 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
-                config.assign_region(
-                    &mut layouter,
-                    self.input_b2_lane,
-                    self.output_b13_lane,
-                )?;
+                let output =
+                    config.assign_region(&mut layouter, self.input_b2_lane)?;
+                assert_eq!(output, self.output_b13_lane);
                 Ok(())
             }
         }

@@ -2,7 +2,7 @@ use crate::gates::gate_helpers::CellF;
 use pairing::arithmetic::FieldExt;
 
 use halo2::{
-    circuit::{Layouter, Region},
+    circuit::{Cell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
@@ -10,6 +10,7 @@ use halo2::{
 #[derive(Debug, Clone)]
 pub struct BaseEvaluationConfig<F> {
     q_enable: Selector,
+    // big-endian
     pub coef: Column<Advice>,
     power_of_base: F,
     acc: Column<Advice>,
@@ -35,13 +36,13 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
         meta.create_gate("Running sum", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let coef = meta.query_advice(coef, Rotation::cur());
-            let acc_next = meta.query_advice(acc, Rotation::next());
+            let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc = meta.query_advice(acc, Rotation::cur());
 
             // acc_{i+1} = acc_{i} * base ** power + coef
             vec![(
                 "running sum",
-                q_enable * (acc_next - acc * power_of_base - coef),
+                q_enable * (acc - acc_prev * power_of_base - coef),
             )]
         });
 
@@ -56,7 +57,7 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        result: CellF<F>,
+        result: Cell,
         coefs: &[F],
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -65,6 +66,9 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
                 let mut acc = F::zero();
                 for (offset, &coef) in coefs.iter().enumerate() {
                     acc = acc * self.power_of_base + coef;
+                    if offset != 0 {
+                        self.q_enable.enable(&mut region, offset)?;
+                    }
                     let coef_cell = region.assign_advice(
                         || "Coef",
                         self.coef,
@@ -82,7 +86,7 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
                         region.constrain_equal(acc_cell, coef_cell)?;
                     } else if offset == coefs.len() - 1 {
                         // bind last acc to result
-                        region.constrain_equal(acc_cell, result.cell)?;
+                        region.constrain_equal(acc_cell, result)?;
                     }
                 }
                 Ok(())

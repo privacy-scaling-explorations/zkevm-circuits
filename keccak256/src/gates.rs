@@ -12,7 +12,7 @@ pub mod pi;
 pub mod rho;
 pub mod rho_checks;
 pub mod rho_helpers;
+pub mod state_conversion;
 pub mod tables;
 pub mod theta;
-pub mod utils;
 pub mod xi;
