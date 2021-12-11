@@ -1,17 +1,21 @@
 use halo2::{
-    circuit::{Layouter, Region},
+    circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
     poly::Rotation,
 };
 
+use crate::arith_helpers::{convert_b2_to_b13, mod_u64};
 use crate::gates::base_eval::BaseEvaluationConfig;
+use crate::gates::gate_helpers::f_to_biguint;
 use crate::gates::gate_helpers::CellF;
 use pairing::arithmetic::FieldExt;
 
 #[derive(Clone, Debug)]
 struct BaseConversionConfig<F> {
     q_enable: Selector,
-    num_chunks: u32,
+    num_chunks: usize,
+    input_base: u64,
+    output_base: u64,
     input_table_col: TableColumn,
     output_table_col: TableColumn,
     input_eval: BaseEvaluationConfig<F>,
@@ -22,7 +26,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
     /// Side effect: input_lane and output_lane are equality enabled
     fn configure(
         meta: &mut ConstraintSystem<F>,
-        num_chunks: u32,
+        num_chunks: usize,
         input_base: u64,
         output_base: u64,
         input_table_col: TableColumn,
@@ -30,9 +34,9 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         input_lane: Column<Advice>,
         output_lane: Column<Advice>,
     ) -> Self {
-        let q_enable = meta.selector();
-        let input_pob = F::from(input_base.pow(num_chunks));
-        let output_pob = F::from(output_base.pow(num_chunks));
+        let q_enable = meta.complex_selector();
+        let input_pob = F::from(input_base.pow(num_chunks as u32));
+        let output_pob = F::from(output_base.pow(num_chunks as u32));
 
         let input_eval =
             BaseEvaluationConfig::configure(meta, input_pob, input_lane);
@@ -54,6 +58,8 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         Self {
             q_enable,
             num_chunks,
+            input_base,
+            output_base,
             input_table_col,
             output_table_col,
             input_eval,
@@ -61,18 +67,56 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         }
     }
 
+    fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>), Error> {
+        // big-endian
+        let input_chunks: Vec<u64> = {
+            let mut raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
+            // little endian
+            let mut input_chunks: Vec<u64> = (0..64)
+                .map(|_| {
+                    let remainder: u64 = mod_u64(&raw, self.input_base);
+                    raw /= self.input_base;
+                    remainder
+                })
+                .collect();
+            // big endian
+            input_chunks.reverse();
+            input_chunks
+        };
+        let input_coefs: Vec<F> = input_chunks
+            .chunks(self.num_chunks)
+            .map(|chunks| {
+                let coef = chunks
+                    .iter()
+                    // big endian
+                    .fold(0, |acc, &x| acc * self.input_base + x);
+                F::from(coef)
+            })
+            .collect();
+
+        let output_coefs: Vec<F> = input_chunks
+            .chunks(self.num_chunks)
+            .map(|chunks| {
+                let coef =
+                    chunks.iter().fold(0, |acc, &x| acc * self.output_base + x);
+                F::from(coef)
+            })
+            .collect();
+        Ok((input_coefs, output_coefs))
+    }
+
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
         input_lane: CellF<F>,
         output_lane: CellF<F>,
-        input_coefs: &Vec<F>,
-        output_coefs: &Vec<F>,
     ) -> Result<(), Error> {
+        let (input_coefs, output_coefs) =
+            self.compute_coefs(input_lane.value)?;
         self.input_eval
-            .assign_region(layouter, input_lane, input_coefs)?;
+            .assign_region(layouter, input_lane, &input_coefs)?;
         self.output_eval
-            .assign_region(layouter, output_lane, output_coefs)?;
+            .assign_region(layouter, output_lane, &output_coefs)?;
         Ok(())
     }
 }
@@ -80,25 +124,22 @@ impl<F: FieldExt> BaseConversionConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::{convert_b2_to_b13, mod_u64};
+    use crate::arith_helpers::convert_b2_to_b13;
     use crate::gates::{
-        gate_helpers::{biguint_to_f, f_to_biguint},
-        tables::FromBinaryTableConfig,
+        gate_helpers::biguint_to_f, tables::FromBinaryTableConfig,
     };
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
-    use num_bigint::BigUint;
-    use num_traits::{One, Zero};
     use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
     fn test_base_conversion() {
-        const input_base: u64 = 2;
-        const output_base: u64 = 13;
+        const INPUT_BASE: u64 = 2;
+        const OUTPUT_BASE: u64 = 13;
 
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
@@ -114,8 +155,9 @@ mod tests {
                 let output_lane = meta.advice_column();
                 let conversion = BaseConversionConfig::configure(
                     meta,
-                    input_base,
-                    output_base,
+                    table.num_chunks(),
+                    INPUT_BASE,
+                    OUTPUT_BASE,
                     table.base2,
                     table.base13,
                     input_lane,
@@ -170,71 +212,10 @@ mod tests {
                         ))
                     },
                 )?;
-
-                let num_chunks = self.table.num_chunks();
-                let input_big =
-                    f_to_biguint(input_value).ok_or(Error::Synthesis)?;
-                let mut base: BigUint = One::one();
-                let mut raw = input_big;
-                let mut input_chunk_indices = vec![];
-                let mut ouput_chunk_indices = vec![];
-                // big-endian
-                let input_chunks: Vec<u64> = (0..64)
-                    // little endian
-                    .map(|_| {
-                        let remainder: u64 = mod_u64(&raw, input_base);
-                        raw /= input_base;
-                        remainder
-                    })
-                    .collect()
-                    // big endian
-                    .reverse();
-                let input_coefs: Vec<F> = input_chunks
-                    .chunks(num_chunks)
-                    .map(|chunks| {
-                        let coef = chunks
-                            .iter()
-                            // big endian
-                            .fold(0, |acc, &x| acc * input_base + x);
-                        F::from(coef)
-                    })
-                    .collect();
-
-                let output_coefs: Vec<F> = input_chunks
-                    .chunks(num_chunks)
-                    .map(|chunks| {
-                        let coef = chunks
-                            .iter()
-                            .fold(0, |acc, &x| acc * output_base + x);
-                        F::from(coef)
-                    })
-                    .collect();
-                let input_pob = input_chunks
-                    .chunks(num_chunks)
-                    .map(|chunks| {
-                        // usually this is `num_chunks` but it's possible the
-                        // last slice is less than `num_chunks`
-                        let size = chunks.len();
-                        F::from(input_base.pow(size as u32))
-                    })
-                    .collect();
-
-                let output_pob = input_chunks
-                    .chunks(num_chunks)
-                    .map(|chunks| {
-                        let size = chunks.len();
-                        F::from(output_base.pow(size as u32))
-                    })
-                    .collect();
-
                 self.conversion.assign_region(
                     layouter,
                     input_lane,
                     output_lane,
-                    &input_coefs,
-                    &output_coefs,
-                    &input_pob,
-                    &output_pob,
                 )?;
                 Ok(())
             }
@@ -277,7 +258,7 @@ mod tests {
             output_b13_lane: biguint_to_f::<Fp>(&convert_b2_to_b13(input))
                 .unwrap(),
         };
-        let prover = MockProver::<Fp>::run(5, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
 }

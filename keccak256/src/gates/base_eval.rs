@@ -57,7 +57,7 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         result: CellF<F>,
-        coefs: &Vec<F>,
+        coefs: &[F],
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "Base eval",

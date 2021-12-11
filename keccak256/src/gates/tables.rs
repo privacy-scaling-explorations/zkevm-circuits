@@ -356,7 +356,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
             vec![
                 (q_enable.clone() * base9_coef, config.base9),
                 (q_enable.clone() * base13_coef, config.base13),
-                (q_enable.clone() * base2_coef, config.base2),
+                (q_enable * base2_coef, config.base2),
             ]
         });
         config
