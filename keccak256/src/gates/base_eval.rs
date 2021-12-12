@@ -56,42 +56,32 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
 
     pub fn assign_region(
         &self,
-        layouter: &mut impl Layouter<F>,
+        region: &mut Region<'_, F>,
         result: Cell,
         coefs: &[F],
     ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "Base eval",
-            |mut region| {
-                let mut acc = F::zero();
-                for (offset, &coef) in coefs.iter().enumerate() {
-                    acc = acc * self.power_of_base + coef;
-                    if offset != 0 {
-                        self.q_enable.enable(&mut region, offset)?;
-                    }
-                    let coef_cell = region.assign_advice(
-                        || "Coef",
-                        self.coef,
-                        offset,
-                        || Ok(coef),
-                    )?;
-                    let acc_cell = region.assign_advice(
-                        || "Acc",
-                        self.acc,
-                        offset,
-                        || Ok(acc),
-                    )?;
-                    if offset == 0 {
-                        // bind first acc to first coef
-                        region.constrain_equal(acc_cell, coef_cell)?;
-                    } else if offset == coefs.len() - 1 {
-                        // bind last acc to result
-                        region.constrain_equal(acc_cell, result)?;
-                    }
-                }
-                Ok(())
-            },
-        )?;
+        let mut acc = F::zero();
+        for (offset, &coef) in coefs.iter().enumerate() {
+            acc = acc * self.power_of_base + coef;
+            if offset != 0 {
+                self.q_enable.enable(region, offset)?;
+            }
+            let coef_cell = region.assign_advice(
+                || "Coef",
+                self.coef,
+                offset,
+                || Ok(coef),
+            )?;
+            let acc_cell =
+                region.assign_advice(|| "Acc", self.acc, offset, || Ok(acc))?;
+            if offset == 0 {
+                // bind first acc to first coef
+                region.constrain_equal(acc_cell, coef_cell)?;
+            } else if offset == coefs.len() - 1 {
+                // bind last acc to result
+                region.constrain_equal(acc_cell, result)?;
+            }
+        }
         Ok(())
     }
 }

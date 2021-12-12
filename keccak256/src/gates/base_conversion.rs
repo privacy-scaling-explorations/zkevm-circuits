@@ -80,11 +80,27 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             },
         )?;
 
-        self.input_eval
-            .assign_region(layouter, input_cell, &input_coefs)?;
+        layouter.assign_region(
+            || "Base conversion",
+            |mut region| {
+                for (offset, _) in input_coefs.iter().enumerate() {
+                    self.q_enable.enable(&mut region, offset)?;
+                }
+                self.input_eval.assign_region(
+                    &mut region,
+                    input_cell,
+                    &input_coefs,
+                )?;
 
-        self.output_eval
-            .assign_region(layouter, output_cell, &output_coefs)?;
+                self.output_eval.assign_region(
+                    &mut region,
+                    output_cell,
+                    &output_coefs,
+                )?;
+                Ok(())
+            },
+        )?;
+
         Ok(output)
     }
 }
