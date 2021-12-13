@@ -1,5 +1,5 @@
 use halo2::{
-    circuit::{Cell, Region},
+    circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::Itertools;
@@ -28,25 +28,31 @@ impl<F: FieldExt> PiConfig<F> {
 
     pub fn assign_region(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
+        layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
     ) -> Result<[(Cell, F); 25], Error> {
-        let mut next_state: Vec<(Cell, F)> = vec![];
+        let state = layouter.assign_region(
+            || "Pi",
+            |mut region| {
+                let mut next_state: Vec<(Cell, F)> = vec![];
+                let offset = 0;
 
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            let idx = 5 * ((x + 3 * y) % 5) + x;
-            let idx_next = 5 * x + y;
-            let (cell, value) = state[idx];
-            let cell_next = region.assign_advice(
-                || "lane next row",
-                self.state[idx_next],
-                offset,
-                || Ok(value),
-            )?;
-            region.constrain_equal(cell_next, cell)?;
-            next_state.push((cell_next, value));
-        }
-        Ok(next_state.try_into().unwrap())
+                for (x, y) in (0..5).cartesian_product(0..5) {
+                    let idx = 5 * ((x + 3 * y) % 5) + x;
+                    let idx_next = 5 * x + y;
+                    let (cell, value) = state[idx];
+                    let cell_next = region.assign_advice(
+                        || "lane next row",
+                        self.state[idx_next],
+                        offset,
+                        || Ok(value),
+                    )?;
+                    region.constrain_equal(cell_next, cell)?;
+                    next_state.push((cell_next, value));
+                }
+                Ok(next_state.try_into().unwrap())
+            },
+        )?;
+        Ok(state)
     }
 }
