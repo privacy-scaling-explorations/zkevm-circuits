@@ -631,26 +631,31 @@ impl<F: FieldExt> MPTConfig<F> {
             let branch_mult_c_cur =
                 meta.query_advice(acc_mult_c, Rotation::cur());
 
-            let two_rlp_bytes = meta.query_advice(s_rlp1, Rotation::cur());
-            let three_rlp_bytes = meta.query_advice(s_rlp2, Rotation::cur());
+            let two_rlp_bytes_s = meta.query_advice(s_rlp1, Rotation::cur());
+            let three_rlp_bytes_s = meta.query_advice(s_rlp2, Rotation::cur());
 
-            // TODO: two_rlp_bytes and three_rlp_bytes are bools
-            // TODO: two_rlp_bytes + three_rlp_bytes = 1
+            let two_rlp_bytes_c =
+                meta.query_advice(s_advices[0], Rotation::cur());
+            let three_rlp_bytes_c =
+                meta.query_advice(s_advices[1], Rotation::cur());
 
-            let s_rlp1 = meta.query_advice(s_advices[0], Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_advices[1], Rotation::cur());
-            let s_rlp3 = meta.query_advice(s_advices[2], Rotation::cur());
+            // TODO: two_rlp_bytes and three_rlp_bytes are bools for S and C
+            // TODO: two_rlp_bytes + three_rlp_bytes = 1 for S and C
 
-            let c_rlp1 = meta.query_advice(s_advices[3], Rotation::cur());
-            let c_rlp2 = meta.query_advice(s_advices[4], Rotation::cur());
-            let c_rlp3 = meta.query_advice(s_advices[5], Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_advices[3], Rotation::cur());
+            let s_rlp3 = meta.query_advice(s_advices[4], Rotation::cur());
+
+            let c_rlp1 = meta.query_advice(s_advices[5], Rotation::cur());
+            let c_rlp2 = meta.query_advice(s_advices[6], Rotation::cur());
+            let c_rlp3 = meta.query_advice(s_advices[7], Rotation::cur());
 
             let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;
             constraints.push((
                 "branch accumulator S row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * two_rlp_bytes.clone()
+                    * two_rlp_bytes_s.clone()
                     * (acc_s_two - branch_acc_s_cur.clone()),
             ));
 
@@ -659,7 +664,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch mult S row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * two_rlp_bytes.clone()
+                    * two_rlp_bytes_s.clone()
                     * (mult_s_two - branch_mult_s_cur.clone()),
             ));
 
@@ -668,7 +673,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch accumulator C row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * two_rlp_bytes.clone()
+                    * two_rlp_bytes_c.clone()
                     * (acc_c_two - branch_acc_c_cur.clone()),
             ));
 
@@ -677,7 +682,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch mult C row 0",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * two_rlp_bytes
+                    * two_rlp_bytes_c
                     * (mult_c_two - branch_mult_c_cur.clone()),
             ));
 
@@ -688,7 +693,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch accumulator S row 0 (3)",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * three_rlp_bytes.clone()
+                    * three_rlp_bytes_s.clone()
                     * (acc_s_three - branch_acc_s_cur),
             ));
 
@@ -697,7 +702,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch mult S row 0 (3)",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * three_rlp_bytes.clone()
+                    * three_rlp_bytes_s.clone()
                     * (mult_s_three - branch_mult_s_cur),
             ));
 
@@ -706,7 +711,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch accumulator C row 0 (3)",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * three_rlp_bytes.clone()
+                    * three_rlp_bytes_c.clone()
                     * (acc_c_three - branch_acc_c_cur),
             ));
 
@@ -715,7 +720,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "branch mult C row 0 (3)",
                 q_enable.clone()
                     * is_branch_init_cur.clone()
-                    * three_rlp_bytes
+                    * three_rlp_bytes_c
                     * (mult_c_three - branch_mult_c_cur),
             ));
 
