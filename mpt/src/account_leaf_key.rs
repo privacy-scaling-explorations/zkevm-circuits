@@ -57,8 +57,9 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 if ind < R_TABLE_LEN {
                     expr = expr + s * r_table[ind].clone();
                 } else {
-                    expr =
-                        expr + s * r_table[ind].clone() * r_table[31].clone();
+                    expr = expr
+                        + s * r_table[ind].clone()
+                            * r_table[R_TABLE_LEN - 1].clone();
                 }
                 if ind == R_TABLE_LEN - 1 {
                     ind = 0
