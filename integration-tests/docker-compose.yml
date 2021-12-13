@@ -1,0 +1,9 @@
+version: '3'
+services:
+  geth0:
+    image: "ethereum/client-go:stable"
+    container_name: zkevm-geth0
+    ports:
+      - 8545:8545
+    command: --dev --vmdebug --gcmode=archive --http --http.addr 0.0.0.0 --http.port 8545 --http.vhosts "*" --http.corsdomain "*" --http.api "eth,net,web3,personal,txpool,miner,debug" --verbosity 6
+

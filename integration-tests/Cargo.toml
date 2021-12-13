@@ -1,0 +1,23 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lazy_static = "1.4"
+ethers = "0.6.2"
+serde_json = "1.0.66"
+serde = {version = "1.0.130", features = ["derive"] }
+bus-mapping = { path = "../bus-mapping"}
+tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
+url = "2.2.2"
+pretty_assertions = "1.0.0"
+
+[dev-dependencies]
+pretty_assertions = "1.0.0"
+
+[features]
+default = []
+rpc = []

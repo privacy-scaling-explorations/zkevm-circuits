@@ -4,6 +4,7 @@ members = [
     "bus-mapping",
     "keccak256",
     "geth-utils",
+    "integration-tests",
 ]
 
 [patch.crates-io]

@@ -4,8 +4,8 @@ use crate::evm::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::types::{
-    transaction::response::Transaction, Address, Block, Bytes,
-    EIP1186ProofResponse, H160, H256, U256, U64,
+    transaction::response::Transaction, Address, Block, Bytes, H160, H256,
+    U256, U64,
 };
 use pairing::arithmetic::FieldExt;
 use serde::{de, Deserialize};
@@ -131,6 +131,37 @@ impl<F: FieldExt> ToScalar<F> for Address {
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         F::from_bytes(&bytes).into()
     }
+}
+
+/// Struct used to define the storage proof
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
+pub struct StorageProof {
+    /// Storage key
+    pub key: U256,
+    /// Storage Value
+    pub value: U256,
+    /// Storage proof: rlp-encoded trie nodes from root to value.
+    pub proof: Vec<Bytes>,
+}
+
+/// Struct used to define the result of `eth_getProof` call
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EIP1186ProofResponse {
+    /// Account address
+    pub address: Address,
+    /// The balance of the account
+    pub balance: U256,
+    /// The hash of the code of the account
+    pub code_hash: H256,
+    /// The nonce of the account
+    pub nonce: U256,
+    /// SHA3 of the StorageRoot
+    pub storage_hash: H256,
+    /// Array of rlp-serialized MerkleTree-Nodes
+    pub account_proof: Vec<Bytes>,
+    /// Array of storage-entries as requested
+    pub storage_proof: Vec<StorageProof>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
