@@ -9,7 +9,7 @@ use halo2::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -178,8 +178,9 @@ impl<F: FieldExt> IotaB13Config<F> {
         Ok(())
     }
 
-    /// Given a [`State`] returns the `init_state` and `out_state` ready to be added
-    /// as circuit witnesses applying `IotaB13` to the input to get the output.
+    /// Given a [`State`] returns the `init_state` and `out_state` ready to be
+    /// added as circuit witnesses applying `IotaB13` to the input to get
+    /// the output.
     pub(crate) fn compute_circ_states(
         state: StateBigInt,
     ) -> ([F; 25], [F; 25]) {
@@ -207,8 +208,7 @@ mod tests {
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -264,7 +264,7 @@ mod tests {
             ) -> Result<(), Error> {
                 let offset: usize = 0;
 
-                let val: F = self.flag.into();
+                let val: F = (self.flag as u64).into();
                 layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
@@ -318,7 +318,7 @@ mod tests {
         let (in_state, out_state) =
             IotaB13Config::compute_circ_states(input1.into());
 
-        let constants: Vec<pallas::Base> = ROUND_CONSTANTS
+        let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
             .map(|num| big_uint_to_pallas(&convert_b2_to_b13(*num)))
             .collect();
@@ -327,7 +327,7 @@ mod tests {
         {
             // With the correct input and output witnesses, the proof should
             // pass.
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
                 round_ctant: PERMUTATION - 1,
@@ -335,18 +335,15 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![constants.clone()],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
+                    .unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
             // With wrong input and/or output witnesses, the proof should fail
             // to be verified.
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
                 round_ctant: PERMUTATION - 1,
@@ -354,12 +351,9 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![constants.clone()],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
+                    .unwrap();
 
             assert!(prover.verify().is_err());
         }
@@ -367,7 +361,7 @@ mod tests {
         // With flag set to `true`, the gate shouldn't trigger. And so we can
         // pass any witness data and the proof should pass.
         {
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
                 round_ctant: PERMUTATION - 1,
@@ -376,8 +370,7 @@ mod tests {
             };
 
             let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![constants])
-                    .unwrap();
+                MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }

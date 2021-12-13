@@ -8,7 +8,7 @@ use halo2::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::{convert::TryInto, marker::PhantomData};
 
 /// The number of next_inputs that are used inside the `absorb` circuit.
@@ -154,8 +154,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
         Ok((out_state, (obtained_cell, flag.1)))
     }
 
-    /// Given a [`State`] and the `next_inputs` returns the `init_state` and `out_state` ready to be added
-    /// as circuit witnesses applying `Absorb` to the input to get the output.
+    /// Given a [`State`] and the `next_inputs` returns the `init_state` and
+    /// `out_state` ready to be added as circuit witnesses applying `Absorb`
+    /// to the input to get the output.
     ///
     /// It also returns `next_inputs` ready to be used in the circuit.
     pub(crate) fn compute_circ_states(
@@ -165,9 +166,8 @@ impl<F: FieldExt> AbsorbConfig<F> {
         let mut in_biguint = StateBigInt::default();
         let mut next_biguint = StateBigInt::default();
 
-        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
-        let mut in_next_input_25: [pallas::Base; 25] =
-            [pallas::Base::zero(); 25];
+        let mut in_state: [Fp; 25] = [Fp::zero(); 25];
+        let mut in_next_input_25: [Fp; 25] = [Fp::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(
@@ -179,10 +179,10 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 big_uint_to_pallas(&next_biguint[(x, y)]);
         }
 
-        let mut in_next_input_17 = [pallas::Base::zero(); ABSORB_NEXT_INPUTS];
+        let mut in_next_input_17 = [Fp::zero(); ABSORB_NEXT_INPUTS];
         in_next_input_17
             .copy_from_slice(&in_next_input_25[0..ABSORB_NEXT_INPUTS]);
-        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input.into());
+        let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
         let next_input = state_to_biguint(in_next_input_25);
         (
             state_bigint_to_pallas::<F, 25>(in_biguint),
@@ -199,8 +199,6 @@ mod tests {
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -242,7 +240,7 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let val: F = self.is_mixing.into();
+                let val: F = (self.is_mixing as u64).into();
                 let flag: (Cell, F) = layouter.assign_region(
                     || "witness_is_mixing_flag",
                     |mut region| {
@@ -318,7 +316,7 @@ mod tests {
         {
             // With the correct input and output witnesses, the proof should
             // pass.
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
                 next_input,
@@ -326,14 +324,13 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
             // With wrong input and/or output witnesses, the proof should fail
             // to be verified.
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
                 next_input,
@@ -341,8 +338,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
             assert!(prover.verify().is_err());
         }
@@ -350,7 +346,7 @@ mod tests {
         // With flag set to `true`, the gate shouldn't trigger.
         // And so we can pass any witness data and the proof should pass.
         {
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
                 next_input,
@@ -358,8 +354,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }

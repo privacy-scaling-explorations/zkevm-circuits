@@ -103,7 +103,7 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
     use std::convert::TryInto;
     use std::marker::PhantomData;
 

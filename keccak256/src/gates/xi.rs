@@ -1,11 +1,11 @@
 use halo2::{
-    circuit::{Region, Cell},
+    circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
-use std::{marker::PhantomData, convert::TryInto};
+use pairing::arithmetic::FieldExt;
+use std::{convert::TryInto, marker::PhantomData};
 
 #[derive(Clone, Debug)]
 pub struct XiConfig<F> {
@@ -74,7 +74,7 @@ impl<F: FieldExt> XiConfig<F> {
         offset: usize,
         state: [(Cell, F); 25],
         out_state: [F; 25],
-    ) -> Result<[(Cell,F); 25], Error> {
+    ) -> Result<[(Cell, F); 25], Error> {
         self.q_enable.enable(region, offset)?;
         for (idx, lane) in state.iter().enumerate() {
             let obtained_cell = region.assign_advice(
@@ -87,7 +87,7 @@ impl<F: FieldExt> XiConfig<F> {
         }
 
         let mut out_vec: Vec<(Cell, F)> = vec![];
-        let out_state:[(Cell,F);25] = {
+        let out_state: [(Cell, F); 25] = {
             for (idx, lane) in out_state.iter().enumerate() {
                 let out_cell = region.assign_advice(
                     || format!("assign out_state {}", idx),
@@ -97,9 +97,9 @@ impl<F: FieldExt> XiConfig<F> {
                 )?;
                 out_vec.push((out_cell, *lane));
             }
-        out_vec.try_into().unwrap()
+            out_vec.try_into().unwrap()
         };
-    Ok(out_state)
+        Ok(out_state)
     }
 }
 
@@ -113,8 +113,8 @@ mod tests {
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pairing::arithmetic::FieldExt;
+    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -139,9 +139,11 @@ mod tests {
                 let q_enable = meta.complex_selector();
 
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| {let column = meta.advice_column();
+                    .map(|_| {
+                        let column = meta.advice_column();
                         meta.enable_equality(column.into());
-                    column})
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
@@ -158,24 +160,24 @@ mod tests {
                 let in_state = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
-                                // Witness `state`
-                                let in_state: [(Cell, F); 25] = {
-                                    let mut state: Vec<(Cell, F)> =
-                                        Vec::with_capacity(25);
-                                    for (idx, val) in self.in_state.iter().enumerate() {
-                                        let cell = region.assign_advice(
-                                            || "witness input state",
-                                            config.state[idx],
-                                            offset,
-                                            || Ok(*val),
-                                        )?;
-                                        state.push((cell, *val))
-                                    }
-                                    state.try_into().unwrap()
-                                };
-                                Ok(in_state)
-                            })?;
-                 
+                        // Witness `state`
+                        let in_state: [(Cell, F); 25] = {
+                            let mut state: Vec<(Cell, F)> =
+                                Vec::with_capacity(25);
+                            for (idx, val) in self.in_state.iter().enumerate() {
+                                let cell = region.assign_advice(
+                                    || "witness input state",
+                                    config.state[idx],
+                                    offset,
+                                    || Ok(*val),
+                                )?;
+                                state.push((cell, *val))
+                            }
+                            state.try_into().unwrap()
+                        };
+                        Ok(in_state)
+                    },
+                )?;
 
                 layouter.assign_region(
                     || "assign input state",

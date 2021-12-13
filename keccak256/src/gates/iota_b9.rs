@@ -9,7 +9,7 @@ use halo2::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -51,7 +51,7 @@ impl<F: FieldExt> IotaB9Config<F> {
                 + (Expression::Constant(F::from(2))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
             let next_lane = meta.query_advice(state[0], Rotation::next());
-            vec![q_enable.clone() * (state_00 - next_lane)]
+            vec![q_enable * (state_00 - next_lane)]
         });
 
         meta.create_gate("iota_b9 in final round", |meta| {
@@ -64,7 +64,7 @@ impl<F: FieldExt> IotaB9Config<F> {
                 + (Expression::Constant(F::from(2))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
             let next_lane = meta.query_advice(state[0], Rotation::next());
-            vec![q_enable.clone() * (state_00 - next_lane)]
+            vec![q_enable * (state_00 - next_lane)]
         });
 
         IotaB9Config {
@@ -202,8 +202,9 @@ impl<F: FieldExt> IotaB9Config<F> {
         Ok(())
     }
 
-    /// Given a [`StateBigInt`] returns the `init_state` and `out_state` ready to be added
-    /// as circuit witnesses applying `IotaB9` to the input to get the output.
+    /// Given a [`StateBigInt`] returns the `init_state` and `out_state` ready
+    /// to be added as circuit witnesses applying `IotaB9` to the input to
+    /// get the output.
     pub(crate) fn compute_circ_states(
         state: StateBigInt,
     ) -> ([F; 25], [F; 25]) {
@@ -231,8 +232,7 @@ mod tests {
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pasta_curves::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -293,7 +293,7 @@ mod tests {
             ) -> Result<(), Error> {
                 let offset: usize = 0;
 
-                let val: F = self.flag.into();
+                let val: F = (self.flag as u64).into();
                 layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
@@ -347,7 +347,7 @@ mod tests {
         let (in_state, out_state) =
             IotaB9Config::compute_circ_states(input1.into());
 
-        let constants: Vec<pallas::Base> = ROUND_CONSTANTS
+        let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
             .map(|num| big_uint_to_pallas(&convert_b2_to_b9(*num)))
             .collect();
@@ -355,7 +355,7 @@ mod tests {
         // (flag = 1) -> Out state is checked as constraints are applied.
         // Providing the correct `out_state` should pass the verification.
         {
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
                 round_ctant: PERMUTATION - 1,
@@ -363,12 +363,9 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![constants.clone()],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
+                    .unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }
@@ -376,7 +373,7 @@ mod tests {
         // (flag = 1) -> Out state is checked as constraints are applied.
         // Providing the wrong `out_state` should make the verification fail.
         {
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 // Add wrong out_state that should cause the verification to
                 // fail.
@@ -386,18 +383,15 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover = MockProver::<pallas::Base>::run(
-                9,
-                &circuit,
-                vec![constants.clone()],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
+                    .unwrap();
 
             let _ = prover.verify().is_err();
         }
 
         // (flag = 0)
-        let circuit = MyCircuit::<pallas::Base> {
+        let circuit = MyCircuit::<Fp> {
             in_state,
             // Use a nonsensical out_state to verify that the gate is not
             // checked.
@@ -408,8 +402,7 @@ mod tests {
         };
 
         let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![constants])
-                .unwrap();
+            MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -496,24 +489,22 @@ mod tests {
             // Compute out state
             let s1_arith =
                 KeccakFArith::iota_b9(&in_biguint, ROUND_CONSTANTS[round]);
-            let out_state =
-                state_bigint_to_pallas::<pallas::Base, 25>(s1_arith);
+            let out_state = state_bigint_to_pallas::<Fp, 25>(s1_arith);
 
-            let circuit = MyCircuit::<pallas::Base> {
+            let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
                 round_ctant_b9: round,
                 _marker: PhantomData,
             };
 
-            let constants: Vec<pallas::Base> = ROUND_CONSTANTS
+            let constants: Vec<Fp> = ROUND_CONSTANTS
                 .iter()
                 .map(|num| big_uint_to_pallas(&convert_b2_to_b9(*num)))
                 .collect();
 
             let prover =
-                MockProver::<pallas::Base>::run(9, &circuit, vec![constants])
-                    .unwrap();
+                MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }

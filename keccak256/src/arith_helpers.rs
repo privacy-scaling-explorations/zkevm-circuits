@@ -2,8 +2,8 @@ use crate::common::State;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use pasta_curves::arithmetic::FieldExt;
-use pasta_curves::pallas;
+use pairing::arithmetic::FieldExt;
+use pairing::bn256::Fr as Fp;
 use std::ops::{Index, IndexMut};
 
 pub const B13: u64 = 13;
@@ -209,7 +209,7 @@ pub fn big_uint_to_pallas<F: FieldExt>(a: &BigUint) -> F {
     }
 
     // Workarround since `FieldExt` does not impl `from_raw`.
-    F::from_bytes(&pallas::Base::from_raw(b).to_bytes()).unwrap()
+    F::from_bytes(&Fp::from_raw(b).to_bytes()).unwrap()
 }
 
 /// This function allows us to inpect coefficients of big-numbers in different
@@ -246,8 +246,9 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
     let mut elems: Vec<u64> = state
         .iter()
         .map(|elem| elem.to_bytes())
-        // This is horrible. But FieldExt does not give much better alternatives and
-        // refactoring `State` will be done once the keccak_all_togheter is done.
+        // This is horrible. But FieldExt does not give much better alternatives
+        // and refactoring `State` will be done once the
+        // keccak_all_togheter is done.
         .map(|bytes| {
             let mut arr = [0u8; 8];
             arr.copy_from_slice(&bytes[0..8]);

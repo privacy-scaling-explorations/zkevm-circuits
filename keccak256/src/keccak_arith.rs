@@ -104,15 +104,15 @@ impl KeccakFArith {
         next_input: Option<&State>,
         rc: u64,
     ) -> StateBigInt {
-        if next_input.is_none() {
+        if let Some(next_input) = next_input {
+            let out_1 = KeccakFArith::absorb(a, next_input);
+            KeccakFArith::iota_b13(&out_1, rc)
+        } else {
             let mut state = KeccakFArith::iota_b9(a, rc);
             for (x, y) in (0..5).cartesian_product(0..5) {
                 state[(x, y)] = convert_b9_lane_to_b13(state[(x, y)].clone());
             }
             state
-        } else {
-            let out_1 = KeccakFArith::absorb(a, next_input.unwrap());
-            KeccakFArith::iota_b13(&out_1, rc)
         }
     }
 }
