@@ -6,7 +6,7 @@ use halo2::{
 use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::HASH_WIDTH;
+use crate::param::{HASH_WIDTH, R_TABLE_LEN};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafNonceBalanceConfig {}
@@ -62,46 +62,65 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
             let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
-            let mut curr_r = acc_mult_prev.clone();
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
             let nonce_len = s_advices0.clone() - c128.clone();
 
             let mut expr = acc_prev.clone()
-                + meta.query_advice(s_rlp1, Rotation::cur()) * curr_r.clone();
-            curr_r = curr_r * acc_r;
+                + meta.query_advice(s_rlp1, Rotation::cur())
+                    * acc_mult_prev.clone();
+            let mut rind = 0;
             expr = expr
-                + meta.query_advice(s_rlp2, Rotation::cur()) * curr_r.clone();
-            curr_r = curr_r * acc_r;
+                + meta.query_advice(s_rlp2, Rotation::cur())
+                    * acc_mult_prev.clone()
+                    * r_table[rind].clone();
+            rind += 1;
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             constraints.push((
                 "leaf nonce balance c_rlp1",
                 q_enable.clone() * (c_rlp1.clone() - c248),
             ));
-            expr = expr + c_rlp1 * curr_r.clone();
-            curr_r = curr_r * acc_r;
+            expr =
+                expr + c_rlp1 * acc_mult_prev.clone() * r_table[rind].clone();
+            rind += 1;
             expr = expr
-                + meta.query_advice(c_rlp2, Rotation::cur()) * curr_r.clone();
-            curr_r = curr_r * acc_r;
+                + meta.query_advice(c_rlp2, Rotation::cur())
+                    * acc_mult_prev.clone()
+                    * r_table[rind].clone();
+            rind += 1;
 
-            expr = expr + s_advices0.clone() * curr_r.clone();
-            curr_r = curr_r * acc_r;
+            expr = expr
+                + s_advices0.clone()
+                    * acc_mult_prev.clone()
+                    * r_table[rind].clone();
+            rind += 1;
+
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                expr = expr + s * curr_r.clone();
-                curr_r = curr_r * acc_r;
+                if rind < R_TABLE_LEN {
+                    expr = expr
+                        + s * acc_mult_prev.clone() * r_table[rind].clone();
+                } else {
+                    expr = expr
+                        + s * acc_mult_prev.clone()
+                            * r_table[rind].clone()
+                            * r_table[R_TABLE_LEN - 1].clone();
+                }
+                if rind == R_TABLE_LEN - 1 {
+                    rind = 0
+                } else {
+                    rind += 1;
+                }
             }
-
-            curr_r = acc_mult_tmp.clone();
 
             let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
             let balance_len = c_advices0.clone() - c128.clone();
-            expr = expr + c_advices0 * curr_r.clone();
-            curr_r = curr_r * acc_r;
+            expr = expr + c_advices0 * acc_mult_tmp.clone();
+            rind = 0;
             for ind in 1..HASH_WIDTH {
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                expr = expr + c * curr_r.clone();
-                curr_r = curr_r * acc_r;
+                expr = expr + c * acc_mult_tmp.clone() * r_table[rind].clone();
+                rind += 1;
             }
 
             let acc = meta.query_advice(acc, Rotation::cur());
