@@ -15,3 +15,4 @@ pub const C_START: usize = RLP_NUM + HASH_WIDTH + RLP_NUM;
 pub const BRANCH_0_S_START: usize = 4; // row 0 of a branch contains some RLP data
 pub const BRANCH_0_C_START: usize = 7;
 pub const BRANCH_0_KEY_POS: usize = 10; // row 0 of a branch contains info (deriving from key) about which branch node is being modified
+pub const R_TABLE_LEN: usize = 32;

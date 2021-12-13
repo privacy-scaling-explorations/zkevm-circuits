@@ -6,7 +6,7 @@ use halo2::{
 use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::HASH_WIDTH;
+use crate::param::{HASH_WIDTH, R_TABLE_LEN};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafKeyConfig {}
@@ -45,21 +45,32 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             // TODO: RLP properties
 
             let one = Expression::Constant(F::one());
-            let mut curr_r = Expression::Constant(F::one());
             let mut expr = meta.query_advice(s_rlp1, Rotation::cur());
-            curr_r = curr_r * acc_r;
+            let mut ind = 0;
             expr = expr
-                + meta.query_advice(s_rlp2, Rotation::cur()) * curr_r.clone();
-            curr_r = curr_r * acc_r;
+                + meta.query_advice(s_rlp2, Rotation::cur())
+                    * r_table[ind].clone();
+            ind += 1;
 
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                expr = expr + s * curr_r.clone();
-                curr_r = curr_r * acc_r;
+                if ind < R_TABLE_LEN {
+                    expr = expr + s * r_table[ind].clone();
+                } else {
+                    expr =
+                        expr + s * r_table[ind].clone() * r_table[31].clone();
+                }
+                if ind == R_TABLE_LEN - 1 {
+                    ind = 0
+                } else {
+                    ind += 1;
+                }
             }
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            expr = expr + c_rlp1.clone() * curr_r.clone();
-            curr_r = curr_r * acc_r;
+            expr = expr
+                + c_rlp1.clone()
+                    * r_table[R_TABLE_LEN - 1].clone()
+                    * r_table[1].clone();
 
             // Key can't go further than c_rlp1.
 
@@ -71,8 +82,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 q_enable.clone() * (expr.clone() - acc),
             ));
 
-            // The curr_r above is being increased also in the columns where there is no key anymore, so
-            // we cannot compare it to acc_mult.
             // Let's say we have a key of length 3, then: [248,112,131,59,158,160,0,0,0,...
             // 131 - 18 presents the key length.
             // key length is at s_advices[0], key is from s_advices[1] to s_advices[1+key_len] (at most c_rlp1)
@@ -100,7 +109,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let mut is_trailing_zero_or_last_key = one.clone();
 
             let check =
-                (r_table[HASH_WIDTH - 1].clone() * r_table[3].clone() * acc_r
+                (r_table[HASH_WIDTH - 2].clone() * r_table[2].clone() * acc_r
                     - acc_mult.clone())
                     * nonzero_table[HASH_WIDTH + 2].clone()
                     * is_trailing_zero_or_last_key.clone();
@@ -114,10 +123,11 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 // Either is_trailing_zero_or_last key is 0 (bytes before the last key byte) or
                 // nonzero_table[ind+2] is 0 (bytes after the last key byte).
                 // Except at the position of last key byte - there neither of these two is zero.
-                let check = (r_table[ind].clone() * r_table[2].clone() * acc_r
-                    - acc_mult.clone())
-                    * nonzero_table[ind + 2].clone()
-                    * is_trailing_zero_or_last_key.clone();
+                let check =
+                    (r_table[ind - 1].clone() * r_table[1].clone() * acc_r
+                        - acc_mult.clone())
+                        * nonzero_table[ind + 2].clone()
+                        * is_trailing_zero_or_last_key.clone();
 
                 constraints.push((
                     "leaf key acc mult s_advices",
