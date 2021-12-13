@@ -176,9 +176,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 state[(x, y)].clone().try_into().expect("Conversion err"),
             );
             next_biguint[(x, y)] = convert_b2_to_b9(next_input[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
             in_next_input_25[5 * x + y] =
-                big_uint_to_pallas(&next_biguint[(x, y)]);
+                big_uint_to_field(&next_biguint[(x, y)]);
         }
 
         let mut in_next_input_17 = [Fp::zero(); ABSORB_NEXT_INPUTS];
@@ -187,9 +187,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
         let s1_arith = KeccakFArith::absorb(&in_biguint, &next_input);
         let next_input = state_to_biguint(in_next_input_25);
         (
-            state_bigint_to_pallas::<F, 25>(in_biguint),
-            state_bigint_to_pallas::<F, 25>(s1_arith),
-            state_bigint_to_pallas::<F, ABSORB_NEXT_INPUTS>(next_input),
+            state_bigint_to_field::<F, 25>(in_biguint),
+            state_bigint_to_field::<F, 25>(s1_arith),
+            state_bigint_to_field::<F, ABSORB_NEXT_INPUTS>(next_input),
         )
     }
 }

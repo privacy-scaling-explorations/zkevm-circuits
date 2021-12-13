@@ -191,13 +191,13 @@ impl<F: FieldExt> IotaB13Config<F> {
             in_biguint[(x, y)] = convert_b2_to_b13(
                 state[(x, y)].clone().try_into().expect("Conversion err"),
             );
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
 
         // Compute out state
         let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
         let s1_arith = KeccakFArith::iota_b13(&in_biguint, round_ctant);
-        (in_state, state_bigint_to_pallas::<F, 25>(s1_arith))
+        (in_state, state_bigint_to_field::<F, 25>(s1_arith))
     }
 }
 
@@ -320,7 +320,7 @@ mod tests {
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_pallas(&convert_b2_to_b13(*num)))
+            .map(|num| big_uint_to_field(&convert_b2_to_b13(*num)))
             .collect();
 
         // With flag set to false, the gate should trigger.

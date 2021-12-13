@@ -208,12 +208,12 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::xi(&in_biguint);
         let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
+            out_state[5 * x + y] = big_uint_to_field(&s1_arith[(x, y)]);
         }
         let circuit = MyCircuit::<Fp> {
             in_state,

@@ -197,7 +197,7 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .unwrap_or(0)
 }
 
-pub fn big_uint_to_pallas<F: FieldExt>(a: &BigUint) -> F {
+pub fn big_uint_to_field<F: FieldExt>(a: &BigUint) -> F {
     let mut b: [u64; 4] = [0; 4];
     let mut iter = a.iter_u64_digits();
 
@@ -263,7 +263,7 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
     matrix
 }
 
-pub fn state_bigint_to_pallas<F: FieldExt, const N: usize>(
+pub fn state_bigint_to_field<F: FieldExt, const N: usize>(
     state: StateBigInt,
 ) -> [F; N] {
     let mut arr = [F::zero(); N];

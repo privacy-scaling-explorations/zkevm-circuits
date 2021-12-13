@@ -260,12 +260,12 @@ mod tests {
 
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_pallas(&convert_b2_to_b13(*num)))
+            .map(|num| big_uint_to_field(&convert_b2_to_b13(*num)))
             .collect();
 
         let constants_b9: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_pallas(&convert_b2_to_b9(*num)))
+            .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
             .collect();
 
         // With flag set to false, we mix. And so we should obtain Absorb +

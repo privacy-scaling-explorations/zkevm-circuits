@@ -215,13 +215,13 @@ impl<F: FieldExt> IotaB9Config<F> {
             in_biguint[(x, y)] = convert_b2_to_b9(
                 state[(x, y)].clone().try_into().expect("Conversion err"),
             );
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
 
         // Compute out state
         let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
         let s1_arith = KeccakFArith::iota_b9(&in_biguint, round_ctant);
-        (in_state, state_bigint_to_pallas::<F, 25>(s1_arith))
+        (in_state, state_bigint_to_field::<F, 25>(s1_arith))
     }
 }
 
@@ -349,7 +349,7 @@ mod tests {
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_pallas(&convert_b2_to_b9(*num)))
+            .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
             .collect();
 
         // (flag = 1) -> Out state is checked as constraints are applied.
@@ -481,7 +481,7 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
 
         // Test for the 25 rounds
@@ -490,7 +490,7 @@ mod tests {
         {
             // Compute out state
             let s1_arith = KeccakFArith::iota_b9(&in_biguint, *round_val);
-            let out_state = state_bigint_to_pallas::<Fp, 25>(s1_arith);
+            let out_state = state_bigint_to_field::<Fp, 25>(s1_arith);
 
             let circuit = MyCircuit::<Fp> {
                 in_state,
@@ -501,7 +501,7 @@ mod tests {
 
             let constants: Vec<Fp> = ROUND_CONSTANTS
                 .iter()
-                .map(|num| big_uint_to_pallas(&convert_b2_to_b9(*num)))
+                .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
                 .collect();
 
             let prover =
