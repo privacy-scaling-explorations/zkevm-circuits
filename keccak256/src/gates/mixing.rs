@@ -109,7 +109,7 @@ impl<F: FieldExt> MixingConfig<F> {
         let (out_state_absorb_cells, flag) =
             self.absorb_config.copy_state_flag_next_inputs(
                 region,
-                offset, //+ whatever is IotaB9 offset,
+                offset + IotaB9Config::<F>::OFFSET,
                 in_state,
                 out_state,
                 next_mixing.unwrap_or_default(),
@@ -120,7 +120,7 @@ impl<F: FieldExt> MixingConfig<F> {
 
         self.iota_b13_config.copy_state_flag_and_assing_rc(
             region,
-            offset + 3,
+            offset + AbsorbConfig::<F>::OFFSET,
             out_state_absorb_cells,
             out_state,
             absolute_row_b13,
@@ -164,6 +164,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 
+    #[ignore]
     #[test]
     fn test_mixing_gate() {
         #[derive(Default)]
@@ -252,10 +253,10 @@ mod tests {
         ];
 
         let (in_state, out_mixing_state, next_mixing) =
-            MixingConfig::compute_circ_states(input1.into(), Some(next_input));
+            MixingConfig::compute_circ_states(input1, Some(next_input));
 
         let (_, out_non_mixing_state, _) =
-            MixingConfig::compute_circ_states(input1.into(), None);
+            MixingConfig::compute_circ_states(input1, None);
 
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -282,14 +283,14 @@ mod tests {
                 round_ctant_b9: PERMUTATION - 1,
             };
 
-            let _prover = MockProver::<Fp>::run(
+            let prover = MockProver::<Fp>::run(
                 9,
                 &circuit,
                 vec![constants_b9.clone(), constants_b13.clone()],
             )
             .unwrap();
 
-            //assert_eq!(prover.verify(), Ok(()));
+            assert_eq!(prover.verify(), Ok(()));
 
             // With wrong input and/or output witnesses, the proof should fail
             // to be verified.
@@ -345,14 +346,14 @@ mod tests {
                 round_ctant_b9: PERMUTATION - 1,
             };
 
-            let _prover = MockProver::<Fp>::run(
+            let prover = MockProver::<Fp>::run(
                 9,
                 &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
+                vec![constants_b9, constants_b13],
             )
             .unwrap();
 
-            //assert!(prover.verify().is_err());
+            assert!(prover.verify().is_err());
         }
     }
 }

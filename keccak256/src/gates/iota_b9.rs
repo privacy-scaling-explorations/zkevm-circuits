@@ -485,16 +485,17 @@ mod tests {
         }
 
         // Test for the 25 rounds
-        for round in 0..PERMUTATION {
+        for (round_idx, round_val) in
+            ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION)
+        {
             // Compute out state
-            let s1_arith =
-                KeccakFArith::iota_b9(&in_biguint, ROUND_CONSTANTS[round]);
+            let s1_arith = KeccakFArith::iota_b9(&in_biguint, *round_val);
             let out_state = state_bigint_to_pallas::<Fp, 25>(s1_arith);
 
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
-                round_ctant_b9: round,
+                round_ctant_b9: round_idx,
                 _marker: PhantomData,
             };
 

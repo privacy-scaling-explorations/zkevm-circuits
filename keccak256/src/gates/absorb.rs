@@ -22,11 +22,13 @@ pub struct AbsorbConfig<F> {
 }
 
 impl<F: FieldExt> AbsorbConfig<F> {
+    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     // Rows are assigned as:
     // 1) STATE (25 columns) (offset -1)
     // 2) NEXT_INPUTS (17 columns) + is_mixing flag (1 column) (offset +0)
-    // (current rotation) 3) OUT_STATE (25 columns) (offset +1)
+    // (current rotation)
+    // 3) OUT_STATE (25 columns) (offset +1)
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
