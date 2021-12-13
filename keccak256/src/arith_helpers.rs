@@ -1,6 +1,9 @@
+use crate::common::State;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
+use pairing::arithmetic::FieldExt;
+use pairing::bn256::Fr as Fp;
 use std::ops::{Index, IndexMut};
 
 pub const B13: u64 = 13;
@@ -21,7 +24,7 @@ pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
 
 pub struct StateBigInt {
-    xy: Vec<BigUint>,
+    pub(crate) xy: Vec<BigUint>,
 }
 impl Default for StateBigInt {
     fn default() -> Self {
@@ -29,6 +32,17 @@ impl Default for StateBigInt {
         for _ in 0..25 {
             xy.push(Zero::zero());
         }
+        Self { xy }
+    }
+}
+
+impl From<State> for StateBigInt {
+    fn from(state: State) -> Self {
+        let xy = state
+            .iter()
+            .flatten()
+            .map(|num| BigUint::from(*num))
+            .collect();
         Self { xy }
     }
 }
@@ -183,6 +197,21 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .unwrap_or(0)
 }
 
+pub fn big_uint_to_field<F: FieldExt>(a: &BigUint) -> F {
+    let mut b: [u64; 4] = [0; 4];
+    let mut iter = a.iter_u64_digits();
+
+    for i in &mut b {
+        *i = match &iter.next() {
+            Some(x) => *x,
+            None => 0u64,
+        };
+    }
+
+    // Workarround since `FieldExt` does not impl `from_raw`.
+    F::from_bytes(&Fp::from_raw(b).to_bytes()).unwrap()
+}
+
 /// This function allows us to inpect coefficients of big-numbers in different
 /// bases.
 pub fn inspect(x: BigUint, name: &str, base: u64) {
@@ -197,4 +226,59 @@ pub fn inspect(x: BigUint, name: &str, base: u64) {
         }
     }
     println!("inspect {} {} info {:?}", name, x, info);
+}
+
+pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
+    StateBigInt {
+        xy: state
+            .iter()
+            .map(|elem| elem.to_bytes())
+            .map(|bytes| BigUint::from_bytes_le(&bytes))
+            .collect(),
+    }
+}
+
+pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
+    state: [F; N],
+) -> State {
+    let mut matrix = [[0u64; 5]; 5];
+
+    let mut elems: Vec<u64> = state
+        .iter()
+        .map(|elem| elem.to_bytes())
+        // This is horrible. But FieldExt does not give much better alternatives
+        // and refactoring `State` will be done once the
+        // keccak_all_togheter is done.
+        .map(|bytes| {
+            assert!(bytes[8..32] == vec![0u8; 24]);
+            let mut arr = [0u8; 8];
+            arr.copy_from_slice(&bytes[0..8]);
+            u64::from_le_bytes(arr)
+        })
+        .collect();
+    elems.extend(vec![0u64; 25 - N]);
+    (0..5).into_iter().for_each(|idx| {
+        matrix[idx].copy_from_slice(&elems[5 * idx..(5 * idx + 5)])
+    });
+
+    matrix
+}
+
+pub fn state_bigint_to_field<F: FieldExt, const N: usize>(
+    state: StateBigInt,
+) -> [F; N] {
+    let mut arr = [F::zero(); N];
+    let vector: Vec<F> = state
+        .xy
+        .iter()
+        .map(|elem| {
+            let mut array = [0u8; 32];
+            let bytes = elem.to_bytes_le();
+            array[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
+            array
+        })
+        .map(|bytes| F::from_bytes(&bytes).unwrap())
+        .collect();
+    arr[0..N].copy_from_slice(&vector[0..N]);
+    arr
 }

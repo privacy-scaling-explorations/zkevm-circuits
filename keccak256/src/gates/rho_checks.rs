@@ -780,7 +780,7 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockCountFinalConfig<F> {
     q_enable: Selector,
     block_count_cols: [Column<Advice>; 2],

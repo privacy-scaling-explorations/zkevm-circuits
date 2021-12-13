@@ -10,13 +10,13 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct ThetaConfig<F> {
-    #[allow(dead_code)]
     q_enable: Selector,
-    state: [Column<Advice>; 25],
+    pub(crate) state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> ThetaConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
@@ -68,7 +68,9 @@ impl<F: FieldExt> ThetaConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
+        out_state: [F; 25],
     ) -> Result<[F; 25], Error> {
+        self.q_enable.enable(region, offset)?;
         for (idx, lane) in state.iter().enumerate() {
             region.assign_advice(
                 || format!("assign state {}", idx),
@@ -77,7 +79,16 @@ impl<F: FieldExt> ThetaConfig<F> {
                 || Ok(*lane),
             )?;
         }
-        Ok(state)
+
+        for (idx, lane) in out_state.iter().enumerate() {
+            region.assign_advice(
+                || format!("assign out_state {}", idx),
+                self.state[idx],
+                offset + 1,
+                || Ok(*lane),
+            )?;
+        }
+        Ok(out_state)
     }
 }
 
@@ -92,7 +103,6 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use num_bigint::BigUint;
     use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -134,32 +144,17 @@ mod tests {
                     || "assign input state",
                     |mut region| {
                         let offset = 0;
-                        config.q_enable.enable(&mut region, offset)?;
                         config.assign_state(
                             &mut region,
                             offset,
                             self.in_state,
-                        )?;
-                        let offset = 1;
-                        config.assign_state(&mut region, offset, self.out_state)
+                            self.out_state,
+                        )
                     },
                 )?;
 
                 Ok(())
             }
-        }
-        fn big_uint_to_pallas(a: &BigUint) -> Fp {
-            let mut b: [u64; 4] = [0; 4];
-            let mut iter = a.iter_u64_digits();
-
-            for i in &mut b {
-                *i = match &iter.next() {
-                    Some(x) => *x,
-                    None => 0u64,
-                };
-            }
-
-            Fp::from_raw(b)
         }
 
         let input1: State = [
@@ -174,12 +169,12 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::theta(&in_biguint);
         let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
+            out_state[5 * x + y] = big_uint_to_field(&s1_arith[(x, y)]);
         }
 
         let circuit = MyCircuit::<Fp> {

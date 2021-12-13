@@ -1,11 +1,11 @@
 use halo2::{
-    circuit::Region,
+    circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
-use std::marker::PhantomData;
+use std::{convert::TryInto, marker::PhantomData};
 
 #[derive(Clone, Debug)]
 pub struct XiConfig<F> {
@@ -16,6 +16,7 @@ pub struct XiConfig<F> {
 }
 
 impl<F: FieldExt> XiConfig<F> {
+    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
         q_enable: Selector,
@@ -71,17 +72,34 @@ impl<F: FieldExt> XiConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        state: [F; 25],
-    ) -> Result<[F; 25], Error> {
+        state: [(Cell, F); 25],
+        out_state: [F; 25],
+    ) -> Result<[(Cell, F); 25], Error> {
+        self.q_enable.enable(region, offset)?;
         for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
+            let obtained_cell = region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
                 offset,
-                || Ok(*lane),
+                || Ok(lane.1),
             )?;
+            region.constrain_equal(lane.0, obtained_cell)?;
         }
-        Ok(state)
+
+        let mut out_vec: Vec<(Cell, F)> = vec![];
+        let out_state: [(Cell, F); 25] = {
+            for (idx, lane) in out_state.iter().enumerate() {
+                let out_cell = region.assign_advice(
+                    || format!("assign out_state {}", idx),
+                    self.state[idx],
+                    offset + 1,
+                    || Ok(*lane),
+                )?;
+                out_vec.push((out_cell, *lane));
+            }
+            out_vec.try_into().unwrap()
+        };
+        Ok(out_state)
     }
 }
 
@@ -95,7 +113,6 @@ mod tests {
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use num_bigint::BigUint;
     use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
@@ -109,6 +126,7 @@ mod tests {
             out_state: [F; 25],
             _marker: PhantomData<F>,
         }
+
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             type Config = XiConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
@@ -121,7 +139,11 @@ mod tests {
                 let q_enable = meta.complex_selector();
 
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let column = meta.advice_column();
+                        meta.enable_equality(column.into());
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
@@ -134,36 +156,44 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
+                let offset = 0;
+                let in_state = layouter.assign_region(
+                    || "Wittnes & assignation",
+                    |mut region| {
+                        // Witness `state`
+                        let in_state: [(Cell, F); 25] = {
+                            let mut state: Vec<(Cell, F)> =
+                                Vec::with_capacity(25);
+                            for (idx, val) in self.in_state.iter().enumerate() {
+                                let cell = region.assign_advice(
+                                    || "witness input state",
+                                    config.state[idx],
+                                    offset,
+                                    || Ok(*val),
+                                )?;
+                                state.push((cell, *val))
+                            }
+                            state.try_into().unwrap()
+                        };
+                        Ok(in_state)
+                    },
+                )?;
+
                 layouter.assign_region(
                     || "assign input state",
                     |mut region| {
-                        let offset = 0;
                         config.q_enable.enable(&mut region, offset)?;
                         config.assign_state(
                             &mut region,
                             offset,
-                            self.in_state,
-                        )?;
-                        let offset = 1;
-                        config.assign_state(&mut region, offset, self.out_state)
+                            in_state,
+                            self.out_state,
+                        )
                     },
                 )?;
 
                 Ok(())
             }
-        }
-        fn big_uint_to_pallas(a: &BigUint) -> Fp {
-            let mut b: [u64; 4] = [0; 4];
-            let mut iter = a.iter_u64_digits();
-
-            for i in &mut b {
-                *i = match &iter.next() {
-                    Some(x) => *x,
-                    None => 0u64,
-                };
-            }
-
-            Fp::from_raw(b)
         }
 
         let input1: State = [
@@ -178,12 +208,12 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::xi(&in_biguint);
         let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
+            out_state[5 * x + y] = big_uint_to_field(&s1_arith[(x, y)]);
         }
         let circuit = MyCircuit::<Fp> {
             in_state,

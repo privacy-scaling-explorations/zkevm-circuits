@@ -13,7 +13,7 @@ use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RhoConfig<F> {
     state: [Column<Advice>; 25],
     state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
@@ -21,6 +21,7 @@ pub struct RhoConfig<F> {
 }
 
 impl<F: FieldExt> RhoConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],

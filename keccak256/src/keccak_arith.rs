@@ -60,7 +60,7 @@ impl KeccakFArith {
         out
     }
 
-    fn pi(a: &StateBigInt) -> StateBigInt {
+    pub fn pi(a: &StateBigInt) -> StateBigInt {
         let mut out = StateBigInt::default();
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[(y, (2 * x + 3 * y) % 5)] = a[(x, y)].clone();
@@ -97,6 +97,23 @@ impl KeccakFArith {
         let mut out = a.clone();
         out[(0, 0)] += convert_b2_to_b13(rc);
         out
+    }
+
+    pub fn mixing(
+        a: &StateBigInt,
+        next_input: Option<&State>,
+        rc: u64,
+    ) -> StateBigInt {
+        if let Some(next_input) = next_input {
+            let out_1 = KeccakFArith::absorb(a, next_input);
+            KeccakFArith::iota_b13(&out_1, rc)
+        } else {
+            let mut state = KeccakFArith::iota_b9(a, rc);
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                state[(x, y)] = convert_b9_lane_to_b13(state[(x, y)].clone());
+            }
+            state
+        }
     }
 }
 

@@ -10,6 +10,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
+#[derive(Clone, Debug)]
 pub struct PiConfig<F> {
     q_enable: Selector,
     state: [Column<Advice>; 25],
@@ -17,6 +18,7 @@ pub struct PiConfig<F> {
 }
 
 impl<F: FieldExt> PiConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
