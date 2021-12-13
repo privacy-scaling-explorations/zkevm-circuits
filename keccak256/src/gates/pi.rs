@@ -18,6 +18,7 @@ pub struct PiConfig<F> {
 }
 
 impl<F: FieldExt> PiConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,

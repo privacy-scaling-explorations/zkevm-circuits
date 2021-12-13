@@ -21,6 +21,7 @@ pub struct RhoConfig<F> {
 }
 
 impl<F: FieldExt> RhoConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],

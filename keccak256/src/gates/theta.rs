@@ -10,13 +10,13 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct ThetaConfig<F> {
-    #[allow(dead_code)]
     q_enable: Selector,
     pub(crate) state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> ThetaConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,

@@ -24,6 +24,7 @@ pub struct IotaB9Config<F> {
 }
 
 impl<F: FieldExt> IotaB9Config<F> {
+    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -201,7 +202,7 @@ impl<F: FieldExt> IotaB9Config<F> {
         Ok(())
     }
 
-    /// Given a [`State`] returns the `init_state` and `out_state` ready to be added
+    /// Given a [`StateBigInt`] returns the `init_state` and `out_state` ready to be added
     /// as circuit witnesses applying `IotaB9` to the input to get the output.
     pub(crate) fn compute_circ_states(
         state: StateBigInt,

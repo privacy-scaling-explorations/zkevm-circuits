@@ -7,7 +7,9 @@ use super::gates::{
     theta::ThetaConfig,
     xi::XiConfig,
 };
-use crate::{arith_helpers::*, common::ROUND_CONSTANTS};
+use crate::{
+    arith_helpers::*, common::{ROUND_CONSTANTS, PERMUTATION, ROTATION_CONSTANTS}, gates::rho_checks::RhoAdvices,
+};
 use crate::{gates::mixing::MixingConfig, keccak_arith::*};
 use halo2::{
     circuit::Region,
@@ -24,7 +26,6 @@ pub struct KeccakFConfig<F: FieldExt> {
     rho_config: RhoConfig<F>,
     pi_config: PiConfig<F>,
     xi_config: XiConfig<F>,
-    q_iota_b9: Selector,
     iota_b9_config: IotaB9Config<F>,
     mixing_config: MixingConfig<F>,
     state: [Column<Advice>; 25],
@@ -37,7 +38,6 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
     // We assume state is recieved in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> KeccakFConfig<F> {
-        let q_iota_b9 = meta.selector();
         let state = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
@@ -51,7 +51,26 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta.selector(), meta, state);
+        let rho_config = {
+            let cols: [Column<Advice>; 7] = state[0..7].try_into().unwrap();
+            let adv = RhoAdvices::from(cols);
+            let axiliary = [state[8], state[9]];
+
+            let base13_to_9 = [
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+            ];
+            let special = [meta.fixed_column(), meta.fixed_column()];
+            RhoConfig::configure(
+                meta,
+                state,
+                &adv,
+                axiliary,
+                base13_to_9,
+                special,
+            )
+        };
         // Pi
         let pi_config = PiConfig::configure(meta.selector(), meta, state);
         // xi
@@ -62,33 +81,24 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let round_ctant_b9 = meta.advice_column();
         let round_constants_b9 = meta.instance_column();
         let iota_b9_config = IotaB9Config::configure(
-            |meta| meta.query_selector(q_iota_b9),
             meta,
             state,
             round_ctant_b9,
             round_constants_b9,
         );
+        let not_mixing_b9_to_13 = StateConversion::configure(meta);
 
-        let mixing_config = {
-            let round_ctant_b13 = meta.advice_column();
-            let round_ctants_b13 = meta.instance_column();
 
-            MixingConfig::configure(
-                meta,
-                state,
-                round_ctant_b9,
-                round_constants_b9,
-                round_ctant_b13,
-                round_ctants_b13,
-            )
-        };
+       
+        let mixing_config = MixingConfig::configure(meta, state);
+        // in side mixing  let b9_to_13 = StateConversion::configure(meta);
+
 
         KeccakFConfig {
             theta_config,
             rho_config,
             pi_config,
             xi_config,
-            q_iota_b9,
             iota_b9_config,
             mixing_config,
             state,
@@ -96,19 +106,22 @@ impl<F: FieldExt> KeccakFConfig<F> {
         }
     }
 
-    pub fn assign_state(
+    pub fn assign_all(
         &self,
         region: &mut Region<'_, F>,
-        offset: usize,
+        mut offset: usize,
         state: [F; 25],
+        out_state: [F;25],
         flag: bool,
+        next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
+        absolute_row_b9: usize,
+        absolute_row_b13: usize,
     ) -> Result<[F; 25], Error> {
         // In case is needed
         let mut state = state;
-        let mut offset = offset;
 
         // First 23 rounds
-        for round in 0..24 {
+        for round in 0..PERMUTATION {
             // State in base-13
             // theta
             state = {
@@ -120,7 +133,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     .assign_state(region, offset, state, out_state)?
             };
 
-            offset += 1;
+            offset += ThetaConfig::OFFSET;
 
             // rho
             state = {
@@ -129,10 +142,11 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 let out_state = state_bigint_to_pallas(out_state);
                 // assignment
                 self.rho_config
-                    .assign_state(region, offset, state, out_state)?
+                    .assign_region(region, offset, out_state)?;
+                out_state
             };
             // Outputs in base-9 which is what Pi requires.
-            offset += 1;
+            offset += RhoConfig::OFFSET;
 
             // pi
             state = {
@@ -144,7 +158,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     .assign_state(region, offset, state, out_state)?
             };
 
-            offset += 1;
+            offset += PiConfig::OFFSET;
 
             // xi
             state = {
@@ -156,17 +170,27 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     .assign_state(region, offset, state, out_state)?
             };
 
-            offset += 1;
+            offset += XiConfig::OFFSET;
 
             // iota_b9
-            let (state, offset) = self
+            state = {
+            let out_state = KeccakFArith::iota_b9(&state_to_biguint(state), ROUND_CONSTANTS[round]);
+            let out_state = state_bigint_to_pallas(out_state); 
+            self
                 .iota_b9_config
-                .assign_state_and_rc(region, offset, flag, state, round)?;
+                .not_last_round(region, offset, state, out_state, round)?;
+                out_state
+            };
+            offset += IotaB9Config::OFFSET;
+            // The resulting state is in Base-13 now. Which is what Theta
+            // requires again at the start of the loop.
 
-            // The resulting state is in Base-13 now. Which is what Theta requires again at the start of the loop.
+            self.not_mixing_b9_to_13.not_last_round();
         }
-        let round = 24;
-        // 24th round
+
+        // Final round.
+        let round = PERMUTATION;
+        // PERMUTATION'th round
         // State in base-13
         // theta
         state = {
@@ -202,7 +226,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 .assign_state(region, offset, state, out_state)?
         };
 
-        offset += 1;
+        offset += PiConfig::OFFSET;
 
         // xi
         state = {
@@ -214,15 +238,15 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 .assign_state(region, offset, state, out_state)?
         };
 
-        offset += 1;
+        offset += XiConfig::OFFSET;
 
-        // iota_b9
-        let (state, offset) = self
-            .iota_b9_config
-            .assign_state_and_rc(region, offset, flag, state, round)?;
-
-        // Final round (if / else)
-        // TODO!!!
+        // Mixing step
+        state = {
+            let out_state = KeccakFArith::mixing(&state_to_biguint(state), next_mixing, ROUND_CONSTANTS[round]);
+            let out_state = state_bigint_to_pallas(out_state);
+            self.mixing_config.assign_state(region, offset, state, out_state, flag, next_mixing, round, round)?;
+            out_state
+        };
 
         Ok(state)
     }
