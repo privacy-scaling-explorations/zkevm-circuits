@@ -250,6 +250,7 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
         // and refactoring `State` will be done once the
         // keccak_all_togheter is done.
         .map(|bytes| {
+            assert!(&bytes[8..32] == &vec![0u8;24]);
             let mut arr = [0u8; 8];
             arr.copy_from_slice(&bytes[0..8]);
             u64::from_le_bytes(arr)
