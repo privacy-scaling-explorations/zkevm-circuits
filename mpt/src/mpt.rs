@@ -1155,7 +1155,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_keccak[1],
             acc_s,
             acc_mult_s,
-            acc_r,
+            r_table.clone(),
         );
 
         let leaf_s_value_chip = LeafValueChip::<F>::configure(
@@ -1290,7 +1290,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 c_rlp2,
                 s_advices,
                 c_advices,
-                acc_r,
                 acc_s,
                 acc_mult_s,
                 acc_mult_c,

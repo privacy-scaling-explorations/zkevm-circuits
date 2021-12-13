@@ -6,7 +6,7 @@ use halo2::{
 use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::HASH_WIDTH;
+use crate::param::{HASH_WIDTH, R_TABLE_LEN};
 
 #[derive(Clone, Debug)]
 pub(crate) struct LeafKeyConfig {}
@@ -29,7 +29,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         s_keccak1: Column<Advice>, // to see whether it's long or short RLP
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
-        acc_r: F,
+        r_table: Vec<Expression<F>>,
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
 
@@ -40,7 +40,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let c248 = Expression::Constant(F::from_u64(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let is_long = meta.query_advice(s_keccak0, Rotation::cur());
-            // let is_short = meta.query_advice(acc_c, Rotation::cur());
+            // let is_short = meta.query_advice(s_keccak1, Rotation::cur());
             constraints.push((
                 "is long",
                 q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
@@ -49,31 +49,39 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // TODO: is_long, is_short are booleans
             // TODO: is_long + is_short = 1
 
-            let mut rlc = Expression::Constant(F::zero());
-            let mut mult = Expression::Constant(F::one());
-
             // TODO: check that from some point on (depends on the rlp meta data)
             // the values are zero (as in key_compr) - but take into account it can be long or short RLP
 
             // TODO: check acc_mult as in key_compr
 
-            // TODO: r_table
-
-            rlc = rlc + s_rlp1 * mult.clone();
-            mult = mult * acc_r;
-
+            let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            rlc = rlc + s_rlp2 * mult.clone();
-            mult = mult * acc_r;
+            rlc = rlc + s_rlp2 * r_table[0].clone();
+            let mut rind = 1;
 
+            let mut r_wrapped = false;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                rlc = rlc + s * mult.clone();
-                mult = mult * acc_r;
+                if !r_wrapped {
+                    rlc = rlc + s * r_table[rind].clone();
+                } else {
+                    rlc = rlc
+                        + s * r_table[rind].clone()
+                            * r_table[R_TABLE_LEN - 1].clone();
+                }
+                if rind == R_TABLE_LEN - 1 {
+                    rind = 0;
+                    r_wrapped = true;
+                } else {
+                    rind += 1;
+                }
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            rlc = rlc + c_rlp1 * mult.clone();
+            rlc = rlc
+                + c_rlp1
+                    * r_table[R_TABLE_LEN - 1].clone()
+                    * r_table[2].clone();
 
             // key is at most of length 32, so it doesn't go further than c_rlp1
 
