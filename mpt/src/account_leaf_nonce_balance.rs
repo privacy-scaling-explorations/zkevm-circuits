@@ -135,9 +135,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 // Either is_trailing_zero_or_last nonce is 0 (bytes before the last nonce byte) or
                 // nonzero_table[ind] is 0 (bytes after the last key byte).
                 // Except at the position of last nonce byte - there neither of these two is zero.
-                let check = (r_table[ind].clone()
+                let check = (r_table[ind-1].clone()
                     * acc_mult_prev.clone()
-                    * r_table[4].clone() // s_rlp1, s_rlp2, c_rlp1, c_rlp2
+                    * r_table[3].clone() // s_rlp1, s_rlp2, c_rlp1, c_rlp2
                     * acc_r
                     - acc_mult_tmp.clone())
                     * nonzero_table[ind].clone()
@@ -167,7 +167,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 is_trailing_zero_or_last_key =
                     is_trailing_zero_or_last_key * counter.clone();
                 let check =
-                    (r_table[ind].clone() * acc_mult_tmp.clone() * acc_r
+                    (r_table[ind - 1].clone() * acc_mult_tmp.clone() * acc_r
                         - acc_mult_final.clone())
                         * nonzero_table[ind].clone()
                         * is_trailing_zero_or_last_key.clone();

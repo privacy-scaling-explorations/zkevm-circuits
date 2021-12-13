@@ -99,8 +99,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let mut r_table = vec![];
         let mut r = one.clone();
         for _ in 0..HASH_WIDTH {
-            r_table.push(r.clone());
             r = r * acc_r;
+            r_table.push(r.clone());
         }
 
         // TODO: r_table constraints
