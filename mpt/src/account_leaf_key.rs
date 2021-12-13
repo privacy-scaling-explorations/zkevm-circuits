@@ -52,9 +52,10 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                     * r_table[ind].clone();
             ind += 1;
 
+            let mut r_wrapped = false;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                if ind < R_TABLE_LEN {
+                if !r_wrapped {
                     expr = expr + s * r_table[ind].clone();
                 } else {
                     expr = expr
@@ -62,7 +63,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                             * r_table[R_TABLE_LEN - 1].clone();
                 }
                 if ind == R_TABLE_LEN - 1 {
-                    ind = 0
+                    ind = 0;
+                    r_wrapped = true;
                 } else {
                     ind += 1;
                 }

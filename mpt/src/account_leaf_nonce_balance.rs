@@ -27,7 +27,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
-        acc_r: F,
         acc: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_mult_c: Column<Advice>,
@@ -95,9 +94,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     * r_table[rind].clone();
             rind += 1;
 
+            let mut r_wrapped = false;
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                if rind < R_TABLE_LEN {
+                if !r_wrapped {
                     expr = expr
                         + s * acc_mult_prev.clone() * r_table[rind].clone();
                 } else {
@@ -107,7 +107,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                             * r_table[R_TABLE_LEN - 1].clone();
                 }
                 if rind == R_TABLE_LEN - 1 {
-                    rind = 0
+                    rind = 0;
+                    r_wrapped = true;
                 } else {
                     rind += 1;
                 }
@@ -157,7 +158,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 let check = (r_table[ind-1].clone()
                     * acc_mult_prev.clone()
                     * r_table[3].clone() // s_rlp1, s_rlp2, c_rlp1, c_rlp2
-                    * acc_r
+                    * r_table[0].clone()
                     - acc_mult_tmp.clone())
                     * nonzero_table[ind].clone()
                     * is_trailing_zero_or_last_key.clone();
@@ -185,11 +186,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 counter = counter - one.clone();
                 is_trailing_zero_or_last_key =
                     is_trailing_zero_or_last_key * counter.clone();
-                let check =
-                    (r_table[ind - 1].clone() * acc_mult_tmp.clone() * acc_r
-                        - acc_mult_final.clone())
-                        * nonzero_table[ind].clone()
-                        * is_trailing_zero_or_last_key.clone();
+                let check = (r_table[ind - 1].clone()
+                    * acc_mult_tmp.clone()
+                    * r_table[0].clone()
+                    - acc_mult_final.clone())
+                    * nonzero_table[ind].clone()
+                    * is_trailing_zero_or_last_key.clone();
 
                 constraints
                     .push(("leaf balance acc mult", q_enable.clone() * check));
