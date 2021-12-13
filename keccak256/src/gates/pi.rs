@@ -1,9 +1,6 @@
-use crate::gates::gate_helpers::Lane;
-
 use halo2::{
-    circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
-    poly::Rotation,
+    circuit::{Cell, Region},
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
@@ -12,37 +9,18 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct PiConfig<F> {
-    q_enable: Selector,
     state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> PiConfig<F> {
-    pub const OFFSET: usize = 2;
-    pub fn configure(
-        q_enable: Selector,
-        meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
-    ) -> PiConfig<F> {
-        meta.create_gate("pi", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            (0..5)
-                .cartesian_product(0..5)
-                .map(|(x, y)| {
-                    let lane = meta.query_advice(
-                        state[5 * ((x + 3 * y) % 5) + x],
-                        Rotation::cur(),
-                    );
-                    let new_lane =
-                        meta.query_advice(state[5 * x + y], Rotation::next());
-
-                    q_enable.clone() * (new_lane - lane)
-                })
-                .collect::<Vec<Expression<F>>>()
-        });
-
-        PiConfig {
-            q_enable,
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        let state: [Column<Advice>; 25] = (0..25)
+            .map(|_| meta.advice_column())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        Self {
             state,
             _marker: PhantomData,
         }
@@ -52,25 +30,22 @@ impl<F: FieldExt> PiConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        previous_state: [Lane<F>; 25],
-    ) -> Result<[Lane<F>; 25], Error> {
-        self.q_enable.enable(region, offset)?;
-        let mut next_state: Vec<Lane<F>> = vec![];
+        state: [(Cell, F); 25],
+    ) -> Result<[(Cell, F); 25], Error> {
+        let mut next_state: Vec<(Cell, F)> = vec![];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
-            let idx_prev = 5 * ((x + 3 * y) % 5) + x;
+            let idx = 5 * ((x + 3 * y) % 5) + x;
             let idx_next = 5 * x + y;
-            let lane = &previous_state[idx_prev];
-            let cell = region.assign_advice(
+            let (cell, value) = state[idx];
+            let cell_next = region.assign_advice(
                 || "lane next row",
                 self.state[idx_next],
                 offset,
-                || Ok(lane.value),
+                || Ok(value),
             )?;
-            next_state.push(Lane {
-                cell,
-                value: lane.value,
-            });
+            region.constrain_equal(cell_next, cell)?;
+            next_state.push((cell_next, value));
         }
         Ok(next_state.try_into().unwrap())
     }
