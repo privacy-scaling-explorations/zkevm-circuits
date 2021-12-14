@@ -69,7 +69,6 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
                 + 1.expr()
                 + (is_not_mstore8.clone() * 31.expr()),
         );
-        let (next_memory_size, memory_gas_cost) = memory_expansion.expr();
 
         /* Stack operations */
         // Pop the address from the stack
@@ -128,14 +127,14 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
-            memory_size: To(next_memory_size),
+            memory_size: To(memory_expansion.next_memory_size()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
             cb,
             opcode,
             step_state_transition,
-            Some(memory_gas_cost),
+            Some(memory_expansion.gas_cost()),
         );
 
         Self {

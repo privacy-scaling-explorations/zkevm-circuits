@@ -94,7 +94,7 @@ pub(crate) struct MemoryExpansionGadget<F, const MAX_QUAD_COST_IN_BYTES: usize>
     next_memory_size: MaxGadget<F, MAX_MEMORY_SIZE_IN_BYTES>,
     curr_quad_memory_cost: ConstantDivisionGadget<F, MAX_QUAD_COST_IN_BYTES>,
     next_quad_memory_cost: ConstantDivisionGadget<F, MAX_QUAD_COST_IN_BYTES>,
-    memory_gas_cost: Expression<F>,
+    gas_cost: Expression<F>,
 }
 
 impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
@@ -108,7 +108,7 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `memory_gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
+    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
     ///   256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
@@ -144,9 +144,9 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
 
         // Calculate the gas cost for the memory expansion.
         // This gas cost is the difference between the next and current memory
-        // costs. `memory_gas_cost <=
+        // costs. `gas_cost <=
         // GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
-        let memory_gas_cost = (next_memory_size.expr() - curr_memory_size)
+        let gas_cost = (next_memory_size.expr() - curr_memory_size)
             * Self::GAS_MEM.expr()
             + (next_quad_memory_cost.expr().0 - curr_quad_memory_cost.expr().0);
 
@@ -155,12 +155,18 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
             next_memory_size,
             curr_quad_memory_cost,
             next_quad_memory_cost,
-            memory_gas_cost,
+            gas_cost,
         }
     }
-    pub(crate) fn expr(&self) -> (Expression<F>, Expression<F>) {
-        // Return the new memory size and the memory expansion gas cost
-        (self.next_memory_size.expr(), self.memory_gas_cost.clone())
+
+    pub(crate) fn next_memory_size(&self) -> Expression<F> {
+        // Return the new memory size
+        self.next_memory_size.expr()
+    }
+
+    pub(crate) fn gas_cost(&self) -> Expression<F> {
+        // Return the gas cost
+        self.gas_cost.clone()
     }
 
     pub(crate) fn assign(

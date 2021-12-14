@@ -15,10 +15,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::ToLittleEndian,
-    evm::{GasCost, OpcodeId},
-};
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -67,11 +64,11 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
             IsZeroGadget::construct(cb, address_high::expr(&address));
         // Check if the amount of gas available is less than the amount of gas
         // required
-        let (_, memory_gas_cost) = memory_expansion.expr();
         let insufficient_gas = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            GasCost::FASTEST.expr() + memory_gas_cost,
+            OpcodeId::MLOAD.constant_gas_cost().expr()
+                + memory_expansion.gas_cost(),
         );
 
         // Make sure we are out of gas
