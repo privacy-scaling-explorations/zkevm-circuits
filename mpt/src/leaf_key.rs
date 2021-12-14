@@ -81,7 +81,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             rlc = rlc
                 + c_rlp1
                     * r_table[R_TABLE_LEN - 1].clone()
-                    * r_table[2].clone();
+                    * r_table[1].clone();
 
             // key is at most of length 32, so it doesn't go further than c_rlp1
 
