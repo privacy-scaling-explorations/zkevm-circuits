@@ -1114,11 +1114,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            acc_r,
             s_rlp2,
             s_advices,
             acc_s,
             acc_mult_s,
+            r_table.clone(),
         );
 
         let branch_acc_c_chip = BranchAccChip::<F>::configure(
@@ -1131,11 +1131,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * is_branch_child
             },
-            acc_r,
             c_rlp2,
             c_advices,
             acc_c,
             acc_mult_c,
+            r_table.clone(),
         );
 
         let leaf_key_chip = LeafKeyChip::<F>::configure(
