@@ -112,7 +112,7 @@ use crate::gates::{
     tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 use halo2::{
-    circuit::{Layouter, Region},
+    circuit::{Cell, Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
     },
@@ -344,8 +344,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        lane_base_13: &Lane<F>,
-    ) -> Result<(Lane<F>, BlockCount2<F>), Error> {
+        lane_base_13: (Cell, F),
+    ) -> Result<((Cell, F), BlockCount2<F>), Error> {
         let (lane, block_counts) = layouter.assign_region(
             || format!("LRCC {:?}", self.lane_xy),
             |mut region| {
@@ -354,12 +354,12 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                     || "base_13_col",
                     self.adv.input.acc,
                     offset,
-                    || Ok(lane_base_13.value),
+                    || Ok(lane_base_13.1),
                 )?;
-                region.constrain_equal(lane_base_13.cell, cell)?;
+                region.constrain_equal(lane_base_13.0, cell)?;
 
                 let mut rv = RotatingVariables::from(
-                    f_to_biguint(lane_base_13.value).ok_or(Error::Synthesis)?,
+                    f_to_biguint(lane_base_13.1).ok_or(Error::Synthesis)?,
                     self.rotation,
                 )?;
                 let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
@@ -600,7 +600,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         rv: &RotatingVariables,
-    ) -> Result<Lane<F>, Error> {
+    ) -> Result<(Cell, F), Error> {
         self.q_enable.enable(region, offset)?;
         rv.high_value.ok_or(Error::Synthesis).unwrap();
         region.assign_advice(
@@ -637,7 +637,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             || Ok(value),
         )?;
 
-        Ok(Lane { cell, value })
+        Ok((cell, value))
     }
 }
 

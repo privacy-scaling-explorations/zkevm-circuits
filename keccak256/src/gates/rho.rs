@@ -1,12 +1,12 @@
 use crate::gates::{
-    gate_helpers::{BlockCount2, Lane},
+    gate_helpers::BlockCount2,
     rho_checks::{
         BlockCountFinalConfig, LaneRotateConversionConfig, RhoAdvices,
     },
 };
 
 use halo2::{
-    circuit::{Layouter, Region},
+    circuit::{Cell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
@@ -59,26 +59,26 @@ impl<F: FieldExt> RhoConfig<F> {
     pub fn assign_rotation_checks(
         &self,
         layouter: &mut impl Layouter<F>,
-        previous_state: [Lane<F>; 25],
-    ) -> Result<[Lane<F>; 25], Error> {
-        type R<F> = (Lane<F>, BlockCount2<F>);
-        let lane_and_bcs: Result<Vec<R<F>>, Error> = previous_state
+        state: [(Cell, F); 25],
+    ) -> Result<[(Cell, F); 25], Error> {
+        type R<F> = ((Cell, F), BlockCount2<F>);
+        let lane_and_bcs: Result<Vec<R<F>>, Error> = state
             .iter()
             .enumerate()
-            .map(|(idx, lane)| -> Result<R<F>, Error> {
+            .map(|(idx, &lane)| -> Result<R<F>, Error> {
                 let (lane_next_row, bc) =
-                    &self.state_rotate_convert_configs[idx].assign_region(
+                    self.state_rotate_convert_configs[idx].assign_region(
                         &mut layouter.namespace(|| format!("arc lane {}", idx)),
                         lane,
                     )?;
-                Ok((lane_next_row.clone(), *bc))
+                Ok((lane_next_row, bc))
             })
             .into_iter()
             .collect();
         let lane_and_bcs = lane_and_bcs?;
         let lane_and_bcs: [R<F>; 25] = lane_and_bcs.try_into().unwrap();
 
-        let block_counts = lane_and_bcs.clone().map(|(_, bc)| bc);
+        let block_counts = lane_and_bcs.map(|(_, bc)| bc);
         let next_state = lane_and_bcs.map(|(lane_next_row, _)| lane_next_row);
 
         self.final_block_count_config.assign_region(
@@ -92,16 +92,16 @@ impl<F: FieldExt> RhoConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        next_state: [Lane<F>; 25],
+        next_state: [(Cell, F); 25],
     ) -> Result<(), Error> {
         for (idx, next_lane) in next_state.iter().enumerate() {
             let cell = region.assign_advice(
                 || "lane next row",
                 self.state[idx],
                 offset + 1,
-                || Ok(next_lane.value),
+                || Ok(next_lane.1),
             )?;
-            region.constrain_equal(cell, next_lane.cell)?;
+            region.constrain_equal(cell, next_lane.0)?;
         }
         Ok(())
     }
@@ -177,23 +177,20 @@ mod tests {
                     || "assign input state",
                     |mut region| {
                         let offset = 0;
-                        let state: [Lane<F>; 25] = self
+                        let state: [(Cell, F); 25] = self
                             .in_state
                             .iter()
                             .enumerate()
-                            .map(|(idx, value)| {
+                            .map(|(idx, &value)| {
                                 let cell = region
                                     .assign_advice(
                                         || format!("lane {}", idx),
                                         config.state[idx],
                                         offset,
-                                        || Ok(*value),
+                                        || Ok(value),
                                     )
                                     .unwrap();
-                                Lane {
-                                    cell,
-                                    value: *value,
-                                }
+                                (cell, value)
                             })
                             .collect::<Vec<_>>()
                             .try_into()
@@ -203,10 +200,7 @@ mod tests {
                 )?;
                 let next_state =
                     config.assign_rotation_checks(&mut layouter, state)?;
-                assert_eq!(
-                    next_state.clone().map(|lane| lane.value),
-                    self.out_state
-                );
+                assert_eq!(next_state.map(|lane| lane.1), self.out_state);
                 layouter.assign_region(
                     || "assign output state",
                     |mut region| {
@@ -214,7 +208,7 @@ mod tests {
                         config.assign_region(
                             &mut region,
                             offset,
-                            next_state.clone(),
+                            next_state,
                         )?;
                         Ok(())
                     },
