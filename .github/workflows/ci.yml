@@ -113,6 +113,11 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
+      - name: cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --all-features
       - run: rustup component add rustfmt
       - uses: actions-rs/cargo@v1
         with:
