@@ -6,9 +6,9 @@ use crate::gadget::{
 use bus_mapping::eth_types::ToScalar;
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
 use halo2::{
-    circuit::{Layouter, Region},
+    circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed,
         VirtualCells,
     },
     poly::Rotation,
@@ -82,7 +82,7 @@ pub(crate) struct BusMapping<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<
+pub struct Config<
     F: FieldExt,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
@@ -1152,9 +1152,77 @@ impl<
     }
 }
 
+/// State Circuit struct.
+#[derive(Default)]
+pub struct StateCircuit<
+    const GLOBAL_COUNTER_MAX: usize,
+    const MEMORY_ROWS_MAX: usize,
+    const MEMORY_ADDRESS_MAX: usize,
+    const STACK_ROWS_MAX: usize,
+    const STACK_ADDRESS_MAX: usize,
+    const STORAGE_ROWS_MAX: usize,
+> {
+    memory_ops: Vec<Operation<MemoryOp>>,
+    stack_ops: Vec<Operation<StackOp>>,
+    storage_ops: Vec<Operation<StorageOp>>,
+}
+
+impl<
+        F: FieldExt,
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    > Circuit<F>
+    for StateCircuit<
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >
+{
+    type Config = Config<
+        F,
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        Config::configure(meta)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.load(&mut layouter)?;
+        config.assign(
+            layouter,
+            self.memory_ops.clone(),
+            self.stack_ops.clone(),
+            self.storage_ops.clone(),
+        )?;
+
+        Ok(())
+    }
+}
 #[cfg(test)]
 mod tests {
-    use super::Config;
+    use super::*;
     use bus_mapping::address;
     use bus_mapping::circuit_input_builder::CircuitInputBuilder;
     use bus_mapping::eth_types::{GethExecStep, Word};
@@ -1162,83 +1230,12 @@ mod tests {
     use bus_mapping::mock;
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
-    use halo2::{
-        circuit::{Layouter, SimpleFloorPlanner},
-        dev::{
-            MockProver, VerifyFailure::ConstraintNotSatisfied,
-            VerifyFailure::Lookup,
-        },
-        plonk::{Circuit, ConstraintSystem, Error},
+    use halo2::dev::{
+        MockProver, VerifyFailure::ConstraintNotSatisfied,
+        VerifyFailure::Lookup,
     };
 
-    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
-    #[derive(Default)]
-    struct StateCircuit<
-        const GLOBAL_COUNTER_MAX: usize,
-        const MEMORY_ROWS_MAX: usize,
-        const MEMORY_ADDRESS_MAX: usize,
-        const STACK_ROWS_MAX: usize,
-        const STACK_ADDRESS_MAX: usize,
-        const STORAGE_ROWS_MAX: usize,
-    > {
-        memory_ops: Vec<Operation<MemoryOp>>,
-        stack_ops: Vec<Operation<StackOp>>,
-        storage_ops: Vec<Operation<StorageOp>>,
-    }
-
-    impl<
-            F: FieldExt,
-            const GLOBAL_COUNTER_MAX: usize,
-            const MEMORY_ROWS_MAX: usize,
-            const MEMORY_ADDRESS_MAX: usize,
-            const STACK_ROWS_MAX: usize,
-            const STACK_ADDRESS_MAX: usize,
-            const STORAGE_ROWS_MAX: usize,
-        > Circuit<F>
-        for StateCircuit<
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
-            STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
-        >
-    {
-        type Config = Config<
-            F,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
-            STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
-        >;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            Config::configure(meta)
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            config.load(&mut layouter)?;
-            config.assign(
-                layouter,
-                self.memory_ops.clone(),
-                self.stack_ops.clone(),
-                self.storage_ops.clone(),
-            )?;
-
-            Ok(())
-        }
-    }
+    use pairing::bn256::Fr as Fp;
 
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
