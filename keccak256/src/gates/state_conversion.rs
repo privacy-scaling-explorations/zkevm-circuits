@@ -1,5 +1,5 @@
 use halo2::{
-    circuit::Layouter,
+    circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 
@@ -36,9 +36,9 @@ impl<F: FieldExt> StateBaseConversion<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        input_state: [F; 25],
-    ) -> Result<[F; 25], Error> {
-        let output_state: Result<Vec<F>, Error> = input_state
+        state: [(Cell, F); 25],
+    ) -> Result<[(Cell, F); 25], Error> {
+        let state: Result<Vec<(Cell, F)>, Error> = state
             .iter()
             .zip(self.bccs.iter())
             .map(|(&lane, config)| {
@@ -47,9 +47,9 @@ impl<F: FieldExt> StateBaseConversion<F> {
             })
             .into_iter()
             .collect();
-        let output_state = output_state?;
-        let output_state: [F; 25] = output_state.try_into().unwrap();
-        Ok(output_state)
+        let state = state?;
+        let state: [(Cell, F); 25] = state.try_into().unwrap();
+        Ok(state)
     }
 }
 
@@ -106,10 +106,39 @@ mod tests {
             pub fn assign_region(
                 &self,
                 layouter: &mut impl Layouter<F>,
-                input_state: [F; 25],
+                input: [F; 25],
             ) -> Result<[F; 25], Error> {
+                let state = layouter.assign_region(
+                    || "Input state",
+                    |mut region| {
+                        let state: [(Cell, F); 25] = input
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, &value)| {
+                                let cell = region
+                                    .assign_advice(
+                                        || format!("State {}", idx),
+                                        self.state[idx],
+                                        idx,
+                                        || Ok(value),
+                                    )
+                                    .unwrap();
+                                (cell, value)
+                            })
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .unwrap();
+                        Ok(state)
+                    },
+                )?;
                 let output_state =
-                    self.conversion.assign_region(layouter, input_state)?;
+                    self.conversion.assign_region(layouter, state)?;
+                let output_state: [F; 25] = output_state
+                    .iter()
+                    .map(|&(_, value)| value)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap();
                 Ok(output_state)
             }
         }

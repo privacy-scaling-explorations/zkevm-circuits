@@ -1,9 +1,8 @@
-use crate::gates::gate_helpers::CellF;
 use pairing::arithmetic::FieldExt;
 
 use halo2::{
-    circuit::{Cell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+    circuit::{Cell, Region},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 

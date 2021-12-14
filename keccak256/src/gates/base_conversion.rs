@@ -1,11 +1,10 @@
 use halo2::{
-    circuit::Layouter,
+    circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
 use crate::gates::base_eval::BaseEvaluationConfig;
-use crate::gates::gate_helpers::CellF;
 use crate::gates::tables::BaseInfo;
 use pairing::arithmetic::FieldExt;
 
@@ -19,7 +18,7 @@ pub struct BaseConversionConfig<F> {
 }
 
 impl<F: FieldExt> BaseConversionConfig<F> {
-    /// Side effect: input_lane and output_lane are equality enabled
+    /// Side effect: lane is equality enabled
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         bi: BaseInfo<F>,
@@ -56,27 +55,22 @@ impl<F: FieldExt> BaseConversionConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: F,
-    ) -> Result<F, Error> {
+        input: (Cell, F),
+    ) -> Result<(Cell, F), Error> {
         let (input_coefs, output_coefs, output) =
-            self.bi.compute_coefs(input)?;
+            self.bi.compute_coefs(input.1)?;
 
-        let (input_cell, output_cell) = layouter.assign_region(
+        let output_cell = layouter.assign_region(
             || "lane",
             |mut region| {
-                let input_cell = region.assign_advice(
-                    || "lane input",
-                    self.lane,
-                    0,
-                    || Ok(input),
-                )?;
                 let output_cell = region.assign_advice(
                     || "lane output",
                     self.lane,
-                    1,
+                    0,
                     || Ok(output),
                 )?;
-                Ok((input_cell, output_cell))
+
+                Ok(output_cell)
             },
         )?;
 
@@ -88,7 +82,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                 }
                 self.input_eval.assign_region(
                     &mut region,
-                    input_cell,
+                    input.0,
                     &input_coefs,
                 )?;
 
@@ -101,7 +95,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             },
         )?;
 
-        Ok(output)
+        Ok((output_cell, output))
     }
 }
 
@@ -156,8 +150,20 @@ mod tests {
                 layouter: &mut impl Layouter<F>,
                 input: F,
             ) -> Result<F, Error> {
-                let output = self.conversion.assign_region(layouter, input)?;
-                Ok(output)
+                let cell = layouter.assign_region(
+                    || "Input lane",
+                    |mut region| {
+                        region.assign_advice(
+                            || "Input lane",
+                            self.lane,
+                            0,
+                            || Ok(input),
+                        )
+                    },
+                )?;
+                let output =
+                    self.conversion.assign_region(layouter, (cell, input))?;
+                Ok(output.1)
             }
         }
 
