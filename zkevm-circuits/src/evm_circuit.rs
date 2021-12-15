@@ -1,14 +1,7 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use crate::util::Expr;
-use bus_mapping::{evm::OpcodeId, operation::Target};
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::{self, Layouter, Region},
-    plonk::*,
-    poly::Rotation,
-};
+use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
 
 mod execution;
 mod param;
