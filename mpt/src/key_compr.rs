@@ -65,6 +65,8 @@ impl<F: FieldExt> KeyComprChip<F> {
 
             // TODO: refactor to avoid repeated queries
 
+            // TODO: use r_table to reduce the degree
+
             // If RLP is shorter than 55 bytes
             // Leaf
             // first two bytes (s_rlp1, s_rlp2) are RLP meta data
