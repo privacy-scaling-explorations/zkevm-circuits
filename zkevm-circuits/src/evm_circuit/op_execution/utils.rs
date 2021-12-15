@@ -332,7 +332,7 @@ macro_rules! impl_op_gadget {
                 state_curr: &OpExecutionState<F>,
                 state_next: &OpExecutionState<F>,
             ) -> Vec<Constraint<F>> {
-                let mut case_constrains = Vec::<Constraint<F>>::new();
+                let mut case_constraints = Vec::<Constraint<F>>::new();
                 paste::paste! {
                     $(
                         let mut [<$case:snake>] = self.[<$case:snake>].constraint(
@@ -340,7 +340,7 @@ macro_rules! impl_op_gadget {
                             state_next,
                             concat!(stringify!($name), " ", stringify!([<$case:snake>])),
                         );
-                        case_constrains.append(&mut [<$case:snake>] );
+                        case_constraints.append(&mut [<$case:snake>] );
                     )*
 
                     // Add common expressions to all cases
@@ -349,7 +349,7 @@ macro_rules! impl_op_gadget {
                         vec![$(OpcodeId::$op),*],
                     );
                     utils::batch_add_expressions(
-                        case_constrains,
+                        case_constraints,
                         cb.expressions,
                         cb.lookups,
                     )
