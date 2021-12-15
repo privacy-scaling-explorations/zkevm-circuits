@@ -29,14 +29,14 @@ pub struct Transaction<F> {
     pub id: usize,
     pub nonce: u64,
     pub gas: u64,
-    pub gas_tip_cap: Word,
-    pub gas_fee_cap: Word,
+    pub gas_price: Word,
     pub caller_address: Address,
     pub callee_address: Address,
     pub is_create: bool,
     pub value: Word,
-    pub call_data_length: usize,
     pub call_data: Vec<u8>,
+    pub call_data_length: usize,
+    pub call_data_gas_cost: u64,
     pub calls: Vec<Call<F>>,
     pub steps: Vec<ExecStep>,
 }
@@ -59,19 +59,10 @@ impl<F: FieldExt> Transaction<F> {
                 ],
                 [
                     F::from(self.id as u64),
-                    F::from(TxContextFieldTag::GasTipCap as u64),
+                    F::from(TxContextFieldTag::GasPrice as u64),
                     F::zero(),
                     RandomLinearCombination::random_linear_combine(
-                        self.gas_tip_cap.to_le_bytes(),
-                        randomness,
-                    ),
-                ],
-                [
-                    F::from(self.id as u64),
-                    F::from(TxContextFieldTag::GasFeeCap as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.gas_fee_cap.to_le_bytes(),
+                        self.gas_price.to_le_bytes(),
                         randomness,
                     ),
                 ],
@@ -107,6 +98,12 @@ impl<F: FieldExt> Transaction<F> {
                     F::from(TxContextFieldTag::CallDataLength as u64),
                     F::zero(),
                     F::from(self.call_data_length as u64),
+                ],
+                [
+                    F::from(self.id as u64),
+                    F::from(TxContextFieldTag::CallDataGasCost as u64),
+                    F::zero(),
+                    F::from(self.call_data_gas_cost),
                 ],
             ],
             self.call_data

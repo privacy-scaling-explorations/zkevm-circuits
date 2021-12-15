@@ -400,7 +400,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         field_tag: TxContextFieldTag,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.tx_context_lookup(id, field_tag.expr(), 0.expr(), cell.expr());
+        self.tx_context_lookup(id, field_tag.expr(), cell.expr());
         cell
     }
 
@@ -410,7 +410,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         field_tag: TxContextFieldTag,
     ) -> Word<F> {
         let word = self.query_word();
-        self.tx_context_lookup(id, field_tag.expr(), 0.expr(), word.expr());
+        self.tx_context_lookup(id, field_tag.expr(), word.expr());
         word
     }
 
@@ -418,13 +418,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         id: Expression<F>,
         field_tag: Expression<F>,
-        index: Expression<F>,
         value: Expression<F>,
     ) {
         self.add_lookup(Lookup::Tx {
             id,
             field_tag,
-            index,
+            index: 0.expr(),
             value,
         });
     }

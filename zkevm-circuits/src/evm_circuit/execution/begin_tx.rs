@@ -25,14 +25,14 @@ pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
-    tx_gas_tip_cap: Word<F>,
-    tx_gas_fee_cap: Word<F>,
+    tx_gas_price: Word<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
     tx_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
+    tx_call_data_gas_cost: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,
@@ -59,7 +59,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
         ]
         .map(|field_tag| cb.call_context(field_tag));
 
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length] =
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -67,19 +67,18 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CalleeAddress,
                 TxContextFieldTag::IsCreate,
                 TxContextFieldTag::CallDataLength,
+                TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag));
-        let [tx_gas_tip_cap, tx_gas_fee_cap, tx_value] = [
-            TxContextFieldTag::GasTipCap,
-            TxContextFieldTag::GasFeeCap,
-            TxContextFieldTag::Value,
-        ]
-        .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag));
+        let [tx_gas_price, tx_value] =
+            [TxContextFieldTag::GasPrice, TxContextFieldTag::Value].map(
+                |field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag),
+            );
 
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas = MulWordByU64Gadget::construct(
             cb,
-            tx_gas_fee_cap.clone(),
+            tx_gas_price.clone(),
             tx_gas.clone(),
             true,
         );
@@ -95,7 +94,8 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Use intrinsic gas and check gas_left is sufficient
         let intrinsic_gas_cost =
-            select::expr(tx_is_create.expr(), 53000.expr(), 21000.expr());
+            select::expr(tx_is_create.expr(), 53000.expr(), 21000.expr())
+                + tx_call_data_gas_cost.expr();
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;
         let sufficient_gas_left =
             RangeCheckGadget::construct(cb, gas_left.clone());
@@ -172,14 +172,14 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id,
             tx_nonce,
             tx_gas,
-            tx_gas_tip_cap,
-            tx_gas_fee_cap,
+            tx_gas_price,
             mul_gas_fee_by_gas,
             tx_caller_address,
             tx_callee_address,
             tx_is_create,
             tx_value,
             tx_call_data_length,
+            tx_call_data_gas_cost,
             rw_counter_end_of_reversion,
             is_persistent,
             sufficient_gas_left,
@@ -197,7 +197,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_fee = tx.gas_fee_cap * tx.gas;
+        let gas_fee = tx.gas_price * tx.gas;
         let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
             [step.rw_indices[6], step.rw_indices[7], step.rw_indices[8]]
                 .map(|idx| block.rws[idx].account_value_pair());
@@ -207,20 +207,15 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_nonce
             .assign(region, offset, Some(F::from(tx.nonce)))?;
         self.tx_gas.assign(region, offset, Some(F::from(tx.gas)))?;
-        self.tx_gas_tip_cap.assign(
+        self.tx_gas_price.assign(
             region,
             offset,
-            Some(tx.gas_tip_cap.to_le_bytes()),
-        )?;
-        self.tx_gas_fee_cap.assign(
-            region,
-            offset,
-            Some(tx.gas_fee_cap.to_le_bytes()),
+            Some(tx.gas_price.to_le_bytes()),
         )?;
         self.mul_gas_fee_by_gas.assign(
             region,
             offset,
-            tx.gas_fee_cap,
+            tx.gas_price,
             tx.gas,
             gas_fee,
         )?;
@@ -243,6 +238,11 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             Some(F::from(tx.call_data_length as u64)),
+        )?;
+        self.tx_call_data_gas_cost.assign(
+            region,
+            offset,
+            Some(F::from(tx.call_data_gas_cost)),
         )?;
         self.rw_counter_end_of_reversion.assign(
             region,
@@ -297,8 +297,14 @@ mod test {
     fn test_ok(tx: eth_types::Transaction, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 20 };
 
-        let gas_fee = tx.gas * tx.max_fee_per_gas.unwrap_or_else(Word::zero);
-        let intrinsic_gas_cost = if tx.to.is_none() { 53000 } else { 21000 };
+        let gas_fee = tx.gas * tx.gas_price.unwrap_or_else(Word::zero);
+        let call_data_gas_cost = tx
+            .input
+            .0
+            .iter()
+            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
+        let intrinsic_gas_cost =
+            if tx.to.is_none() { 53000 } else { 21000 } + call_data_gas_cost;
 
         let from_balance_prev = Word::from(10).pow(20.into());
         let to_balance_prev = Word::zero();
@@ -313,16 +319,14 @@ mod test {
                 id: 1,
                 nonce: tx.nonce.low_u64(),
                 gas: tx.gas.low_u64(),
-                gas_tip_cap: tx
-                    .max_priority_fee_per_gas
-                    .unwrap_or_else(Word::zero),
-                gas_fee_cap: tx.max_fee_per_gas.unwrap_or_else(Word::zero),
+                gas_price: tx.gas_price.unwrap_or_else(Word::zero),
                 caller_address: tx.from,
                 callee_address: tx.to.unwrap_or_else(Address::zero),
                 is_create: tx.to.is_none(),
                 value: tx.value,
-                call_data_length: tx.input.0.len(),
                 call_data: tx.input.to_vec(),
+                call_data_length: tx.input.0.len(),
+                call_data_gas_cost,
                 calls: vec![Call {
                     id: 1,
                     is_root: true,
@@ -351,7 +355,7 @@ mod test {
                         rw_counter: 17,
                         program_counter: 0,
                         stack_pointer: 1024,
-                        gas_left: tx.gas.low_u64() - intrinsic_gas_cost,
+                        gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
                         state_write_counter: 2,
                         ..Default::default()
@@ -512,54 +516,84 @@ mod test {
 
     fn mock_tx(
         value: Option<Word>,
-        max_fee_per_gas: Option<Word>,
+        gas: Option<u64>,
+        gas_price: Option<Word>,
+        calldata: Vec<u8>,
     ) -> eth_types::Transaction {
         let from = address!("0x00000000000000000000000000000000000000fe");
         let to = address!("0x00000000000000000000000000000000000000ff");
+        let minimal_gas = Word::from(21000);
         let one_ether = Word::from(10).pow(18.into());
         let two_gwei = Word::from(2_000_000_000);
         eth_types::Transaction {
             from,
             to: Some(to),
             value: value.unwrap_or(one_ether),
-            gas: 21000.into(),
-            max_fee_per_gas: max_fee_per_gas.or(Some(two_gwei)),
+            gas: gas.map(Word::from).unwrap_or(minimal_gas),
+            gas_price: gas_price.or(Some(two_gwei)),
+            input: calldata.into(),
             ..Default::default()
         }
     }
 
     #[test]
     fn begin_tx_gadget_simple() {
-        // Transaction succeeds
-        test_ok(mock_tx(None, None), true);
+        // Transfer 1 ether, successfully
+        test_ok(mock_tx(None, None, None, vec![]), true);
 
-        // Transaction fails
-        test_ok(mock_tx(None, None), false);
+        // Transfer 1 ether, tx reverts
+        test_ok(mock_tx(None, None, None, vec![]), false);
+
+        // Transfer nothing with some calldata
+        test_ok(
+            mock_tx(None, Some(21080), None, vec![1, 2, 3, 4, 0, 0, 0, 0]),
+            false,
+        );
     }
 
     #[test]
     fn begin_tx_gadget_rand() {
-        // Transaction succeeds
-        // random value
+        // Transfer random ether, successfully
         test_ok(
-            mock_tx(Some(Word::from(rand_range(0..=10u64.pow(20)))), None),
-            true,
-        );
-        // random gas_fee
-        test_ok(
-            mock_tx(None, Some(Word::from(rand_range(0..42857142857143u64)))),
+            mock_tx(
+                Some(Word::from(rand_range(0..=10u64.pow(20)))),
+                None,
+                None,
+                vec![],
+            ),
             true,
         );
 
-        // Transaction fails
-        // random value
+        // Transfer nothing with random gas_price, successfully
         test_ok(
-            mock_tx(Some(Word::from(rand_range(0..=10u64.pow(20)))), None),
+            mock_tx(
+                None,
+                None,
+                Some(Word::from(rand_range(0..42857142857143u64))),
+                vec![],
+            ),
+            true,
+        );
+
+        // Transfer random ether, tx reverts
+        test_ok(
+            mock_tx(
+                Some(Word::from(rand_range(0..=10u64.pow(20)))),
+                None,
+                None,
+                vec![],
+            ),
             false,
         );
-        // random gas_fee
+
+        // Transfer nothing with random gas_price, tx reverts
         test_ok(
-            mock_tx(None, Some(Word::from(rand_range(0..42857142857143u64)))),
+            mock_tx(
+                None,
+                None,
+                Some(Word::from(rand_range(0..42857142857143u64))),
+                vec![],
+            ),
             false,
         );
     }

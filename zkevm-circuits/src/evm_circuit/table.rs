@@ -119,13 +119,13 @@ impl FixedTableTag {
 pub enum TxContextFieldTag {
     Nonce = 1,
     Gas,
-    GasTipCap,
-    GasFeeCap,
+    GasPrice,
     CallerAddress,
     CalleeAddress,
     IsCreate,
     Value,
     CallDataLength,
+    CallDataGasCost,
     CallData,
 }
 
