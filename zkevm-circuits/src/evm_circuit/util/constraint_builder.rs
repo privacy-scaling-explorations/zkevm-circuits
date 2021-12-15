@@ -583,15 +583,17 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     pub(crate) fn call_context(
         &mut self,
+        call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.call_context_lookup(field_tag, cell.expr());
+        self.call_context_lookup(call_id, field_tag, cell.expr());
         cell
     }
 
     pub(crate) fn call_context_lookup(
         &mut self,
+        call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
         value: Expression<F>,
     ) {
@@ -599,7 +601,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             false.expr(),
             RwTableTag::CallContext,
             [
-                self.curr.state.call_id.expr(),
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 field_tag.expr(),
                 value,
                 0.expr(),

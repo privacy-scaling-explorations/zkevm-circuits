@@ -8,7 +8,7 @@ use crate::{
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same, To},
+                Transition::{Delta, To},
             },
             math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
             select, Cell, RandomLinearCombination, Word,
@@ -46,18 +46,15 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BeginTx;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        cb.require_equal(
-            "call_id is correctly set to rw_counter at the step which creates the call",
-            cb.curr.state.call_id.expr(),
-            cb.curr.state.rw_counter.expr(),
-        );
+        // Use rw_counter of the step which triggers next call as its call_id.
+        let call_id = cb.curr.state.rw_counter.clone();
 
         let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
             CallContextFieldTag::TxId,
             CallContextFieldTag::RwCounterEndOfReversion,
             CallContextFieldTag::IsPersistent,
         ]
-        .map(|field_tag| cb.call_context(field_tag));
+        .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
@@ -75,6 +72,17 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
                 |field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag),
             );
 
+        // Increase caller's nonce.
+        // (tx caller's nonce always increases even tx ends with error)
+        cb.account_write(
+            tx_caller_address.expr(),
+            AccountFieldTag::Nonce,
+            tx_nonce.expr() + 1.expr(),
+            tx_nonce.expr(),
+        );
+
+        // TODO: Implement EIP 1559 (currently it only supports legacy
+        // transaction format)
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas = MulWordByU64Gadget::construct(
             cb,
@@ -83,19 +91,13 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             true,
         );
 
-        // Increase caller's nonce (tx caller's nonce always increases even tx
-        // ends with error)
-        cb.account_write(
-            tx_caller_address.expr(),
-            AccountFieldTag::Nonce,
-            tx_nonce.expr() + 1.expr(),
-            tx_nonce.expr(),
-        );
-
-        // Use intrinsic gas and check gas_left is sufficient
+        // TODO: Take gas cost of access list (EIP 2930) into consideration.
+        // Use intrinsic gas
         let intrinsic_gas_cost =
             select::expr(tx_is_create.expr(), 53000.expr(), 21000.expr())
                 + tx_call_data_gas_cost.expr();
+
+        // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;
         let sufficient_gas_left =
             RangeCheckGadget::construct(cb, gas_left.clone());
@@ -139,7 +141,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             code_hash.expr(),
         );
 
-        // Setup call context fields
+        // Setup next call's context.
         for (field_tag, value) in [
             (CallContextFieldTag::Depth, 1.expr()),
             (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
@@ -152,12 +154,12 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             (CallContextFieldTag::Value, tx_value.expr()),
             (CallContextFieldTag::IsStatic, 0.expr()),
         ] {
-            cb.call_context_lookup(field_tag, value);
+            cb.call_context_lookup(Some(call_id.expr()), field_tag, value);
         }
 
         cb.require_step_state_transition(StepStateTransition {
             rw_counter: Delta(16.expr()),
-            call_id: Same,
+            call_id: To(call_id.expr()),
             is_root: To(1.expr()),
             is_create: To(0.expr()),
             opcode_source: To(code_hash.expr()),
