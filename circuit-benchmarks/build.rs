@@ -112,4 +112,19 @@ mod tests {{
     state_file
         .write(&_bench_code.as_bytes())
         .expect("Error writing to state_circ.rs file");
+
+    // Add state_circuit module to `lib.rs`
+    let state_mod = r#"
+#[cfg(feature = "benches")]
+pub mod state_circuit;
+"#;
+    let mut lib_file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open("src/lib.rs")
+        .expect("Error opening lib.rs");
+
+    if let Err(e) = writeln!(lib_file, "{}", state_mod) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
 }
