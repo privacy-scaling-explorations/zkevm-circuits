@@ -6,17 +6,17 @@ use std::fs::*;
 use std::io::Write;
 
 fn main() {
-    let degree: usize = var("DEGREE").unwrap().parse().unwrap();
+    let degree: usize = var("DEGREE").expect("Missing DEGREE env var").parse().expect("Cannot parse DEGREE env var as usize");
     let memory_rows_max: usize = 1 << (degree - 2);
     let memory_address_max: usize = var("MEMORY_ADDRESS_MAX")
         .unwrap_or_else(|_| "2000".to_string())
         .parse()
-        .unwrap();
+        .expect("Cannot parse MEMORY_ADDRESS_MAX env var as usize");
     let stack_rows_max: usize = 1 << (degree - 2);
     let stack_address_max: usize = var("STACK_ADDRESS_MAX")
         .unwrap_or_else(|_| "1300".to_string())
         .parse()
-        .unwrap();
+        .expect("Cannot parse STACK_ADDRESS_MAX env var as usize");
     let storage_rows_max: usize = 1 << (degree - 2);
     let global_counter_max: usize =
         memory_rows_max + stack_rows_max + storage_rows_max;

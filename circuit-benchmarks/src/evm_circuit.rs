@@ -209,9 +209,9 @@ mod evm_circ_benches {
         use rand_xorshift::XorShiftRng;
 
         let degree: usize = var("DEGREE")
-            .unwrap()
+            .expect("No DEGREE env var was provided")
             .parse()
-            .expect("No DEGREE env var was provided");
+            .unwrap("Cannot parse DEGREE env var as usize");
 
         let public_inputs_size = 0;
         let empty_circuit = TestCircuit::default();
