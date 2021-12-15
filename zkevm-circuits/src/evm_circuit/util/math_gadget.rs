@@ -1,45 +1,50 @@
-use super::super::CaseAllocation;
-use super::super::Cell;
-use super::constraint_builder::ConstraintBuilder;
-use super::select;
-use super::sum;
-use super::{from_bytes, get_range};
-use crate::evm_circuit::param::MAX_BYTES_FIELD;
-use crate::util::Expr;
-use array_init::array_init;
+use crate::{
+    evm_circuit::{
+        param::MAX_BYTES_FIELD,
+        util::{
+            self, constraint_builder::ConstraintBuilder, from_bytes,
+            pow_of_two, pow_of_two_expr, select, split_u256, sum, Cell,
+        },
+    },
+    util::Expr,
+};
+use bus_mapping::eth_types::{ToLittleEndian, Word};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
 pub struct IsZeroGadget<F> {
-    pub(crate) inverse: Cell<F>,
+    inverse: Cell<F>,
+    is_zero: Expression<F>,
 }
 
 impl<F: FieldExt> IsZeroGadget<F> {
-    pub const NUM_CELLS: usize = 1;
-    pub const NUM_WORDS: usize = 0;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        Self {
-            inverse: alloc.cells.pop().unwrap(),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         value: Expression<F>,
-    ) -> Expression<F> {
-        let is_zero = 1.expr() - (value.clone() * self.inverse.expr());
-        // when `value != 0` check `inverse = a.invert()`:
-        // value * (1 - value * inverse)
-        cb.add_expression(value * is_zero.clone());
-        // when `value == 0` check `inverse = 0`:
-        // `inverse * (1 - value * inverse)`
-        cb.add_expression(self.inverse.expr() * is_zero.clone());
+    ) -> Self {
+        let inverse = cb.query_cell();
 
-        is_zero
+        let is_zero = 1.expr() - (value.clone() * inverse.expr());
+        // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
+        // inverse)
+        cb.add_constraint(
+            "value ⋅ (1 - value ⋅ value_inv)",
+            value * is_zero.clone(),
+        );
+        // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
+        // inverse)`
+        cb.add_constraint(
+            "value_inv ⋅ (1 - value ⋅ value_inv)",
+            inverse.expr() * is_zero.clone(),
+        );
+
+        Self { inverse, is_zero }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        self.is_zero.clone()
     }
 
     pub(crate) fn assign(
@@ -61,26 +66,22 @@ impl<F: FieldExt> IsZeroGadget<F> {
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
 pub struct IsEqualGadget<F> {
-    pub(crate) is_zero: IsZeroGadget<F>,
+    is_zero: IsZeroGadget<F>,
 }
 
 impl<F: FieldExt> IsEqualGadget<F> {
-    pub const NUM_CELLS: usize = IsZeroGadget::<F>::NUM_CELLS;
-    pub const NUM_WORDS: usize = IsZeroGadget::<F>::NUM_WORDS;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        Self {
-            is_zero: IsZeroGadget::<F>::construct(alloc),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
-    ) -> Expression<F> {
-        self.is_zero.constraints(cb, (lhs) - (rhs))
+    ) -> Self {
+        let is_zero = IsZeroGadget::construct(cb, lhs - rhs);
+
+        Self { is_zero }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        self.is_zero.expr()
     }
 
     pub(crate) fn assign(
@@ -94,6 +95,111 @@ impl<F: FieldExt> IsEqualGadget<F> {
     }
 }
 
+/// Construction of 2 256-bit words addition and result, which is useful for
+/// opcode ADD, SUB and balance operation
+#[derive(Clone, Debug)]
+pub(crate) struct AddWordsGadget<F, const N: usize> {
+    addends: [util::Word<F>; N],
+    sum: util::Word<F>,
+    carry_lo: Cell<F>,
+    carry_hi: Cell<F>,
+}
+
+impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        addends: [util::Word<F>; N],
+    ) -> Self {
+        let sum = cb.query_word();
+        let carry_lo = cb.query_cell();
+        let carry_hi = cb.query_cell();
+
+        let addends_lo = &addends
+            .iter()
+            .map(|addend| from_bytes::expr(&addend.cells[..16]))
+            .collect::<Vec<_>>();
+        let addends_hi = &addends
+            .iter()
+            .map(|addend| from_bytes::expr(&addend.cells[16..]))
+            .collect::<Vec<_>>();
+        let sum_lo = from_bytes::expr(&sum.cells[..16]);
+        let sum_hi = from_bytes::expr(&sum.cells[16..]);
+
+        cb.require_equal(
+            "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",
+            sum::expr(addends_lo),
+            sum_lo + carry_lo.expr() * pow_of_two_expr(128),
+        );
+        cb.require_equal(
+            "sum(addends_hi) + carry_lo == sum_hi + carry_hi ⋅ 2^128",
+            sum::expr(addends_hi) + carry_lo.expr(),
+            sum_hi + carry_hi.expr() * pow_of_two_expr(128),
+        );
+
+        for carry in [&carry_lo, &carry_hi] {
+            cb.require_in_set(
+                "carry_lo in 0..N",
+                carry.expr(),
+                (0..N).map(|idx| idx.expr()).collect(),
+            );
+        }
+
+        Self {
+            addends,
+            sum,
+            carry_lo,
+            carry_hi,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        addends: [Word; N],
+        sum: Word,
+    ) -> Result<(), Error> {
+        for (word, value) in self.addends.iter().zip(addends.iter()) {
+            word.assign(region, offset, Some(value.to_le_bytes()))?;
+        }
+        self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+
+        let (addends_lo, addends_hi): (Vec<_>, Vec<_>) =
+            addends.iter().map(split_u256).unzip();
+        let (sum_lo, sum_hi) = split_u256(&sum);
+
+        let sum_of_addends_lo = addends_lo
+            .into_iter()
+            .fold(Word::zero(), |acc, addend_lo| acc + addend_lo);
+        let sum_of_addends_hi = addends_hi
+            .into_iter()
+            .fold(Word::zero(), |acc, addend_hi| acc + addend_hi);
+
+        let carry_lo = (sum_of_addends_lo - sum_lo) >> 128;
+        let carry_hi = (sum_of_addends_hi + carry_lo - sum_hi) >> 128;
+        self.carry_lo.assign(
+            region,
+            offset,
+            Some(F::from(carry_lo.low_u64())),
+        )?;
+        self.carry_hi.assign(
+            region,
+            offset,
+            Some(F::from(carry_hi.low_u64())),
+        )?;
+
+        Ok(())
+    }
+
+    pub(crate) fn sum(&self) -> &util::Word<F> {
+        &self.sum
+    }
+
+    pub(crate) fn carry(&self) -> &util::Cell<F> {
+        &self.carry_hi
+    }
+}
+
 /// Requires that the passed in value is within the specified range.
 /// `NUM_BYTES` is required to be `<= 31`.
 #[derive(Clone, Debug)]
@@ -102,30 +208,22 @@ pub struct RangeCheckGadget<F, const NUM_BYTES: usize> {
 }
 
 impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
-    pub const NUM_CELLS: usize = NUM_BYTES;
-    pub const NUM_WORDS: usize = 0;
-
-    pub const PART_SIZE: u64 = 256;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        assert!(NUM_BYTES <= 31, "number of bytes too large");
-        Self {
-            parts: array_init(|_| alloc.cells.pop().unwrap()),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         value: Expression<F>,
-    ) {
-        // Range check the parts using lookups
-        for part in self.parts.iter() {
-            cb.require_in_range(part.expr(), Self::PART_SIZE);
-        }
+    ) -> Self {
+        assert!(NUM_BYTES <= 31, "number of bytes too large");
+
+        let parts = cb.query_bytes();
         // Require that the reconstructed value from the parts equals the
         // original value
-        cb.require_equal(value, from_bytes::expr(self.parts.to_vec()));
+        cb.require_equal(
+            "Constrain bytes recomposited to value",
+            value,
+            from_bytes::expr(&parts),
+        );
+
+        Self { parts }
     }
 
     pub(crate) fn assign(
@@ -160,35 +258,28 @@ pub struct LtGadget<F, const NUM_BYTES: usize> {
 }
 
 impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
-    pub const NUM_CELLS: usize = 1 + NUM_BYTES; // lt + diff
-    pub const NUM_WORDS: usize = 0;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        assert!(NUM_BYTES <= MAX_BYTES_FIELD, "unsupported number of bytes");
-        Self {
-            lt: alloc.cells.pop().unwrap(),
-            diff: array_init(|_| alloc.cells.pop().unwrap()),
-            range: get_range(NUM_BYTES * 8),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
-    ) -> Expression<F> {
-        let diff = from_bytes::expr(self.diff.to_vec());
+    ) -> Self {
+        assert!(NUM_BYTES <= MAX_BYTES_FIELD, "unsupported number of bytes");
+
+        let lt = cb.query_bool();
+        let diff = cb.query_bytes();
+        let range = pow_of_two(NUM_BYTES * 8);
+
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
-        cb.require_equal(lhs - rhs, diff - (self.lt.expr() * self.range));
+        cb.require_equal(
+            "lhs - rhs == diff - (lt ⋅ range)",
+            lhs - rhs,
+            from_bytes::expr(&diff) - (lt.expr() * range),
+        );
 
-        // `lt` needs to be boolean
-        cb.require_boolean(self.lt.expr());
-        // All parts of `diff` need to be bytes
-        for byte in self.diff.iter() {
-            cb.require_in_range(byte.expr(), 256);
-        }
+        Self { lt, diff, range }
+    }
 
+    pub(crate) fn expr(&self) -> Expression<F> {
         self.lt.expr()
     }
 
@@ -234,32 +325,19 @@ pub struct ComparisonGadget<F, const NUM_BYTES: usize> {
 }
 
 impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
-    pub const NUM_CELLS: usize =
-        LtGadget::<F, NUM_BYTES>::NUM_CELLS + IsZeroGadget::<F>::NUM_CELLS;
-    pub const NUM_WORDS: usize = 0;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        Self {
-            lt: LtGadget::<F, NUM_BYTES>::construct(alloc),
-            eq: IsZeroGadget::<F>::construct(alloc),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
-    ) -> (Expression<F>, Expression<F>) {
-        // lt
-        let lt = self.lt.constraints(cb, lhs, rhs);
+    ) -> Self {
+        let lt = LtGadget::<F, NUM_BYTES>::construct(cb, lhs, rhs);
+        let eq = IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()));
 
-        // eq
-        let eq = self
-            .eq
-            .constraints(cb, sum::expr(&self.lt.diff_bytes()[..]));
+        Self { lt, eq }
+    }
 
-        (lt, eq)
+    pub(crate) fn expr(&self) -> (Expression<F>, Expression<F>) {
+        (self.lt.expr(), self.eq.expr())
     }
 
     pub(crate) fn assign(
@@ -273,7 +351,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
         let (lt, diff) = self.lt.assign(region, offset, lhs, rhs)?;
 
         // eq
-        let eq = self.eq.assign(region, offset, sum::value(&diff[..]))?;
+        let eq = self.eq.assign(region, offset, sum::value(&diff))?;
 
         Ok((lt, eq))
     }
@@ -288,35 +366,36 @@ impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
 /// future expressions depending on this result more efficient.
 #[derive(Clone, Debug)]
 pub struct PairSelectGadget<F> {
-    pub(crate) is_a: Cell<F>,
+    is_a: Cell<F>,
+    is_b: Expression<F>,
 }
 
 impl<F: FieldExt> PairSelectGadget<F> {
-    pub const NUM_CELLS: usize = 1;
-    pub const NUM_WORDS: usize = 0;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        Self {
-            is_a: alloc.cells.pop().unwrap(),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         value: Expression<F>,
         a: Expression<F>,
         b: Expression<F>,
-    ) -> (Expression<F>, Expression<F>) {
-        let is_b = 1.expr() - self.is_a.expr();
-        // `is_a` needs to be boolean
-        cb.require_boolean(self.is_a.expr());
-        // Force `is_a` to be `0` when `value != a`
-        cb.add_expression(self.is_a.expr() * (value.clone() - a));
-        // Force `1 - is_a` to be `0` when `value != b`
-        cb.add_expression(is_b.clone() * (value - b));
+    ) -> Self {
+        let is_a = cb.query_bool();
+        let is_b = 1.expr() - is_a.expr();
 
-        (self.is_a.expr(), is_b)
+        // Force `is_a` to be `0` when `value != a`
+        cb.add_constraint(
+            "is_a ⋅ (value - a)",
+            is_a.expr() * (value.clone() - a),
+        );
+        // Force `1 - is_a` to be `0` when `value != b`
+        cb.add_constraint(
+            "(1 - is_a) ⋅ (value - b)",
+            is_b.clone() * (value - b),
+        );
+
+        Self { is_a, is_b }
+    }
+
+    pub(crate) fn expr(&self) -> (Expression<F>, Expression<F>) {
+        (self.is_a.expr(), self.is_b.clone())
     }
 
     pub(crate) fn assign(
@@ -349,41 +428,38 @@ pub struct ConstantDivisionGadget<F, const NUM_BYTES: usize> {
 }
 
 impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
-    pub const NUM_CELLS: usize =
-        2 + RangeCheckGadget::<F, NUM_BYTES>::NUM_CELLS;
-    pub const NUM_WORDS: usize = RangeCheckGadget::<F, NUM_BYTES>::NUM_WORDS;
-
     pub(crate) fn construct(
-        alloc: &mut CaseAllocation<F>,
-        divisor: u64,
-    ) -> Self {
-        Self {
-            quotient: alloc.cells.pop().unwrap(),
-            remainder: alloc.cells.pop().unwrap(),
-            divisor,
-            quotient_range_check: RangeCheckGadget::construct(alloc),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
         cb: &mut ConstraintBuilder<F>,
         numerator: Expression<F>,
-    ) -> (Expression<F>, Expression<F>) {
+        divisor: u64,
+    ) -> Self {
+        let quotient = cb.query_cell();
+        let remainder = cb.query_cell();
+
         // Require that remainder < divisor
-        cb.require_in_range(self.remainder.expr(), self.divisor);
+        cb.range_lookup(remainder.expr(), divisor);
 
         // Require that quotient < 2**NUM_BYTES
         // so we can't have any overflow when doing `quotient * divisor`.
-        self.quotient_range_check
-            .constraints(cb, self.quotient.expr());
+        let quotient_range_check =
+            RangeCheckGadget::construct(cb, quotient.expr());
 
         // Check if the division was done correctly
         cb.require_equal(
-            numerator - self.remainder.expr(),
-            self.quotient.expr() * self.divisor.expr(),
+            "lhnumerator - remainder == quotient ⋅ divisor",
+            numerator - remainder.expr(),
+            quotient.expr() * divisor.expr(),
         );
 
+        Self {
+            quotient,
+            remainder,
+            divisor,
+            quotient_range_check,
+        }
+    }
+
+    pub(crate) fn expr(&self) -> (Expression<F>, Expression<F>) {
         // Return the quotient and the remainder
         (self.quotient.expr(), self.remainder.expr())
     }
@@ -418,26 +494,23 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
 #[derive(Clone, Debug)]
 pub struct MaxGadget<F, const NUM_BYTES: usize> {
     lt: LtGadget<F, NUM_BYTES>,
+    max: Expression<F>,
 }
 
 impl<F: FieldExt, const NUM_BYTES: usize> MaxGadget<F, NUM_BYTES> {
-    pub const NUM_CELLS: usize = LtGadget::<F, NUM_BYTES>::NUM_CELLS;
-    pub const NUM_WORDS: usize = LtGadget::<F, NUM_BYTES>::NUM_WORDS;
-
-    pub(crate) fn construct(alloc: &mut CaseAllocation<F>) -> Self {
-        Self {
-            lt: LtGadget::construct(alloc),
-        }
-    }
-
-    pub(crate) fn constraints(
-        &self,
+    pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
-    ) -> Expression<F> {
-        let lt = self.lt.constraints(cb, lhs.clone(), rhs.clone());
-        select::expr(lt, rhs, lhs)
+    ) -> Self {
+        let lt = LtGadget::construct(cb, lhs.clone(), rhs.clone());
+        let max = select::expr(lt.expr(), rhs, lhs);
+
+        Self { lt, max }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        self.max.clone()
     }
 
     pub(crate) fn assign(
