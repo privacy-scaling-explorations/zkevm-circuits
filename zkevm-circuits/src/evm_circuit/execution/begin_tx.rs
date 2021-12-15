@@ -72,6 +72,16 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
                 |field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag),
             );
 
+        // Add first step constraint to have both rw_counter and tx_id to be 1
+        cb.add_constraint_first_step(
+            "rw_counter is initialized to be 1",
+            1.expr() - cb.curr.state.rw_counter.expr(),
+        );
+        cb.add_constraint_first_step(
+            "tx_id is initialized to be 1",
+            1.expr() - tx_id.expr(),
+        );
+
         // Increase caller's nonce.
         // (tx caller's nonce always increases even tx ends with error)
         cb.account_write(

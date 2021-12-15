@@ -55,6 +55,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     randomness: Expression<F>,
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
+    constraints_first_step: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<Lookup<F>>,
     row_usages: Vec<StepRowUsage>,
     rw_counter_offset: usize,
@@ -77,6 +78,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             randomness,
             execution_state,
             constraints: Vec::new(),
+            constraints_first_step: Vec::new(),
             lookups: Vec::new(),
             row_usages: vec![StepRowUsage::default(); curr.rows.len()],
             rw_counter_offset: 0,
@@ -91,6 +93,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn build(
         self,
     ) -> (
+        Vec<(&'static str, Expression<F>)>,
         Vec<(&'static str, Expression<F>)>,
         Vec<Lookup<F>>,
         Vec<Preset<F>>,
@@ -126,6 +129,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
         (
             constraints
+                .into_iter()
+                .map(|(name, constraint)| {
+                    (name, execution_state_selector.clone() * constraint)
+                })
+                .collect(),
+            self.constraints_first_step
                 .into_iter()
                 .map(|(name, constraint)| {
                     (name, execution_state_selector.clone() * constraint)
@@ -717,9 +726,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     pub(crate) fn add_constraints(
         &mut self,
-        constraint: Vec<(&'static str, Expression<F>)>,
+        constraints: Vec<(&'static str, Expression<F>)>,
     ) {
-        for (name, constraint) in constraint {
+        for (name, constraint) in constraints {
             self.add_constraint(name, constraint);
         }
     }
@@ -735,6 +744,19 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         };
         self.validate_degree(constraint.degree());
         self.constraints.push((name, constraint));
+    }
+
+    pub(crate) fn add_constraint_first_step(
+        &mut self,
+        name: &'static str,
+        constraint: Expression<F>,
+    ) {
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+        self.validate_degree(constraint.degree());
+        self.constraints_first_step.push((name, constraint));
     }
 
     pub(crate) fn add_lookup(&mut self, lookup: Lookup<F>) {

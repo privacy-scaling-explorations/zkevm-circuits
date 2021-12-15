@@ -94,6 +94,15 @@ impl<F: FieldExt> EvmCircuit<F> {
     ) -> Result<(), Error> {
         self.execution.assign_block(layouter, block)
     }
+
+    /// Assign steps in incomplete block for unit test purpose
+    pub fn assign_incomplete_block(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+    ) -> Result<(), Error> {
+        self.execution.assign_incomplete_block(layouter, block)
+    }
 }
 
 #[cfg(test)]
@@ -340,7 +349,9 @@ mod test {
                 &self.block.bytecodes,
                 self.block.randomness,
             )?;
-            config.evm_circuit.assign_block(&mut layouter, &self.block)
+            config
+                .evm_circuit
+                .assign_incomplete_block(&mut layouter, &self.block)
         }
     }
 
