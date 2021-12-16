@@ -16,7 +16,11 @@ pub struct PiConfig<F> {
 impl<F: FieldExt> PiConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let state: [Column<Advice>; 25] = (0..25)
-            .map(|_| meta.advice_column())
+            .map(|_| {
+                let col = meta.advice_column();
+                meta.enable_equality(col.into());
+                col
+            })
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
