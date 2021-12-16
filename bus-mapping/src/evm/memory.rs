@@ -270,6 +270,11 @@ impl Memory {
             &self[addr..addr + MemoryAddress::from(32)],
         ))
     }
+
+    /// Returns the size of memory in words
+    pub fn size(&self) -> usize {
+        (self.0.len() + 31) / 32
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +338,25 @@ mod memory_tests {
             mem_map.read_word(MemoryAddress::from(0x40))?,
             Word::from(0x80)
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn mem_size_works() -> Result<(), Error> {
+        let mut mem_map = Memory(
+            [Word::from(0), Word::from(0), Word::from(0x80)]
+                .iter()
+                .flat_map(|w| w.to_be_bytes())
+                .collect(),
+        );
+
+        // There are 3 words in memory
+        assert_eq!(mem_map.size(), 3);
+
+        // Now push extra 3 byte
+        mem_map.push([0; 10]);
+        assert_eq!(mem_map.size(), 4);
 
         Ok(())
     }
