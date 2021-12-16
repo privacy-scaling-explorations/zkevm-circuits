@@ -23,10 +23,10 @@ jobs:
         run: echo "${HOME}/bin" >> $GITHUB_PATH
       - name: Install Solc
         run: |
-            mkdir -p "$HOME/bin"
-            wget -q https://github.com/ethereum/solidity/releases/download/v0.8.0/solc-static-linux -O $HOME/bin/solc
-            chmod u+x "$HOME/bin/solc"
-            solc --version
+          mkdir -p "$HOME/bin"
+          wget -q https://github.com/ethereum/solidity/releases/download/v0.8.10/solc-static-linux -O $HOME/bin/solc
+          chmod u+x "$HOME/bin/solc"
+          solc --version
       # Run an initial build in a sepparate step to split the build time from execution time
       - name: Build gendata bin
         run: cargo build --bin gen_blockchain_data
