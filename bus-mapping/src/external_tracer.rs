@@ -1,5 +1,7 @@
 //! This module generates traces by connecting to an external tracer
-use crate::eth_types::{self, Address, Block, GethExecStep, Hash, Word, U64};
+use crate::eth_types::{
+    self, Address, Block, Bytes, GethExecStep, Hash, Word, U64,
+};
 use crate::Error;
 use geth_utils;
 use serde::Serialize;
@@ -94,7 +96,7 @@ pub struct Account {
     /// Balance
     pub balance: Word,
     /// EVM Code
-    pub code: String,
+    pub code: Bytes,
 }
 
 #[derive(Debug, Clone, Serialize)]

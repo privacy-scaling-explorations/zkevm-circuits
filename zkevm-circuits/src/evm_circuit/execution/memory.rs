@@ -233,11 +233,7 @@ mod test {
         block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
             [bytecode.get_pos("start")..]
             .to_vec();
-        let mut builder =
-            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                &block_trace.eth_block.clone(),
-                block_trace.ctants.clone(),
-            );
+        let mut builder = block_trace.new_circuit_input_builder();
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .unwrap();

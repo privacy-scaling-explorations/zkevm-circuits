@@ -1224,8 +1224,8 @@ impl<
 mod tests {
     use super::*;
     use bus_mapping::address;
-    use bus_mapping::circuit_input_builder::CircuitInputBuilder;
-    use bus_mapping::eth_types::{GethExecStep, Word};
+    use bus_mapping::bytecode;
+    use bus_mapping::eth_types::Word;
     use bus_mapping::evm::{GlobalCounter, MemoryAddress, StackAddress};
     use bus_mapping::mock;
 
@@ -1918,61 +1918,19 @@ mod tests {
 
     #[test]
     fn trace() {
-        let input_trace = r#"
-        [
-            {
-                "pc": 5,
-                "op": "PUSH1",
-                "gas": 82,
-                "gasCost": 3,
-                "depth": 1,
-                "stack": [],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              },
-              {
-                "pc": 7,
-                "op": "MLOAD",
-                "gas": 79,
-                "gasCost": 3,
-                "depth": 1,
-                "stack": [
-                  "40"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              },
-              {
-                "pc": 8,
-                "op": "STOP",
-                "gas": 76,
-                "gasCost": 0,
-                "depth": 1,
-                "stack": [
-                  "80"
-                ],
-                "memory": [
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000000",
-                  "0000000000000000000000000000000000000000000000000000000000000080"
-                ]
-              }
-        ]
-        "#;
-
-        // Here we have the ExecutionTrace completelly formed with all of the
-        // data to witness structured.
-        let geth_steps: Vec<GethExecStep> =
-            serde_json::from_str(input_trace).expect("Error on trace parsing");
-        let block = mock::BlockData::new_single_tx_geth_steps(geth_steps);
-        let mut builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        let bytecode = bytecode! {
+            PUSH1(0x80)
+            PUSH1(0x40)
+            MSTORE
+            #[start]
+            PUSH1(0x40)
+            MLOAD
+            STOP
+        };
+        let block =
+            mock::BlockData::new_single_tx_trace_code_at_start(&bytecode)
+                .unwrap();
+        let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let stack_ops = builder.block.container.sorted_stack();

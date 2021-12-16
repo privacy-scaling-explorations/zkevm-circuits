@@ -51,6 +51,7 @@
 //! use bus_mapping::Error;
 //! use bus_mapping::evm::Gas;
 //! use bus_mapping::mock;
+//! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use bus_mapping::eth_types::{
 //!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
 //! };
@@ -113,9 +114,11 @@
 //! // We use some mock data as context for the trace
 //! let eth_block = mock::new_block();
 //! let eth_tx = mock::new_tx(&eth_block);
+//! let mut sdb = StateDB::new();
+//! sdb.set_account(&Address::zero(), state_db::Account::zero());
 //!
 //! let mut builder =
-//!     CircuitInputBuilder::new(&eth_block, ctants);
+//!     CircuitInputBuilder::new(sdb, CodeDB::new(), &eth_block, ctants);
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
