@@ -6,10 +6,10 @@ pub const NUM_CELLS_STEP_STATE: usize = 10;
 /// The maximum number of bytes that a field element
 /// can be broken down into without causing the value it
 /// represents to overflow a single field element.
-pub const MAX_BYTES_FIELD: usize = 31;
+pub(crate) const MAX_BYTES_FIELD: usize = 31;
 
-pub const STACK_START_IDX: usize = 1024;
-pub const MAX_GAS_SIZE_IN_BYTES: usize = 8;
+pub(crate) const STACK_START_IDX: usize = 1024;
+pub(crate) const MAX_GAS_SIZE_IN_BYTES: usize = 8;
 // Number of bytes that will be used of the address word.
 // If any of the other more signficant bytes are used it will
 // always result in an out-of-gas error.

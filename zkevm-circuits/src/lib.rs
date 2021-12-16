@@ -7,7 +7,6 @@
 #![allow(clippy::upper_case_acronyms)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
-#![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
@@ -15,6 +14,3 @@ pub mod evm_circuit;
 pub mod gadget;
 pub mod state_circuit;
 pub mod util;
-
-#[cfg(test)]
-mod test_vectors;

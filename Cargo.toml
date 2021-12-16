@@ -5,6 +5,7 @@ members = [
     "keccak256",
     "geth-utils",
     "integration-tests",
+    "circuit-benchmarks"
 ]
 
 [patch.crates-io]
@@ -14,3 +15,18 @@ halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79
 # and leads to a compilation error.  This can be removed once the upstream PR
 # is resolved: https://github.com/bitvecto-rs/bitvec/pull/141
 bitvec = { git = "https://github.com/ed255/bitvec.git", rev = "5cfc5fa8496c66872d21905e677120fc3e79693c" }
+
+ethers-providers = { git = "https://github.com/gakonst/ethers-rs.git", rev = "6cbdc891876851355c4f8d300d24d7dab5bb9af3" } 
+ethers-core = { git = "https://github.com/gakonst/ethers-rs.git", rev = "6cbdc891876851355c4f8d300d24d7dab5bb9af3" } 
+ethers = { git = "https://github.com/gakonst/ethers-rs.git", rev = "6cbdc891876851355c4f8d300d24d7dab5bb9af3" } 
+
+# Definition of benchmarks profile to use.
+[profile.bench]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+rpath = false
+lto = "thin"
+incremental = false
+codegen-units = 1
