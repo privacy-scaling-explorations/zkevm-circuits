@@ -49,7 +49,7 @@
 //! - We lookup [`crate::gates::tables::Base13toBase9TableConfig`] and check the
 //!   conversion between `input_coef` and `output_coef` is valid
 //!
-//! We have the copy constrain to glue input accumulator to input lane and the
+//! We have the copy constraint to glue input accumulator to input lane and the
 //! output accumulator to output lane
 //!
 //! But we have special checks to do
