@@ -79,7 +79,8 @@ pub struct MPTConfig<F> {
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    leaf_key_chip: LeafKeyConfig,
+    leaf_s_key_chip: LeafKeyConfig,
+    leaf_c_key_chip: LeafKeyConfig,
     leaf_s_value_chip: LeafValueConfig,
     leaf_c_value_chip: LeafValueConfig,
     _marker: PhantomData<F>,
@@ -1214,14 +1215,14 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
         );
 
-        let leaf_key_chip = LeafKeyChip::<F>::configure(
+        let leaf_s_key_chip = LeafKeyChip::<F>::configure(
             meta,
             |meta| {
-                let q_enable = meta.query_selector(q_enable);
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
                 let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
-                let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
 
-                q_enable * (is_leaf_s + is_leaf_c)
+                not_first_level * is_leaf_s
             },
             s_rlp1,
             s_rlp2,
@@ -1231,7 +1232,37 @@ impl<F: FieldExt> MPTConfig<F> {
             s_keccak[1],
             acc_s,
             acc_mult_s,
+            key_rlc,
+            key_rlc_mult,
+            sel1,
+            sel2,
             r_table.clone(),
+            true,
+        );
+
+        let leaf_c_key_chip = LeafKeyChip::<F>::configure(
+            meta,
+            |meta| {
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
+                let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
+
+                not_first_level * is_leaf_c
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            s_advices,
+            s_keccak[0],
+            s_keccak[1],
+            acc_s,
+            acc_mult_s,
+            key_rlc,
+            key_rlc_mult,
+            sel1,
+            sel2,
+            r_table.clone(),
+            false,
         );
 
         let leaf_s_value_chip = LeafValueChip::<F>::configure(
@@ -1399,7 +1430,8 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             keccak_table,
-            leaf_key_chip,
+            leaf_s_key_chip,
+            leaf_c_key_chip,
             leaf_s_value_chip,
             leaf_c_value_chip,
             _marker: PhantomData,

@@ -29,18 +29,23 @@ impl<F: FieldExt> LeafKeyChip<F> {
         s_keccak1: Column<Advice>, // to see whether it's long or short RLP
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        key_rlc: Column<Advice>,
+        key_rlc_mult: Column<Advice>,
+        sel1: Column<Advice>,
+        sel2: Column<Advice>,
         r_table: Vec<Expression<F>>,
+        is_s: bool,
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
 
-        meta.create_gate("Storage leaf key", |meta| {
+        meta.create_gate("Storage leaf key hash RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
             let c248 = Expression::Constant(F::from_u64(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let is_long = meta.query_advice(s_keccak0, Rotation::cur());
-            // let is_short = meta.query_advice(s_keccak1, Rotation::cur());
+            let is_short = meta.query_advice(s_keccak1, Rotation::cur());
             constraints.push((
                 "is long",
                 q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
@@ -54,18 +59,18 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // TODO: check acc_mult as in key_compr
 
-            let mut rlc = s_rlp1;
+            let mut hash_rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            rlc = rlc + s_rlp2 * r_table[0].clone();
+            hash_rlc = hash_rlc + s_rlp2 * r_table[0].clone();
             let mut rind = 1;
 
             let mut r_wrapped = false;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 if !r_wrapped {
-                    rlc = rlc + s * r_table[rind].clone();
+                    hash_rlc = hash_rlc + s * r_table[rind].clone();
                 } else {
-                    rlc = rlc
+                    hash_rlc = hash_rlc
                         + s * r_table[rind].clone()
                             * r_table[R_TABLE_LEN - 1].clone();
                 }
@@ -78,7 +83,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            rlc = rlc
+            hash_rlc = hash_rlc
                 + c_rlp1
                     * r_table[R_TABLE_LEN - 1].clone()
                     * r_table[1].clone();
@@ -86,7 +91,99 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // key is at most of length 32, so it doesn't go further than c_rlp1
 
             let acc = meta.query_advice(acc, Rotation::cur());
-            constraints.push(("Leaf key acc", q_enable.clone() * (rlc - acc)));
+            constraints
+                .push(("Leaf key acc", q_enable.clone() * (hash_rlc - acc)));
+
+            constraints
+        });
+
+        meta.create_gate("Storage leaf key RLC", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            // key rlc is in the first branch node
+            let mut rot = -16;
+            if !is_s {
+                rot = -18;
+            }
+
+            let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
+            let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
+            let sel1 = meta.query_advice(sel1, Rotation(rot));
+            let sel2 = meta.query_advice(sel2, Rotation(rot));
+
+            let c32 = Expression::Constant(F::from_u64(32));
+            let c48 = Expression::Constant(F::from_u64(48));
+
+            // For short RLP (key starts at s_advices[0]):
+
+            // If sel1 = 1, we have one nibble+48 in s_advices[0].
+            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+            let mut key_rlc_acc_short = key_rlc_acc_start.clone()
+                + (s_advice0.clone() - c48.clone())
+                    * key_mult_start.clone()
+                    * sel1.clone();
+            let mut key_mult =
+                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+
+            // If sel2 = 1, we have 32 in s_advices[0].
+            constraints.push((
+                "Leaf key acc",
+                q_enable.clone() * (s_advice0 - c32.clone()) * sel2.clone(),
+            ));
+
+            for ind in 1..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc_short = key_rlc_acc_short
+                    + s * key_mult.clone() * r_table[ind - 1].clone();
+            }
+
+            // Key RLC is to be checked to verify that the proper key is used.
+            // TODO: enable this when key in mpt.rs is available. This is to ensure
+            // the node in trie has been modified that corresponds to the key.
+            /*
+            let key = meta.query_advice(key, Rotation::cur());
+            constraints
+                .push(("Key RLC", q_enable.clone() * (key_rlc_acc_short - key_rlc) * is_short));
+            */
+
+            // For long RLP (key starts at s_advices[1]):
+
+            // If sel1 = 1, we have one nibble+48 in s_advices[0].
+            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let mut key_rlc_acc_long = key_rlc_acc_start.clone()
+                + (s_advice1.clone() - c48)
+                    * key_mult_start.clone()
+                    * sel1.clone();
+            let mut key_mult =
+                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+
+            // If sel2 = 1, we have 32 in s_advices[0].
+            constraints.push((
+                "Leaf key acc",
+                q_enable.clone() * (s_advice1 - c32) * sel2.clone(),
+            ));
+
+            for ind in 2..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc_long = key_rlc_acc_long
+                    + s * key_mult.clone() * r_table[ind - 2].clone();
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long
+                + c_rlp1 * key_mult.clone() * r_table[30].clone();
+
+            // Key RLC is to be checked to verify that the proper key is used.
+            // TODO: enable this when key in mpt.rs is available. This is to ensure
+            // the node in trie has been modified that corresponds to the key.
+            /*
+            let key = meta.query_advice(key, Rotation::cur());
+            constraints
+                .push(("Key RLC", q_enable.clone() * (key_rlc_acc_long - key_rlc) * is_long));
+            */
 
             constraints
         });
