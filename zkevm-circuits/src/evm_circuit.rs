@@ -1,9 +1,7 @@
 //! The EVM circuit implementation.
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::Layouter,
-    plonk::{Column, ConstraintSystem, Error, Fixed, Instance},
-};
+
+#![allow(missing_docs)]
+use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
 
 mod execution;
 mod param;
