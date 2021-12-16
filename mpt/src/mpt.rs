@@ -63,11 +63,13 @@ pub struct MPTConfig<F> {
     c_advices: [Column<Advice>; HASH_WIDTH],
     s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-    acc_s: Column<Advice>, // for branch s and accout leaf
-    acc_mult_s: Column<Advice>, // for branch s and accout leaf
+    acc_s: Column<Advice>, // for branch s and account leaf
+    acc_mult_s: Column<Advice>, // for branch s and account leaf
     acc_c: Column<Advice>, // for branch c
     acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
+    sel1: Column<Advice>,
+    sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
@@ -163,6 +165,9 @@ impl<F: FieldExt> MPTConfig<F> {
         let acc_c = meta.advice_column();
         let acc_mult_c = meta.advice_column();
 
+        let sel1 = meta.advice_column();
+        let sel2 = meta.advice_column();
+
         // NOTE: acc_mult_s and acc_mult_c wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
         // difficult to handle the accumulator when we iterate over the row.
@@ -237,6 +242,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_account_leaf_storage_codehash_c,
                 Rotation::cur(),
             );
+            let sel1 = meta.query_advice(sel1, Rotation::cur());
+            let sel2 = meta.query_advice(sel2, Rotation::cur());
 
             let bool_check_is_branch_init = is_branch_init_cur.clone()
                 * (one.clone() - is_branch_init_cur.clone());
@@ -276,6 +283,11 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_account_leaf_storage_codehash_c.clone()
                     * (one.clone()
                         - is_account_leaf_storage_codehash_c.clone());
+
+            let bool_check_sel1 = sel1.clone() * (one.clone() - sel1.clone());
+            let bool_check_sel2 = sel2.clone() * (one.clone() - sel2.clone());
+
+            // TODO: sel1 + sel2 = 1
 
             // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
             // followed by is_leaf_key_nibbles
@@ -352,6 +364,10 @@ impl<F: FieldExt> MPTConfig<F> {
                 "bool check is leaf account storage codehash c",
                 q_enable.clone() * bool_check_is_account_storage_codehash_c,
             ));
+            constraints
+                .push(("bool check sel1", q_enable.clone() * bool_check_sel1));
+            constraints
+                .push(("bool check sel2", q_enable.clone() * bool_check_sel2));
 
             constraints.push((
                 "rlp 1",
@@ -523,6 +539,16 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_account_leaf_storage_codehash_prev = meta
                 .query_advice(is_account_leaf_storage_codehash_c, Rotation(-2));
 
+            let c16 = Expression::Constant(F::from_u64(16));
+            // If sel1 = 1, then modified_node is multiplied by 16.
+            // If sel2 = 1, then modified_node is multiplied by 1.
+            // NOTE: modified_node presents nibbles: n0, n1, ...
+            // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
+            let sel1_prev = meta.query_advice(sel1, Rotation(-17));
+            let sel2_prev = meta.query_advice(sel2, Rotation(-17));
+            let sel1_cur = meta.query_advice(sel1, Rotation::cur());
+            let sel2_cur = meta.query_advice(sel2, Rotation::cur());
+
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-17));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
             let key_rlc_mult_prev =
@@ -530,21 +556,58 @@ impl<F: FieldExt> MPTConfig<F> {
             let key_rlc_mult_cur =
                 meta.query_advice(key_rlc_mult, Rotation::cur());
             constraints.push((
-                "first branch children key_rlc",
+                "first branch children key_rlc sel1",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * sel1_cur.clone()
+                    * (key_rlc_cur.clone()
+                        - key_rlc_prev.clone()
+                        - modified_node_cur.clone() * c16.clone()
+                            * key_rlc_mult_prev.clone()),
+            ));
+            constraints.push((
+                "first branch children key_rlc sel2",
+                not_first_level.clone()
+                    * is_branch_init_prev.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * sel2_cur.clone()
                     * (key_rlc_cur.clone()
                         - key_rlc_prev
                         - modified_node_cur.clone()
                             * key_rlc_mult_prev.clone()),
             ));
+
             constraints.push((
-                "first branch children key_rlc_mult",
+                "first branch children key_rlc_mult sel1",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * sel1_cur.clone()
+                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
+            ));
+            constraints.push((
+                "first branch children key_rlc_mult sel2",
+                not_first_level.clone()
+                    * is_branch_init_prev.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * sel2_cur.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * acc_r),
+            ));
+
+            constraints.push((
+                "first branch children sel1 0->1->0->...",
+                not_first_level.clone()
+                    * is_branch_init_prev.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
+            ));
+            constraints.push((
+                "first branch children sel2 0->1->0->...",
+                not_first_level.clone()
+                    * is_branch_init_prev.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * (sel2_cur.clone() + sel2_prev.clone() - one.clone()),
             ));
 
             // Key (which actually means account address) in first level in account proof.
@@ -553,14 +616,30 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * (one.clone() - not_first_level.clone())
                     * is_branch_init_prev.clone()
-                    * (key_rlc_cur.clone() - modified_node_cur.clone()),
+                    * (key_rlc_cur.clone()
+                        - modified_node_cur.clone() * c16.clone()),
             ));
             constraints.push((
                 "account first level key_rlc_mult",
                 q_not_first.clone()
                     * (one.clone() - not_first_level.clone())
                     * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur.clone() - one.clone() * acc_r),
+                    * (key_rlc_mult_cur.clone() - one.clone()),
+            ));
+            // First sel1 is 1, first sel2 is 0.
+            constraints.push((
+                "account first level key_rlc sel1",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * is_branch_init_prev.clone()
+                    * (sel1_cur.clone() - one.clone()),
+            ));
+            constraints.push((
+                "account first level key_rlc sel2",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * is_branch_init_prev.clone()
+                    * sel2_cur.clone(),
             ));
 
             // First storage level.
@@ -569,14 +648,29 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * is_account_leaf_storage_codehash_prev.clone()
                     * is_branch_init_prev.clone()
-                    * (key_rlc_cur - modified_node_cur),
+                    * (key_rlc_cur - modified_node_cur * c16.clone()),
             ));
             constraints.push((
                 "storage first level key_rlc_mult",
                 q_not_first.clone()
                     * is_account_leaf_storage_codehash_prev.clone()
                     * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur - one.clone() * acc_r),
+                    * (key_rlc_mult_cur - one.clone()),
+            ));
+            // First sel1 is 1, first sel2 is 0.
+            constraints.push((
+                "storage first level key_rlc sel1",
+                q_not_first.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_branch_init_prev.clone()
+                    * (sel1_cur.clone() - one.clone()),
+            ));
+            constraints.push((
+                "storage first level key_rlc sel2",
+                q_not_first.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_branch_init_prev.clone()
+                    * sel2_cur.clone(),
             ));
 
             // TODO:
@@ -1294,6 +1388,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             acc_r,
+            sel1,
+            sel2,
             r_table,
             branch_acc_s_chip,
             branch_acc_c_chip,
@@ -1419,6 +1515,19 @@ impl<F: FieldExt> MPTConfig<F> {
         region.assign_advice(
             || format!("assign key rlc mult"),
             self.key_rlc_mult,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || format!("assign sel1"),
+            self.sel1,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        region.assign_advice(
+            || format!("assign sel2"),
+            self.sel2,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1695,6 +1804,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut acc_mult_c = F::zero();
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
+                    let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
@@ -1812,10 +1922,23 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
 
                             if node_index == 0 {
-                                key_rlc = key_rlc
-                                    + F::from_u64(modified_node as u64)
-                                        * key_rlc_mult;
-                                key_rlc_mult = key_rlc_mult * self.acc_r;
+                                let mut sel1 = F::zero();
+                                let mut sel2 = F::zero();
+                                if key_rlc_sel {
+                                    key_rlc = key_rlc
+                                        + F::from_u64(modified_node as u64)
+                                            * F::from_u64(16)
+                                            * key_rlc_mult;
+                                    // key_rlc_mult stays the same
+                                    sel1 = F::one();
+                                } else {
+                                    key_rlc = key_rlc
+                                        + F::from_u64(modified_node as u64)
+                                            * key_rlc_mult;
+                                    key_rlc_mult = key_rlc_mult * self.acc_r;
+                                    sel2 = F::one();
+                                }
+                                key_rlc_sel = !key_rlc_sel;
                                 self.assign_branch_row(
                                     &mut region,
                                     node_index,
@@ -1826,6 +1949,18 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &s_words,
                                     &c_words,
                                     offset,
+                                )?;
+                                region.assign_advice(
+                                    || format!("assign sel1"),
+                                    self.sel1,
+                                    offset,
+                                    || Ok(sel1),
+                                )?;
+                                region.assign_advice(
+                                    || format!("assign sel2"),
+                                    self.sel2,
+                                    offset,
+                                    || Ok(sel2),
                                 )?;
                             } else {
                                 // assigning key_rlc and key_rlc_mult to avoid the possibility
@@ -1952,6 +2087,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_storage_codehash_c = true;
                                 key_rlc = F::zero(); // account address until here, storage key from here on
                                 key_rlc_mult = F::one();
+                                key_rlc_sel = true;
                             } else if row[row.len() - 1] == 13 {
                                 is_leaf_s_value = true;
                             } else if row[row.len() - 1] == 14 {
