@@ -88,18 +88,27 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
 
     pub(crate) fn random_linear_combine_expr(
         bytes: [Expression<F>; N],
-        randomness: Expression<F>,
+        power_of_randomness: &[Expression<F>],
     ) -> Expression<F> {
-        bytes.iter().rev().fold(0.expr(), |acc, byte| {
-            acc * randomness.clone() + byte.clone()
-        })
+        assert!(bytes.len() <= power_of_randomness.len() + 1);
+
+        let mut rlc = bytes[0].clone();
+        for (byte, randomness) in
+            bytes[1..].iter().zip(power_of_randomness.iter())
+        {
+            rlc = rlc + byte.clone() * randomness.clone();
+        }
+        rlc
     }
 
-    pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
+    pub(crate) fn new(
+        cells: [Cell<F>; N],
+        power_of_randomness: &[Expression<F>],
+    ) -> Self {
         Self {
             expression: Self::random_linear_combine_expr(
                 cells.clone().map(|cell| cell.expr()),
-                randomness,
+                power_of_randomness,
             ),
             cells,
         }

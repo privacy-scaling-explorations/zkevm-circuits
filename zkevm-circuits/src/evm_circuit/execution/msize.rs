@@ -37,7 +37,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
         );
 
         // Push the value on the stack
-        let value = RandomLinearCombination::new(bytes, cb.randomness());
+        let value =
+            RandomLinearCombination::new(bytes, cb.power_of_randomness());
         cb.stack_push(value.expr());
 
         // State transition

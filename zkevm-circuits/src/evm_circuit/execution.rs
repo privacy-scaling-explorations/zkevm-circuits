@@ -11,9 +11,7 @@ use crate::{
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
-    plonk::{
-        Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
-    },
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use std::collections::HashMap;
@@ -109,7 +107,7 @@ pub(crate) struct ExecutionConfig<F> {
 impl<F: FieldExt> ExecutionConfig<F> {
     pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
-        randomness: Column<Instance>,
+        power_of_randomness: [Expression<F>; 31],
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
@@ -126,15 +124,6 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
-
-        let randomness = {
-            let mut expr = None;
-            meta.create_gate("Query randomness", |meta| {
-                expr = Some(meta.query_instance(randomness, Rotation::cur()));
-                vec![0.expr()]
-            });
-            expr.unwrap()
-        };
 
         let step_curr = Step::new(meta, qs_byte_lookup, advices, false);
         let step_next = Step::new(meta, qs_byte_lookup, advices, true);
@@ -209,7 +198,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     meta,
                     q_step,
                     q_step_first,
-                    &randomness,
+                    &power_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut independent_lookups,
@@ -264,7 +253,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
         q_step_first: Selector,
-        randomness: &Expression<F>,
+        power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         independent_lookups: &mut Vec<Vec<Lookup<F>>>,
@@ -273,7 +262,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let mut cb = ConstraintBuilder::new(
             step_curr,
             step_next,
-            randomness.clone(),
+            power_of_randomness,
             G::EXECUTION_STATE,
         );
 

@@ -41,7 +41,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
-        let address = MemoryAddress::new(cb.query_bytes(), cb.randomness());
+        let address =
+            MemoryAddress::new(cb.query_bytes(), cb.power_of_randomness());
         let value = cb.query_word();
 
         // Check if this is an MLOAD

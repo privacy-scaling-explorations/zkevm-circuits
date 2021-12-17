@@ -35,8 +35,10 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination =
-            RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
+        let destination = RandomLinearCombination::new(
+            cb.query_bytes(),
+            cb.power_of_randomness(),
+        );
         let condition = cb.query_cell();
 
         // Pop the value from the stack

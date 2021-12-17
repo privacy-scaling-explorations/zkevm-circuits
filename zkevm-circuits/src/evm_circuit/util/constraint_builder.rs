@@ -13,7 +13,7 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-const MAX_DEGREE: usize = 2usize.pow(3) + 1 + 32;
+const MAX_DEGREE: usize = 2usize.pow(3) + 1;
 // Degree added for expressions used in lookups.
 const LOOKUP_DEGREE: usize = 3;
 
@@ -52,7 +52,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
 pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
-    randomness: Expression<F>,
+    power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
@@ -69,13 +69,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: &'a Step<F>,
         next: &'a Step<F>,
-        randomness: Expression<F>,
+        power_of_randomness: &'a [Expression<F>; 31],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
             curr,
             next,
-            randomness,
+            power_of_randomness,
             execution_state,
             constraints: Vec::new(),
             constraints_first_step: Vec::new(),
@@ -150,8 +150,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn randomness(&self) -> Expression<F> {
-        self.randomness.clone()
+    pub(crate) fn power_of_randomness(&self) -> &[Expression<F>] {
+        self.power_of_randomness
     }
 
     pub(crate) fn execution_state(&self) -> ExecutionState {
@@ -189,7 +189,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_word(&mut self) -> Word<F> {
-        Word::new(self.query_bytes(), self.randomness.clone())
+        Word::new(self.query_bytes(), self.power_of_randomness)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
