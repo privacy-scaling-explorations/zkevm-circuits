@@ -8,8 +8,10 @@ use bus_mapping::{
     eth_types::{Address, ToLittleEndian, ToScalar, Word},
     evm::OpcodeId,
 };
-use halo2::arithmetic::FieldExt;
+use halo2::arithmetic::{BaseExt, FieldExt};
+use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
+use std::convert::TryInto;
 
 #[derive(Debug, Default)]
 pub struct Block<F> {
@@ -312,10 +314,6 @@ impl Rw {
         }
     }
 }
-
-use halo2::arithmetic::BaseExt;
-use pairing::bn256::Fr as Fp;
-use std::convert::TryInto;
 
 impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
