@@ -2,6 +2,7 @@ use crate::arith_helpers::*;
 use crate::common::*;
 use crate::keccak_arith::*;
 use halo2::circuit::Cell;
+use halo2::circuit::Layouter;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
@@ -80,24 +81,29 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// Doc this
     pub fn not_last_round(
         &self,
-        region: &mut Region<'_, F>,
-        mut offset: usize,
+        layouter: &mut impl Layouter<F>,
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         absolute_row: usize,
     ) -> Result<[(Cell, F); 25], Error> {
-        // Enable `q_not_last`.
-        self.q_not_last.enable(region, offset)?;
+        layouter.assign_region(
+            || "Assign IotaB9 for steady step",
+            |mut region| {
+                let mut offset = 0;
+                // Enable `q_not_last`.
+                self.q_not_last.enable(&mut region, offset)?;
 
-        // Assign state
-        self.assign_in_state(region, offset, in_state)?;
+                // Assign state
+                self.assign_in_state(&mut region, offset, in_state)?;
 
-        // Assign round_constant at offset + 0
-        self.assign_round_ctant_b9(region, offset, absolute_row)?;
+                // Assign round_constant at offset + 0
+                self.assign_round_ctant_b9(&mut region, offset, absolute_row)?;
 
-        offset += 1;
-        // Assign out_state at offset + 1
-        self.assign_out_state(region, offset, out_state)
+                offset += 1;
+                // Assign out_state at offset + 1
+                self.assign_out_state(&mut region, offset, out_state)
+            },
+        )
     }
 
     /// Assignment for iota_b9 in the context of the final round, where
@@ -105,8 +111,7 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// advice column.
     pub fn last_round(
         &self,
-        region: &mut Region<'_, F>,
-        mut offset: usize,
+        layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
         out_state: [F; 25],
         absolute_row: usize,
@@ -147,19 +152,26 @@ impl<F: FieldExt> IotaB9Config<F> {
             Ok(())
         };
 
-        // Enable `q_last`.
-        self.q_last.enable(region, offset)?;
+        layouter.assign_region(
+            || "Assign IotaB9 for final round step",
+            |mut region| {
+                let mut offset = 0;
 
-        // Copy state at offset + 0
-        copy_state(region, offset, state)?;
-        // Assign round_ctant at offset + 0.
-        self.assign_round_ctant_b9(region, offset, absolute_row)?;
+                // Enable `q_last`.
+                self.q_last.enable(&mut region, offset)?;
 
-        offset += 1;
-        // Copy flag at `round_ctant_b9` at offset + 1
-        copy_flag(region, offset, flag)?;
-        // Assign out state at offset + 1
-        self.assign_out_state(region, offset, out_state)
+                // Copy state at offset + 0
+                copy_state(&mut region, offset, state)?;
+                // Assign round_ctant at offset + 0.
+                self.assign_round_ctant_b9(&mut region, offset, absolute_row)?;
+
+                offset += 1;
+                // Copy flag at `round_ctant_b9` at offset + 1
+                copy_flag(&mut region, offset, flag)?;
+                // Assign out state at offset + 1
+                self.assign_out_state(&mut region, offset, out_state)
+            },
+        )
     }
 
     // Assign `[(Cell,F);25]` at `state` `Advice` column at the provided offset
@@ -327,7 +339,7 @@ mod tests {
                 let offset: usize = 0;
 
                 let val: F = (self.flag as u64).into();
-                layouter.assign_region(
+                let (in_state, flag) = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `is_mixing` flag
@@ -354,19 +366,19 @@ mod tests {
                             }
                             state.try_into().unwrap()
                         };
-
-                        // Assign `in_state`, `out_state`, round and flag
-                        config.last_round(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                            self.round_ctant,
-                            flag,
-                        )?;
-                        Ok(())
+                        Ok((in_state, flag))
                     },
-                )
+                )?;
+
+                // Assign `in_state`, `out_state`, round and flag
+                config.last_round(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.round_ctant,
+                    flag,
+                )?;
+                Ok(())
             }
         }
 
@@ -486,7 +498,7 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                layouter.assign_region(
+                let in_state = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
                         let offset: usize = 0;
@@ -506,17 +518,17 @@ mod tests {
                             }
                             state.try_into().unwrap()
                         };
-
-                        // Start IotaB9 config without copy at offset = 0
-                        config.not_last_round(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                            self.round_ctant_b9,
-                        )
+                        Ok(in_state)
                     },
                 )?;
+
+                // Start IotaB9 config without copy at offset = 0
+                config.not_last_round(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.round_ctant_b9,
+                );
 
                 Ok(())
             }
