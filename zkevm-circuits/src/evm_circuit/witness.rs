@@ -367,7 +367,6 @@ fn step_convert(
     ops_len: (usize, usize, usize),
 ) -> ExecStep {
     let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
-    //println!("prev is {:#?}", prev);
     let result = ExecStep {
         rw_indices: step
             .bus_mapping_instance
