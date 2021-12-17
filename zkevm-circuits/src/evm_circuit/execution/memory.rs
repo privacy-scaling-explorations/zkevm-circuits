@@ -223,9 +223,6 @@ mod test {
             .write_op(opcode)
             STOP
         };
-        //let block  =
-        // witness::build_block_from_trace_code_at_start(&
-        // bytecode);
 
         let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
         let mut block_trace =

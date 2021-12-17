@@ -23,12 +23,11 @@ impl<const N: usize> Opcode for StackOnlyOpcode<N> {
         let step = &steps[0];
         // N stack reads
         for i in 0..N {
-            let op = StackOp::new(
+            state.push_op(StackOp::new(
                 RW::READ,
                 step.stack.nth_last_filled(i),
                 step.stack.nth_last(i)?,
-            );
-            state.push_op(op);
+            ));
         }
 
         // Get operator result from next step and do stack write
