@@ -195,11 +195,7 @@ mod mstore_tests {
         ));
 
         // Add 1 MemoryOp generated from the Memory write at addr 0x100.
-        state_ref.push_op(MemoryOp::new(
-            RW::WRITE,
-            MemoryAddress(0x100),
-            *Word::from(0x12).to_le_bytes().first().unwrap(),
-        ));
+        state_ref.push_op(MemoryOp::new(RW::WRITE, MemoryAddress(0x100), 0x12));
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
