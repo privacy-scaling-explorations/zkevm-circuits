@@ -7,8 +7,14 @@ use std::fmt;
 
 /// Represents a `StackAddress` of the EVM.
 /// The address range goes `TOP -> DOWN (1024, 0]`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct StackAddress(pub(crate) usize);
+
+impl fmt::Debug for StackAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
 
 impl StackAddress {
     /// Generates a new StackAddress given a `usize`.

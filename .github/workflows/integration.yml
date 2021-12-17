@@ -33,4 +33,5 @@ jobs:
       - run: ./run.sh --steps "setup"
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
+      - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
       - run: ./run.sh --steps "cleanup"
