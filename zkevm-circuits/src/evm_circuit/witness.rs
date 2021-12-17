@@ -421,15 +421,6 @@ fn tx_convert(
         }],
         ..Default::default()
     };
-    result.calls = vec![Call {
-        id: 1,
-        is_root: true,
-        is_create: tx.is_create(),
-        opcode_source: RandomLinearCombination::random_linear_combine(
-            bytecode.hash.to_le_bytes(),
-            randomness,
-        ),
-    }];
     for idx in 0..tx.steps().len() {
         let cur_step = &tx.steps()[idx];
         let prev_step = if idx == 0 {
