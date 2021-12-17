@@ -28,6 +28,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         acc_r: F,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
 
@@ -45,8 +46,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // TODO: storage root and codehash compared to the input
 
             let c160 = Expression::Constant(F::from_u64(160));
-            let acc_prev = meta.query_advice(acc, Rotation::prev());
-            let acc_mult_prev = meta.query_advice(acc_mult, Rotation::prev());
+            let mut rot = -1;
+            if !is_s {
+                rot = -3;
+            }
+            let acc_prev = meta.query_advice(acc, Rotation(rot));
+            let acc_mult_prev = meta.query_advice(acc_mult, Rotation(rot));
             let mut curr_r = acc_mult_prev.clone();
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());

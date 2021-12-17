@@ -132,7 +132,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
-                "Leaf key acc",
+                "Leaf key acc s_advice0",
                 q_enable.clone() * (s_advice0 - c32.clone()) * sel2.clone(),
             ));
 
@@ -170,7 +170,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
-                "Leaf key acc",
+                "Leaf key acc s_advice1",
                 q_enable.clone() * (s_advice1 - c32) * sel2.clone(),
             ));
 

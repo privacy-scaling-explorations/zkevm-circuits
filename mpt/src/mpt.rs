@@ -9,6 +9,10 @@ use keccak256::plain::Keccak;
 use pasta_curves::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
+use crate::param::{
+    BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
+    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
+};
 use crate::{
     account_leaf_key::{AccountLeafKeyChip, AccountLeafKeyConfig},
     account_leaf_nonce_balance::{
@@ -17,22 +21,12 @@ use crate::{
     account_leaf_storage_codehash::{
         AccountLeafStorageCodehashChip, AccountLeafStorageCodehashConfig,
     },
-    address_compr::{AddressComprChip, AddressComprConfig},
     branch_acc::BranchAccChip,
-    key_compr::KeyComprChip,
     leaf_key::{LeafKeyChip, LeafKeyConfig},
     leaf_value::{LeafValueChip, LeafValueConfig},
     param::LAYOUT_OFFSET,
 };
 use crate::{branch_acc::BranchAccConfig, param::WITNESS_ROW_WIDTH};
-use crate::{
-    key_compr::KeyComprConfig,
-    param::{
-        BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START,
-        C_START, HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
-        S_RLP_START, S_START,
-    },
-};
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
@@ -49,7 +43,9 @@ pub struct MPTConfig<F> {
     is_account_leaf_key_s: Column<Advice>,
     is_account_leaf_nonce_balance_s: Column<Advice>,
     is_account_leaf_storage_codehash_s: Column<Advice>,
-    is_account_leaf_key_c: Column<Advice>,
+    // There is no is_account_leaf_key_s because it's always the same for S and C,
+    // so we just use S for both.
+    // TODO: remove nonce_balance_c and use S.
     is_account_leaf_nonce_balance_c: Column<Advice>,
     is_account_leaf_storage_codehash_c: Column<Advice>,
     node_index: Column<Advice>,
@@ -74,8 +70,10 @@ pub struct MPTConfig<F> {
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
     account_leaf_key_chip: AccountLeafKeyConfig,
-    account_leaf_nonce_balance_chip: AccountLeafNonceBalanceConfig,
-    account_leaf_storage_codehash_chip: AccountLeafStorageCodehashConfig,
+    account_leaf_nonce_balance_chip_s: AccountLeafNonceBalanceConfig,
+    account_leaf_nonce_balance_chip_c: AccountLeafNonceBalanceConfig,
+    account_leaf_storage_codehash_chip_s: AccountLeafStorageCodehashConfig,
+    account_leaf_storage_codehash_chip_c: AccountLeafStorageCodehashConfig,
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -115,7 +113,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_account_leaf_key_s = meta.advice_column();
         let is_account_leaf_nonce_balance_s = meta.advice_column();
         let is_account_leaf_storage_codehash_s = meta.advice_column();
-        let is_account_leaf_key_c = meta.advice_column();
         let is_account_leaf_nonce_balance_c = meta.advice_column();
         let is_account_leaf_storage_codehash_c = meta.advice_column();
 
@@ -235,8 +232,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 Rotation::cur(),
             );
 
-            let is_account_leaf_key_c =
-                meta.query_advice(is_account_leaf_key_c, Rotation::cur());
             let is_account_leaf_nonce_balance_c = meta
                 .query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
             let is_account_leaf_storage_codehash_c = meta.query_advice(
@@ -273,10 +268,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 is_account_leaf_storage_codehash_s.clone()
                     * (one.clone()
                         - is_account_leaf_storage_codehash_s.clone());
-
-            let bool_check_is_account_leaf_key_c = is_account_leaf_key_c
-                .clone()
-                * (one.clone() - is_account_leaf_key_c.clone());
             let bool_check_is_account_nonce_balance_c =
                 is_account_leaf_nonce_balance_c.clone()
                     * (one.clone() - is_account_leaf_nonce_balance_c.clone());
@@ -352,10 +343,6 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints.push((
                 "bool check is leaf account storage codehash s",
                 q_enable.clone() * bool_check_is_account_storage_codehash_s,
-            ));
-            constraints.push((
-                "bool check is leaf account key c",
-                q_enable.clone() * bool_check_is_account_leaf_key_c,
             ));
             constraints.push((
                 "bool check is leaf account nonce balance c",
@@ -927,9 +914,9 @@ impl<F: FieldExt> MPTConfig<F> {
 
             let mut s_hash = vec![];
             for column in s_advices.iter() {
-                // s (account leaf) key (-22), s nonce balance (-21), s storage codehash (-20),
-                // c (account leaf) key (-19), c nonce balance (-18), c storage codehash (-17),
-                s_hash.push(meta.query_advice(*column, Rotation(-20)));
+                // s (account leaf) key (-21), s nonce balance (-20), s storage codehash (-19),
+                // c nonce balance (-18), c storage codehash (-17),
+                s_hash.push(meta.query_advice(*column, Rotation(-19)));
             }
             let storage_root_words = into_words_expr(s_hash);
 
@@ -981,8 +968,8 @@ impl<F: FieldExt> MPTConfig<F> {
             let mut c_hash = vec![];
             // storage root is always in s_advices
             for column in s_advices.iter() {
-                // s (account leaf) key (-22), s nonce balance (-21), s storage codehash (-20),
-                // c (account leaf) key (-19), c nonce balance (-18), c storage codehash (-17),
+                // s (account leaf) key (-21), s nonce balance (-20), s storage codehash (-19),
+                // c nonce balance (-18), c storage codehash (-17),
                 c_hash.push(meta.query_advice(*column, Rotation(-17)));
             }
             let storage_root_words = into_words_expr(c_hash);
@@ -1310,22 +1297,23 @@ impl<F: FieldExt> MPTConfig<F> {
                     meta.query_fixed(q_not_first, Rotation::cur());
                 let is_account_leaf_key_s =
                     meta.query_advice(is_account_leaf_key_s, Rotation::cur());
-                let is_account_leaf_key_c =
-                    meta.query_advice(is_account_leaf_key_c, Rotation::cur());
 
-                q_not_first * (is_account_leaf_key_s + is_account_leaf_key_c)
+                q_not_first * is_account_leaf_key_s
             },
             s_rlp1,
             s_rlp2,
             c_rlp1,
             s_advices,
-            acc_r,
             acc_s,
             acc_mult_s,
+            key_rlc,
+            key_rlc_mult,
+            sel1,
+            sel2,
             r_table.clone(),
         );
 
-        let account_leaf_nonce_balance_chip =
+        let account_leaf_nonce_balance_chip_s =
             AccountLeafNonceBalanceChip::<F>::configure(
                 meta,
                 |meta| {
@@ -1335,14 +1323,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         is_account_leaf_nonce_balance_s,
                         Rotation::cur(),
                     );
-                    let is_account_leaf_nonce_balance_c = meta.query_advice(
-                        is_account_leaf_nonce_balance_c,
-                        Rotation::cur(),
-                    );
-
-                    q_not_first
-                        * (is_account_leaf_nonce_balance_s
-                            + is_account_leaf_nonce_balance_c)
+                    q_not_first * is_account_leaf_nonce_balance_s
                 },
                 s_rlp1,
                 s_rlp2,
@@ -1354,11 +1335,37 @@ impl<F: FieldExt> MPTConfig<F> {
                 acc_mult_s,
                 acc_mult_c,
                 r_table.clone(),
+                true,
+            );
+
+        let account_leaf_nonce_balance_chip_c =
+            AccountLeafNonceBalanceChip::<F>::configure(
+                meta,
+                |meta| {
+                    let q_not_first =
+                        meta.query_fixed(q_not_first, Rotation::cur());
+                    let is_account_leaf_nonce_balance_c = meta.query_advice(
+                        is_account_leaf_nonce_balance_c,
+                        Rotation::cur(),
+                    );
+                    q_not_first * is_account_leaf_nonce_balance_c
+                },
+                s_rlp1,
+                s_rlp2,
+                c_rlp1,
+                c_rlp2,
+                s_advices,
+                c_advices,
+                acc_s,
+                acc_mult_s,
+                acc_mult_c,
+                r_table.clone(),
+                false,
             );
 
         // NOTE: storage leaf chip (LeafHashChip) checks the keccak, while
         // account leaf chip doesn't do this internally, the lookup is in mpt.rs
-        let account_leaf_storage_codehash_chip =
+        let account_leaf_storage_codehash_chip_s =
             AccountLeafStorageCodehashChip::<F>::configure(
                 meta,
                 |meta| {
@@ -1368,14 +1375,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         is_account_leaf_storage_codehash_s,
                         Rotation::cur(),
                     );
-                    let is_account_leaf_storage_codehash_c = meta.query_advice(
-                        is_account_leaf_storage_codehash_c,
-                        Rotation::cur(),
-                    );
-
-                    q_not_first
-                        * (is_account_leaf_storage_codehash_s
-                            + is_account_leaf_storage_codehash_c)
+                    q_not_first * is_account_leaf_storage_codehash_s
                 },
                 s_rlp2,
                 c_rlp2,
@@ -1384,6 +1384,29 @@ impl<F: FieldExt> MPTConfig<F> {
                 acc_r,
                 acc_s,
                 acc_mult_s,
+                true,
+            );
+
+        let account_leaf_storage_codehash_chip_c =
+            AccountLeafStorageCodehashChip::<F>::configure(
+                meta,
+                |meta| {
+                    let q_not_first =
+                        meta.query_fixed(q_not_first, Rotation::cur());
+                    let is_account_leaf_storage_codehash_c = meta.query_advice(
+                        is_account_leaf_storage_codehash_c,
+                        Rotation::cur(),
+                    );
+                    q_not_first * is_account_leaf_storage_codehash_c
+                },
+                s_rlp2,
+                c_rlp2,
+                s_advices,
+                c_advices,
+                acc_r,
+                acc_s,
+                acc_mult_s,
+                false,
             );
 
         MPTConfig {
@@ -1400,7 +1423,6 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_key_s,
             is_account_leaf_nonce_balance_s,
             is_account_leaf_storage_codehash_s,
-            is_account_leaf_key_c,
             is_account_leaf_nonce_balance_c,
             is_account_leaf_storage_codehash_c,
             node_index,
@@ -1425,8 +1447,10 @@ impl<F: FieldExt> MPTConfig<F> {
             branch_acc_s_chip,
             branch_acc_c_chip,
             account_leaf_key_chip,
-            account_leaf_nonce_balance_chip,
-            account_leaf_storage_codehash_chip,
+            account_leaf_nonce_balance_chip_s,
+            account_leaf_nonce_balance_chip_c,
+            account_leaf_storage_codehash_chip_s,
+            account_leaf_storage_codehash_chip_c,
             key_rlc,
             key_rlc_mult,
             keccak_table,
@@ -1454,7 +1478,6 @@ impl<F: FieldExt> MPTConfig<F> {
         is_account_leaf_key_s: bool,
         is_account_leaf_nonce_balance_s: bool,
         is_account_leaf_storage_codehash_s: bool,
-        is_account_leaf_key_c: bool,
         is_account_leaf_nonce_balance_c: bool,
         is_account_leaf_storage_codehash_c: bool,
         offset: usize,
@@ -1617,12 +1640,6 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         region.assign_advice(
-            || format!("assign is account leaf key c"),
-            self.is_account_leaf_key_c,
-            offset,
-            || Ok(F::from_u64(is_account_leaf_key_c as u64)),
-        )?;
-        region.assign_advice(
             || format!("assign is account leaf nonce balance c"),
             self.is_account_leaf_nonce_balance_c,
             offset,
@@ -1703,7 +1720,7 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         self.assign_row(
             region, row, true, false, false, 0, 0, false, false, false, false,
-            false, false, false, false, false, false, offset,
+            false, false, false, false, false, offset,
         )?;
 
         Ok(())
@@ -1729,7 +1746,6 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index == 15,
             node_index,
             key,
-            false,
             false,
             false,
             false,
@@ -1832,6 +1848,10 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut node_index: u8 = 0;
                     let mut acc_s = F::zero();
                     let mut acc_mult_s = F::zero();
+
+                    let mut acc_account_leaf_s = F::zero();
+                    let mut acc_mult_account_leaf_s = F::zero();
+
                     let mut acc_c = F::zero();
                     let mut acc_mult_c = F::zero();
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
@@ -1845,13 +1865,12 @@ impl<F: FieldExt> MPTConfig<F> {
                             r[r.len() - 1] != 5
                                 && r[r.len() - 1] != 4
                                 && r[r.len() - 1] != 14
+                                && r[r.len() - 1] != 9
                         })
                         .enumerate()
                     {
                         // TODO: what if extension node
-                        if (ind == 17 as usize && row[row.len() - 1] == 0)
-                            || (ind == 20 as usize && row[row.len() - 1] == 0)
-                        {
+                        if ind == 17 as usize && row[row.len() - 1] == 0 {
                             // when the first branch ends
                             not_first_level = F::one();
                         }
@@ -2074,7 +2093,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             || row[row.len() - 1] == 6
                             || row[row.len() - 1] == 7
                             || row[row.len() - 1] == 8
-                            || row[row.len() - 1] == 9
                             || row[row.len() - 1] == 10
                             || row[row.len() - 1] == 11
                             || row[row.len() - 1] == 13
@@ -2097,7 +2115,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut is_account_leaf_nonce_balance_s = false;
                             let mut is_account_leaf_storage_codehash_s = false;
 
-                            let mut is_account_leaf_key_c = false;
                             let mut is_account_leaf_nonce_balance_c = false;
                             let mut is_account_leaf_storage_codehash_c = false;
 
@@ -2111,8 +2128,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_nonce_balance_s = true;
                             } else if row[row.len() - 1] == 8 {
                                 is_account_leaf_storage_codehash_s = true;
-                            } else if row[row.len() - 1] == 9 {
-                                is_account_leaf_key_c = true;
                             } else if row[row.len() - 1] == 10 {
                                 is_account_leaf_nonce_balance_c = true;
                             } else if row[row.len() - 1] == 11 {
@@ -2141,7 +2156,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_key_s,
                                 is_account_leaf_nonce_balance_s,
                                 is_account_leaf_storage_codehash_s,
-                                is_account_leaf_key_c,
                                 is_account_leaf_nonce_balance_c,
                                 is_account_leaf_storage_codehash_c,
                                 offset,
@@ -2271,9 +2285,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             }
 
-                            if row[row.len() - 1] == 6
-                                || row[row.len() - 1] == 9
-                            {
+                            if row[row.len() - 1] == 6 {
                                 acc_s = F::zero();
                                 acc_mult_s = F::one();
                                 // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
@@ -2291,9 +2303,36 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
+
+                                acc_account_leaf_s = acc_s.clone();
+                                acc_mult_account_leaf_s = acc_mult_s.clone();
+
+                                // TODO: only for S, remove C row
+
+                                // For leaf S and leaf C we need to start with the same rlc.
+                                let mut key_rlc_new = key_rlc.clone();
+                                let mut key_rlc_mult_new = key_rlc_mult.clone();
+                                compute_key_rlc(
+                                    &mut key_rlc_new,
+                                    &mut key_rlc_mult_new,
+                                    S_START,
+                                );
+                                region.assign_advice(
+                                    || format!("assign key_rlc"),
+                                    self.key_rlc,
+                                    offset,
+                                    || Ok(key_rlc_new),
+                                )?;
                             } else if row[row.len() - 1] == 7
                                 || row[row.len() - 1] == 10
                             {
+                                if row[row.len() - 1] == 10 {
+                                    // Leaf key S and leaf key C are always the same, so there is
+                                    // no leaf C and we just use accumulated value from S.
+                                    acc_s = acc_account_leaf_s.clone();
+                                    acc_mult_s =
+                                        acc_mult_account_leaf_s.clone();
+                                }
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
                                     &mut acc_s,

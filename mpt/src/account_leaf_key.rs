@@ -20,14 +20,17 @@ pub(crate) struct AccountLeafKeyChip<F> {
 impl<F: FieldExt> AccountLeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        acc_r: F,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        key_rlc: Column<Advice>,
+        key_rlc_mult: Column<Advice>,
+        sel1: Column<Advice>,
+        sel2: Column<Advice>,
         r_table: Vec<Expression<F>>,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
@@ -111,11 +114,12 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let mut counter = c32.clone() - key_len.clone() + one.clone();
             let mut is_trailing_zero_or_last_key = one.clone();
 
-            let check =
-                (r_table[HASH_WIDTH - 2].clone() * r_table[2].clone() * acc_r
-                    - acc_mult.clone())
-                    * nonzero_table[HASH_WIDTH + 2].clone()
-                    * is_trailing_zero_or_last_key.clone();
+            let check = (r_table[HASH_WIDTH - 2].clone()
+                * r_table[2].clone()
+                * r_table[0].clone()
+                - acc_mult.clone())
+                * nonzero_table[HASH_WIDTH + 2].clone()
+                * is_trailing_zero_or_last_key.clone();
             constraints
                 .push(("leaf key acc mult c_rlp1", q_enable.clone() * check));
 
@@ -126,11 +130,12 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 // Either is_trailing_zero_or_last key is 0 (bytes before the last key byte) or
                 // nonzero_table[ind+2] is 0 (bytes after the last key byte).
                 // Except at the position of last key byte - there neither of these two is zero.
-                let check =
-                    (r_table[ind - 1].clone() * r_table[1].clone() * acc_r
-                        - acc_mult.clone())
-                        * nonzero_table[ind + 2].clone()
-                        * is_trailing_zero_or_last_key.clone();
+                let check = (r_table[ind - 1].clone()
+                    * r_table[1].clone()
+                    * r_table[0].clone()
+                    - acc_mult.clone())
+                    * nonzero_table[ind + 2].clone()
+                    * is_trailing_zero_or_last_key.clone();
 
                 constraints.push((
                     "leaf key acc mult s_advices",
@@ -143,7 +148,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let mut is_not_key = k_counter.clone();
 
             constraints.push((
-                "leaf key zeros c_rlp1",
+                "account leaf key zeros c_rlp1",
                 q_enable.clone() * c_rlp1 * is_not_key.clone(),
             ));
 
@@ -158,6 +163,60 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                     q_enable.clone() * s * is_not_key.clone(),
                 ));
             }
+
+            constraints
+        });
+
+        meta.create_gate("Account leaf address RLC", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            // key rlc is in the first branch node
+            let rot = -16;
+            let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
+            let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
+            let sel1 = meta.query_advice(sel1, Rotation(rot));
+            let sel2 = meta.query_advice(sel2, Rotation(rot));
+
+            let c32 = Expression::Constant(F::from_u64(32));
+            let c48 = Expression::Constant(F::from_u64(48));
+
+            // If sel1 = 1, we have nibble+48 in s_advices[0].
+            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let mut key_rlc_acc = key_rlc_acc_start.clone()
+                + (s_advice1.clone() - c48)
+                    * key_mult_start.clone()
+                    * sel1.clone();
+            let mut key_mult =
+                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+
+            // If sel2 = 1, we have 32 in s_advices[0].
+            constraints.push((
+                "Account leaf key acc s_advice1",
+                q_enable.clone() * (s_advice1 - c32) * sel2.clone(),
+            ));
+
+            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+            key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
+
+            for ind in 3..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc = key_rlc_acc
+                    + s * key_mult.clone() * r_table[ind - 3].clone();
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_acc =
+                key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[30].clone();
+
+            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+
+            // Key RLC is be checked to verify that the proper key is used.
+            constraints.push((
+                "Account address RLC",
+                q_enable.clone() * (key_rlc_acc - key_rlc),
+            ));
 
             constraints
         });
