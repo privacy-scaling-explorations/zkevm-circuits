@@ -12,9 +12,9 @@ use core::convert::TryInto;
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
 /// `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Mstore<const WHOLEWORD: bool>;
+pub(crate) struct Mstore<const IS_MSTORE8: bool>;
 
-impl<const WHOLEWORD: bool> Opcode for Mstore<WHOLEWORD> {
+impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
@@ -32,22 +32,27 @@ impl<const WHOLEWORD: bool> Opcode for Mstore<WHOLEWORD> {
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
-        if WHOLEWORD {
-            let bytes = value.to_be_bytes();
-            for (i, byte) in bytes.iter().enumerate() {
+
+        match IS_MSTORE8 {
+            true => {
+                // stack write operation for mstore8
                 state.push_op(MemoryOp::new(
                     RW::WRITE,
-                    offset_addr.map(|a| a + i),
-                    *byte,
+                    offset_addr,
+                    *value.to_le_bytes().first().unwrap(),
                 ));
             }
-        } else {
-            // stack write operation for mstore8
-            state.push_op(MemoryOp::new(
-                RW::WRITE,
-                offset_addr,
-                *value.to_le_bytes().first().unwrap(),
-            ));
+            false => {
+                // stack write each byte for mstore
+                let bytes = value.to_be_bytes();
+                for (i, byte) in bytes.iter().enumerate() {
+                    state.push_op(MemoryOp::new(
+                        RW::WRITE,
+                        offset_addr.map(|a| a + i),
+                        *byte,
+                    ));
+                }
+            }
         }
 
         Ok(())
