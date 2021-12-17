@@ -319,7 +319,8 @@ use std::convert::TryInto;
 
 impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
-        // TODO: convert error (circuit_input_builder.rs)
+        // TODO: error reporting. (errors are defined in
+        // circuit_input_builder.rs)
         assert!(step.error.is_none());
         if step.op.is_dup() {
             return ExecutionState::DUP;
@@ -391,6 +392,7 @@ fn step_convert(
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
         opcode: Some(step.op),
+        // As in https://github.com/ethereum/go-ethereum/blob/bc6bf1e1937829b5d5b0d431a9333d47c3e08082/core/vm/interpreter.go#L224-L233,
         // geth increases memory size before making trace,
         // so the memory size in ExecStep is not what we expect to see.
         // We have to use the memory size of previous step as correct memory
