@@ -10,6 +10,7 @@ pub use super::evm::{GlobalCounter, MemoryAddress, StackAddress};
 use crate::eth_types::{Address, Word};
 pub use container::OperationContainer;
 use core::cmp::Ordering;
+use core::fmt;
 use core::fmt::Debug;
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
@@ -57,11 +58,22 @@ pub trait Op: Eq + Ord {
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
 /// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MemoryOp {
     rw: RW,
     addr: MemoryAddress,
     value: u8,
+}
+
+impl fmt::Debug for MemoryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MemoryOp { ")?;
+        f.write_fmt(format_args!(
+            "{:?}, addr: {:?}, value: 0x{:02x}",
+            self.rw, self.addr, self.value
+        ))?;
+        f.write_str(" }")
+    }
 }
 
 impl MemoryOp {
@@ -113,11 +125,22 @@ impl Ord for MemoryOp {
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
 /// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct StackOp {
     rw: RW,
     addr: StackAddress,
     value: Word,
+}
+
+impl fmt::Debug for StackOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("StackOp { ")?;
+        f.write_fmt(format_args!(
+            "{:?}, addr: {:?}, value: {:?}",
+            self.rw, self.addr, self.value
+        ))?;
+        f.write_str(" }")
+    }
 }
 
 impl StackOp {
@@ -169,13 +192,24 @@ impl Ord for StackOp {
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
 /// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct StorageOp {
     rw: RW,
     address: Address,
     key: Word,
     value: Word,
     value_prev: Word,
+}
+
+impl fmt::Debug for StorageOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("StorageOp { ")?;
+        f.write_fmt(format_args!(
+            "{:?}, addr: {:?}, key: {:?}, val_prev: {:?}, val: {:?}",
+            self.rw, self.address, self.key, self.value_prev, self.value,
+        ))?;
+        f.write_str(" }")
+    }
 }
 
 impl StorageOp {

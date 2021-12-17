@@ -14,6 +14,8 @@ bus-mapping = { path = "../bus-mapping"}
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"
+log = "0.4.14"
+env_logger = "0.9"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
@@ -21,3 +23,4 @@ pretty_assertions = "1.0.0"
 [features]
 default = []
 rpc = []
+circuit_input_builder = []

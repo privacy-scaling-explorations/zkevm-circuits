@@ -6,8 +6,8 @@ use crate::eth_types::{
     ResultGethExecTraces, Transaction, Word, U64,
 };
 use crate::Error;
+pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
-use serde::{Serialize, Serializer};
 
 /// Serialize a type.
 ///
@@ -18,40 +18,6 @@ pub fn serialize<T: serde::Serialize>(t: &T) -> serde_json::Value {
     serde_json::to_value(t).expect("Types never fail to serialize.")
 }
 
-/// Struct used to define the input that you want to provide to the
-/// `eth_getBlockByNumber` call as it mixes numbers with string literals.
-#[derive(Debug)]
-pub enum BlockNumber {
-    /// Specific block number
-    Num(u64),
-    /// Earliest block
-    Earliest,
-    /// Latest block
-    Latest,
-    /// Pending block
-    Pending,
-}
-
-impl From<u64> for BlockNumber {
-    fn from(num: u64) -> Self {
-        BlockNumber::Num(num)
-    }
-}
-
-impl Serialize for BlockNumber {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            BlockNumber::Num(num) => U64::from(*num).serialize(serializer),
-            BlockNumber::Earliest => "earliest".serialize(serializer),
-            BlockNumber::Latest => "latest".serialize(serializer),
-            BlockNumber::Pending => "pending".serialize(serializer),
-        }
-    }
-}
-
 /// Placeholder structure designed to contain the methods that the BusMapping
 /// needs in order to enable Geth queries.
 pub struct GethClient<P: JsonRpcClient>(pub P);
@@ -60,6 +26,24 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// Generates a new `GethClient` instance.
     pub fn new(provider: P) -> Self {
         Self(provider)
+    }
+
+    /// Calls `eth_coinbase` via JSON-RPC returning the coinbase of the network.
+    pub async fn get_coinbase(&self) -> Result<Address, Error> {
+        self.0
+            .request("eth_coinbase", ())
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))
+    }
+
+    /// Calls `eth_chainId` via JSON-RPC returning the chain id of the network.
+    pub async fn get_chain_id(&self) -> Result<u64, Error> {
+        let net_id: U64 = self
+            .0
+            .request("eth_chainId", ())
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+        Ok(net_id.as_u64())
     }
 
     /// Calls `eth_getBlockByHash` via JSON-RPC returning a [`Block`] returning
@@ -124,7 +108,7 @@ impl<P: JsonRpcClient> GethClient<P> {
     }
 
     /// Calls `eth_getCode` via JSON-RPC returning a contract code
-    pub async fn get_code_by_address(
+    pub async fn get_code(
         &self,
         contract_address: Address,
         block_num: BlockNumber,

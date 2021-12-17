@@ -2,7 +2,7 @@
 
 use bus_mapping::eth_types::{StorageProof, Word};
 use integration_tests::{
-    get_client, CompiledContract, GenDataOutput, CONTRACTS_PATH,
+    get_client, CompiledContract, GenDataOutput, CHAIN_ID, CONTRACTS_PATH,
 };
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
@@ -11,6 +11,20 @@ use std::path::Path;
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+}
+
+#[tokio::test]
+async fn test_get_chain_id() {
+    let cli = get_client();
+    let chain_id = cli.get_chain_id().await.unwrap();
+    assert_eq!(CHAIN_ID, chain_id);
+}
+
+#[tokio::test]
+async fn test_get_coinbase() {
+    let cli = get_client();
+    let coinbase = cli.get_coinbase().await.unwrap();
+    assert_eq!(GEN_DATA.coinbase, coinbase);
 }
 
 #[tokio::test]
@@ -55,10 +69,7 @@ async fn test_get_contract_code() {
     .expect("cannot deserialize json from file");
 
     let cli = get_client();
-    let code = cli
-        .get_code_by_address(*address, (*block_num).into())
-        .await
-        .unwrap();
+    let code = cli.get_code(*address, (*block_num).into()).await.unwrap();
     assert_eq!(compiled.bin_runtime.to_vec(), code);
 }
 
