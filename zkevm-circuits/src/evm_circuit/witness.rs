@@ -438,6 +438,13 @@ impl Rw {
         }
     }
 
+    pub fn memory_value(&self) -> u8 {
+        match self {
+            Self::Memory { byte, .. } => *byte,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
         match self {
             Self::TxAccessListAccount {
