@@ -5,7 +5,7 @@ use halo2::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use zkevm_circuits::evm_circuit::{bus_mapping_tmp::Block, EvmCircuit};
+use zkevm_circuits::evm_circuit::{witness::Block, EvmCircuit};
 
 #[derive(Debug, Default)]
 pub struct TestCircuit<F> {
