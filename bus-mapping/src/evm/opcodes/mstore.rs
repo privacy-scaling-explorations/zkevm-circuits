@@ -149,7 +149,7 @@ mod mstore_tests {
     fn mstore8_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
             .setup_state()
-            PUSH1(0x12)
+            PUSH2(0x1234)
             PUSH2(0x100)
             #[start]
             MSTORE8
@@ -191,11 +191,11 @@ mod mstore_tests {
         state_ref.push_op(StackOp::new(
             RW::READ,
             StackAddress::from(1023),
-            Word::from(0x12),
+            Word::from(0x1234),
         ));
 
         // Add 1 MemoryOp generated from the Memory write at addr 0x100.
-        state_ref.push_op(MemoryOp::new(RW::WRITE, MemoryAddress(0x100), 0x12));
+        state_ref.push_op(MemoryOp::new(RW::WRITE, MemoryAddress(0x100), 0x34));
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
