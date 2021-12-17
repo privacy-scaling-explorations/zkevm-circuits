@@ -1,11 +1,12 @@
 use crate::arith_helpers::*;
 use halo2::{
-    circuit::Region,
+    circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -67,27 +68,34 @@ impl<F: FieldExt> ThetaConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        state: [F; 25],
+        state: [(Cell, F); 25],
         out_state: [F; 25],
-    ) -> Result<[F; 25], Error> {
+    ) -> Result<[(Cell, F); 25], Error> {
         self.q_enable.enable(region, offset)?;
+
         for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
+            let obtained_cell = region.assign_advice(
                 || format!("assign state {}", idx),
                 self.state[idx],
                 offset,
-                || Ok(*lane),
+                || Ok(lane.1),
             )?;
+            region.constrain_equal(lane.0, obtained_cell)?;
         }
 
-        for (idx, lane) in out_state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign out_state {}", idx),
-                self.state[idx],
-                offset + 1,
-                || Ok(*lane),
-            )?;
-        }
+        let mut out_vec: Vec<(Cell, F)> = vec![];
+        let out_state: [(Cell, F); 25] = {
+            for (idx, lane) in out_state.iter().enumerate() {
+                let out_cell = region.assign_advice(
+                    || format!("assign out_state {}", idx),
+                    self.state[idx],
+                    offset + 1,
+                    || Ok(*lane),
+                )?;
+                out_vec.push((out_cell, *lane));
+            }
+            out_vec.try_into().unwrap()
+        };
         Ok(out_state)
     }
 }
@@ -127,7 +135,11 @@ mod tests {
                 let q_enable = meta.complex_selector();
 
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let column = meta.advice_column();
+                        meta.enable_equality(column.into());
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
@@ -140,6 +152,29 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
+                let offset = 0;
+                let in_state = layouter.assign_region(
+                    || "Wittnes & assignation",
+                    |mut region| {
+                        // Witness `state`
+                        let in_state: [(Cell, F); 25] = {
+                            let mut state: Vec<(Cell, F)> =
+                                Vec::with_capacity(25);
+                            for (idx, val) in self.in_state.iter().enumerate() {
+                                let cell = region.assign_advice(
+                                    || "witness input state",
+                                    config.state[idx],
+                                    offset,
+                                    || Ok(*val),
+                                )?;
+                                state.push((cell, *val))
+                            }
+                            state.try_into().unwrap()
+                        };
+                        Ok(in_state)
+                    },
+                )?;
+
                 layouter.assign_region(
                     || "assign input state",
                     |mut region| {
@@ -147,7 +182,7 @@ mod tests {
                         config.assign_state(
                             &mut region,
                             offset,
-                            self.in_state,
+                            in_state,
                             self.out_state,
                         )
                     },
