@@ -354,7 +354,7 @@ mod memory_tests {
         // There are 3 words in memory
         assert_eq!(mem_map.size(), 3);
 
-        // Now push extra 3 byte
+        // Now push extra 10 byte
         mem_map.push([0; 10]);
         assert_eq!(mem_map.size(), 4);
 
