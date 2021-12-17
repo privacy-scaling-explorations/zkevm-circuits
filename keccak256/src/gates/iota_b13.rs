@@ -86,7 +86,7 @@ impl<F: FieldExt> IotaB13Config<F> {
         out_state: [F; 25],
         absolute_row: usize,
         flag: (Cell, F),
-    ) -> Result<(), Error> {
+    ) -> Result<[(Cell, F); 25], Error> {
         // Enable `q_mixing`.
         self.q_mixing.enable(region, offset)?;
         // Copy state at offset + 0
@@ -146,16 +146,21 @@ impl<F: FieldExt> IotaB13Config<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
-    ) -> Result<(), Error> {
-        for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-        }
-        Ok(())
+    ) -> Result<[(Cell, F); 25], Error> {
+        let mut out_vec: Vec<(Cell, F)> = vec![];
+        let out_state: [(Cell, F); 25] = {
+            for (idx, lane) in state.iter().enumerate() {
+                let out_cell = region.assign_advice(
+                    || format!("assign state[{}]", idx),
+                    self.state[idx],
+                    offset,
+                    || Ok(*lane),
+                )?;
+                out_vec.push((out_cell, *lane));
+            }
+            out_vec.try_into().unwrap()
+        };
+        Ok(out_state)
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_13 to the `absolute_row` passed as an
