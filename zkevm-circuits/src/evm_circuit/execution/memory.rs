@@ -298,8 +298,8 @@ mod test {
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
-            // TODO: tracer needs to be optimized to enable larger
-            // max_memory_size_pow_of_two
+            // we use 15-bit here to reduce testing resource consumption.
+            // In real cases the address is 5 bytes (40 bits)
             let max_memory_size_pow_of_two = 15;
             let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
             let value = rand_word();
