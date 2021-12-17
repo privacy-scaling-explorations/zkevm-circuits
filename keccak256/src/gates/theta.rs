@@ -1,6 +1,6 @@
 use crate::arith_helpers::*;
 use halo2::{
-    circuit::{Cell, Region},
+    circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -66,37 +66,42 @@ impl<F: FieldExt> ThetaConfig<F> {
 
     pub fn assign_state(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
+        layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
         out_state: [F; 25],
     ) -> Result<[(Cell, F); 25], Error> {
-        self.q_enable.enable(region, offset)?;
+        layouter.assign_region(
+            || "Theta gate",
+            |mut region| {
+                let offset = 0;
+                self.q_enable.enable(&mut region, offset)?;
 
-        for (idx, lane) in state.iter().enumerate() {
-            let obtained_cell = region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(lane.1),
-            )?;
-            region.constrain_equal(lane.0, obtained_cell)?;
-        }
+                for (idx, lane) in state.iter().enumerate() {
+                    let obtained_cell = region.assign_advice(
+                        || format!("assign state {}", idx),
+                        self.state[idx],
+                        offset,
+                        || Ok(lane.1),
+                    )?;
+                    region.constrain_equal(lane.0, obtained_cell)?;
+                }
 
-        let mut out_vec: Vec<(Cell, F)> = vec![];
-        let out_state: [(Cell, F); 25] = {
-            for (idx, lane) in out_state.iter().enumerate() {
-                let out_cell = region.assign_advice(
-                    || format!("assign out_state {}", idx),
-                    self.state[idx],
-                    offset + 1,
-                    || Ok(*lane),
-                )?;
-                out_vec.push((out_cell, *lane));
-            }
-            out_vec.try_into().unwrap()
-        };
-        Ok(out_state)
+                let mut out_vec: Vec<(Cell, F)> = vec![];
+                let out_state: [(Cell, F); 25] = {
+                    for (idx, lane) in out_state.iter().enumerate() {
+                        let out_cell = region.assign_advice(
+                            || format!("assign out_state {}", idx),
+                            self.state[idx],
+                            offset + 1,
+                            || Ok(*lane),
+                        )?;
+                        out_vec.push((out_cell, *lane));
+                    }
+                    out_vec.try_into().unwrap()
+                };
+                Ok(out_state)
+            },
+        )
     }
 }
 
@@ -175,18 +180,11 @@ mod tests {
                     },
                 )?;
 
-                layouter.assign_region(
-                    || "assign input state",
-                    |mut region| {
-                        let offset = 0;
-                        config.assign_state(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                        )
-                    },
-                )?;
+                let _ = config.assign_state(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                );
 
                 Ok(())
             }
