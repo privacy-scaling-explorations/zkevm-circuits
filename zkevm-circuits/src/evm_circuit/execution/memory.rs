@@ -235,8 +235,8 @@ mod test {
             .to_vec();
         let mut builder =
             bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                block_trace.eth_block.clone(),
-                block_trace.block_ctants.clone(),
+                &block_trace.eth_block.clone(),
+                block_trace.ctants.clone(),
             );
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)

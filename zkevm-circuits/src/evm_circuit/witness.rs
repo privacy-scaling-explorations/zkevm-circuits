@@ -512,8 +512,8 @@ pub fn build_block_from_trace_code_at_start(
         .unwrap();
     let mut builder =
         bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
+            &block.eth_block.clone(),
+            block.ctants.clone(),
         );
     builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
