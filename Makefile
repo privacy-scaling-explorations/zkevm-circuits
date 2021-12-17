@@ -26,7 +26,7 @@ evm_bench: ## Run Evm Circuit benchmarks
 	@cargo test --profile bench bench_evm_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
 state_bench: ## Run State Circuit benchmarks
-	@cargo test --profile bench bench_evm_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
+	@cargo test --profile bench bench_state_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 
