@@ -2187,6 +2187,36 @@ impl<F: FieldExt> MPTConfig<F> {
                                     }
                                 };
 
+                            let compute_key_rlc =
+                                |key_rlc: &mut F,
+                                 key_rlc_mult: &mut F,
+                                 start: usize| {
+                                    if !key_rlc_sel {
+                                        // That means we had key_rlc_sel=true when setting rlc last time,
+                                        // that means we have nibble+48 in s_advices[0].
+                                        *key_rlc += F::from_u64(
+                                            (row[start + 1] - 48) as u64,
+                                        ) * *key_rlc_mult;
+                                        *key_rlc_mult *= self.acc_r;
+
+                                        let len = row[start] as usize - 128;
+                                        compute_acc_and_mult(
+                                            key_rlc,
+                                            key_rlc_mult,
+                                            start + 2,
+                                            len - 1, // -1 because one byte was already considered
+                                        );
+                                    } else {
+                                        let len = row[start - 1] as usize - 128;
+                                        compute_acc_and_mult(
+                                            key_rlc,
+                                            key_rlc_mult,
+                                            start + 1,
+                                            len - 1, // -1 because the first byte doesn't contain any key byte (it's just 32)
+                                        );
+                                    }
+                                };
+
                             // Leaf key
                             if row[row.len() - 1] == 2
                                 || row[row.len() - 1] == 3
@@ -2216,6 +2246,28 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     F::zero(),
                                     offset,
+                                )?;
+
+                                // TODO: handle if branch or extension node is added
+                                let mut start = S_START - 1;
+                                if row[0] == 248 {
+                                    // long RLP
+                                    start = S_START;
+                                }
+
+                                // For leaf S and leaf C we need to start with the same rlc.
+                                let mut key_rlc_new = key_rlc.clone();
+                                let mut key_rlc_mult_new = key_rlc_mult.clone();
+                                compute_key_rlc(
+                                    &mut key_rlc_new,
+                                    &mut key_rlc_mult_new,
+                                    start,
+                                );
+                                region.assign_advice(
+                                    || format!("assign key_rlc"),
+                                    self.key_rlc,
+                                    offset,
+                                    || Ok(key_rlc_new),
                                 )?;
                             }
 
