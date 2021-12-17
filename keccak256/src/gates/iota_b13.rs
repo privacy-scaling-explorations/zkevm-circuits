@@ -2,6 +2,7 @@ use crate::arith_helpers::*;
 use crate::common::*;
 use crate::keccak_arith::*;
 use halo2::circuit::Cell;
+use halo2::circuit::Layouter;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
@@ -80,25 +81,30 @@ impl<F: FieldExt> IotaB13Config<F> {
     /// Doc this
     pub fn copy_state_flag_and_assing_rc(
         &self,
-        region: &mut Region<'_, F>,
-        mut offset: usize,
+        layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
         out_state: [F; 25],
         absolute_row: usize,
         flag: (Cell, F),
     ) -> Result<[(Cell, F); 25], Error> {
-        // Enable `q_mixing`.
-        self.q_mixing.enable(region, offset)?;
-        // Copy state at offset + 0
-        self.copy_state(region, offset, state)?;
-        // Assign round_ctant at offset + 0.
-        self.assign_round_ctant_b13(region, offset, absolute_row)?;
+        layouter.assign_region(
+            || "Assign IotaB13 state",
+            |mut region| {
+                let mut offset = 0;
+                // Enable `q_mixing`.
+                self.q_mixing.enable(&mut region, offset)?;
+                // Copy state at offset + 0
+                self.copy_state(&mut region, offset, state)?;
+                // Assign round_ctant at offset + 0.
+                self.assign_round_ctant_b13(&mut region, offset, absolute_row)?;
 
-        offset += 1;
-        // Copy flag at `round_ctant_b9` at offset + 1
-        self.copy_flag(region, offset, flag)?;
-        // Assign out state at offset + 1
-        self.assign_state(region, offset, out_state)
+                offset += 1;
+                // Copy flag at `round_ctant_b9` at offset + 1
+                self.copy_flag(&mut region, offset, flag)?;
+                // Assign out state at offset + 1
+                self.assign_state(&mut region, offset, out_state)
+            },
+        )
     }
 
     /// Copies the `[(Cell,F);25]` to the `state` Advice column.
@@ -270,7 +276,7 @@ mod tests {
                 let offset: usize = 0;
 
                 let val: F = (self.flag as u64).into();
-                layouter.assign_region(
+                let (in_state, flag) = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `is_missing` flag
@@ -297,19 +303,19 @@ mod tests {
                             }
                             state.try_into().unwrap()
                         };
-
-                        // Assign `in_state`, `out_state`, round and flag
-                        config.copy_state_flag_and_assing_rc(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                            self.round_ctant,
-                            flag,
-                        )?;
-                        Ok(())
+                        Ok((in_state, flag))
                     },
-                )
+                )?;
+
+                // Assign `in_state`, `out_state`, round and flag
+                config.copy_state_flag_and_assing_rc(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.round_ctant,
+                    flag,
+                )?;
+                Ok(())
             }
         }
 

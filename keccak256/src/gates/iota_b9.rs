@@ -528,7 +528,7 @@ mod tests {
                     in_state,
                     self.out_state,
                     self.round_ctant_b9,
-                );
+                )?;
 
                 Ok(())
             }
