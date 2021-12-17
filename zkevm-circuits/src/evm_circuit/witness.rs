@@ -501,13 +501,12 @@ pub fn block_convert(
     block
 }
 
-#[allow(clippy::needless_borrow)]
 pub fn build_block_from_trace_code_at_start(
     bytecode: &bus_mapping::bytecode::Bytecode,
 ) -> Block<Fp> {
     let block =
         bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
-            &bytecode,
+            bytecode,
         )
         .unwrap();
     let mut builder =
@@ -517,5 +516,5 @@ pub fn build_block_from_trace_code_at_start(
         );
     builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-    block_convert(&bytecode, &builder.block)
+    block_convert(bytecode, &builder.block)
 }
