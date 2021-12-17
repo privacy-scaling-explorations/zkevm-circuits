@@ -83,8 +83,8 @@ impl<F: FieldExt> ThetaConfig<F> {
             region.constrain_equal(lane.0, obtained_cell)?;
         }
 
-        let mut out_vec: Vec<(Cell, F)> = vec![];
         let out_state: [(Cell, F); 25] = {
+            let mut out_vec: Vec<(Cell, F)> = vec![];
             for (idx, lane) in out_state.iter().enumerate() {
                 let out_cell = region.assign_advice(
                     || format!("assign out_state {}", idx),
