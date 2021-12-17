@@ -379,6 +379,7 @@ fn step_convert(
                     bus_mapping::operation::Target::Storage => {
                         index + stack_ops_len + memory_ops_len
                     }
+                    _ => unimplemented!(),
                 }
             })
             .collect(),

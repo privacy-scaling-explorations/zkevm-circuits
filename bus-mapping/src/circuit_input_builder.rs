@@ -404,6 +404,11 @@ impl Transaction {
         &mut self.steps
     }
 
+    /// Return the list of calls of this transaction.
+    pub fn calls(&self) -> &[Call] {
+        &self.calls
+    }
+
     fn push_call(
         &mut self,
         parent_index: usize,
