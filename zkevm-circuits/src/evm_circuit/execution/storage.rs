@@ -176,9 +176,6 @@ mod test {
             .write_op(opcode)
             STOP
         };
-        //let block  =
-        // witness::build_block_from_trace_code_at_start(&
-        // bytecode);
 
         // TODO:
         let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
@@ -192,8 +189,8 @@ mod test {
             .to_vec();
         let mut builder =
             bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                block_trace.eth_block.clone(),
-                block_trace.block_ctants.clone(),
+                &block_trace.eth_block.clone(),
+                block_trace.ctants.clone(),
             );
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
@@ -249,8 +246,8 @@ mod test {
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
-            // TODO: tracer needs to be optimized to enable larger
-            // max_memory_size_pow_of_two
+            // we use 15-bit here to reduce testing resource consumption.
+            // In real cases the address is 5 bytes (40 bits)
             let max_memory_size_pow_of_two = 15;
             let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
             let value = rand_word();
