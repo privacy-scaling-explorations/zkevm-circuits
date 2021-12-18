@@ -230,15 +230,8 @@ mod test {
     #[test]
     // TODO: fix size and gas
     fn storage_gadget_rand() {
-        let calc_memory_size_and_gas_cost = |opcode, address: Word| {
-            let memory_size = (address.as_u64()
-                + match opcode {
-                    OpcodeId::MSTORE | OpcodeId::MLOAD => 32,
-                    OpcodeId::MSTORE8 => 1,
-                    _ => 0,
-                }
-                + 31)
-                / 32;
+        let calc_memory_size_and_gas_cost = |_opcode, address: Word| {
+            let memory_size = (address.as_u64() + 32 + 31) / 32;
             let gas_cost = memory_size * memory_size / 512
                 + 3 * memory_size
                 + GasCost::FASTEST.as_u64();
