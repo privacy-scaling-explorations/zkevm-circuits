@@ -51,7 +51,7 @@ mod jumpi_tests {
     #[test]
     fn jumpi_opcode_impl() -> Result<(), Error> {
         let condition = 1;
-        let destination = 35;
+        let destination = 69;
 
         let mut code = bytecode! {
             PUSH32(condition)
