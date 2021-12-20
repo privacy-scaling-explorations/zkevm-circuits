@@ -12,7 +12,7 @@ use pairing::arithmetic::FieldExt;
 pub struct BaseConversionConfig<F> {
     q_enable: Selector,
     bi: BaseInfo<F>,
-    lane: Column<Advice>,
+    input_lane: Column<Advice>,
     input_eval: BaseEvaluationConfig<F>,
     output_eval: BaseEvaluationConfig<F>,
 }
@@ -22,14 +22,14 @@ impl<F: FieldExt> BaseConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         bi: BaseInfo<F>,
-        lane: Column<Advice>,
+        input_lane: Column<Advice>,
     ) -> Self {
         let q_enable = meta.complex_selector();
+        meta.enable_equality(input_lane.into());
 
-        let input_eval =
-            BaseEvaluationConfig::configure(meta, bi.input_pob(), lane);
+        let input_eval = BaseEvaluationConfig::configure(meta, bi.input_pob());
         let output_eval =
-            BaseEvaluationConfig::configure(meta, bi.output_pob(), lane);
+            BaseEvaluationConfig::configure(meta, bi.output_pob());
 
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -46,7 +46,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         Self {
             q_enable,
             bi,
-            lane,
+            input_lane,
             input_eval,
             output_eval,
         }
@@ -57,45 +57,27 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         layouter: &mut impl Layouter<F>,
         input: (Cell, F),
     ) -> Result<(Cell, F), Error> {
-        let (input_coefs, output_coefs, output) =
-            self.bi.compute_coefs(input.1)?;
+        let (input_coefs, output_coefs, _) = self.bi.compute_coefs(input.1)?;
 
-        let output_cell = layouter.assign_region(
-            || "lane",
-            |mut region| {
-                let output_cell = region.assign_advice(
-                    || "lane output",
-                    self.lane,
-                    0,
-                    || Ok(output),
-                )?;
-
-                Ok(output_cell)
-            },
-        )?;
-
-        layouter.assign_region(
+        let (out_cell, out_value) = layouter.assign_region(
             || "Base conversion",
             |mut region| {
-                for (offset, _) in input_coefs.iter().enumerate() {
+                let count = self.bi.clone().slice_count();
+                for offset in 0..count {
                     self.q_enable.enable(&mut region, offset)?;
                 }
-                self.input_eval.assign_region(
-                    &mut region,
-                    input.0,
-                    &input_coefs,
-                )?;
+                let (in_cell, _) =
+                    self.input_eval.assign_region(&mut region, &input_coefs)?;
+                region.constrain_equal(in_cell, input.0)?;
 
-                self.output_eval.assign_region(
-                    &mut region,
-                    output_cell,
-                    &output_coefs,
-                )?;
-                Ok(())
+                let (out_cell, out_value) = self
+                    .output_eval
+                    .assign_region(&mut region, &output_coefs)?;
+                Ok((out_cell, out_value))
             },
         )?;
 
-        Ok((output_cell, output))
+        Ok((out_cell, out_value))
     }
 }
 

@@ -196,7 +196,10 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
 pub struct BaseInfo<F> {
     input_base: u64,
     output_base: u64,
+    // How many chunks we perform in a lookup?
     num_chunks: usize,
+    // How many chunks in total
+    pub max_chunks: usize,
     pub input_tc: TableColumn,
     pub output_tc: TableColumn,
     _marker: PhantomData<F>,
@@ -210,6 +213,16 @@ impl<F: FieldExt> BaseInfo<F> {
         F::from(self.output_base.pow(self.num_chunks as u32))
     }
 
+    pub fn slice_count(self) -> usize {
+        // Just want the `self.max_chunks.div_ceil(self.num_chunks)`
+        (0..self.max_chunks)
+            .chunks(self.num_chunks)
+            .into_iter()
+            .map(|_| 0)
+            .collect_vec()
+            .len()
+    }
+
     pub fn compute_coefs(
         &self,
         input: F,
@@ -218,7 +231,7 @@ impl<F: FieldExt> BaseInfo<F> {
         let input_chunks: Vec<u64> = {
             let mut raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
             // little endian
-            let mut input_chunks: Vec<u64> = (0..64)
+            let mut input_chunks: Vec<u64> = (0..self.max_chunks)
                 .map(|_| {
                     let remainder: u64 = mod_u64(&raw, self.input_base);
                     raw /= self.input_base;
@@ -266,6 +279,7 @@ impl<F: FieldExt> BaseInfo<F> {
     }
 }
 
+const MAX_CHUNKS: usize = 64;
 const NUM_OF_BINARY_CHUNKS: usize = 16;
 
 #[derive(Debug, Clone)]
@@ -347,6 +361,7 @@ impl<F: FieldExt> FromBinaryTableConfig<F> {
             input_base: B2,
             output_base: if output_b9 { B9 } else { B13 },
             num_chunks: NUM_OF_BINARY_CHUNKS,
+            max_chunks: MAX_CHUNKS,
             input_tc: self.base2,
             output_tc: if output_b9 { self.base9 } else { self.base13 },
             _marker: PhantomData,
@@ -452,6 +467,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
             input_base: B9,
             output_base: if output_b2 { B2 } else { B13 },
             num_chunks: NUM_OF_B9_CHUNKS,
+            max_chunks: MAX_CHUNKS,
             input_tc: self.base2,
             output_tc: if output_b2 { self.base2 } else { self.base13 },
             _marker: PhantomData,

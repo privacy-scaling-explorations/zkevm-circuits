@@ -18,16 +18,10 @@ pub struct BaseEvaluationConfig<F> {
 impl<F: FieldExt> BaseEvaluationConfig<F> {
     /// # Side effect
     /// Enable equality on result and acc
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        power_of_base: F,
-        result: Column<Advice>,
-    ) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>, power_of_base: F) -> Self {
         let q_enable = meta.selector();
         let coef = meta.advice_column();
         let acc = meta.advice_column();
-        // Bind result to acc
-        meta.enable_equality(result.into());
         // Bind first coef value to acc
         meta.enable_equality(coef.into());
         meta.enable_equality(acc.into());
@@ -56,9 +50,8 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
     pub fn assign_region(
         &self,
         region: &mut Region<'_, F>,
-        result: Cell,
         coefs: &[F],
-    ) -> Result<(), Error> {
+    ) -> Result<(Cell, F), Error> {
         let mut acc = F::zero();
         for (offset, &coef) in coefs.iter().enumerate() {
             acc = acc * self.power_of_base + coef;
@@ -77,10 +70,9 @@ impl<F: FieldExt> BaseEvaluationConfig<F> {
                 // bind first acc to first coef
                 region.constrain_equal(acc_cell, coef_cell)?;
             } else if offset == coefs.len() - 1 {
-                // bind last acc to result
-                region.constrain_equal(acc_cell, result)?;
+                return Ok((acc_cell, acc));
             }
         }
-        Ok(())
+        unreachable!();
     }
 }
