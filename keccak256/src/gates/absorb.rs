@@ -2,8 +2,8 @@ use crate::arith_helpers::*;
 use crate::common::*;
 use crate::keccak_arith::*;
 use halo2::circuit::Cell;
+use halo2::circuit::Layouter;
 use halo2::{
-    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -93,67 +93,68 @@ impl<F: FieldExt> AbsorbConfig<F> {
     /// Doc this
     pub fn copy_state_flag_next_inputs(
         &self,
-        region: &mut Region<'_, F>,
-        mut offset: usize,
+        layouter: &mut impl Layouter<F>,
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         next_input: [F; ABSORB_NEXT_INPUTS],
         flag: (Cell, F),
     ) -> Result<([(Cell, F); 25], (Cell, F)), Error> {
-        let mut state_array = [F::zero(); 25];
+        layouter.assign_region(
+            || "Absorb state assignations",
+            |mut region| {
+                let mut offset = 0;
+                // State at offset + 0
+                for (idx, (cell, value)) in in_state.iter().enumerate() {
+                    let new_cell = region.assign_advice(
+                        || format!("assign state {}", idx),
+                        self.state[idx],
+                        offset,
+                        || Ok(*value),
+                    )?;
 
-        // State at offset + 0
-        for (idx, (cell, value)) in in_state.iter().enumerate() {
-            // Copy value into state_array
-            state_array[idx] = *value;
-            let new_cell = region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*value),
-            )?;
+                    region.constrain_equal(*cell, new_cell)?;
+                }
 
-            region.constrain_equal(*cell, new_cell)?;
-        }
+                offset += 1;
+                // Enable `q_mixing` at `offset + 1`
+                self.q_mixing.enable(&mut region, offset)?;
+                // Assign next_mixing at offset + 1
+                for (idx, lane) in next_input.iter().enumerate() {
+                    region.assign_advice(
+                        || format!("assign next_input {}", idx),
+                        self.state[idx],
+                        offset,
+                        || Ok(*lane),
+                    )?;
+                }
+                // Assign flag at last column(17th) of the offset + 1 row.
+                let obtained_cell = region.assign_advice(
+                    || format!("assign next_input {}", ABSORB_NEXT_INPUTS),
+                    self.state[ABSORB_NEXT_INPUTS],
+                    offset,
+                    || Ok(flag.1),
+                )?;
+                region.constrain_equal(flag.0, obtained_cell)?;
 
-        offset += 1;
-        // Enable `q_mixing` at `offset + 1`
-        self.q_mixing.enable(region, offset)?;
-        // Assign next_mixing at offset + 1
-        for (idx, lane) in next_input.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign next_input {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-        }
-        // Assign flag at last column(17th) of the offset + 1 row.
-        let obtained_cell = region.assign_advice(
-            || format!("assign next_input {}", ABSORB_NEXT_INPUTS),
-            self.state[ABSORB_NEXT_INPUTS],
-            offset,
-            || Ok(flag.1),
-        )?;
-        region.constrain_equal(flag.0, obtained_cell)?;
+                offset += 1;
+                // Assign out_state at offset + 2
+                let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                for (idx, lane) in out_state.iter().enumerate() {
+                    let cell = region.assign_advice(
+                        || format!("assign state {}", idx),
+                        self.state[idx],
+                        offset,
+                        || Ok(*lane),
+                    )?;
+                    state.push((cell, *lane));
+                }
+                let out_state: [(Cell, F); 25] = state
+                    .try_into()
+                    .expect("Unexpected into_slice conversion err");
 
-        offset += 1;
-        // Assign out_state at offset + 2
-        let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
-        for (idx, lane) in out_state.iter().enumerate() {
-            let cell = region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-            state.push((cell, *lane));
-        }
-        let out_state: [(Cell, F); 25] = state
-            .try_into()
-            .expect("Unexpected into_slice conversion err");
-
-        Ok((out_state, (obtained_cell, flag.1)))
+                Ok((out_state, (obtained_cell, flag.1)))
+            },
+        )
     }
 
     /// Given a [`State`] and the `next_inputs` returns the `init_state` and
@@ -276,19 +277,12 @@ mod tests {
                     },
                 )?;
 
-                layouter.assign_region(
-                    || "assign input state",
-                    |mut region| {
-                        let offset = 0;
-                        config.copy_state_flag_next_inputs(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                            self.next_input,
-                            flag,
-                        )
-                    },
+                config.copy_state_flag_next_inputs(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.next_input,
+                    flag,
                 )?;
 
                 Ok(())

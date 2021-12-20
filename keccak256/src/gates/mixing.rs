@@ -6,7 +6,7 @@ use super::{
 use crate::arith_helpers::*;
 use crate::common::*;
 use halo2::{
-    circuit::{Cell, Region},
+    circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use pairing::arithmetic::FieldExt;
@@ -76,56 +76,67 @@ impl<F: FieldExt> MixingConfig<F> {
 
     pub fn assign_state(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
+        layouter: &mut impl Layouter<F>,
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         flag: bool,
         next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
         absolute_row_b9: usize,
         absolute_row_b13: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<[(Cell, F); 25], Error> {
         // Witness the mixing flag.
         let val: F = (flag as u64).into();
-        // Witness `is_mixing` flag.
-        let cell = region.assign_advice(
-            || "witness is_mixing",
-            self.flag,
-            offset,
-            || Ok(val),
+        let flag_cell = layouter.assign_region(
+            || "Mixing witnessing",
+            |mut region| {
+                let offset: usize = 0;
+                // Witness `is_mixing` flag.
+                let cell = region.assign_advice(
+                    || "witness is_mixing",
+                    self.flag,
+                    offset,
+                    || Ok(val),
+                )?;
+                Ok((cell, val))
+            },
         )?;
-        let flag = (cell, val);
 
-        // If we mix,
-        self.iota_b9_config.last_round(
-            region,
-            offset,
+        // If we mix:
+        let mix_res = self.iota_b9_config.last_round(
+            layouter,
             in_state,
             out_state,
             absolute_row_b9,
-            flag,
-        )?;
+            flag_cell,
+        );
 
-        let (out_state_absorb_cells, flag) =
+        // If we don't mix:
+        // Absorb
+        let (out_state_absorb_cells, flag_cell) =
             self.absorb_config.copy_state_flag_next_inputs(
-                region,
-                offset + IotaB9Config::<F>::OFFSET,
+                layouter,
                 in_state,
                 out_state,
                 next_mixing.unwrap_or_default(),
-                flag,
+                flag_cell,
             )?;
 
         // Base conversion assign
 
-        self.iota_b13_config.copy_state_flag_and_assing_rc(
-            region,
-            offset + AbsorbConfig::<F>::OFFSET,
+        // IotaB13
+        let non_mix_res = self.iota_b13_config.copy_state_flag_and_assing_rc(
+            layouter,
             out_state_absorb_cells,
             out_state,
             absolute_row_b13,
-            flag,
-        )
+            flag_cell,
+        );
+
+        if flag {
+            mix_res
+        } else {
+            non_mix_res
+        }
     }
 
     /// Given an `in_state` as [`State`] and `next_inputs` as [`Option<State>`],
@@ -201,7 +212,7 @@ mod tests {
             ) -> Result<(), Error> {
                 let offset: usize = 0;
 
-                layouter.assign_region(
+                let in_state = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `state`
@@ -219,20 +230,20 @@ mod tests {
                             }
                             state.try_into().unwrap()
                         };
-
-                        config.assign_state(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                            self.is_mixing,
-                            self.next_mixing,
-                            self.round_ctant_b9,
-                            self.round_ctant_b13,
-                        )?;
-                        Ok(())
+                        Ok(in_state)
                     },
-                )
+                )?;
+
+                config.assign_state(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.is_mixing,
+                    self.next_mixing,
+                    self.round_ctant_b9,
+                    self.round_ctant_b13,
+                )?;
+                Ok(())
             }
         }
 
