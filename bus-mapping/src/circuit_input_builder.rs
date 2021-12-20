@@ -4,12 +4,14 @@ use crate::eth_types::{
     self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash,
     ToAddress, ToBigEndian, Word,
 };
-use crate::evm::{Gas, GasCost, GlobalCounter, OpcodeId, ProgramCounter};
+use crate::evm::{
+    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, RWCounter,
+    StackAddress,
+};
 use crate::exec_trace::OperationRef;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
-use crate::operation::RW;
-use crate::operation::{Op, Operation};
+use crate::operation::{MemoryOp, Op, Operation, StackOp, RW};
 use crate::state_db::{CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
@@ -107,7 +109,7 @@ pub struct ExecStep {
     /// Call index within the [`Transaction`]
     pub call_index: usize,
     /// The global counter when this step was executed.
-    pub gc: GlobalCounter,
+    pub rwc: RWCounter,
     /// State Write Counter.  Counter of state write operations in the call
     /// that haven't been reverted yet up to this step.
     pub swc: usize,
@@ -124,7 +126,7 @@ impl ExecStep {
     pub fn new(
         step: &GethExecStep,
         call_index: usize,
-        gc: GlobalCounter,
+        rwc: RWCounter,
         swc: usize, // State Write Counter
     ) -> Self {
         ExecStep {
@@ -135,7 +137,7 @@ impl ExecStep {
             gas_left: step.gas,
             gas_cost: step.gas_cost,
             call_index,
-            gc,
+            rwc,
             swc,
             bus_mapping_instance: Vec::new(),
             error: None,
@@ -148,7 +150,8 @@ impl ExecStep {
 #[derive(Debug)]
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
-    pub gc: GlobalCounter,
+    /// Contains the next available value.
+    pub rwc: RWCounter,
 }
 
 impl Default for BlockContext {
@@ -161,7 +164,7 @@ impl BlockContext {
     /// Create a new Self
     pub fn new() -> Self {
         Self {
-            gc: GlobalCounter::new(),
+            rwc: RWCounter::new(),
         }
     }
 }
@@ -244,6 +247,8 @@ impl TryFrom<OpcodeId> for CallKind {
 /// Circuit Input related to an Ethereum Call
 #[derive(Debug)]
 pub struct Call {
+    /// Unique call identifier within the Block.
+    call_id: usize,
     /// Type of call
     kind: CallKind,
     /// This call is being executed without write access (STATIC)
@@ -344,6 +349,7 @@ pub struct Transaction {
 impl Transaction {
     /// Create a new Self.
     pub fn new(
+        call_id: usize,
         sdb: &StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
@@ -357,6 +363,7 @@ impl Transaction {
             }
             let code_hash = account.code_hash;
             calls.push(Call {
+                call_id,
                 kind: CallKind::Call,
                 is_static: false,
                 is_root: true,
@@ -368,6 +375,7 @@ impl Transaction {
             // Contract creation
             let code_hash = code_db.insert(eth_tx.input.to_vec());
             calls.push(Call {
+                call_id,
                 kind: CallKind::Create,
                 is_static: false,
                 is_root: true,
@@ -412,6 +420,7 @@ impl Transaction {
     fn push_call(
         &mut self,
         parent_index: usize,
+        call_id: usize,
         kind: CallKind,
         address: Address,
         code_source: CodeSource,
@@ -420,6 +429,7 @@ impl Transaction {
         let is_static =
             kind == CallKind::StaticCall || self.calls[parent_index].is_static;
         self.calls.push(Call {
+            call_id,
             kind,
             is_static,
             is_root: false,
@@ -452,15 +462,55 @@ pub struct CircuitInputStateRef<'a> {
 
 impl<'a> CircuitInputStateRef<'a> {
     /// Push an [`Operation`] into the [`OperationContainer`] with the next
-    /// [`GlobalCounter`] and then adds a reference to the stored operation
+    /// [`RWCounter`] and then adds a reference to the stored operation
     /// ([`OperationRef`]) inside the bus-mapping instance of the current
-    /// [`ExecStep`].  Then increase the block_ctx [`GlobalCounter`] by one.
+    /// [`ExecStep`].  Then increase the block_ctx [`RWCounter`] by one.
     pub fn push_op<T: Op>(&mut self, op: T) {
         let op_ref = self
             .block
             .container
-            .insert(Operation::new(self.block_ctx.gc.inc_pre(), op));
+            .insert(Operation::new(self.block_ctx.rwc.inc_pre(), op));
         self.step.bus_mapping_instance.push(op_ref);
+    }
+
+    /// Push a [`MemoryOp`] into the [`OperationContainer`] with the next
+    /// [`RWCounter`] and `call_id`, and then adds a reference to
+    /// the stored operation ([`OperationRef`]) inside the bus-mapping
+    /// instance of the current [`ExecStep`].  Then increase the `block_ctx`
+    /// [`RWCounter`] by one.
+    pub fn push_memory_op(
+        &mut self,
+        rw: RW,
+        address: MemoryAddress,
+        value: u8,
+    ) {
+        let call_id = self.call().call_id;
+        self.push_op(MemoryOp {
+            rw,
+            call_id,
+            address,
+            value,
+        });
+    }
+
+    /// Push a [`StackOp`] into the [`OperationContainer`] with the next
+    /// [`RWCounter`] and `call_id`, and then adds a reference to
+    /// the stored operation ([`OperationRef`]) inside the bus-mapping
+    /// instance of the current [`ExecStep`].  Then increase the `block_ctx`
+    /// [`RWCounter`] by one.
+    pub fn push_stack_op(
+        &mut self,
+        rw: RW,
+        address: StackAddress,
+        value: Word,
+    ) {
+        let call_id = self.call().call_id;
+        self.push_op(StackOp {
+            rw,
+            call_id,
+            address,
+            value,
+        });
     }
 
     /// Reference to the current Call
@@ -488,8 +538,10 @@ impl<'a> CircuitInputStateRef<'a> {
         code_hash: Hash,
     ) {
         let parent_index = self.tx_ctx.call_index();
+        let call_id = self.block_ctx.rwc.0;
         let index = self.tx.push_call(
             parent_index,
+            call_id,
             kind,
             address,
             code_source,
@@ -801,7 +853,8 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_tx: &eth_types::Transaction,
     ) -> Result<Transaction, Error> {
-        Transaction::new(&self.sdb, &mut self.code_db, eth_tx)
+        let call_id = self.block_ctx.rwc.0;
+        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx)
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -819,7 +872,7 @@ impl<'a> CircuitInputBuilder {
             let mut step = ExecStep::new(
                 geth_step,
                 tx_ctx.call_index(),
-                self.block_ctx.gc,
+                self.block_ctx.rwc,
                 tx_ctx.call_ctx().swc,
             );
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx, &mut step);
@@ -1175,7 +1228,7 @@ mod tracer_tests {
                 builder,
                 tx,
                 tx_ctx: TransactionContext::new(&block.eth_tx),
-                step: ExecStep::new(geth_step, 0, GlobalCounter(0), 0),
+                step: ExecStep::new(geth_step, 0, RWCounter::new(), 0),
             }
         }
 

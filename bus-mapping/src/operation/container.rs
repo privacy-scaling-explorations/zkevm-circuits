@@ -1,6 +1,6 @@
 use super::{
     AccountDestructedOp, AccountOp, MemoryOp, Op, OpEnum, Operation, StackOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListStorageSlotOp,
+    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp,
     TxRefundOp,
 };
 use crate::exec_trace::OperationRef;
@@ -27,7 +27,7 @@ pub struct OperationContainer {
     pub(crate) storage: Vec<Operation<StorageOp>>,
     pub(crate) tx_access_list_account: Vec<Operation<TxAccessListAccountOp>>,
     pub(crate) tx_access_list_storage_slot:
-        Vec<Operation<TxAccessListStorageSlotOp>>,
+        Vec<Operation<TxAccessListAccountStorageOp>>,
     pub(crate) tx_refund: Vec<Operation<TxRefundOp>>,
     pub(crate) account: Vec<Operation<AccountOp>>,
     pub(crate) account_destructed: Vec<Operation<AccountDestructedOp>>,
@@ -62,45 +62,45 @@ impl OperationContainer {
     /// location of the inserted operation inside the corresponding container
     /// vector.
     pub fn insert<T: Op>(&mut self, op: Operation<T>) -> OperationRef {
-        let gc = op.gc();
+        let rwc = op.rwc();
         match op.op.into_enum() {
             OpEnum::Memory(op) => {
-                self.memory.push(Operation::new(gc, op));
+                self.memory.push(Operation::new(rwc, op));
                 OperationRef::from((Target::Memory, self.memory.len()))
             }
             OpEnum::Stack(op) => {
-                self.stack.push(Operation::new(gc, op));
+                self.stack.push(Operation::new(rwc, op));
                 OperationRef::from((Target::Stack, self.stack.len()))
             }
             OpEnum::Storage(op) => {
-                self.storage.push(Operation::new(gc, op));
+                self.storage.push(Operation::new(rwc, op));
                 OperationRef::from((Target::Storage, self.storage.len()))
             }
             OpEnum::TxAccessListAccount(op) => {
-                self.tx_access_list_account.push(Operation::new(gc, op));
+                self.tx_access_list_account.push(Operation::new(rwc, op));
                 OperationRef::from((
                     Target::TxAccessListAccount,
                     self.tx_access_list_account.len(),
                 ))
             }
-            OpEnum::TxAccessListStorageSlot(op) => {
+            OpEnum::TxAccessListAccountStorage(op) => {
                 self.tx_access_list_storage_slot
-                    .push(Operation::new(gc, op));
+                    .push(Operation::new(rwc, op));
                 OperationRef::from((
-                    Target::TxAccessListStorageSlot,
+                    Target::TxAccessListAccountStorage,
                     self.tx_access_list_storage_slot.len(),
                 ))
             }
             OpEnum::TxRefund(op) => {
-                self.tx_refund.push(Operation::new(gc, op));
+                self.tx_refund.push(Operation::new(rwc, op));
                 OperationRef::from((Target::TxRefund, self.tx_refund.len()))
             }
             OpEnum::Account(op) => {
-                self.account.push(Operation::new(gc, op));
+                self.account.push(Operation::new(rwc, op));
                 OperationRef::from((Target::Account, self.account.len()))
             }
             OpEnum::AccountDestructed(op) => {
-                self.account_destructed.push(Operation::new(gc, op));
+                self.account_destructed.push(Operation::new(rwc, op));
                 OperationRef::from((
                     Target::AccountDestructed,
                     self.account_destructed.len(),
@@ -134,21 +134,21 @@ mod container_test {
 
     use crate::{
         eth_types::{Address, Word},
-        evm::{GlobalCounter, MemoryAddress, StackAddress},
+        evm::{MemoryAddress, RWCounter, StackAddress},
         operation::RW,
     };
 
     #[test]
     fn operation_container_test() {
-        let mut global_counter = GlobalCounter::default();
+        let mut global_counter = RWCounter::default();
         let mut operation_container = OperationContainer::default();
         let stack_operation = Operation::new(
             global_counter.inc_pre(),
-            StackOp::new(RW::WRITE, StackAddress(1023), Word::from(0x100)),
+            StackOp::new(RW::WRITE, 1, StackAddress(1023), Word::from(0x100)),
         );
         let memory_operation = Operation::new(
             global_counter.inc_pre(),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(1), 1),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(1), 1),
         );
         let storage_operation = Operation::new(
             global_counter.inc_pre(),
