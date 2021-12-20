@@ -31,7 +31,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         acc_mult_s: Column<Advice>,
         acc_mult_c: Column<Advice>,
         r_table: Vec<Expression<F>>,
-        is_s: bool,
     ) -> AccountLeafNonceBalanceConfig {
         let config = AccountLeafNonceBalanceConfig {};
 
@@ -59,12 +58,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let one = Expression::Constant(F::one());
             let c128 = Expression::Constant(F::from_u64(128));
             let c248 = Expression::Constant(F::from_u64(248));
-            let mut rot = -1;
-            if !is_s {
-                rot = -3;
-            }
-            let acc_prev = meta.query_advice(acc, Rotation(rot));
-            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation(rot));
+            let acc_prev = meta.query_advice(acc, Rotation::prev());
+            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
             let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
             let nonce_len = s_advices0.clone() - c128.clone();

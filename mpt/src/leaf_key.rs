@@ -133,7 +133,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
                 "Leaf key acc s_advice0",
-                q_enable.clone() * (s_advice0 - c32.clone()) * sel2.clone(),
+                q_enable.clone()
+                    * (s_advice0 - c32.clone())
+                    * sel2.clone()
+                    * is_short.clone(),
             ));
 
             let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
@@ -168,10 +171,13 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1, we have 32 in s_advices[0].
+            // If sel2 = 1, we have 32 in s_advices[1].
             constraints.push((
                 "Leaf key acc s_advice1",
-                q_enable.clone() * (s_advice1 - c32) * sel2.clone(),
+                q_enable.clone()
+                    * (s_advice1 - c32)
+                    * sel2.clone()
+                    * is_long.clone(),
             ));
 
             let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -185,7 +191,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long
-                + c_rlp1 * key_mult.clone() * r_table[30].clone();
+                + c_rlp1 * key_mult.clone() * r_table[29].clone();
 
             // Key RLC is be checked to verify that the proper key is used.
             constraints.push((
