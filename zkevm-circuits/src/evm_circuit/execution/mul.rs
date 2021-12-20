@@ -364,12 +364,12 @@ mod test {
     }
 
     #[test]
-    fn add_gadget_simple() {
+    fn mul_gadget_simple() {
         test_ok(OpcodeId::MUL, 0x030201.into(), 0x060504.into());
     }
 
     #[test]
-    fn add_gadget_rand() {
+    fn mul_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
         test_ok(OpcodeId::MUL, a, b);
