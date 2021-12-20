@@ -1,4 +1,8 @@
-use super::{MemoryOp, Op, OpEnum, Operation, StackOp, StorageOp, Target};
+use super::{
+    AccountDestructedOp, AccountOp, MemoryOp, Op, OpEnum, Operation, StackOp,
+    StorageOp, Target, TxAccessListAccountOp, TxAccessListStorageSlotOp,
+    TxRefundOp,
+};
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
 
@@ -21,6 +25,14 @@ pub struct OperationContainer {
     pub(crate) memory: Vec<Operation<MemoryOp>>,
     pub(crate) stack: Vec<Operation<StackOp>>,
     pub(crate) storage: Vec<Operation<StorageOp>>,
+    pub(crate) tx_access_list_account: Vec<Operation<TxAccessListAccountOp>>,
+    pub(crate) tx_access_list_storage_slot:
+        Vec<Operation<TxAccessListStorageSlotOp>>,
+    pub(crate) tx_refund: Vec<Operation<TxRefundOp>>,
+    pub(crate) account: Vec<Operation<AccountOp>>,
+    pub(crate) account_destructed: Vec<Operation<AccountDestructedOp>>,
+    /* TODO
+     * pub(crate) call_context: Vec<Operation<CallContextOp>>, */
 }
 
 impl Default for OperationContainer {
@@ -37,6 +49,11 @@ impl OperationContainer {
             memory: Vec::new(),
             stack: Vec::new(),
             storage: Vec::new(),
+            tx_access_list_account: Vec::new(),
+            tx_access_list_storage_slot: Vec::new(),
+            tx_refund: Vec::new(),
+            account: Vec::new(),
+            account_destructed: Vec::new(),
         }
     }
 
@@ -58,6 +75,36 @@ impl OperationContainer {
             OpEnum::Storage(op) => {
                 self.storage.push(Operation::new(gc, op));
                 OperationRef::from((Target::Storage, self.storage.len()))
+            }
+            OpEnum::TxAccessListAccount(op) => {
+                self.tx_access_list_account.push(Operation::new(gc, op));
+                OperationRef::from((
+                    Target::TxAccessListAccount,
+                    self.tx_access_list_account.len(),
+                ))
+            }
+            OpEnum::TxAccessListStorageSlot(op) => {
+                self.tx_access_list_storage_slot
+                    .push(Operation::new(gc, op));
+                OperationRef::from((
+                    Target::TxAccessListStorageSlot,
+                    self.tx_access_list_storage_slot.len(),
+                ))
+            }
+            OpEnum::TxRefund(op) => {
+                self.tx_refund.push(Operation::new(gc, op));
+                OperationRef::from((Target::TxRefund, self.tx_refund.len()))
+            }
+            OpEnum::Account(op) => {
+                self.account.push(Operation::new(gc, op));
+                OperationRef::from((Target::Account, self.account.len()))
+            }
+            OpEnum::AccountDestructed(op) => {
+                self.account_destructed.push(Operation::new(gc, op));
+                OperationRef::from((
+                    Target::AccountDestructed,
+                    self.account_destructed.len(),
+                ))
             }
         }
     }

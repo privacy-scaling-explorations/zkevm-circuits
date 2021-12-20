@@ -64,9 +64,7 @@ mod mstore_tests {
     use super::*;
     use crate::{
         bytecode,
-        circuit_input_builder::{
-            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
-        },
+        circuit_input_builder::{ExecStep, TransactionContext},
         eth_types::Word,
         evm::{MemoryAddress, StackAddress},
         mock,
@@ -88,13 +86,11 @@ mod mstore_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
-        let mut tx = Transaction::new(&block.eth_tx);
+        let mut test_builder = block.new_circuit_input_builder();
+        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
         // Generate step corresponding to MSTORE
@@ -160,15 +156,11 @@ mod mstore_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder = CircuitInputBuilder::new(
-            &block.eth_block.clone(),
-            block.ctants.clone(),
-        );
+        let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
-        let mut tx = Transaction::new(&block.eth_tx);
+        let mut test_builder = block.new_circuit_input_builder();
+        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
         // Generate step corresponding to MSTORE

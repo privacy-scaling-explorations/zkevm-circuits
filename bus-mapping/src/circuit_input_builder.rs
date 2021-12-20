@@ -10,7 +10,7 @@ use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
 use crate::operation::RW;
 use crate::operation::{Op, Operation};
-use crate::state_db::StateDB;
+use crate::state_db::{CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use ethers_core::utils::{get_contract_address, get_create2_address};
@@ -252,6 +252,8 @@ pub struct Call {
     is_root: bool,
     /// Address where this call is being executed
     pub address: Address,
+    /// Code Source
+    code_source: CodeSource,
     /// Code Hash
     code_hash: Hash,
 }
@@ -341,27 +343,40 @@ pub struct Transaction {
 
 impl Transaction {
     /// Create a new Self.
-    pub fn new(eth_tx: &eth_types::Transaction) -> Self {
+    pub fn new(
+        sdb: &StateDB,
+        code_db: &mut CodeDB,
+        eth_tx: &eth_types::Transaction,
+    ) -> Result<Self, Error> {
         let mut calls = Vec::new();
-        let code_hash = Hash::zero();
         if let Some(address) = eth_tx.to {
+            // Contract Call / Transfer
+            let (found, account) = sdb.get_account(&address);
+            if !found {
+                return Err(Error::AccountNotFound(address));
+            }
+            let code_hash = account.code_hash;
             calls.push(Call {
                 kind: CallKind::Call,
                 is_static: false,
                 is_root: true,
                 address,
+                code_source: CodeSource::Address(address),
                 code_hash,
             });
         } else {
+            // Contract creation
+            let code_hash = code_db.insert(eth_tx.input.to_vec());
             calls.push(Call {
                 kind: CallKind::Create,
                 is_static: false,
                 is_root: true,
-                address: Address::zero(),
+                address: get_contract_address(eth_tx.from, eth_tx.nonce),
+                code_source: CodeSource::Tx,
                 code_hash,
             });
         }
-        Self {
+        Ok(Self {
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             from: eth_tx.from,
@@ -371,7 +386,7 @@ impl Transaction {
 
             calls,
             steps: Vec::new(),
-        }
+        })
     }
 
     /// Wether this [`Transaction`] is a create one
@@ -389,20 +404,27 @@ impl Transaction {
         &mut self.steps
     }
 
+    /// Return the list of calls of this transaction.
+    pub fn calls(&self) -> &[Call] {
+        &self.calls
+    }
+
     fn push_call(
         &mut self,
         parent_index: usize,
         kind: CallKind,
         address: Address,
+        code_source: CodeSource,
+        code_hash: Hash,
     ) -> usize {
         let is_static =
             kind == CallKind::StaticCall || self.calls[parent_index].is_static;
-        let code_hash = Hash::zero();
         self.calls.push(Call {
             kind,
             is_static,
             is_root: false,
             address,
+            code_source,
             code_hash,
         });
         self.calls.len() - 1
@@ -414,6 +436,8 @@ impl Transaction {
 pub struct CircuitInputStateRef<'a> {
     /// StateDB
     pub sdb: &'a mut StateDB,
+    /// CodeDB
+    pub code_db: &'a mut CodeDB,
     /// Block
     pub block: &'a mut Block,
     /// Block Context
@@ -424,18 +448,6 @@ pub struct CircuitInputStateRef<'a> {
     pub tx_ctx: &'a mut TransactionContext,
     /// Step
     pub step: &'a mut ExecStep,
-}
-
-/// Helper function to push a call into a Transaction and TransactionContext
-fn push_call(
-    tx: &mut Transaction,
-    tx_ctx: &mut TransactionContext,
-    kind: CallKind,
-    address: Address,
-) {
-    let parent_index = tx_ctx.call_index();
-    let index = tx.push_call(parent_index, kind, address);
-    tx_ctx.push_call_index_ctx(index, CallContext { swc: 0 });
 }
 
 impl<'a> CircuitInputStateRef<'a> {
@@ -468,182 +480,25 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a new [`Call`] into the [`Transaction`], and add its index and
     /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
-    pub fn push_call(&mut self, kind: CallKind, address: Address) {
-        push_call(self.tx, self.tx_ctx, kind, address)
-    }
-}
-
-#[derive(Debug)]
-/// Builder to generate a complete circuit input from data gathered from a geth
-/// instance. This structure is the centre of the crate and is intended to be
-/// the only entry point to it. The `CircuitInputBuilder` works in several
-/// steps:
-///
-/// 1. Take a [`eth_types::Block`] to build the circuit input associated with
-/// the block. 2. For each [`eth_types::Transaction`] in the block, take the
-/// [`eth_types::GethExecTrace`] to    build the circuit input associated with
-/// each transaction, and the bus-mapping operations    associated with each
-/// `eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
-///
-/// The generated bus-mapping operations are:
-/// [`StackOp`](crate::operation::StackOp)s,
-/// [`MemoryOp`](crate::operation::MemoryOp)s and
-/// [`StorageOp`](crate::operation::StorageOp), which correspond to each
-/// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
-/// the State Proof witnesses are already generated on a structured manner and
-/// ready to be added into the State circuit.
-pub struct CircuitInputBuilder {
-    /// StateDB key-value DB
-    pub sdb: StateDB,
-    /// Map of account codes by code hash
-    pub codes: HashMap<Hash, Vec<u8>>,
-    /// Block
-    pub block: Block,
-    /// Block Context
-    pub block_ctx: BlockContext,
-}
-
-impl<'a> CircuitInputBuilder {
-    /// Create a new CircuitInputBuilder from the given `eth_block` and
-    /// `constants`.
-    pub fn new<TX>(
-        eth_block: &eth_types::Block<TX>,
-        constants: ChainConstants,
-    ) -> Self {
-        Self {
-            sdb: StateDB::new(),
-            codes: HashMap::new(),
-            block: Block::new(eth_block, constants),
-            block_ctx: BlockContext::new(),
-        }
-    }
-
-    /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
-    /// maintains, contextualized to a particular transaction and a
-    /// particular execution step in that transaction.
-    pub fn state_ref(
-        &'a mut self,
-        tx: &'a mut Transaction,
-        tx_ctx: &'a mut TransactionContext,
-        step: &'a mut ExecStep,
-    ) -> CircuitInputStateRef {
-        CircuitInputStateRef {
-            sdb: &mut self.sdb,
-            block: &mut self.block,
-            block_ctx: &mut self.block_ctx,
-            tx,
-            tx_ctx,
-            step,
-        }
-    }
-
-    /// Handle a transaction with its corresponding execution trace to generate
-    /// all the associated operations.  Each operation is registered in
-    /// `self.block.container`, and each step stores the [`OperationRef`] to
-    /// each of the generated operations.
-    pub fn handle_tx(
+    pub fn push_call(
         &mut self,
-        eth_tx: &eth_types::Transaction,
-        geth_trace: &GethExecTrace,
-    ) -> Result<(), Error> {
-        let mut tx = Transaction::new(eth_tx);
-        let mut tx_ctx = TransactionContext::new(eth_tx);
-        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-            let mut step = ExecStep::new(
-                geth_step,
-                tx_ctx.call_index(),
-                self.block_ctx.gc,
-                tx_ctx.call_ctx().swc,
-            );
-            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx, &mut step);
-            geth_step.op.gen_associated_ops(
-                &mut state_ref,
-                &geth_trace.struct_logs[index..],
-            )?;
-
-            if let Some(geth_next_step) = geth_trace.struct_logs.get(index + 1)
-            {
-                if geth_step.depth + 1 == geth_next_step.depth {
-                    // Handle *CALL*/CREATE*
-                    let address = state_ref.call_address(geth_step)?;
-                    let kind = CallKind::try_from(geth_step.op)?;
-                    push_call(&mut tx, &mut tx_ctx, kind, address);
-                } else if geth_step.depth - 1 == geth_next_step.depth {
-                    // Handle *CALL*/CREATE* return
-                    if tx_ctx.call_stack.len() == 1 {
-                        return Err(Error::InvalidGethExecStep(
-                            "handle_tx: call stack will be empty",
-                            Box::new(geth_step.clone()),
-                        ));
-                    }
-                    let (_, call_ctx) = tx_ctx
-                        .pop_call_index_ctx()
-                        .expect("call stack is empty");
-                    // If the return was successful, accumulate the swc from the
-                    // subcall.
-                    if !geth_next_step.stack.last()?.is_zero() {
-                        tx_ctx.call_ctx_mut().swc += call_ctx.swc;
-                    }
-                }
-            }
-            tx.steps.push(step);
-        }
-        self.block.txs.push(tx);
-        Ok(())
+        kind: CallKind,
+        address: Address,
+        code_source: CodeSource,
+        code_hash: Hash,
+    ) {
+        let parent_index = self.tx_ctx.call_index();
+        let index = self.tx.push_call(
+            parent_index,
+            kind,
+            address,
+            code_source,
+            code_hash,
+        );
+        self.tx_ctx
+            .push_call_index_ctx(index, CallContext { swc: 0 });
     }
-}
 
-fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_WRITE_PROTECTION {
-        ExecError::WriteProtection
-    } else if error == GETH_ERR_OUT_OF_GAS
-        || error == GETH_ERR_GAS_UINT_OVERFLOW
-    {
-        // NOTE: We report a GasUintOverflow error as an OutOfGas error
-        let oog_err = match op {
-            OpcodeId::SHA3 => OogError::Sha3,
-            OpcodeId::CALLDATACOPY => OogError::CallDataCopy,
-            OpcodeId::CODECOPY => OogError::CodeCopy,
-            OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
-            OpcodeId::RETURNDATACOPY => OogError::ReturnDataCopy,
-            OpcodeId::LOG0
-            | OpcodeId::LOG2
-            | OpcodeId::LOG3
-            | OpcodeId::LOG4 => OogError::Log,
-            OpcodeId::CALL => OogError::Call,
-            OpcodeId::CALLCODE => OogError::CallCode,
-            OpcodeId::DELEGATECALL => OogError::DelegateCall,
-            OpcodeId::CREATE2 => OogError::Create2,
-            OpcodeId::STATICCALL => OogError::StaticCall,
-            OpcodeId::MLOAD
-            | OpcodeId::MSTORE
-            | OpcodeId::MSTORE8
-            | OpcodeId::CREATE
-            | OpcodeId::RETURN
-            | OpcodeId::REVERT => OogError::PureMemory,
-            _ => OogError::Constant,
-        };
-        ExecError::OutOfGas(oog_err)
-    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
-        ExecError::StackOverflow
-    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
-        ExecError::StackUnderflow
-    } else if error.starts_with(GETH_ERR_INVALID_OPCODE) {
-        ExecError::InvalidOpcode
-    } else {
-        panic!("Unknown GethExecStep.error: {}", error);
-    }
-}
-
-/// Retreive the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code(step: &GethExecStep) -> Result<&[u8], Error> {
-    let offset = step.stack.nth_last(1)?;
-    let length = step.stack.nth_last(2)?;
-    Ok(&step.memory.0[offset.low_u64() as usize
-        ..(offset.low_u64() + length.low_u64()) as usize])
-}
-
-impl<'a> CircuitInputStateRef<'a> {
     /// Return the contract address of a CREATE step.  This is calculated by
     /// inspecting the current address and its nonce from the StateDB.
     fn create_address(&self) -> Result<Address, Error> {
@@ -678,6 +533,53 @@ impl<'a> CircuitInputStateRef<'a> {
             OpcodeId::CREATE2 => self.create2_address(step)?,
             _ => return Err(Error::OpcodeIdNotCallType),
         })
+    }
+
+    /// Handle a *CALL*/CREATE* step.
+    fn handle_call_create(&mut self, step: &GethExecStep) -> Result<(), Error> {
+        let kind = CallKind::try_from(step.op)?;
+        let address = self.call_address(step)?;
+        let (code_source, code_hash) = match kind {
+            CallKind::Create | CallKind::Create2 => {
+                let init_code = get_create_init_code(step)?;
+                let code_hash = self.code_db.insert(init_code.to_vec());
+                (CodeSource::Memory, code_hash)
+            }
+            _ => {
+                let (found, account) = self.sdb.get_account(&address);
+                if !found {
+                    return Err(Error::AccountNotFound(address));
+                }
+                (CodeSource::Address(address), (account.code_hash))
+            }
+        };
+        self.push_call(kind, address, code_source, code_hash);
+        Ok(())
+    }
+
+    /// Handle a return step caused by any opcode that causes a return to the
+    /// previous call context.
+    fn handle_return(
+        &mut self,
+        step: &GethExecStep,
+        next_step: &GethExecStep,
+    ) -> Result<(), Error> {
+        if self.tx_ctx.call_stack.len() == 1 {
+            return Err(Error::InvalidGethExecStep(
+                "handle_tx: call stack will be empty",
+                Box::new(step.clone()),
+            ));
+        }
+        let (_, call_ctx) = self
+            .tx_ctx
+            .pop_call_index_ctx()
+            .expect("call stack is empty");
+        // If the return was successful, accumulate the swc from the
+        // subcall.
+        if !next_step.stack.last()?.is_zero() {
+            self.tx_ctx.call_ctx_mut().swc += call_ctx.swc;
+        }
+        Ok(())
     }
 
     fn get_step_err(
@@ -827,6 +729,172 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 }
 
+#[derive(Debug)]
+/// Builder to generate a complete circuit input from data gathered from a geth
+/// instance. This structure is the centre of the crate and is intended to be
+/// the only entry point to it. The `CircuitInputBuilder` works in several
+/// steps:
+///
+/// 1. Take a [`eth_types::Block`] to build the circuit input associated with
+/// the block. 2. For each [`eth_types::Transaction`] in the block, take the
+/// [`eth_types::GethExecTrace`] to    build the circuit input associated with
+/// each transaction, and the bus-mapping operations    associated with each
+/// `eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
+///
+/// The generated bus-mapping operations are:
+/// [`StackOp`](crate::operation::StackOp)s,
+/// [`MemoryOp`](crate::operation::MemoryOp)s and
+/// [`StorageOp`](crate::operation::StorageOp), which correspond to each
+/// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
+/// the State Proof witnesses are already generated on a structured manner and
+/// ready to be added into the State circuit.
+pub struct CircuitInputBuilder {
+    /// StateDB key-value DB
+    pub sdb: StateDB,
+    /// Map of account codes by code hash
+    pub code_db: CodeDB,
+    /// Block
+    pub block: Block,
+    /// Block Context
+    pub block_ctx: BlockContext,
+}
+
+impl<'a> CircuitInputBuilder {
+    /// Create a new CircuitInputBuilder from the given `eth_block` and
+    /// `constants`.
+    pub fn new<TX>(
+        sdb: StateDB,
+        code_db: CodeDB,
+        eth_block: &eth_types::Block<TX>,
+        constants: ChainConstants,
+    ) -> Self {
+        Self {
+            sdb,
+            code_db,
+            block: Block::new(eth_block, constants),
+            block_ctx: BlockContext::new(),
+        }
+    }
+
+    /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
+    /// maintains, contextualized to a particular transaction and a
+    /// particular execution step in that transaction.
+    pub fn state_ref(
+        &'a mut self,
+        tx: &'a mut Transaction,
+        tx_ctx: &'a mut TransactionContext,
+        step: &'a mut ExecStep,
+    ) -> CircuitInputStateRef {
+        CircuitInputStateRef {
+            sdb: &mut self.sdb,
+            code_db: &mut self.code_db,
+            block: &mut self.block,
+            block_ctx: &mut self.block_ctx,
+            tx,
+            tx_ctx,
+            step,
+        }
+    }
+
+    /// Create a new Transaction from a [`eth_types::Transaction`].
+    pub fn new_tx(
+        &mut self,
+        eth_tx: &eth_types::Transaction,
+    ) -> Result<Transaction, Error> {
+        Transaction::new(&self.sdb, &mut self.code_db, eth_tx)
+    }
+
+    /// Handle a transaction with its corresponding execution trace to generate
+    /// all the associated operations.  Each operation is registered in
+    /// `self.block.container`, and each step stores the [`OperationRef`] to
+    /// each of the generated operations.
+    pub fn handle_tx(
+        &mut self,
+        eth_tx: &eth_types::Transaction,
+        geth_trace: &GethExecTrace,
+    ) -> Result<(), Error> {
+        let mut tx = self.new_tx(eth_tx)?;
+        let mut tx_ctx = TransactionContext::new(eth_tx);
+        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
+            let mut step = ExecStep::new(
+                geth_step,
+                tx_ctx.call_index(),
+                self.block_ctx.gc,
+                tx_ctx.call_ctx().swc,
+            );
+            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx, &mut step);
+            geth_step.op.gen_associated_ops(
+                &mut state_ref,
+                &geth_trace.struct_logs[index..],
+            )?;
+
+            if let Some(geth_next_step) = geth_trace.struct_logs.get(index + 1)
+            {
+                if geth_step.depth + 1 == geth_next_step.depth {
+                    // Handle *CALL*/CREATE*
+                    state_ref.handle_call_create(geth_step)?;
+                } else if geth_step.depth - 1 == geth_next_step.depth {
+                    // Handle return
+                    state_ref.handle_return(geth_step, geth_next_step)?;
+                }
+            }
+            tx.steps.push(step);
+        }
+        self.block.txs.push(tx);
+        Ok(())
+    }
+}
+
+fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
+    if error == GETH_ERR_WRITE_PROTECTION {
+        ExecError::WriteProtection
+    } else if error == GETH_ERR_OUT_OF_GAS
+        || error == GETH_ERR_GAS_UINT_OVERFLOW
+    {
+        // NOTE: We report a GasUintOverflow error as an OutOfGas error
+        let oog_err = match op {
+            OpcodeId::SHA3 => OogError::Sha3,
+            OpcodeId::CALLDATACOPY => OogError::CallDataCopy,
+            OpcodeId::CODECOPY => OogError::CodeCopy,
+            OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
+            OpcodeId::RETURNDATACOPY => OogError::ReturnDataCopy,
+            OpcodeId::LOG0
+            | OpcodeId::LOG2
+            | OpcodeId::LOG3
+            | OpcodeId::LOG4 => OogError::Log,
+            OpcodeId::CALL => OogError::Call,
+            OpcodeId::CALLCODE => OogError::CallCode,
+            OpcodeId::DELEGATECALL => OogError::DelegateCall,
+            OpcodeId::CREATE2 => OogError::Create2,
+            OpcodeId::STATICCALL => OogError::StaticCall,
+            OpcodeId::MLOAD
+            | OpcodeId::MSTORE
+            | OpcodeId::MSTORE8
+            | OpcodeId::CREATE
+            | OpcodeId::RETURN
+            | OpcodeId::REVERT => OogError::PureMemory,
+            _ => OogError::Constant,
+        };
+        ExecError::OutOfGas(oog_err)
+    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
+        ExecError::StackOverflow
+    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
+        ExecError::StackUnderflow
+    } else if error.starts_with(GETH_ERR_INVALID_OPCODE) {
+        ExecError::InvalidOpcode
+    } else {
+        panic!("Unknown GethExecStep.error: {}", error);
+    }
+}
+
+/// Retreive the init_code from memory for {CREATE, CREATE2}
+pub fn get_create_init_code(step: &GethExecStep) -> Result<&[u8], Error> {
+    let offset = step.stack.nth_last(1)?;
+    let length = step.stack.nth_last(2)?;
+    Ok(&step.memory.0[offset.low_u64() as usize
+        ..(offset.low_u64() + length.low_u64()) as usize])
+}
+
 /// State and Code Access with "keys/index" used in the access operation.
 #[derive(Debug, PartialEq)]
 pub enum AccessValue {
@@ -918,7 +986,7 @@ impl From<Vec<Access>> for AccessSet {
 }
 
 /// Source of the code in the EVM execution.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum CodeSource {
     /// Code comes from a deployed contract at `Address`.
     Address(Address),
@@ -1101,12 +1169,11 @@ mod tracer_tests {
 
     impl CircuitInputBuilderTx {
         fn new(block: &mock::BlockData, geth_step: &GethExecStep) -> Self {
+            let mut builder = block.new_circuit_input_builder();
+            let tx = builder.new_tx(&block.eth_tx).unwrap();
             Self {
-                builder: CircuitInputBuilder::new(
-                    &block.eth_block,
-                    block.ctants.clone(),
-                ),
-                tx: Transaction::new(&block.eth_tx),
+                builder,
+                tx,
                 tx_ctx: TransactionContext::new(&block.eth_tx),
                 step: ExecStep::new(geth_step, 0, GlobalCounter(0), 0),
             }
@@ -1349,7 +1416,12 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at CREATE2
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         // Set up account and contract that exist during the second CREATE2
         builder.builder.sdb.set_account(
             &ADDR_B,
@@ -1456,7 +1528,12 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at CREATE
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::CodeStoreOutOfGas)
@@ -1545,7 +1622,12 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at RETURN
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::InvalidCode)
@@ -1632,7 +1714,12 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at RETURN
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::MaxCodeSizeExceeded)
@@ -1704,7 +1791,12 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at STOP
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             None
@@ -2184,7 +2276,12 @@ mod tracer_tests {
             .unwrap();
         let mut builder = CircuitInputBuilderTx::new(&block, step_create2);
         // Set up call context at CREATE2
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         let addr = builder.state_ref().create2_address(step_create2).unwrap();
 
         assert_eq!(addr.to_word(), addr_expect);
@@ -2272,7 +2369,12 @@ mod tracer_tests {
             .unwrap();
         let mut builder = CircuitInputBuilderTx::new(&block, step_create);
         // Set up call context at CREATE
-        builder.state_ref().push_call(CallKind::Create, *ADDR_B);
+        builder.state_ref().push_call(
+            CallKind::Create,
+            *ADDR_B,
+            CodeSource::Memory,
+            Hash::zero(),
+        );
         builder.builder.sdb.set_account(
             &ADDR_B,
             Account {

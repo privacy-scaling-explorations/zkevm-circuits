@@ -355,7 +355,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
 
 impl From<&bus_mapping::bytecode::Bytecode> for Bytecode {
     fn from(b: &bus_mapping::bytecode::Bytecode) -> Self {
-        Bytecode::new(b.to_bytes())
+        Bytecode::new(b.to_vec())
     }
 }
 
@@ -379,6 +379,7 @@ fn step_convert(
                     bus_mapping::operation::Target::Storage => {
                         index + stack_ops_len + memory_ops_len
                     }
+                    _ => unimplemented!(),
                 }
             })
             .collect(),
@@ -498,11 +499,7 @@ pub fn build_block_from_trace_code_at_start(
             bytecode,
         )
         .unwrap();
-    let mut builder =
-        bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-            &block.eth_block.clone(),
-            block.ctants.clone(),
-        );
+    let mut builder = block.new_circuit_input_builder();
     builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
     block_convert(bytecode, &builder.block)
