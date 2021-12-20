@@ -87,7 +87,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.fixed_column();
 
-        let acc_r = F::rand(); // TODO: generate from commitments
+        let acc_r = F::one(); // F::rand(); // TODO: generate from commitments
 
         let one = Expression::Constant(F::one());
         let mut r_table = vec![];
