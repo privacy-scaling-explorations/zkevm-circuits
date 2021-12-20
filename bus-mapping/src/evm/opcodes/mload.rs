@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, ToBigEndian};
+use crate::eth_types::{GethExecStep, ToBigEndian, Word};
 use crate::{
     evm::MemoryAddress,
     operation::{MemoryOp, StackOp, RW},
@@ -33,7 +33,12 @@ impl Opcode for Mload {
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        let mem_read_value = steps[1].memory.read_word(mem_read_addr)?;
+        // Accesses to memory that hasn't been initialized are valid, and return
+        // 0.
+        let mem_read_value = steps[1]
+            .memory
+            .read_word(mem_read_addr)
+            .unwrap_or_else(|_| Word::zero());
 
         //
         // First stack write
@@ -84,16 +89,12 @@ mod mload_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder = CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder = CircuitInputBuilder::new(
-            block.eth_block,
-            block.block_ctants.clone(),
-        );
+        let mut test_builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 

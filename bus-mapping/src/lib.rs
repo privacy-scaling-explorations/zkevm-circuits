@@ -48,10 +48,12 @@
 //! by the provided trace.
 //!
 //! ```rust
-//! use bus_mapping::{BlockConstants, Error};
+//! use bus_mapping::Error;
 //! use bus_mapping::evm::Gas;
 //! use bus_mapping::mock;
-//! use bus_mapping::eth_types::{self, Address, Word, Hash, U64, GethExecTrace, GethExecStep};
+//! use bus_mapping::eth_types::{
+//!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
+//! };
 //! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 //! use pairing::arithmetic::FieldExt;
 //!
@@ -103,23 +105,17 @@
 //! ]
 //! "#;
 //!
-//! let block_ctants = BlockConstants::new(
-//!     Hash::zero(),
-//!     Address::zero(),
-//!     Word::zero(),
-//!     U64::zero(),
-//!     Word::zero(),
-//!     Word::zero(),
-//!     Word::zero(),
-//!     Word::zero(),
-//! );
+//! let ctants = ChainConstants{
+//!     coinbase: Address::zero(),
+//!     chain_id: 0,
+//! };
 //!
 //! // We use some mock data as context for the trace
 //! let eth_block = mock::new_block();
 //! let eth_tx = mock::new_tx(&eth_block);
 //!
 //! let mut builder =
-//!     CircuitInputBuilder::new(eth_block, block_ctants);
+//!     CircuitInputBuilder::new(&eth_block, ctants);
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
@@ -226,6 +222,5 @@ pub mod eth_types;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod rpc;
-pub(crate) mod state_db;
+pub mod state_db;
 pub use error::Error;
-pub use exec_trace::BlockConstants;

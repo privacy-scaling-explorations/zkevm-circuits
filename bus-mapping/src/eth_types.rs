@@ -123,7 +123,7 @@ impl ToAddress for U256 {
     }
 }
 
-/// Ethereum Hash (160 bits).
+/// Ethereum Hash (256 bits).
 pub type Hash = types::H256;
 
 impl ToWord for Address {
@@ -140,6 +140,15 @@ impl<F: FieldExt> ToScalar<F> for Address {
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         F::from_bytes(&bytes).into()
     }
+}
+
+/// Chain specific constants
+#[derive(Debug, Clone)]
+pub struct ChainConstants {
+    /// Coinbase
+    pub coinbase: Address,
+    /// Chain ID
+    pub chain_id: u64,
 }
 
 /// Struct used to define the storage proof

@@ -9,8 +9,14 @@ use core::str::FromStr;
 use std::fmt;
 
 /// Represents a `MemoryAddress` of the EVM.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct MemoryAddress(pub(crate) usize);
+
+impl fmt::Debug for MemoryAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("0x{:06x}", self.0))
+    }
+}
 
 impl MemoryAddress {
     /// Returns the zero address for Memory targets.
