@@ -103,11 +103,8 @@ impl<F: FieldExt> AbsorbConfig<F> {
             || "Absorb state assignations",
             |mut region| {
                 let mut offset = 0;
-                let mut state_array = [F::zero(); 25];
                 // State at offset + 0
                 for (idx, (cell, value)) in in_state.iter().enumerate() {
-                    // Copy value into state_array
-                    state_array[idx] = *value;
                     let new_cell = region.assign_advice(
                         || format!("assign state {}", idx),
                         self.state[idx],
