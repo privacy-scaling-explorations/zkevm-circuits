@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
@@ -42,7 +42,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let c248 = Expression::Constant(F::from_u64(248));
+            let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let is_long = meta.query_advice(s_keccak0, Rotation::cur());
             let is_short = meta.query_advice(s_keccak1, Rotation::cur());
@@ -115,8 +115,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let sel1 = meta.query_advice(sel1, Rotation(rot));
             let sel2 = meta.query_advice(sel2, Rotation(rot));
 
-            let c32 = Expression::Constant(F::from_u64(32));
-            let c48 = Expression::Constant(F::from_u64(48));
+            let c32 = Expression::Constant(F::from(32));
+            let c48 = Expression::Constant(F::from(48));
 
             // For short RLP (key starts at s_advices[0]):
 

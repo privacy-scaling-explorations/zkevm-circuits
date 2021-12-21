@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::marker::PhantomData;
 
 use crate::param::HASH_WIDTH;
@@ -43,7 +43,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
             // We have codehash in c_advices.
 
-            let c160 = Expression::Constant(F::from_u64(160));
+            let c160 = Expression::Constant(F::from(160));
             let mut rot = -1;
             if !is_s {
                 rot = -2;

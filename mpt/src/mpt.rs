@@ -6,7 +6,7 @@ use halo2::{
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::{
@@ -192,7 +192,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 let mut exp = Expression::Constant(F::one());
                 for j in 0..8 {
                     word = word + hash[i * 8 + j].clone() * exp.clone();
-                    exp = exp * Expression::Constant(F::from_u64(256));
+                    exp = exp * Expression::Constant(F::from(256));
                 }
                 words.push(word)
             }
@@ -459,7 +459,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (is_branch_child_prev.clone()
                         - is_branch_child_cur.clone()) // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
                     * (node_index_prev.clone()
-                        - Expression::Constant(F::from_u64(15 as u64))), // node_index has to be 15
+                        - Expression::Constant(F::from(15 as u64))), // node_index has to be 15
             ));
 
             // When node_index is not 15, is_last_branch_child needs to be 0.
@@ -468,7 +468,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_not_first.clone()
                     * is_last_branch_child_cur.clone()
                     * (node_index_cur.clone() // for this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
-                        - Expression::Constant(F::from_u64(15 as u64))),
+                        - Expression::Constant(F::from(15 as u64))),
             ));
             // When node_index is 15, is_last_branch_child needs to be 1.
             constraints.push((
@@ -514,7 +514,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_account_leaf_storage_codehash_prev = meta
                 .query_advice(is_account_leaf_storage_codehash_c, Rotation(-2));
 
-            let c16 = Expression::Constant(F::from_u64(16));
+            let c16 = Expression::Constant(F::from(16));
             // If sel1 = 1, then modified_node is multiplied by 16.
             // If sel2 = 1, then modified_node is multiplied by 1.
             // NOTE: modified_node presents nibbles: n0, n1, ...
@@ -878,7 +878,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         // Storage first level branch hash for S - root in last account leaf.
         // TODO: S and C can be in the same lookup, but it's easier to debug if we have two.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
@@ -895,7 +895,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let acc_s = meta.query_advice(acc_s, Rotation::cur());
 
             // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
-            let c128 = Expression::Constant(F::from_u64(128));
+            let c128 = Expression::Constant(F::from(128));
             let mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
             let branch_acc_s1 = acc_s + c128 * mult_s;
 
@@ -931,7 +931,7 @@ impl<F: FieldExt> MPTConfig<F> {
         });
 
         // Storage first level branch hash for C - root in last account leaf.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
@@ -948,7 +948,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
 
             // TODO: acc_c currently doesn't have branch ValueNode info (which 128 if nil)
-            let c128 = Expression::Constant(F::from_u64(128));
+            let c128 = Expression::Constant(F::from(128));
             let mult_c = meta.query_advice(acc_mult_c, Rotation::cur());
             let branch_acc_c1 = acc_c + c128 * mult_c;
 
@@ -989,7 +989,7 @@ impl<F: FieldExt> MPTConfig<F> {
         // Check if (accumulated_s_rlc, hash1, hash2, hash3, hash4) is in keccak table,
         // where hash1, hash2, hash3, hash4 are stored in the previous branch and
         // accumulated_s_rlc presents the branch RLC.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
@@ -1006,7 +1006,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let acc_s = meta.query_advice(acc_s, Rotation::cur());
 
             // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
-            let c128 = Expression::Constant(F::from_u64(128));
+            let c128 = Expression::Constant(F::from(128));
             let mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
             let branch_acc_s1 = acc_s + c128 * mult_s;
 
@@ -1039,7 +1039,7 @@ impl<F: FieldExt> MPTConfig<F> {
         // Check if (accumulated_c_rlc, hash1, hash2, hash3, hash4) is in keccak table,
         // where hash1, hash2, hash3, hash4 are stored in the previous branch and
         // accumulated_c_rlc presents the branch RLC.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
@@ -1056,7 +1056,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
 
             // TODO: acc_c currently doesn't have branch ValueNode info (which 128 if nil)
-            let c128 = Expression::Constant(F::from_u64(128));
+            let c128 = Expression::Constant(F::from(128));
             let mult_c = meta.query_advice(acc_mult_c, Rotation::cur());
             let branch_acc_c1 = acc_c + c128 * mult_c;
 
@@ -1086,7 +1086,7 @@ impl<F: FieldExt> MPTConfig<F> {
         });
 
         // Check hash of a leaf.
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
@@ -1120,7 +1120,7 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
@@ -1242,11 +1242,12 @@ impl<F: FieldExt> MPTConfig<F> {
         let leaf_s_value_chip = LeafValueChip::<F>::configure(
             meta,
             |meta| {
-                let q_enable = meta.query_selector(q_enable);
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
                 let is_leaf_s_value =
                     meta.query_advice(is_leaf_s_value, Rotation::cur());
 
-                q_enable * is_leaf_s_value
+                q_not_first * is_leaf_s_value
             },
             s_rlp1,
             s_rlp2,
@@ -1261,11 +1262,12 @@ impl<F: FieldExt> MPTConfig<F> {
         let leaf_c_value_chip = LeafValueChip::<F>::configure(
             meta,
             |meta| {
-                let q_enable = meta.query_selector(q_enable);
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
                 let is_leaf_c_value =
                     meta.query_advice(is_leaf_c_value, Rotation::cur());
 
-                q_enable * is_leaf_c_value
+                q_not_first * is_leaf_c_value
             },
             s_rlp1,
             s_rlp2,
@@ -1444,14 +1446,14 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign is_branch_init"),
             self.is_branch_init,
             offset,
-            || Ok(F::from_u64(is_branch_init as u64)),
+            || Ok(F::from(is_branch_init as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign is_branch_child"),
             self.is_branch_child,
             offset,
-            || Ok(F::from_u64(is_branch_child as u64)),
+            || Ok(F::from(is_branch_child as u64)),
         )?;
 
         region.assign_advice(
@@ -1501,21 +1503,21 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign is_last_branch_child"),
             self.is_last_branch_child,
             offset,
-            || Ok(F::from_u64(is_last_branch_child as u64)),
+            || Ok(F::from(is_last_branch_child as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign node_index"),
             self.node_index,
             offset,
-            || Ok(F::from_u64(node_index as u64)),
+            || Ok(F::from(node_index as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign modified node"),
             self.modified_node,
             offset,
-            || Ok(F::from_u64(modified_node as u64)),
+            || Ok(F::from(modified_node as u64)),
         )?;
 
         region.assign_advice(
@@ -1549,72 +1551,72 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign is_modified"),
             self.is_modified,
             offset,
-            || Ok(F::from_u64((modified_node == node_index) as u64)),
+            || Ok(F::from((modified_node == node_index) as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign is_leaf_s"),
             self.is_leaf_s,
             offset,
-            || Ok(F::from_u64(is_leaf_s as u64)),
+            || Ok(F::from(is_leaf_s as u64)),
         )?;
         region.assign_advice(
             || format!("assign is_leaf_c"),
             self.is_leaf_c,
             offset,
-            || Ok(F::from_u64(is_leaf_c as u64)),
+            || Ok(F::from(is_leaf_c as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign is_leaf_s_value"),
             self.is_leaf_s_value,
             offset,
-            || Ok(F::from_u64(is_leaf_s_value as u64)),
+            || Ok(F::from(is_leaf_s_value as u64)),
         )?;
         region.assign_advice(
             || format!("assign is_leaf_c_value"),
             self.is_leaf_c_value,
             offset,
-            || Ok(F::from_u64(is_leaf_c_value as u64)),
+            || Ok(F::from(is_leaf_c_value as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign is account leaf key s"),
             self.is_account_leaf_key_s,
             offset,
-            || Ok(F::from_u64(is_account_leaf_key_s as u64)),
+            || Ok(F::from(is_account_leaf_key_s as u64)),
         )?;
         region.assign_advice(
             || format!("assign is account leaf nonce balance s"),
             self.is_account_leaf_nonce_balance_s,
             offset,
-            || Ok(F::from_u64(is_account_leaf_nonce_balance_s as u64)),
+            || Ok(F::from(is_account_leaf_nonce_balance_s as u64)),
         )?;
         region.assign_advice(
             || format!("assign is account leaf storage codehash s"),
             self.is_account_leaf_storage_codehash_s,
             offset,
-            || Ok(F::from_u64(is_account_leaf_storage_codehash_s as u64)),
+            || Ok(F::from(is_account_leaf_storage_codehash_s as u64)),
         )?;
         region.assign_advice(
             || format!("assign is account leaf storage codehash c"),
             self.is_account_leaf_storage_codehash_c,
             offset,
-            || Ok(F::from_u64(is_account_leaf_storage_codehash_c as u64)),
+            || Ok(F::from(is_account_leaf_storage_codehash_c as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign s_rlp1"),
             self.s_rlp1,
             offset,
-            || Ok(F::from_u64(row[0] as u64)),
+            || Ok(F::from(row[0] as u64)),
         )?;
 
         region.assign_advice(
             || format!("assign s_rlp2"),
             self.s_rlp2,
             offset,
-            || Ok(F::from_u64(row[1] as u64)),
+            || Ok(F::from(row[1] as u64)),
         )?;
 
         for idx in 0..HASH_WIDTH {
@@ -1622,7 +1624,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || format!("assign s_advice {}", idx),
                 self.s_advices[idx],
                 offset,
-                || Ok(F::from_u64(row[LAYOUT_OFFSET + idx] as u64)),
+                || Ok(F::from(row[LAYOUT_OFFSET + idx] as u64)),
             )?;
         }
 
@@ -1642,13 +1644,13 @@ impl<F: FieldExt> MPTConfig<F> {
             || format!("assign c_rlp1"),
             self.c_rlp1,
             offset,
-            || Ok(F::from_u64(get_val(WITNESS_ROW_WIDTH / 2))),
+            || Ok(F::from(get_val(WITNESS_ROW_WIDTH / 2))),
         )?;
         region.assign_advice(
             || format!("assign c_rlp2"),
             self.c_rlp2,
             offset,
-            || Ok(F::from_u64(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
+            || Ok(F::from(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
         )?;
 
         for (idx, _c) in self.c_advices.iter().enumerate() {
@@ -1657,7 +1659,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || format!("assign c_advice {}", idx),
                 self.c_advices[idx],
                 offset,
-                || Ok(F::from_u64(val)),
+                || Ok(F::from(val)),
             )?;
         }
         Ok(())
@@ -1713,7 +1715,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || "Keccak s",
                 *column,
                 offset,
-                || Ok(F::from_u64(s_words[ind])),
+                || Ok(F::from(s_words[ind])),
             )?;
         }
         for (ind, column) in self.c_keccak.iter().enumerate() {
@@ -1721,7 +1723,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 || "Keccak c",
                 *column,
                 offset,
-                || Ok(F::from_u64(c_words[ind])),
+                || Ok(F::from(c_words[ind])),
             )?;
         }
 
@@ -1878,27 +1880,27 @@ impl<F: FieldExt> MPTConfig<F> {
                             // Branch (length 340) with three bytes of RLP meta data
                             // [249,1,81,128,16,...
 
-                            acc_s = F::from_u64(row[BRANCH_0_S_START] as u64)
-                                + F::from_u64(row[BRANCH_0_S_START + 1] as u64)
+                            acc_s = F::from(row[BRANCH_0_S_START] as u64)
+                                + F::from(row[BRANCH_0_S_START + 1] as u64)
                                     * self.acc_r;
                             acc_mult_s = self.acc_r * self.acc_r;
 
                             if row[BRANCH_0_S_START] == 249 {
-                                acc_s += F::from_u64(
-                                    row[BRANCH_0_S_START + 2] as u64,
-                                ) * acc_mult_s;
+                                acc_s +=
+                                    F::from(row[BRANCH_0_S_START + 2] as u64)
+                                        * acc_mult_s;
                                 acc_mult_s *= self.acc_r;
                             }
 
-                            acc_c = F::from_u64(row[BRANCH_0_C_START] as u64)
-                                + F::from_u64(row[BRANCH_0_C_START + 1] as u64)
+                            acc_c = F::from(row[BRANCH_0_C_START] as u64)
+                                + F::from(row[BRANCH_0_C_START + 1] as u64)
                                     * self.acc_r;
                             acc_mult_c = self.acc_r * self.acc_r;
 
                             if row[BRANCH_0_C_START] == 249 {
-                                acc_c += F::from_u64(
-                                    row[BRANCH_0_C_START + 2] as u64,
-                                ) * acc_mult_c;
+                                acc_c +=
+                                    F::from(row[BRANCH_0_C_START + 2] as u64)
+                                        * acc_mult_c;
                                 acc_mult_c *= self.acc_r;
                             }
 
@@ -1927,14 +1929,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                 let mut sel2 = F::zero();
                                 if key_rlc_sel {
                                     key_rlc = key_rlc
-                                        + F::from_u64(modified_node as u64)
-                                            * F::from_u64(16)
+                                        + F::from(modified_node as u64)
+                                            * F::from(16)
                                             * key_rlc_mult;
                                     // key_rlc_mult stays the same
                                     sel1 = F::one();
                                 } else {
                                     key_rlc = key_rlc
-                                        + F::from_u64(modified_node as u64)
+                                        + F::from(modified_node as u64)
                                             * key_rlc_mult;
                                     key_rlc_mult = key_rlc_mult * self.acc_r;
                                     sel2 = F::one();
@@ -1987,8 +1989,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             // empty node at position 1: 0
                             // non-empty node at position 1: 160
 
-                            let c128 = F::from_u64(128 as u64);
-                            let c160 = F::from_u64(160 as u64);
+                            let c128 = F::from(128 as u64);
+                            let c160 = F::from(160 as u64);
 
                             let compute_acc_and_mult =
                                 |branch_acc: &mut F,
@@ -2004,9 +2006,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                         *branch_mult =
                                             *branch_mult * self.acc_r;
                                         for i in 0..HASH_WIDTH {
-                                            *branch_acc += F::from_u64(
-                                                row[start + i] as u64,
-                                            ) * *branch_mult;
+                                            *branch_acc +=
+                                                F::from(row[start + i] as u64)
+                                                    * *branch_mult;
                                             *branch_mult =
                                                 *branch_mult * self.acc_r;
                                         }
@@ -2119,7 +2121,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         || format!("assign acc_s"),
                                         self.s_keccak[0],
                                         offset,
-                                        || Ok(F::from_u64(is_long as u64)),
+                                        || Ok(F::from(is_long as u64)),
                                     )
                                     .ok();
                                 region
@@ -2127,7 +2129,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                         || format!("assign acc_c"),
                                         self.s_keccak[1],
                                         offset,
-                                        || Ok(F::from_u64(is_short as u64)),
+                                        || Ok(F::from(is_short as u64)),
                                     )
                                     .ok();
                             };
@@ -2142,9 +2144,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                         if start + i == 70 {
                                             println!("adsf");
                                         }
-                                        *acc +=
-                                            F::from_u64(row[start + i] as u64)
-                                                * *mult;
+                                        *acc += F::from(row[start + i] as u64)
+                                            * *mult;
                                         *mult = *mult * self.acc_r;
                                     }
                                 };
@@ -2156,7 +2157,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     if !key_rlc_sel {
                                         // That means we had key_rlc_sel=true when setting rlc last time,
                                         // that means we have nibble+48 in s_advices[0].
-                                        *key_rlc += F::from_u64(
+                                        *key_rlc += F::from(
                                             (row[start + 1] - 48) as u64,
                                         ) * *key_rlc_mult;
                                         *key_rlc_mult *= self.acc_r;
@@ -2240,7 +2241,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 let key_len = (row[2] - 128) as usize;
                                 for i in 0..3 + key_len {
                                     acc_s +=
-                                        F::from_u64(row[i] as u64) * acc_mult_s;
+                                        F::from(row[i] as u64) * acc_mult_s;
                                     acc_mult_s = acc_mult_s * self.acc_r;
                                 }
                                 self.assign_acc(
@@ -2400,7 +2401,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut mult = F::one();
 
                     for i in t.iter() {
-                        rlc = rlc + F::from_u64(*i as u64) * mult;
+                        rlc = rlc + F::from(*i as u64) * mult;
                         mult = mult * self.acc_r;
                     }
                     region.assign_fixed(
@@ -2421,7 +2422,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "Keccak table",
                             *column,
                             offset,
-                            || Ok(F::from_u64(val)),
+                            || Ok(F::from(val)),
                         )?;
                     }
                     offset += 1;
@@ -2448,7 +2449,7 @@ mod tests {
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
 
-    use pasta_curves::{arithmetic::FieldExt, pallas, EqAffine};
+    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
     use std::{fs, marker::PhantomData};
 
     #[test]
@@ -2493,8 +2494,8 @@ mod tests {
         }
 
         // for debugging:
-        let path = "mpt/tests";
-        // let path = "tests";
+        // let path = "mpt/tests";
+        let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
@@ -2509,14 +2510,13 @@ mod tests {
                 let file = std::fs::File::open(f.path());
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
-                let circuit = MyCircuit::<pallas::Base> {
+                let circuit = MyCircuit::<Fp> {
                     _marker: PhantomData,
                     witness: w,
                 };
 
                 let prover =
-                    MockProver::<pallas::Base>::run(9, &circuit, vec![])
-                        .unwrap();
+                    MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*

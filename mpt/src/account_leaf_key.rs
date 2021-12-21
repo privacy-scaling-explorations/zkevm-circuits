@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
@@ -92,8 +92,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             // 131 - 18 presents the key length.
             // key length is at s_advices[0], key is from s_advices[1] to s_advices[1+key_len] (at most c_rlp1)
 
-            let c32 = Expression::Constant(F::from_u64(32));
-            let c128 = Expression::Constant(F::from_u64(128));
+            let c32 = Expression::Constant(F::from(32));
+            let c128 = Expression::Constant(F::from(128));
             let key_len =
                 meta.query_advice(s_advices[0], Rotation::cur()) - c128;
 
@@ -178,8 +178,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let sel1 = meta.query_advice(sel1, Rotation(rot));
             let sel2 = meta.query_advice(sel2, Rotation(rot));
 
-            let c32 = Expression::Constant(F::from_u64(32));
-            let c48 = Expression::Constant(F::from_u64(48));
+            let c32 = Expression::Constant(F::from(32));
+            let c48 = Expression::Constant(F::from(48));
 
             // If sel1 = 1, we have nibble+48 in s_advices[0].
             let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());

@@ -1392,6 +1392,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0f40b2dcd8bc322217a5f6559ae5f9e9d1de202a2ecee2e9eafcbece7562a4f"
 dependencies = [
+ "bitvec 0.22.3",
  "rand_core",
  "subtle",
 ]
@@ -1687,6 +1688,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c363a5301b8f153d80747126a04b3c82073b9fe3130571a9d170cacdeaf7912"
 dependencies = [
+ "byteorder",
  "ff 0.10.1",
  "rand_core",
  "subtle",
@@ -2055,6 +2057,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "pairing_bn256",
+ "pasta_curves",
  "plotters",
  "pretty_assertions",
 ]
@@ -2154,6 +2157,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9f1c5b025cda876f66ef43a113f91ebc9f4ccef34843000e0adf6ebbab84e21"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "mpt"
+version = "0.1.0"
+dependencies = [
+ "halo2",
+ "itertools",
+ "keccak256",
+ "num-bigint",
+ "num-traits",
+ "pairing_bn256",
+ "pasta_curves",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2418,6 +2436,21 @@ checksum = "77e0b28ace46c5a396546bcf443bf422b57049617433d8854227352a4a9b24e7"
 dependencies = [
  "base64ct",
  "rand_core",
+ "subtle",
+]
+
+[[package]]
+name = "pasta_curves"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a21914ddc589b74e7638091c8e91a4e8b083ee5e1d0066d64407131b7570799"
+dependencies = [
+ "blake2b_simd",
+ "ff 0.10.1",
+ "group 0.10.0",
+ "lazy_static",
+ "rand",
+ "static_assertions",
  "subtle",
 ]
 

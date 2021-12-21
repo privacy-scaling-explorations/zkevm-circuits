@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
@@ -56,8 +56,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // TODO: nonce and balance compared to the input
 
             let one = Expression::Constant(F::one());
-            let c128 = Expression::Constant(F::from_u64(128));
-            let c248 = Expression::Constant(F::from_u64(248));
+            let c128 = Expression::Constant(F::from(128));
+            let c248 = Expression::Constant(F::from(248));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
             let acc_mult_tmp = meta.query_advice(acc_mult_c, Rotation::cur());
@@ -142,7 +142,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 z_expr = z_expr * z_counter.clone();
             }
 
-            let c32 = Expression::Constant(F::from_u64(32));
+            let c32 = Expression::Constant(F::from(32));
             let mut counter = c32.clone() - nonce_len.clone() + one.clone();
             let mut is_trailing_zero_or_last_key = one.clone();
 

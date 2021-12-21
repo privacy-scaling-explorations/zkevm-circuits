@@ -5,7 +5,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::{marker::PhantomData, u64};
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
@@ -44,8 +44,8 @@ impl<F: FieldExt> BranchAccChip<F> {
             let branch_mult_cur =
                 meta.query_advice(branch_mult, Rotation::cur());
 
-            let c128 = Expression::Constant(F::from_u64(128 as u64));
-            let c160 = Expression::Constant(F::from_u64(160 as u64));
+            let c128 = Expression::Constant(F::from(128 as u64));
+            let c160 = Expression::Constant(F::from(160 as u64));
 
             // empty:
             // branch_acc_curr = branch_acc_prev + 128 * branch_mult_prev
