@@ -1,2 +1,6 @@
 /target
 *.png
+Cargo.lock
+.vscode
+.DS_Store
+

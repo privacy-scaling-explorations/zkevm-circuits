@@ -87,7 +87,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.fixed_column();
 
-        let acc_r = F::one(); // F::rand(); // TODO: generate from commitments
+        let acc_r = F::rand(); // TODO: generate from commitments
 
         let one = Expression::Constant(F::one());
         let mut r_table = vec![];
@@ -1800,7 +1800,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut node_index: u8 = 0;
                     let mut acc_s = F::zero();
                     let mut acc_mult_s = F::zero();
-
                     let mut acc_nonce_balance = F::zero();
                     let mut acc_mult_nonce_balance = F::zero();
 
@@ -1809,6 +1808,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
+
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
@@ -2065,7 +2065,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut is_account_leaf_key_s = false;
                             let mut is_account_leaf_nonce_balance_s = false;
                             let mut is_account_leaf_storage_codehash_s = false;
-
                             let mut is_account_leaf_storage_codehash_c = false;
 
                             if row[row.len() - 1] == 2 {
