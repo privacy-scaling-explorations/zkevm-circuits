@@ -83,10 +83,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let acc = meta.query_advice(acc, Rotation::cur());
             let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
 
-            constraints.push((
-                "leaf key acc",
-                q_enable.clone() * (expr.clone() - acc),
-            ));
+            constraints.push(("leaf key acc", q_enable.clone() * (expr - acc)));
 
             // Let's say we have a key of length 3, then: [248,112,131,59,158,160,0,0,0,...
             // 131 - 18 presents the key length.
@@ -144,7 +141,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             }
 
             // Now we need to ensure after key_len there are only 0s.
-            let mut k_counter = c32 - key_len.clone();
+            let mut k_counter = c32 - key_len;
             let mut is_not_key = k_counter.clone();
 
             constraints.push((
@@ -183,18 +180,18 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             // If sel1 = 1, we have nibble+48 in s_advices[0].
             let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
-            let mut key_rlc_acc = key_rlc_acc_start.clone()
+            let mut key_rlc_acc = key_rlc_acc_start
                 + (s_advice1.clone() - c48)
                     * key_mult_start.clone()
                     * sel1.clone();
             let mut key_mult =
-                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+                key_mult_start.clone() * r_table[0].clone() * sel1;
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
             // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
                 "Account leaf key acc s_advice1",
-                q_enable.clone() * (s_advice1 - c32) * sel2.clone(),
+                q_enable.clone() * (s_advice1 - c32) * sel2,
             ));
 
             let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -207,15 +204,14 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            key_rlc_acc =
-                key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[30].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult * r_table[30].clone();
 
             let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
 
             // Key RLC is be checked to verify that the proper key is used.
             constraints.push((
                 "Account address RLC",
-                q_enable.clone() * (key_rlc_acc - key_rlc),
+                q_enable * (key_rlc_acc - key_rlc),
             ));
 
             constraints

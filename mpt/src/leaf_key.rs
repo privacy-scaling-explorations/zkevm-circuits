@@ -48,7 +48,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_short = meta.query_advice(s_keccak1, Rotation::cur());
             constraints.push((
                 "is long",
-                q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
+                q_enable.clone() * is_long * (s_rlp1.clone() - c248),
             ));
 
             // TODO: is_long, is_short are booleans
@@ -91,8 +91,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // key is at most of length 32, so it doesn't go further than c_rlp1
 
             let acc = meta.query_advice(acc, Rotation::cur());
-            constraints
-                .push(("Leaf key acc", q_enable.clone() * (hash_rlc - acc)));
+            constraints.push(("Leaf key acc", q_enable * (hash_rlc - acc)));
 
             constraints
         });
@@ -163,21 +162,18 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // If sel1 = 1, we have nibble+48 in s_advices[0].
             let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
-            let mut key_rlc_acc_long = key_rlc_acc_start.clone()
+            let mut key_rlc_acc_long = key_rlc_acc_start
                 + (s_advice1.clone() - c48)
                     * key_mult_start.clone()
                     * sel1.clone();
             let mut key_mult =
-                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
+                key_mult_start.clone() * r_table[0].clone() * sel1;
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
             // If sel2 = 1, we have 32 in s_advices[1].
             constraints.push((
                 "Leaf key acc s_advice1",
-                q_enable.clone()
-                    * (s_advice1 - c32)
-                    * sel2.clone()
-                    * is_long.clone(),
+                q_enable.clone() * (s_advice1 - c32) * sel2 * is_long.clone(),
             ));
 
             let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -190,13 +186,13 @@ impl<F: FieldExt> LeafKeyChip<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            key_rlc_acc_long = key_rlc_acc_long
-                + c_rlp1 * key_mult.clone() * r_table[29].clone();
+            key_rlc_acc_long =
+                key_rlc_acc_long + c_rlp1 * key_mult * r_table[29].clone();
 
             // Key RLC is be checked to verify that the proper key is used.
             constraints.push((
                 "Key RLC long",
-                q_enable.clone() * (key_rlc_acc_long - key_rlc) * is_long,
+                q_enable * (key_rlc_acc_long - key_rlc) * is_long,
             ));
 
             constraints

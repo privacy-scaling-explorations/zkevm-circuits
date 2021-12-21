@@ -64,7 +64,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
             let nonce_len = s_advices0.clone() - c128.clone();
 
-            let mut expr = acc_prev.clone()
+            let mut expr = acc_prev
                 + meta.query_advice(s_rlp1, Rotation::cur())
                     * acc_mult_prev.clone();
             let mut rind = 0;
@@ -89,9 +89,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             rind += 1;
 
             expr = expr
-                + s_advices0.clone()
-                    * acc_mult_prev.clone()
-                    * r_table[rind].clone();
+                + s_advices0 * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
 
             let mut r_wrapped = false;
@@ -115,7 +113,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             }
 
             let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
-            let balance_len = c_advices0.clone() - c128.clone();
+            let balance_len = c_advices0.clone() - c128;
             expr = expr + c_advices0 * acc_mult_tmp.clone();
             rind = 0;
             for ind in 1..HASH_WIDTH {
@@ -127,7 +125,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let acc = meta.query_advice(acc, Rotation::cur());
             constraints.push((
                 "leaf nonce balance acc",
-                q_enable.clone() * (expr.clone() - acc),
+                q_enable.clone() * (expr - acc),
             ));
 
             // nonzero_table has some nonzero values at the positions where we still have nonce bytes
@@ -199,7 +197,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             // TODO: integrate this in for loops above with query_advices
             // Now we need to ensure after nonce there are only 0s in s_advices.
-            let mut k_counter = c32.clone() - nonce_len.clone();
+            let mut k_counter = c32.clone() - nonce_len;
             let mut is_not_balance = k_counter.clone();
             // is_not_nonce becomes 0 in the positions where we have nonce
             for ind in (0..HASH_WIDTH).rev() {
@@ -211,7 +209,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     q_enable.clone() * s * is_not_balance.clone(),
                 ));
             }
-            k_counter = c32 - balance_len.clone();
+            k_counter = c32 - balance_len;
             is_not_balance = k_counter.clone();
             // is_not_balance becomes 0 in the positions where we have balance
             for ind in (0..HASH_WIDTH).rev() {

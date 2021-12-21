@@ -44,8 +44,8 @@ impl<F: FieldExt> BranchAccChip<F> {
             let branch_mult_cur =
                 meta.query_advice(branch_mult, Rotation::cur());
 
-            let c128 = Expression::Constant(F::from(128 as u64));
-            let c160 = Expression::Constant(F::from(160 as u64));
+            let c128 = Expression::Constant(F::from(128_u64));
+            let c160 = Expression::Constant(F::from(160_u64));
 
             // empty:
             // branch_acc_curr = branch_acc_prev + 128 * branch_mult_prev
@@ -55,7 +55,7 @@ impl<F: FieldExt> BranchAccChip<F> {
                     * (c160.clone() - rlp2.clone())
                     * (branch_acc_cur.clone()
                         - branch_acc_prev.clone()
-                        - c128.clone() * branch_mult_prev.clone()),
+                        - c128 * branch_mult_prev.clone()),
             ));
             constraints.push((
                 "branch acc mult empty",
@@ -66,7 +66,7 @@ impl<F: FieldExt> BranchAccChip<F> {
             ));
 
             // non-empty
-            let mut expr = c160.clone() * branch_mult_prev.clone();
+            let mut expr = c160 * branch_mult_prev.clone();
             for (ind, col) in advices.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 expr =
@@ -76,14 +76,14 @@ impl<F: FieldExt> BranchAccChip<F> {
                 "branch acc non-empty",
                 q_enable.clone()
                     * rlp2.clone()
-                    * (branch_acc_cur.clone() - branch_acc_prev.clone() - expr),
+                    * (branch_acc_cur - branch_acc_prev - expr),
             ));
             constraints.push((
                 "branch acc mult non-empty",
-                q_enable.clone()
-                    * rlp2.clone()
-                    * (branch_mult_cur.clone()
-                        - branch_mult_prev.clone()
+                q_enable
+                    * rlp2
+                    * (branch_mult_cur
+                        - branch_mult_prev
                             * r_table[R_TABLE_LEN - 1].clone()
                             * r_table[0].clone()),
             ));

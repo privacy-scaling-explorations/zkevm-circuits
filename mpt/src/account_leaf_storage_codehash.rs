@@ -50,7 +50,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             }
             let acc_prev = meta.query_advice(acc, Rotation(rot));
             let acc_mult_prev = meta.query_advice(acc_mult, Rotation(rot));
-            let mut curr_r = acc_mult_prev.clone();
+            let mut curr_r = acc_mult_prev;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             constraints.push((
@@ -62,7 +62,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 q_enable.clone() * (c_rlp2.clone() - c160),
             ));
 
-            let mut expr = acc_prev.clone() + s_rlp2.clone() * curr_r.clone();
+            let mut expr = acc_prev + s_rlp2 * curr_r.clone();
             curr_r = curr_r * acc_r;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
@@ -81,7 +81,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let acc = meta.query_advice(acc, Rotation::cur());
             constraints.push((
                 "account leaf storage codehash acc",
-                q_enable.clone() * (expr.clone() - acc),
+                q_enable * (expr - acc),
             ));
 
             constraints
