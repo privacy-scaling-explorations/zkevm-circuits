@@ -1,12 +1,15 @@
 //! Mock types and functions to generate mock data useful for tests
 use crate::address;
 use crate::bytecode::Bytecode;
+use crate::circuit_input_builder::CircuitInputBuilder;
 use crate::eth_types::{self, Address, Bytes, ChainConstants, Hash, Word, U64};
 use crate::evm::Gas;
 use crate::external_tracer;
 use crate::external_tracer::BlockConstants;
+use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 
 /// Mock chain ID
 pub const CHAIN_ID: u64 = 1338;
@@ -82,6 +85,10 @@ pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
 /// to build the circuit inputs.
 #[derive(Debug)]
 pub struct BlockData {
+    /// StateDB
+    pub sdb: StateDB,
+    /// CodeDB
+    pub code_db: CodeDB,
     /// Block from geth
     pub eth_block: eth_types::Block<()>,
     /// Transaction from geth
@@ -122,7 +129,23 @@ impl BlockData {
             )?
             .to_vec(),
         };
+        let mut sdb = StateDB::new();
+        let mut code_db = CodeDB::new();
+        for account in accounts {
+            let code_hash = code_db.insert(account.code.to_vec());
+            sdb.set_account(
+                &account.address,
+                state_db::Account {
+                    nonce: Word::zero(),
+                    balance: account.balance,
+                    storage: HashMap::new(),
+                    code_hash,
+                },
+            );
+        }
         Ok(Self {
+            sdb,
+            code_db,
             eth_block,
             eth_tx,
             ctants,
@@ -190,7 +213,8 @@ impl BlockData {
     }
 
     /// Create a new block with a single tx that leads to the geth_steps passed
-    /// by argument.
+    /// by argument.  The returned BlockData contains an empty StateDB and
+    /// CodeDB.
     pub fn new_single_tx_geth_steps(
         geth_steps: Vec<eth_types::GethExecStep>,
     ) -> Self {
@@ -202,12 +226,27 @@ impl BlockData {
             failed: false,
             struct_logs: geth_steps,
         };
+        let sdb = StateDB::new();
+        let code_db = CodeDB::new();
         Self {
+            sdb,
+            code_db,
             eth_block,
             eth_tx,
             ctants,
             geth_trace,
         }
+    }
+
+    /// Generate a new CircuitInputBuilder initialized with the context of the
+    /// BlockData.
+    pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder {
+        CircuitInputBuilder::new(
+            self.sdb.clone(),
+            self.code_db.clone(),
+            &self.eth_block,
+            self.ctants.clone(),
+        )
     }
 }
 
@@ -226,6 +265,6 @@ pub fn new_tracer_account(code: &Bytecode) -> external_tracer::Account {
     external_tracer::Account {
         address: new_tracer_tx().target,
         balance: Word::from(555u64),
-        code: hex::encode(code.to_bytes()),
+        code: Bytes::from(code.to_vec()),
     }
 }

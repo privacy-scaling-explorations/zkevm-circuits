@@ -5,7 +5,6 @@ package main
 */
 import "C"
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"main/gethutil"
@@ -76,7 +75,7 @@ type Transaction struct {
 type AccountData struct {
 	Address common.Address `json:"address"`
 	Balance *hexutil.Big   `json:"balance"`
-	Code    string         `json:"code"`
+	Code    hexutil.Bytes  `json:"code"`
 }
 
 type JsonConfig struct {
@@ -122,10 +121,7 @@ func (this *GethConfig) UnmarshalJSON(b []byte) error {
 	for _, contract := range jConfig.Accounts {
 		address := contract.Address
 		balance := contract.Balance.ToInt()
-		code, err := hex.DecodeString(contract.Code)
-		if err != nil {
-			return err
-		}
+		code := contract.Code
 		this.contracts = append(this.contracts, gethutil.Account{Address: address, Balance: balance, Bytecode: code})
 	}
 

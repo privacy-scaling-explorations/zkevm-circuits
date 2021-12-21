@@ -7,30 +7,35 @@ use crate::{
 };
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the POP stack operation
+/// corresponding to the [`OpcodeId::JUMPI`](crate::evm::OpcodeId::JUMPI)
+/// `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Pop;
+pub(crate) struct Jumpi;
 
-impl Opcode for Pop {
+impl Opcode for Jumpi {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
-        // `POP` needs only one read operation
-        let op = StackOp::new(
+        // `JUMPI` needs two read operation
+        state.push_op(StackOp::new(
             RW::READ,
             step.stack.nth_last_filled(0),
             step.stack.nth_last(0)?,
-        );
-        state.push_op(op);
+        ));
+        state.push_op(StackOp::new(
+            RW::READ,
+            step.stack.nth_last_filled(1),
+            step.stack.nth_last(1)?,
+        ));
 
         Ok(())
     }
 }
 
 #[cfg(test)]
-mod pop_tests {
+mod jumpi_tests {
     use super::*;
     use crate::{
         bytecode,
@@ -42,13 +47,24 @@ mod pop_tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn pop_opcode_impl() -> Result<(), Error> {
-        let code = bytecode! {
-            PUSH1(0x80)
+    fn jumpi_opcode_impl() -> Result<(), Error> {
+        let condition = 1;
+        let destination = 69;
+
+        let mut code = bytecode! {
+            PUSH32(condition)
+            PUSH32(destination)
             #[start]
-            POP
+            JUMPI
             STOP
         };
+        for _ in 0..(destination - 68) {
+            code.write(0);
+        }
+        code.append(&bytecode! {
+            JUMPDEST
+            STOP
+        });
 
         // Get the execution steps from the external tracer
         let block =
@@ -61,7 +77,7 @@ mod pop_tests {
         let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate step corresponding to POP
+        // Generate step corresponding to JUMP
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
@@ -70,19 +86,26 @@ mod pop_tests {
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
-        // Add StackOp associated to the stack pop.
+
+        // Add the last 2 Stack reads
+        state_ref.push_op(StackOp::new(
+            RW::READ,
+            StackAddress::from(1022),
+            Word::from(destination),
+        ));
         state_ref.push_op(StackOp::new(
             RW::READ,
             StackAddress::from(1023),
-            Word::from(0x80u32),
+            Word::from(condition),
         ));
+
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
 
         // Compare first step bus mapping instance
         assert_eq!(
             builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance
+            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
         );
 
         // Compare containers

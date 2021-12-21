@@ -37,9 +37,7 @@ mod dup_tests {
     use super::*;
     use crate::{
         bytecode,
-        circuit_input_builder::{
-            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
-        },
+        circuit_input_builder::{ExecStep, TransactionContext},
         evm::StackAddress,
         mock, word,
     };
@@ -62,13 +60,11 @@ mod dup_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
-        let mut tx = Transaction::new(&block.eth_tx);
+        let mut test_builder = block.new_circuit_input_builder();
+        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
         // Generate steps corresponding to DUP1, DUP3, DUP5

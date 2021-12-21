@@ -2,6 +2,7 @@ use crate::arith_helpers::*;
 use crate::common::*;
 use crate::keccak_arith::*;
 use halo2::circuit::Cell;
+use halo2::circuit::Layouter;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
@@ -80,24 +81,29 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// Doc this
     pub fn not_last_round(
         &self,
-        region: &mut Region<'_, F>,
-        mut offset: usize,
-        in_state: [F; 25],
+        layouter: &mut impl Layouter<F>,
+        in_state: [(Cell, F); 25],
         out_state: [F; 25],
         absolute_row: usize,
-    ) -> Result<(), Error> {
-        // Enable `q_not_last`.
-        self.q_not_last.enable(region, offset)?;
+    ) -> Result<[(Cell, F); 25], Error> {
+        layouter.assign_region(
+            || "Assign IotaB9 for steady step",
+            |mut region| {
+                let mut offset = 0;
+                // Enable `q_not_last`.
+                self.q_not_last.enable(&mut region, offset)?;
 
-        // Assign state
-        self.assign_state(region, offset, in_state)?;
+                // Assign state
+                self.assign_in_state(&mut region, offset, in_state)?;
 
-        // Assign round_constant at offset + 0
-        self.assign_round_ctant_b9(region, offset, absolute_row)?;
+                // Assign round_constant at offset + 0
+                self.assign_round_ctant_b9(&mut region, offset, absolute_row)?;
 
-        offset += 1;
-        // Assign out_state at offset + 1
-        self.assign_state(region, offset, out_state)
+                offset += 1;
+                // Assign out_state at offset + 1
+                self.assign_out_state(&mut region, offset, out_state)
+            },
+        )
     }
 
     /// Assignment for iota_b9 in the context of the final round, where
@@ -105,13 +111,12 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// advice column.
     pub fn last_round(
         &self,
-        region: &mut Region<'_, F>,
-        mut offset: usize,
+        layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
         out_state: [F; 25],
         absolute_row: usize,
         flag: (Cell, F),
-    ) -> Result<(), Error> {
+    ) -> Result<[(Cell, F); 25], Error> {
         // Copies the `[(Cell,F);25]` to the `state` Advice column.
         let copy_state = |region: &mut Region<'_, F>,
                           offset: usize,
@@ -147,37 +152,77 @@ impl<F: FieldExt> IotaB9Config<F> {
             Ok(())
         };
 
-        // Enable `q_last`.
-        self.q_last.enable(region, offset)?;
+        layouter.assign_region(
+            || "Assign IotaB9 for final round step",
+            |mut region| {
+                let mut offset = 0;
 
-        // Copy state at offset + 0
-        copy_state(region, offset, state)?;
-        // Assign round_ctant at offset + 0.
-        self.assign_round_ctant_b9(region, offset, absolute_row)?;
+                // Enable `q_last`.
+                self.q_last.enable(&mut region, offset)?;
 
-        offset += 1;
-        // Copy flag at `round_ctant_b9` at offset + 1
-        copy_flag(region, offset, flag)?;
-        // Assign out state at offset + 1
-        self.assign_state(region, offset, out_state)
+                // Copy state at offset + 0
+                copy_state(&mut region, offset, state)?;
+                // Assign round_ctant at offset + 0.
+                self.assign_round_ctant_b9(&mut region, offset, absolute_row)?;
+
+                offset += 1;
+                // Copy flag at `round_ctant_b9` at offset + 1
+                copy_flag(&mut region, offset, flag)?;
+                // Assign out state at offset + 1
+                self.assign_out_state(&mut region, offset, out_state)
+            },
+        )
+    }
+
+    // Assign `[(Cell,F);25]` at `state` `Advice` column at the provided offset
+    // enforcing equality between Cells.
+    fn assign_in_state(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        state: [(Cell, F); 25],
+    ) -> Result<[(Cell, F); 25], Error> {
+        let mut out_vec: Vec<(Cell, F)> = vec![];
+        let out_state: [(Cell, F); 25] = {
+            for (idx, lane) in state.iter().enumerate() {
+                let out_cell = region.assign_advice(
+                    || format!("assign in_state[{}] and enforce equalty", idx),
+                    self.state[idx],
+                    offset,
+                    || Ok(lane.1),
+                )?;
+                // Enforce Cell equalty
+                region.constrain_equal(lane.0, out_cell)?;
+                // Push new generated Cell to out state vec with it's
+                // corresponding value.
+                out_vec.push((out_cell, lane.1));
+            }
+            out_vec.try_into().unwrap()
+        };
+        Ok(out_state)
     }
 
     // Assign `[F;25]` at `state` `Advice` column at the provided offset.
-    fn assign_state(
+    fn assign_out_state(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
-    ) -> Result<(), Error> {
-        for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-        }
-        Ok(())
+    ) -> Result<[(Cell, F); 25], Error> {
+        let mut out_vec: Vec<(Cell, F)> = vec![];
+        let out_state: [(Cell, F); 25] = {
+            for (idx, lane) in state.iter().enumerate() {
+                let out_cell = region.assign_advice(
+                    || format!("assign out state {}", idx),
+                    self.state[idx],
+                    offset,
+                    || Ok(*lane),
+                )?;
+                out_vec.push((out_cell, *lane));
+            }
+            out_vec.try_into().unwrap()
+        };
+        Ok(out_state)
     }
 
     /// Assigns the ROUND_CONSTANTS_BASE_9 to the `absolute_row` passed as an
@@ -294,7 +339,7 @@ mod tests {
                 let offset: usize = 0;
 
                 let val: F = (self.flag as u64).into();
-                layouter.assign_region(
+                let (in_state, flag) = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `is_mixing` flag
@@ -321,19 +366,19 @@ mod tests {
                             }
                             state.try_into().unwrap()
                         };
-
-                        // Assign `in_state`, `out_state`, round and flag
-                        config.last_round(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                            self.round_ctant,
-                            flag,
-                        )?;
-                        Ok(())
+                        Ok((in_state, flag))
                     },
-                )
+                )?;
+
+                // Assign `in_state`, `out_state`, round and flag
+                config.last_round(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.round_ctant,
+                    flag,
+                )?;
+                Ok(())
             }
         }
 
@@ -427,7 +472,11 @@ mod tests {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let column = meta.advice_column();
+                        meta.enable_equality(column.into());
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
@@ -449,20 +498,36 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let offset: usize = 0;
-                // Assign input state at offset + 0
-                layouter.assign_region(
-                    || "assign input state",
+                let in_state = layouter.assign_region(
+                    || "Wittnes & assignation",
                     |mut region| {
-                        // Start IotaB9 config without copy at offset = 0
-                        config.not_last_round(
-                            &mut region,
-                            offset,
-                            self.in_state,
-                            self.out_state,
-                            self.round_ctant_b9,
-                        )
+                        let offset: usize = 0;
+
+                        // Witness `state`
+                        let in_state: [(Cell, F); 25] = {
+                            let mut state: Vec<(Cell, F)> =
+                                Vec::with_capacity(25);
+                            for (idx, val) in self.in_state.iter().enumerate() {
+                                let cell = region.assign_advice(
+                                    || "witness input state",
+                                    config.state[idx],
+                                    offset,
+                                    || Ok(*val),
+                                )?;
+                                state.push((cell, *val))
+                            }
+                            state.try_into().unwrap()
+                        };
+                        Ok(in_state)
                     },
+                )?;
+
+                // Start IotaB9 config without copy at offset = 0
+                config.not_last_round(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                    self.round_ctant_b9,
                 )?;
 
                 Ok(())
