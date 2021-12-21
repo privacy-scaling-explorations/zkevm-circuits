@@ -9,6 +9,7 @@ extern "C" {
     fn CreateTrace(str: *const c_char) -> *const c_char;
     fn FreeString(str: *const c_char);
 }
+
 /// Creates the trace
 pub fn trace(config: &str) -> Result<String, Error> {
     // Create a string we can pass into Go
@@ -30,6 +31,7 @@ pub fn trace(config: &str) -> Result<String, Error> {
 
     // Return the trace
     match result.is_empty() || result.starts_with("Error") {
+        // TODO: Embed error from result into TracingError if possible
         true => Err(Error::TracingError),
         false => Ok(result),
     }

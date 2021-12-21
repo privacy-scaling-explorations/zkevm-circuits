@@ -5,7 +5,7 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
@@ -34,7 +34,7 @@ impl<F: FieldExt> LeafValueChip<F> {
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
 
-        meta.lookup(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
 
             let mut rlc = meta.query_advice(acc, Rotation::prev());

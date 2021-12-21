@@ -1,17 +1,9 @@
 //! Error module for the bus-mapping crate
 
+use crate::eth_types::{Address, GethExecStep, Word};
 use core::fmt::{Display, Formatter, Result as FmtResult};
+use ethers_providers::ProviderError;
 use std::error::Error as StdError;
-
-/// Error type for a failure while parsig an EVM word as returned by geth in the json-serialized
-/// trace.
-#[derive(Debug)]
-pub enum EvmWordParsingError {
-    /// Hex string containing the EVM word is greater than 32*2
-    TooLong,
-    /// Hex decoding error
-    Hex(hex::FromHexError),
-}
 
 /// Error type for any BusMapping related failure.
 #[derive(Debug)]
@@ -22,8 +14,6 @@ pub enum Error {
     MemAddressParsing,
     /// Error while parsing a `StackAddress`.
     StackAddressParsing,
-    /// Error while parsing an `EvmWord`.
-    EvmWordParsing(EvmWordParsingError),
     /// Error while trying to convert to an incorrect `OpcodeId`.
     InvalidOpConversion,
     /// Serde de/serialization error.
@@ -34,10 +24,29 @@ pub enum Error {
     InvalidMemoryPointer,
     /// Error while trying to access an invalid/empty Storage key.
     InvalidStorageKey,
-    /// Error when an EvmWord is too big to be converted into a `MemoryAddress`.
+    /// Error when an EvmWord is too big to be converted into a
+    /// `MemoryAddress`.
     WordToMemAddr,
     /// Error while generating a trace.
     TracingError,
+    /// JSON-RPC related error.
+    JSONRpcError(ProviderError),
+    /// OpcodeId is not a call type.
+    OpcodeIdNotCallType,
+    /// Account not found in the StateDB
+    AccountNotFound(Address),
+    /// Storage key not found in the StateDB
+    StorageKeyNotFound(Address, Word),
+    /// Unable to figure out error at a [`GethExecStep`]
+    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
+    /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
+    InvalidGethExecStep(&'static str, Box<GethExecStep>),
+}
+
+impl From<ProviderError> for Error {
+    fn from(err: ProviderError) -> Self {
+        Error::JSONRpcError(err)
+    }
 }
 
 impl Display for Error {
@@ -47,12 +56,6 @@ impl Display for Error {
 }
 
 impl StdError for Error {}
-
-impl From<EvmWordParsingError> for Error {
-    fn from(err: EvmWordParsingError) -> Self {
-        Error::EvmWordParsing(err)
-    }
-}
 
 /// Error type for a failure while parsig an Ethereum Address.
 #[derive(Debug)]

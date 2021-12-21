@@ -1,10 +1,12 @@
-use crate::error::Error;
+use crate::{error::Error, evm::GasCost};
 use core::fmt::Debug;
-use serde::{Deserialize, Serialize};
+use lazy_static::lazy_static;
+use regex::Regex;
+use serde::{de, Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,
@@ -229,8 +231,8 @@ pub enum OpcodeId {
     /// `REVERT`
     REVERT,
 
-    /// `INVALID`
-    INVALID,
+    /// Invalid opcode
+    INVALID(u8),
 
     // External opcodes
     /// `SHA3`
@@ -440,7 +442,7 @@ impl OpcodeId {
             OpcodeId::SWAP16 => 0x9fu8,
             OpcodeId::RETURN => 0xf3u8,
             OpcodeId::REVERT => 0xfdu8,
-            OpcodeId::INVALID => 0xfeu8,
+            OpcodeId::INVALID(b) => *b,
             OpcodeId::SHA3 => 0x20u8,
             OpcodeId::ADDRESS => 0x30u8,
             OpcodeId::BALANCE => 0x31u8,
@@ -477,6 +479,160 @@ impl OpcodeId {
             OpcodeId::DELEGATECALL => 0xf4u8,
             OpcodeId::STATICCALL => 0xfau8,
             OpcodeId::SELFDESTRUCT => 0xffu8,
+        }
+    }
+
+    /// Returns the `OpcodeId` as a `u64`.
+    pub const fn as_u64(&self) -> u64 {
+        self.as_u8() as u64
+    }
+
+    /// Returns the constant gas cost of `OpcodeId`
+    pub const fn constant_gas_cost(&self) -> GasCost {
+        match self {
+            OpcodeId::STOP => GasCost::ZERO,
+            OpcodeId::ADD => GasCost::FASTEST,
+            OpcodeId::MUL => GasCost::FAST,
+            OpcodeId::SUB => GasCost::FASTEST,
+            OpcodeId::DIV => GasCost::FAST,
+            OpcodeId::SDIV => GasCost::FAST,
+            OpcodeId::MOD => GasCost::FAST,
+            OpcodeId::SMOD => GasCost::FAST,
+            OpcodeId::ADDMOD => GasCost::MID,
+            OpcodeId::MULMOD => GasCost::MID,
+            OpcodeId::EXP => GasCost::ZERO,
+            OpcodeId::SIGNEXTEND => GasCost::FAST,
+            OpcodeId::LT => GasCost::FASTEST,
+            OpcodeId::GT => GasCost::FASTEST,
+            OpcodeId::SLT => GasCost::FASTEST,
+            OpcodeId::SGT => GasCost::FASTEST,
+            OpcodeId::EQ => GasCost::FASTEST,
+            OpcodeId::ISZERO => GasCost::FASTEST,
+            OpcodeId::AND => GasCost::FASTEST,
+            OpcodeId::OR => GasCost::FASTEST,
+            OpcodeId::XOR => GasCost::FASTEST,
+            OpcodeId::NOT => GasCost::FASTEST,
+            OpcodeId::BYTE => GasCost::FASTEST,
+            OpcodeId::SHL => GasCost::FASTEST,
+            OpcodeId::SHR => GasCost::FASTEST,
+            OpcodeId::SAR => GasCost::FASTEST,
+            OpcodeId::SHA3 => GasCost::SHA3,
+            OpcodeId::ADDRESS => GasCost::QUICK,
+            OpcodeId::BALANCE => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::ORIGIN => GasCost::QUICK,
+            OpcodeId::CALLER => GasCost::QUICK,
+            OpcodeId::CALLVALUE => GasCost::QUICK,
+            OpcodeId::CALLDATALOAD => GasCost::FASTEST,
+            OpcodeId::CALLDATASIZE => GasCost::QUICK,
+            OpcodeId::CALLDATACOPY => GasCost::FASTEST,
+            OpcodeId::CODESIZE => GasCost::QUICK,
+            OpcodeId::CODECOPY => GasCost::FASTEST,
+            OpcodeId::GASPRICE => GasCost::QUICK,
+            OpcodeId::EXTCODESIZE => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::EXTCODECOPY => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::RETURNDATASIZE => GasCost::QUICK,
+            OpcodeId::RETURNDATACOPY => GasCost::FASTEST,
+            OpcodeId::EXTCODEHASH => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::BLOCKHASH => GasCost::EXT,
+            OpcodeId::COINBASE => GasCost::QUICK,
+            OpcodeId::TIMESTAMP => GasCost::QUICK,
+            OpcodeId::NUMBER => GasCost::QUICK,
+            OpcodeId::DIFFICULTY => GasCost::QUICK,
+            OpcodeId::GASLIMIT => GasCost::QUICK,
+            OpcodeId::CHAINID => GasCost::QUICK,
+            OpcodeId::SELFBALANCE => GasCost::FAST,
+            OpcodeId::BASEFEE => GasCost::QUICK,
+            OpcodeId::POP => GasCost::QUICK,
+            OpcodeId::MLOAD => GasCost::FASTEST,
+            OpcodeId::MSTORE => GasCost::FASTEST,
+            OpcodeId::MSTORE8 => GasCost::FASTEST,
+            OpcodeId::SLOAD => GasCost::ZERO,
+            OpcodeId::SSTORE => GasCost::ZERO,
+            OpcodeId::JUMP => GasCost::MID,
+            OpcodeId::JUMPI => GasCost::SLOW,
+            OpcodeId::PC => GasCost::QUICK,
+            OpcodeId::MSIZE => GasCost::QUICK,
+            OpcodeId::GAS => GasCost::QUICK,
+            OpcodeId::JUMPDEST => GasCost::ONE,
+            OpcodeId::PUSH1 => GasCost::FASTEST,
+            OpcodeId::PUSH2 => GasCost::FASTEST,
+            OpcodeId::PUSH3 => GasCost::FASTEST,
+            OpcodeId::PUSH4 => GasCost::FASTEST,
+            OpcodeId::PUSH5 => GasCost::FASTEST,
+            OpcodeId::PUSH6 => GasCost::FASTEST,
+            OpcodeId::PUSH7 => GasCost::FASTEST,
+            OpcodeId::PUSH8 => GasCost::FASTEST,
+            OpcodeId::PUSH9 => GasCost::FASTEST,
+            OpcodeId::PUSH10 => GasCost::FASTEST,
+            OpcodeId::PUSH11 => GasCost::FASTEST,
+            OpcodeId::PUSH12 => GasCost::FASTEST,
+            OpcodeId::PUSH13 => GasCost::FASTEST,
+            OpcodeId::PUSH14 => GasCost::FASTEST,
+            OpcodeId::PUSH15 => GasCost::FASTEST,
+            OpcodeId::PUSH16 => GasCost::FASTEST,
+            OpcodeId::PUSH17 => GasCost::FASTEST,
+            OpcodeId::PUSH18 => GasCost::FASTEST,
+            OpcodeId::PUSH19 => GasCost::FASTEST,
+            OpcodeId::PUSH20 => GasCost::FASTEST,
+            OpcodeId::PUSH21 => GasCost::FASTEST,
+            OpcodeId::PUSH22 => GasCost::FASTEST,
+            OpcodeId::PUSH23 => GasCost::FASTEST,
+            OpcodeId::PUSH24 => GasCost::FASTEST,
+            OpcodeId::PUSH25 => GasCost::FASTEST,
+            OpcodeId::PUSH26 => GasCost::FASTEST,
+            OpcodeId::PUSH27 => GasCost::FASTEST,
+            OpcodeId::PUSH28 => GasCost::FASTEST,
+            OpcodeId::PUSH29 => GasCost::FASTEST,
+            OpcodeId::PUSH30 => GasCost::FASTEST,
+            OpcodeId::PUSH31 => GasCost::FASTEST,
+            OpcodeId::PUSH32 => GasCost::FASTEST,
+            OpcodeId::DUP1 => GasCost::FASTEST,
+            OpcodeId::DUP2 => GasCost::FASTEST,
+            OpcodeId::DUP3 => GasCost::FASTEST,
+            OpcodeId::DUP4 => GasCost::FASTEST,
+            OpcodeId::DUP5 => GasCost::FASTEST,
+            OpcodeId::DUP6 => GasCost::FASTEST,
+            OpcodeId::DUP7 => GasCost::FASTEST,
+            OpcodeId::DUP8 => GasCost::FASTEST,
+            OpcodeId::DUP9 => GasCost::FASTEST,
+            OpcodeId::DUP10 => GasCost::FASTEST,
+            OpcodeId::DUP11 => GasCost::FASTEST,
+            OpcodeId::DUP12 => GasCost::FASTEST,
+            OpcodeId::DUP13 => GasCost::FASTEST,
+            OpcodeId::DUP14 => GasCost::FASTEST,
+            OpcodeId::DUP15 => GasCost::FASTEST,
+            OpcodeId::DUP16 => GasCost::FASTEST,
+            OpcodeId::SWAP1 => GasCost::FASTEST,
+            OpcodeId::SWAP2 => GasCost::FASTEST,
+            OpcodeId::SWAP3 => GasCost::FASTEST,
+            OpcodeId::SWAP4 => GasCost::FASTEST,
+            OpcodeId::SWAP5 => GasCost::FASTEST,
+            OpcodeId::SWAP6 => GasCost::FASTEST,
+            OpcodeId::SWAP7 => GasCost::FASTEST,
+            OpcodeId::SWAP8 => GasCost::FASTEST,
+            OpcodeId::SWAP9 => GasCost::FASTEST,
+            OpcodeId::SWAP10 => GasCost::FASTEST,
+            OpcodeId::SWAP11 => GasCost::FASTEST,
+            OpcodeId::SWAP12 => GasCost::FASTEST,
+            OpcodeId::SWAP13 => GasCost::FASTEST,
+            OpcodeId::SWAP14 => GasCost::FASTEST,
+            OpcodeId::SWAP15 => GasCost::FASTEST,
+            OpcodeId::SWAP16 => GasCost::FASTEST,
+            OpcodeId::LOG0 => GasCost::ZERO,
+            OpcodeId::LOG1 => GasCost::ZERO,
+            OpcodeId::LOG2 => GasCost::ZERO,
+            OpcodeId::LOG3 => GasCost::ZERO,
+            OpcodeId::LOG4 => GasCost::ZERO,
+            OpcodeId::CREATE => GasCost::CREATE,
+            OpcodeId::CALL => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::CALLCODE => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::RETURN => GasCost::ZERO,
+            OpcodeId::DELEGATECALL => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::CREATE2 => GasCost::CREATE,
+            OpcodeId::STATICCALL => GasCost::WARM_STORAGE_READ_COST,
+            OpcodeId::REVERT => GasCost::ZERO,
+            OpcodeId::INVALID(_) => GasCost::ZERO,
+            OpcodeId::SELFDESTRUCT => GasCost::SELFDESTRUCT,
         }
     }
 }
@@ -592,7 +748,7 @@ impl FromStr for OpcodeId {
             "SWAP16" => OpcodeId::SWAP16,
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
-            "INVALID" => OpcodeId::INVALID,
+            "INVALID" => OpcodeId::INVALID(0xfe),
             "SHA3" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
@@ -629,7 +785,33 @@ impl FromStr for OpcodeId {
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
             "BASEFEE" => OpcodeId::BASEFEE,
-            _ => return Err(Error::OpcodeParsing),
+            _ => {
+                // Parse an invalid opcode value as reported by geth
+                lazy_static! {
+                    static ref RE: Regex =
+                        Regex::new("opcode 0x([[:xdigit:]]{1,2}) not defined")
+                            .expect("invalid regex");
+                }
+                if let Some(cap) = RE.captures(s) {
+                    if let Some(byte_hex) = cap.get(1).map(|m| m.as_str()) {
+                        return Ok(OpcodeId::INVALID(
+                            u8::from_str_radix(byte_hex, 16)
+                                .expect("invalid hex byte from regex"),
+                        ));
+                    }
+                }
+                return Err(Error::OpcodeParsing);
+            }
         })
+    }
+}
+
+impl<'de> Deserialize<'de> for OpcodeId {
+    fn deserialize<D>(deserializer: D) -> Result<OpcodeId, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        OpcodeId::from_str(&s).map_err(de::Error::custom)
     }
 }

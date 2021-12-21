@@ -1,6 +1,7 @@
 //! EVM byte code generator
 
-use crate::{evm::OpcodeId, operation::EvmWord};
+use crate::eth_types::Word;
+use crate::evm::OpcodeId;
 use std::collections::HashMap;
 
 /// EVM Bytecode
@@ -12,14 +13,19 @@ pub struct Bytecode {
 }
 
 impl Bytecode {
+    /// Get a reference to the generated code
+    pub fn code(&self) -> &[u8] {
+        &self.code
+    }
+
     /// Get the generated code
     pub fn to_bytes(&self) -> Vec<u8> {
         self.code.clone()
     }
 
     /// Append
-    pub fn append(&mut self, other: &mut Bytecode) {
-        self.code.append(&mut other.code);
+    pub fn append(&mut self, other: &Bytecode) {
+        self.code.extend_from_slice(&other.code);
         for (key, val) in other.markers.iter() {
             self.insert_marker(key, self.num_opcodes + val);
         }
@@ -43,13 +49,14 @@ impl Bytecode {
     }
 
     /// Push
-    pub fn push(&mut self, n: usize, value: EvmWord) -> &mut Self {
+    pub fn push(&mut self, n: usize, value: Word) -> &mut Self {
         assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
         self.write_op_internal(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8));
 
-        let bytes = value.to_le_bytes();
+        let mut bytes = [0u8; 32];
+        value.to_little_endian(&mut bytes);
         // Write the bytes MSB to LSB
         for i in 0..n {
             self.write(bytes[n - 1 - i]);
@@ -87,7 +94,7 @@ impl Bytecode {
 
     /// Setup state
     pub fn setup_state(&mut self) -> &mut Self {
-        self.append(&mut crate::bytecode! {
+        self.append(&crate::bytecode! {
             PUSH1(0x80u64)
             PUSH1(0x40u64)
             MSTORE
@@ -99,15 +106,15 @@ impl Bytecode {
     #[allow(clippy::too_many_arguments)]
     pub fn call(
         &mut self,
-        gas: EvmWord,
-        address: EvmWord,
-        value: EvmWord,
-        mem_in: EvmWord,
-        mem_in_size: EvmWord,
-        mem_out: EvmWord,
-        mem_out_size: EvmWord,
+        gas: Word,
+        address: Word,
+        value: Word,
+        mem_in: Word,
+        mem_in_size: Word,
+        mem_out: Word,
+        mem_out_size: Word,
     ) -> &mut Self {
-        self.append(&mut crate::bytecode! {
+        self.append(&crate::bytecode! {
             PUSH32(mem_out_size)
             PUSH32(mem_out)
             PUSH32(mem_in_size)
@@ -125,7 +132,7 @@ impl Bytecode {
 #[macro_export]
 macro_rules! bytecode {
     ($($args:tt)*) => {{
-        let mut code = crate::bytecode::Bytecode::default();
+        let mut code = $crate::bytecode::Bytecode::default();
         $crate::bytecode_internal!(code, $($args)*);
         code
     }};
@@ -138,27 +145,27 @@ macro_rules! bytecode_internal {
     ($code:ident, ) => {};
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        assert!(crate::evm::OpcodeId::$x.is_push(), "invalid push");
-        let n = crate::evm::OpcodeId::$x.as_u8()
-            - crate::evm::OpcodeId::PUSH1.as_u8()
+        assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        let n = $crate::evm::OpcodeId::$x.as_u8()
+            - $crate::evm::OpcodeId::PUSH1.as_u8()
             + 1;
         $code.push(n as usize, $v.into());
-        crate::bytecode_internal!($code, $($rest)*);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        assert!(!crate::evm::OpcodeId::$x.is_push(), "invalid push");
-        $code.write_op(crate::evm::OpcodeId::$x);
-        crate::bytecode_internal!($code, $($rest)*);
+        assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        $code.write_op($crate::evm::OpcodeId::$x);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Marker
     ($code:ident, #[$marker:tt] $($rest:tt)*) => {{
         $code.add_marker(stringify!($marker).to_string());
-        crate::bytecode_internal!($code, $($rest)*);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Function calls
     ($code:ident, .$function:ident ($($args:expr),*) $($rest:tt)*) => {{
         $code.$function($($args.into(),)*);
-        crate::bytecode_internal!($code, $($rest)*);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
 }

@@ -1,12 +1,16 @@
 name: CI checks
 
-on: [push, pull_request]
+on:
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
 
-## `actions-rs/toolchain@v1` overwrite set to false so that 
+## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
   test:
+    if: github.event.pull_request.draft == false
+
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -24,9 +28,11 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --all-features
+          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
 
   build:
+    if: github.event.pull_request.draft == false
+
     name: Build target ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
@@ -47,8 +53,16 @@ jobs:
         with:
           command: build
           args: --all-features
+      # Make sure benchmarks compile.
+      - name: cargo build benchmarks no-run
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --release --all-features -p circuit-benchmarks --no-run
 
   bitrot:
+    if: github.event.pull_request.draft == false
+
     name: Bitrot check
     runs-on: ubuntu-latest
 
@@ -65,6 +79,8 @@ jobs:
           args: --benches --examples --all-features
 
   doc-links:
+    if: github.event.pull_request.draft == false
+
     name: Intra-doc links
     runs-on: ubuntu-latest
 
@@ -87,6 +103,8 @@ jobs:
           args: --all --document-private-items
 
   fmt:
+    if: github.event.pull_request.draft == false
+
     name: Rustfmt
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -95,6 +113,11 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
+      - name: cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all-features
       - run: rustup component add rustfmt
       - uses: actions-rs/cargo@v1
         with:

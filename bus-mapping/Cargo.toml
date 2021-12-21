@@ -1,16 +1,25 @@
 [package]
 name = "bus-mapping"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 authors = ["CPerezz <c.perezbaro@gmail.com>"]
 
-
 [dependencies]
-ff = "0.10"
-pasta_curves = "0.1"
+ff = "0.11"
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 itertools = "0.10"
-serde = {version = "1.0.127", features = ["derive"] }
+serde = {version = "1.0.130", features = ["derive"] }
 lazy_static = "1.4"
 serde_json = "1.0.66"
 hex = "0.4"
 geth-utils = { path = "../geth-utils" }
+uint = "0.9.1"
+ethers-providers = "0.6"
+ethers-core = "0.6"
+regex = "1.5.4"
+log = "0.4.14"
+
+[dev-dependencies]
+url = "2.2.2"
+tokio = { version = "1.13", features = ["macros"] }
+pretty_assertions = "1.0.0"

@@ -41,13 +41,8 @@ impl Keccak {
     }
 }
 
+#[derive(Default)]
 pub struct KeccakF {}
-
-impl Default for KeccakF {
-    fn default() -> Self {
-        KeccakF {}
-    }
-}
 
 impl KeccakF {
     pub fn permutations(&self, a: &mut State) {
@@ -126,7 +121,7 @@ impl Sponge {
         }
     }
 
-    pub fn absorb(&self, mut state: &mut State, message: &[u8]) {
+    pub fn absorb(&self, state: &mut State, message: &[u8]) {
         assert!(
             message.len() % self.rate == 0,
             "Message is not divisible entirely by bytes rate"
@@ -150,7 +145,7 @@ impl Sponge {
                     x = 0;
                 }
             }
-            self.keccak_f.permutations(&mut state);
+            self.keccak_f.permutations(state);
         }
     }
 

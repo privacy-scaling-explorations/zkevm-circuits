@@ -40,13 +40,22 @@
 //! execution trace from an EVM, you can parse it and construct an
 //! `ExecutionTrace` instance from it. That will automatically fill all of the
 //! bus-mapping instances of each
-//! [`ExecutionStep`](crate::exec_trace::ExecutionStep) plus fill in an
-//! [`OperationContainer`](crate::operation::container::OperationContainer) with
-//! all of the Memory, Stack and Storage ops performed by the provided trace.
+//! [`GethExecStep`](crate::eth_types::GethExecStep).  Then the
+//! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder)
+//! will fill in an
+//! [`OperationContainer`](crate::operation::container::OperationContainer)
+//! with all of the Memory, Stack and Storage ops performed
+//! by the provided trace.
 //!
 //! ```rust
-//! use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::{EvmWord, EthAddress}};
-//! use pasta_curves::arithmetic::FieldExt;
+//! use bus_mapping::Error;
+//! use bus_mapping::evm::Gas;
+//! use bus_mapping::mock;
+//! use bus_mapping::eth_types::{
+//!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
+//! };
+//! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+//! use pairing::arithmetic::FieldExt;
 //!
 //! let input_trace = r#"
 //! [
@@ -96,28 +105,32 @@
 //! ]
 //! "#;
 //!
-//! let block_ctants = BlockConstants::new(
-//!     EvmWord::from(0u8),
-//!     EthAddress::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//!     pasta_curves::Fp::zero(),
-//! );
+//! let ctants = ChainConstants{
+//!     coinbase: Address::zero(),
+//!     chain_id: 0,
+//! };
 //!
-//! // Here we have the ExecutionTrace completelly formed with all of the data to witness structured.
-//! let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
-//!     input_trace.as_bytes(),
-//!     block_ctants,
-//! ).expect("Error on trace generation");
+//! // We use some mock data as context for the trace
+//! let eth_block = mock::new_block();
+//! let eth_tx = mock::new_tx(&eth_block);
+//!
+//! let mut builder =
+//!     CircuitInputBuilder::new(&eth_block, ctants);
+//!
+//! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
+//! let geth_trace = GethExecTrace {
+//!     gas: Gas(eth_tx.gas.as_u64()),
+//!     failed: false,
+//!     struct_logs: geth_steps,
+//! };
+//! // Here we update the circuit input with the data from the transaction trace.
+//! builder.handle_tx(&eth_tx, &geth_trace).unwrap();
 //!
 //! // Get an ordered vector with all of the Stack operations of this trace.
-//! let stack_ops = obtained_exec_trace.sorted_stack_ops();
+//! let stack_ops = builder.block.container.sorted_stack();
 //!
 //! // You can also iterate over the steps of the trace and witness the EVM Proof.
-//! obtained_exec_trace.steps().iter();
+//! builder.block.txs()[0].steps().iter();
 //! ```
 //!
 //! Assume we have the following trace:
@@ -172,8 +185,8 @@
 //! `global_counter`.
 //!
 //! - Iterate over the `ExecutionTrace` itself over
-//! each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
-//! This is also automatically done via the
+//! each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage
+//! operations are linked to each step. This is also automatically done via the
 //! [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
 //!
 //! ## Documentation
@@ -203,8 +216,11 @@ pub mod external_tracer;
 pub mod operation;
 #[macro_use]
 pub mod bytecode;
-pub mod util;
+pub mod circuit_input_builder;
+#[macro_use]
+pub mod eth_types;
+pub(crate) mod geth_errors;
+pub mod mock;
+pub mod rpc;
+pub mod state_db;
 pub use error::Error;
-pub use exec_trace::{BlockConstants, ExecutionStep, ExecutionTrace};
-/// Gas is exported as a type alias for u64
-pub type Gas = u64;

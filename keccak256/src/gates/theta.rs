@@ -1,21 +1,23 @@
 use crate::arith_helpers::*;
 use halo2::{
-    circuit::Region,
+    circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pasta_curves::arithmetic::FieldExt;
+use pairing::arithmetic::FieldExt;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct ThetaConfig<F> {
     q_enable: Selector,
-    state: [Column<Advice>; 25],
+    pub(crate) state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> ThetaConfig<F> {
+    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
@@ -64,19 +66,42 @@ impl<F: FieldExt> ThetaConfig<F> {
 
     pub fn assign_state(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        state: [F; 25],
-    ) -> Result<[F; 25], Error> {
-        for (idx, lane) in state.iter().enumerate() {
-            region.assign_advice(
-                || format!("assign state {}", idx),
-                self.state[idx],
-                offset,
-                || Ok(*lane),
-            )?;
-        }
-        Ok(state)
+        layouter: &mut impl Layouter<F>,
+        state: [(Cell, F); 25],
+        out_state: [F; 25],
+    ) -> Result<[(Cell, F); 25], Error> {
+        layouter.assign_region(
+            || "Theta gate",
+            |mut region| {
+                let offset = 0;
+                self.q_enable.enable(&mut region, offset)?;
+
+                for (idx, lane) in state.iter().enumerate() {
+                    let obtained_cell = region.assign_advice(
+                        || format!("assign state {}", idx),
+                        self.state[idx],
+                        offset,
+                        || Ok(lane.1),
+                    )?;
+                    region.constrain_equal(lane.0, obtained_cell)?;
+                }
+
+                let mut out_vec: Vec<(Cell, F)> = vec![];
+                let out_state: [(Cell, F); 25] = {
+                    for (idx, lane) in out_state.iter().enumerate() {
+                        let out_cell = region.assign_advice(
+                            || format!("assign out_state {}", idx),
+                            self.state[idx],
+                            offset + 1,
+                            || Ok(*lane),
+                        )?;
+                        out_vec.push((out_cell, *lane));
+                    }
+                    out_vec.try_into().unwrap()
+                };
+                Ok(out_state)
+            },
+        )
     }
 }
 
@@ -87,12 +112,11 @@ mod tests {
     use crate::keccak_arith::*;
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
+        dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use num_bigint::BigUint;
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -113,10 +137,14 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.selector();
+                let q_enable = meta.complex_selector();
 
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let column = meta.advice_column();
+                        meta.enable_equality(column.into());
+                        column
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
@@ -129,36 +157,37 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                layouter.assign_region(
-                    || "assign input state",
+                let offset = 0;
+                let in_state = layouter.assign_region(
+                    || "Wittnes & assignation",
                     |mut region| {
-                        let offset = 0;
-                        config.q_enable.enable(&mut region, offset)?;
-                        config.assign_state(
-                            &mut region,
-                            offset,
-                            self.in_state,
-                        )?;
-                        let offset = 1;
-                        config.assign_state(&mut region, offset, self.out_state)
+                        // Witness `state`
+                        let in_state: [(Cell, F); 25] = {
+                            let mut state: Vec<(Cell, F)> =
+                                Vec::with_capacity(25);
+                            for (idx, val) in self.in_state.iter().enumerate() {
+                                let cell = region.assign_advice(
+                                    || "witness input state",
+                                    config.state[idx],
+                                    offset,
+                                    || Ok(*val),
+                                )?;
+                                state.push((cell, *val))
+                            }
+                            state.try_into().unwrap()
+                        };
+                        Ok(in_state)
                     },
                 )?;
 
+                let _ = config.assign_state(
+                    &mut layouter,
+                    in_state,
+                    self.out_state,
+                );
+
                 Ok(())
             }
-        }
-        fn big_uint_to_pallas(a: &BigUint) -> pallas::Base {
-            let mut b: [u64; 4] = [0; 4];
-            let mut iter = a.iter_u64_digits();
-
-            for i in &mut b {
-                *i = match &iter.next() {
-                    Some(x) => *x,
-                    None => 0u64,
-                };
-            }
-
-            pallas::Base::from_raw(b)
         }
 
         let input1: State = [
@@ -169,47 +198,39 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
         let mut in_biguint = StateBigInt::default();
-        let mut in_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut in_state: [Fp; 25] = [Fp::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_pallas(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::theta(&in_biguint);
-        let mut out_state: [pallas::Base; 25] = [pallas::Base::zero(); 25];
+        let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_pallas(&s1_arith[(x, y)]);
+            out_state[5 * x + y] = big_uint_to_field(&s1_arith[(x, y)]);
         }
 
-        let circuit = MyCircuit::<pallas::Base> {
+        let circuit = MyCircuit::<Fp> {
             in_state,
             out_state,
             _marker: PhantomData,
         };
 
         // Test without public inputs
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
 
         let mut out_state2 = out_state;
-        out_state2[0] = pallas::Base::from(5566u64);
+        out_state2[0] = Fp::from(5566u64);
 
-        let circuit2 = MyCircuit::<pallas::Base> {
+        let circuit2 = MyCircuit::<Fp> {
             in_state,
             out_state: out_state2,
             _marker: PhantomData,
         };
 
-        let prover =
-            MockProver::<pallas::Base>::run(9, &circuit2, vec![]).unwrap();
-        assert_eq!(
-            prover.verify(),
-            Err(vec![VerifyFailure::ConstraintNotSatisfied {
-                constraint: ((0, "theta").into(), 0, "").into(),
-                row: 0
-            }])
-        );
+        let prover = MockProver::<Fp>::run(9, &circuit2, vec![]).unwrap();
+        assert!(prover.verify().is_err());
     }
 }

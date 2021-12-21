@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 use std::marker::PhantomData;
 
 use crate::param::HASH_WIDTH;
@@ -28,6 +28,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         acc_r: F,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
 
@@ -42,11 +43,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
             // We have codehash in c_advices.
 
-            // TODO: storage root and codehash compared to the input
-
-            let c160 = Expression::Constant(F::from_u64(160));
-            let acc_prev = meta.query_advice(acc, Rotation::prev());
-            let acc_mult_prev = meta.query_advice(acc_mult, Rotation::prev());
+            let c160 = Expression::Constant(F::from(160));
+            let mut rot = -1;
+            if !is_s {
+                rot = -2;
+            }
+            let acc_prev = meta.query_advice(acc, Rotation(rot));
+            let acc_mult_prev = meta.query_advice(acc_mult, Rotation(rot));
             let mut curr_r = acc_mult_prev.clone();
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());

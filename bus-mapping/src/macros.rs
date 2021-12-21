@@ -1,21 +1,5 @@
 //! Collection of utility macros used within this crate.
 
-#[macro_use]
-pub(crate) mod evm;
-
-macro_rules! impl_from_evm_word_wrappers {
-    ($($implementor:ty),*) => {
-        $(impl From<$implementor> for EvmWord {
-            fn from(item: $implementor) -> EvmWord {
-                let mut bytes = [0u8;32];
-                let item_bytes = item.to_be_bytes();
-                bytes[32-item_bytes.len()..].copy_from_slice(&item_bytes[..]);
-                EvmWord(bytes)
-            }
-        })*
-    };
-}
-
 macro_rules! impl_from_usize_wrappers {
     ($implemented:ty = $alias:expr, ($($implementor:ty),*)) => {
         $(impl From<$implementor> for $implemented {
@@ -142,7 +126,8 @@ macro_rules! define_mul_assign_variants {
     };
 }
 
-/// Define Range indexing ops for the given type converting the ranges internally.
+/// Define Range indexing ops for the given type converting the ranges
+/// internally.
 macro_rules! define_range_index_variants {
     (IN_RANGE = $inner_range:ty, OUT_RANGE = $out_range:ty, STRUCT_CONTAINER = $struc:ty, INDEX_OUTPUT = $output:ty) => {
         impl core::ops::Index<core::ops::Range<$out_range>> for $struc {

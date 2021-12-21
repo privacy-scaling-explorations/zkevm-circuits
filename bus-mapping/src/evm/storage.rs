@@ -1,16 +1,31 @@
 //! Doc this
-use crate::evm::EvmWord;
+use crate::eth_types::{DebugWord, Word};
 use crate::Error;
 use std::collections::HashMap;
+use std::fmt;
 
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Storage(pub(crate) HashMap<EvmWord, EvmWord>);
+#[derive(Clone, Eq, PartialEq)]
+pub struct Storage(pub(crate) HashMap<Word, Word>);
 
-impl<T: Into<HashMap<EvmWord, EvmWord>>> From<T> for Storage {
+impl<T: Into<HashMap<Word, Word>>> From<T> for Storage {
     fn from(map: T) -> Self {
         Self(map.into())
+    }
+}
+
+impl fmt::Debug for Storage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(self.0.iter().map(|(k, v)| (DebugWord(k), DebugWord(v))))
+            .finish()
+    }
+}
+
+impl Default for Storage {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 
@@ -20,18 +35,19 @@ impl Storage {
         Storage(HashMap::new())
     }
 
-    /// Generate an new instance of EVM storage given a `HashMap<EvmWord, EvmWord>`.
-    pub fn new(map: HashMap<EvmWord, EvmWord>) -> Self {
+    /// Generate an new instance of EVM storage given a `HashMap<Word, Word>`.
+    pub fn new(map: HashMap<Word, Word>) -> Self {
         Self::from(map)
     }
 
     /// Get the word for a given key in the EVM storage
-    pub fn get(&self, key: &EvmWord) -> Option<&EvmWord> {
+    pub fn get(&self, key: &Word) -> Option<&Word> {
         self.0.get(key)
     }
 
-    /// Get the word for a given key in the EVM storage.  Returns error if key is not found.
-    pub fn get_or_err(&self, key: &EvmWord) -> Result<&EvmWord, Error> {
-        self.get(key).ok_or(Error::InvalidStorageKey)
+    /// Get the word for a given key in the EVM storage.  Returns error if key
+    /// is not found.
+    pub fn get_or_err(&self, key: &Word) -> Result<Word, Error> {
+        self.get(key).cloned().ok_or(Error::InvalidStorageKey)
     }
 }

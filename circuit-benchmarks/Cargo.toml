@@ -1,0 +1,20 @@
+[package]
+name = "circuit-benchmarks"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ff = "0.11"
+halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79d287032f1b5f94beb661b3fb42" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
+ark-std = { version = "0.3", features = ["print-trace"] }
+zkevm-circuits = { path = "../zkevm-circuits" }
+bus-mapping = { path = "../bus-mapping" }
+rand_xorshift = "0.3"
+rand = "0.8"
+
+[features]
+default = []
+benches = []

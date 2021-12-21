@@ -1,50 +1,34 @@
-use core::ops::Deref;
-// Port this to a macro if possible to avoid defining all the PushN
 use super::Opcode;
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::eth_types::GethExecStep;
 use crate::{
-    evm::GlobalCounter,
-    exec_trace::ExecutionStep,
-    operation::{container::OperationContainer, StackOp, RW},
+    operation::{StackOp, RW},
     Error,
 };
 
-/// Number of ops that PUSH1 adds to the container & busmapping
-const PUSH1_OP_NUM: usize = 1;
-
-/// Placeholder structure used to implement [`Opcode`] trait over it corresponding to the
-/// [`OpcodeId::PUSH1`](crate::evm::OpcodeId::PUSH1) `OpcodeId`.
-/// This is responsible of generating all of the associated [`StackOp`]s and place them
-/// inside the trace's [`OperationContainer`].
+/// Placeholder structure used to implement [`Opcode`] trait over it
+/// corresponding to the `OpcodeId::PUSH*` `OpcodeId`.
+/// This is responsible of generating all of the associated [`StackOp`]s and
+/// place them inside the trace's
+/// [`OperationContainer`](crate::operation::OperationContainer).
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Push1;
+pub(crate) struct Push<const N: usize>;
 
-impl Opcode for Push1 {
+impl<const N: usize> Opcode for Push<N> {
     fn gen_associated_ops(
-        &self,
-        // Contains the PUSH1 instr
-        exec_step: &mut ExecutionStep,
-        container: &mut OperationContainer,
-        // Contains the next step where we can find the value that was pushed.
-        next_steps: &[ExecutionStep],
-    ) -> Result<usize, Error> {
-        let op = StackOp::new(
+        state: &mut CircuitInputStateRef,
+        steps: &[GethExecStep],
+    ) -> Result<(), Error> {
+        let step = &steps[0];
+        state.push_op(StackOp::new(
             RW::WRITE,
-            GlobalCounter::from(exec_step.gc().0 + 1),
-            // Get the value and addr from the next step. Being the last position filled with an element in the stack
-            next_steps[0].stack().last_filled(),
-            next_steps[0]
-                .stack()
-                .deref()
-                .last()
-                .cloned()
-                .ok_or(Error::InvalidStackPointer)?,
-        );
+            // Get the value and addr from the next step. Being the last
+            // position filled with an element in the stack
+            step.stack.last_filled().map(|a| a - 1),
+            steps[1].stack.last()?,
+        ));
 
-        exec_step
-            .bus_mapping_instance_mut()
-            .push(container.insert(op));
-
-        Ok(PUSH1_OP_NUM)
+        Ok(())
     }
 }
 
@@ -53,78 +37,76 @@ mod push_tests {
     use super::*;
     use crate::{
         bytecode,
-        evm::{
-            EvmWord, GasCost, GasInfo, OpcodeId, ProgramCounter, Stack,
-            StackAddress, Storage,
+        circuit_input_builder::{
+            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
         },
-        external_tracer, BlockConstants, ExecutionTrace,
+        evm::StackAddress,
+        mock, word,
     };
-    use pasta_curves::pallas::Scalar;
+    use pretty_assertions::assert_eq;
 
     #[test]
-    fn push1_opcode_impl() -> Result<(), Error> {
+    fn push_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
             #[start]
-            PUSH1(0x80u64)
+            PUSH1(0x80)
+            PUSH2(0x1234)
+            PUSH16(word!("0x00112233445566778899aabbccddeeff"))
             STOP
         };
 
-        let block_ctants = BlockConstants::default();
-
         // Get the execution steps from the external tracer
-        let obtained_steps = &external_tracer::trace(&block_ctants, &code)?
-            [code.get_pos("start")..];
+        let block =
+            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        // Obtained trace computation
-        let obtained_exec_trace = ExecutionTrace::<Scalar>::new(
-            obtained_steps.to_vec(),
-            block_ctants,
-        )?;
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut container = OperationContainer::new();
-        let mut gc = GlobalCounter(0);
+        let mut test_builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        let mut tx = Transaction::new(&block.eth_tx);
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Start from the same pc and gas limit
-        let mut pc = obtained_steps[0].pc();
-        let mut gas = obtained_steps[0].gas_info().gas;
+        // Generate steps corresponding to PUSH1 80, PUSH2 1234,
+        // PUSH16 0x00112233445566778899aabbccddeeff
+        for (i, word) in [
+            word!("0x80"),
+            word!("0x1234"),
+            word!("0x00112233445566778899aabbccddeeff"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut step = ExecStep::new(
+                &block.geth_trace.struct_logs[i],
+                0,
+                test_builder.block_ctx.gc,
+                0,
+            );
+            let mut state_ref =
+                test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
-        // The memory is the same in both steps as none of them edits the
-        // memory of the EVM.
-        let mem_map = obtained_steps[0].memory.clone();
-
-        // Generate Step1 corresponding to PUSH1 80
-        let mut step_1 = ExecutionStep {
-            memory: mem_map,
-            stack: Stack::empty(),
-            storage: Storage::empty(),
-            instruction: OpcodeId::PUSH1,
-            gas_info: gas_info!(gas, FASTEST),
-            depth: 1u8,
-            pc: advance_pc!(pc),
-            gc: advance_gc!(gc),
-            bus_mapping_instance: vec![],
-        };
-
-        // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        step_1
-            .bus_mapping_instance_mut()
-            .push(container.insert(StackOp::new(
+            // Add StackOp associated to the push at the latest Stack pos.
+            state_ref.push_op(StackOp::new(
                 RW::WRITE,
-                advance_gc!(gc),
-                StackAddress::from(1023),
-                EvmWord::from(0x80u8),
-            )));
+                StackAddress::from(1023 - i),
+                *word,
+            ));
+            tx.steps_mut().push(step);
+        }
 
-        // Compare first step bus mapping instance
-        assert_eq!(
-            obtained_exec_trace[0].bus_mapping_instance(),
-            step_1.bus_mapping_instance()
-        );
-        // Compare first step entirely
-        assert_eq!(obtained_exec_trace[0], step_1);
+        test_builder.block.txs_mut().push(tx);
 
+        // Compare first 3 steps bus mapping instance
+        for i in 0..3 {
+            assert_eq!(
+                builder.block.txs()[0].steps()[i].bus_mapping_instance,
+                test_builder.block.txs()[0].steps()[i].bus_mapping_instance
+            );
+        }
         // Compare containers
-        assert_eq!(obtained_exec_trace.container, container);
+        assert_eq!(builder.block.container, test_builder.block.container);
 
         Ok(())
     }
