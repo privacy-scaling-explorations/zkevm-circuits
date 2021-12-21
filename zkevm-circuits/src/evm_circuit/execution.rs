@@ -103,6 +103,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpi_gadget: JumpiGadget<F>,
     gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
+    copy_mem2mem_gadget: CopyMemoryToMemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
@@ -231,6 +232,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jumpi_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
+            copy_mem2mem_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
@@ -476,6 +478,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
+            ExecutionState::CopyMemoryToMemory => {
+                assign_exec_step!(self.copy_mem2mem_gadget)
+            }
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
