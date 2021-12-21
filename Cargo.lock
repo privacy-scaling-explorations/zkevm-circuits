@@ -2157,6 +2157,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpt"
+version = "0.1.0"
+dependencies = [
+ "halo2",
+ "itertools",
+ "keccak256",
+ "num-bigint",
+ "num-traits",
+ "pairing_bn256",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
