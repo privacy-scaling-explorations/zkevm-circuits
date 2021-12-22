@@ -19,12 +19,12 @@ impl Opcode for Msize {
     ) -> Result<(), Error> {
         let step = &steps[0];
 
-        // Get value result from memory and do stack write
-        let mem_size_value = step.memory.size() as u32;
+        // Get value result from next step's memory and do stack write
+        let mem_size_value = Word::from(steps[1].memory.size() as u32);
         state.push_op(StackOp::new(
             RW::WRITE,
-            step.stack.last_filled(),
-            Word::from(mem_size_value),
+            step.stack.last_filled().map(|a| a - 1),
+            mem_size_value,
         ));
 
         Ok(())
@@ -57,16 +57,12 @@ mod msize_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder = CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
+        let mut builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder = CircuitInputBuilder::new(
-            block.eth_block,
-            block.block_ctants.clone(),
-        );
+        let mut test_builder =
+            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
@@ -82,7 +78,7 @@ mod msize_tests {
         // Add StackOp WRITE to the latest Stack pos.
         state_ref.push_op(StackOp::new(
             RW::WRITE,
-            StackAddress::from(1024),
+            StackAddress::from(1023),
             Word::from(0x3_u64),
         ));
 

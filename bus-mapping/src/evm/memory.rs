@@ -279,7 +279,7 @@ impl Memory {
 
     /// Returns the size of memory in words
     pub fn size(&self) -> usize {
-        (self.0.len() + 31) / 32
+        self.0.len() >> 5
     }
 }
 
@@ -350,7 +350,7 @@ mod memory_tests {
 
     #[test]
     fn mem_size_works() -> Result<(), Error> {
-        let mut mem_map = Memory(
+        let mem_map = Memory(
             [Word::from(0), Word::from(0), Word::from(0x80)]
                 .iter()
                 .flat_map(|w| w.to_be_bytes())
@@ -359,10 +359,6 @@ mod memory_tests {
 
         // There are 3 words in memory
         assert_eq!(mem_map.size(), 3);
-
-        // Now push extra 10 byte
-        mem_map.push([0; 10]);
-        assert_eq!(mem_map.size(), 4);
 
         Ok(())
     }

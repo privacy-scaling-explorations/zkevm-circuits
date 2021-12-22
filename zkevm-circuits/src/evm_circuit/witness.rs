@@ -348,6 +348,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::MSTORE8 => ExecutionState::MEMORY,
             OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
             OpcodeId::PC => ExecutionState::PC,
+            OpcodeId::MSIZE => ExecutionState::MSIZE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -393,10 +394,19 @@ fn step_convert(
         // geth increases memory size before making trace,
         // so the memory size in ExecStep is not what we expect to see.
         // We have to use the memory size of previous step as correct memory
-        // size before each step
-        memory_size: match prev {
-            None => 0,
-            Some(prev_step) => (prev_step.memory_size as u64) / 32, /* memory size in word */
+        // size before each step. However, since we [`assign_exec_step`]
+        // using step state, for MSIZE we better use current memory_size
+        // instead of previous.
+        memory_size: {
+            let memory_size = if step.op == OpcodeId::MSIZE {
+                step.memory_size
+            } else {
+                match prev {
+                    None => 0,
+                    Some(prev_step) => prev_step.memory_size,
+                }
+            };
+            memory_size as u64 / 32 /* memory size in word */
         },
         ..Default::default()
     };
