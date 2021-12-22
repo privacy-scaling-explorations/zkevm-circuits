@@ -21,18 +21,13 @@ impl<F: FieldExt> StateBaseConversion<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
-        parent_flag: Column<Advice>,
+        flag: Column<Advice>,
     ) -> Self {
-        meta.enable_equality(parent_flag.into());
+        meta.enable_equality(flag.into());
         let bccs: [BaseConversionConfig<F>; 25] = state
             .iter()
             .map(|&lane| {
-                BaseConversionConfig::configure(
-                    meta,
-                    bi.clone(),
-                    lane,
-                    parent_flag,
-                )
+                BaseConversionConfig::configure(meta, bi.clone(), lane, flag)
             })
             .collect::<Vec<_>>()
             .try_into()
@@ -45,14 +40,13 @@ impl<F: FieldExt> StateBaseConversion<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
-        parent_flag: (Cell, F),
+        flag: (Cell, F),
     ) -> Result<[(Cell, F); 25], Error> {
         let state: Result<Vec<(Cell, F)>, Error> = state
             .iter()
             .zip(self.bccs.iter())
             .map(|(&lane, config)| {
-                let output =
-                    config.assign_region(layouter, lane, parent_flag)?;
+                let output = config.assign_region(layouter, lane, flag)?;
                 Ok(output)
             })
             .into_iter()

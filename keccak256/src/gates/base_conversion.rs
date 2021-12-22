@@ -92,7 +92,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         input: (Cell, F),
-        parent_flag: (Cell, F),
+        flag: (Cell, F),
     ) -> Result<(Cell, F), Error> {
         let (input_coefs, output_coefs, _) = self.bi.compute_coefs(input.1)?;
 
@@ -114,9 +114,9 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                         || "flag",
                         self.flag,
                         offset,
-                        || Ok(parent_flag.1),
+                        || Ok(flag.1),
                     )?;
-                    region.constrain_equal(flag_cell, parent_flag.0)?;
+                    region.constrain_equal(flag_cell, flag.0)?;
                     let input_coef_cell = region.assign_advice(
                         || "Input Coef",
                         self.input_coef,
