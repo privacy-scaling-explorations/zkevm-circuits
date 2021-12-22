@@ -8,7 +8,7 @@ use crate::gates::tables::BaseInfo;
 use pairing::arithmetic::FieldExt;
 
 #[derive(Clone, Debug)]
-pub struct BaseConversionConfig<F> {
+pub(crate) struct BaseConversionConfig<F> {
     q_running_sum: Selector,
     q_lookup: Selector,
     bi: BaseInfo<F>,
@@ -24,7 +24,7 @@ pub struct BaseConversionConfig<F> {
 
 impl<F: FieldExt> BaseConversionConfig<F> {
     /// Side effect: lane and parent_flag is equality enabled
-    pub fn configure(
+    pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         bi: BaseInfo<F>,
         input_lane: Column<Advice>,
@@ -88,7 +88,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         }
     }
 
-    pub fn assign_region(
+    pub(crate) fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
         input: (Cell, F),

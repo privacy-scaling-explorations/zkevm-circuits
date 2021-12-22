@@ -9,7 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
-pub struct StateBaseConversion<F> {
+pub(crate) struct StateBaseConversion<F> {
     bi: BaseInfo<F>,
     bccs: [BaseConversionConfig<F>; 25],
     state: [Column<Advice>; 25],
@@ -17,7 +17,7 @@ pub struct StateBaseConversion<F> {
 
 impl<F: FieldExt> StateBaseConversion<F> {
     /// Side effect: parent flag is enabled
-    pub fn configure(
+    pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
@@ -41,7 +41,7 @@ impl<F: FieldExt> StateBaseConversion<F> {
         Self { bi, bccs, state }
     }
 
-    pub fn assign_region(
+    pub(crate) fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],

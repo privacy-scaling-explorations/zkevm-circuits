@@ -15,6 +15,10 @@ use itertools::Itertools;
 use crate::arith_helpers::mod_u64;
 use crate::gates::gate_helpers::f_to_biguint;
 
+const MAX_CHUNKS: usize = 64;
+const NUM_OF_BINARY_CHUNKS: usize = 16;
+const NUM_OF_B9_CHUNKS: usize = 5;
+
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
     base13: TableColumn,
@@ -193,7 +197,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct BaseInfo<F> {
+pub(crate) struct BaseInfo<F> {
     input_base: u64,
     output_base: u64,
     // How many chunks we perform in a lookup?
@@ -279,9 +283,6 @@ impl<F: FieldExt> BaseInfo<F> {
     }
 }
 
-const MAX_CHUNKS: usize = 64;
-const NUM_OF_BINARY_CHUNKS: usize = 16;
-
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
     base2: TableColumn,
@@ -356,7 +357,7 @@ impl<F: FieldExt> FromBinaryTableConfig<F> {
         }
     }
 
-    pub fn get_base_info(&self, output_b9: bool) -> BaseInfo<F> {
+    pub(crate) fn get_base_info(&self, output_b9: bool) -> BaseInfo<F> {
         BaseInfo {
             input_base: B2,
             output_base: if output_b9 { B9 } else { B13 },
@@ -368,8 +369,6 @@ impl<F: FieldExt> FromBinaryTableConfig<F> {
         }
     }
 }
-
-const NUM_OF_B9_CHUNKS: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct FromBase9TableConfig<F> {
@@ -462,7 +461,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
         config
     }
 
-    pub fn get_base_info(&self, output_b2: bool) -> BaseInfo<F> {
+    pub(crate) fn get_base_info(&self, output_b2: bool) -> BaseInfo<F> {
         BaseInfo {
             input_base: B9,
             output_base: if output_b2 { B2 } else { B13 },
