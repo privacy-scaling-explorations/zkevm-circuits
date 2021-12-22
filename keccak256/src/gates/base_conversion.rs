@@ -12,6 +12,9 @@ pub struct BaseConversionConfig<F> {
     q_running_sum: Selector,
     q_lookup: Selector,
     bi: BaseInfo<F>,
+    // Flag is copied from the parent flag. Parent flag is assumed to be binary
+    // constrained.
+    flag: Column<Advice>,
     input_lane: Column<Advice>,
     input_coef: Column<Advice>,
     input_acc: Column<Advice>,
@@ -20,48 +23,55 @@ pub struct BaseConversionConfig<F> {
 }
 
 impl<F: FieldExt> BaseConversionConfig<F> {
-    /// Side effect: lane is equality enabled
+    /// Side effect: lane and parent_flag is equality enabled
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         bi: BaseInfo<F>,
         input_lane: Column<Advice>,
+        parent_flag: Column<Advice>,
     ) -> Self {
         let q_running_sum = meta.selector();
         let q_lookup = meta.complex_selector();
+        let flag = meta.advice_column();
         let input_coef = meta.advice_column();
         let input_acc = meta.advice_column();
         let output_coef = meta.advice_column();
         let output_acc = meta.advice_column();
 
+        meta.enable_equality(flag.into());
         meta.enable_equality(input_coef.into());
         meta.enable_equality(input_acc.into());
         meta.enable_equality(output_coef.into());
         meta.enable_equality(output_acc.into());
         meta.enable_equality(input_lane.into());
+        meta.enable_equality(parent_flag.into());
 
         meta.create_gate("input running sum", |meta| {
             let q_enable = meta.query_selector(q_running_sum);
+            let flag = meta.query_advice(flag, Rotation::cur());
             let coef = meta.query_advice(input_coef, Rotation::cur());
             let acc_prev = meta.query_advice(input_acc, Rotation::prev());
             let acc = meta.query_advice(input_acc, Rotation::cur());
             let power_of_base = bi.input_pob();
-            vec![q_enable * (acc - acc_prev * power_of_base - coef)]
+            vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
         });
         meta.create_gate("output running sum", |meta| {
             let q_enable = meta.query_selector(q_running_sum);
+            let flag = meta.query_advice(flag, Rotation::cur());
             let coef = meta.query_advice(output_coef, Rotation::cur());
             let acc_prev = meta.query_advice(output_acc, Rotation::prev());
             let acc = meta.query_advice(output_acc, Rotation::cur());
             let power_of_base = bi.output_pob();
-            vec![q_enable * (acc - acc_prev * power_of_base - coef)]
+            vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
         });
         meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_lookup);
+            let flag = meta.query_advice(flag, Rotation::cur());
             let input_slices = meta.query_advice(input_coef, Rotation::cur());
             let output_slices = meta.query_advice(output_coef, Rotation::cur());
             vec![
-                (q_enable.clone() * input_slices, bi.input_tc),
-                (q_enable * output_slices, bi.output_tc),
+                (q_enable.clone() * flag.clone() * input_slices, bi.input_tc),
+                (q_enable * flag * output_slices, bi.output_tc),
             ]
         });
 
@@ -69,6 +79,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             q_running_sum,
             q_lookup,
             bi,
+            flag,
             input_lane,
             input_coef,
             input_acc,
@@ -81,6 +92,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         input: (Cell, F),
+        parent_flag: (Cell, F),
     ) -> Result<(Cell, F), Error> {
         let (input_coefs, output_coefs, _) = self.bi.compute_coefs(input.1)?;
 
@@ -98,6 +110,13 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                     if offset != 0 {
                         self.q_running_sum.enable(&mut region, offset)?;
                     }
+                    let flag_cell = region.assign_advice(
+                        || "flag",
+                        self.flag,
+                        offset,
+                        || Ok(parent_flag.1),
+                    )?;
+                    region.constrain_equal(flag_cell, parent_flag.0)?;
                     let input_coef_cell = region.assign_advice(
                         || "Input Coef",
                         self.input_coef,
@@ -168,6 +187,7 @@ mod tests {
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
             lane: Column<Advice>,
+            flag: Column<Advice>,
             table: FromBinaryTableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
@@ -175,11 +195,13 @@ mod tests {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
+                let flag = meta.advice_column();
                 let bi = table.get_base_info(false);
                 let conversion =
-                    BaseConversionConfig::configure(meta, bi, lane);
+                    BaseConversionConfig::configure(meta, bi, lane, flag);
                 Self {
                     lane,
+                    flag,
                     table,
                     conversion,
                 }
@@ -197,19 +219,31 @@ mod tests {
                 layouter: &mut impl Layouter<F>,
                 input: F,
             ) -> Result<F, Error> {
-                let cell = layouter.assign_region(
+                // The main flag is enabled
+                let flag_value = F::one();
+                let (lane, flag) = layouter.assign_region(
                     || "Input lane",
                     |mut region| {
-                        region.assign_advice(
+                        let lane = region.assign_advice(
                             || "Input lane",
                             self.lane,
                             0,
                             || Ok(input),
-                        )
+                        )?;
+                        let flag = region.assign_advice(
+                            || "main flag",
+                            self.flag,
+                            0,
+                            || Ok(flag_value),
+                        )?;
+                        Ok((lane, flag))
                     },
                 )?;
-                let output =
-                    self.conversion.assign_region(layouter, (cell, input))?;
+                let output = self.conversion.assign_region(
+                    layouter,
+                    (lane, input),
+                    (flag, flag_value),
+                )?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| {

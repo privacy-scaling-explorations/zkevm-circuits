@@ -16,15 +16,23 @@ pub struct StateBaseConversion<F> {
 }
 
 impl<F: FieldExt> StateBaseConversion<F> {
+    /// Side effect: parent flag is enabled
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
+        parent_flag: Column<Advice>,
     ) -> Self {
+        meta.enable_equality(parent_flag.into());
         let bccs: [BaseConversionConfig<F>; 25] = state
             .iter()
             .map(|&lane| {
-                BaseConversionConfig::configure(meta, bi.clone(), lane)
+                BaseConversionConfig::configure(
+                    meta,
+                    bi.clone(),
+                    lane,
+                    parent_flag,
+                )
             })
             .collect::<Vec<_>>()
             .try_into()
@@ -37,12 +45,14 @@ impl<F: FieldExt> StateBaseConversion<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
+        parent_flag: (Cell, F),
     ) -> Result<[(Cell, F); 25], Error> {
         let state: Result<Vec<(Cell, F)>, Error> = state
             .iter()
             .zip(self.bccs.iter())
             .map(|(&lane, config)| {
-                let output = config.assign_region(layouter, lane)?;
+                let output =
+                    config.assign_region(layouter, lane, parent_flag)?;
                 Ok(output)
             })
             .into_iter()
@@ -74,6 +84,7 @@ mod tests {
         // We need to load the table
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
+            flag: Column<Advice>,
             state: [Column<Advice>; 25],
             table: FromBinaryTableConfig<F>,
             conversion: StateBaseConversion<F>,
@@ -86,10 +97,12 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
+                let flag = meta.advice_column();
                 let bi = table.get_base_info(false);
                 let conversion =
-                    StateBaseConversion::configure(meta, state, bi);
+                    StateBaseConversion::configure(meta, state, bi, flag);
                 Self {
+                    flag,
                     state,
                     table,
                     conversion,
@@ -108,7 +121,8 @@ mod tests {
                 layouter: &mut impl Layouter<F>,
                 input: [F; 25],
             ) -> Result<[F; 25], Error> {
-                let state = layouter.assign_region(
+                let flag_value = F::one();
+                let (state, flag) = layouter.assign_region(
                     || "Input state",
                     |mut region| {
                         let state: [(Cell, F); 25] = input
@@ -119,7 +133,7 @@ mod tests {
                                     .assign_advice(
                                         || format!("State {}", idx),
                                         self.state[idx],
-                                        idx,
+                                        0,
                                         || Ok(value),
                                     )
                                     .unwrap();
@@ -128,11 +142,20 @@ mod tests {
                             .collect::<Vec<_>>()
                             .try_into()
                             .unwrap();
-                        Ok(state)
+                        let flag = region.assign_advice(
+                            || "Flag",
+                            self.flag,
+                            0,
+                            || Ok(flag_value),
+                        )?;
+                        Ok((state, flag))
                     },
                 )?;
-                let output_state =
-                    self.conversion.assign_region(layouter, state)?;
+                let output_state = self.conversion.assign_region(
+                    layouter,
+                    state,
+                    (flag, flag_value),
+                )?;
                 let output_state: [F; 25] = output_state
                     .iter()
                     .map(|&(_, value)| value)
