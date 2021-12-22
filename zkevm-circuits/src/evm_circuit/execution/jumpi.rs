@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::MAX_CODE_SIZE_IN_BYTES,
+        param::NUM_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsZeroGadget,
-            select, sum, RandomLinearCombination, Word,
+            select, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -24,8 +24,8 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct JumpiGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, MAX_CODE_SIZE_IN_BYTES>,
-    condition: Word<F>,
+    destination: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
+    condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
 }
 
@@ -37,15 +37,14 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let destination =
             RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
-        let condition = cb.query_word();
+        let condition = cb.query_cell();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
         cb.stack_pop(condition.expr());
 
         // Determine if the jump condition is met
-        let is_condition_zero =
-            IsZeroGadget::construct(cb, sum::expr(&condition.cells));
+        let is_condition_zero = IsZeroGadget::construct(cb, condition.expr());
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump
@@ -101,19 +100,22 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
 
         let [destination, condition] = [step.rw_indices[0], step.rw_indices[1]]
             .map(|idx| block.rws[idx].stack_value());
+        let condition = Word::random_linear_combine(
+            condition.to_le_bytes(),
+            block.randomness,
+        );
 
         self.destination.assign(
             region,
             offset,
-            Some(destination.to_le_bytes()[..3].try_into().unwrap()),
+            Some(
+                destination.to_le_bytes()[..NUM_BYTES_PROGRAM_COUNTER]
+                    .try_into()
+                    .unwrap(),
+            ),
         )?;
-        self.condition
-            .assign(region, offset, Some(condition.to_le_bytes()))?;
-        self.is_condition_zero.assign(
-            region,
-            offset,
-            sum::value(&condition.to_le_bytes()),
-        )?;
+        self.condition.assign(region, offset, Some(condition))?;
+        self.is_condition_zero.assign(region, offset, condition)?;
 
         Ok(())
     }

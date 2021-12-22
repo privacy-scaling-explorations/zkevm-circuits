@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::MAX_CODE_SIZE_IN_BYTES,
+        param::NUM_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -22,7 +22,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct JumpGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, MAX_CODE_SIZE_IN_BYTES>,
+    destination: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
@@ -80,7 +80,11 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
         self.destination.assign(
             region,
             offset,
-            Some(destination.to_le_bytes()[..3].try_into().unwrap()),
+            Some(
+                destination.to_le_bytes()[..NUM_BYTES_PROGRAM_COUNTER]
+                    .try_into()
+                    .unwrap(),
+            ),
         )?;
 
         Ok(())
