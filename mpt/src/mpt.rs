@@ -6,7 +6,7 @@ use halo2::{
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+use pairing::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::{
@@ -62,6 +62,8 @@ pub struct MPTConfig<F> {
     acc_c: Column<Advice>, // for branch c
     acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
+    // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
+    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
@@ -269,6 +271,8 @@ impl<F: FieldExt> MPTConfig<F> {
             let bool_check_sel2 = sel2.clone() * (one.clone() - sel2);
 
             // TODO: sel1 + sel2 = 1
+            // However, in branch children, it can be sel1 + sel2 = 0 too - this
+            // case is checked separately.
 
             // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
             // followed by is_leaf_key_nibbles
@@ -517,10 +521,10 @@ impl<F: FieldExt> MPTConfig<F> {
             // If sel2 = 1, then modified_node is multiplied by 1.
             // NOTE: modified_node presents nibbles: n0, n1, ...
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-            let sel1_prev = meta.query_advice(sel1, Rotation(-17));
-            let sel2_prev = meta.query_advice(sel2, Rotation(-17));
-            let sel1_cur = meta.query_advice(sel1, Rotation::cur());
-            let sel2_cur = meta.query_advice(sel2, Rotation::cur());
+            let sel1_prev = meta.query_advice(sel1, Rotation(-18));
+            let sel2_prev = meta.query_advice(sel2, Rotation(-18));
+            let sel1_cur = meta.query_advice(sel1, Rotation::prev());
+            let sel2_cur = meta.query_advice(sel2, Rotation::prev());
 
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-17));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
@@ -838,6 +842,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 ));
             }
 
+            // TODO: replace constraints above with permutation argument - for s_keccak and
+            // c_keccak being the same in all branch children (similarly needs to be done
+            // for sel1 and sel2 below).
+
+            // NOTE: the reason why s_keccak and c_keccak need to be the same in all branch
+            // children is that we need to check s_keccak and c_keccak in is_modified row,
+            // but we don't know in advance at which position (in branch) is this row.
+
             // s_keccak and c_keccak correspond to s and c at the modified index
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
 
@@ -870,6 +882,62 @@ impl<F: FieldExt> MPTConfig<F> {
                         * (c_advices_words[ind].clone() - c_keccak_cur),
                 ));
             }
+
+            // sel1 - denoting whether leaf is empty at modified_node.
+            let c128 = Expression::Constant(F::from(128));
+            let sel1_cur = meta.query_advice(sel1, Rotation::cur());
+
+            // s_advices[0] = 128
+            let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
+            constraints.push((
+                "branch child sel1 s_advices0",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * is_modified.clone()
+                    * (s_advices0 - c128.clone())
+                    * sel1_cur.clone(),
+            ));
+            // s_advices[i] = 0 for i > 0
+            for column in s_advices.iter().skip(1) {
+                let s = meta.query_advice(*column, Rotation::cur());
+                constraints.push((
+                    "branch child sel1 s_advices",
+                    q_not_first.clone()
+                        * is_branch_child_cur.clone()
+                        * is_modified.clone()
+                        * s
+                        * sel1_cur.clone(),
+                ));
+            }
+
+            // sel2 - denoting whether leaf is empty at modified_node.
+            let sel2_cur = meta.query_advice(sel2, Rotation::cur());
+
+            // s_advices[0] = 128
+            let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
+            constraints.push((
+                "branch child sel2 c_advices0",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * is_modified.clone()
+                    * (c_advices0 - c128.clone())
+                    * sel2_cur.clone(),
+            ));
+            // c_advices[i] = 0 for i > 0
+            for column in c_advices.iter().skip(1) {
+                let c = meta.query_advice(*column, Rotation::cur());
+                constraints.push((
+                    "branch child sel2 c_advices",
+                    q_not_first.clone()
+                        * is_branch_child_cur.clone()
+                        * is_modified.clone()
+                        * c
+                        * sel2_cur.clone(),
+                ));
+            }
+
+            // TODO: permutation argument for sel1 and sel2 - need to be the same in all
+            // branch children
 
             constraints
         });
@@ -1254,6 +1322,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             acc_s,
             acc_mult_s,
+            sel1,
             acc_r,
         );
 
@@ -1274,6 +1343,7 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             acc_s,
             acc_mult_s,
+            sel2,
             acc_r,
         );
 
@@ -1911,6 +1981,28 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
+                            // sel1 and sel2 are here to distinguish whether it's the
+                            // first or the second nibble of the key byte
+                            let mut sel1 = F::zero();
+                            let mut sel2 = F::zero();
+                            if key_rlc_sel {
+                                sel1 = F::one();
+                            } else {
+                                sel2 = F::one();
+                            }
+                            region.assign_advice(
+                                || "assign sel1".to_string(),
+                                self.sel1,
+                                offset,
+                                || Ok(sel1),
+                            )?;
+                            region.assign_advice(
+                                || "assign sel2".to_string(),
+                                self.sel2,
+                                offset,
+                                || Ok(sel2),
+                            )?;
+
                             offset += 1;
                         } else if row[row.len() - 1] == 1 {
                             // branch child
@@ -1923,19 +2015,15 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
 
                             if node_index == 0 {
-                                let mut sel1 = F::zero();
-                                let mut sel2 = F::zero();
                                 if key_rlc_sel {
                                     key_rlc += F::from(modified_node as u64)
                                         * F::from(16)
                                         * key_rlc_mult;
                                     // key_rlc_mult stays the same
-                                    sel1 = F::one();
                                 } else {
                                     key_rlc += F::from(modified_node as u64)
                                         * key_rlc_mult;
                                     key_rlc_mult *= self.acc_r;
-                                    sel2 = F::one();
                                 }
                                 key_rlc_sel = !key_rlc_sel;
                                 self.assign_branch_row(
@@ -1948,18 +2036,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &s_words,
                                     &c_words,
                                     offset,
-                                )?;
-                                region.assign_advice(
-                                    || "assign sel1".to_string(),
-                                    self.sel1,
-                                    offset,
-                                    || Ok(sel1),
-                                )?;
-                                region.assign_advice(
-                                    || "assign sel2".to_string(),
-                                    self.sel2,
-                                    offset,
-                                    || Ok(sel2),
                                 )?;
                             } else {
                                 // assigning key_rlc and key_rlc_mult to avoid the possibility
@@ -1976,6 +2052,52 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &s_words,
                                     &c_words,
                                     offset,
+                                )?;
+                                // sel1 is to distinguish whether s_words is [128, 0, 0, 0].
+                                // sel2 is to distinguish whether c_words is [128, 0, 0, 0].
+                                // Note that 128 comes from the RLP byte denoting empty leaf.
+                                // Having [128, 0, 0, 0] for *_word means there is no node at
+                                // this position in branch - for example, s_words
+                                // is [128, 0, 0, 0] and c_words is some other value
+                                // when new value is added to the trie
+                                // (as opposed to just updating the value).
+                                // Note that there is a potential attack if a leaf node
+                                // is found with hash [128, 0, ..., 0],
+                                // but the probably is negligible.
+                                let mut sel1 = F::zero();
+                                let mut sel2 = F::zero();
+                                if s_words[0] == 128
+                                    && s_words
+                                        .iter()
+                                        .skip(1)
+                                        .filter(|w| **w == 0_u64)
+                                        .count()
+                                        == KECCAK_OUTPUT_WIDTH - 1
+                                {
+                                    sel1 = F::one();
+                                }
+                                if c_words[0] == 128
+                                    && c_words
+                                        .iter()
+                                        .skip(1)
+                                        .filter(|w| **w == 0_u64)
+                                        .count()
+                                        == KECCAK_OUTPUT_WIDTH - 1
+                                {
+                                    sel2 = F::one();
+                                }
+
+                                region.assign_advice(
+                                    || "assign sel1".to_string(),
+                                    self.sel1,
+                                    offset,
+                                    || Ok(sel1),
+                                )?;
+                                region.assign_advice(
+                                    || "assign sel2".to_string(),
+                                    self.sel2,
+                                    offset,
+                                    || Ok(sel2),
                                 )?;
                             }
 
@@ -2485,8 +2607,8 @@ mod tests {
         }
 
         // for debugging:
-        let path = "mpt/tests";
-        // let path = "tests";
+        // let path = "mpt/tests";
+        let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)

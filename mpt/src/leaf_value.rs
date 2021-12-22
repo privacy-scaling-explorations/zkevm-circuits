@@ -30,6 +30,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        sel: Column<Advice>,
         acc_r: F,
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
@@ -54,20 +55,28 @@ impl<F: FieldExt> LeafValueChip<F> {
                 mult = mult * acc_r;
             }
 
-            let mut constraints = vec![];
-            constraints.push((
-                q_enable.clone() * rlc,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
             // NOTE: Rotation -4 can be used here (in S and C leaf), because
             // s_keccak and c_keccak have the same value in all branch rows (thus, the same
-            // value in branch node_index: 13 and branch node_index: 15)
+            // value in branch node_index: 13 and branch node_index: 15).
+            // The same holds for sel1 and sel2.
+            let sel = meta.query_advice(sel, Rotation(-4));
+            let one = Expression::Constant(F::one());
+
+            // If sel = 1, there is no leaf at this position (value is being added or deleted)
+            // and we don't check the hash of it.
+            let mut constraints = vec![];
+            constraints.push((
+                q_enable.clone() * rlc * (one.clone() - sel.clone()),
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
             for (ind, column) in sc_keccak.iter().enumerate() {
                 let sc_keccak = meta.query_advice(*column, Rotation(-4));
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints
-                    .push((q_enable.clone() * sc_keccak, keccak_table_i));
+                constraints.push((
+                    q_enable.clone() * sc_keccak * (one.clone() - sel.clone()),
+                    keccak_table_i,
+                ));
             }
 
             constraints

@@ -172,8 +172,9 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let rot = -16;
             let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
             let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
-            let sel1 = meta.query_advice(sel1, Rotation(rot));
-            let sel2 = meta.query_advice(sel2, Rotation(rot));
+            // sel1, sel2 is in init branch
+            let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
+            let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
 
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
