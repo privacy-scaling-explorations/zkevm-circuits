@@ -31,7 +31,7 @@ pub(crate) struct MulGadget<F> {
     //a, b, c is divided into 4 64-bit digits, call them a0 ~ a3, b0 ~ b3 ...
     //a * b = a0 * b0 + a1 * b0 ...
     t0: Cell<F>, //a0 * b0, contribute 0 ~ 128 bit
-    t1: Cell<F>, //a0 * b1 + a1 * b0, contribute 64 ~ 192 bit
+    t1: Cell<F>, //a0 * b1 + a1 * b0, contribute 64 ~ 193 (notice not 192) bit
     t2: Cell<F>, //a0 * b2 + a2 * b0 + a1 * b1, contribute 128 ~ 256 bit
     t3: Cell<F>, /* a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute 192
                   * bit above */
@@ -56,7 +56,7 @@ impl<F: FieldExt> MulGadget<F> {
         wa: &eth_types::Word,
         wb: &eth_types::Word,
     ) -> Result<(), Error> {
-        use num::{BigUint, ToPrimitive};
+        use num::BigUint;
         //    use bus_mapping::eth_types::ToWord;
 
         let constant_64 = BigUint::from(1u128 << 64);
@@ -92,12 +92,12 @@ impl<F: FieldExt> MulGadget<F> {
             for a_id in 0..=total_idx {
                 let (a_idx, b_idx) =
                     (a_id as usize, (total_idx - a_id) as usize);
-                let tmp_a = if a_digits.len() >= a_idx + 1 {
+                let tmp_a = if a_digits.len() > a_idx {
                     BigUint::from(a_digits[a_idx])
                 } else {
                     BigUint::from(0u128)
                 };
-                let tmp_b = if b_digits.len() >= b_idx + 1 {
+                let tmp_b = if b_digits.len() > b_idx {
                     BigUint::from(b_digits[b_idx])
                 } else {
                     BigUint::from(0u128)
@@ -111,18 +111,19 @@ impl<F: FieldExt> MulGadget<F> {
             .iter()
             .zip([&self.t0, &self.t1, &self.t2, &self.t3])
         {
+            let mut digit_bts = digit.to_bytes_le();
+            digit_bts.resize(32, 0);
+            let digit_bts: [u8; 32] = digit_bts.try_into().unwrap();
             assignee.assign(
                 region,
                 offset,
-                Some(F::from_u128(
-                    digit.to_u128().expect("t digit not exceed u128"),
-                )),
+                Some(F::from_bytes(&digit_bts).unwrap()),
             )?;
         }
 
         let mut c_now = vec![];
         for idx in 0..4 {
-            c_now.push(if c_digits.len() >= idx + 1 {
+            c_now.push(if c_digits.len() > idx {
                 BigUint::from(c_digits[idx])
             } else {
                 BigUint::from(0u128)
@@ -134,30 +135,24 @@ impl<F: FieldExt> MulGadget<F> {
             / &constant_128;
         let v1 = (constant_64.clone() * &t_digits[3] + &v0 + &t_digits[2]
             - &c_now[2]
-            - constant_64.clone() * &c_now[3])
+            - constant_64 * &c_now[3])
             / &constant_128;
 
-        let ret: Result<(), Error> = v0
-            .to_bytes_le()
+        v0.to_bytes_le()
             .into_iter()
             .zip(self.v0.iter())
-            .map(|(bt, assignee)| {
+            .try_for_each(|(bt, assignee)| -> Result<(), Error> {
                 assignee.assign(region, offset, Some(F::from(bt as u64)))?;
                 Ok(())
-            })
-            .collect();
-        ret?;
+            })?;
 
-        let ret: Result<(), Error> = v1
-            .to_bytes_le()
+        v1.to_bytes_le()
             .into_iter()
             .zip(self.v1.iter())
-            .map(|(bt, assignee)| {
+            .try_for_each(|(bt, assignee)| -> Result<(), Error> {
                 assignee.assign(region, offset, Some(F::from(bt as u64)))?;
                 Ok(())
-            })
-            .collect();
-        ret?;
+            })?;
 
         Ok(())
 
@@ -281,10 +276,10 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
         );
         cb.require_equal(
             "mul(multipliers_high) == product_high + radix_high ⋅ 2^128",
-            cur_v1 * radix_constant_128.clone(),
+            cur_v1 * radix_constant_128,
             cur_v0 + t2.expr() + t3.expr() * radix_constant_64.clone()
                 - (c_digits[2].clone()
-                    + c_digits[3].clone() * radix_constant_64.clone()),
+                    + c_digits[3].clone() * radix_constant_64),
         );
 
         //Pop a and b from the stack, push c on the stack
