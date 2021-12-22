@@ -109,6 +109,22 @@ mod test {
     }
 
     #[test]
+    fn mul_gadget_overflow() {
+        let a = Word::from_dec_str("3402823669209384634633746074317682114560")
+            .unwrap(); //2**128 * 10
+        let b = Word::from_dec_str("34028236692093846346337460743176821145600")
+            .unwrap(); //2**128 * 100
+        test_ok(OpcodeId::MUL, a, b);
+
+        let a = Word::from_dec_str("3402823669209384634633746074317682114560")
+            .unwrap(); //2**128 * 10
+        let b = Word::from_dec_str("34028236692093846346337460743176821145500")
+            .unwrap(); //(2**128 
+                       //(2**128 - 1) * 100
+        test_ok(OpcodeId::MUL, a, b);
+    }
+
+    #[test]
     fn mul_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
