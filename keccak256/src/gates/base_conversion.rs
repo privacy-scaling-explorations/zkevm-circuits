@@ -4,17 +4,19 @@ use halo2::{
     poly::Rotation,
 };
 
-use crate::gates::base_eval::BaseEvaluationConfig;
 use crate::gates::tables::BaseInfo;
 use pairing::arithmetic::FieldExt;
 
 #[derive(Clone, Debug)]
 pub struct BaseConversionConfig<F> {
-    q_enable: Selector,
+    q_running_sum: Selector,
+    q_lookup: Selector,
     bi: BaseInfo<F>,
     input_lane: Column<Advice>,
-    input_eval: BaseEvaluationConfig<F>,
-    output_eval: BaseEvaluationConfig<F>,
+    input_coef: Column<Advice>,
+    input_acc: Column<Advice>,
+    output_coef: Column<Advice>,
+    output_acc: Column<Advice>,
 }
 
 impl<F: FieldExt> BaseConversionConfig<F> {
@@ -24,19 +26,39 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         bi: BaseInfo<F>,
         input_lane: Column<Advice>,
     ) -> Self {
-        let q_enable = meta.complex_selector();
+        let q_running_sum = meta.selector();
+        let q_lookup = meta.complex_selector();
+        let input_coef = meta.advice_column();
+        let input_acc = meta.advice_column();
+        let output_coef = meta.advice_column();
+        let output_acc = meta.advice_column();
+
+        meta.enable_equality(input_coef.into());
+        meta.enable_equality(input_acc.into());
+        meta.enable_equality(output_coef.into());
+        meta.enable_equality(output_acc.into());
         meta.enable_equality(input_lane.into());
 
-        let input_eval = BaseEvaluationConfig::configure(meta, bi.input_pob());
-        let output_eval =
-            BaseEvaluationConfig::configure(meta, bi.output_pob());
-
+        meta.create_gate("input running sum", |meta| {
+            let q_enable = meta.query_selector(q_running_sum);
+            let coef = meta.query_advice(input_coef, Rotation::cur());
+            let acc_prev = meta.query_advice(input_acc, Rotation::prev());
+            let acc = meta.query_advice(input_acc, Rotation::cur());
+            let power_of_base = bi.input_pob();
+            vec![q_enable * (acc - acc_prev * power_of_base - coef)]
+        });
+        meta.create_gate("output running sum", |meta| {
+            let q_enable = meta.query_selector(q_running_sum);
+            let coef = meta.query_advice(output_coef, Rotation::cur());
+            let acc_prev = meta.query_advice(output_acc, Rotation::prev());
+            let acc = meta.query_advice(output_acc, Rotation::cur());
+            let power_of_base = bi.output_pob();
+            vec![q_enable * (acc - acc_prev * power_of_base - coef)]
+        });
         meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let input_slices =
-                meta.query_advice(input_eval.coef, Rotation::cur());
-            let output_slices =
-                meta.query_advice(output_eval.coef, Rotation::cur());
+            let q_enable = meta.query_selector(q_lookup);
+            let input_slices = meta.query_advice(input_coef, Rotation::cur());
+            let output_slices = meta.query_advice(output_coef, Rotation::cur());
             vec![
                 (q_enable.clone() * input_slices, bi.input_tc),
                 (q_enable * output_slices, bi.output_tc),
@@ -44,11 +66,14 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         });
 
         Self {
-            q_enable,
+            q_running_sum,
+            q_lookup,
             bi,
             input_lane,
-            input_eval,
-            output_eval,
+            input_coef,
+            input_acc,
+            output_coef,
+            output_acc,
         }
     }
 
@@ -62,18 +87,58 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         let (out_cell, out_value) = layouter.assign_region(
             || "Base conversion",
             |mut region| {
-                let count = self.bi.clone().slice_count();
-                for offset in 0..count {
-                    self.q_enable.enable(&mut region, offset)?;
-                }
-                let (in_cell, _) =
-                    self.input_eval.assign_region(&mut region, &input_coefs)?;
-                region.constrain_equal(in_cell, input.0)?;
+                let mut input_acc = F::zero();
+                let input_pob = self.bi.input_pob();
+                let mut output_acc = F::zero();
+                let output_pob = self.bi.output_pob();
+                for (offset, (&input_coef, &output_coef)) in
+                    input_coefs.iter().zip(output_coefs.iter()).enumerate()
+                {
+                    self.q_lookup.enable(&mut region, offset)?;
+                    if offset != 0 {
+                        self.q_running_sum.enable(&mut region, offset)?;
+                    }
+                    let input_coef_cell = region.assign_advice(
+                        || "Input Coef",
+                        self.input_coef,
+                        offset,
+                        || Ok(input_coef),
+                    )?;
+                    input_acc = input_acc * input_pob + input_coef;
+                    let input_acc_cell = region.assign_advice(
+                        || "Input Acc",
+                        self.input_acc,
+                        offset,
+                        || Ok(input_acc),
+                    )?;
+                    let output_coef_cell = region.assign_advice(
+                        || "Output Coef",
+                        self.output_coef,
+                        offset,
+                        || Ok(output_coef),
+                    )?;
+                    output_acc = output_acc * output_pob + output_coef;
+                    let output_acc_cell = region.assign_advice(
+                        || "Output Acc",
+                        self.output_acc,
+                        offset,
+                        || Ok(output_acc),
+                    )?;
 
-                let (out_cell, out_value) = self
-                    .output_eval
-                    .assign_region(&mut region, &output_coefs)?;
-                Ok((out_cell, out_value))
+                    if offset == 0 {
+                        // bind first acc to first coef
+                        region
+                            .constrain_equal(input_acc_cell, input_coef_cell)?;
+                        region.constrain_equal(
+                            output_acc_cell,
+                            output_coef_cell,
+                        )?;
+                    } else if offset == input_coefs.len() - 1 {
+                        region.constrain_equal(input_acc_cell, input.0)?;
+                        return Ok((output_acc_cell, output_acc));
+                    }
+                }
+                unreachable!();
             },
         )?;
 
@@ -145,6 +210,19 @@ mod tests {
                 )?;
                 let output =
                     self.conversion.assign_region(layouter, (cell, input))?;
+                layouter.assign_region(
+                    || "Input lane",
+                    |mut region| {
+                        let cell = region.assign_advice(
+                            || "Output lane",
+                            self.lane,
+                            0,
+                            || Ok(output.1),
+                        )?;
+                        region.constrain_equal(cell, output.0)?;
+                        Ok(())
+                    },
+                )?;
                 Ok(output.1)
             }
         }
@@ -184,7 +262,22 @@ mod tests {
             output_b13_lane: biguint_to_f::<Fp>(&convert_b2_to_b13(input))
                 .unwrap(),
         };
-        let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
+        let k = 17;
+
+        #[cfg(feature = "dev-graph")]
+        {
+            use plotters::prelude::*;
+            let root = BitMapBackend::new("base-conversion.png", (1024, 32768))
+                .into_drawing_area();
+            root.fill(&WHITE).unwrap();
+            let root =
+                root.titled("Base conversion", ("sans-serif", 60)).unwrap();
+            halo2::dev::CircuitLayout::default()
+                .mark_equality_cells(true)
+                .render(k, &circuit, &root)
+                .unwrap();
+        }
+        let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
 }
