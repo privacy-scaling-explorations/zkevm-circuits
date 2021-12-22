@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
-use crate::{
-    operation::{StackOp, RW},
-    Error,
-};
+use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::JUMP`](crate::evm::OpcodeId::JUMP)
@@ -20,12 +17,11 @@ impl Opcode for Jump {
         let step = &steps[0];
 
         // `JUMP` needs only one read operation
-        let op = StackOp::new(
+        state.push_stack_op(
             RW::READ,
             step.stack.nth_last_filled(0),
             step.stack.nth_last(0)?,
         );
-        state.push_op(op);
 
         Ok(())
     }
@@ -75,18 +71,18 @@ mod jump_tests {
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
-            test_builder.block_ctx.gc,
+            test_builder.block_ctx.rwc,
             0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last Stack read
-        state_ref.push_op(StackOp::new(
+        state_ref.push_stack_op(
             RW::READ,
             StackAddress::from(1023),
             Word::from(destination),
-        ));
+        );
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);

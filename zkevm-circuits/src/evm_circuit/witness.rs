@@ -386,7 +386,7 @@ fn step_convert(
             })
             .collect(),
         execution_state: ExecutionState::from(step),
-        rw_counter: usize::from(step.gc),
+        rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
         stack_pointer: 1024 - step.stack_size,
         gas_left: step.gas_left.0,
@@ -446,13 +446,13 @@ pub fn block_convert(
     let bytecode = bytecode.into();
 
     // here stack_ops/memory_ops/etc are merged into a single array
-    // in EVM circuit, we need gc-sorted ops
+    // in EVM circuit, we need rwc-sorted ops
     let mut stack_ops = b.container.sorted_stack();
-    stack_ops.sort_by_key(|s| usize::from(s.gc()));
+    stack_ops.sort_by_key(|s| usize::from(s.rwc()));
     let mut memory_ops = b.container.sorted_memory();
-    memory_ops.sort_by_key(|s| usize::from(s.gc()));
+    memory_ops.sort_by_key(|s| usize::from(s.rwc()));
     let mut storage_ops = b.container.sorted_storage();
-    storage_ops.sort_by_key(|s| usize::from(s.gc()));
+    storage_ops.sort_by_key(|s| usize::from(s.rwc()));
 
     let mut block = Block {
         randomness,
@@ -473,14 +473,14 @@ pub fn block_convert(
     };
 
     block.rws.extend(stack_ops.iter().map(|s| Rw::Stack {
-        rw_counter: s.gc().into(),
+        rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
         call_id: 1,
         stack_pointer: usize::from(*s.op().address()),
         value: *s.op().value(),
     }));
     block.rws.extend(memory_ops.iter().map(|s| Rw::Memory {
-        rw_counter: s.gc().into(),
+        rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
         call_id: 1,
         memory_address: u64::from_le_bytes(

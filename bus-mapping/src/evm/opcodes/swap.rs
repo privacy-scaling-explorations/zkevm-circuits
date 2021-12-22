@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
-use crate::{
-    operation::{StackOp, RW},
-    Error,
-};
+use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::SWAP*` `OpcodeId`.
@@ -21,30 +18,14 @@ impl<const N: usize> Opcode for Swap<N> {
         // Peek b and a
         let stack_b_value_read = step.stack.nth_last(N)?;
         let stack_b_position = step.stack.nth_last_filled(N);
-        state.push_op(StackOp::new(
-            RW::READ,
-            stack_b_position,
-            stack_b_value_read,
-        ));
+        state.push_stack_op(RW::READ, stack_b_position, stack_b_value_read);
         let stack_a_value_read = step.stack.last()?;
         let stack_a_position = step.stack.last_filled();
-        state.push_op(StackOp::new(
-            RW::READ,
-            stack_a_position,
-            stack_a_value_read,
-        ));
+        state.push_stack_op(RW::READ, stack_a_position, stack_a_value_read);
 
         // Write a into b_position, write b into a_position
-        state.push_op(StackOp::new(
-            RW::WRITE,
-            stack_b_position,
-            stack_a_value_read,
-        ));
-        state.push_op(StackOp::new(
-            RW::WRITE,
-            stack_a_position,
-            stack_b_value_read,
-        ));
+        state.push_stack_op(RW::WRITE, stack_b_position, stack_a_value_read);
+        state.push_stack_op(RW::WRITE, stack_a_position, stack_b_value_read);
 
         Ok(())
     }
@@ -94,7 +75,7 @@ mod swap_tests {
             let mut step = ExecStep::new(
                 &block.geth_trace.struct_logs[i],
                 0,
-                test_builder.block_ctx.gc,
+                test_builder.block_ctx.rwc,
                 0,
             );
             let mut state_ref =
@@ -105,10 +86,10 @@ mod swap_tests {
             let a_val = Word::from(*a);
             let b_val = Word::from(*b);
 
-            state_ref.push_op(StackOp::new(RW::READ, b_pos, b_val));
-            state_ref.push_op(StackOp::new(RW::READ, a_pos, a_val));
-            state_ref.push_op(StackOp::new(RW::WRITE, b_pos, a_val));
-            state_ref.push_op(StackOp::new(RW::WRITE, a_pos, b_val));
+            state_ref.push_stack_op(RW::READ, b_pos, b_val);
+            state_ref.push_stack_op(RW::READ, a_pos, a_val);
+            state_ref.push_stack_op(RW::WRITE, b_pos, a_val);
+            state_ref.push_stack_op(RW::WRITE, a_pos, b_val);
 
             tx.steps_mut().push(step);
         }

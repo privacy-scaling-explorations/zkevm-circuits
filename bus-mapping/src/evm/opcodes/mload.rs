@@ -1,18 +1,14 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::{GethExecStep, ToBigEndian, Word};
-use crate::{
-    evm::MemoryAddress,
-    operation::{MemoryOp, StackOp, RW},
-    Error,
-};
+use crate::{evm::MemoryAddress, operation::RW, Error};
 use core::convert::TryInto;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
 /// `OpcodeId`. This is responsible of generating all of the associated
-/// [`StackOp`]s and [`MemoryOp`]s and place them inside the trace's
-/// [`OperationContainer`](crate::operation::OperationContainer).
+/// [`crate::operation::StackOp`]s and [`crate::operation::MemoryOp`]s and place
+/// them inside the trace's [`crate::operation::OperationContainer`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Mload;
 
@@ -29,7 +25,7 @@ impl Opcode for Mload {
         let stack_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_op(StackOp::new(RW::READ, stack_position, stack_value_read));
+        state.push_stack_op(RW::READ, stack_position, stack_value_read);
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
@@ -43,14 +39,14 @@ impl Opcode for Mload {
         //
         // First stack write
         //
-        state.push_op(StackOp::new(RW::WRITE, stack_position, mem_read_value));
+        state.push_stack_op(RW::WRITE, stack_position, mem_read_value);
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
         let bytes = mem_read_value.to_be_bytes();
         bytes.iter().for_each(|value_byte| {
-            state.push_op(MemoryOp::new(RW::READ, mem_read_addr, *value_byte));
+            state.push_memory_op(RW::READ, mem_read_addr, *value_byte);
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
@@ -98,25 +94,25 @@ mod mload_tests {
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
-            test_builder.block_ctx.gc,
+            test_builder.block_ctx.rwc,
             0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOp associated to the 0x40 read from the latest Stack pos.
-        state_ref.push_op(StackOp::new(
+        state_ref.push_stack_op(
             RW::READ,
             StackAddress::from(1023),
             Word::from(0x40),
-        ));
+        );
 
         // Add the last Stack write
-        state_ref.push_op(StackOp::new(
+        state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1023),
             Word::from(0x80),
-        ));
+        );
 
         // Add the 32 MemoryOp generated from the Memory read at addr
         // 0x40<->0x80 for each byte.
@@ -126,7 +122,7 @@ mod mload_tests {
             .enumerate()
             .map(|(idx, byte)| (idx + 0x40, byte))
             .for_each(|(idx, byte)| {
-                state_ref.push_op(MemoryOp::new(RW::READ, idx.into(), *byte));
+                state_ref.push_memory_op(RW::READ, idx.into(), *byte);
             });
 
         tx.steps_mut().push(step);

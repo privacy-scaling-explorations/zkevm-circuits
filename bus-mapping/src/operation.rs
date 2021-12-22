@@ -6,7 +6,7 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{GlobalCounter, MemoryAddress, StackAddress};
+pub use super::evm::{MemoryAddress, RWCounter, StackAddress};
 use crate::eth_types::{Address, Word};
 pub use container::OperationContainer;
 use core::cmp::Ordering;
@@ -48,8 +48,8 @@ pub enum Target {
     Storage,
     /// Means the target of the operation is the TxAccessListAccount.
     TxAccessListAccount,
-    /// Means the target of the operation is the TxAccessListStorageSlot.
-    TxAccessListStorageSlot,
+    /// Means the target of the operation is the TxAccessListAccountStorage.
+    TxAccessListAccountStorage,
     /// Means the target of the operation is the TxRefund.
     TxRefund,
     /// Means the target of the operation is the Account.
@@ -72,6 +72,8 @@ pub trait Op: Eq + Ord {
 pub struct MemoryOp {
     /// RW
     pub rw: RW,
+    /// Call ID
+    pub call_id: usize,
     /// Memory Address
     pub address: MemoryAddress,
     /// Value
@@ -91,8 +93,18 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(rw: RW, address: MemoryAddress, value: u8) -> MemoryOp {
-        MemoryOp { rw, address, value }
+    pub fn new(
+        rw: RW,
+        call_id: usize,
+        address: MemoryAddress,
+        value: u8,
+    ) -> MemoryOp {
+        MemoryOp {
+            rw,
+            call_id,
+            address,
+            value,
+        }
     }
 
     /// Returns the internal [`RW`] which says whether the operation corresponds
@@ -131,7 +143,7 @@ impl PartialOrd for MemoryOp {
 
 impl Ord for MemoryOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.address.cmp(&other.address)
+        (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
     }
 }
 
@@ -142,6 +154,8 @@ impl Ord for MemoryOp {
 pub struct StackOp {
     /// RW
     pub rw: RW,
+    /// Call ID
+    pub call_id: usize,
     /// Stack Address
     pub address: StackAddress,
     /// Value
@@ -161,8 +175,18 @@ impl fmt::Debug for StackOp {
 
 impl StackOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub const fn new(rw: RW, address: StackAddress, value: Word) -> StackOp {
-        StackOp { rw, address, value }
+    pub const fn new(
+        rw: RW,
+        call_id: usize,
+        address: StackAddress,
+        value: Word,
+    ) -> StackOp {
+        StackOp {
+            rw,
+            call_id,
+            address,
+            value,
+        }
     }
 
     /// Returns the internal [`RW`] which says whether the operation corresponds
@@ -201,7 +225,7 @@ impl PartialOrd for StackOp {
 
 impl Ord for StackOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.address.cmp(&other.address)
+        (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
     }
 }
 
@@ -297,10 +321,7 @@ impl PartialOrd for StorageOp {
 
 impl Ord for StorageOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.address.cmp(&other.address) {
-            Ordering::Equal => self.key.cmp(&other.key),
-            ord => ord,
-        }
+        (&self.address, &self.key).cmp(&(&other.address, &other.key))
     }
 }
 
@@ -338,10 +359,7 @@ impl PartialOrd for TxAccessListAccountOp {
 
 impl Ord for TxAccessListAccountOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.tx_id.cmp(&other.tx_id) {
-            Ordering::Equal => self.address.cmp(&other.address),
-            ord => ord,
-        }
+        (&self.tx_id, &self.address).cmp(&(&other.tx_id, &other.address))
     }
 }
 
@@ -354,7 +372,7 @@ impl Op for TxAccessListAccountOp {
 /// Represents a change in the Storage AccessList implied by an `SSTORE` or
 /// `SLOAD` step of the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
-pub struct TxAccessListStorageSlotOp {
+pub struct TxAccessListAccountStorageOp {
     /// Transaction ID: Transaction index in the block starting at 1.
     pub tx_id: usize,
     /// Account Address
@@ -367,9 +385,9 @@ pub struct TxAccessListStorageSlotOp {
     pub value_prev: bool,
 }
 
-impl fmt::Debug for TxAccessListStorageSlotOp {
+impl fmt::Debug for TxAccessListAccountStorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TxAccessListStorageSlotOp { ")?;
+        f.write_str("TxAccessListAccountStorageOp { ")?;
         f.write_fmt(format_args!(
             "tx_id: {:?}, addr: {:?}, key: {:?}, val_prev: {:?}, val: {:?}",
             self.tx_id, self.address, self.key, self.value_prev, self.value
@@ -378,27 +396,25 @@ impl fmt::Debug for TxAccessListStorageSlotOp {
     }
 }
 
-impl PartialOrd for TxAccessListStorageSlotOp {
+impl PartialOrd for TxAccessListAccountStorageOp {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for TxAccessListStorageSlotOp {
+impl Ord for TxAccessListAccountStorageOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.tx_id.cmp(&other.tx_id) {
-            Ordering::Equal => match self.address.cmp(&other.address) {
-                Ordering::Equal => self.key.cmp(&other.key),
-                ord => ord,
-            },
-            ord => ord,
-        }
+        (&self.tx_id, &self.address, &self.key).cmp(&(
+            &other.tx_id,
+            &other.address,
+            &other.key,
+        ))
     }
 }
 
-impl Op for TxAccessListStorageSlotOp {
+impl Op for TxAccessListAccountStorageOp {
     fn into_enum(self) -> OpEnum {
-        OpEnum::TxAccessListStorageSlot(self)
+        OpEnum::TxAccessListAccountStorage(self)
     }
 }
 
@@ -494,10 +510,7 @@ impl PartialOrd for AccountOp {
 
 impl Ord for AccountOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.address.cmp(&other.address) {
-            Ordering::Equal => self.field.cmp(&other.field),
-            ord => ord,
-        }
+        (&self.address, &self.field).cmp(&(&other.address, &other.field))
     }
 }
 
@@ -540,10 +553,7 @@ impl PartialOrd for AccountDestructedOp {
 
 impl Ord for AccountDestructedOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.tx_id.cmp(&other.tx_id) {
-            Ordering::Equal => self.address.cmp(&other.address),
-            ord => ord,
-        }
+        (&self.tx_id, &self.address).cmp(&(&other.tx_id, &other.address))
     }
 }
 
@@ -568,8 +578,8 @@ pub enum OpEnum {
     Storage(StorageOp),
     /// TxAccessListAccount
     TxAccessListAccount(TxAccessListAccountOp),
-    /// TxAccessListStorageSlot
-    TxAccessListStorageSlot(TxAccessListStorageSlotOp),
+    /// TxAccessListAccountStorage
+    TxAccessListAccountStorage(TxAccessListAccountStorageOp),
     /// TxRefund
     TxRefund(TxRefundOp),
     /// Account
@@ -580,10 +590,10 @@ pub enum OpEnum {
      * CallContext(CallContextOp), */
 }
 
-/// Operation is a Wrapper over a type that implements Op with a GlobalCounter.
+/// Operation is a Wrapper over a type that implements Op with a RWCounter.
 #[derive(Debug, Clone)]
 pub struct Operation<T: Op> {
-    gc: GlobalCounter,
+    rwc: RWCounter,
     /// True when this Operation is a revert of its mirror
     revert: bool,
     op: T,
@@ -591,7 +601,7 @@ pub struct Operation<T: Op> {
 
 impl<T: Op> PartialEq for Operation<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.op.eq(&other.op) && self.gc == other.gc
+        self.op.eq(&other.op) && self.rwc == other.rwc
     }
 }
 
@@ -606,25 +616,25 @@ impl<T: Op> PartialOrd for Operation<T> {
 impl<T: Op> Ord for Operation<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.op.cmp(&other.op) {
-            Ordering::Equal => self.gc.cmp(&other.gc),
+            Ordering::Equal => self.rwc.cmp(&other.rwc),
             ord => ord,
         }
     }
 }
 
 impl<T: Op> Operation<T> {
-    /// Create a new Operation from an `op` with a `gc`
-    pub fn new(gc: GlobalCounter, op: T) -> Self {
+    /// Create a new Operation from an `op` with a `rwc`
+    pub fn new(rwc: RWCounter, op: T) -> Self {
         Self {
-            gc,
+            rwc,
             revert: false,
             op,
         }
     }
 
-    /// Return this `Operation` `gc`
-    pub fn gc(&self) -> GlobalCounter {
-        self.gc
+    /// Return this `Operation` `rwc`
+    pub fn rwc(&self) -> RWCounter {
+        self.rwc
     }
 
     /// Return this `Operation` `op`
@@ -693,16 +703,20 @@ mod operation_tests {
 
     #[test]
     fn unchecked_op_transmutations_are_safe() {
-        let stack_op =
-            StackOp::new(RW::WRITE, StackAddress::from(1024), Word::from(0x40));
+        let stack_op = StackOp::new(
+            RW::WRITE,
+            1,
+            StackAddress::from(1024),
+            Word::from(0x40),
+        );
 
         let stack_op_as_operation =
-            Operation::new(GlobalCounter(1), stack_op.clone());
+            Operation::new(RWCounter(1), stack_op.clone());
 
-        let memory_op = MemoryOp::new(RW::WRITE, MemoryAddress(0x40), 0x40);
+        let memory_op = MemoryOp::new(RW::WRITE, 1, MemoryAddress(0x40), 0x40);
 
         let memory_op_as_operation =
-            Operation::new(GlobalCounter(1), memory_op.clone());
+            Operation::new(RWCounter(1), memory_op.clone());
 
         assert_eq!(stack_op, stack_op_as_operation.op);
         assert_eq!(memory_op, memory_op_as_operation.op)
