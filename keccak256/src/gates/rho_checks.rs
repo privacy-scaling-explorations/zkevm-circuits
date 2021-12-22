@@ -114,7 +114,8 @@ use crate::gates::{
 use halo2::{
     circuit::{Cell, Layouter, Region},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+        Advice, Column, ConstraintSystem, Error, Expression, Selector,
+        TableColumn,
     },
     poly::Rotation,
 };
@@ -302,8 +303,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         lane_xy: (usize, usize),
         adv: RhoAdvices,
         axiliary: [Column<Advice>; 2],
-        base13_to_9: [Column<Fixed>; 3],
-        special: [Column<Fixed>; 2],
+        base13_to_9: [TableColumn; 3],
+        special: [TableColumn; 2],
     ) -> Self {
         meta.enable_equality(adv.input.acc.into());
         meta.enable_equality(adv.output.acc.into());
@@ -414,7 +415,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
     fn configure(
         meta: &mut ConstraintSystem<F>,
         adv: RhoAdvices,
-        fix_cols: [Column<Fixed>; 3],
+        fix_cols: [TableColumn; 3],
         chunk_idx: u32,
         rotation: u32,
         step: u32,
@@ -564,7 +565,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         base_13_acc: Column<Advice>,
         base_9_acc: Column<Advice>,
         last_b9_coef: Column<Advice>,
-        special: [Column<Fixed>; 2],
+        special: [TableColumn; 2],
         rotation: u64,
     ) -> Self {
         meta.create_gate("validate base_9_acc", |meta| {

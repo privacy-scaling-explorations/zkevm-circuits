@@ -7,7 +7,7 @@ use crate::gates::{
 
 use halo2::{
     circuit::{Cell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
@@ -27,8 +27,8 @@ impl<F: FieldExt> RhoConfig<F> {
         state: [Column<Advice>; 25],
         adv: &RhoAdvices,
         axiliary: [Column<Advice>; 2],
-        base13_to_9: [Column<Fixed>; 3],
-        special: [Column<Fixed>; 2],
+        base13_to_9: [TableColumn; 3],
+        special: [TableColumn; 2],
     ) -> Self {
         for lane in state.iter() {
             meta.enable_equality((*lane).into());
@@ -152,11 +152,12 @@ mod tests {
                 let axiliary = [state[8], state[9]];
 
                 let base13_to_9 = [
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
+                    meta.lookup_table_column(),
+                    meta.lookup_table_column(),
+                    meta.lookup_table_column(),
                 ];
-                let special = [meta.fixed_column(), meta.fixed_column()];
+                let special =
+                    [meta.lookup_table_column(), meta.lookup_table_column()];
                 RhoConfig::configure(
                     meta,
                     state,
@@ -248,7 +249,7 @@ mod tests {
             use plotters::prelude::*;
             let k = 15;
             let root =
-                BitMapBackend::new("rho-test-circuit.png", (4096, 65536))
+                BitMapBackend::new("rho-test-circuit.png", (16384, 65536))
                     .into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
