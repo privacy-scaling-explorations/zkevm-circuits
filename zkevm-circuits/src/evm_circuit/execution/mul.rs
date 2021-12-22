@@ -17,6 +17,7 @@ use crate::{
     util::Expr,
 };
 //use bus_mapping::evm::OpcodeId;
+//use bus_mapping::evm::GasCost;
 use bus_mapping::eth_types::{self, ToLittleEndian};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
@@ -65,24 +66,6 @@ impl<F: FieldExt> MulGadget<F> {
         let a = BigUint::from_bytes_le(&wa.to_le_bytes());
         let b = BigUint::from_bytes_le(&wb.to_le_bytes());
         let c = a.clone() * b.clone() % constant_256;
-        //TODO: would c is an invalid Field?
-        /*
-        //TODO: move it to test code?
-        let a8s = a.to_bytes_le();
-        let b8s = b.to_bytes_le();
-        let c8s = c.to_bytes_le();
-        let mut suma :u128 = 0;
-        let mut sumb :u128 = 0;
-        let mut sumc :u128 = 0;
-        for idx in 0..32 {
-            let tmp_a = if a8s.len() >= idx + 1 { a8s[idx] as u128} else { 0u128 };
-            let tmp_b = if b8s.len() >= idx + 1 { b8s[idx] as u128} else { 0u128 };
-            let tmp_c = if c8s.len() >= idx + 1 { c8s[idx] as u128} else { 0u128 };
-            suma = suma + tmp_a;
-            sumb = sumb + tmp_b;
-            sumc = sumc + tmp_c;
-            print!("{} ",tmp_c);
-        }println!("");*/
         let a_digits = a.to_u64_digits();
         let b_digits = b.to_u64_digits();
         let c_digits = c.to_u64_digits();
@@ -155,20 +138,6 @@ impl<F: FieldExt> MulGadget<F> {
             })?;
 
         Ok(())
-
-        /*        println!("{} {} {} {} {} {}",t0,t1,t2,t3,v0,v1);
-        (
-            c,
-            t0,
-            t1,
-            t2,
-            t3,
-            v0,
-            v1,
-            suma,
-            sumb,
-            sumc,
-        )*/
     }
 }
 
@@ -187,7 +156,6 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
         let t1 = cb.query_cell();
         let t2 = cb.query_cell();
         let t3 = cb.query_cell();
-        //TODO: can the cell is just bytes so we use query_byte instead?
         let v0: [Cell<F>; 9] = (0..9)
             .map(|_| cb.query_cell())
             .collect::<Vec<Cell<F>>>()
@@ -292,6 +260,9 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
+            //Setting gas_left as default (SAME), SameContextGadget would
+            //deduce the gas cost from OPCODE automatically
+            //gas_left: Delta(-GasCost::FAST.as_usize().expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
