@@ -37,6 +37,8 @@ mod push;
 mod signextend;
 mod stop;
 mod swap;
+mod coinbase;
+
 use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
@@ -56,6 +58,8 @@ use push::PushGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
+use coinbase::CoinbaseGadget;
+
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -100,6 +104,7 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
+    coinbase_gadget: CoinbaseGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
@@ -234,6 +239,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
+            coinbase_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -372,6 +378,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         lookup!(Table::Tx, tx_table);
         lookup!(Table::Rw, rw_table);
         lookup!(Table::Bytecode, bytecode_table);
+        lookup!(Table::Block, bytecode_table);
     }
 
     pub fn assign_block(
@@ -500,6 +507,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
