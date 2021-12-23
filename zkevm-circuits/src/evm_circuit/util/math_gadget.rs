@@ -205,61 +205,56 @@ impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
 /// which is useful for opcode MUL, DIV, SDIV and xxxMOD
 #[derive(Clone, Debug)]
 pub(crate) struct MulWordsGadget<F> {
-    multiplier: util::Word<F>,
-    multiplicand: util::Word<F>,
+    a: util::Word<F>,
+    b: util::Word<F>,
     product: util::Word<F>,
     //here we execute a multi-limbs multiplication, see spec or
     //https://hackmd.io/HL0QhGUeQoSgIBt2el6fHA
-    t0: Cell<F>,
-    t1: Cell<F>,
-    t2: Cell<F>,
-    t3: Cell<F>,
+    // a, b and product is divided into 4 64-bit digits, call them a0 ~ a3, b0
+    // ~ b3 ... a * b = a0 * b0 + a1 * b0 ...
+    t0: Cell<F>, // a0 * b0, contribute to 0 ~ 128 bit
+    t1: Cell<F>, /* a0 * b1 + a1 * b0, contribute to 64 ~ 193 bit (include
+                  * the carry) */
+    t2: Cell<F>, // a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
+    t3: Cell<F>, /* a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to
+                  * above 192 bit */
+
+    // so t0 ~ t1 include all contributions to the low 256bit of product,
+    // with a maxium 68bit radix (the part higher than 256bit) v1
+    // it is similar that we have v0 as the radix of contributions
+    // to the low 128bit of the product
+    // we can slightly relax the constraint of v0/v1 to 72bit so just
+    // use 9 bytes for them
     v0: [Cell<F>; 9],
     v1: [Cell<F>; 9],
+    /* just prove:
+     *  t0 + t1 = <low 128 bit of product> + <radix v0>
+     *  t2 + t3 + <radix v0> = <high 128 bit of product> + <radix v1> */
 }
 
 impl<F: FieldExt> MulWordsGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        multiplier: util::Word<F>,
-        multiplicand: util::Word<F>,
+        a: util::Word<F>,
+        b: util::Word<F>,
     ) -> Self {
         let product = cb.query_word();
         let t0 = cb.query_cell();
         let t1 = cb.query_cell();
         let t2 = cb.query_cell();
         let t3 = cb.query_cell();
-        let v0: [Cell<F>; 9] = (0..9)
-            .map(|_| cb.query_cell())
-            .collect::<Vec<Cell<F>>>()
-            .try_into()
-            .unwrap();
-        let v1: [Cell<F>; 9] = (0..9)
-            .map(|_| cb.query_cell())
-            .collect::<Vec<Cell<F>>>()
-            .try_into()
-            .unwrap();
+        let v0 = array_init::array_init(|_| cb.query_byte());
+        let v1 = array_init::array_init(|_| cb.query_byte());
 
-        let mut a_digits = vec![];
-        let mut b_digits = vec![];
-        let mut c_digits = vec![];
+        let mut a_limbs = vec![];
+        let mut b_limbs = vec![];
+        let mut c_limbs = vec![];
         for virtual_idx in 0..4 {
-            let mut tmp_a = 0.expr();
-            let mut tmp_b = 0.expr();
-            let mut tmp_c = 0.expr();
-            let mut radix = 1.expr();
-            for idx in 0..8 {
-                let now_idx = (virtual_idx * 8 + idx) as usize;
-                tmp_a =
-                    tmp_a + radix.clone() * multiplier.cells[now_idx].expr();
-                tmp_b =
-                    tmp_b + radix.clone() * multiplicand.cells[now_idx].expr();
-                tmp_c = tmp_c + radix.clone() * product.cells[now_idx].expr();
-                radix = radix * (1 << 8).expr();
-            }
-            a_digits.push(tmp_a);
-            b_digits.push(tmp_b);
-            c_digits.push(tmp_c);
+            let now_idx = (virtual_idx * 8) as usize;
+            a_limbs.push(from_bytes::expr(&a.cells[now_idx..now_idx + 8]));
+            b_limbs.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
+            c_limbs
+                .push(from_bytes::expr(&product.cells[now_idx..now_idx + 8]));
         }
 
         for total_idx in 0..4 {
@@ -268,39 +263,23 @@ impl<F: FieldExt> MulWordsGadget<F> {
                 let (a_idx, b_idx) =
                     (a_id as usize, (total_idx - a_id) as usize);
                 rhs_sum =
-                    rhs_sum + a_digits[a_idx].clone() * b_digits[b_idx].clone();
+                    rhs_sum + a_limbs[a_idx].clone() * b_limbs[b_idx].clone();
             }
             cb.require_zero(
                 "mul: dissemble product",
                 match total_idx {
-                    //indicate the digits inside a_digits and b_digits as a0 ~ a3 and b0 ~ b3
+                    // indicate the digits inside a_limbs and b_limbs as a0 ~ a3 and b0 ~ b3
                     0 => t0.expr() - rhs_sum, //a0 * b0
                     1 => t1.expr() - rhs_sum, //a0 * b1 + a1 * b0
                     2 => t2.expr() - rhs_sum, //a0 * b2 + a2 * b0 + a1 * b1
                     3 => t3.expr() - rhs_sum, //a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2
                     _ => unimplemented!(),
-                    //so all the digits contributed to the low 256bits of product has been involved
                 },
             );
         }
 
-        let mut cur_v0 = 0.expr();
-        let mut cur_v1 = 0.expr();
-        let mut tmp_radix = 1.expr();
-        //radix_constant_8 == 2^8
-        let radix_constant_8 = 256.expr();
-        for idx in 0..9 {
-            cur_v0 = cur_v0 + tmp_radix.clone() * v0[idx].expr();
-            cur_v1 = cur_v1 + tmp_radix.clone() * v1[idx].expr();
-            tmp_radix = tmp_radix * radix_constant_8.clone();
-        }
-
-        //use rangecheck to check v0,v1
-        //we need v0,v1 in range[0,2^66)
-        for idx in 0..9 {
-            cb.range_lookup(v0[idx].expr(), 256);
-            cb.range_lookup(v1[idx].expr(), 256);
-        }
+        let cur_v0 = from_bytes::expr(&v0[..]);
+        let cur_v1 = from_bytes::expr(&v1[..]);
 
         //radix_constant_64 == 2^64
         //radix_constant_128 == 2^128
@@ -312,20 +291,19 @@ impl<F: FieldExt> MulWordsGadget<F> {
             "mul(multipliers_lo) == product_lo + radix_lo ⋅ 2^128",
             cur_v0.clone() * radix_constant_128.clone(),
             t0.expr() + t1.expr() * radix_constant_64.clone()
-                - (c_digits[0].clone()
-                    + c_digits[1].clone() * radix_constant_64.clone()),
+                - (c_limbs[0].clone()
+                    + c_limbs[1].clone() * radix_constant_64.clone()),
         );
         cb.require_equal(
             "mul(multipliers_high) == product_high + radix_high ⋅ 2^128",
             cur_v1 * radix_constant_128,
             cur_v0 + t2.expr() + t3.expr() * radix_constant_64.clone()
-                - (c_digits[2].clone()
-                    + c_digits[3].clone() * radix_constant_64),
+                - (c_limbs[2].clone() + c_limbs[3].clone() * radix_constant_64),
         );
 
         Self {
-            multiplier,
-            multiplicand,
+            a,
+            b,
             product,
             t0,
             t1,
@@ -340,27 +318,13 @@ impl<F: FieldExt> MulWordsGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        multiplier: Word,
-        multiplicand: Word,
+        a: Word,
+        b: Word,
         product: Word,
     ) -> Result<(), Error> {
-        self.assign_witness(
-            region,
-            offset,
-            &multiplier,
-            &multiplicand,
-            &product,
-        )?;
-        self.multiplier.assign(
-            region,
-            offset,
-            Some(multiplier.to_le_bytes()),
-        )?;
-        self.multiplicand.assign(
-            region,
-            offset,
-            Some(multiplicand.to_le_bytes()),
-        )?;
+        self.assign_witness(region, offset, &a, &b, &product)?;
+        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
         self.product
             .assign(region, offset, Some(product.to_le_bytes()))?;
         Ok(())
@@ -388,22 +352,22 @@ impl<F: FieldExt> MulWordsGadget<F> {
         let constant_128 = constant_64.clone() * constant_64.clone();
         /*let constant_256 = constant_128.clone() * constant_128.clone();
         assert_eq!(a.clone() * b.clone() % constant_256, c);*/
-        let a_digits = a.to_u64_digits();
-        let b_digits = b.to_u64_digits();
-        let c_digits = c.to_u64_digits();
+        let a_limbs = a.to_u64_digits();
+        let b_limbs = b.to_u64_digits();
+        let c_limbs = c.to_u64_digits();
         let mut t_digits = vec![];
         for total_idx in 0..4 {
             let mut rhs_sum = BigUint::from(0u128);
             for a_id in 0..=total_idx {
                 let (a_idx, b_idx) =
                     (a_id as usize, (total_idx - a_id) as usize);
-                let tmp_a = if a_digits.len() > a_idx {
-                    BigUint::from(a_digits[a_idx])
+                let tmp_a = if a_limbs.len() > a_idx {
+                    BigUint::from(a_limbs[a_idx])
                 } else {
                     BigUint::from(0u128)
                 };
-                let tmp_b = if b_digits.len() > b_idx {
-                    BigUint::from(b_digits[b_idx])
+                let tmp_b = if b_limbs.len() > b_idx {
+                    BigUint::from(b_limbs[b_idx])
                 } else {
                     BigUint::from(0u128)
                 };
@@ -428,8 +392,8 @@ impl<F: FieldExt> MulWordsGadget<F> {
 
         let mut c_now = vec![];
         for idx in 0..4 {
-            c_now.push(if c_digits.len() > idx {
-                BigUint::from(c_digits[idx])
+            c_now.push(if c_limbs.len() > idx {
+                BigUint::from(c_limbs[idx])
             } else {
                 BigUint::from(0u128)
             })

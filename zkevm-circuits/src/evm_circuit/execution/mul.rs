@@ -8,15 +8,11 @@ use crate::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             math_gadget::MulWordsGadget,
-            /*math_gadget::{AddWordsGadget, PairSelectGadget},
-             *select, */
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-//use bus_mapping::evm::OpcodeId;
-//use bus_mapping::evm::GasCost;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // MulGadget verifies MUL: a * b mod 2^256 is equal to c,
@@ -37,7 +33,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
         let a = cb.query_word();
         let b = cb.query_word();
 
-        //Pop a and b from the stack, push product on the stack
+        // Pop a and b from the stack, push product on the stack
         cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
         let mul_words = MulWordsGadget::construct(cb, a, b);
@@ -48,9 +44,9 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
-            //Setting gas_left as default (SAME), SameContextGadget would
-            //deduce the gas cost from OPCODE automatically
-            //gas_left: Delta(-GasCost::FAST.as_usize().expr()),
+            // Setting gas_left as default (SAME), SameContextGadget would
+            // deduce the gas cost from OPCODE automatically
+            // gas_left: Delta(-GasCost::FAST.as_usize().expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
