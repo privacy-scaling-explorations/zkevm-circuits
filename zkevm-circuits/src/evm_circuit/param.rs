@@ -1,7 +1,10 @@
 // Step dimension
-pub const STEP_WIDTH: usize = 32;
-pub const STEP_HEIGHT: usize = 10;
-pub const NUM_CELLS_STEP_STATE: usize = 10;
+pub(crate) const STEP_WIDTH: usize = 32;
+pub(crate) const STEP_HEIGHT: usize = 10;
+pub(crate) const NUM_CELLS_STEP_STATE: usize = 10;
+
+// The number of bytes an u64 has.
+pub(crate) const NUM_BYTES_U64: usize = 8;
 
 /// The maximum number of bytes that a field element
 /// can be broken down into without causing the value it
@@ -13,9 +16,11 @@ pub(crate) const MAX_GAS_SIZE_IN_BYTES: usize = 8;
 // Number of bytes that will be used of the address word.
 // If any of the other more signficant bytes are used it will
 // always result in an out-of-gas error.
-pub const NUM_ADDRESS_BYTES_USED: usize = 5;
-pub const MAX_MEMORY_SIZE_IN_BYTES: usize = 5;
-// Number of bytes that will be used of the JUMP* destination or code copy range
-// check. Although the deployed code has maximum size of 0x6000, the size of
-// a creation transaction could be 128KB, which needs 3 bytes to cover.
-pub const MAX_CODE_SIZE_IN_BYTES: usize = 3;
+pub(crate) const NUM_ADDRESS_BYTES_USED: usize = 5;
+pub(crate) const MAX_MEMORY_SIZE_IN_BYTES: usize = 5;
+// Number of bytes that will be used of prorgam counter. Although the maximum
+// size of execution bytecode could be at most 128kB due to the size limit of a
+// transaction, which could be covered by 3 bytes, we still support program
+// counter to u64 as go-ethereum in case transaction size is allowed larger in
+// the future.
+pub(crate) const NUM_BYTES_PROGRAM_COUNTER: usize = NUM_BYTES_U64;

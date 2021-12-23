@@ -55,39 +55,39 @@ impl ProgramCounter {
 /// Wrapper type over `usize` which represents the global counter associated to
 /// an [`ExecStep`](crate::circuit_input_builder::ExecStep) or
 /// [`Operation`](crate::operation::Operation). The purpose of the
-/// `GlobalCounter` is to enforce that each Opcode/Instruction and Operation is
+/// `RWCounter` is to enforce that each Opcode/Instruction and Operation is
 /// unique and just executed once.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct GlobalCounter(pub(crate) usize);
+pub struct RWCounter(pub(crate) usize);
 
-impl fmt::Debug for GlobalCounter {
+impl fmt::Debug for RWCounter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{}", self.0))
     }
 }
 
-impl From<GlobalCounter> for usize {
-    fn from(addr: GlobalCounter) -> usize {
+impl From<RWCounter> for usize {
+    fn from(addr: RWCounter) -> usize {
         addr.0
     }
 }
 
-impl From<usize> for GlobalCounter {
-    fn from(gc: usize) -> Self {
-        GlobalCounter(gc)
+impl From<usize> for RWCounter {
+    fn from(rwc: usize) -> Self {
+        RWCounter(rwc)
     }
 }
 
-impl Default for GlobalCounter {
+impl Default for RWCounter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl GlobalCounter {
-    /// Create a new GlobalCounter with the initial default value
+impl RWCounter {
+    /// Create a new RWCounter with the initial default value
     pub fn new() -> Self {
-        Self(0)
+        Self(1)
     }
 
     /// Increase Self by one

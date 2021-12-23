@@ -712,7 +712,7 @@ impl<
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
             let address = F::from_bytes(&op.address().to_le_bytes()).unwrap();
-            let gc = usize::from(oper.gc());
+            let rwc = usize::from(oper.rwc());
             let val = F::from(op.value() as u64);
 
             let mut target = 1;
@@ -736,7 +736,7 @@ impl<
                 region,
                 offset,
                 address,
-                gc,
+                rwc,
                 val,
                 op.rw().is_write(),
                 target,
@@ -770,7 +770,7 @@ impl<
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
             let address = F::from(usize::from(*op.address()) as u64);
-            let gc = usize::from(oper.gc());
+            let rwc = usize::from(oper.rwc());
             let val = op.value().to_scalar().unwrap();
 
             let mut target = 1;
@@ -782,7 +782,7 @@ impl<
                 region,
                 offset,
                 address,
-                gc,
+                rwc,
                 val,
                 op.rw().is_write(),
                 target,
@@ -824,7 +824,7 @@ impl<
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
             let address = op.address().to_scalar().unwrap();
-            let gc = usize::from(oper.gc());
+            let rwc = usize::from(oper.rwc());
             let val = op.value().to_scalar().unwrap();
             let val_prev = op.value_prev().to_scalar().unwrap();
             let storage_key = op.key().to_scalar().unwrap();
@@ -838,7 +838,7 @@ impl<
                 region,
                 offset,
                 address,
-                gc,
+                rwc,
                 val,
                 op.rw().is_write(),
                 target,
@@ -1226,7 +1226,7 @@ mod tests {
     use bus_mapping::address;
     use bus_mapping::bytecode;
     use bus_mapping::eth_types::Word;
-    use bus_mapping::evm::{GlobalCounter, MemoryAddress, StackAddress};
+    use bus_mapping::evm::{MemoryAddress, RWCounter, StackAddress};
     use bus_mapping::mock;
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
@@ -1300,34 +1300,34 @@ mod tests {
     #[test]
     fn state_circuit() {
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32),
+            RWCounter::from(12),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 32),
         );
         let memory_op_1 = Operation::new(
-            GlobalCounter::from(24),
-            MemoryOp::new(RW::READ, MemoryAddress::from(0), 32),
+            RWCounter::from(24),
+            MemoryOp::new(RW::READ, 1, MemoryAddress::from(0), 32),
         );
 
         let memory_op_2 = Operation::new(
-            GlobalCounter::from(17),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(1), 32),
+            RWCounter::from(17),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(1), 32),
         );
         let memory_op_3 = Operation::new(
-            GlobalCounter::from(87),
-            MemoryOp::new(RW::READ, MemoryAddress::from(1), 32),
+            RWCounter::from(87),
+            MemoryOp::new(RW::READ, 1, MemoryAddress::from(1), 32),
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(17),
-            StackOp::new(RW::WRITE, StackAddress::from(1), Word::from(32)),
+            RWCounter::from(17),
+            StackOp::new(RW::WRITE, 1, StackAddress::from(1), Word::from(32)),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(87),
-            StackOp::new(RW::READ, StackAddress::from(1), Word::from(32)),
+            RWCounter::from(87),
+            StackOp::new(RW::READ, 1, StackAddress::from(1), Word::from(32)),
         );
 
         let storage_op_0 = Operation::new(
-            GlobalCounter::from(17),
+            RWCounter::from(17),
             StorageOp::new(
                 RW::WRITE,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1337,7 +1337,7 @@ mod tests {
             ),
         );
         let storage_op_1 = Operation::new(
-            GlobalCounter::from(18),
+            RWCounter::from(18),
             StorageOp::new(
                 RW::WRITE,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1347,7 +1347,7 @@ mod tests {
             ),
         );
         let storage_op_2 = Operation::new(
-            GlobalCounter::from(19),
+            RWCounter::from(19),
             StorageOp::new(
                 RW::WRITE,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1375,30 +1375,30 @@ mod tests {
     #[test]
     fn no_stack_padding() {
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32),
+            RWCounter::from(12),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 32),
         );
         let memory_op_1 = Operation::new(
-            GlobalCounter::from(24),
-            MemoryOp::new(RW::READ, MemoryAddress::from(0), 32),
+            RWCounter::from(24),
+            MemoryOp::new(RW::READ, 1, MemoryAddress::from(0), 32),
         );
 
         let memory_op_2 = Operation::new(
-            GlobalCounter::from(17),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(1), 32),
+            RWCounter::from(17),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(1), 32),
         );
         let memory_op_3 = Operation::new(
-            GlobalCounter::from(87),
-            MemoryOp::new(RW::READ, MemoryAddress::from(1), 32),
+            RWCounter::from(87),
+            MemoryOp::new(RW::READ, 1, MemoryAddress::from(1), 32),
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(17),
-            StackOp::new(RW::WRITE, StackAddress::from(1), Word::from(32)),
+            RWCounter::from(17),
+            StackOp::new(RW::WRITE, 1, StackAddress::from(1), Word::from(32)),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(87),
-            StackOp::new(RW::READ, StackAddress::from(1), Word::from(32)),
+            RWCounter::from(87),
+            StackOp::new(RW::READ, 1, StackAddress::from(1), Word::from(32)),
         );
 
         const STACK_ROWS_MAX: usize = 2;
@@ -1420,13 +1420,14 @@ mod tests {
     #[test]
     fn same_address_read() {
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 31),
+            RWCounter::from(12),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 31),
         );
         let memory_op_1 = Operation::new(
-            GlobalCounter::from(24),
+            RWCounter::from(24),
             MemoryOp::new(
                 RW::READ,
+                1,
                 MemoryAddress::from(0),
                 32,
                 /* This should fail as it not the same value as in previous
@@ -1435,13 +1436,14 @@ mod tests {
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(19),
-            StackOp::new(RW::WRITE, StackAddress::from(0), Word::from(12)),
+            RWCounter::from(19),
+            StackOp::new(RW::WRITE, 1, StackAddress::from(0), Word::from(12)),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(28),
+            RWCounter::from(28),
             StackOp::new(
                 RW::READ,
+                1,
                 StackAddress::from(0),
                 Word::from(13),
                 /* This should fail as it not the same value as in previous
@@ -1467,12 +1469,12 @@ mod tests {
     #[test]
     fn first_write() {
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(28),
-            StackOp::new(RW::READ, StackAddress::from(0), Word::from(13)),
+            RWCounter::from(28),
+            StackOp::new(RW::READ, 1, StackAddress::from(0), Word::from(13)),
         );
 
         let storage_op_0 = Operation::new(
-            GlobalCounter::from(17),
+            RWCounter::from(17),
             StorageOp::new(
                 RW::READ, /* Fails because the first storage op needs to be
                            * write. */
@@ -1483,7 +1485,7 @@ mod tests {
             ),
         );
         let storage_op_1 = Operation::new(
-            GlobalCounter::from(18),
+            RWCounter::from(18),
             StorageOp::new(
                 RW::READ, /* Fails because when storage key changes, the op
                            * needs to be write. */
@@ -1495,7 +1497,7 @@ mod tests {
         );
 
         let storage_op_2 = Operation::new(
-            GlobalCounter::from(19),
+            RWCounter::from(19),
             StorageOp::new(
                 RW::READ, /* Fails because when address changes, the op
                            * needs to be write. */
@@ -1527,76 +1529,85 @@ mod tests {
     #[test]
     fn max_values() {
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
+            RWCounter::from(12),
             MemoryOp::new(
                 RW::WRITE,
+                1,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX),
                 32,
             ),
         );
         let memory_op_1 = Operation::new(
-            GlobalCounter::from(GLOBAL_COUNTER_MAX),
+            RWCounter::from(GLOBAL_COUNTER_MAX),
             MemoryOp::new(
                 RW::READ,
+                1,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX),
                 32,
             ),
         );
         let memory_op_2 = Operation::new(
-            GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+            RWCounter::from(GLOBAL_COUNTER_MAX + 1),
             MemoryOp::new(
                 RW::WRITE,
+                1,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX),
                 32,
             ),
         );
 
         let memory_op_3 = Operation::new(
-            GlobalCounter::from(12),
+            RWCounter::from(12),
             MemoryOp::new(
                 RW::WRITE,
+                1,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
                 32,
             ),
         );
         let memory_op_4 = Operation::new(
-            GlobalCounter::from(24),
+            RWCounter::from(24),
             MemoryOp::new(
                 RW::READ,
+                1,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
                 32,
             ),
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(12),
+            RWCounter::from(12),
             StackOp::new(
                 RW::WRITE,
+                1,
                 StackAddress::from(STACK_ADDRESS_MAX),
                 Word::from(12),
             ),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(24),
+            RWCounter::from(24),
             StackOp::new(
                 RW::READ,
+                1,
                 StackAddress::from(STACK_ADDRESS_MAX),
                 Word::from(12),
             ),
         );
 
         let stack_op_2 = Operation::new(
-            GlobalCounter::from(17),
+            RWCounter::from(17),
             StackOp::new(
                 RW::WRITE,
+                1,
                 StackAddress::from(STACK_ADDRESS_MAX + 1),
                 Word::from(12),
             ),
         );
         let stack_op_3 = Operation::new(
-            GlobalCounter::from(GLOBAL_COUNTER_MAX + 1),
+            RWCounter::from(GLOBAL_COUNTER_MAX + 1),
             StackOp::new(
                 RW::WRITE,
+                1,
                 StackAddress::from(STACK_ADDRESS_MAX + 1),
                 Word::from(12),
             ),
@@ -1637,9 +1648,10 @@ mod tests {
         // first row of a target needs to be checked for address to be in range
         // too
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(12),
+            RWCounter::from(12),
             MemoryOp::new(
                 RW::WRITE,
+                1,
                 MemoryAddress::from(MEMORY_ADDRESS_MAX + 1),
                 // This address is not in the allowed range
                 32,
@@ -1647,17 +1659,19 @@ mod tests {
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(12),
+            RWCounter::from(12),
             StackOp::new(
                 RW::WRITE,
+                1,
                 StackAddress::from(STACK_ADDRESS_MAX + 1),
                 Word::from(12),
             ),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(24),
+            RWCounter::from(24),
             StackOp::new(
                 RW::READ,
+                1,
                 StackAddress::from(STACK_ADDRESS_MAX + 1),
                 Word::from(12),
             ),
@@ -1690,35 +1704,35 @@ mod tests {
     #[test]
     fn non_monotone_global_counter() {
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(1352),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32),
+            RWCounter::from(1352),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 32),
         );
         let memory_op_1 = Operation::new(
-            GlobalCounter::from(1255),
-            MemoryOp::new(RW::READ, MemoryAddress::from(0), 32),
+            RWCounter::from(1255),
+            MemoryOp::new(RW::READ, 1, MemoryAddress::from(0), 32),
         );
 
         // fails because it needs to be strictly monotone
         let memory_op_2 = Operation::new(
-            GlobalCounter::from(1255),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32),
+            RWCounter::from(1255),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 32),
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(228),
-            StackOp::new(RW::WRITE, StackAddress::from(1), Word::from(12)),
+            RWCounter::from(228),
+            StackOp::new(RW::WRITE, 1, StackAddress::from(1), Word::from(12)),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(217),
-            StackOp::new(RW::READ, StackAddress::from(1), Word::from(12)),
+            RWCounter::from(217),
+            StackOp::new(RW::READ, 1, StackAddress::from(1), Word::from(12)),
         );
         let stack_op_2 = Operation::new(
-            GlobalCounter::from(217),
-            StackOp::new(RW::READ, StackAddress::from(1), Word::from(12)),
+            RWCounter::from(217),
+            StackOp::new(RW::READ, 1, StackAddress::from(1), Word::from(12)),
         );
 
         let storage_op_0 = Operation::new(
-            GlobalCounter::from(301),
+            RWCounter::from(301),
             StorageOp::new(
                 RW::WRITE,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1728,7 +1742,7 @@ mod tests {
             ),
         );
         let storage_op_1 = Operation::new(
-            GlobalCounter::from(302),
+            RWCounter::from(302),
             StorageOp::new(
                 RW::READ,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1738,7 +1752,7 @@ mod tests {
             ),
         );
         let storage_op_2 = Operation::new(
-            GlobalCounter::from(302),
+            RWCounter::from(302),
             StorageOp::new(
                 RW::READ,
                 /*fails because the address and
@@ -1751,7 +1765,7 @@ mod tests {
             ),
         );
         let storage_op_3 = Operation::new(
-            GlobalCounter::from(297),
+            RWCounter::from(297),
             StorageOp::new(
                 RW::WRITE,
                 // Global counter goes down, but it doesn't fail because
@@ -1764,7 +1778,7 @@ mod tests {
         );
 
         let storage_op_4 = Operation::new(
-            GlobalCounter::from(296),
+            RWCounter::from(296),
             StorageOp::new(
                 RW::WRITE,
                 // Global counter goes down, but it doesn't fail because the
@@ -1802,32 +1816,33 @@ mod tests {
     #[test]
     fn non_monotone_address() {
         let memory_op_0 = Operation::new(
-            GlobalCounter::from(1352),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32),
+            RWCounter::from(1352),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 32),
         );
         let memory_op_1 = Operation::new(
-            GlobalCounter::from(1255),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(1), 32),
+            RWCounter::from(1255),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(1), 32),
         );
 
         // fails because it's not monotone
         let memory_op_2 = Operation::new(
-            GlobalCounter::from(1255),
-            MemoryOp::new(RW::WRITE, MemoryAddress::from(0), 32),
+            RWCounter::from(1255),
+            MemoryOp::new(RW::WRITE, 1, MemoryAddress::from(0), 32),
         );
 
         let stack_op_0 = Operation::new(
-            GlobalCounter::from(228),
-            StackOp::new(RW::WRITE, StackAddress::from(0), Word::from(12)),
+            RWCounter::from(228),
+            StackOp::new(RW::WRITE, 1, StackAddress::from(0), Word::from(12)),
         );
         let stack_op_1 = Operation::new(
-            GlobalCounter::from(229),
-            StackOp::new(RW::WRITE, StackAddress::from(1), Word::from(12)),
+            RWCounter::from(229),
+            StackOp::new(RW::WRITE, 1, StackAddress::from(1), Word::from(12)),
         );
         let stack_op_2 = Operation::new(
-            GlobalCounter::from(230),
+            RWCounter::from(230),
             StackOp::new(
                 RW::WRITE,
+                1,
                 StackAddress::from(0), /* this fails because the
                                         * address is not
                                         * monotone */
@@ -1853,7 +1868,7 @@ mod tests {
     #[test]
     fn storage() {
         let storage_op_0 = Operation::new(
-            GlobalCounter::from(18),
+            RWCounter::from(18),
             StorageOp::new(
                 RW::WRITE,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1863,7 +1878,7 @@ mod tests {
             ),
         );
         let storage_op_1 = Operation::new(
-            GlobalCounter::from(19),
+            RWCounter::from(19),
             StorageOp::new(
                 RW::READ,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1876,7 +1891,7 @@ mod tests {
             ),
         );
         let storage_op_2 = Operation::new(
-            GlobalCounter::from(20),
+            RWCounter::from(20),
             StorageOp::new(
                 RW::WRITE,
                 address!("0x0000000000000000000000000000000000000001"),
@@ -1888,7 +1903,7 @@ mod tests {
             ),
         );
         let storage_op_3 = Operation::new(
-            GlobalCounter::from(21),
+            RWCounter::from(21),
             StorageOp::new(
                 RW::READ,
                 address!("0x0000000000000000000000000000000000000001"),

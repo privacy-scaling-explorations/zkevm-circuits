@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
-use crate::{
-    operation::{StackOp, RW},
-    Error,
-};
+use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
@@ -19,11 +16,11 @@ impl Opcode for Pc {
         let step = &steps[0];
         // Get value result from next step and do stack write
         let value = steps[1].stack.last()?;
-        state.push_op(StackOp::new(
+        state.push_stack_op(
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
             value,
-        ));
+        );
 
         Ok(())
     }
@@ -66,18 +63,18 @@ mod pc_tests {
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
-            test_builder.block_ctx.gc,
+            test_builder.block_ctx.rwc,
             0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last Stack write
-        state_ref.push_op(StackOp::new(
+        state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1024 - 3),
             Word::from(0x4),
-        ));
+        );
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);

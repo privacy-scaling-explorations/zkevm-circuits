@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
-use crate::{
-    operation::{StackOp, RW},
-    Error,
-};
+use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::JUMPI`](crate::evm::OpcodeId::JUMPI)
@@ -19,16 +16,16 @@ impl Opcode for Jumpi {
     ) -> Result<(), Error> {
         let step = &steps[0];
         // `JUMPI` needs two read operation
-        state.push_op(StackOp::new(
+        state.push_stack_op(
             RW::READ,
             step.stack.nth_last_filled(0),
             step.stack.nth_last(0)?,
-        ));
-        state.push_op(StackOp::new(
+        );
+        state.push_stack_op(
             RW::READ,
             step.stack.nth_last_filled(1),
             step.stack.nth_last(1)?,
-        ));
+        );
 
         Ok(())
     }
@@ -81,23 +78,23 @@ mod jumpi_tests {
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
-            test_builder.block_ctx.gc,
+            test_builder.block_ctx.rwc,
             0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last 2 Stack reads
-        state_ref.push_op(StackOp::new(
+        state_ref.push_stack_op(
             RW::READ,
             StackAddress::from(1022),
             Word::from(destination),
-        ));
-        state_ref.push_op(StackOp::new(
+        );
+        state_ref.push_stack_op(
             RW::READ,
             StackAddress::from(1023),
             Word::from(condition),
-        ));
+        );
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
