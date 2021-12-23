@@ -347,6 +347,8 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::MSTORE => ExecutionState::MEMORY,
             OpcodeId::MSTORE8 => ExecutionState::MEMORY,
             OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
+            OpcodeId::JUMP => ExecutionState::JUMP,
+            OpcodeId::JUMPI => ExecutionState::JUMPI,
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
@@ -356,7 +358,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
 
 impl From<&bus_mapping::bytecode::Bytecode> for Bytecode {
     fn from(b: &bus_mapping::bytecode::Bytecode) -> Self {
-        Bytecode::new(b.to_bytes())
+        Bytecode::new(b.to_vec())
     }
 }
 
@@ -380,11 +382,12 @@ fn step_convert(
                     bus_mapping::operation::Target::Storage => {
                         index + stack_ops_len + memory_ops_len
                     }
+                    _ => unimplemented!(),
                 }
             })
             .collect(),
         execution_state: ExecutionState::from(step),
-        rw_counter: usize::from(step.gc),
+        rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
         stack_pointer: 1024 - step.stack_size,
         gas_left: step.gas_left.0,
@@ -453,13 +456,13 @@ pub fn block_convert(
     let bytecode = bytecode.into();
 
     // here stack_ops/memory_ops/etc are merged into a single array
-    // in EVM circuit, we need gc-sorted ops
+    // in EVM circuit, we need rwc-sorted ops
     let mut stack_ops = b.container.sorted_stack();
-    stack_ops.sort_by_key(|s| usize::from(s.gc()));
+    stack_ops.sort_by_key(|s| usize::from(s.rwc()));
     let mut memory_ops = b.container.sorted_memory();
-    memory_ops.sort_by_key(|s| usize::from(s.gc()));
+    memory_ops.sort_by_key(|s| usize::from(s.rwc()));
     let mut storage_ops = b.container.sorted_storage();
-    storage_ops.sort_by_key(|s| usize::from(s.gc()));
+    storage_ops.sort_by_key(|s| usize::from(s.rwc()));
 
     let mut block = Block {
         randomness,
@@ -480,14 +483,14 @@ pub fn block_convert(
     };
 
     block.rws.extend(stack_ops.iter().map(|s| Rw::Stack {
-        rw_counter: s.gc().into(),
+        rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
         call_id: 1,
         stack_pointer: usize::from(*s.op().address()),
         value: *s.op().value(),
     }));
     block.rws.extend(memory_ops.iter().map(|s| Rw::Memory {
-        rw_counter: s.gc().into(),
+        rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
         call_id: 1,
         memory_address: u64::from_le_bytes(
@@ -508,11 +511,7 @@ pub fn build_block_from_trace_code_at_start(
             bytecode,
         )
         .unwrap();
-    let mut builder =
-        bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-            &block.eth_block.clone(),
-            block.ctants.clone(),
-        );
+    let mut builder = block.new_circuit_input_builder();
     builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
     block_convert(bytecode, &builder.block)

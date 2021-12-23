@@ -1,12 +1,43 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use crate::eth_types::{Address, Hash, Word};
+use crate::eth_types::{Address, Hash, Word, H256};
+use ethers_core::utils::keccak256;
+use lazy_static::lazy_static;
 use std::collections::HashMap;
+
+lazy_static! {
+    static ref ACCOUNT_ZERO: Account = Account::zero();
+    static ref VALUE_ZERO: Word = Word::zero();
+    static ref CODE_HASH_ZERO: Hash = H256(keccak256(&[]));
+}
+
+/// Memory storage for contract code by code hash.
+#[derive(Debug, Clone)]
+pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
+
+impl Default for CodeDB {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeDB {
+    /// Create a new empty Self.
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+    /// Insert code indexed by code hash, and return the code hash.
+    pub fn insert(&mut self, code: Vec<u8>) -> Hash {
+        let hash = H256(keccak256(&code));
+        self.0.insert(hash, code);
+        hash
+    }
+}
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value
 /// database that represents the Account Storage Trie.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Account {
     /// Nonce
     pub nonce: Word,
@@ -19,22 +50,21 @@ pub struct Account {
 }
 
 impl Account {
-    fn zero() -> Self {
+    /// Return an empty account, with all values set at zero.
+    pub fn zero() -> Self {
         Self {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
-            code_hash: Hash::zero(),
+            code_hash: *CODE_HASH_ZERO,
         }
     }
 }
 
 /// In-memory key-value database that represents the Ethereum State Trie.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StateDB {
     state: HashMap<Address, Account>,
-    acc_zero: Account,
-    value_zero: Word,
 }
 
 impl Default for StateDB {
@@ -48,8 +78,6 @@ impl StateDB {
     pub fn new() -> Self {
         Self {
             state: HashMap::new(),
-            acc_zero: Account::zero(),
-            value_zero: Word::zero(),
         }
     }
 
@@ -63,7 +91,7 @@ impl StateDB {
     pub fn get_account(&self, addr: &Address) -> (bool, &Account) {
         match self.state.get(addr) {
             Some(acc) => (true, acc),
-            None => (false, &self.acc_zero),
+            None => (false, &(*ACCOUNT_ZERO)),
         }
     }
 
@@ -87,7 +115,7 @@ impl StateDB {
         let (_, acc) = self.get_account(addr);
         match acc.storage.get(key) {
             Some(value) => (true, value),
-            None => (false, &self.value_zero),
+            None => (false, &(*VALUE_ZERO)),
         }
     }
 

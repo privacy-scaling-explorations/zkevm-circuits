@@ -3,9 +3,8 @@
 use bus_mapping::circuit_input_builder::{
     gen_state_access_trace, AccessSet, CircuitInputBuilder,
 };
-use bus_mapping::eth_types::{Word, H256};
-use bus_mapping::state_db;
-use ethers::core::utils::keccak256;
+use bus_mapping::eth_types::{Address, Word};
+use bus_mapping::state_db::{self, CodeDB, StateDB};
 use integration_tests::{
     get_chain_constants, get_client, log_init, GenDataOutput,
 };
@@ -59,7 +58,7 @@ async fn test_circuit_input_builder_block_a() {
             .unwrap();
         proofs.push(proof);
     }
-    let mut codes = HashMap::new();
+    let mut codes: HashMap<Address, Vec<u8>> = HashMap::new();
     for address in access_set.code {
         let code = cli
             .get_code(address, (*block_num - 1).into())
@@ -68,16 +67,14 @@ async fn test_circuit_input_builder_block_a() {
         codes.insert(address, code);
     }
 
-    let constants = get_chain_constants().await;
-    let mut builder = CircuitInputBuilder::new(&eth_block, constants);
-
     // 4. Build a partial StateDB from step 3
+    let mut sdb = StateDB::new();
     for proof in proofs {
         let mut storage = HashMap::new();
         for storage_proof in proof.storage_proof {
             storage.insert(storage_proof.key, storage_proof.value);
         }
-        builder.sdb.set_account(
+        sdb.set_account(
             &proof.address,
             state_db::Account {
                 nonce: proof.nonce,
@@ -87,12 +84,15 @@ async fn test_circuit_input_builder_block_a() {
             },
         )
     }
-    trace!("StateDB: {:#?}", builder.sdb);
+    trace!("StateDB: {:#?}", sdb);
 
+    let mut code_db = CodeDB::new();
     for (_address, code) in codes {
-        let hash = H256(keccak256(&code));
-        builder.codes.insert(hash, code.clone());
+        code_db.insert(code.clone());
     }
+    let constants = get_chain_constants().await;
+    let mut builder =
+        CircuitInputBuilder::new(sdb, code_db, &eth_block, constants);
 
     // 5. For each step in TxExecTraces, gen the associated ops and state
     // circuit inputs

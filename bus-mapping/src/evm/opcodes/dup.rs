@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::GethExecStep;
-use crate::{
-    operation::{StackOp, RW},
-    Error,
-};
+use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::DUP*` `OpcodeId`.
@@ -20,13 +17,13 @@ impl<const N: usize> Opcode for Dup<N> {
 
         let stack_value_read = step.stack.nth_last(N - 1)?;
         let stack_position = step.stack.nth_last_filled(N - 1);
-        state.push_op(StackOp::new(RW::READ, stack_position, stack_value_read));
+        state.push_stack_op(RW::READ, stack_position, stack_value_read);
 
-        state.push_op(StackOp::new(
+        state.push_stack_op(
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
             stack_value_read,
-        ));
+        );
 
         Ok(())
     }
@@ -37,9 +34,7 @@ mod dup_tests {
     use super::*;
     use crate::{
         bytecode,
-        circuit_input_builder::{
-            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
-        },
+        circuit_input_builder::{ExecStep, TransactionContext},
         evm::StackAddress,
         mock, word,
     };
@@ -62,13 +57,11 @@ mod dup_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
-        let mut tx = Transaction::new(&block.eth_tx);
+        let mut test_builder = block.new_circuit_input_builder();
+        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
         // Generate steps corresponding to DUP1, DUP3, DUP5
@@ -79,23 +72,23 @@ mod dup_tests {
             let mut step = ExecStep::new(
                 &block.geth_trace.struct_logs[i],
                 0,
-                test_builder.block_ctx.gc,
+                test_builder.block_ctx.rwc,
                 0,
             );
             let mut state_ref =
                 test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
-            state_ref.push_op(StackOp::new(
+            state_ref.push_stack_op(
                 RW::READ,
                 StackAddress(1024 - 3 + i),
                 *word,
-            ));
+            );
 
-            state_ref.push_op(StackOp::new(
+            state_ref.push_stack_op(
                 RW::WRITE,
                 StackAddress(1024 - 4 - i),
                 *word,
-            ));
+            );
 
             tx.steps_mut().push(step);
         }

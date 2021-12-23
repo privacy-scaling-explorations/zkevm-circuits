@@ -4,7 +4,7 @@ use crate::gates::rho_helpers::{get_block_count, BASE_NUM_OF_CHUNKS};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
     poly::Rotation,
 };
 use std::convert::TryInto;
@@ -14,9 +14,9 @@ use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
-    base13: Column<Fixed>,
-    base9: Column<Fixed>,
-    block_count: Column<Fixed>,
+    base13: TableColumn,
+    base9: TableColumn,
+    block_count: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -25,16 +25,16 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "from base13",
-            |mut region| {
+        layouter.assign_table(
+            || "13 -> 9",
+            |mut table| {
                 // Iterate over all possible 13-ary values of size 4
                 for (i, b13_chunks) in (0..BASE_NUM_OF_CHUNKS)
                     .map(|_| 0..B13)
                     .multi_cartesian_product()
                     .enumerate()
                 {
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "base 13",
                         self.base13,
                         i,
@@ -47,7 +47,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         },
                     )?;
 
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "base 9",
                         self.base9,
                         i,
@@ -57,7 +57,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                             })))
                         },
                     )?;
-                    region.assign_fixed(
+                    table.assign_cell(
                         || "block_count",
                         self.block_count,
                         i,
@@ -82,7 +82,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         base13_coef: Column<Advice>,
         base9_coef: Column<Advice>,
         block_count: Column<Advice>,
-        fixed: [Column<Fixed>; 3],
+        fixed: [TableColumn; 3],
     ) -> Self {
         let config = Self {
             base13: fixed[0],
@@ -91,21 +91,16 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
             _marker: PhantomData,
         };
 
-        meta.lookup_any(|meta| {
+        meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
             let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
             let bc = meta.query_advice(block_count, Rotation::cur());
 
-            let base13 = meta.query_fixed(config.base13, Rotation::cur());
-            let base9 = meta.query_fixed(config.base9, Rotation::cur());
-            let block_count =
-                meta.query_fixed(config.block_count, Rotation::cur());
-
             vec![
-                (q_enable.clone() * base13_coef, base13),
-                (q_enable.clone() * base9_coef, base9),
-                (q_enable * bc, block_count),
+                (q_enable.clone() * base13_coef, config.base13),
+                (q_enable.clone() * base9_coef, config.base9),
+                (q_enable * bc, config.block_count),
             ]
         });
         config
@@ -117,8 +112,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
 /// - The last output coef: `convert_b13_coef(high_value + low_value)`
 #[derive(Debug, Clone)]
 pub struct SpecialChunkTableConfig<F> {
-    last_chunk: Column<Fixed>,
-    output_coef: Column<Fixed>,
+    last_chunk: TableColumn,
+    output_coef: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -127,9 +122,9 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        layouter.assign_table(
             || "Special Chunks",
-            |mut region| {
+            |mut table| {
                 // Iterate over all possible values less than 13 for both low
                 // and high
                 let mut offset = 0;
@@ -145,13 +140,13 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
                                     0,
                                 ]);
                         let output_coef = F::from(convert_b13_coef(low + high));
-                        region.assign_fixed(
+                        table.assign_cell(
                             || "last chunk",
                             self.last_chunk,
                             offset,
                             || Ok(last_chunk),
                         )?;
-                        region.assign_fixed(
+                        table.assign_cell(
                             || "output coef",
                             self.output_coef,
                             offset,
@@ -170,7 +165,7 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         q_enable: Selector,
         last_chunk_advice: Column<Advice>,
         output_coef_advice: Column<Advice>,
-        cols: [Column<Fixed>; 2],
+        cols: [TableColumn; 2],
     ) -> Self {
         let config = Self {
             last_chunk: cols[0],
@@ -178,21 +173,16 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
             _marker: PhantomData,
         };
         // Lookup for special chunk conversion
-        meta.lookup_any(|meta| {
+        meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let last_chunk_advice =
                 meta.query_advice(last_chunk_advice, Rotation::cur());
             let output_coef_advice =
                 meta.query_advice(output_coef_advice, Rotation::cur());
 
-            let last_chunk =
-                meta.query_fixed(config.last_chunk, Rotation::cur());
-            let output_coef =
-                meta.query_fixed(config.output_coef, Rotation::cur());
-
             vec![
-                (q_enable.clone() * last_chunk_advice, last_chunk),
-                (q_enable * output_coef_advice, output_coef),
+                (q_enable.clone() * last_chunk_advice, config.last_chunk),
+                (q_enable * output_coef_advice, config.output_coef),
             ]
         });
         config

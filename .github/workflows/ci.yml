@@ -3,6 +3,9 @@ name: CI checks
 on:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
+  push:
+    branches:
+      - main
 
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.

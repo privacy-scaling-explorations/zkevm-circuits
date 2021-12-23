@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::MAX_GAS_SIZE_IN_BYTES,
+        param::{MAX_GAS_SIZE_IN_BYTES, NUM_ADDRESS_BYTES_USED},
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -164,7 +164,11 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         self.address.assign(
             region,
             offset,
-            Some(address.to_le_bytes()[..5].try_into().unwrap()),
+            Some(
+                address.to_le_bytes()[..NUM_ADDRESS_BYTES_USED]
+                    .try_into()
+                    .unwrap(),
+            ),
         )?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
@@ -233,11 +237,7 @@ mod test {
         block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
             [bytecode.get_pos("start")..]
             .to_vec();
-        let mut builder =
-            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                &block_trace.eth_block.clone(),
-                block_trace.ctants.clone(),
-            );
+        let mut builder = block_trace.new_circuit_input_builder();
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .unwrap();

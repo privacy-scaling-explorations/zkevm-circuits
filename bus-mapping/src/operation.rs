@@ -6,7 +6,7 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{GlobalCounter, MemoryAddress, StackAddress};
+pub use super::evm::{MemoryAddress, RWCounter, StackAddress};
 use crate::eth_types::{Address, Word};
 pub use container::OperationContainer;
 use core::cmp::Ordering;
@@ -46,6 +46,16 @@ pub enum Target {
     Stack,
     /// Means the target of the operation is the Storage.
     Storage,
+    /// Means the target of the operation is the TxAccessListAccount.
+    TxAccessListAccount,
+    /// Means the target of the operation is the TxAccessListAccountStorage.
+    TxAccessListAccountStorage,
+    /// Means the target of the operation is the TxRefund.
+    TxRefund,
+    /// Means the target of the operation is the Account.
+    Account,
+    /// Means the target of the operation is the AccountDestructed.
+    AccountDestructed,
 }
 
 /// Trait used for Operation Kinds.
@@ -60,9 +70,14 @@ pub trait Op: Eq + Ord {
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct MemoryOp {
-    rw: RW,
-    addr: MemoryAddress,
-    value: u8,
+    /// RW
+    pub rw: RW,
+    /// Call ID
+    pub call_id: usize,
+    /// Memory Address
+    pub address: MemoryAddress,
+    /// Value
+    pub value: u8,
 }
 
 impl fmt::Debug for MemoryOp {
@@ -70,7 +85,7 @@ impl fmt::Debug for MemoryOp {
         f.write_str("MemoryOp { ")?;
         f.write_fmt(format_args!(
             "{:?}, addr: {:?}, value: 0x{:02x}",
-            self.rw, self.addr, self.value
+            self.rw, self.address, self.value
         ))?;
         f.write_str(" }")
     }
@@ -78,8 +93,18 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(rw: RW, addr: MemoryAddress, value: u8) -> MemoryOp {
-        MemoryOp { rw, addr, value }
+    pub fn new(
+        rw: RW,
+        call_id: usize,
+        address: MemoryAddress,
+        value: u8,
+    ) -> MemoryOp {
+        MemoryOp {
+            rw,
+            call_id,
+            address,
+            value,
+        }
     }
 
     /// Returns the internal [`RW`] which says whether the operation corresponds
@@ -95,7 +120,7 @@ impl MemoryOp {
 
     /// Returns the [`MemoryAddress`] associated to this Operation.
     pub const fn address(&self) -> &MemoryAddress {
-        &self.addr
+        &self.address
     }
 
     /// Returns the bytes read or written by this operation.
@@ -111,14 +136,14 @@ impl Op for MemoryOp {
 }
 
 impl PartialOrd for MemoryOp {
-    fn partial_cmp(&self, other: &MemoryOp) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for MemoryOp {
-    fn cmp(&self, other: &MemoryOp) -> Ordering {
-        self.address().cmp(other.address())
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
     }
 }
 
@@ -127,17 +152,22 @@ impl Ord for MemoryOp {
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StackOp {
-    rw: RW,
-    addr: StackAddress,
-    value: Word,
+    /// RW
+    pub rw: RW,
+    /// Call ID
+    pub call_id: usize,
+    /// Stack Address
+    pub address: StackAddress,
+    /// Value
+    pub value: Word,
 }
 
 impl fmt::Debug for StackOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("StackOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, value: {:?}",
-            self.rw, self.addr, self.value
+            "{:?}, addr: {:?}, val: {:?}",
+            self.rw, self.address, self.value
         ))?;
         f.write_str(" }")
     }
@@ -145,8 +175,18 @@ impl fmt::Debug for StackOp {
 
 impl StackOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub const fn new(rw: RW, addr: StackAddress, value: Word) -> StackOp {
-        StackOp { rw, addr, value }
+    pub const fn new(
+        rw: RW,
+        call_id: usize,
+        address: StackAddress,
+        value: Word,
+    ) -> StackOp {
+        StackOp {
+            rw,
+            call_id,
+            address,
+            value,
+        }
     }
 
     /// Returns the internal [`RW`] which says whether the operation corresponds
@@ -162,7 +202,7 @@ impl StackOp {
 
     /// Returns the [`StackAddress`] associated to this Operation.
     pub const fn address(&self) -> &StackAddress {
-        &self.addr
+        &self.address
     }
 
     /// Returns the [`Word`] read or written by this operation.
@@ -178,14 +218,14 @@ impl Op for StackOp {
 }
 
 impl PartialOrd for StackOp {
-    fn partial_cmp(&self, other: &StackOp) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for StackOp {
-    fn cmp(&self, other: &StackOp) -> Ordering {
-        self.address().cmp(other.address())
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
     }
 }
 
@@ -194,11 +234,16 @@ impl Ord for StackOp {
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StorageOp {
-    rw: RW,
-    address: Address,
-    key: Word,
-    value: Word,
-    value_prev: Word,
+    /// RW
+    pub rw: RW,
+    /// Account Address
+    pub address: Address,
+    /// Storage Key
+    pub key: Word,
+    /// Storage Value after the operation
+    pub value: Word,
+    /// Storage Value before the operation
+    pub value_prev: Word,
 }
 
 impl fmt::Debug for StorageOp {
@@ -269,77 +314,327 @@ impl Op for StorageOp {
 }
 
 impl PartialOrd for StorageOp {
-    fn partial_cmp(&self, other: &StorageOp) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for StorageOp {
-    fn cmp(&self, other: &StorageOp) -> Ordering {
-        match self.address().cmp(other.address()) {
-            Ordering::Equal => self.key().cmp(other.key()),
-            ord => ord,
-        }
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.address, &self.key).cmp(&(&other.address, &other.key))
     }
 }
+
+/// Represents a change in the Account AccessList implied by a `BeginTx`,
+/// `EXTCODECOPY`, `EXTCODESIZE`, `BALANCE`, `SELFDESTRUCT`, `*CALL`* or
+/// `CREATE*` step.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxAccessListAccountOp {
+    /// Transaction ID: Transaction index in the block starting at 1.
+    pub tx_id: usize,
+    /// Account Address
+    pub address: Address,
+    /// Value after the operation
+    pub value: bool,
+    /// Value before the operation
+    pub value_prev: bool,
+}
+
+impl fmt::Debug for TxAccessListAccountOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxAccessListAccountOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
+            self.tx_id, self.address, self.value_prev, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxAccessListAccountOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxAccessListAccountOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.address).cmp(&(&other.tx_id, &other.address))
+    }
+}
+
+impl Op for TxAccessListAccountOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxAccessListAccount(self)
+    }
+}
+
+/// Represents a change in the Storage AccessList implied by an `SSTORE` or
+/// `SLOAD` step of the [`ExecStep`](crate::circuit_input_builder::ExecStep).
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxAccessListAccountStorageOp {
+    /// Transaction ID: Transaction index in the block starting at 1.
+    pub tx_id: usize,
+    /// Account Address
+    pub address: Address,
+    /// Storage Key
+    pub key: Word,
+    /// Value after the operation
+    pub value: bool,
+    /// Value before the operation
+    pub value_prev: bool,
+}
+
+impl fmt::Debug for TxAccessListAccountStorageOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxAccessListAccountStorageOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, addr: {:?}, key: {:?}, val_prev: {:?}, val: {:?}",
+            self.tx_id, self.address, self.key, self.value_prev, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxAccessListAccountStorageOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxAccessListAccountStorageOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.address, &self.key).cmp(&(
+            &other.tx_id,
+            &other.address,
+            &other.key,
+        ))
+    }
+}
+
+impl Op for TxAccessListAccountStorageOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxAccessListAccountStorage(self)
+    }
+}
+
+/// Represents a change in the Transaction Refund AccessList implied by an
+/// `SSTORE`, `STOP`, `RETURN` or `REVERT` step of the
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxRefundOp {
+    /// RW
+    pub rw: RW,
+    /// Transaction ID: Transaction index in the block starting at 1.
+    pub tx_id: usize,
+    /// Refund Value after the operation
+    pub value: Word,
+    /// Refund Value before the operation
+    pub value_prev: Word,
+}
+
+impl fmt::Debug for TxRefundOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxRefundOp { ")?;
+        f.write_fmt(format_args!(
+            "{:?} tx_id: {:?}, val_prev: {:?}, val: {:?}",
+            self.rw, self.tx_id, self.value_prev, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxRefundOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxRefundOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.tx_id.cmp(&other.tx_id)
+    }
+}
+
+impl Op for TxRefundOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxRefund(self)
+    }
+}
+
+/// Represents a field parameter of the Account that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AccountField {
+    /// Account Nonce
+    Nonce,
+    /// Account Balance
+    Balance,
+    /// Account Code Hash
+    CodeHash,
+}
+
+/// Represents a change in the Account field implied by a `BeginTx`,
+/// `EXTCODECOPY`, `EXTCODESIZE`, `BALANCE`, `SELFDESTRUCT`, `*CALL`*,
+/// `CREATE*`, `STOP`, `RETURN` or `REVERT` step.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AccountOp {
+    /// RW
+    pub rw: RW,
+    /// Account Address
+    pub address: Address,
+    /// Field
+    pub field: AccountField,
+    /// Field Value after the operation
+    pub value: Word,
+    /// Field Value before the operation
+    pub value_prev: Word,
+}
+
+impl fmt::Debug for AccountOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AccountOp { ")?;
+        f.write_fmt(format_args!(
+            "{:?}, addr: {:?}, field: {:?}, val_prev: {:?}, val: {:?}",
+            self.rw, self.address, self.field, self.value_prev, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for AccountOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AccountOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.address, &self.field).cmp(&(&other.address, &other.field))
+    }
+}
+
+impl Op for AccountOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::Account(self)
+    }
+}
+
+/// Represents an Account destruction implied by a `SELFDESTRUCT` step of the
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+#[derive(Clone, PartialEq, Eq)]
+pub struct AccountDestructedOp {
+    /// Transaction ID: Transaction index in the block starting at 1.
+    pub tx_id: usize,
+    /// Account Address
+    pub address: Address,
+    /// Value after the operation
+    pub value: bool,
+    /// Value before the operation
+    pub value_prev: bool,
+}
+
+impl fmt::Debug for AccountDestructedOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AccountDestructedOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
+            self.tx_id, self.address, self.value_prev, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for AccountDestructedOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AccountDestructedOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.address).cmp(&(&other.tx_id, &other.address))
+    }
+}
+
+impl Op for AccountDestructedOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::AccountDestructed(self)
+    }
+}
+
+// TODO: https://github.com/appliedzkp/zkevm-circuits/issues/225
+// pub struct CallContextOp{}
 
 /// Generic enum that wraps over all the operation types possible.
 /// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
 pub enum OpEnum {
-    /// Doc
+    /// Stack
     Stack(StackOp),
-    /// Doc
+    /// Memory
     Memory(MemoryOp),
-    /// Doc
+    /// Storage
     Storage(StorageOp),
+    /// TxAccessListAccount
+    TxAccessListAccount(TxAccessListAccountOp),
+    /// TxAccessListAccountStorage
+    TxAccessListAccountStorage(TxAccessListAccountStorageOp),
+    /// TxRefund
+    TxRefund(TxRefundOp),
+    /// Account
+    Account(AccountOp),
+    /// AccountDestructed
+    AccountDestructed(AccountDestructedOp),
+    /* TODO: https://github.com/appliedzkp/zkevm-circuits/issues/225
+     * CallContext(CallContextOp), */
 }
 
-/// Operation is a Wrapper over a type that implements Op with a GlobalCounter.
+/// Operation is a Wrapper over a type that implements Op with a RWCounter.
 #[derive(Debug, Clone)]
 pub struct Operation<T: Op> {
-    gc: GlobalCounter,
+    rwc: RWCounter,
     /// True when this Operation is a revert of its mirror
     revert: bool,
     op: T,
 }
 
 impl<T: Op> PartialEq for Operation<T> {
-    fn eq(&self, other: &Operation<T>) -> bool {
-        self.op.eq(&other.op) && self.gc == other.gc
+    fn eq(&self, other: &Self) -> bool {
+        self.op.eq(&other.op) && self.rwc == other.rwc
     }
 }
 
 impl<T: Op> Eq for Operation<T> {}
 
 impl<T: Op> PartialOrd for Operation<T> {
-    fn partial_cmp(&self, other: &Operation<T>) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<T: Op> Ord for Operation<T> {
-    fn cmp(&self, other: &Operation<T>) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         match self.op.cmp(&other.op) {
-            Ordering::Equal => self.gc.cmp(&other.gc),
+            Ordering::Equal => self.rwc.cmp(&other.rwc),
             ord => ord,
         }
     }
 }
 
 impl<T: Op> Operation<T> {
-    /// Create a new Operation from an `op` with a `gc`
-    pub fn new(gc: GlobalCounter, op: T) -> Self {
+    /// Create a new Operation from an `op` with a `rwc`
+    pub fn new(rwc: RWCounter, op: T) -> Self {
         Self {
-            gc,
+            rwc,
             revert: false,
             op,
         }
     }
 
-    /// Return this `Operation` `gc`
-    pub fn gc(&self) -> GlobalCounter {
-        self.gc
+    /// Return this `Operation` `rwc`
+    pub fn rwc(&self) -> RWCounter {
+        self.rwc
     }
 
     /// Return this `Operation` `op`
@@ -408,16 +703,20 @@ mod operation_tests {
 
     #[test]
     fn unchecked_op_transmutations_are_safe() {
-        let stack_op =
-            StackOp::new(RW::WRITE, StackAddress::from(1024), Word::from(0x40));
+        let stack_op = StackOp::new(
+            RW::WRITE,
+            1,
+            StackAddress::from(1024),
+            Word::from(0x40),
+        );
 
         let stack_op_as_operation =
-            Operation::new(GlobalCounter(1), stack_op.clone());
+            Operation::new(RWCounter(1), stack_op.clone());
 
-        let memory_op = MemoryOp::new(RW::WRITE, MemoryAddress(0x40), 0x40);
+        let memory_op = MemoryOp::new(RW::WRITE, 1, MemoryAddress(0x40), 0x40);
 
         let memory_op_as_operation =
-            Operation::new(GlobalCounter(1), memory_op.clone());
+            Operation::new(RWCounter(1), memory_op.clone());
 
         assert_eq!(stack_op, stack_op_as_operation.op);
         assert_eq!(memory_op, memory_op_as_operation.op)
