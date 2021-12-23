@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::eth_types::{GethExecStep, Word};
-use crate::{
-    operation::{StackOp, RW},
-    Error,
-};
+use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSIZE`](crate::evm::OpcodeId::MSIZE)
@@ -21,11 +18,11 @@ impl Opcode for Msize {
 
         // Get value result from next step's memory and do stack write
         let mem_size_value = Word::from(steps[1].memory.size() as u32);
-        state.push_op(StackOp::new(
+        state.push_stack_op(
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
             mem_size_value,
-        ));
+        );
 
         Ok(())
     }
@@ -36,9 +33,7 @@ mod msize_tests {
     use super::*;
     use crate::{
         bytecode,
-        circuit_input_builder::{
-            CircuitInputBuilder, ExecStep, Transaction, TransactionContext,
-        },
+        circuit_input_builder::{ExecStep, TransactionContext},
         eth_types::Word,
         evm::StackAddress,
         mock,
@@ -57,30 +52,28 @@ mod msize_tests {
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
-        let mut builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
+        let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let mut test_builder =
-            CircuitInputBuilder::new(&block.eth_block, block.ctants.clone());
-        let mut tx = Transaction::new(&block.eth_tx);
+        let mut test_builder = block.new_circuit_input_builder();
+        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
-            test_builder.block_ctx.gc,
+            test_builder.block_ctx.rwc,
             0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOp WRITE to the latest Stack pos.
-        state_ref.push_op(StackOp::new(
+        state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1023),
             Word::from(0x3_u64),
-        ));
+        );
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);

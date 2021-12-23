@@ -400,16 +400,9 @@ fn step_convert(
         // size before each step. However, since we [`assign_exec_step`]
         // using step state, for MSIZE we better use current memory_size
         // instead of previous.
-        memory_size: {
-            let memory_size = if step.op == OpcodeId::MSIZE {
-                step.memory_size
-            } else {
-                match prev {
-                    None => 0,
-                    Some(prev_step) => prev_step.memory_size,
-                }
-            };
-            memory_size as u64 / 32 /* memory size in word */
+        memory_size: match prev {
+            None => 0,
+            Some(prev_step) => prev_step.memory_size as u64 / 32,
         },
         ..Default::default()
     };
