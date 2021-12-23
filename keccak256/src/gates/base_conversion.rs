@@ -11,7 +11,7 @@ use pairing::arithmetic::FieldExt;
 pub(crate) struct BaseConversionConfig<F> {
     q_running_sum: Selector,
     q_lookup: Selector,
-    bi: BaseInfo<F>,
+    base_info: BaseInfo<F>,
     // Flag is copied from the parent flag. Parent flag is assumed to be binary
     // constrained.
     flag: Column<Advice>,
@@ -26,7 +26,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
     /// Side effect: lane and parent_flag is equality enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        bi: BaseInfo<F>,
+        base_info: BaseInfo<F>,
         input_lane: Column<Advice>,
         parent_flag: Column<Advice>,
     ) -> Self {
@@ -52,7 +52,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             let coef = meta.query_advice(input_coef, Rotation::cur());
             let acc_prev = meta.query_advice(input_acc, Rotation::prev());
             let acc = meta.query_advice(input_acc, Rotation::cur());
-            let power_of_base = bi.input_pob();
+            let power_of_base = base_info.input_pob();
             vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
         });
         meta.create_gate("output running sum", |meta| {
@@ -61,7 +61,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             let coef = meta.query_advice(output_coef, Rotation::cur());
             let acc_prev = meta.query_advice(output_acc, Rotation::prev());
             let acc = meta.query_advice(output_acc, Rotation::cur());
-            let power_of_base = bi.output_pob();
+            let power_of_base = base_info.output_pob();
             vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
         });
         meta.lookup(|meta| {
@@ -70,15 +70,18 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             let input_slices = meta.query_advice(input_coef, Rotation::cur());
             let output_slices = meta.query_advice(output_coef, Rotation::cur());
             vec![
-                (q_enable.clone() * flag.clone() * input_slices, bi.input_tc),
-                (q_enable * flag * output_slices, bi.output_tc),
+                (
+                    q_enable.clone() * flag.clone() * input_slices,
+                    base_info.input_tc,
+                ),
+                (q_enable * flag * output_slices, base_info.output_tc),
             ]
         });
 
         Self {
             q_running_sum,
             q_lookup,
-            bi,
+            base_info,
             flag,
             input_lane,
             input_coef,
@@ -94,15 +97,16 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         input: (Cell, F),
         flag: (Cell, F),
     ) -> Result<(Cell, F), Error> {
-        let (input_coefs, output_coefs, _) = self.bi.compute_coefs(input.1)?;
+        let (input_coefs, output_coefs, _) =
+            self.base_info.compute_coefs(input.1)?;
 
         let (out_cell, out_value) = layouter.assign_region(
             || "Base conversion",
             |mut region| {
                 let mut input_acc = F::zero();
-                let input_pob = self.bi.input_pob();
+                let input_pob = self.base_info.input_pob();
                 let mut output_acc = F::zero();
-                let output_pob = self.bi.output_pob();
+                let output_pob = self.base_info.output_pob();
                 for (offset, (&input_coef, &output_coef)) in
                     input_coefs.iter().zip(output_coefs.iter()).enumerate()
                 {
@@ -196,9 +200,10 @@ mod tests {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
                 let flag = meta.advice_column();
-                let bi = table.get_base_info(false);
-                let conversion =
-                    BaseConversionConfig::configure(meta, bi, lane, flag);
+                let base_info = table.get_base_info(false);
+                let conversion = BaseConversionConfig::configure(
+                    meta, base_info, lane, flag,
+                );
                 Self {
                     lane,
                     flag,
