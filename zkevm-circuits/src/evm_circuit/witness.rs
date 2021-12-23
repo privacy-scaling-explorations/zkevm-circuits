@@ -267,9 +267,8 @@ pub enum Rw {
         rw_counter: usize,
         is_write: bool,
         call_id: usize,
-        // TODO:
-        // storage_address: u64,
-        // byte: u8,
+        storage_address: Word,
+        value: Word,
     },
 }
 
@@ -323,8 +322,8 @@ impl Rw {
                 rw_counter,
                 is_write,
                 call_id,
-                // memory_address,
-                // byte,
+                storage_address,
+                value,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -517,15 +516,12 @@ pub fn block_convert(
         ),
         byte: s.op().value(),
     }));
-    // TODO: add storage ops
     block.rws.extend(storage_ops.iter().map(|s| Rw::Storage {
         rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
         call_id: 1,
-        // memory_address: u64::from_le_bytes(
-        //     s.op().address().to_le_bytes()[..8].try_into().unwrap(),
-        // ),
-        // byte: s.op().value(),
+        storage_address: *s.op().key(),
+        value: *s.op().value(),
     }));
 
     block
