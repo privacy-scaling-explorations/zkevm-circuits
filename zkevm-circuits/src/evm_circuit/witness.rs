@@ -329,10 +329,14 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::Storage as u64),
                 F::from(*call_id as u64),
-                // F::from(*memory_address),
-                // F::from(*byte as u64),
-                F::zero(),
-                F::zero(),
+                RandomLinearCombination::random_linear_combine(
+                    storage_address.to_le_bytes(),
+                    randomness,
+                ),
+                RandomLinearCombination::random_linear_combine(
+                    value.to_le_bytes(),
+                    randomness,
+                ),
                 F::zero(),
                 F::zero(),
             ],
