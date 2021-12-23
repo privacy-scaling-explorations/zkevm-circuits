@@ -48,6 +48,8 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         let storage_expansion = StorageExpansionGadget::construct();
         let storage_gas_cost = storage_expansion.expr();
 
+        println!("--------{:?}", cb.stack_pointer_offset());
+
         /* Stack operations */
         // Pop the address from the stack
         cb.stack_lookup(
@@ -55,6 +57,12 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
             cb.stack_pointer_offset().expr(),
             address.expr(),
         );
+
+
+
+        println!("++++++++{:?}", cb.stack_pointer_offset());
+
+
         // For SLOAD push the value to the stack
         // FOR SSTORE pop the value from the stack
         cb.stack_lookup(
@@ -116,7 +124,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
 
         let opcode = step.opcode.unwrap();
 
-        // panic!("{:?}", block);
+        panic!("{:?}", block);
 
         // Inputs/Outputs
         // consistent with bus_mapping
@@ -197,7 +205,8 @@ mod test {
         test_ok(
             OpcodeId::SLOAD,
             Word::from(0x12),
-            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            // Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            Word::from(0x00),
             38913,
             3074206,
         );
@@ -217,34 +226,5 @@ mod test {
         //     38912,
         //     3074051,
         // );
-    }
-
-    #[test]
-    fn storage_gadget_rand() {
-        let calc_memory_size_and_gas_cost = |opcode, address: Word| {
-            let memory_size = (address.as_u64()
-                + match opcode {
-                    OpcodeId::MSTORE | OpcodeId::MLOAD => 32,
-                    OpcodeId::MSTORE8 => 1,
-                    _ => 0,
-                }
-                + 31)
-                / 32;
-            let gas_cost = memory_size * memory_size / 512
-                + 3 * memory_size
-                + GasCost::FASTEST.as_u64();
-            (memory_size, gas_cost)
-        };
-
-        for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
-            // we use 15-bit here to reduce testing resource consumption.
-            // In real cases the address is 5 bytes (40 bits)
-            let max_memory_size_pow_of_two = 15;
-            let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
-            let value = rand_word();
-            let (memory_size, gas_cost) =
-                calc_memory_size_and_gas_cost(opcode, address);
-            test_ok(opcode, address, value, memory_size, gas_cost);
-        }
     }
 }
