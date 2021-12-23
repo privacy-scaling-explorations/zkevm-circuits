@@ -508,10 +508,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         rw_counter: Expression<F>,
         is_write: Expression<F>,
-        address_low: Expression<F>,
-        address_high: Expression<F>,
-        offset: Expression<F>,
-        byte: Expression<F>,
+        address: Expression<F>,
+        value: Expression<F>,
     ) {
         self.rw_lookup_with_counter(
             rw_counter,
@@ -519,10 +517,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Storage.expr(),
             [
                 self.curr.state.call_id.expr(),
-                address_low,
-                address_high,
-                offset,
-                byte,
+                address,
+                value,
+                0.expr(),
+                0.expr(),
             ],
         );
     }

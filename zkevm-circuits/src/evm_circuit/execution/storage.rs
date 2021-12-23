@@ -68,37 +68,21 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
 
         /* Storage operations */
         // Read/Write the value from storage at the specified address
-        for idx in 0..32 {
-            // We read/write all the bytes of value at an increasing address
-            // value.
-            let byte = if idx == 31 {
-                value.cells[0].expr()
-            } else {
-                value.cells[31 - idx].expr()
-            };
-
-            // We increase the offset for SLOAD and SSTORE.
-            let offset = if idx == 0 { 0.expr() } else { idx.expr() };
-
-            cb.storage_lookup_with_counter(
-                cb.curr.state.rw_counter.expr()
-                    + cb.rw_counter_offset().expr()
-                    + offset.clone(),
-                is_sstore.clone(),
-                from_bytes::expr(&address.cells[0..16]),
-                from_bytes::expr(&address.cells[16..32]),
-                offset,
-                byte,
-            );
-        }
+        cb.storage_lookup_with_counter(
+            cb.curr.state.rw_counter.expr()
+                + cb.rw_counter_offset().expr(),
+            is_sstore.clone(),
+            address.expr(),
+            value.expr(),
+        );
 
         // State transition
-        // - `rw_counter` needs to be increased by 34
+        // - `rw_counter` needs to be increased by 3
         // - `program_counter` needs to be increased by 1
         // - `stack_pointer` needs to be increased by 2 when is_sstore,
         //   otherwise to be same
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(34.expr()),
+            rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_sstore * 2.expr()),
             ..Default::default()
