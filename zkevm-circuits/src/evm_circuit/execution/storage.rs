@@ -206,8 +206,8 @@ mod test {
 
         test_ok(
             OpcodeId::SLOAD,
-            Word::from(0x12FFFF),
-            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            Word::from(0x12),
+            Word::from_big_endian(&(1..3).collect::<Vec<_>>()),
             38913,
             3074206,
         );
