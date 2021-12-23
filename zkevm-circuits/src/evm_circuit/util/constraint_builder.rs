@@ -516,7 +516,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.rw_lookup_with_counter(
             rw_counter,
             is_write,
-            RwTableTag::Memory.expr(),
+            RwTableTag::Storage.expr(),
             [
                 self.curr.state.call_id.expr(),
                 address_low,
