@@ -129,6 +129,8 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
 
         let opcode = step.opcode.unwrap();
 
+        // panic!("{:?}", block);
+
         // Inputs/Outputs
         let [address, value] = [step.rw_indices[0], step.rw_indices[1]]
             .map(|idx| block.rws[idx].stack_value());
@@ -207,7 +209,7 @@ mod test {
         test_ok(
             OpcodeId::SLOAD,
             Word::from(0x12),
-            Word::from_big_endian(&(1..3).collect::<Vec<_>>()),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
             38913,
             3074206,
         );

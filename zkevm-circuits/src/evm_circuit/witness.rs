@@ -263,6 +263,14 @@ pub enum Rw {
         memory_address: u64,
         byte: u8,
     },
+    Storage {
+        rw_counter: usize,
+        is_write: bool,
+        call_id: usize,
+        // TODO:
+        // storage_address: u64,
+        // byte: u8,
+    },
 }
 
 impl Rw {
@@ -307,6 +315,25 @@ impl Rw {
                 F::from(*call_id as u64),
                 F::from(*memory_address),
                 F::from(*byte as u64),
+                F::zero(),
+                F::zero(),
+            ],
+            // TODO:
+            Self::Storage {
+                rw_counter,
+                is_write,
+                call_id,
+                // memory_address,
+                // byte,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::Storage as u64),
+                F::from(*call_id as u64),
+                // F::from(*memory_address),
+                // F::from(*byte as u64),
+                F::zero(),
+                F::zero(),
                 F::zero(),
                 F::zero(),
             ],
@@ -491,6 +518,15 @@ pub fn block_convert(
         byte: s.op().value(),
     }));
     // TODO: add storage ops
+    block.rws.extend(storage_ops.iter().map(|s| Rw::Storage {
+        rw_counter: s.rwc().into(),
+        is_write: s.op().rw().is_write(),
+        call_id: 1,
+        // memory_address: u64::from_le_bytes(
+        //     s.op().address().to_le_bytes()[..8].try_into().unwrap(),
+        // ),
+        // byte: s.op().value(),
+    }));
 
     block
 }
