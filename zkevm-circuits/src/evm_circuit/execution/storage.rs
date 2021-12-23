@@ -59,7 +59,10 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         // FOR SSTORE pop the value from the stack
         cb.stack_lookup(
             is_sload.expr(),
-            cb.stack_pointer_offset().expr() + 1.expr() - is_sload.expr(),
+            cb.stack_pointer_offset().expr()
+            // TODO:
+            // + 1.expr()
+            - is_sload.expr(),
             value.expr(),
         );
 
@@ -132,7 +135,8 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         // panic!("{:?}", block);
 
         // Inputs/Outputs
-        let [address, value] = [step.rw_indices[0], step.rw_indices[1]]
+        // TODO: how to sort this? 
+        let [address, value] = [step.rw_indices[0], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());
         self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
