@@ -61,7 +61,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
             is_sload.expr(),
             cb.stack_pointer_offset().expr()
             // TODO:
-            // + 1.expr()
+            + 1.expr()
             - is_sload.expr(),
             value.expr(),
         );
