@@ -350,6 +350,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::JUMP => ExecutionState::JUMP,
             OpcodeId::JUMPI => ExecutionState::JUMPI,
             OpcodeId::PC => ExecutionState::PC,
+            OpcodeId::MSIZE => ExecutionState::MSIZE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -362,7 +363,6 @@ impl From<&bus_mapping::bytecode::Bytecode> for Bytecode {
 }
 
 fn step_convert(
-    prev: Option<&bus_mapping::circuit_input_builder::ExecStep>,
     step: &bus_mapping::circuit_input_builder::ExecStep,
     ops_len: (usize, usize, usize),
 ) -> ExecStep {
@@ -392,15 +392,7 @@ fn step_convert(
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
         opcode: Some(step.op),
-        // As in https://github.com/ethereum/go-ethereum/blob/bc6bf1e1937829b5d5b0d431a9333d47c3e08082/core/vm/interpreter.go#L224-L233,
-        // geth increases memory size before making trace,
-        // so the memory size in ExecStep is not what we expect to see.
-        // We have to use the memory size of previous step as correct memory
-        // size before each step
-        memory_size: match prev {
-            None => 0,
-            Some(prev_step) => (prev_step.memory_size as u64) / 32, /* memory size in word */
-        },
+        memory_size: step.memory_size as u64 / 32, /* memory size in word */
         ..Default::default()
     };
     result
@@ -424,17 +416,9 @@ fn tx_convert(
         }],
         ..Default::default()
     };
-    for idx in 0..tx.steps().len() {
-        let cur_step = &tx.steps()[idx];
-        let prev_step = if idx == 0 {
-            None
-        } else {
-            Some(&tx.steps()[idx - 1])
-        };
-        result
-            .steps
-            .push(step_convert(prev_step, cur_step, ops_len));
-    }
+    let _ = tx.steps().iter().map(|step| {
+        result.steps.push(step_convert(step, ops_len));
+    });
     result
 }
 

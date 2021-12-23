@@ -5,6 +5,7 @@ mod jump;
 mod jumpdest;
 mod jumpi;
 mod mload;
+mod msize;
 mod mstore;
 mod pc;
 mod pop;
@@ -26,6 +27,7 @@ use jump::Jump;
 use jumpdest::Jumpdest;
 use jumpi::Jumpi;
 use mload::Mload;
+use msize::Msize;
 use mstore::Mstore;
 use pc::Pc;
 use pop::Pop;
@@ -125,7 +127,7 @@ impl OpcodeId {
             OpcodeId::JUMP => Jump::gen_associated_ops,
             OpcodeId::JUMPI => Jumpi::gen_associated_ops,
             OpcodeId::PC => Pc::gen_associated_ops,
-            // OpcodeId::MSIZE => {},
+            OpcodeId::MSIZE => Msize::gen_associated_ops,
             // OpcodeId::GAS => {},
             OpcodeId::JUMPDEST => Jumpdest::gen_associated_ops,
             OpcodeId::PUSH1 => Push::<1>::gen_associated_ops,
