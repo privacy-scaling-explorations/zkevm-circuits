@@ -119,7 +119,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         // panic!("{:?}", block);
 
         // Inputs/Outputs
-        // TODO: how to sort this? 
+        // consistent with bus_mapping
         let [address, value] = [step.rw_indices[0], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());
         self.address
