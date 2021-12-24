@@ -9,7 +9,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsEqualGadget,
-            storage_gadget::StorageExpansionGadget,
+            storage_gadget::StorageGasGadget,
             Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -24,7 +24,7 @@ pub(crate) struct StorageGadget<F> {
     same_context: SameContextGadget<F>,
     address: Word<F>,
     value: Word<F>,
-    storage_expansion: StorageExpansionGadget<F>,
+    storage_gas: StorageGasGadget<F>,
     is_sload: IsEqualGadget<F>,
 }
 
@@ -45,8 +45,8 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         let is_sstore = 1.expr() - is_sload.expr();
 
         // Calculate the gas cost for this storage access
-        let storage_expansion = StorageExpansionGadget::construct();
-        let storage_gas_cost = storage_expansion.expr();
+        let storage_gas = StorageGasGadget::construct();
+        let storage_gas_cost = storage_gas.expr();
 
         /* Stack operations */
         // Pop the address from the stack
@@ -93,7 +93,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
             same_context,
             address,
             value,
-            storage_expansion,
+            storage_gas,
             is_sload,
         }
     }

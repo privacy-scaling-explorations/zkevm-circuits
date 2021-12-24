@@ -4,11 +4,11 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 /// Returns storage gas cost for a storage access.
 #[derive(Clone, Debug)]
-pub(crate) struct StorageExpansionGadget<F> {
+pub(crate) struct StorageGasGadget<F> {
     storage_gas_cost: Expression<F>,
 }
 
-impl<F: FieldExt> StorageExpansionGadget<F> {
+impl<F: FieldExt> StorageGasGadget<F> {
     pub const GAS_STOR: GasCost = GasCost::COLD_SLOAD_COST; // TODO:
 
     pub(crate) fn construct() -> Self {
