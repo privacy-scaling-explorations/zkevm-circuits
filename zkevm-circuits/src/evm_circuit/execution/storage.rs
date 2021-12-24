@@ -177,20 +177,11 @@ mod test {
 
     #[test]
     fn storage_gadget_simple() {
-        // test_ok(
-        //     OpcodeId::MSTORE,
-        //     Word::from(0x12FFFF),
-        //     Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-        //     38913,
-        //     3074206,
-        // );
-
         test_ok(
             OpcodeId::SLOAD,
             Word::from(0x12FFFF),
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
         );
-
         test_ok(
             OpcodeId::SLOAD,
             Word::from(0x12FFFF) + 16,
@@ -198,13 +189,5 @@ mod test {
                 &(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>(),
             ),
         );
-
-        // test_ok(
-        //     OpcodeId::MSTORE8,
-        //     Word::from(0x12FFFF),
-        //     Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-        //     38912,
-        //     3074051,
-        // );
     }
 }
