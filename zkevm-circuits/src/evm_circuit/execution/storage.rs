@@ -48,8 +48,6 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         let storage_expansion = StorageExpansionGadget::construct();
         let storage_gas_cost = storage_expansion.expr();
 
-        println!("--------{:?}", cb.stack_pointer_offset());
-
         /* Stack operations */
         // Pop the address from the stack
         cb.stack_lookup(
@@ -57,11 +55,6 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
             cb.stack_pointer_offset().expr(),
             address.expr(),
         );
-
-
-
-        println!("++++++++{:?}", cb.stack_pointer_offset());
-
 
         // For SLOAD push the value to the stack
         // FOR SSTORE pop the value from the stack
