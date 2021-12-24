@@ -145,13 +145,7 @@ mod test {
     };
     use std::iter;
 
-    fn test_ok(
-        opcode: OpcodeId,
-        address: Word,
-        value: Word,
-        _memory_size: u64,
-        gas_cost: u64,
-    ) {
+    fn test_ok(opcode: OpcodeId, address: Word, value: Word) {
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(address)
@@ -160,7 +154,7 @@ mod test {
             STOP
         };
 
-        let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
+        let gas = Gas(100_000);
         let mut block_trace =
             bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
                 &bytecode, gas,
@@ -189,12 +183,10 @@ mod test {
 
         test_ok(
             OpcodeId::SLOAD,
-            Word::from(0x12),
-            // Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-            Word::from(0x00),
-            38913,
-            3074206,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
         );
+
         // test_ok(
         //     OpcodeId::MLOAD,
         //     Word::from(0x12FFFF) + 16,
@@ -204,6 +196,7 @@ mod test {
         //     38914,
         //     3074361,
         // );
+
         // test_ok(
         //     OpcodeId::MSTORE8,
         //     Word::from(0x12FFFF),
