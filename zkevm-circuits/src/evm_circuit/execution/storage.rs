@@ -63,17 +63,13 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
             cb.stack_pointer_offset().expr()
             // TODO:
             + 1.expr()
-            - is_sload.expr(),
+                - is_sload.expr(),
             value.expr(),
         );
 
         /* Storage operations */
         // Read/Write the value from storage at the specified address
-        cb.storage_lookup(
-            is_sstore.clone(),
-            address.expr(),
-            value.expr(),
-        );
+        cb.storage_lookup(is_sstore.clone(), address.expr(), value.expr());
 
         // State transition
         // - `rw_counter` needs to be increased by 3
@@ -203,8 +199,8 @@ mod test {
         //     OpcodeId::MLOAD,
         //     Word::from(0x12FFFF) + 16,
         //     Word::from_big_endian(
-        //         &(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>(),
-        //     ),
+        //         &(17..33).chain(iter::repeat(0).take(16)).collect::
+        // <Vec<_>>(),     ),
         //     38914,
         //     3074361,
         // );
