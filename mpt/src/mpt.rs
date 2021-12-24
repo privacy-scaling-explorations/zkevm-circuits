@@ -395,6 +395,10 @@ impl<F: FieldExt> MPTConfig<F> {
                 ));
             }
 
+            // TODO: use permutation argument for s = c.
+
+            // TODO: use permutation argument to make sure modified_node is the same in all branch rows.
+
             constraints
         });
 
@@ -1297,6 +1301,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            modified_node,
             r_table.clone(),
             true,
         );
@@ -1323,6 +1328,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            modified_node,
             r_table.clone(),
             false,
         );

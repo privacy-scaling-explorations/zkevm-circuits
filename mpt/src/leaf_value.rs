@@ -22,7 +22,7 @@ pub(crate) struct LeafValueChip<F> {
 impl<F: FieldExt> LeafValueChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -104,7 +104,64 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints
         });
 
-        // TODO: lookup for case when there is a placeholder branch
+        // Lookup for case when there is a placeholder branch - in this case we need to check
+        // the hash in the branch above the placeholder branch.
+        meta.lookup_any(|meta| {
+            let q_enable = q_enable(meta);
+
+            let mut rlc = meta.query_advice(acc, Rotation::prev());
+            let mut mult = meta.query_advice(acc_mult, Rotation::prev());
+
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            rlc = rlc + s_rlp1 * mult.clone();
+            mult = mult * acc_r;
+
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            rlc = rlc + s_rlp2 * mult.clone();
+            mult = mult * acc_r;
+
+            for col in s_advices.iter() {
+                let s = meta.query_advice(*col, Rotation::cur());
+                rlc = rlc + s * mult.clone();
+                mult = mult * acc_r;
+            }
+
+            let sel = meta.query_advice(sel, Rotation(rot));
+            let one = Expression::Constant(F::one());
+
+            let is_branch_placeholder = meta.query_advice(
+                is_branch_placeholder,
+                Rotation(rot_placeholder_branch),
+            );
+
+            // If sel = 1, there is no leaf at this position (value is being added or deleted)
+            // and we don't check the hash of it.
+            let mut constraints = vec![];
+            constraints.push((
+                q_enable.clone()
+                    * rlc
+                    * (one.clone() - sel.clone())
+                    * is_branch_placeholder.clone(),
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            for (ind, column) in sc_keccak.iter().enumerate() {
+                let sc_keccak = meta.query_advice(
+                    *column,
+                    Rotation(rot_placeholder_branch - 1), // -1 to get from init branch into the previous branch (last row)
+                );
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    q_enable.clone()
+                        * sc_keccak
+                        * (one.clone() - sel.clone())
+                        * is_branch_placeholder.clone(),
+                    keccak_table_i,
+                ));
+            }
+
+            constraints
+        });
 
         config
     }

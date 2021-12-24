@@ -34,6 +34,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
+        modified_node: Column<Advice>,
         r_table: Vec<Expression<F>>,
         is_s: bool,
     ) -> LeafKeyConfig {
@@ -117,8 +118,16 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
 
             let one = Expression::Constant(F::one());
+            let c16 = Expression::Constant(F::from(16));
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
+
+            let is_branch_placeholder =
+                meta.query_advice(is_branch_placeholder, Rotation(rot - 1));
+
+            // If the last branch is placeholder (the placeholder branch is the same as its
+            // parallel counterpart), there is a branch modified_index nibble already
+            // incorporated in key_rlc. That means we need to ignore the first nibble here (in leaf key).
 
             // For short RLP (key starts at s_advices[0]):
 
@@ -132,11 +141,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            let is_branch_placeholder =
-                meta.query_advice(is_branch_placeholder, Rotation(rot - 1));
-
-            // If the last branch is placeholder, sel1 and sel2 are turned around.
-
             // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[0].
             constraints.push((
                 "Leaf key acc s_advice0",
@@ -147,19 +151,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_short.clone(),
             ));
 
-            // If sel1 = 1 and is_branch_placeholder, we have 32 in s_advices[0].
-            constraints.push((
-                "Leaf key acc s_advice0 is_placeholder",
-                q_enable.clone()
-                    * (s_advice0 - c32.clone())
-                    * sel1.clone()
-                    * is_branch_placeholder.clone()
-                    * is_short.clone(),
-            ));
-
             let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
             key_rlc_acc_short =
-                key_rlc_acc_short + s_advices1 * key_mult.clone();
+                key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
@@ -174,14 +168,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 "Key RLC short",
                 q_enable.clone()
                     * (key_rlc_acc_short - key_rlc.clone())
-                    * is_short,
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * is_short.clone(),
             ));
 
             // For long RLP (key starts at s_advices[1]):
 
-            // If sel1 = 1, we have nibble+48 in s_advices[0].
+            // If sel1 = 1, we have nibble+48 in s_advices[1].
             let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
-            let mut key_rlc_acc_long = key_rlc_acc_start
+            let mut key_rlc_acc_long = key_rlc_acc_start.clone()
                 + (s_advice1.clone() - c48)
                     * key_mult_start.clone()
                     * sel1.clone();
@@ -194,18 +189,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 "Leaf key acc s_advice1",
                 q_enable.clone()
                     * (s_advice1.clone() - c32.clone())
-                    * sel2
+                    * sel2.clone()
                     * (one.clone() - is_branch_placeholder.clone())
-                    * is_long.clone(),
-            ));
-
-            // If sel1 = 1 and is_branch_placeholder, we have 32 in s_advices[1].
-            constraints.push((
-                "Leaf key acc s_advice1 is_placeholder",
-                q_enable.clone()
-                    * (s_advice1 - c32)
-                    * sel1
-                    * is_branch_placeholder
                     * is_long.clone(),
             ));
 
@@ -218,14 +203,117 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     + s * key_mult.clone() * r_table[ind - 3].clone();
             }
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            key_rlc_acc_long =
-                key_rlc_acc_long + c_rlp1 * key_mult * r_table[29].clone();
+            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long
+                + c_rlp1_cur.clone() * key_mult * r_table[29].clone();
 
             // Key RLC is be checked to verify that the proper key is used.
             constraints.push((
-                "Key RLC long",
-                q_enable * (key_rlc_acc_long - key_rlc) * is_long,
+                "Key RLC long is_placeholder",
+                q_enable.clone()
+                    * (key_rlc_acc_long - key_rlc.clone())
+                    * is_long.clone(),
+            ));
+
+            // branch_is_placeholder section:
+
+            // For short RLP and is_branch_placeholder (key starts at s_advices[0]):
+            // If the last branch is placeholder, sel1 and sel2 are turned around.
+
+            // If sel2 = 1, we have one nibble+48 in s_advices[0]. This is the nibble we ignore
+            // because of "is_branch_placeholder".
+
+            key_rlc_acc_short = key_rlc_acc_start.clone();
+            key_mult = key_mult_start.clone();
+
+            // If sel1 = 1 and is_branch_placeholder, we have 32 in s_advices[0].
+            constraints.push((
+                "Leaf key acc s_advice0 is_placeholder",
+                q_enable.clone()
+                    * (s_advice0 - c32.clone())
+                    * sel1.clone()
+                    * is_branch_placeholder.clone()
+                    * is_short.clone(),
+            ));
+
+            // If sel1 = 1, s_advices[1] contains two nibbles, the first nibble
+            // (which is modified_node) needs to be ignored.
+            // modified_node is the same for all branch rows, -4 brings us into branch rows
+            // for both, S and C key (-3 would work too, but rotation -4 is used in leaf_value)
+            let modified_node = meta.query_advice(modified_node, Rotation(-4));
+
+            // TODO: prepare test for sel1 = 1
+
+            key_rlc_acc_short = key_rlc_acc_short
+                + (s_advice1.clone() - modified_node.clone() * c16.clone())
+                    * sel1.clone()
+                    * key_mult.clone()
+                + s_advice1.clone() * sel2.clone() * key_mult.clone();
+
+            for ind in 2..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc_short = key_rlc_acc_short
+                    + s * key_mult.clone() * r_table[ind - 2].clone();
+            }
+
+            // Key RLC is be checked to verify that the proper key is used.
+            constraints.push((
+                "Key RLC short is_placeholder",
+                q_enable.clone()
+                    * (key_rlc_acc_short - key_rlc.clone())
+                    * is_branch_placeholder.clone()
+                    * is_short,
+            ));
+
+            // For long RLP and is_branch_placeholder (key starts at s_advices[1]):
+            // If the last branch is placeholder, sel1 and sel2 are turned around.
+
+            // If sel2 = 1, we have one nibble+48 in s_advices[1]. This is the nibble we ignore
+            // because of "is_branch_placeholder".
+            let mut key_rlc_acc_long = key_rlc_acc_start.clone();
+            key_mult = key_mult_start.clone();
+
+            // If sel1 = 1 and is_branch_placeholder, we have 32 in s_advices[1].
+            constraints.push((
+                "Leaf key acc s_advice1 is_placeholder",
+                q_enable.clone()
+                    * (s_advice1 - c32.clone())
+                    * sel1.clone()
+                    * is_branch_placeholder.clone()
+                    * is_long.clone(),
+            ));
+
+            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+
+            // If sel1 = 1, s_advices[2] contains two nibbles, the first nibble
+            // (which is modified_node) needs to be ignored.
+            // modified_node is the same for all branch rows, -4 brings us into branch rows
+            // for both, S and C key (-3 would work too, but rotation -4 is used in leaf_value)
+
+            key_rlc_acc_long = key_rlc_acc_long
+                + (s_advices2.clone() - modified_node.clone() * c16.clone())
+                    * sel1.clone()
+                    * key_mult.clone()
+                + s_advices2.clone() * sel2.clone() * key_mult.clone();
+
+            for ind in 3..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc_long = key_rlc_acc_long
+                    + s * key_mult.clone() * r_table[ind - 3].clone();
+            }
+
+            // TODO: prepare a test for this
+
+            key_rlc_acc_long =
+                key_rlc_acc_long + c_rlp1_cur * key_mult * r_table[29].clone();
+
+            // Key RLC is be checked to verify that the proper key is used.
+            constraints.push((
+                "Key RLC long is_placeholder",
+                q_enable.clone()
+                    * (key_rlc_acc_long - key_rlc.clone())
+                    * is_branch_placeholder.clone()
+                    * is_long,
             ));
 
             constraints
