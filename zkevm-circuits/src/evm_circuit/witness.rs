@@ -317,7 +317,6 @@ impl Rw {
                 F::zero(),
                 F::zero(),
             ],
-            // TODO:
             Self::Storage {
                 rw_counter,
                 is_write,
