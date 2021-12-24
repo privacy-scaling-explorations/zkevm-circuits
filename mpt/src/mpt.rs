@@ -11,7 +11,8 @@ use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::{
     BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
-    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+    KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
 };
 use crate::{
     account_leaf_key::{AccountLeafKeyChip, AccountLeafKeyConfig},
@@ -283,6 +284,9 @@ impl<F: FieldExt> MPTConfig<F> {
             // in storage part, for this we also need account proof selector and storage
             // proof selector - bool and strictly increasing for example. Also, is_account_leaf_key_nibbles
             // needs to be 1 in the previous row when the account/storage selector changes.
+
+            // TODO: constraints for s_advices[IS_ADD_BRANCH_S_POS - LAYOUT_OFFSET]
+            // and s_advices[IS_ADD_BRANCH_C_POS - LAYOUT_OFFSET] in branch init
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let modified_node =
@@ -1069,6 +1073,12 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
+            // When placeholder branch, we don't check its hash in a parent.
+            let is_branch_s_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(-16),
+            );
+
             let acc_s = meta.query_advice(acc_s, Rotation::cur());
 
             // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
@@ -1081,6 +1091,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 not_first_level.clone()
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
+                    * (one.clone() - is_branch_s_placeholder.clone())
                     * branch_acc_s1, // TODO: replace with acc_s once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -1094,6 +1105,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         * is_last_branch_child.clone()
                         * (one.clone()
                             - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
+                        * (one.clone() - is_branch_s_placeholder.clone())
                         * s_keccak,
                     keccak_table_i,
                 ));
@@ -1119,6 +1131,12 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_last_branch_child =
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
+            // When placeholder branch, we don't check its hash in a parent.
+            let is_branch_c_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(-16),
+            );
+
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
 
             // TODO: acc_c currently doesn't have branch ValueNode info (which 128 if nil)
@@ -1131,6 +1149,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 not_first_level.clone()
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
+                    * (one.clone() - is_branch_c_placeholder.clone())
                     * branch_acc_c1, // TODO: replace with acc_c once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -1143,6 +1162,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     not_first_level.clone()
                         * is_last_branch_child.clone()
                         * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
+                        * (one.clone() - is_branch_c_placeholder.clone())
                         * c_keccak,
                     keccak_table_i,
                 ));
@@ -1276,6 +1296,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             sel1,
             sel2,
+            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             r_table.clone(),
             true,
         );
@@ -1301,6 +1322,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             sel1,
             sel2,
+            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             r_table.clone(),
             false,
         );
@@ -1323,6 +1345,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             sel1,
+            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            true,
             acc_r,
         );
 
@@ -1344,6 +1368,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             sel2,
+            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            false,
             acc_r,
         );
 
@@ -2607,8 +2633,8 @@ mod tests {
         }
 
         // for debugging:
-        // let path = "mpt/tests";
-        let path = "tests";
+        let path = "mpt/tests";
+        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)

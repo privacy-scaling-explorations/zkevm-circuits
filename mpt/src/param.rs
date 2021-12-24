@@ -16,3 +16,5 @@ pub const BRANCH_0_S_START: usize = 4; // row 0 of a branch contains some RLP da
 pub const BRANCH_0_C_START: usize = 7;
 pub const BRANCH_0_KEY_POS: usize = 10; // row 0 of a branch contains info (deriving from key) about which branch node is being modified
 pub const R_TABLE_LEN: usize = 32;
+pub const IS_BRANCH_S_PLACEHOLDER_POS: usize = 11;
+pub const IS_BRANCH_C_PLACEHOLDER_POS: usize = 12;

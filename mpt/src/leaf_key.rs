@@ -33,6 +33,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         key_rlc_mult: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
+        is_branch_placeholder: Column<Advice>,
         r_table: Vec<Expression<F>>,
         is_s: bool,
     ) -> LeafKeyConfig {
@@ -115,6 +116,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
             let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
 
+            let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
 
@@ -130,12 +132,28 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1, we have 32 in s_advices[0].
+            let is_branch_placeholder =
+                meta.query_advice(is_branch_placeholder, Rotation(rot - 1));
+
+            // If the last branch is placeholder, sel1 and sel2 are turned around.
+
+            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[0].
             constraints.push((
                 "Leaf key acc s_advice0",
                 q_enable.clone()
-                    * (s_advice0 - c32.clone())
+                    * (s_advice0.clone() - c32.clone())
                     * sel2.clone()
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * is_short.clone(),
+            ));
+
+            // If sel1 = 1 and is_branch_placeholder, we have 32 in s_advices[0].
+            constraints.push((
+                "Leaf key acc s_advice0 is_placeholder",
+                q_enable.clone()
+                    * (s_advice0 - c32.clone())
+                    * sel1.clone()
+                    * is_branch_placeholder.clone()
                     * is_short.clone(),
             ));
 
@@ -168,13 +186,27 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * key_mult_start.clone()
                     * sel1.clone();
             let mut key_mult =
-                key_mult_start.clone() * r_table[0].clone() * sel1;
+                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1, we have 32 in s_advices[1].
+            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[1].
             constraints.push((
                 "Leaf key acc s_advice1",
-                q_enable.clone() * (s_advice1 - c32) * sel2 * is_long.clone(),
+                q_enable.clone()
+                    * (s_advice1.clone() - c32.clone())
+                    * sel2
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * is_long.clone(),
+            ));
+
+            // If sel1 = 1 and is_branch_placeholder, we have 32 in s_advices[1].
+            constraints.push((
+                "Leaf key acc s_advice1 is_placeholder",
+                q_enable.clone()
+                    * (s_advice1 - c32)
+                    * sel1
+                    * is_branch_placeholder
+                    * is_long.clone(),
             ));
 
             let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
