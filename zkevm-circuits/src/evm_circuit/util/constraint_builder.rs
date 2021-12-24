@@ -504,6 +504,25 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Storage
 
+    pub(crate) fn storage_lookup(
+        &mut self,
+        is_write: Expression<F>,
+        address: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            is_write,
+            RwTableTag::Storage.expr(),
+            [
+                self.curr.state.call_id.expr(),
+                address,
+                value,
+                0.expr(),
+                0.expr(),
+            ],
+        );
+    }
+
     pub(crate) fn storage_lookup_with_counter(
         &mut self,
         rw_counter: Expression<F>,

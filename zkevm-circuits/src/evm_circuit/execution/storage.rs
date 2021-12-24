@@ -76,9 +76,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
 
         /* Storage operations */
         // Read/Write the value from storage at the specified address
-        cb.storage_lookup_with_counter(
-            cb.curr.state.rw_counter.expr()
-                + cb.rw_counter_offset().expr(),
+        cb.storage_lookup(
             is_sstore.clone(),
             address.expr(),
             value.expr(),
@@ -123,8 +121,6 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let opcode = step.opcode.unwrap();
-
-        panic!("{:?}", block);
 
         // Inputs/Outputs
         // consistent with bus_mapping
