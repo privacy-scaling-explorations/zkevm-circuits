@@ -113,6 +113,7 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
 
         // Inputs/Outputs
         // consistent with bus_mapping
+        // TODO: fix for SSTORE
         let [address, value] = [step.rw_indices[0], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());
         self.address
@@ -187,15 +188,13 @@ mod test {
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
         );
 
-        // test_ok(
-        //     OpcodeId::MLOAD,
-        //     Word::from(0x12FFFF) + 16,
-        //     Word::from_big_endian(
-        //         &(17..33).chain(iter::repeat(0).take(16)).collect::
-        // <Vec<_>>(),     ),
-        //     38914,
-        //     3074361,
-        // );
+        test_ok(
+            OpcodeId::SLOAD,
+            Word::from(0x12FFFF) + 16,
+            Word::from_big_endian(
+                &(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>(),
+            ),
+        );
 
         // test_ok(
         //     OpcodeId::MSTORE8,
