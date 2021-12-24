@@ -28,6 +28,7 @@ mod jump;
 mod jumpdest;
 mod jumpi;
 mod memory;
+mod msize;
 mod mul;
 mod pc;
 mod pop;
@@ -45,6 +46,7 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
+use msize::MsizeGadget;
 use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -93,6 +95,7 @@ pub(crate) struct ExecutionConfig<F> {
     signextend_gadget: SignextendGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
+    msize_gadget: MsizeGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
@@ -206,6 +209,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
+            msize_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -414,6 +418,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
+            ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
             ExecutionState::JUMPDEST => {

@@ -1,6 +1,7 @@
 //! This module generates traces by connecting to an external tracer
 use crate::eth_types::{
-    self, Address, Block, Bytes, GethExecStep, Hash, Word, U64,
+    self, fix_geth_trace_memory_size, Address, Block, Bytes, GethExecStep,
+    Hash, Word, U64,
 };
 use crate::Error;
 use geth_utils;
@@ -123,7 +124,32 @@ pub fn trace(
         geth_utils::trace(&serde_json::to_string(&geth_config).unwrap())
             .map_err(|_| Error::TracingError)?;
 
-    let trace: Vec<GethExecStep> =
+    let mut trace: Vec<GethExecStep> =
         serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
+    fix_geth_trace_memory_size(&mut trace);
     Ok(trace)
+}
+
+#[cfg(test)]
+mod trace_test {
+    use crate::{bytecode, mock};
+
+    // Make sure that fix_geth_trace_memory_size is called on the result
+    // returned via the tracer, so that the memory at MSTORE is not expanded
+    // (the size should be 0).
+    #[test]
+    fn msize_trace_test() {
+        let code = bytecode! {
+            #[start]
+            PUSH1(0x80)
+            PUSH1(0x40)
+            MSTORE
+            MSIZE
+            STOP
+        };
+
+        let block =
+            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        assert_eq!(block.geth_trace.struct_logs[2].memory.0.len(), 0)
+    }
 }
