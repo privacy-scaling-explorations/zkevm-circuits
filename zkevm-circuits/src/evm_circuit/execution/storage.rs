@@ -129,6 +129,9 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
             F::from(OpcodeId::SLOAD.as_u64()),
         )?;
 
+        self.storage_gas
+            .assign(self.is_sload.expr(), address, value)?;
+
         Ok(())
     }
 }

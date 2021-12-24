@@ -1,6 +1,10 @@
+use crate::evm_circuit::util::U256;
 use crate::util::Expr;
 use bus_mapping::evm::GasCost;
-use halo2::{arithmetic::FieldExt, plonk::Expression};
+use halo2::{
+    arithmetic::FieldExt,
+    plonk::{Error, Expression},
+};
 
 /// Returns storage gas cost for a storage access.
 #[derive(Clone, Debug)]
@@ -20,5 +24,15 @@ impl<F: FieldExt> StorageGasGadget<F> {
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the new storage size and the storage expansion gas cost
         self.storage_gas_cost.clone()
+    }
+    pub(crate) fn assign(
+        &self,
+        _is_sload: Expression<F>,
+        _address: U256,
+        _value: U256,
+    ) -> Result<F, Error> {
+        // Return the new storage size and the storage expansion gas cost
+        // TODO:
+        Ok(F::from(1))
     }
 }
