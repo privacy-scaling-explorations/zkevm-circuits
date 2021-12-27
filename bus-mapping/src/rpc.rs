@@ -8,6 +8,7 @@ use crate::eth_types::{
 use crate::Error;
 pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
+use serde::Serialize;
 
 /// Serialize a type.
 ///
@@ -16,6 +17,34 @@ use ethers_providers::JsonRpcClient;
 /// If the type returns an error during serialization.
 pub fn serialize<T: serde::Serialize>(t: &T) -> serde_json::Value {
     serde_json::to_value(t).expect("Types never fail to serialize.")
+}
+
+#[derive(Serialize)]
+#[doc(hidden)]
+pub(crate) struct GethLoggerConfig {
+    /// enable memory capture
+    #[serde(rename = "EnableMemory")]
+    enable_memory: bool,
+    /// disable stack capture
+    #[serde(rename = "DisableStack")]
+    disable_stack: bool,
+    /// disable storage capture
+    #[serde(rename = "DisableStorage")]
+    disable_storage: bool,
+    /// enable return data capture
+    #[serde(rename = "EnableReturnData")]
+    enable_return_data: bool,
+}
+
+impl Default for GethLoggerConfig {
+    fn default() -> Self {
+        Self {
+            enable_memory: true,
+            disable_stack: false,
+            disable_storage: false,
+            enable_return_data: true,
+        }
+    }
 }
 
 /// Placeholder structure designed to contain the methods that the BusMapping
@@ -83,9 +112,10 @@ impl<P: JsonRpcClient> GethClient<P> {
         hash: Hash,
     ) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
+        let cfg = serialize(&GethLoggerConfig::default());
         let resp: ResultGethExecTraces = self
             .0
-            .request("debug_traceBlockByHash", [hash])
+            .request("debug_traceBlockByHash", [hash, cfg])
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))?;
         Ok(resp.0.into_iter().map(|step| step.result).collect())
@@ -99,9 +129,10 @@ impl<P: JsonRpcClient> GethClient<P> {
         block_num: BlockNumber,
     ) -> Result<Vec<GethExecTrace>, Error> {
         let num = serialize(&block_num);
+        let cfg = serialize(&GethLoggerConfig::default());
         let resp: ResultGethExecTraces = self
             .0
-            .request("debug_traceBlockByNumber", [num])
+            .request("debug_traceBlockByNumber", [num, cfg])
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))?;
         Ok(resp.0.into_iter().map(|step| step.result).collect())

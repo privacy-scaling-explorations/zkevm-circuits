@@ -1,143 +1,37 @@
-//! The EVM circuit implementation.
+#![cfg(feature = "circuits")]
 
-#![allow(missing_docs)]
-use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
+use bus_mapping::circuit_input_builder::BuilderClient;
+use halo2::dev::MockProver;
+use integration_tests::{get_client, log_init, GenDataOutput};
+use lazy_static::lazy_static;
+use log::trace;
+use zkevm_circuits::evm_circuit::witness::block_convert;
+use zkevm_circuits::state_circuit::StateCircuit;
 
-mod execution;
-pub mod param;
-mod step;
-mod util;
-
-pub mod table;
-pub mod witness;
-
-use execution::ExecutionConfig;
-use table::{FixedTableTag, LookupTable};
-use witness::Block;
-
-/// EvmCircuit implements verification of execution trace of a block.
-#[derive(Clone, Debug)]
-pub struct EvmCircuit<F> {
-    fixed_table: [Column<Fixed>; 4],
-    execution: ExecutionConfig<F>,
+lazy_static! {
+    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
-impl<F: FieldExt> EvmCircuit<F> {
-    /// Configure EvmCircuit
-    pub fn configure<TxTable, RwTable, BytecodeTable>(
-        meta: &mut ConstraintSystem<F>,
-        randomness: Column<Instance>,
-        tx_table: TxTable,
-        rw_table: RwTable,
-        bytecode_table: BytecodeTable,
-    ) -> Self
-    where
-        TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 8>,
-        BytecodeTable: LookupTable<F, 4>,
-    {
-        let fixed_table = [(); 4].map(|_| meta.fixed_column());
-
-        let execution = ExecutionConfig::configure(
-            meta,
-            randomness,
-            fixed_table,
-            tx_table,
-            rw_table,
-            bytecode_table,
-        );
-
-        Self {
-            fixed_table,
-            execution,
-        }
-    }
-
-    /// Load fixed table
-    pub fn load_fixed_table(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        fixed_table_tags: Vec<FixedTableTag>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "fixed table",
-            |mut region| {
-                for (offset, row) in std::iter::once([F::zero(); 4])
-                    .chain(
-                        fixed_table_tags
-                            .iter()
-                            .map(|tag| tag.build())
-                            .flatten(),
-                    )
-                    .enumerate()
-                {
-                    for (column, value) in self.fixed_table.iter().zip(row) {
-                        region.assign_fixed(
-                            || "",
-                            *column,
-                            offset,
-                            || Ok(value),
-                        )?;
-                    }
-                }
-
-                Ok(())
-            },
-        )
-    }
-
-    /// Assign block
-    pub fn assign_block(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::evm_circuit::{
+/// This module contains a definition of a Circuit for the EVM Circuit that can
+/// be used for testing.  This is required because there's no public directly
+/// usable EVM Circuit yet.  The code in this module is copied from
+/// `zkevm_circuits::evm_circuit::test` at `zkevm-circuits/src/evm_circuit.rs`.
+mod test_evm_circuit {
+    use halo2::{
+        arithmetic::FieldExt,
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::{MockProver, VerifyFailure},
+        plonk::*,
+    };
+    use zkevm_circuits::evm_circuit::{
         param::STEP_HEIGHT,
         table::FixedTableTag,
         witness::{Block, Bytecode, Rw, Transaction},
         EvmCircuit,
     };
-    use bus_mapping::eth_types::Word;
-    use halo2::{
-        arithmetic::FieldExt,
-        circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
-    };
-    use rand::{
-        distributions::uniform::{SampleRange, SampleUniform},
-        random, thread_rng, Rng,
-    };
-
-    pub(crate) fn rand_range<T, R>(range: R) -> T
-    where
-        T: SampleUniform,
-        R: SampleRange<T>,
-    {
-        thread_rng().gen_range(range)
-    }
-
-    pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        vec![random(); n]
-    }
-
-    pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
-        [(); N].map(|_| random())
-    }
-
-    pub(crate) fn rand_word() -> Word {
-        Word::from_big_endian(&rand_bytes_array::<32>())
-    }
 
     #[derive(Clone)]
-    pub(crate) struct TestCircuitConfig<F> {
+    struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
         rw_table: [Column<Advice>; 8],
         bytecode_table: [Column<Advice>; 4],
@@ -266,16 +160,13 @@ mod test {
     }
 
     #[derive(Default)]
-    pub(crate) struct TestCircuit<F> {
+    struct TestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
     impl<F> TestCircuit<F> {
-        pub fn new(
-            block: Block<F>,
-            fixed_table_tags: Vec<FixedTableTag>,
-        ) -> Self {
+        fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
                 block,
                 fixed_table_tags,
@@ -339,7 +230,13 @@ mod test {
         }
     }
 
-    pub(crate) fn run_test_circuit<F: FieldExt>(
+    pub fn run_test_circuit_complete_fixed_table<F: FieldExt>(
+        block: Block<F>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        run_test_circuit(block, FixedTableTag::iterator().collect())
+    }
+
+    fn run_test_circuit<F: FieldExt>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -373,26 +270,73 @@ mod test {
             MockProver::<F>::run(k, &circuit, vec![randomness]).unwrap();
         prover.verify()
     }
+}
 
-    pub(crate) fn run_test_circuit_incomplete_fixed_table<F: FieldExt>(
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        run_test_circuit(
-            block,
-            vec![
-                FixedTableTag::Range16,
-                FixedTableTag::Range32,
-                FixedTableTag::Range256,
-                FixedTableTag::Range512,
-                FixedTableTag::SignByte,
-                FixedTableTag::ResponsibleOpcode,
-            ],
-        )
-    }
+#[tokio::test]
+async fn test_evm_circuit_block_a() {
+    use test_evm_circuit::*;
 
-    pub(crate) fn run_test_circuit_complete_fixed_table<F: FieldExt>(
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        run_test_circuit(block, FixedTableTag::iterator().collect())
-    }
+    log_init();
+    let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
+    let cli = get_client();
+
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let builder = cli.gen_inputs(*block_num).await.unwrap();
+
+    // Generate evm_circuit proof
+    let code_hash = builder.block.txs()[0].calls()[0].code_hash;
+    let bytecode = builder
+        .code_db
+        .0
+        .get(&code_hash)
+        .expect("code_hash not found");
+    let block = block_convert(bytecode, &builder.block);
+    run_test_circuit_complete_fixed_table(block)
+        .expect("evm_circuit verification failed");
+}
+
+#[tokio::test]
+async fn test_state_circuit_block_a() {
+    log_init();
+    let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
+    let cli = get_client();
+
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let builder = cli.gen_inputs(*block_num).await.unwrap();
+
+    // Generate state proof
+    let stack_ops = builder.block.container.sorted_stack();
+    trace!("stack_ops: {:#?}", stack_ops);
+    let memory_ops = builder.block.container.sorted_memory();
+    trace!("memory_ops: {:#?}", memory_ops);
+    let storage_ops = builder.block.container.sorted_storage();
+    trace!("storage_ops: {:#?}", storage_ops);
+
+    const DEGREE: usize = 16;
+    const MEMORY_ADDRESS_MAX: usize = 2000;
+    const STACK_ADDRESS_MAX: usize = 1300;
+
+    const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
+    const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
+    const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
+    const GLOBAL_COUNTER_MAX: usize =
+        MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+
+    let circuit = StateCircuit::<
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    > {
+        memory_ops,
+        stack_ops,
+        storage_ops,
+    };
+
+    use pairing::bn256::Fr as Fp;
+    let prover =
+        MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
+    prover.verify().expect("state_circuit verification failed");
 }

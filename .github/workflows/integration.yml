@@ -1,8 +1,6 @@
 name: Integration Tests
 
 on:
-  pull_request:
-    types: [synchronize, opened, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -30,11 +28,16 @@ jobs:
           wget -q https://github.com/ethereum/solidity/releases/download/v0.8.10/solc-static-linux -O $HOME/bin/solc
           chmod u+x "$HOME/bin/solc"
           solc --version
-      # Run an initial build in a sepparate step to split the build time from execution time
-      - name: Build gendata bin
+      # Run an initial build in a separate step to split the build time from execution time
+      - name: Build bins
         run: cargo build --bin gen_blockchain_data
+      - name: Build tests
+        run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
       - run: ./run.sh --steps "setup"
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
+      # Uncomment once the evm and state circuits tests pass for the block
+      # where Greeter.sol is deployed.
+      # - run: ./run.sh --steps "tests" --tests "circuits"
       - run: ./run.sh --steps "cleanup"

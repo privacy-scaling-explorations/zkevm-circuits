@@ -3,7 +3,7 @@ set -e
 
 ARG_DEFAULT_SUDO=
 ARG_DEFAULT_STEPS="setup gendata tests cleanup"
-ARG_DEFAULT_TESTS="rpc circuit_input_builder"
+ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits"
 
 usage() {
     cat >&2 << EOF
@@ -97,7 +97,7 @@ fi
 if [ -n "$STEP_TESTS" ]; then
     for testname in $ARG_TESTS; do
         echo "+ Running test group $testname"
-        cargo test --test $testname --features $testname -- --nocapture
+        cargo test --profile release --test $testname --features $testname -- --nocapture
     done
 fi
 
