@@ -301,69 +301,6 @@ impl<F: FieldExt> ExecutionConfig<F> {
             }
         }
 
-        // Push lookups of this ExecutionState to independent_lookups for
-        // further configuration in configure_lookup.
-        // hack code here:
-        // pub(crate) enum Table {
-        //     Fixed,
-        //     Tx,
-        //     Rw,
-        //     Bytecode,
-        //     Block,
-        // }
-        for lookup in lookups.clone() {
-            match lookup {
-                Lookup::Conditional(.., box1_lookup) => match *box1_lookup {
-                    Lookup::Fixed { .. } => {
-                        println!("fixed ");
-                    }
-                    Lookup::Tx { .. } => {
-                        println!("Tx ");
-                    }
-                    Lookup::Rw { .. } => {
-                        println!("Rw ");
-                    }
-                    Lookup::Bytecode { .. } => {
-                        println!("Bytecode ");
-                    }
-                    Lookup::Block { .. } => {
-                        println!("Block ");
-                    }
-                    Lookup::Conditional(.., box2_lookup) => {
-                        println!("Conditinal ");
-                        match *box2_lookup {
-                            Lookup::Fixed { tag, values } => {
-                                println!("fixed ");
-                            }
-                            Lookup::Tx { .. } => {
-                                println!("Tx ");
-                            }
-                            Lookup::Rw { .. } => {
-                                println!("Rw ");
-                            }
-                            Lookup::Bytecode {
-                                hash,
-                                index,
-                                value,
-                                is_code,
-                            } => {
-                                println!("Bytecode ");
-                            }
-                            Lookup::Block { .. } => {
-                                println!("Block ");
-                            }
-                            Lookup::Conditional(.., box2_lookup) => {
-                                println!("BloConditionalck ");
-                            }
-                        }
-                    }
-                    _ => unimplemented!(),
-                },
-                _ => unimplemented!(),
-            }
-        }
-        // hack end
-
         independent_lookups.push(lookups);
 
         gadget
