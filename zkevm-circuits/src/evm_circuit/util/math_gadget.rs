@@ -11,7 +11,6 @@ use crate::{
 use bus_mapping::eth_types::{ToLittleEndian, Word};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
-use std::convert::TryInto;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
@@ -211,14 +210,12 @@ pub(crate) struct MulWordsGadget<F> {
     //here we execute a multi-limbs multiplication, see spec or
     //https://hackmd.io/HL0QhGUeQoSgIBt2el6fHA
     // a, b and product is divided into 4 64-bit digits, call them a0 ~ a3, b0
-    // ~ b3 ... a * b = a0 * b0 + a1 * b0 ...
-    t0: Cell<F>, // a0 * b0, contribute to 0 ~ 128 bit
-    t1: Cell<F>, /* a0 * b1 + a1 * b0, contribute to 64 ~ 193 bit (include
-                  * the carry) */
-    t2: Cell<F>, // a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
-    t3: Cell<F>, /* a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to
-                  * above 192 bit */
-
+    // ~ b3 ... a * b = a0 * b0 + a1 * b0 ..., and let
+    // t0 = a0 * b0, contribute to 0 ~ 128 bit
+    // t1 = a0 * b1 + a1 * b0, contribute to 64 ~ 193 bit (include the carry)
+    // t2 = a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
+    // t3 =  a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
+    //
     // so t0 ~ t1 include all contributions to the low 256bit of product,
     // with a maxium 68bit radix (the part higher than 256bit) v1
     // it is similar that we have v0 as the radix of contributions
@@ -227,7 +224,7 @@ pub(crate) struct MulWordsGadget<F> {
     // use 9 bytes for them
     v0: [Cell<F>; 9],
     v1: [Cell<F>; 9],
-    /* just prove:
+    /* finally we just prove:
      *  t0 + t1 = <low 128 bit of product> + <radix v0>
      *  t2 + t3 + <radix v0> = <high 128 bit of product> + <radix v1> */
 }
@@ -239,10 +236,6 @@ impl<F: FieldExt> MulWordsGadget<F> {
         b: util::Word<F>,
     ) -> Self {
         let product = cb.query_word();
-        let t0 = cb.query_cell();
-        let t1 = cb.query_cell();
-        let t2 = cb.query_cell();
-        let t3 = cb.query_cell();
         let v0 = array_init::array_init(|_| cb.query_byte());
         let v1 = array_init::array_init(|_| cb.query_byte());
 
@@ -257,26 +250,16 @@ impl<F: FieldExt> MulWordsGadget<F> {
                 .push(from_bytes::expr(&product.cells[now_idx..now_idx + 8]));
         }
 
-        for total_idx in 0..4 {
-            let mut rhs_sum = 0.expr();
-            for a_id in 0..=total_idx {
-                let (a_idx, b_idx) =
-                    (a_id as usize, (total_idx - a_id) as usize);
-                rhs_sum =
-                    rhs_sum + a_limbs[a_idx].clone() * b_limbs[b_idx].clone();
-            }
-            cb.require_zero(
-                "mul: dissemble product",
-                match total_idx {
-                    // indicate the digits inside a_limbs and b_limbs as a0 ~ a3 and b0 ~ b3
-                    0 => t0.expr() - rhs_sum, //a0 * b0
-                    1 => t1.expr() - rhs_sum, //a0 * b1 + a1 * b0
-                    2 => t2.expr() - rhs_sum, //a0 * b2 + a2 * b0 + a1 * b1
-                    3 => t3.expr() - rhs_sum, //a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2
-                    _ => unimplemented!(),
-                },
-            );
-        }
+        let t0 = a_limbs[0].clone() * b_limbs[0].clone();
+        let t1 = a_limbs[0].clone() * b_limbs[1].clone()
+            + a_limbs[1].clone() * b_limbs[0].clone();
+        let t2 = a_limbs[0].clone() * b_limbs[2].clone()
+            + a_limbs[1].clone() * b_limbs[1].clone()
+            + a_limbs[2].clone() * b_limbs[0].clone();
+        let t3 = a_limbs[0].clone() * b_limbs[3].clone()
+            + a_limbs[1].clone() * b_limbs[2].clone()
+            + a_limbs[2].clone() * b_limbs[1].clone()
+            + a_limbs[3].clone() * b_limbs[0].clone();
 
         let cur_v0 = from_bytes::expr(&v0[..]);
         let cur_v1 = from_bytes::expr(&v1[..]);
@@ -305,10 +288,6 @@ impl<F: FieldExt> MulWordsGadget<F> {
             a,
             b,
             product,
-            t0,
-            t1,
-            t2,
-            t3,
             v0,
             v1,
         }
@@ -374,20 +353,6 @@ impl<F: FieldExt> MulWordsGadget<F> {
                 rhs_sum = rhs_sum.clone() + tmp_a * tmp_b;
             }
             t_digits.push(rhs_sum);
-        }
-
-        for (digit, assignee) in t_digits
-            .iter()
-            .zip([&self.t0, &self.t1, &self.t2, &self.t3])
-        {
-            let mut digit_bts = digit.to_bytes_le();
-            digit_bts.resize(32, 0);
-            let digit_bts: [u8; 32] = digit_bts.try_into().unwrap();
-            assignee.assign(
-                region,
-                offset,
-                Some(F::from_bytes(&digit_bts).unwrap()),
-            )?;
         }
 
         let mut c_now = vec![];
