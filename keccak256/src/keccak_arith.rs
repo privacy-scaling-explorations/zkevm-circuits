@@ -106,6 +106,7 @@ impl KeccakFArith {
     ) -> StateBigInt {
         if let Some(next_input) = next_input {
             let out_1 = KeccakFArith::absorb(a, next_input);
+            // TODO: Base conversion missing
             KeccakFArith::iota_b13(&out_1, rc)
         } else {
             let mut state = KeccakFArith::iota_b9(a, rc);
