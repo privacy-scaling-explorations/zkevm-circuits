@@ -404,7 +404,7 @@ fn tx_convert(
     tx: &bus_mapping::circuit_input_builder::Transaction,
     ops_len: (usize, usize, usize),
 ) -> Transaction<Fp> {
-    let mut result: Transaction<Fp> = Transaction::<Fp> {
+    Transaction::<Fp> {
         calls: vec![Call {
             id: 1,
             is_root: true,
@@ -414,14 +414,13 @@ fn tx_convert(
                 randomness,
             ),
         }],
+        steps: tx
+            .steps()
+            .iter()
+            .map(|step| step_convert(step, ops_len))
+            .collect(),
         ..Default::default()
-    };
-    result.steps = tx
-        .steps()
-        .iter()
-        .map(|step| step_convert(step, ops_len))
-        .collect();
-    result
+    }
 }
 
 pub fn block_convert(
