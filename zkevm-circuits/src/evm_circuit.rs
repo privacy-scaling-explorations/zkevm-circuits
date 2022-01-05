@@ -6,8 +6,9 @@ use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
 mod execution;
 mod param;
 mod step;
-mod table;
 mod util;
+
+pub mod table;
 pub mod witness;
 
 use execution::ExecutionConfig;
