@@ -330,7 +330,7 @@ pub struct GethExecTrace {
 
 /// Truncate the memory in each step to the memory size before the step is
 /// executed (and before the memory is expanded).  This is required because geth
-/// sets the memory in each step as the memroy before execution but after
+/// sets the memory in each step as the memory before execution but after
 /// expansion.
 pub fn fix_geth_trace_memory_size(trace: &mut [GethExecStep]) {
     let mut mem_sizes = vec![0; trace.len()];
