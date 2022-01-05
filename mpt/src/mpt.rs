@@ -11,8 +11,9 @@ use std::{convert::TryInto, marker::PhantomData};
 
 use crate::param::{
     BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-    KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, S_RLP_START, S_START,
+    FIRST_NIBBLE_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
+    IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+    S_RLP_START, S_START,
 };
 use crate::{
     account_leaf_key::{AccountLeafKeyChip, AccountLeafKeyConfig},
@@ -50,6 +51,10 @@ pub struct MPTConfig<F> {
     node_index: Column<Advice>,
     is_modified: Column<Advice>, // whether this branch node is modified
     modified_node: Column<Advice>, // index of the modified node
+    is_at_first_nibble: Column<Advice>, // needed when leaf is turned into branch
+    first_nibble: Column<Advice>, // needed when leaf is turned into branch - first nibble of the key stored in a leaf (because the existing leaf will jump to this position in added branch)
+    is_leaf_in_added_branch: Column<Advice>, // it is at first_nibble position in added branch, note that this row could be omitted when there is no added branch but then it would open a vulnerability because the attacker could omit these row in cases when it's needed too (and constraints happen in this row)
+    is_extension_node_key: Column<Advice>,
     s_rlp1: Column<Advice>,
     s_rlp2: Column<Advice>,
     c_rlp1: Column<Advice>,
@@ -118,6 +123,11 @@ impl<F: FieldExt> MPTConfig<F> {
         let node_index = meta.advice_column();
         let is_modified = meta.advice_column();
         let modified_node = meta.advice_column();
+
+        let is_at_first_nibble = meta.advice_column();
+        let first_nibble = meta.advice_column();
+        let is_leaf_in_added_branch = meta.advice_column();
+        let is_extension_node_key = meta.advice_column();
 
         let s_rlp1 = meta.advice_column();
         let s_rlp2 = meta.advice_column();
@@ -277,7 +287,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
             // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
             // followed by is_leaf_key_nibbles
-            // is_leaf_s_value ...
+            // is_leaf_s_value ..., is_extension_node_key, is_leaf_in_added_branch ...
 
             // TODO: account leaf constraints (order and also that account leaf selectors
             // are truea only in account proof part & normal leaf selectors are true only
@@ -292,6 +302,12 @@ impl<F: FieldExt> MPTConfig<F> {
             let modified_node =
                 meta.query_advice(modified_node, Rotation::cur());
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
+            let is_at_first_nibble =
+                meta.query_advice(is_at_first_nibble, Rotation::cur());
+            let is_leaf_in_added_branch =
+                meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
+            let is_extension_node_key =
+                meta.query_advice(is_extension_node_key, Rotation::cur());
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
@@ -372,6 +388,29 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable.clone() * bool_check_is_modified,
             ));
 
+            let bool_check_is_at_first_nibble = is_at_first_nibble.clone()
+                * (one.clone() - is_at_first_nibble.clone());
+            constraints.push((
+                "bool check is_at_first_nibble",
+                q_enable.clone() * bool_check_is_at_first_nibble,
+            ));
+
+            let bool_check_is_leaf_in_added_branch = is_leaf_in_added_branch
+                .clone()
+                * (one.clone() - is_leaf_in_added_branch.clone());
+            constraints.push((
+                "bool check is_leaf_in_added_branch",
+                q_enable.clone() * bool_check_is_leaf_in_added_branch,
+            ));
+
+            let bool_check_is_extension_node_key = is_extension_node_key
+                .clone()
+                * (one.clone() - is_extension_node_key.clone());
+            constraints.push((
+                "bool check is_extension_node_key",
+                q_enable.clone() * bool_check_is_extension_node_key,
+            ));
+
             // is_modified is:
             //   0 when node_index_cur != key
             //   1 when node_index_cur == key
@@ -382,6 +421,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     * is_modified
                     * (node_index_cur.clone() - modified_node.clone()),
             ));
+
+            // TODO: is_at_first_nibble similarly as is_modified
 
             for (ind, col) in s_advices.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
@@ -398,6 +439,8 @@ impl<F: FieldExt> MPTConfig<F> {
             // TODO: use permutation argument for s = c.
 
             // TODO: use permutation argument to make sure modified_node is the same in all branch rows.
+
+            // TODO: use permutation argument to make sure first_nibble is the same in all branch rows.
 
             constraints
         });
@@ -1490,6 +1533,10 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index,
             is_modified,
             modified_node,
+            is_at_first_nibble,
+            first_nibble,
+            is_leaf_in_added_branch,
+            is_extension_node_key,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -1540,6 +1587,9 @@ impl<F: FieldExt> MPTConfig<F> {
         is_account_leaf_nonce_balance_s: bool,
         is_account_leaf_storage_codehash_s: bool,
         is_account_leaf_storage_codehash_c: bool,
+        first_nibble: u8,
+        is_leaf_in_added_branch: bool,
+        is_extension_node_key: bool,
         offset: usize,
     ) -> Result<(), Error> {
         region.assign_advice(
@@ -1618,6 +1668,20 @@ impl<F: FieldExt> MPTConfig<F> {
             self.modified_node,
             offset,
             || Ok(F::from(modified_node as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign first_nibble".to_string(),
+            self.first_nibble,
+            offset,
+            || Ok(F::from(first_nibble as u64)),
+        )?;
+
+        region.assign_advice(
+            || "assign is_at_first_nibble".to_string(),
+            self.is_at_first_nibble,
+            offset,
+            || Ok(F::from((first_nibble == node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -1706,6 +1770,19 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         region.assign_advice(
+            || "assign is leaf in added branch".to_string(),
+            self.is_leaf_in_added_branch,
+            offset,
+            || Ok(F::from(is_leaf_in_added_branch as u64)),
+        )?;
+        region.assign_advice(
+            || "assign is extension node key".to_string(),
+            self.is_extension_node_key,
+            offset,
+            || Ok(F::from(is_extension_node_key as u64)),
+        )?;
+
+        region.assign_advice(
             || "assign s_rlp1".to_string(),
             self.s_rlp1,
             offset,
@@ -1773,7 +1850,7 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         self.assign_row(
             region, row, true, false, false, 0, 0, false, false, false, false,
-            false, false, false, false, offset,
+            false, false, false, false, 0, false, false, offset,
         )?;
 
         Ok(())
@@ -1789,6 +1866,7 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &[u8],
         s_words: &[u64],
         c_words: &[u64],
+        first_nibble: u8,
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
@@ -1805,6 +1883,9 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             false,
             false,
+            false,
+            false,
+            first_nibble,
             false,
             false,
             offset,
@@ -1909,6 +1990,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc_mult = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
 
+                    let mut first_nibble: u8 = 0; // needed when leaf turned into branch and leaf moves into a branch where it's at first_nibble position
+
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
@@ -1937,6 +2020,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             // branch init
                             modified_node = row[BRANCH_0_KEY_POS];
                             node_index = 0;
+                            first_nibble = row[FIRST_NIBBLE_POS];
 
                             // Get the child that is being changed and convert it to words to enable lookups:
                             let s_hash = witness
@@ -2067,6 +2151,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
+                                    first_nibble,
                                     offset,
                                 )?;
                             } else {
@@ -2083,6 +2168,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
+                                    first_nibble,
                                     offset,
                                 )?;
                                 // sel1 is to distinguish whether s_words is [128, 0, 0, 0].
@@ -2195,6 +2281,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             || row[row.len() - 1] == 11
                             || row[row.len() - 1] == 13
                             || row[row.len() - 1] == 14
+                            || row[row.len() - 1] == 15
+                            || row[row.len() - 1] == 16
                         {
                             // leaf s or leaf c or leaf key s or leaf key c
                             self.q_enable.enable(&mut region, offset)?;
@@ -2213,6 +2301,9 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut is_account_leaf_nonce_balance_s = false;
                             let mut is_account_leaf_storage_codehash_s = false;
                             let mut is_account_leaf_storage_codehash_c = false;
+
+                            let mut is_leaf_in_added_branch = false;
+                            let mut is_extension_node_key = false;
 
                             if row[row.len() - 1] == 2 {
                                 is_leaf_s = true;
@@ -2233,6 +2324,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_leaf_s_value = true;
                             } else if row[row.len() - 1] == 14 {
                                 is_leaf_c_value = true;
+                            } else if row[row.len() - 1] == 15 {
+                                is_leaf_in_added_branch = true;
+                            } else if row[row.len() - 1] == 16 {
+                                is_extension_node_key = true;
                             }
 
                             self.assign_row(
@@ -2251,6 +2346,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_nonce_balance_s,
                                 is_account_leaf_storage_codehash_s,
                                 is_account_leaf_storage_codehash_c,
+                                0,
+                                is_leaf_in_added_branch,
+                                is_extension_node_key,
                                 offset,
                             )?;
 
@@ -2287,9 +2385,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                  start: usize,
                                  len: usize| {
                                     for i in 0..len {
-                                        if start + i == 70 {
-                                            println!("adsf");
-                                        }
                                         *acc += F::from(row[start + i] as u64)
                                             * *mult;
                                         *mult *= self.acc_r;

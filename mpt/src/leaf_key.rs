@@ -40,6 +40,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
 
+        // TODO: check first nibble in branch in case of placeholder branch - first nibble
+        // in the branch that is parallel to placeholder branch needs to be set to be the
+        // first nibble of leaf key that corresponds to the placeholder branch
+
         meta.create_gate("Storage leaf key hash RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];

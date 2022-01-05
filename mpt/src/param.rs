@@ -18,3 +18,4 @@ pub const BRANCH_0_KEY_POS: usize = 10; // row 0 of a branch contains info (deri
 pub const R_TABLE_LEN: usize = 32;
 pub const IS_BRANCH_S_PLACEHOLDER_POS: usize = 11;
 pub const IS_BRANCH_C_PLACEHOLDER_POS: usize = 12;
+pub const FIRST_NIBBLE_POS: usize = 13;
