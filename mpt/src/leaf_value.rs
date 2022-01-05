@@ -39,15 +39,15 @@ impl<F: FieldExt> LeafValueChip<F> {
 
         // TODO: use r_table
 
-        // NOTE: Rotation -4 can be used here (in S and C leaf), because
+        // NOTE: Rotation -6 can be used here (in S and C leaf), because
         // s_keccak and c_keccak have the same value in all branch rows (thus, the same
         // value in branch node_index: 13 and branch node_index: 15).
         // The same holds for sel1 and sel2.
-        let rot = -4;
+        let rot = -6;
 
-        let mut rot_placeholder_branch = -18;
+        let mut rot_placeholder_branch = -20;
         if !is_s {
-            rot_placeholder_branch = -20;
+            rot_placeholder_branch = -22;
         }
 
         meta.lookup_any(|meta| {
@@ -134,6 +134,8 @@ impl<F: FieldExt> LeafValueChip<F> {
                 Rotation(rot_placeholder_branch),
             );
 
+            // Note: sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
+
             // If sel = 1, there is no leaf at this position (value is being added or deleted)
             // and we don't check the hash of it.
             let mut constraints = vec![];
@@ -147,7 +149,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             for (ind, column) in sc_keccak.iter().enumerate() {
                 let sc_keccak = meta.query_advice(
                     *column,
-                    Rotation(rot_placeholder_branch - 1), // -1 to get from init branch into the previous branch (last row)
+                    Rotation(rot_placeholder_branch - 3), // -3 to get from init branch into the previous branch (last row), note that -2 is needed because of extension nodes
                 );
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());

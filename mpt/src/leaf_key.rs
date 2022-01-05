@@ -110,9 +110,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_short = meta.query_advice(s_keccak1, Rotation::cur());
 
             // key rlc is in the first branch node
-            let mut rot = -16;
+            let mut rot = -18;
             if !is_s {
-                rot = -18;
+                rot = -20;
             }
 
             let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
@@ -242,9 +242,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // If sel1 = 1, s_advices[1] contains two nibbles, the first nibble
             // (which is modified_node) needs to be ignored.
-            // modified_node is the same for all branch rows, -4 brings us into branch rows
-            // for both, S and C key (-3 would work too, but rotation -4 is used in leaf_value)
-            let modified_node = meta.query_advice(modified_node, Rotation(-4));
+            // modified_node is the same for all branch rows, -6 brings us into branch rows
+            // for both, S and C key (-5 would work too, but rotation -6 is used in leaf_value)
+            let modified_node = meta.query_advice(modified_node, Rotation(-6));
 
             // TODO: prepare test for sel1 = 1
 
@@ -291,8 +291,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // If sel1 = 1, s_advices[2] contains two nibbles, the first nibble
             // (which is modified_node) needs to be ignored.
-            // modified_node is the same for all branch rows, -4 brings us into branch rows
-            // for both, S and C key (-3 would work too, but rotation -4 is used in leaf_value)
+            // modified_node is the same for all branch rows, -6 brings us into branch rows
+            // for both, S and C key (-5 would work too, but rotation -6 is used in leaf_value)
 
             key_rlc_acc_long = key_rlc_acc_long
                 + (s_advices2.clone() - modified_node.clone() * c16.clone())

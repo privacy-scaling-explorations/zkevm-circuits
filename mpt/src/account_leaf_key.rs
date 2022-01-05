@@ -169,7 +169,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let mut constraints = vec![];
 
             // key rlc is in the first branch node
-            let rot = -16;
+            let rot = -18;
             let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
             let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
             // sel1, sel2 is in init branch
