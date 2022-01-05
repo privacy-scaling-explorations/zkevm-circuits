@@ -416,9 +416,11 @@ fn tx_convert(
         }],
         ..Default::default()
     };
-    let _ = tx.steps().iter().map(|step| {
-        result.steps.push(step_convert(step, ops_len));
-    });
+    result.steps = tx
+        .steps()
+        .iter()
+        .map(|step| step_convert(step, ops_len))
+        .collect();
     result
 }
 
