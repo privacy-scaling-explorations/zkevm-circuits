@@ -132,7 +132,7 @@ pub(crate) mod test {
     }
 
     pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        vec![random(); n]
+        (0..n).map(|_| random()).collect()
     }
 
     pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
