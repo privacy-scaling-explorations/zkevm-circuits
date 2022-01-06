@@ -46,6 +46,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             // TODO: RLP properties
 
+            // TODO: check acc_mult as in leaf_key_in_added_branch
+
             // Nonce, balance, storage, codehash are string in RLP: s_rlp1 and s_rlp2
             // contains the length of this string, for example 184 80 means the second
             // part is of length 1 (183 + 1 = 184) and there are 80 bytes in this string.

@@ -40,11 +40,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
 
-        // TODO: check first nibble in branch in case of placeholder branch - first nibble
-        // in the branch that is parallel to placeholder branch needs to be set to be the
-        // first nibble of leaf key that corresponds to the placeholder branch
-
-        meta.create_gate("Storage leaf key hash RLC", |meta| {
+        // Checking leaf RLC is ok - this value is then taken in the next row, where
+        // leaf value is added to RLC, finally lookup is used to check the hash that
+        // corresponds to this RLC is in the parent branch.
+        meta.create_gate("Storage leaf RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -63,20 +62,20 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // TODO: check that from some point on (depends on the rlp meta data)
             // the values are zero (as in key_compr) - but take into account it can be long or short RLP
 
-            // TODO: check acc_mult as in key_compr
+            // TODO: check acc_mult as in leaf_key_in_added_branch
 
-            let mut hash_rlc = s_rlp1;
+            let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            hash_rlc = hash_rlc + s_rlp2 * r_table[0].clone();
+            rlc = rlc + s_rlp2 * r_table[0].clone();
             let mut rind = 1;
 
             let mut r_wrapped = false;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 if !r_wrapped {
-                    hash_rlc = hash_rlc + s * r_table[rind].clone();
+                    rlc = rlc + s * r_table[rind].clone();
                 } else {
-                    hash_rlc = hash_rlc
+                    rlc = rlc
                         + s * r_table[rind].clone()
                             * r_table[R_TABLE_LEN - 1].clone();
                 }
@@ -89,7 +88,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            hash_rlc = hash_rlc
+            rlc = rlc
                 + c_rlp1
                     * r_table[R_TABLE_LEN - 1].clone()
                     * r_table[1].clone();
@@ -97,11 +96,14 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // key is at most of length 32, so it doesn't go further than c_rlp1
 
             let acc = meta.query_advice(acc, Rotation::cur());
-            constraints.push(("Leaf key acc", q_enable * (hash_rlc - acc)));
+            constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
 
             constraints
         });
 
+        // Checking the key - accumulated RLC is taken (computed using the path through branches)
+        // and key bytes are added to the RLC. The external circuit can check
+        // the key (where value in trie is being set at key) RLC is the same as in key_rlc column.
         meta.create_gate("Storage leaf key RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];

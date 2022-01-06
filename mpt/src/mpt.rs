@@ -25,6 +25,9 @@ use crate::{
     },
     branch_acc::BranchAccChip,
     leaf_key::{LeafKeyChip, LeafKeyConfig},
+    leaf_key_in_added_branch::{
+        LeafKeyInAddedBranchChip, LeafKeyInAddedBranchConfig,
+    },
     leaf_value::{LeafValueChip, LeafValueConfig},
     param::LAYOUT_OFFSET,
 };
@@ -85,8 +88,10 @@ pub struct MPTConfig<F> {
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     leaf_s_key_chip: LeafKeyConfig,
     leaf_c_key_chip: LeafKeyConfig,
+    leaf_key_in_added_branch_chip: LeafKeyInAddedBranchConfig,
     leaf_s_value_chip: LeafValueConfig,
     leaf_c_value_chip: LeafValueConfig,
+    r_mult_table: [Column<Fixed>; 2],
     _marker: PhantomData<F>,
 }
 
@@ -150,6 +155,12 @@ impl<F: FieldExt> MPTConfig<F> {
         let keccak_table: [Column<Fixed>;
             KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH] = (0..KECCAK_INPUT_WIDTH
             + KECCAK_OUTPUT_WIDTH)
+            .map(|_| meta.fixed_column())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let r_mult_table: [Column<Fixed>; 2] = (0..2)
             .map(|_| meta.fixed_column())
             .collect::<Vec<_>>()
             .try_into()
@@ -1390,6 +1401,34 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
+        let leaf_key_in_added_branch_chip =
+            LeafKeyInAddedBranchChip::<F>::configure(
+                meta,
+                |meta| {
+                    let not_first_level =
+                        meta.query_fixed(not_first_level, Rotation::cur());
+                    let is_leaf_c = meta
+                        .query_advice(is_leaf_in_added_branch, Rotation::cur());
+
+                    not_first_level * is_leaf_c
+                },
+                s_rlp1,
+                s_rlp2,
+                c_rlp1,
+                s_advices,
+                s_keccak[0],
+                s_keccak[1],
+                acc_s,
+                acc_mult_s,
+                sel1,
+                sel2,
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                modified_node,
+                r_table.clone(),
+                r_mult_table.clone(),
+            );
+
         let leaf_s_value_chip = LeafValueChip::<F>::configure(
             meta,
             |meta| {
@@ -1579,8 +1618,10 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             leaf_s_key_chip,
             leaf_c_key_chip,
+            leaf_key_in_added_branch_chip,
             leaf_s_value_chip,
             leaf_c_value_chip,
+            r_mult_table,
             _marker: PhantomData,
         }
     }
@@ -2378,31 +2419,32 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            let mut assign_long_short = |long: bool| {
-                                let mut is_short = false;
-                                let mut is_long = false;
-                                if long {
-                                    is_long = true;
-                                } else {
-                                    is_short = true;
-                                }
-                                region
-                                    .assign_advice(
-                                        || "assign acc_s".to_string(),
-                                        self.s_keccak[0],
-                                        offset,
-                                        || Ok(F::from(is_long as u64)),
-                                    )
-                                    .ok();
-                                region
-                                    .assign_advice(
-                                        || "assign acc_c".to_string(),
-                                        self.s_keccak[1],
-                                        offset,
-                                        || Ok(F::from(is_short as u64)),
-                                    )
-                                    .ok();
-                            };
+                            let mut assign_long_short =
+                                |region: &mut Region<'_, F>, long: bool| {
+                                    let mut is_short = false;
+                                    let mut is_long = false;
+                                    if long {
+                                        is_long = true;
+                                    } else {
+                                        is_short = true;
+                                    }
+                                    region
+                                        .assign_advice(
+                                            || "assign acc_s".to_string(),
+                                            self.s_keccak[0],
+                                            offset,
+                                            || Ok(F::from(is_long as u64)),
+                                        )
+                                        .ok();
+                                    region
+                                        .assign_advice(
+                                            || "assign acc_c".to_string(),
+                                            self.s_keccak[1],
+                                            offset,
+                                            || Ok(F::from(is_short as u64)),
+                                        )
+                                        .ok();
+                                };
 
                             // assign leaf accumulator that will be used as keccak input
                             let compute_acc_and_mult =
@@ -2452,7 +2494,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 || row[row.len() - 1] == 3
                             {
                                 // Info whether leaf rlp is long or short.
-                                assign_long_short(witness[ind][0] == 248);
+                                assign_long_short(
+                                    &mut region,
+                                    witness[ind][0] == 248,
+                                );
 
                                 acc_s = F::zero();
                                 acc_mult_s = F::one();
@@ -2609,6 +2654,36 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
+                            } else if row[row.len() - 1] == 15 {
+                                // Info whether leaf rlp is long or short.
+                                assign_long_short(
+                                    &mut region,
+                                    witness[ind][0] == 248,
+                                );
+
+                                acc_s = F::zero();
+                                acc_mult_s = F::one();
+                                let len: usize;
+                                if row[0] == 248 {
+                                    len = (row[2] - 128) as usize + 3;
+                                } else {
+                                    len = (row[1] - 128) as usize + 2;
+                                }
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    0,
+                                    len,
+                                );
+
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
                             }
 
                             offset += 1;
@@ -2627,6 +2702,7 @@ impl<F: FieldExt> MPTConfig<F> {
         to_be_hashed: Vec<Vec<u8>>,
     ) -> Result<(), Error> {
         self.load_keccak_table(_layouter, to_be_hashed).ok();
+        self.load_r_mult_table(_layouter).ok();
 
         Ok(())
     }
@@ -2691,6 +2767,39 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Ok(F::from(val)),
                         )?;
                     }
+                    offset += 1;
+                }
+
+                Ok(())
+            },
+        )
+    }
+
+    fn load_r_mult_table(
+        &self,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "r multiplication table",
+            |mut region| {
+                let mut offset = 0;
+                let mut mult = F::one();
+                for ind in 0..(2 * HASH_WIDTH + 1) {
+                    region.assign_fixed(
+                        || "multiplication table",
+                        self.r_mult_table[0],
+                        offset,
+                        || Ok(F::from(ind as u64)),
+                    )?;
+
+                    region.assign_fixed(
+                        || "multiplication table",
+                        self.r_mult_table[1],
+                        offset,
+                        || Ok(mult),
+                    )?;
+                    mult = mult * self.acc_r;
+
                     offset += 1;
                 }
 

@@ -165,39 +165,6 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints
         });
 
-        // If the branch is placeholder, we need to check that the leaf without the first
-        // nibble has a hash which is in the parallel branch at first_nibble position.
-
-        // TODO: "when placeholder" constraints - the branch that is parallel to the placeholder
-        // branch needs to be checked to have exactly two non empty leaves: one is at is_modified
-        // and one at is_at_first_nibble (is_modified is checked in leaf_key and leaf_value).
-        // the leaf at first_nibble needs to be the same as the leaf at is_modified
-        // in the previous branch (and at parallel position)
-        /*
-        meta.create_gate("branch placeholder", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let is_branch_init_cur =
-                meta.query_advice(is_branch_init, Rotation::cur());
-
-            let mut constraints = vec![];
-
-            let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
-                Rotation(-16),
-            );
-
-            constraints.push((
-                "branch mult C row 0 (3)",
-                q_enable
-                    * is_branch_init_cur
-                    * three_rlp_bytes_c
-                    * (mult_c_three - branch_mult_c_cur),
-            ));
-
-            constraints
-        });
-        */
-
         config
     }
 

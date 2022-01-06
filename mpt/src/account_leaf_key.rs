@@ -47,6 +47,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             // TODO: RLP properties
 
+            // TODO: check acc_mult as in leaf_key_in_added_branch
+
             let one = Expression::Constant(F::one());
             let mut expr = meta.query_advice(s_rlp1, Rotation::cur());
             let mut ind = 0;
