@@ -445,7 +445,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
             output_base: if output_b2 { B2 } else { B13 },
             num_chunks: NUM_OF_B9_CHUNKS,
             max_chunks: MAX_CHUNKS,
-            input_tc: self.base2,
+            input_tc: self.base9,
             output_tc: if output_b2 { self.base2 } else { self.base13 },
             _marker: PhantomData,
         }
