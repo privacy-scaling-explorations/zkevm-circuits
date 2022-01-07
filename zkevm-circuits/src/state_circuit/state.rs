@@ -1168,6 +1168,37 @@ pub struct StateCircuit<
 }
 
 impl<
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    >
+    StateCircuit<
+        GLOBAL_COUNTER_MAX,
+        MEMORY_ROWS_MAX,
+        MEMORY_ADDRESS_MAX,
+        STACK_ROWS_MAX,
+        STACK_ADDRESS_MAX,
+        STORAGE_ROWS_MAX,
+    >
+{
+    /// Use memory_ops, stack_ops, storage_ops to build a StateCircuit instance.
+    pub fn new(
+        memory_ops: Vec<Operation<MemoryOp>>,
+        stack_ops: Vec<Operation<StackOp>>,
+        storage_ops: Vec<Operation<StorageOp>>,
+    ) -> Self {
+        Self {
+            memory_ops,
+            stack_ops,
+            storage_ops,
+        }
+    }
+}
+
+impl<
         F: FieldExt,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
