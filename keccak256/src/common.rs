@@ -1,13 +1,7 @@
 //! Types and constants of Keccak hash function. The constants can be found in the appendices of <https://keccak.team/keccak_specs_summary.html> or [pycryptodome](https://github.com/Legrandin/pycryptodome).
 
-use halo2::arithmetic::FieldExt;
-
 /// The State is a 5x5 matrix of 64 bit lanes.
 pub type State = [[u64; 5]; 5];
-
-/// Type that represents a `State` as an array of 25 generic `FieldExt`
-/// elements.
-pub type StateF<F: FieldExt> = [F; 25];
 
 /// The number of rounds for the 1600 bits permutation used in Keccak-256. See [here](https://github.com/Legrandin/pycryptodome/blob/016252bde04456614b68d4e4e8798bc124d91e7a/src/keccak.c#L230)
 pub const PERMUTATION: usize = 24;

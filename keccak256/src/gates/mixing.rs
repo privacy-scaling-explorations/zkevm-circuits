@@ -2,24 +2,18 @@ use super::super::arith_helpers::*;
 use super::tables::FromBase9TableConfig;
 use super::{
     absorb::{AbsorbConfig, ABSORB_NEXT_INPUTS},
-    base_conversion::BaseConversionConfig,
     iota_b13::IotaB13Config,
     iota_b9::IotaB9Config,
     state_conversion::StateBaseConversion,
-    tables::FromBinaryTableConfig,
 };
-use crate::arith_helpers::*;
 use crate::common::*;
-use crate::keccak_arith::KeccakFArith;
 use halo2::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use itertools::Itertools;
-use num_bigint::BigInt;
 use num_bigint::BigUint;
 use pairing::arithmetic::FieldExt;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub struct MixingConfig<F> {
@@ -354,50 +348,6 @@ mod tests {
                 out_state: out_mixing_state,
                 next_mixing,
                 out_state_absorb: out_absorb,
-                is_mixing: false,
-                round_ctant_b13: PERMUTATION - 1,
-                round_ctant_b9: PERMUTATION - 1,
-            };
-
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
-
-            assert_eq!(prover.verify(), Ok(()));
-
-            // With wrong input and/or output witnesses, the proof should fail
-            // to be verified.
-            let circuit = MyCircuit::<Fp> {
-                in_state,
-                out_state: out_non_mixing_state,
-                next_mixing,
-                out_state_absorb: out_absorb,
-                is_mixing: false,
-                round_ctant_b13: PERMUTATION - 1,
-                round_ctant_b9: PERMUTATION - 1,
-            };
-
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
-
-            assert!(prover.verify().is_err());
-        }
-
-        // With flag set to `true`, we don't mix. And so we should obtain IotaB9
-        // application as result.
-        {
-            let circuit = MyCircuit::<Fp> {
-                in_state,
-                out_state: out_non_mixing_state,
-                next_mixing,
-                out_state_absorb: out_absorb,
                 is_mixing: true,
                 round_ctant_b13: PERMUTATION - 1,
                 round_ctant_b9: PERMUTATION - 1,
@@ -419,7 +369,51 @@ mod tests {
                 out_state: out_non_mixing_state,
                 next_mixing,
                 out_state_absorb: out_absorb,
+                is_mixing: true,
+                round_ctant_b13: PERMUTATION - 1,
+                round_ctant_b9: PERMUTATION - 1,
+            };
+
+            let prover = MockProver::<Fp>::run(
+                17,
+                &circuit,
+                vec![constants_b9.clone(), constants_b13.clone()],
+            )
+            .unwrap();
+
+            assert!(prover.verify().is_err());
+        }
+
+        // With flag set to `false`, we don't mix. And so we should obtain
+        // IotaB9 application as result.
+        {
+            let circuit = MyCircuit::<Fp> {
+                in_state,
+                out_state: out_non_mixing_state,
+                next_mixing,
+                out_state_absorb: out_absorb,
                 is_mixing: false,
+                round_ctant_b13: PERMUTATION - 1,
+                round_ctant_b9: PERMUTATION - 1,
+            };
+
+            let prover = MockProver::<Fp>::run(
+                17,
+                &circuit,
+                vec![constants_b9.clone(), constants_b13.clone()],
+            )
+            .unwrap();
+
+            assert_eq!(prover.verify(), Ok(()));
+
+            // With wrong input and/or output witnesses, the proof should fail
+            // to be verified.
+            let circuit = MyCircuit::<Fp> {
+                in_state,
+                out_state: out_non_mixing_state,
+                next_mixing,
+                out_state_absorb: out_absorb,
+                is_mixing: true,
                 round_ctant_b13: PERMUTATION - 1,
                 round_ctant_b9: PERMUTATION - 1,
             };
