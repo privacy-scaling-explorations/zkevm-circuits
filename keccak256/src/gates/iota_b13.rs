@@ -195,20 +195,13 @@ impl<F: FieldExt> IotaB13Config<F> {
     pub(crate) fn compute_circ_states(
         state: StateBigInt,
     ) -> ([F; 25], [F; 25]) {
-        let mut in_biguint = StateBigInt::default();
-        let mut in_state: [F; 25] = [F::zero(); 25];
-
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b13(
-                state[(x, y)].clone().try_into().expect("Conversion err"),
-            );
-            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
-        }
-
         // Compute out state
         let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
-        let s1_arith = KeccakFArith::iota_b13(&in_biguint, round_ctant);
-        (in_state, state_bigint_to_field::<F, 25>(s1_arith))
+        let s1_arith = KeccakFArith::iota_b13(&state, round_ctant);
+        (
+            state_bigint_to_field::<F, 25>(state),
+            state_bigint_to_field::<F, 25>(s1_arith),
+        )
     }
 }
 
