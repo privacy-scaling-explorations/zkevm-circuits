@@ -113,6 +113,10 @@ impl<F: FieldExt> MPTConfig<F> {
 
         // TODO: r_table constraints
 
+        // TODO: in many cases different rotations can be used - for example, when getting back
+        // into s_keccak or c_keccak to get the hash (all 16 branch children contain the same hash in
+        // s_keccak and c_keccak), so we can choose the rotations smartly to have at least as possible of them
+
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
         let is_last_branch_child = meta.advice_column();
@@ -317,6 +321,7 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
             let is_at_first_nibble =
                 meta.query_advice(is_at_first_nibble, Rotation::cur());
+            let first_nibble = meta.query_advice(first_nibble, Rotation::cur());
             let is_leaf_in_added_branch =
                 meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
             let is_extension_node_s =
@@ -432,8 +437,8 @@ impl<F: FieldExt> MPTConfig<F> {
             ));
 
             // is_modified is:
-            //   0 when node_index_cur != key
-            //   1 when node_index_cur == key
+            //   0 when node_index_cur != modified_node
+            //   1 when node_index_cur == modified_node (it's checked elsewhere for booleanity)
             constraints.push((
                 "is modified",
                 q_enable.clone()
@@ -442,7 +447,16 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (node_index_cur.clone() - modified_node.clone()),
             ));
 
-            // TODO: is_at_first_nibble similarly as is_modified
+            // is_at_first_nibble is:
+            //   0 when node_index_cur != first_nibble
+            //   1 when node_index_cur == first_nibble (it's checked elsewhere for booleanity)
+            constraints.push((
+                "is at first nibble",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * is_at_first_nibble
+                    * (node_index_cur.clone() - first_nibble.clone()),
+            ));
 
             for (ind, col) in s_advices.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation::cur());
@@ -1439,14 +1453,12 @@ impl<F: FieldExt> MPTConfig<F> {
                 s_rlp2,
                 c_rlp1,
                 s_advices,
-                s_keccak[0],
-                s_keccak[1],
+                s_keccak,
+                c_keccak,
                 acc_s,
                 acc_mult_s,
                 sel1,
                 sel2,
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
-                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 modified_node,
                 r_table.clone(),
                 r_mult_table.clone(),

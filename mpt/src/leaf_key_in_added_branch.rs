@@ -9,13 +9,13 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::param::{
-    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+    KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, R_TABLE_LEN,
 };
 
 #[derive(Clone, Debug)]
 pub(crate) struct LeafKeyInAddedBranchConfig {}
 
-// Verifies RLC of a leaf key.
 pub(crate) struct LeafKeyInAddedBranchChip<F> {
     config: LeafKeyInAddedBranchConfig,
     _marker: PhantomData<F>,
@@ -29,20 +29,20 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        s_keccak0: Column<Advice>, // to see whether it's long or short RLP
-        s_keccak1: Column<Advice>, // to see whether it's long or short RLP
+        s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
+        c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
-        is_branch_s_placeholder: Column<Advice>,
-        is_branch_c_placeholder: Column<Advice>,
         modified_node: Column<Advice>,
         r_table: Vec<Expression<F>>,
         r_mult_table: [Column<Fixed>; 2],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> LeafKeyInAddedBranchConfig {
         let config = LeafKeyInAddedBranchConfig {};
+
+        // TODO: leaf and leaf in added branch differs in first_nibble
 
         // Checking leaf RLC is ok - this value is then taken and value is added
         // to RLC, finally lookup is used to check the hash that
@@ -105,7 +105,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let two = Expression::Constant(F::from(2_u64));
 
-            let is_short = meta.query_advice(s_keccak1, Rotation::cur());
+            let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
 
             let c128 = Expression::Constant(F::from(128));
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
@@ -131,7 +131,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let three = Expression::Constant(F::from(3_u64));
 
-            let is_long = meta.query_advice(s_keccak0, Rotation::cur());
+            let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
 
             let c128 = Expression::Constant(F::from(128));
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
@@ -160,6 +160,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // In case we have a placeholder branch at position S:
         // (1) branch which contains leaf that turns into branch at is_modified position (S positions) | branch that contains added branch hash at is_modified position (C positions)
         // (2) placeholder branch (S positions) | added branch (C positions)
+        // S and C extension node rows
         // (3) leaf key S
         // (4) leaf value S ((3)||(4) hash is two levels above in (1) at is_modified)
         // (5) leaf key C
@@ -173,37 +174,26 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // We need to construct RLP of the leaf. We have leaf key in is_leaf_in_added_branch
         // and the value is the same as it is in the leaf value S (3).
 
-        // NOTE: Rotation -6 can be used here (in S and C leaf), because
-        // s_keccak and c_keccak have the same value in all branch rows (thus, the same
-        // value in branch node_index: 13 and branch node_index: 15).
-        // The same holds for sel1 and sel2.
-        /*
-        let rot = -6;
-
-        let mut rot_placeholder_branch = -20;
-
         meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let one = Expression::Constant(F::one());
             let mut rlc = meta.query_advice(acc, Rotation::cur());
             let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
 
             // If branch placeholder in S, value is 3 above.
-            // If branch placeholder in C, value is 1 above. TODO
             let rot_val = -3;
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot_val));
-            rlc = rlc + s_rlp1 * acc_mult.clone() * r_table[0].clone();
+            rlc = rlc + s_rlp1 * acc_mult.clone();
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
-            rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[1].clone();
+            rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
 
-            let mut rind = 2;
+            let mut rind = 1;
             let mut r_wrapped = false;
             for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation::cur());
+                let s = meta.query_advice(*col, Rotation(rot_val));
                 if !r_wrapped {
                     rlc = rlc + s * r_table[rind].clone();
                 } else {
@@ -219,48 +209,96 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 }
             }
 
-            // just not to have empty constraints
-            constraints.push((
-                q_enable.clone() * rlc,
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
-
-            /*
-            let sel = meta.query_advice(sel, Rotation(rot));
-            let one = Expression::Constant(F::one());
-
-            let is_branch_placeholder = meta.query_advice(
-                is_branch_placeholder,
-                Rotation(rot_placeholder_branch),
+            // Any rotation that lands into branch children can be used.
+            let rot = -17;
+            let is_branch_s_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(-23),
             );
 
-            // If sel = 1, there is no leaf at this position (value is being added or deleted)
-            // and we don't check the hash of it.
-            let mut constraints = vec![];
             constraints.push((
-                q_enable.clone()
-                    * rlc
-                    * (one.clone() - sel.clone())
-                    * (one.clone() - is_branch_placeholder.clone()),
+                q_enable.clone() * rlc * is_branch_s_placeholder.clone(),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                let sc_keccak = meta.query_advice(*column, Rotation(rot));
+
+            for (ind, column) in s_keccak.iter().enumerate() {
+                // placeholder branch contains hash of a leaf that moved to added branch
+                let s_keccak = meta.query_advice(*column, Rotation(rot));
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
                     q_enable.clone()
-                        * sc_keccak
-                        * (one.clone() - sel.clone())
-                        * (one.clone() - is_branch_placeholder.clone()),
+                        * s_keccak
+                        * is_branch_s_placeholder.clone(),
                     keccak_table_i,
                 ));
             }
-            */
 
             constraints
         });
-        */
+
+        meta.lookup_any(|meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let mut rlc = meta.query_advice(acc, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
+
+            // If branch placeholder in C, value is 1 above.
+            let rot_val = -1;
+
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot_val));
+            rlc = rlc + s_rlp1 * acc_mult.clone();
+
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
+            rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
+
+            let mut rind = 1;
+            let mut r_wrapped = false;
+            for col in s_advices.iter() {
+                let s = meta.query_advice(*col, Rotation(rot_val));
+                if !r_wrapped {
+                    rlc = rlc + s * r_table[rind].clone();
+                } else {
+                    rlc = rlc
+                        + s * r_table[rind].clone()
+                            * r_table[R_TABLE_LEN - 1].clone();
+                }
+                if rind == R_TABLE_LEN - 1 {
+                    rind = 0;
+                    r_wrapped = true;
+                } else {
+                    rind += 1;
+                }
+            }
+
+            // Any rotation that lands into branch children can be used.
+            let rot = -17;
+            let is_branch_c_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(-23),
+            );
+
+            constraints.push((
+                q_enable.clone() * rlc * is_branch_c_placeholder.clone(),
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+
+            for (ind, column) in c_keccak.iter().enumerate() {
+                // placeholder branch contains hash of a leaf that moved to added branch
+                let c_keccak = meta.query_advice(*column, Rotation(rot));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    q_enable.clone()
+                        * c_keccak
+                        * is_branch_c_placeholder.clone(),
+                    keccak_table_i,
+                ));
+            }
+
+            constraints
+        });
 
         // TODO: "when placeholder" constraints - the branch that is parallel to the placeholder
         // branch needs to be checked to have exactly two non empty leaves: one is at is_modified
