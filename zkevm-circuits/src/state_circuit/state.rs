@@ -1184,7 +1184,7 @@ impl<
         STORAGE_ROWS_MAX,
     >
 {
-    #[allow(missing_docs)]
+    /// Use memory_ops, stack_ops, storage_ops to build a StateCircuit instance.
     pub fn new(
         memory_ops: Vec<Operation<MemoryOp>>,
         stack_ops: Vec<Operation<StackOp>>,
