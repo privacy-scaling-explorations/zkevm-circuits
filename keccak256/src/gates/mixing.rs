@@ -1,4 +1,5 @@
 use super::super::arith_helpers::*;
+use super::tables::FromBase9TableConfig;
 use super::{
     absorb::{AbsorbConfig, ABSORB_NEXT_INPUTS},
     base_conversion::BaseConversionConfig,
@@ -18,7 +19,7 @@ use itertools::Itertools;
 use num_bigint::BigInt;
 use num_bigint::BigUint;
 use pairing::arithmetic::FieldExt;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, Debug)]
 pub struct MixingConfig<F> {
@@ -33,7 +34,7 @@ pub struct MixingConfig<F> {
 impl<F: FieldExt> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        table: FromBinaryTableConfig<F>,
+        table: FromBase9TableConfig<F>,
     ) -> MixingConfig<F> {
         // Allocate space for the flag column from which we will copy to all of
         // the sub-configs.
@@ -180,14 +181,15 @@ impl<F: FieldExt> MixingConfig<F> {
             // We mix, therefore we apply Absorb
             let (in_state, out_absorb, next_inputs) =
                 AbsorbConfig::compute_circ_states(in_state.into(), next_inputs);
+
             // Base conversion
             let big_uint_out = state_to_biguint::<F>(out_absorb)
                 .xy
                 .iter()
                 .map(|elem| convert_b9_lane_to_b13(elem.clone()))
                 .collect::<Vec<BigUint>>();
-            let big_uint_out = StateBigInt { xy: big_uint_out };
 
+            let big_uint_out = StateBigInt { xy: big_uint_out };
             let out_base_conv: [F; 25] = state_bigint_to_field(big_uint_out);
 
             // IotaB13
@@ -236,7 +238,7 @@ mod tests {
         #[derive(Clone)]
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
-            table: FromBinaryTableConfig<F>,
+            table: FromBase9TableConfig<F>,
         }
 
         impl<F: FieldExt> MyConfig<F> {
@@ -258,7 +260,7 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let table = FromBinaryTableConfig::configure(meta);
+                let table = FromBase9TableConfig::configure(meta);
                 MyConfig {
                     mixing_conf: MixingConfig::configure(meta, table.clone()),
                     table,
@@ -393,7 +395,7 @@ mod tests {
         {
             let circuit = MyCircuit::<Fp> {
                 in_state,
-                out_state: out_mixing_state,
+                out_state: out_non_mixing_state,
                 next_mixing,
                 out_state_absorb: out_absorb,
                 is_mixing: true,
@@ -410,7 +412,6 @@ mod tests {
 
             assert_eq!(prover.verify(), Ok(()));
 
-            // FIXME: This should be failing.
             // With wrong input and/or output witnesses, the proof should fail
             // to be verified.
             let circuit = MyCircuit::<Fp> {
@@ -418,7 +419,7 @@ mod tests {
                 out_state: out_non_mixing_state,
                 next_mixing,
                 out_state_absorb: out_absorb,
-                is_mixing: true,
+                is_mixing: false,
                 round_ctant_b13: PERMUTATION - 1,
                 round_ctant_b9: PERMUTATION - 1,
             };
