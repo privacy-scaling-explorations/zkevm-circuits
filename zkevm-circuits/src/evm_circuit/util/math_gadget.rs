@@ -266,10 +266,8 @@ impl<F: FieldExt> MulWordsGadget<F> {
 
         //radix_constant_64 == 2^64
         //radix_constant_128 == 2^128
-        let radix_constant = (1u64 << 32).expr();
-        let radix_constant_64 = radix_constant.clone() * radix_constant;
-        let radix_constant_128 =
-            radix_constant_64.clone() * radix_constant_64.clone();
+        let radix_constant_64 = pow_of_two_expr(64);
+        let radix_constant_128 = pow_of_two_expr(128);
         cb.require_equal(
             "mul(multipliers_lo) == product_lo + radix_lo ⋅ 2^128",
             cur_v0.clone() * radix_constant_128.clone(),
