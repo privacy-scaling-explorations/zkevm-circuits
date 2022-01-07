@@ -1168,7 +1168,6 @@ pub struct StateCircuit<
 }
 
 impl<
-        F: FieldExt,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -1185,18 +1184,12 @@ impl<
         STORAGE_ROWS_MAX,
     >
 {
+    #[allow(missing_docs)]
     pub fn new(
         memory_ops: Vec<Operation<MemoryOp>>,
         stack_ops: Vec<Operation<StackOp>>,
         storage_ops: Vec<Operation<StorageOp>>,
-    ) -> Self<
-        GLOBAL_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
-        STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
-    > {
+    ) -> Self {
         Self {
             memory_ops,
             stack_ops,
