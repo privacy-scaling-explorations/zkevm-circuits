@@ -889,9 +889,12 @@ impl<F: FieldExt> MPTConfig<F> {
                 gives us the key where the storage change is happening.
             */
 
-            // s_keccak is the same for all is_branch_child rows
-            // (this is to enable easier comparison when in keccak leaf row
-            // where we need to compare the keccak output is the same as keccak of the modified node)
+            // s_keccak is the same for all is_branch_child rows.
+            // This is to enable easier comparison when in leaf row
+            // where we need to compare the keccak output is the same as keccak of the modified node,
+            // this way we just rotate back to one of the branch children rows and we get s_keccak there
+            // (otherwise we would need iterate over all branch children rows (many rotations) and check
+            // that at is_modified the value corresponds).
             for column in s_keccak.iter() {
                 let s_keccak_prev =
                     meta.query_advice(*column, Rotation::prev());
@@ -904,7 +907,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     * (s_keccak_cur.clone() - s_keccak_prev),
                 ));
             }
-            // c_keccak is the same for all is_branch_child rows
+            // c_keccak is the same for all is_branch_child rows.
             for column in c_keccak.iter() {
                 let c_keccak_prev =
                     meta.query_advice(*column, Rotation::prev());
@@ -928,6 +931,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
             // s_keccak and c_keccak correspond to s and c at the modified index
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
+            let is_at_first_nibble =
+                meta.query_advice(is_at_first_nibble, Rotation::cur());
 
             let mut s_hash = vec![];
             let mut c_hash = vec![];
@@ -938,12 +943,25 @@ impl<F: FieldExt> MPTConfig<F> {
             let s_advices_words = into_words_expr(s_hash);
             let c_advices_words = into_words_expr(c_hash);
 
+            // When it's NOT placeholder branch, is_modified = is_at_first_nibble.
+            // When it's placeholder branch, is_modified != is_at_first_nibble.
+            // This is used instead of having is_branch_s_placeholder and is_branch_c_placeholder columns -
+            // we only have this info in branch init where we don't need additional columns.
+
             for (ind, column) in s_keccak.iter().enumerate() {
+                // In placeholder branch (when is_modified != is_at_first_nibble) the following
+                // constraint could be satisfied by attacker by putting hash of is_modified (while
+                // it should be is_at_first_nibble), but then the attacker would need to
+                // use is_modified node for leaf_key_in_added_branch (hash of it is in keccak
+                // at is_at_first_nibble), but then the constraint of leaf_in_added_branch having
+                // the same key (TODO this constraint in leaf_key_in_added_branch) except for
+                // the nibble will fail.
                 let s_keccak_cur = meta.query_advice(*column, Rotation::cur());
                 constraints.push((
                     "s_keccak correspond to s_advices at the modified index",
                     q_not_first.clone()
                         * is_branch_child_cur.clone()
+                        * is_at_first_nibble.clone() // is_at_first_nibble = is_modified when NOT placeholder
                         * is_modified.clone()
                         * (s_advices_words[ind].clone() - s_keccak_cur),
                 ));
@@ -1011,6 +1029,11 @@ impl<F: FieldExt> MPTConfig<F> {
                         * sel2_cur.clone(),
                 ));
             }
+
+            // TODO: constraint for is_modified = is_at_first_nibble, to do this
+            // we can check modified_node = first_nibble in branch init and then check
+            // in each branch node: modified_node_prev = modified_node_cur and
+            // first_nibble_prev = first_nibble_cur, this way we can use only Rotation(-1).
 
             // TODO: permutation argument for sel1 and sel2 - need to be the same in all
             // branch children
@@ -1427,6 +1450,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 modified_node,
                 r_table.clone(),
                 r_mult_table.clone(),
+                keccak_table.clone(),
             );
 
         let leaf_s_value_chip = LeafValueChip::<F>::configure(
@@ -2085,16 +2109,41 @@ impl<F: FieldExt> MPTConfig<F> {
                             first_nibble = row[FIRST_NIBBLE_POS];
 
                             // Get the child that is being changed and convert it to words to enable lookups:
-                            let s_hash = witness
+                            let mut s_hash = witness
                                 [ind + 1 + modified_node as usize]
                                 [S_START..S_START + HASH_WIDTH]
                                 .to_vec();
-                            let c_hash = witness
+                            let mut c_hash = witness
                                 [ind + 1 + modified_node as usize]
                                 [C_START..C_START + HASH_WIDTH]
                                 .to_vec();
                             s_words = self.convert_into_words(&s_hash);
                             c_words = self.convert_into_words(&c_hash);
+
+                            if row[IS_BRANCH_S_PLACEHOLDER_POS] == 1 {
+                                // We put hash of a nibble that drifted down to the added branch.
+                                // This is needed to check the hash of leaf_in_added_branch.
+                                s_hash = witness
+                                    [ind + 1 + first_nibble as usize]
+                                    [S_START..S_START + HASH_WIDTH]
+                                    .to_vec();
+                                s_words = self.convert_into_words(&s_hash);
+                            }
+                            if row[IS_BRANCH_C_PLACEHOLDER_POS] == 1 {
+                                c_hash = witness
+                                    [ind + 1 + modified_node as usize]
+                                    [C_START..C_START + HASH_WIDTH]
+                                    .to_vec();
+                                c_words = self.convert_into_words(&c_hash);
+                            }
+                            // If no placeholder branch, we set first_nibble = modified_node. This
+                            // is needed just to make some other constraints (s_keccak/c_keccak
+                            // corresponds to the proper node) easier to write.
+                            if row[IS_BRANCH_S_PLACEHOLDER_POS] == 0
+                                && row[IS_BRANCH_C_PLACEHOLDER_POS] == 0
+                            {
+                                first_nibble = modified_node
+                            }
 
                             self.q_enable.enable(&mut region, offset)?;
                             if ind == 0 {

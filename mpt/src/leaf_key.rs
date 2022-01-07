@@ -67,8 +67,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             rlc = rlc + s_rlp2 * r_table[0].clone();
-            let mut rind = 1;
 
+            let mut rind = 1;
             let mut r_wrapped = false;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());

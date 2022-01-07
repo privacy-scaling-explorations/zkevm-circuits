@@ -5,10 +5,12 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{HASH_WIDTH, R_TABLE_LEN};
+use crate::param::{
+    HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct LeafKeyInAddedBranchConfig {}
@@ -38,6 +40,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         modified_node: Column<Advice>,
         r_table: Vec<Expression<F>>,
         r_mult_table: [Column<Fixed>; 2],
+        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> LeafKeyInAddedBranchConfig {
         let config = LeafKeyInAddedBranchConfig {};
 
@@ -183,22 +186,21 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let c248 = Expression::Constant(F::from(248));
-            let s_rlp1_key = meta.query_advice(s_rlp1, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            let mut rlc = meta.query_advice(acc, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
 
-            // TODO: check that from some point on (depends on the rlp meta data)
-            // the values are zero (as in key_compr) - but take into account it can be long or short RLP
+            // If branch placeholder in S, value is 3 above.
+            // If branch placeholder in C, value is 1 above. TODO
+            let rot_val = -3;
 
-            // TODO: check acc_mult as in key_compr
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot_val));
+            rlc = rlc + s_rlp1 * acc_mult.clone() * r_table[0].clone();
 
-            // TODO: rlc meta data should correspond to the the change in key length
-            // (from leaf_key to leaf_key_in_added_branch)
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
+            rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[1].clone();
 
-            let mut rlc = s_rlp1_key;
-            let s_rlp2_key = meta.query_advice(s_rlp2, Rotation::cur());
-            rlc = rlc + s_rlp2_key * r_table[0].clone();
-            let mut rind = 1;
-
+            let mut rind = 2;
             let mut r_wrapped = false;
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
@@ -217,47 +219,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 }
             }
 
-            let one = Expression::Constant(F::one());
-
-            let c_rlp1_key = meta.query_advice(c_rlp1, Rotation::cur());
-            rlc = rlc
-                + c_rlp1_key
-                    * r_table[R_TABLE_LEN - 1].clone()
-                    * r_table[1].clone();
-
-            // key is at most of length 32, so it doesn't go further than c_rlp1
-
-            // multiplication factor depends on the length of the key
-
-            // If branch placeholder in S, value is 3 above.
-            // If branch placeholder in C, value is 1 above. TODO
-            let rot_val = -3;
-
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot_val));
-            rlc = rlc
-                + s_rlp1
-                    * r_table[R_TABLE_LEN - 1].clone()
-                    * r_table[2].clone();
-
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
-            rlc = rlc
-                + s_rlp2
-                    * r_table[R_TABLE_LEN - 1].clone()
-                    * r_table[3].clone();
-
             // just not to have empty constraints
             constraints.push((
                 q_enable.clone() * rlc,
-                one, //meta.query_fixed(keccak_table[0], Rotation::cur()),
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
             /*
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                rlc = rlc + s * mult.clone();
-                mult = mult * acc_r;
-            }
-
             let sel = meta.query_advice(sel, Rotation(rot));
             let one = Expression::Constant(F::one());
 
