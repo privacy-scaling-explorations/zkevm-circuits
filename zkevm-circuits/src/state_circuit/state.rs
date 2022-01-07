@@ -1153,6 +1153,7 @@ impl<
 }
 
 /// State Circuit struct.
+#[allow(missing_docs)]
 #[derive(Default)]
 pub struct StateCircuit<
     const GLOBAL_COUNTER_MAX: usize,
