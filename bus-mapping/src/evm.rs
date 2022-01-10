@@ -160,6 +160,10 @@ impl GasCost {
     pub const COLD_ACCOUNT_ACCESS_COST: Self = Self(2600);
     /// Constant cost for a warm storage read
     pub const WARM_STORAGE_READ_COST: Self = Self(100);
+    /// Constant cost for a non-creation transaction
+    pub const TX: Self = Self(21000);
+    /// Constant cost for creation transaction
+    pub const CREATION_TX: Self = Self(53000);
 }
 
 impl GasCost {

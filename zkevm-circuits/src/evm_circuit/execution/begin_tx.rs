@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::MAX_GAS_SIZE_IN_BYTES,
+        param::{MAX_GAS_SIZE_IN_BYTES, STACK_CAPACITY},
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
@@ -17,7 +17,10 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::eth_types::{ToLittleEndian, ToScalar};
+use bus_mapping::{
+    eth_types::{ToLittleEndian, ToScalar},
+    evm::GasCost,
+};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -103,9 +106,11 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
-        let intrinsic_gas_cost =
-            select::expr(tx_is_create.expr(), 53000.expr(), 21000.expr())
-                + tx_call_data_gas_cost.expr();
+        let intrinsic_gas_cost = select::expr(
+            tx_is_create.expr(),
+            GasCost::CREATION_TX.expr(),
+            GasCost::TX.expr(),
+        ) + tx_call_data_gas_cost.expr();
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;
@@ -174,7 +179,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             is_create: To(0.expr()),
             opcode_source: To(code_hash.expr()),
             program_counter: To(0.expr()),
-            stack_pointer: To(1024.expr()),
+            stack_pointer: To(STACK_CAPACITY.expr()),
             gas_left: To(gas_left),
             memory_size: To(0.expr()),
             state_write_counter: To(2.expr()),
@@ -294,6 +299,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
+        param::STACK_CAPACITY,
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag},
         test::{rand_fp, rand_range, run_test_circuit_incomplete_fixed_table},
@@ -303,7 +309,7 @@ mod test {
     use bus_mapping::{
         address,
         eth_types::{self, Address, ToLittleEndian, ToWord, Word},
-        evm::OpcodeId,
+        evm::{GasCost, OpcodeId},
     };
 
     fn test_ok(tx: eth_types::Transaction, result: bool) {
@@ -315,8 +321,11 @@ mod test {
             .0
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
-        let intrinsic_gas_cost =
-            if tx.to.is_none() { 53000 } else { 21000 } + call_data_gas_cost;
+        let intrinsic_gas_cost = if tx.to.is_none() {
+            GasCost::CREATION_TX.as_u64()
+        } else {
+            GasCost::TX.as_u64()
+        } + call_data_gas_cost;
 
         let from_balance_prev = Word::from(10).pow(20.into());
         let to_balance_prev = Word::zero();
@@ -366,7 +375,7 @@ mod test {
                         execution_state: ExecutionState::STOP,
                         rw_counter: 17,
                         program_counter: 0,
-                        stack_pointer: 1024,
+                        stack_pointer: STACK_CAPACITY,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
                         state_write_counter: 2,

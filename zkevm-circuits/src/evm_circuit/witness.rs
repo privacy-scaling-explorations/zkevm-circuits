@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
+    param::STACK_CAPACITY,
     step::ExecutionState,
     table::{
         AccountFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
@@ -490,7 +491,7 @@ fn step_convert(
         execution_state: ExecutionState::from(step),
         rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
-        stack_pointer: 1024 - step.stack_size,
+        stack_pointer: STACK_CAPACITY - step.stack_size,
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
         opcode: Some(step.op),
