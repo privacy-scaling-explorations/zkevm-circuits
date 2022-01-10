@@ -190,9 +190,10 @@ impl<F: FieldExt> IotaB13Config<F> {
     /// the output.
     pub(crate) fn compute_circ_states(
         state: StateBigInt,
+        round: usize,
     ) -> ([F; 25], [F; 25]) {
         // Compute out state
-        let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
+        let round_ctant = ROUND_CONSTANTS[round];
         let s1_arith = KeccakFArith::iota_b13(&state, round_ctant);
         (
             state_bigint_to_field::<F, 25>(state),
@@ -318,7 +319,7 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
         let (in_state, out_state) =
-            IotaB13Config::compute_circ_states(input1.into());
+            IotaB13Config::compute_circ_states(input1.into(), PERMUTATION);
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -332,7 +333,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
-                round_ctant: PERMUTATION - 1,
+                round_ctant: PERMUTATION,
                 flag: true,
                 _marker: PhantomData,
             };
@@ -348,7 +349,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                round_ctant: PERMUTATION - 1,
+                round_ctant: PERMUTATION,
                 flag: true,
                 _marker: PhantomData,
             };
@@ -366,7 +367,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                round_ctant: PERMUTATION - 1,
+                round_ctant: PERMUTATION,
                 flag: false,
                 _marker: PhantomData,
             };
