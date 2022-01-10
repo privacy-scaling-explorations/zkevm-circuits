@@ -95,8 +95,7 @@ impl<F: FieldExt> MixingConfig<F> {
         out_absorb_state: Option<[F; 25]>,
         flag: bool,
         next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
-        absolute_row_b9: usize,
-        absolute_row_b13: usize,
+        absolute_row: usize,
     ) -> Result<[(Cell, F); 25], Error> {
         // Witness the mixing flag.
         let val: F = (flag as u64).into();
@@ -120,7 +119,7 @@ impl<F: FieldExt> MixingConfig<F> {
             layouter,
             in_state,
             out_state,
-            absolute_row_b9,
+            absolute_row,
             flag_cell,
         );
 
@@ -147,7 +146,7 @@ impl<F: FieldExt> MixingConfig<F> {
             layouter,
             base_conv_cells,
             out_state,
-            absolute_row_b13,
+            absolute_row,
             flag_cell,
         );
 
@@ -220,11 +219,8 @@ mod tests {
             out_state_absorb: Option<[F; 25]>,
             next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
             // This usize is indeed pointing the exact row of the
-            // ROUND_CTANTS_B9 we want to use.
-            round_ctant_b9: usize,
-            // This usize is indeed pointing the exact row of the
-            // ROUND_CTANTS_B13 we want to use.
-            round_ctant_b13: usize,
+            // ROUND_CTANTS we want to use.
+            round_ctant: usize,
             // flag
             is_mixing: bool,
         }
@@ -299,8 +295,7 @@ mod tests {
                     self.out_state_absorb,
                     self.is_mixing,
                     self.next_mixing,
-                    self.round_ctant_b9,
-                    self.round_ctant_b13,
+                    self.round_ctant,
                 )?;
                 Ok(())
             }
@@ -349,8 +344,7 @@ mod tests {
                 next_mixing,
                 out_state_absorb: out_absorb,
                 is_mixing: true,
-                round_ctant_b13: PERMUTATION - 1,
-                round_ctant_b9: PERMUTATION - 1,
+                round_ctant: PERMUTATION - 1,
             };
 
             let prover = MockProver::<Fp>::run(
@@ -370,8 +364,7 @@ mod tests {
                 next_mixing,
                 out_state_absorb: out_absorb,
                 is_mixing: true,
-                round_ctant_b13: PERMUTATION - 1,
-                round_ctant_b9: PERMUTATION - 1,
+                round_ctant: PERMUTATION - 1,
             };
 
             let prover = MockProver::<Fp>::run(
@@ -393,8 +386,7 @@ mod tests {
                 next_mixing,
                 out_state_absorb: out_absorb,
                 is_mixing: false,
-                round_ctant_b13: PERMUTATION - 1,
-                round_ctant_b9: PERMUTATION - 1,
+                round_ctant: PERMUTATION - 1,
             };
 
             let prover = MockProver::<Fp>::run(
@@ -414,8 +406,7 @@ mod tests {
                 next_mixing,
                 out_state_absorb: out_absorb,
                 is_mixing: true,
-                round_ctant_b13: PERMUTATION - 1,
-                round_ctant_b9: PERMUTATION - 1,
+                round_ctant: PERMUTATION - 1,
             };
 
             let prover = MockProver::<Fp>::run(
