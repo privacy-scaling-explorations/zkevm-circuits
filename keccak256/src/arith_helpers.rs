@@ -1,4 +1,5 @@
 use crate::common::State;
+use halo2::circuit::Cell;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
@@ -250,6 +251,17 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(
         .collect();
     arr[0..N].copy_from_slice(&vector[0..N]);
     arr
+}
+
+pub fn split_state_cells<F: FieldExt, const N: usize>(
+    state: [(Cell, F); N],
+) -> [F; N] {
+    let mut res = [F::zero(); N];
+    state
+        .iter()
+        .enumerate()
+        .for_each(|(idx, assigned_cell)| res[idx] = assigned_cell.1);
+    res
 }
 
 pub fn f_from_radix_be<F: FieldExt>(buf: &[u8], base: u8) -> F {
