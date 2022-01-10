@@ -8,7 +8,9 @@ use super::gates::{
     xi::XiConfig,
 };
 use crate::{
-    arith_helpers::*, common::{ROUND_CONSTANTS, PERMUTATION, ROTATION_CONSTANTS}, gates::rho_checks::RhoAdvices,
+    arith_helpers::*,
+    common::{PERMUTATION, ROTATION_CONSTANTS, ROUND_CONSTANTS},
+    gates::rho_checks::RhoAdvices,
 };
 use crate::{gates::mixing::MixingConfig, keccak_arith::*};
 use halo2::{
@@ -33,9 +35,6 @@ pub struct KeccakFConfig<F: FieldExt> {
 }
 
 impl<F: FieldExt> KeccakFConfig<F> {
-    const B9_ROW: usize = 0;
-    const B13_ROW: usize = 1;
-
     // We assume state is recieved in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> KeccakFConfig<F> {
         let state = (0..25)
@@ -88,11 +87,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
         );
         let not_mixing_b9_to_13 = StateConversion::configure(meta);
 
-
-       
         let mixing_config = MixingConfig::configure(meta, state);
         // in side mixing  let b9_to_13 = StateConversion::configure(meta);
-
 
         KeccakFConfig {
             theta_config,
@@ -111,7 +107,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         region: &mut Region<'_, F>,
         mut offset: usize,
         state: [F; 25],
-        out_state: [F;25],
+        out_state: [F; 25],
         flag: bool,
         next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
         absolute_row_b9: usize,
@@ -141,8 +137,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 let out_state = KeccakFArith::rho(&state_to_biguint(state));
                 let out_state = state_bigint_to_pallas(out_state);
                 // assignment
-                self.rho_config
-                    .assign_region(region, offset, out_state)?;
+                self.rho_config.assign_region(region, offset, out_state)?;
                 out_state
             };
             // Outputs in base-9 which is what Pi requires.
@@ -174,11 +169,13 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
             // iota_b9
             state = {
-            let out_state = KeccakFArith::iota_b9(&state_to_biguint(state), ROUND_CONSTANTS[round]);
-            let out_state = state_bigint_to_pallas(out_state); 
-            self
-                .iota_b9_config
-                .not_last_round(region, offset, state, out_state, round)?;
+                let out_state = KeccakFArith::iota_b9(
+                    &state_to_biguint(state),
+                    ROUND_CONSTANTS[round],
+                );
+                let out_state = state_bigint_to_pallas(out_state);
+                self.iota_b9_config
+                    .not_last_round(region, offset, state, out_state, round)?;
                 out_state
             };
             offset += IotaB9Config::OFFSET;
@@ -242,9 +239,22 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
         // Mixing step
         state = {
-            let out_state = KeccakFArith::mixing(&state_to_biguint(state), next_mixing, ROUND_CONSTANTS[round]);
+            let out_state = KeccakFArith::mixing(
+                &state_to_biguint(state),
+                next_mixing,
+                ROUND_CONSTANTS[round],
+            );
             let out_state = state_bigint_to_pallas(out_state);
-            self.mixing_config.assign_state(region, offset, state, out_state, flag, next_mixing, round, round)?;
+            self.mixing_config.assign_state(
+                region,
+                offset,
+                state,
+                out_state,
+                flag,
+                next_mixing,
+                round,
+                round,
+            )?;
             out_state
         };
 
