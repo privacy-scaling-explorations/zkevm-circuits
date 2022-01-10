@@ -6,7 +6,7 @@ use super::{
     iota_b9::IotaB9Config,
     state_conversion::StateBaseConversion,
 };
-use crate::common::*;
+use crate::common::{self, *};
 use halo2::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
@@ -65,7 +65,6 @@ impl<F: FieldExt> MixingConfig<F> {
         );
         // We don't mix -> Flag = false
         let absorb_config = AbsorbConfig::configure(meta, state);
-        meta.enable_equality(flag.into());
         let base_info = table.get_base_info(false);
         let base_conv_config =
             StateBaseConversion::configure(meta, state, base_info, flag);
@@ -93,52 +92,35 @@ impl<F: FieldExt> MixingConfig<F> {
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         out_absorb_state: Option<[F; 25]>,
-        flag: bool,
+        flag: (Cell, F),
         next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
         absolute_row: usize,
     ) -> Result<[(Cell, F); 25], Error> {
-        // Witness the mixing flag.
-        let val: F = (flag as u64).into();
-        let flag_cell = layouter.assign_region(
-            || "Mixing witnessing",
-            |mut region| {
-                let offset: usize = 0;
-                // Witness `is_mixing` flag.
-                let cell = region.assign_advice(
-                    || "witness is_mixing",
-                    self.flag,
-                    offset,
-                    || Ok(val),
-                )?;
-                Ok((cell, val))
-            },
-        )?;
-
         // If we mix:
         let mix_res = self.iota_b9_config.last_round(
             layouter,
             in_state,
             out_state,
             absolute_row,
-            flag_cell,
+            flag,
         );
 
         // If we don't mix:
         // Absorb
-        let (out_state_absorb_cells, flag_cell) =
+        let (out_state_absorb_cells, flag) =
             self.absorb_config.copy_state_flag_next_inputs(
                 layouter,
                 in_state,
                 out_absorb_state.unwrap_or_default(),
                 next_mixing.unwrap_or_default(),
-                flag_cell,
+                flag,
             )?;
 
         // Base conversion assign
         let base_conv_cells = self.base_conv_config.assign_region(
             layouter,
             out_state_absorb_cells,
-            flag_cell,
+            flag,
         )?;
 
         // IotaB13
@@ -147,10 +129,10 @@ impl<F: FieldExt> MixingConfig<F> {
             base_conv_cells,
             out_state,
             absolute_row,
-            flag_cell,
+            flag,
         );
 
-        if flag {
+        if flag.1 == F::one() {
             mix_res
         } else {
             non_mix_res
@@ -188,12 +170,15 @@ impl<F: FieldExt> MixingConfig<F> {
             // IotaB13
             let (_, out_state) = IotaB13Config::compute_circ_states(
                 state_to_state_bigint::<F, 25>(out_base_conv).into(),
+                common::PERMUTATION,
             );
             (in_state, out_state, Some(out_absorb), Some(next_inputs))
         } else {
             // We don't mix, therefore we run IotaB9
-            let (in_state, out_state) =
-                IotaB9Config::compute_circ_states(in_state.into());
+            let (in_state, out_state) = IotaB9Config::compute_circ_states(
+                in_state.into(),
+                common::PERMUTATION,
+            );
             (in_state, out_state, None, None)
         }
     }
@@ -267,8 +252,8 @@ mod tests {
                 config.table.load(&mut layouter)?;
                 let offset: usize = 0;
 
-                let in_state = layouter.assign_region(
-                    || "Wittnes & assignation",
+                let (in_state, flag) = layouter.assign_region(
+                    || "Mixing Wittnes & flag assignation",
                     |mut region| {
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
@@ -285,7 +270,17 @@ mod tests {
                             }
                             state.try_into().unwrap()
                         };
-                        Ok(in_state)
+
+                        // Witness `is_mixing` flag
+                        let val = (self.is_mixing as u64).into();
+                        let cell = region.assign_advice(
+                            || "witness is_mixing",
+                            config.mixing_conf.flag,
+                            offset,
+                            || Ok(val),
+                        )?;
+
+                        Ok((in_state, (cell, val)))
                     },
                 )?;
 
@@ -294,7 +289,7 @@ mod tests {
                     in_state,
                     self.out_state,
                     self.out_state_absorb,
-                    self.is_mixing,
+                    flag,
                     self.next_mixing,
                     self.round_ctant,
                 )?;
