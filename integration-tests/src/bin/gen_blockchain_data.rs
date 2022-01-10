@@ -63,11 +63,9 @@ async fn main() {
             )
             .expect("contract not found");
         let abi = contract.abi.expect("no abi found").clone();
-        let bin = contract.bytecode().expect("no bin found").clone();
-        let bin_runtime = contract
-            .runtime_bytecode()
-            .expect("no bin_runtime found")
-            .clone();
+        let bin = contract.bin.expect("no bin found").clone();
+        let bin_runtime =
+            contract.bin_runtime.expect("no bin_runtime found").clone();
         let compiled_contract = CompiledContract {
             path: path_sol.to_str().expect("path is not str").to_string(),
             name: name.to_string(),
