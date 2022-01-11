@@ -289,16 +289,12 @@ mod test_evm_circuit {
     }
 }
 
-#[tokio::test]
-async fn test_evm_circuit_block_a() {
+async fn test_evm_circuit_block(block_num: u64) {
     use test_evm_circuit::*;
 
-    log_init();
-    let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
     let cli = get_client();
-
     let cli = BuilderClient::new(cli).await.unwrap();
-    let builder = cli.gen_inputs(*block_num).await.unwrap();
+    let builder = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate evm_circuit proof
     let code_hash = builder.block.txs()[0].calls()[0].code_hash;
@@ -313,13 +309,23 @@ async fn test_evm_circuit_block_a() {
 }
 
 #[tokio::test]
-async fn test_state_circuit_block_a() {
+async fn test_evm_circuit_block_transfer_0() {
     log_init();
-    let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
-    let cli = get_client();
+    let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
+    test_evm_circuit_block(*block_num).await;
+}
 
+#[tokio::test]
+async fn test_evm_circuit_block_deploy_greeter() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
+    test_evm_circuit_block(*block_num).await;
+}
+
+async fn test_state_circuit_block(block_num: u64) {
+    let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
-    let builder = cli.gen_inputs(*block_num).await.unwrap();
+    let builder = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
     let stack_ops = builder.block.container.sorted_stack();
@@ -356,4 +362,18 @@ async fn test_state_circuit_block_a() {
     let prover =
         MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
     prover.verify().expect("state_circuit verification failed");
+}
+
+#[tokio::test]
+async fn test_state_circuit_block_transfer_0() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
+    test_state_circuit_block(*block_num).await;
+}
+
+#[tokio::test]
+async fn test_state_circuit_block_deploy_greeter() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
+    test_state_circuit_block(*block_num).await;
 }
