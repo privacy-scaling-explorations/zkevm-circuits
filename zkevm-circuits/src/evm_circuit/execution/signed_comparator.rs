@@ -172,13 +172,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         self.sign_check_a.assign(
             region,
             offset,
-            from_bytes::value(&a[0..1]),
+            F::from(a[0] as u64),
             F::from(128u64),
         )?;
         self.sign_check_b.assign(
             region,
             offset,
-            from_bytes::value(&b[0..1]),
+            F::from(b[0] as u64),
             F::from(128u64),
         )?;
 
