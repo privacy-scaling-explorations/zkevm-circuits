@@ -3,7 +3,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
@@ -111,7 +111,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_long = meta.query_advice(s_keccak0, Rotation::cur());
             let is_short = meta.query_advice(s_keccak1, Rotation::cur());
 
-            // key rlc is in the first branch node
+            // key rlc is in the first branch node (not branch init)
             let mut rot = -18;
             if !is_s {
                 rot = -20;

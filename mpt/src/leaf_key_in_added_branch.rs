@@ -36,6 +36,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         modified_node: Column<Advice>,
+        first_nibble: Column<Advice>,
         r_table: Vec<Expression<F>>,
         r_mult_table: [Column<Fixed>; 2],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -44,7 +45,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
         // TODO: leaf and leaf in added branch differs in first_nibble
 
-        // Checking leaf RLC is ok - this value is then taken and value is added
+        // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row) is added
         // to RLC, finally lookup is used to check the hash that
         // corresponds to this RLC is in the parent branch at first_nibble position.
         meta.create_gate("Storage leaf in added branch RLC", |meta| {
@@ -97,6 +98,106 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             constraints
         });
+
+        // We also need to check leaf_key and leaf_key_in_added_branch are different only
+        // in the first_nibble. This ensures the leaf
+        // that was turned into branch was moved down to the new branch correctly.
+        meta.create_gate(
+            "Storage leaf in added branch differs only in first nibble (placeholder S, sel2, is_short)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
+
+                let is_branch_s_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(-23),
+                );
+                let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
+
+                // If sel2 = 1 and is_short, the leaf_key has the first nibble
+                // in s_advices[0].
+                // Note that due to placeholder branch, sel1 and sel2 are turned around.
+
+                // The first nibble is removed in leaf_key_in_added_branch.
+                // So, s_rlp1 is the same in both rows.
+                // Also s_rlp2 is the same in both rows.
+                // Further, s_advices[0]_leaf_key_in_added_branch = 32 and
+                // s_advices[0]_leaf_key = 32 + 16 + first_nibble.
+                // From s_advices[0] on, key bytes are the same in both rows.
+
+                let rot_branch_init = -23;
+                let rot_leaf_key = -4;
+                let c32 = Expression::Constant(F::from(32_u64));
+                let c48 = Expression::Constant(F::from(48_u64));
+
+                // sel1 and sel2 are in init branch
+                let sel2 = meta.query_advice(sel2, Rotation(rot_branch_init));
+
+                let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation(rot_leaf_key));
+                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+                let s_rlp2_prev = meta.query_advice(s_rlp2, Rotation(rot_leaf_key));
+                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+                
+                constraints.push((
+                    "Leaf key differs first nibble s_rlp1",
+                    q_enable.clone()
+                        * is_branch_s_placeholder.clone()
+                        * sel2.clone()
+                        * is_short.clone()
+                        * (s_rlp1 - s_rlp1_prev),
+                ));
+                constraints.push((
+                    "Leaf key differs first nibble s_rlp2",
+                    q_enable.clone()
+                        * is_branch_s_placeholder.clone()
+                        * sel2.clone()
+                        * is_short.clone()
+                        * (s_rlp2 - s_rlp2_prev),
+                ));
+
+                let s_advices0_prev = meta.query_advice(s_advices[0], Rotation(rot_leaf_key));
+                let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
+
+                // Any rotation that lands into branch children can be used.
+                let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
+
+                constraints.push((
+                    "Leaf key differs first nibble s_advices[0] prev",
+                    q_enable.clone()
+                        * is_branch_s_placeholder.clone()
+                        * sel2.clone()
+                        * is_short.clone()
+                        * (s_advices0 - c32),
+                ));
+                constraints.push((
+                    "Leaf key differs first nibble s_advices[0]",
+                    q_enable.clone()
+                        * is_branch_s_placeholder.clone()
+                        * sel2.clone()
+                        * is_short.clone()
+                        * (s_advices0_prev - first_nibble - c48),
+                ));
+
+                for col in s_advices.iter().skip(1) {
+                    let s_prev = meta.query_advice(*col, Rotation(rot_leaf_key));
+                    let s = meta.query_advice(*col, Rotation::cur());
+
+                    constraints.push((
+                        "Leaf key differs first nibble s_advices",
+                            q_enable.clone()
+                            * is_branch_s_placeholder.clone()
+                            * sel2.clone()
+                            * is_short.clone()
+                            * (s_prev - s),
+                    ));
+                }
+
+                // key is at most of length 32 and this is short RLP,
+                // so key doesn't go further than s_advices
+
+                constraints
+            },
+        );
 
         // Check acc_mult when RLP metadata is two bytes (short)
         meta.lookup_any(|meta| {

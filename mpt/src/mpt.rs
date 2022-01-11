@@ -1460,6 +1460,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 sel1,
                 sel2,
                 modified_node,
+                first_nibble,
                 r_table.clone(),
                 r_mult_table.clone(),
                 keccak_table.clone(),
@@ -2222,6 +2223,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             // sel1 and sel2 are here to distinguish whether it's the
                             // first or the second nibble of the key byte
+                            // If sel1 = 1 and short, we have one nibble+48 in s_advices[0].
+                            // If sel1 = 1 and long, we have nibble+48 in s_advices[1].
+                            // If sel2 = 1 and short, we have 32 in s_advices[0].
+                            // If sel2 = 1 and long, we have 32 in s_advices[1].
+
+                            // Note that if the last branch is placeholder,
+                            // sel1 and sel2 are still switched at this branch which
+                            // needs to be considered in leaf rows.
                             let mut sel1 = F::zero();
                             let mut sel2 = F::zero();
                             if key_rlc_sel {
@@ -2304,7 +2313,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // (as opposed to just updating the value).
                                 // Note that there is a potential attack if a leaf node
                                 // is found with hash [128, 0, ..., 0],
-                                // but the probably is negligible.
+                                // but the probability is negligible.
                                 let mut sel1 = F::zero();
                                 let mut sel2 = F::zero();
                                 if s_words[0] == 128
