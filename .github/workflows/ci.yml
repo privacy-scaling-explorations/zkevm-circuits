@@ -27,21 +27,26 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      - name: Cache cargo index
+      # Go cache for building geth-utils
+      - name: Go cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-ubuntu-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo registry
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Cargo cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-ubuntu-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo target
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-ubuntu-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
@@ -66,21 +71,26 @@ jobs:
           override: false
       - name: Add target
         run: rustup target add ${{ matrix.target }}
-      - name: Cache cargo index
+      # Go cache for building geth-utils
+      - name: Go cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo registry
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Cargo cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo target
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-%{{ matrix-target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
@@ -104,21 +114,26 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      - name: Cache cargo index
+      # Go cache for building geth-utils
+      - name: Go cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-ubuntu-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo registry
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Cargo cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-ubuntu-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo target
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-ubuntu-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('**/Cargo.lock') }}
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
         uses: actions-rs/cargo@v1
@@ -137,21 +152,26 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      - name: Cache cargo index
+      # Go cache for building geth-utils
+      - name: Go cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-ubuntu-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo registry
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Cargo cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-ubuntu-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo target
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-ubuntu-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: cargo fetch
         uses: actions-rs/cargo@v1
         with:
@@ -176,21 +196,26 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      - name: Cache cargo index
+      # Go cache for building geth-utils
+      - name: Go cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-ubuntu-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo registry
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Cargo cache
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-ubuntu-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo target
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-ubuntu-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: cargo check
         uses: actions-rs/cargo@v1
         with:
