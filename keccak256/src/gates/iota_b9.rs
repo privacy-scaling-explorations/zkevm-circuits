@@ -56,8 +56,13 @@ impl<F: FieldExt> IotaB9Config<F> {
         });
 
         meta.create_gate("iota_b9 in final round", |meta| {
+            // Note also that we want to enable the gate when `is_mixing` is
+            // false. (flag = 0). Therefore, we are doing
+            // `1-flag` in order to enforce this. (See the flag computation
+            // below).
             let q_enable = {
-                let flag = meta.query_advice(round_ctant_b9, Rotation::next());
+                let flag = Expression::Constant(F::one())
+                    - meta.query_advice(round_ctant_b9, Rotation::next());
                 meta.query_selector(q_last) * flag
             };
 
@@ -397,14 +402,14 @@ mod tests {
             .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
             .collect();
 
-        // (flag = 1) -> Out state is checked as constraints are applied.
+        // (flag = 0) -> Out state is checked as constraints are applied.
         // Providing the correct `out_state` should pass the verification.
         {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
                 round_ctant: PERMUTATION - 1,
-                flag: true,
+                flag: false,
                 _marker: PhantomData,
             };
 
@@ -415,7 +420,7 @@ mod tests {
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        // (flag = 1) -> Out state is checked as constraints are applied.
+        // (flag = 0) -> Out state is checked as constraints are applied.
         // Providing the wrong `out_state` should make the verification fail.
         {
             let circuit = MyCircuit::<Fp> {
@@ -424,7 +429,7 @@ mod tests {
                 // fail.
                 out_state: in_state,
                 round_ctant: PERMUTATION - 1,
-                flag: true,
+                flag: false,
                 _marker: PhantomData,
             };
 
@@ -435,14 +440,14 @@ mod tests {
             let _ = prover.verify().is_err();
         }
 
-        // (flag = 0)
+        // (flag = 1)
         let circuit = MyCircuit::<Fp> {
             in_state,
             // Use a nonsensical out_state to verify that the gate is not
             // checked.
             out_state: in_state,
             round_ctant: PERMUTATION - 1,
-            flag: false,
+            flag: true,
             _marker: PhantomData,
         };
 

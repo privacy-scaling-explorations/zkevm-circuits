@@ -430,35 +430,13 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        base9_coef: Column<Advice>,
-        base13_coef: Column<Advice>,
-        base2_coef: Column<Advice>,
-        fixed: [TableColumn; 3],
-    ) -> Self {
-        let config = Self {
-            base2: fixed[0],
-            base9: fixed[1],
-            base13: fixed[2],
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            base2: meta.lookup_table_column(),
+            base9: meta.lookup_table_column(),
+            base13: meta.lookup_table_column(),
             _marker: PhantomData,
-        };
-
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-
-            let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
-            let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
-            let base2_coef = meta.query_advice(base2_coef, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * base9_coef, config.base9),
-                (q_enable.clone() * base13_coef, config.base13),
-                (q_enable * base2_coef, config.base2),
-            ]
-        });
-        config
+        }
     }
 
     pub(crate) fn get_base_info(&self, output_b2: bool) -> BaseInfo<F> {
@@ -467,7 +445,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
             output_base: if output_b2 { B2 } else { B13 },
             num_chunks: NUM_OF_B9_CHUNKS,
             max_chunks: MAX_CHUNKS,
-            input_tc: self.base2,
+            input_tc: self.base9,
             output_tc: if output_b2 { self.base2 } else { self.base13 },
             _marker: PhantomData,
         }

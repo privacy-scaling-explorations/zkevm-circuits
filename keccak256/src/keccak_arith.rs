@@ -106,7 +106,13 @@ impl KeccakFArith {
     ) -> StateBigInt {
         if let Some(next_input) = next_input {
             let out_1 = KeccakFArith::absorb(a, next_input);
-            KeccakFArith::iota_b13(&out_1, rc)
+            // Base conversion from 9 to 13
+            let mut out_2 = StateBigInt::default();
+            for (x, y) in (0..5).cartesian_product(0..5) {
+                out_2[(x, y)] = convert_b9_lane_to_b13(out_1[(x, y)].clone())
+            }
+
+            KeccakFArith::iota_b13(&out_2, rc)
         } else {
             let mut state = KeccakFArith::iota_b9(a, rc);
             for (x, y) in (0..5).cartesian_product(0..5) {

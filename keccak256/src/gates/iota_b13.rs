@@ -6,10 +6,9 @@ use halo2::circuit::Layouter;
 use halo2::plonk::Instance;
 use halo2::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
@@ -53,13 +52,10 @@ impl<F: FieldExt> IotaB13Config<F> {
                 // the active selector so that we avoid the
                 // `PoisonedConstraints` and each gate equation
                 // can be satisfied while enforcing the correct gate logic.
-                let flag = Expression::Constant(F::one())
-                    - meta.query_advice(round_ctant_b13, Rotation::next());
+                let flag = meta.query_advice(round_ctant_b13, Rotation::next());
 
                 // Note also that we want to enable the gate when `is_mixing` is
-                // false. (flag = 0). Therefore, we are doing
-                // `1-flag` in order to enforce this. (See the flag computation
-                // above).
+                // true. (flag = 1).
                 meta.query_selector(q_mixing) * flag
             };
 
@@ -195,20 +191,13 @@ impl<F: FieldExt> IotaB13Config<F> {
     pub(crate) fn compute_circ_states(
         state: StateBigInt,
     ) -> ([F; 25], [F; 25]) {
-        let mut in_biguint = StateBigInt::default();
-        let mut in_state: [F; 25] = [F::zero(); 25];
-
-        for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b13(
-                state[(x, y)].clone().try_into().expect("Conversion err"),
-            );
-            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
-        }
-
         // Compute out state
         let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
-        let s1_arith = KeccakFArith::iota_b13(&in_biguint, round_ctant);
-        (in_state, state_bigint_to_field::<F, 25>(s1_arith))
+        let s1_arith = KeccakFArith::iota_b13(&state, round_ctant);
+        (
+            state_bigint_to_field::<F, 25>(state),
+            state_bigint_to_field::<F, 25>(s1_arith),
+        )
     }
 }
 
@@ -233,7 +222,8 @@ mod tests {
             // This usize is indeed pointing the exact row of the
             // ROUND_CTANTS_B13 we want to use.
             round_ctant: usize,
-            // The flag acts like a selector that turns ON/OFF the gate
+            // The flag acts like a selector that turns ON/OFF the gate.
+            // In this gate, `true` enables it as we are in a `Mixing` fashion.
             flag: bool,
             _marker: PhantomData<F>,
         }
@@ -334,7 +324,7 @@ mod tests {
             .map(|num| big_uint_to_field(&convert_b2_to_b13(*num)))
             .collect();
 
-        // With flag set to false, the gate should trigger.
+        // With flag set to true, the gate should trigger as we Mix.
         {
             // With the correct input and output witnesses, the proof should
             // pass.
@@ -342,7 +332,7 @@ mod tests {
                 in_state,
                 out_state,
                 round_ctant: PERMUTATION - 1,
-                flag: false,
+                flag: true,
                 _marker: PhantomData,
             };
 
@@ -358,7 +348,7 @@ mod tests {
                 in_state,
                 out_state: in_state,
                 round_ctant: PERMUTATION - 1,
-                flag: false,
+                flag: true,
                 _marker: PhantomData,
             };
 
@@ -369,14 +359,14 @@ mod tests {
             assert!(prover.verify().is_err());
         }
 
-        // With flag set to `true`, the gate shouldn't trigger. And so we can
+        // With flag set to `false`, the gate shouldn't trigger. And so we can
         // pass any witness data and the proof should pass.
         {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
                 round_ctant: PERMUTATION - 1,
-                flag: true,
+                flag: false,
                 _marker: PhantomData,
             };
 
