@@ -331,6 +331,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
         }
         match step.op {
             OpcodeId::ADD => ExecutionState::ADD,
+            OpcodeId::MUL => ExecutionState::MUL,
             OpcodeId::SUB => ExecutionState::ADD,
             OpcodeId::EQ => ExecutionState::CMP,
             OpcodeId::GT => ExecutionState::CMP,
