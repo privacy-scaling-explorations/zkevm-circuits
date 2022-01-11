@@ -327,8 +327,6 @@ impl<F: FieldExt> MulWordsGadget<F> {
         let c = BigUint::from_bytes_le(&wc.to_le_bytes());
         let constant_64 = BigUint::from(1u128 << 64);
         let constant_128 = constant_64.clone() * constant_64.clone();
-        /*let constant_256 = constant_128.clone() * constant_128.clone();
-        assert_eq!(a.clone() * b.clone() % constant_256, c);*/
         let a_limbs = a.to_u64_digits();
         let b_limbs = b.to_u64_digits();
         let c_limbs = c.to_u64_digits();
