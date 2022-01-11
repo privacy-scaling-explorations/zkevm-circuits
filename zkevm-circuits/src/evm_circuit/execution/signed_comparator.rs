@@ -59,9 +59,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // number is negative if the most significant cell >= 128
         // (0b10000000).
         let sign_check_a =
-            LtGadget::construct(cb, a.cells[0].expr(), 128u8.expr());
+            LtGadget::construct(cb, a.cells[0].expr(), 128.expr());
         let sign_check_b =
-            LtGadget::construct(cb, b.cells[0].expr(), 128u8.expr());
+            LtGadget::construct(cb, b.cells[0].expr(), 128.expr());
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
@@ -90,21 +90,21 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         let a_b_positive = sign_check_a_lt.clone() * sign_check_b_lt.clone();
         let a_lt_b = select::expr(
             a_b_positive,
-            select::expr(a_lt_b_hi.clone(), 1u8.expr(), a_lt_b_lo.clone()),
-            select::expr(a_lt_b_hi, 0u8.expr(), 1u8.expr() - a_lt_b_lo),
+            select::expr(a_lt_b_hi.clone(), 1.expr(), a_lt_b_lo.clone()),
+            select::expr(a_lt_b_hi, 0.expr(), 1.expr() - a_lt_b_lo),
         );
 
         // Add a trivial selector: if only a or only b is negative we have the
         // result. result = if a < 0 && b > 0, slt = 1.
         // result = if b < 0 && a < 0, slt = 0.
         let a_negative =
-            (1u8.expr() - sign_check_a_lt.expr()) * sign_check_b_lt.expr();
+            (1.expr() - sign_check_a_lt.expr()) * sign_check_b_lt.expr();
         let b_negative =
-            (1u8.expr() - sign_check_b_lt.expr()) * sign_check_a_lt.expr();
+            (1.expr() - sign_check_b_lt.expr()) * sign_check_a_lt.expr();
         let result = select::expr(
             a_negative,
-            0u8.expr(),
-            select::expr(b_negative, 1u8.expr(), a_lt_b),
+            0.expr(),
+            select::expr(b_negative, 1.expr(), a_lt_b),
         );
 
         // Pop a and b from the stack, push the result on the stack.
@@ -117,9 +117,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // and the since the stack now has one less word, the stack pointer also
         // shifts by one.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(3u8.expr()),
-            program_counter: Transition::Delta(1u8.expr()),
-            stack_pointer: Transition::Delta(1u8.expr()),
+            rw_counter: Transition::Delta(3.expr()),
+            program_counter: Transition::Delta(1.expr()),
+            stack_pointer: Transition::Delta(1.expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
@@ -237,7 +237,7 @@ mod test {
         };
         let plus_1 = {
             let mut bytes = vec![0u8; 15];
-            bytes.push(1u8);
+            bytes.push(1);
             let bytes: [u8; 16] = bytes.try_into().unwrap();
             Word::from_big_endian(&bytes)
         };
