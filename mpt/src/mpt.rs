@@ -263,7 +263,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "is modified",
                 q_enable.clone()
                     * is_branch_child_cur.clone()
-                    * is_modified
+                    * is_modified.clone()
                     * (node_index_cur.clone() - modified_node.clone()),
             ));
 
@@ -274,7 +274,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 "is at first nibble",
                 q_enable.clone()
                     * is_branch_child_cur.clone()
-                    * is_at_first_nibble
+                    * is_at_first_nibble.clone()
                     * (node_index_cur.clone() - first_nibble.clone()),
             ));
 
@@ -303,12 +303,29 @@ impl<F: FieldExt> MPTConfig<F> {
                 let s = meta.query_advice(*col, Rotation::cur());
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
                 constraints.push((
-                    "s = c",
+                    "s = c when not is_modified",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
-                        * (s - c)
+                        * (s.clone() - c.clone())
                         * (node_index_cur.clone() - modified_node.clone()),
                 ));
+
+                // When it's NOT placeholder branch, is_modified = is_at_first_nibble.
+                // When it's placeholder branch, is_modified != is_at_first_nibble.
+                // This is used instead of having is_branch_s_placeholder and is_branch_c_placeholder columns -
+                // we only have this info in branch init where we don't need additional columns.
+                /*
+                TODO
+                constraints.push((
+                    "s = 0 when placeholder and is neither is_modified neither at_first_nibble",
+                    q_enable.clone()
+                        * is_branch_child_cur.clone()
+                        * (one.clone() - is_modified.clone())
+                        * (one.clone() - is_at_first_nibble.clone())
+                        * s
+                        * (node_index_cur.clone() - modified_node.clone()),
+                ));
+                */
             }
 
             // TODO: use permutation argument for s = c.
@@ -810,8 +827,9 @@ impl<F: FieldExt> MPTConfig<F> {
                 // use is_modified node for leaf_key_in_added_branch (hash of it is in keccak
                 // at is_at_first_nibble), but then the constraint of leaf_in_added_branch having
                 // the same key (TODO this constraint in leaf_key_in_added_branch) except for
-                // the nibble will fail.
+                // the first nibble will fail.
                 let s_keccak_cur = meta.query_advice(*column, Rotation::cur());
+                // Needs to correspond when is_modified or is_at_first_nibble.
                 constraints.push((
                     "s_keccak correspond to s_advices at the modified index",
                     q_not_first.clone()
@@ -823,10 +841,12 @@ impl<F: FieldExt> MPTConfig<F> {
             }
             for (ind, column) in c_keccak.iter().enumerate() {
                 let c_keccak_cur = meta.query_advice(*column, Rotation::cur());
+                // Needs to correspond when is_modified or is_at_first_nibble.
                 constraints.push((
                     "c_keccak correspond to c_advices at the modified index",
                     q_not_first.clone()
                         * is_branch_child_cur.clone()
+                        * is_at_first_nibble.clone() // is_at_first_nibble = is_modified when NOT placeholder
                         * is_modified.clone()
                         * (c_advices_words[ind].clone() - c_keccak_cur),
                 ));
