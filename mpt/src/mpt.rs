@@ -9,29 +9,24 @@ use keccak256::plain::Keccak;
 use pairing::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
-use crate::param::{
-    BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START, C_START,
-    FIRST_NIBBLE_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
-    IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
-    S_RLP_START, S_START,
-};
 use crate::{
-    account_leaf_key::{AccountLeafKeyChip, AccountLeafKeyConfig},
-    account_leaf_nonce_balance::{
-        AccountLeafNonceBalanceChip, AccountLeafNonceBalanceConfig,
-    },
-    account_leaf_storage_codehash::{
-        AccountLeafStorageCodehashChip, AccountLeafStorageCodehashConfig,
-    },
-    branch_acc::BranchAccChip,
-    leaf_key::{LeafKeyChip, LeafKeyConfig},
-    leaf_key_in_added_branch::{
-        LeafKeyInAddedBranchChip, LeafKeyInAddedBranchConfig,
-    },
-    leaf_value::{LeafValueChip, LeafValueConfig},
-    param::LAYOUT_OFFSET,
+    account_leaf_key::AccountLeafKeyChip,
+    account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
+    account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
+    branch_acc::BranchAccChip, leaf_key::LeafKeyChip,
+    leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
+    leaf_value::LeafValueChip, param::LAYOUT_OFFSET,
 };
 use crate::{branch_acc::BranchAccConfig, param::WITNESS_ROW_WIDTH};
+use crate::{
+    param::{
+        BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START,
+        C_START, FIRST_NIBBLE_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+        S_RLP_START, S_START,
+    },
+    selectors::SelectorsChip,
+};
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
@@ -79,18 +74,9 @@ pub struct MPTConfig<F> {
     r_table: Vec<Expression<F>>,
     branch_acc_s_chip: BranchAccConfig,
     branch_acc_c_chip: BranchAccConfig,
-    account_leaf_key_chip: AccountLeafKeyConfig,
-    account_leaf_nonce_balance_chip_s: AccountLeafNonceBalanceConfig,
-    account_leaf_storage_codehash_chip_s: AccountLeafStorageCodehashConfig,
-    account_leaf_storage_codehash_chip_c: AccountLeafStorageCodehashConfig,
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    leaf_s_key_chip: LeafKeyConfig,
-    leaf_c_key_chip: LeafKeyConfig,
-    leaf_key_in_added_branch_chip: LeafKeyInAddedBranchConfig,
-    leaf_s_value_chip: LeafValueConfig,
-    leaf_c_value_chip: LeafValueConfig,
     r_mult_table: [Column<Fixed>; 2],
     _marker: PhantomData<F>,
 }
@@ -230,91 +216,38 @@ impl<F: FieldExt> MPTConfig<F> {
             words
         };
 
+        SelectorsChip::<F>::configure(
+            meta,
+            |meta| meta.query_selector(q_enable),
+            is_branch_init,
+            is_branch_child,
+            is_last_branch_child,
+            is_leaf_s,
+            is_leaf_s_value,
+            is_leaf_c,
+            is_leaf_c_value,
+            is_account_leaf_key_s,
+            is_account_leaf_nonce_balance_s,
+            is_account_leaf_storage_codehash_s,
+            is_account_leaf_storage_codehash_c,
+            is_leaf_in_added_branch,
+            is_extension_node_s,
+            is_extension_node_c,
+            sel1,
+            sel2,
+            is_modified,
+            is_at_first_nibble,
+        );
+
         // TODO: range proofs for bytes
 
-        meta.create_gate("general constraints", |meta| {
+        meta.create_gate("branch equalities", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
             let mut constraints = vec![];
-            let is_branch_init_cur =
-                meta.query_advice(is_branch_init, Rotation::cur());
+
             let is_branch_child_cur =
                 meta.query_advice(is_branch_child, Rotation::cur());
-            let is_last_branch_child_cur =
-                meta.query_advice(is_last_branch_child, Rotation::cur());
-            let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
-            let is_leaf_s_value =
-                meta.query_advice(is_leaf_s_value, Rotation::cur());
-            let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
-            let is_leaf_c_value =
-                meta.query_advice(is_leaf_c_value, Rotation::cur());
-
-            let is_account_leaf_key_s =
-                meta.query_advice(is_account_leaf_key_s, Rotation::cur());
-            let is_account_leaf_nonce_balance_s = meta
-                .query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
-            let is_account_leaf_storage_codehash_s = meta.query_advice(
-                is_account_leaf_storage_codehash_s,
-                Rotation::cur(),
-            );
-
-            let is_account_leaf_storage_codehash_c = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation::cur(),
-            );
-            let sel1 = meta.query_advice(sel1, Rotation::cur());
-            let sel2 = meta.query_advice(sel2, Rotation::cur());
-
-            let bool_check_is_branch_init =
-                is_branch_init_cur.clone() * (one.clone() - is_branch_init_cur);
-            let bool_check_is_branch_child = is_branch_child_cur.clone()
-                * (one.clone() - is_branch_child_cur.clone());
-            let bool_check_is_last_branch_child = is_last_branch_child_cur
-                .clone()
-                * (one.clone() - is_last_branch_child_cur);
-            let bool_check_is_leaf_s =
-                is_leaf_s.clone() * (one.clone() - is_leaf_s);
-            let bool_check_is_leaf_c =
-                is_leaf_c.clone() * (one.clone() - is_leaf_c);
-
-            let bool_check_is_leaf_s_value =
-                is_leaf_s_value.clone() * (one.clone() - is_leaf_s_value);
-            let bool_check_is_leaf_c_value =
-                is_leaf_c_value.clone() * (one.clone() - is_leaf_c_value);
-
-            let bool_check_is_account_leaf_key_s = is_account_leaf_key_s
-                .clone()
-                * (one.clone() - is_account_leaf_key_s);
-            let bool_check_is_account_nonce_balance_s =
-                is_account_leaf_nonce_balance_s.clone()
-                    * (one.clone() - is_account_leaf_nonce_balance_s);
-            let bool_check_is_account_storage_codehash_s =
-                is_account_leaf_storage_codehash_s.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_s);
-            let bool_check_is_account_storage_codehash_c =
-                is_account_leaf_storage_codehash_c.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_c);
-
-            let bool_check_sel1 = sel1.clone() * (one.clone() - sel1);
-            let bool_check_sel2 = sel2.clone() * (one.clone() - sel2);
-
-            // TODO: sel1 + sel2 = 1
-            // However, in branch children, it can be sel1 + sel2 = 0 too - this
-            // case is checked separately.
-
-            // TODO: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
-            // followed by is_leaf_key_nibbles
-            // is_leaf_s_value ..., is_extension_node_s, is_extension_node_c, is_leaf_in_added_branch ...
-
-            // TODO: account leaf constraints (order and also that account leaf selectors
-            // are truea only in account proof part & normal leaf selectors are true only
-            // in storage part, for this we also need account proof selector and storage
-            // proof selector - bool and strictly increasing for example. Also, is_account_leaf_key_nibbles
-            // needs to be 1 in the previous row when the account/storage selector changes.
-
-            // TODO: constraints for s_advices[IS_ADD_BRANCH_S_POS - LAYOUT_OFFSET]
-            // and s_advices[IS_ADD_BRANCH_C_POS - LAYOUT_OFFSET] in branch init
-
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let modified_node =
                 meta.query_advice(modified_node, Rotation::cur());
@@ -322,119 +255,6 @@ impl<F: FieldExt> MPTConfig<F> {
             let is_at_first_nibble =
                 meta.query_advice(is_at_first_nibble, Rotation::cur());
             let first_nibble = meta.query_advice(first_nibble, Rotation::cur());
-            let is_leaf_in_added_branch =
-                meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
-            let is_extension_node_s =
-                meta.query_advice(is_extension_node_s, Rotation::cur());
-            let is_extension_node_c =
-                meta.query_advice(is_extension_node_c, Rotation::cur());
-
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-
-            constraints.push((
-                "bool check is branch init",
-                q_enable.clone() * bool_check_is_branch_init,
-            ));
-            constraints.push((
-                "bool check is branch child",
-                q_enable.clone() * bool_check_is_branch_child,
-            ));
-            constraints.push((
-                "bool check is last branch child",
-                q_enable.clone() * bool_check_is_last_branch_child,
-            ));
-            constraints.push((
-                "bool check is leaf s",
-                q_enable.clone() * bool_check_is_leaf_s,
-            ));
-            constraints.push((
-                "bool check is leaf c",
-                q_enable.clone() * bool_check_is_leaf_c,
-            ));
-
-            constraints.push((
-                "bool check is leaf s value",
-                q_enable.clone() * bool_check_is_leaf_s_value,
-            ));
-            constraints.push((
-                "bool check is leaf c value",
-                q_enable.clone() * bool_check_is_leaf_c_value,
-            ));
-
-            constraints.push((
-                "bool check is leaf account key s",
-                q_enable.clone() * bool_check_is_account_leaf_key_s,
-            ));
-            constraints.push((
-                "bool check is leaf account nonce balance s",
-                q_enable.clone() * bool_check_is_account_nonce_balance_s,
-            ));
-            constraints.push((
-                "bool check is leaf account storage codehash s",
-                q_enable.clone() * bool_check_is_account_storage_codehash_s,
-            ));
-            constraints.push((
-                "bool check is leaf account storage codehash c",
-                q_enable.clone() * bool_check_is_account_storage_codehash_c,
-            ));
-            constraints
-                .push(("bool check sel1", q_enable.clone() * bool_check_sel1));
-            constraints
-                .push(("bool check sel2", q_enable.clone() * bool_check_sel2));
-
-            constraints.push((
-                "rlp 1",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp1 - c_rlp1)
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-            constraints.push((
-                "rlp 2",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp2 - c_rlp2)
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-
-            let bool_check_is_modified =
-                is_modified.clone() * (one.clone() - is_modified.clone());
-            constraints.push((
-                "bool check is_modified",
-                q_enable.clone() * bool_check_is_modified,
-            ));
-
-            let bool_check_is_at_first_nibble = is_at_first_nibble.clone()
-                * (one.clone() - is_at_first_nibble.clone());
-            constraints.push((
-                "bool check is_at_first_nibble",
-                q_enable.clone() * bool_check_is_at_first_nibble,
-            ));
-
-            let bool_check_is_leaf_in_added_branch = is_leaf_in_added_branch
-                .clone()
-                * (one.clone() - is_leaf_in_added_branch.clone());
-            constraints.push((
-                "bool check is_leaf_in_added_branch",
-                q_enable.clone() * bool_check_is_leaf_in_added_branch,
-            ));
-
-            let bool_check_is_extension_node_s = is_extension_node_s.clone()
-                * (one.clone() - is_extension_node_s.clone());
-            constraints.push((
-                "bool check is_extension_node_s",
-                q_enable.clone() * bool_check_is_extension_node_s,
-            ));
-            let bool_check_is_extension_node_c = is_extension_node_c.clone()
-                * (one.clone() - is_extension_node_c.clone());
-            constraints.push((
-                "bool check is_extension_node_c",
-                q_enable.clone() * bool_check_is_extension_node_c,
-            ));
 
             // is_modified is:
             //   0 when node_index_cur != modified_node
@@ -456,6 +276,27 @@ impl<F: FieldExt> MPTConfig<F> {
                     * is_branch_child_cur.clone()
                     * is_at_first_nibble
                     * (node_index_cur.clone() - first_nibble.clone()),
+            ));
+
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+
+            constraints.push((
+                "rlp 1",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * (s_rlp1 - c_rlp1)
+                    * (node_index_cur.clone() - modified_node.clone()),
+            ));
+            constraints.push((
+                "rlp 2",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * (s_rlp2 - c_rlp2)
+                    * (node_index_cur.clone() - modified_node.clone()),
             ));
 
             for (ind, col) in s_advices.iter().enumerate() {
@@ -1384,7 +1225,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
         );
 
-        let leaf_s_key_chip = LeafKeyChip::<F>::configure(
+        LeafKeyChip::<F>::configure(
             meta,
             |meta| {
                 let not_first_level =
@@ -1411,7 +1252,7 @@ impl<F: FieldExt> MPTConfig<F> {
             true,
         );
 
-        let leaf_c_key_chip = LeafKeyChip::<F>::configure(
+        LeafKeyChip::<F>::configure(
             meta,
             |meta| {
                 let not_first_level =
@@ -1438,34 +1279,33 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        let leaf_key_in_added_branch_chip =
-            LeafKeyInAddedBranchChip::<F>::configure(
-                meta,
-                |meta| {
-                    let not_first_level =
-                        meta.query_fixed(not_first_level, Rotation::cur());
-                    let is_leaf_c = meta
-                        .query_advice(is_leaf_in_added_branch, Rotation::cur());
+        LeafKeyInAddedBranchChip::<F>::configure(
+            meta,
+            |meta| {
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
+                let is_leaf_c =
+                    meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
 
-                    not_first_level * is_leaf_c
-                },
-                s_rlp1,
-                s_rlp2,
-                c_rlp1,
-                s_advices,
-                s_keccak,
-                c_keccak,
-                acc_s,
-                acc_mult_s,
-                sel1,
-                sel2,
-                first_nibble,
-                r_table.clone(),
-                r_mult_table.clone(),
-                keccak_table.clone(),
-            );
+                not_first_level * is_leaf_c
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            s_advices,
+            s_keccak,
+            c_keccak,
+            acc_s,
+            acc_mult_s,
+            sel1,
+            sel2,
+            first_nibble,
+            r_table.clone(),
+            r_mult_table.clone(),
+            keccak_table.clone(),
+        );
 
-        let leaf_s_value_chip = LeafValueChip::<F>::configure(
+        LeafValueChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first =
@@ -1488,7 +1328,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        let leaf_c_value_chip = LeafValueChip::<F>::configure(
+        LeafValueChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first =
@@ -1511,7 +1351,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        let account_leaf_key_chip = AccountLeafKeyChip::<F>::configure(
+        AccountLeafKeyChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first =
@@ -1534,75 +1374,72 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
         );
 
-        let account_leaf_nonce_balance_chip_s =
-            AccountLeafNonceBalanceChip::<F>::configure(
-                meta,
-                |meta| {
-                    let q_not_first =
-                        meta.query_fixed(q_not_first, Rotation::cur());
-                    let is_account_leaf_nonce_balance_s = meta.query_advice(
-                        is_account_leaf_nonce_balance_s,
-                        Rotation::cur(),
-                    );
-                    q_not_first * is_account_leaf_nonce_balance_s
-                },
-                s_rlp1,
-                s_rlp2,
-                c_rlp1,
-                c_rlp2,
-                s_advices,
-                c_advices,
-                acc_s,
-                acc_mult_s,
-                acc_mult_c,
-                r_table.clone(),
-            );
+        AccountLeafNonceBalanceChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_account_leaf_nonce_balance_s = meta.query_advice(
+                    is_account_leaf_nonce_balance_s,
+                    Rotation::cur(),
+                );
+                q_not_first * is_account_leaf_nonce_balance_s
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            acc_s,
+            acc_mult_s,
+            acc_mult_c,
+            r_table.clone(),
+        );
 
         // NOTE: storage leaf chip (LeafHashChip) checks the keccak, while
         // account leaf chip doesn't do this internally, the lookup is in mpt.rs
-        let account_leaf_storage_codehash_chip_s =
-            AccountLeafStorageCodehashChip::<F>::configure(
-                meta,
-                |meta| {
-                    let q_not_first =
-                        meta.query_fixed(q_not_first, Rotation::cur());
-                    let is_account_leaf_storage_codehash_s = meta.query_advice(
-                        is_account_leaf_storage_codehash_s,
-                        Rotation::cur(),
-                    );
-                    q_not_first * is_account_leaf_storage_codehash_s
-                },
-                s_rlp2,
-                c_rlp2,
-                s_advices,
-                c_advices,
-                acc_r,
-                acc_s,
-                acc_mult_s,
-                true,
-            );
+        AccountLeafStorageCodehashChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_account_leaf_storage_codehash_s = meta.query_advice(
+                    is_account_leaf_storage_codehash_s,
+                    Rotation::cur(),
+                );
+                q_not_first * is_account_leaf_storage_codehash_s
+            },
+            s_rlp2,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            acc_r,
+            acc_s,
+            acc_mult_s,
+            true,
+        );
 
-        let account_leaf_storage_codehash_chip_c =
-            AccountLeafStorageCodehashChip::<F>::configure(
-                meta,
-                |meta| {
-                    let q_not_first =
-                        meta.query_fixed(q_not_first, Rotation::cur());
-                    let is_account_leaf_storage_codehash_c = meta.query_advice(
-                        is_account_leaf_storage_codehash_c,
-                        Rotation::cur(),
-                    );
-                    q_not_first * is_account_leaf_storage_codehash_c
-                },
-                s_rlp2,
-                c_rlp2,
-                s_advices,
-                c_advices,
-                acc_r,
-                acc_s,
-                acc_mult_s,
-                false,
-            );
+        AccountLeafStorageCodehashChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_account_leaf_storage_codehash_c = meta.query_advice(
+                    is_account_leaf_storage_codehash_c,
+                    Rotation::cur(),
+                );
+                q_not_first * is_account_leaf_storage_codehash_c
+            },
+            s_rlp2,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            acc_r,
+            acc_s,
+            acc_mult_s,
+            false,
+        );
 
         MPTConfig {
             q_enable,
@@ -1645,18 +1482,9 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table,
             branch_acc_s_chip,
             branch_acc_c_chip,
-            account_leaf_key_chip,
-            account_leaf_nonce_balance_chip_s,
-            account_leaf_storage_codehash_chip_s,
-            account_leaf_storage_codehash_chip_c,
             key_rlc,
             key_rlc_mult,
             keccak_table,
-            leaf_s_key_chip,
-            leaf_c_key_chip,
-            leaf_key_in_added_branch_chip,
-            leaf_s_value_chip,
-            leaf_c_value_chip,
             r_mult_table,
             _marker: PhantomData,
         }
