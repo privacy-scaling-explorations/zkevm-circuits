@@ -1459,7 +1459,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 acc_mult_s,
                 sel1,
                 sel2,
-                modified_node,
                 first_nibble,
                 r_table.clone(),
                 r_mult_table.clone(),
@@ -2724,7 +2723,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
-                            } else if row[row.len() - 1] == 15 {
+                            } else if row[row.len() - 1] == 15 && row[1] != 0 {
+                                // row[1] != 0 just to avoid usize problems below (when row doesn't need to be assigned)
                                 // Info whether leaf rlp is long or short.
                                 assign_long_short(
                                     &mut region,
