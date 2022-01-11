@@ -529,6 +529,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::JUMPI => ExecutionState::JUMPI,
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
+            OpcodeId::COINBASE => ExecutionState::COINBASE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -618,8 +619,15 @@ pub fn block_convert(
     let mut storage_ops = b.container.sorted_storage();
     storage_ops.sort_by_key(|s| usize::from(s.rwc()));
 
+    // converting to block context
+    let context = BlockContext {
+        coinbase: b.constants.coinbase,
+        ..Default::default()
+    };
+
     let mut block = Block {
         randomness,
+        context,
         txs: b
             .txs()
             .iter()

@@ -91,84 +91,21 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        step::ExecutionState,
-        test::run_test_circuit_incomplete_fixed_table,
-        util::RandomLinearCombination,
-        witness::{
-            Block, BlockContext, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
+        test::run_test_circuit_incomplete_fixed_table, witness,
     };
-    use bus_mapping::{
-        eth_types::{Address, ToLittleEndian, ToWord},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
-    use std::str::FromStr;
+    use bus_mapping::bytecode;
 
-    fn test_ok(address: &str) {
-        let randomness = Fp::rand();
-        let coinbase_addr = Address::from_str(address).unwrap(); // u160
-        let bytecode = Bytecode::new(
-            [vec![OpcodeId::COINBASE.as_u8(), OpcodeId::STOP.as_u8()]].concat(),
-        );
-        let block_context = BlockContext {
-            coinbase: coinbase_addr,
-            gas_limit: 0,
-            ..Default::default()
+    fn test_ok() {
+        let bytecode = bytecode! {
+            #[start]
+            COINBASE
+            STOP
         };
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0],
-                        execution_state: ExecutionState::COINBASE,
-                        rw_counter: 1,
-                        program_counter: 0,
-                        stack_pointer: 1024,
-                        gas_left: 3,
-                        gas_cost: 2,
-                        opcode: Some(OpcodeId::COINBASE),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 2,
-                        program_counter: 1,
-                        stack_pointer: 1023,
-                        gas_left: 1,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![Rw::Stack {
-                rw_counter: 1,
-                is_write: true,
-                call_id: 1,
-                stack_pointer: 1023,
-                value: coinbase_addr.to_word(),
-            }],
-            bytecodes: vec![bytecode],
-            context: block_context,
-        };
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
-
     #[test]
     fn coinbase_gadget_test() {
-        test_ok("0x9a0C63EBb78B35D7c209aFbD299B056098b5439b");
+        test_ok();
     }
 }
