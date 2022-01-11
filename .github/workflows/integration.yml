@@ -49,7 +49,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       # Run an initial build in a sepparate step to split the build time from execution time
       - name: Build gendata bin
         run: cargo build --bin gen_blockchain_data
