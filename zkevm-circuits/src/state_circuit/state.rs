@@ -1162,9 +1162,12 @@ pub struct StateCircuit<
     const STACK_ADDRESS_MAX: usize,
     const STORAGE_ROWS_MAX: usize,
 > {
-    memory_ops: Vec<Operation<MemoryOp>>,
-    stack_ops: Vec<Operation<StackOp>>,
-    storage_ops: Vec<Operation<StorageOp>>,
+    /// Memory Operations
+    pub memory_ops: Vec<Operation<MemoryOp>>,
+    /// Stack Operations
+    pub stack_ops: Vec<Operation<StackOp>>,
+    /// Storage Operations
+    pub storage_ops: Vec<Operation<StorageOp>>,
 }
 
 impl<

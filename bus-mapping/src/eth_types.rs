@@ -188,7 +188,7 @@ struct GethExecStepInternal {
     pc: ProgramCounter,
     op: OpcodeId,
     gas: Gas,
-    #[serde(alias = "gasCost")]
+    #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
     error: Option<String>,
@@ -310,7 +310,7 @@ pub struct GethExecTraceInternal {
     pub gas: Gas,
     pub failed: bool,
     // return_value is a hex encoded byte array
-    #[serde(alias = "structLogs")]
+    #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
 }
 

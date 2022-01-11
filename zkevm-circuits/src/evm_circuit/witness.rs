@@ -425,11 +425,11 @@ fn tx_convert(
 }
 
 pub fn block_convert(
-    bytecode: &bus_mapping::bytecode::Bytecode,
+    bytecode: &[u8],
     b: &bus_mapping::circuit_input_builder::Block,
 ) -> Block<Fp> {
     let randomness = Fp::rand();
-    let bytecode = bytecode.into();
+    let bytecode = Bytecode::new(bytecode.to_vec());
 
     // here stack_ops/memory_ops/etc are merged into a single array
     // in EVM circuit, we need rwc-sorted ops
@@ -490,5 +490,5 @@ pub fn build_block_from_trace_code_at_start(
     let mut builder = block.new_circuit_input_builder();
     builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-    block_convert(bytecode, &builder.block)
+    block_convert(bytecode.code(), &builder.block)
 }
