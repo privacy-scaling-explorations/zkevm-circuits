@@ -22,6 +22,21 @@ jobs:
         with:
           components: clippy
           override: false
+      - name: Cache cargo index
+        uses: actions/cache@v2
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-ubuntu-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo registry
+        uses: actions/cache@v2
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-ubuntu-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo target
+        uses: actions/cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-ubuntu-cargo-target-${{ hashFiles('**/Cargo.lock') }}
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:
