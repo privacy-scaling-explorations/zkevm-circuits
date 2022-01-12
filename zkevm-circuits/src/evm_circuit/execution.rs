@@ -46,6 +46,7 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use calldatacopy::CallDataCopyGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -96,6 +97,7 @@ pub(crate) struct ExecutionConfig<F> {
     bitwise_gadget: BitwiseGadget<F>,
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
+    calldatacopy_gadget: CallDataCopyGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
@@ -225,6 +227,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             bitwise_gadget: configure_gadget!(),
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
+            calldatacopy_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             error_oog_pure_memory_gadget: configure_gadget!(),
@@ -479,9 +482,6 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
-            ExecutionState::CopyToMemory => {
-                assign_exec_step!(self.copy_to_memory_gadget)
-            }
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
@@ -496,6 +496,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::TIMESTAMP => {
                 assign_exec_step!(self.timestamp_gadget)
+            }
+            ExecutionState::CALLDATACOPY => {
+                assign_exec_step!(self.calldatacopy_gadget)
+            }
+            ExecutionState::CopyToMemory => {
+                assign_exec_step!(self.copy_to_memory_gadget)
             }
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
