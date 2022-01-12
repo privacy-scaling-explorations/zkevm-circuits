@@ -173,6 +173,23 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
         }
 
         cb.require_step_state_transition(StepStateTransition {
+            // 16 read/write including:
+            //   - Read CallContext TxId
+            //   - Read CallContext RwCounterEndOfReversion
+            //   - Read CallContext IsPersistent
+            //   - Write Account Nonce
+            //   - Write TxAccessListAccount
+            //   - Write TxAccessListAccount
+            //   - Write Account Balance
+            //   - Write Account Balance
+            //   - Read Account CodeHash
+            //   - Read CallContext Depth
+            //   - Read CallContext CallerAddress
+            //   - Read CallContext CalleeAddress
+            //   - Read CallContext CallDataOffset
+            //   - Read CallContext CallDataLength
+            //   - Read CallContext Value
+            //   - Read CallContext IsStatic
             rw_counter: Delta(16.expr()),
             call_id: To(call_id.expr()),
             is_root: To(1.expr()),
