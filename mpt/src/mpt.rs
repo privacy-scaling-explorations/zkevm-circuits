@@ -77,8 +77,13 @@ pub struct MPTConfig<F> {
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    r_mult_table: [Column<Fixed>; 2],
+    fixed_table: [Column<Fixed>; 3],
     _marker: PhantomData<F>,
+}
+
+pub enum FixedTableTag {
+    RMult,
+    Range256,
 }
 
 impl<F: FieldExt> MPTConfig<F> {
@@ -150,7 +155,7 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let r_mult_table: [Column<Fixed>; 2] = (0..2)
+        let fixed_table: [Column<Fixed>; 3] = (0..3)
             .map(|_| meta.fixed_column())
             .collect::<Vec<_>>()
             .try_into()
@@ -239,7 +244,53 @@ impl<F: FieldExt> MPTConfig<F> {
             is_at_first_nibble,
         );
 
-        // TODO: range proofs for bytes
+        // TODO: nil rows have 0 everywhere except in s_rlp2 and c_rlp2
+        // TODO: RLP
+
+        // Range check for s_advices and c_advices being bytes.
+        for ind in 0..HASH_WIDTH {
+            meta.lookup_any(|meta| {
+                // We check every row except branch init.
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let mut constraints = vec![];
+                let is_branch_init =
+                    meta.query_advice(is_branch_init, Rotation::cur());
+
+                let one = Expression::Constant(F::one());
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                constraints.push((
+                    Expression::Constant(F::from(FixedTableTag::Range256 as u64)),
+                    meta.query_fixed(fixed_table[0], Rotation::cur()),
+                ));
+                constraints.push((
+                    q_not_first.clone() * s * (one - is_branch_init),
+                    meta.query_fixed(fixed_table[1], Rotation::cur()),
+                ));
+
+                constraints
+            });
+            
+            meta.lookup_any(|meta| {
+                // We check every row except branch init.
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let mut constraints = vec![];
+                let is_branch_init =
+                    meta.query_advice(is_branch_init, Rotation::cur());
+
+                let one = Expression::Constant(F::one());
+                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                constraints.push((
+                    Expression::Constant(F::from(FixedTableTag::Range256 as u64)),
+                    meta.query_fixed(fixed_table[0], Rotation::cur()),
+                ));
+                constraints.push((
+                    q_not_first.clone() * c * (one - is_branch_init),
+                    meta.query_fixed(fixed_table[1], Rotation::cur()),
+                ));
+
+                constraints
+            });
+        }
 
         meta.create_gate("branch equalities", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -1333,7 +1384,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             first_nibble,
             r_table.clone(),
-            r_mult_table.clone(),
+            fixed_table.clone(),
             keccak_table.clone(),
         );
 
@@ -1517,7 +1568,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             keccak_table,
-            r_mult_table,
+            fixed_table,
             _marker: PhantomData,
         }
     }
@@ -2632,7 +2683,7 @@ impl<F: FieldExt> MPTConfig<F> {
         to_be_hashed: Vec<Vec<u8>>,
     ) -> Result<(), Error> {
         self.load_keccak_table(_layouter, to_be_hashed).ok();
-        self.load_r_mult_table(_layouter).ok();
+        self.load_fixed_table(_layouter).ok();
 
         Ok(())
     }
@@ -2705,30 +2756,55 @@ impl<F: FieldExt> MPTConfig<F> {
         )
     }
 
-    fn load_r_mult_table(
+    fn load_fixed_table(
         &self,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "r multiplication table",
+            || "fixed table",
             |mut region| {
                 let mut offset = 0;
                 let mut mult = F::one();
                 for ind in 0..(2 * HASH_WIDTH + 1) {
                     region.assign_fixed(
-                        || "multiplication table",
-                        self.r_mult_table[0],
+                        || "fixed table",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from(FixedTableTag::RMult as u64)),
+                    )?;
+
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[1],
                         offset,
                         || Ok(F::from(ind as u64)),
                     )?;
 
                     region.assign_fixed(
-                        || "multiplication table",
-                        self.r_mult_table[1],
+                        || "fixed table",
+                        self.fixed_table[2],
                         offset,
                         || Ok(mult),
                     )?;
                     mult = mult * self.acc_r;
+
+                    offset += 1;
+                }
+
+                for ind in 0..256 {
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from(FixedTableTag::Range256 as u64)),
+                    )?;
+
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from(ind as u64)),
+                    )?;
 
                     offset += 1;
                 }

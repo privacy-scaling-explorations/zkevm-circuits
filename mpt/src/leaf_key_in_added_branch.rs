@@ -8,6 +8,11 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
+
+use crate::{
+    mpt::FixedTableTag,
+};
+
 use crate::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
     KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET, R_TABLE_LEN,
@@ -37,7 +42,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         sel2: Column<Advice>,
         first_nibble: Column<Advice>,
         r_table: Vec<Expression<F>>,
-        r_mult_table: [Column<Fixed>; 2],
+        r_mult_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> LeafKeyInAddedBranchConfig {
         let config = LeafKeyInAddedBranchConfig {};
@@ -814,12 +819,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
 
             constraints.push((
-                q_enable.clone() * (key_len + two) * is_short.clone(), // when short, there are 2 RLP meta data
+                Expression::Constant(F::from(FixedTableTag::RMult as u64)),
                 meta.query_fixed(r_mult_table[0], Rotation::cur()),
             ));
             constraints.push((
-                q_enable.clone() * acc_mult * is_short,
+                q_enable.clone() * (key_len + two) * is_short.clone(), // when short, there are 2 RLP meta data
                 meta.query_fixed(r_mult_table[1], Rotation::cur()),
+            ));
+            constraints.push((
+                q_enable.clone() * acc_mult * is_short,
+                meta.query_fixed(r_mult_table[2], Rotation::cur()),
             ));
 
             constraints
@@ -840,12 +849,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
 
             constraints.push((
-                q_enable.clone() * (key_len + three) * is_long.clone(), // when long, there are 3 RLP meta data
+                Expression::Constant(F::from(FixedTableTag::RMult as u64)),
                 meta.query_fixed(r_mult_table[0], Rotation::cur()),
             ));
             constraints.push((
-                q_enable.clone() * acc_mult * is_long,
+                q_enable.clone() * (key_len + three) * is_long.clone(), // when long, there are 3 RLP meta data
                 meta.query_fixed(r_mult_table[1], Rotation::cur()),
+            ));
+            constraints.push((
+                q_enable.clone() * acc_mult * is_long,
+                meta.query_fixed(r_mult_table[2], Rotation::cur()),
             ));
 
             constraints
