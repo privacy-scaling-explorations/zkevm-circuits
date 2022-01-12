@@ -28,6 +28,26 @@ jobs:
           wget -q https://github.com/ethereum/solidity/releases/download/v0.8.10/solc-static-linux -O $HOME/bin/solc
           chmod u+x "$HOME/bin/solc"
           solc --version
+      # Go cache for building geth-utils
+      - name: Go cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       # Run an initial build in a separate step to split the build time from execution time
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
