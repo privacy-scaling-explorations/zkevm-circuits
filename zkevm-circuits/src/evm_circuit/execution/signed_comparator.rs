@@ -17,7 +17,7 @@ use crate::{
     util::Expr,
 };
 
-use bus_mapping::{eth_types::ToBigEndian, evm::OpcodeId};
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT
@@ -196,7 +196,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
             [step.rw_indices[0], step.rw_indices[1]]
         };
         let [a, b] =
-            indices.map(|idx| block.rws[idx].stack_value().to_be_bytes());
+            indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
 
         // Assign to the sign check gadgets. Since both a and b are in the
         // big-endian form, the most significant byte is the first byte.
