@@ -95,13 +95,13 @@ impl<F: FieldExt> EvmCircuit<F> {
         self.execution.assign_block(layouter, block)
     }
 
-    /// Assign steps in incomplete block for unit test purpose
-    pub fn assign_incomplete_block(
+    /// Assign exact steps in block without padding for unit test purpose
+    pub fn assign_block_exact(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_incomplete_block(layouter, block)
+        self.execution.assign_block_exact(layouter, block)
     }
 }
 
@@ -351,7 +351,7 @@ mod test {
             )?;
             config
                 .evm_circuit
-                .assign_incomplete_block(&mut layouter, &self.block)
+                .assign_block_exact(&mut layouter, &self.block)
         }
     }
 

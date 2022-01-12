@@ -379,8 +379,6 @@ impl<F: FieldExt> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        // TODO: Assign region upto the desired capacity
-
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -408,11 +406,15 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 }
                 Ok(())
             },
-        )
+        )?;
+
+        // TODO: Pad leftover region to the desired capacity
+
+        Ok(())
     }
 
-    /// Assign steps in incomplete block for unit test purpose
-    pub fn assign_incomplete_block(
+    /// Assign exact steps in block without padding for unit test purpose
+    pub fn assign_block_exact(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
