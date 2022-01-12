@@ -34,7 +34,6 @@ impl BlockConstants {
     pub fn from_eth_block<TX>(
         block: &Block<TX>,
         chain_id: &Word,
-        //&coinbase: &Address,
     ) -> Self {
         Self {
             hash: block.hash.unwrap(),

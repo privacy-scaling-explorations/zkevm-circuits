@@ -115,7 +115,6 @@ impl BlockData {
         let b_constant = BlockConstants::from_eth_block(
             &eth_block,
             &Word::from(c_constant.chain_id),
-            //&ctants.coinbase,
         );
         let tracer_tx = external_tracer::Transaction::from_eth_tx(&eth_tx);
         let geth_trace = eth_types::GethExecTrace {
