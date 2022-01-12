@@ -275,7 +275,6 @@ mod test {
         let plus_1 = {
             let mut bytes = vec![0u8; 32];
             bytes[31] = 1u8;
-            let bytes: [u8; 32] = bytes.try_into().unwrap();
             Word::from_big_endian(&bytes)
         };
         test_ok(OpcodeId::SLT, zero, plus_1);
@@ -289,11 +288,23 @@ mod test {
         let minus_2 = {
             let mut bytes = vec![255u8; 32];
             bytes[31] = 254u8;
-            let bytes: [u8; 32] = bytes.try_into().unwrap();
             Word::from_big_endian(&bytes)
         };
         test_ok(OpcodeId::SLT, minus_2, minus_1);
         test_ok(OpcodeId::SGT, minus_1, minus_2);
+    }
+
+    #[test]
+    // TODO(rohit): rename this once lookup error is debugged
+    fn dave() {
+        let plus_1 = {
+            let mut bytes = vec![0u8; 32];
+            bytes[31] = 1u8;
+            Word::from_big_endian(&bytes)
+        };
+        let plus_2 = plus_1 + 1;
+        test_ok(OpcodeId::SLT, plus_1, plus_2);
+        test_ok(OpcodeId::SGT, plus_2, plus_1);
     }
 
     #[test]
