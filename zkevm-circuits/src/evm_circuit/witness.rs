@@ -621,7 +621,7 @@ pub fn block_convert(
 
     // converting to block context
     let context = BlockContext {
-        coinbase: b.constants.coinbase,
+        coinbase: b.block_const.coinbase,
         ..Default::default()
     };
 

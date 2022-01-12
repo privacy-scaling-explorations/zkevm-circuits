@@ -71,7 +71,7 @@ mod coinbase_tests {
         state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1024 - 1),
-            block.ctants.coinbase.to_word(),
+            block.b_constant.coinbase.to_word(),
         );
 
         tx.steps_mut().push(step);

@@ -146,8 +146,6 @@ impl<F: FieldExt> ToScalar<F> for Address {
 /// Chain specific constants
 #[derive(Debug, Clone)]
 pub struct ChainConstants {
-    /// Coinbase
-    pub coinbase: Address,
     /// Chain ID
     pub chain_id: u64,
 }
