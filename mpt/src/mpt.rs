@@ -303,7 +303,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 let s = meta.query_advice(*col, Rotation::cur());
                 let c = meta.query_advice(c_advices[ind], Rotation::cur());
                 constraints.push((
-                    "s = c when not is_modified",
+                    "s = c when NOT is_modified",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
                         * (s.clone() - c.clone())
@@ -314,18 +314,30 @@ impl<F: FieldExt> MPTConfig<F> {
                 // When it's placeholder branch, is_modified != is_at_first_nibble.
                 // This is used instead of having is_branch_s_placeholder and is_branch_c_placeholder columns -
                 // we only have this info in branch init where we don't need additional columns.
-                /*
-                TODO
+                // When there is a placeholder branch, there are only two nodes - one at is_modified
+                // and one at is_at_first_nibble - at other positions there need to be nil nodes.
+                
+                // TODO: This might be optimized once the check for branch is added - check
+                // that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte is 128.
+                // So, only s_rlp2 could be checked here instead of all s and c.
                 constraints.push((
-                    "s = 0 when placeholder and is neither is_modified neither at_first_nibble",
+                    "s = 0 when placeholder and is neither is_modified or is_at_first_nibble",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
+                        * (is_modified.clone() - is_at_first_nibble.clone()) // this is 0 when NOT placeholder
                         * (one.clone() - is_modified.clone())
                         * (one.clone() - is_at_first_nibble.clone())
                         * s
-                        * (node_index_cur.clone() - modified_node.clone()),
                 ));
-                */
+                constraints.push((
+                    "c = 0 when placeholder and is neither is_modified or is_at_first_nibble",
+                    q_enable.clone()
+                        * is_branch_child_cur.clone()
+                        * (is_modified.clone() - is_at_first_nibble.clone()) // this is 0 when NOT placeholder
+                        * (one.clone() - is_modified.clone())
+                        * (one.clone() - is_at_first_nibble.clone())
+                        * c
+                ));
             }
 
             // TODO: use permutation argument for s = c.
