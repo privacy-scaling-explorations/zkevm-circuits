@@ -166,7 +166,7 @@ impl fmt::Debug for StackOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("StackOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, val: {:?}",
+            "{:?}, addr: {:?}, val: 0x{:x}",
             self.rw, self.address, self.value
         ))?;
         f.write_str(" }")
@@ -250,7 +250,7 @@ impl fmt::Debug for StorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("StorageOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, key: {:?}, val_prev: {:?}, val: {:?}",
+            "{:?}, addr: {:?}, key: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
             self.rw, self.address, self.key, self.value_prev, self.value,
         ))?;
         f.write_str(" }")
@@ -389,7 +389,7 @@ impl fmt::Debug for TxAccessListAccountStorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountStorageOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, key: {:?}, val_prev: {:?}, val: {:?}",
+            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, val_prev: {:?}, val: {:?}",
             self.tx_id, self.address, self.key, self.value_prev, self.value
         ))?;
         f.write_str(" }")
@@ -437,7 +437,7 @@ impl fmt::Debug for TxRefundOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxRefundOp { ")?;
         f.write_fmt(format_args!(
-            "{:?} tx_id: {:?}, val_prev: {:?}, val: {:?}",
+            "{:?} tx_id: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
             self.rw, self.tx_id, self.value_prev, self.value
         ))?;
         f.write_str(" }")
@@ -495,7 +495,7 @@ impl fmt::Debug for AccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, field: {:?}, val_prev: {:?}, val: {:?}",
+            "{:?}, addr: {:?}, field: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
             self.rw, self.address, self.field, self.value_prev, self.value
         ))?;
         f.write_str(" }")

@@ -241,7 +241,7 @@ mod test {
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .unwrap();
-        let block = witness::block_convert(&bytecode, &builder.block);
+        let block = witness::block_convert(bytecode.code(), &builder.block);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

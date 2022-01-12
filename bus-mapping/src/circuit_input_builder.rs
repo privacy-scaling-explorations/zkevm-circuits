@@ -12,11 +12,14 @@ use crate::exec_trace::OperationRef;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
 use crate::operation::{MemoryOp, Op, Operation, StackOp, RW};
-use crate::state_db::{CodeDB, StateDB};
+use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
+
+use crate::rpc::GethClient;
+use ethers_providers::JsonRpcClient;
 
 /// Out of Gas errors by opcode
 #[derive(Debug, PartialEq)]
@@ -248,19 +251,19 @@ impl TryFrom<OpcodeId> for CallKind {
 #[derive(Debug)]
 pub struct Call {
     /// Unique call identifier within the Block.
-    call_id: usize,
+    pub call_id: usize,
     /// Type of call
-    kind: CallKind,
+    pub kind: CallKind,
     /// This call is being executed without write access (STATIC)
-    is_static: bool,
+    pub is_static: bool,
     /// This call generated implicity by a Transaction.
-    is_root: bool,
+    pub is_root: bool,
     /// Address where this call is being executed
     pub address: Address,
     /// Code Source
-    code_source: CodeSource,
+    pub code_source: CodeSource,
     /// Code Hash
-    code_hash: Hash,
+    pub code_hash: Hash,
 }
 
 impl Call {
@@ -1191,6 +1194,164 @@ pub fn gen_state_access_trace<TX>(
         }
     }
     Ok(accs)
+}
+
+type EthBlock = eth_types::Block<eth_types::Transaction>;
+
+/// Struct that wraps a GethClient and contains methods to perform all the steps
+/// necessary to generate the circuit inputs for a block by querying geth for
+/// the necessary information and using the CircuitInputBuilder.
+pub struct BuilderClient<P: JsonRpcClient> {
+    cli: GethClient<P>,
+    constants: ChainConstants,
+}
+
+impl<P: JsonRpcClient> BuilderClient<P> {
+    /// Create a new BuilderClient
+    pub async fn new(client: GethClient<P>) -> Result<Self, Error> {
+        let constants = ChainConstants {
+            coinbase: client.get_coinbase().await?,
+            chain_id: client.get_chain_id().await?,
+        };
+        Ok(Self {
+            cli: client,
+            constants,
+        })
+    }
+
+    /// Step 1. Query geth for Block, Txs and TxExecTraces
+    pub async fn get_block(
+        &self,
+        block_num: u64,
+    ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>), Error> {
+        let eth_block = self.cli.get_block_by_number(block_num.into()).await?;
+        let geth_traces =
+            self.cli.trace_block_by_number(block_num.into()).await?;
+        Ok((eth_block, geth_traces))
+    }
+
+    /// Step 2. Get State Accesses from TxExecTraces
+    pub fn get_state_accesses(
+        &self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<AccessSet, Error> {
+        let mut block_access_trace = Vec::new();
+        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[tx_index];
+            let tx_access_trace =
+                gen_state_access_trace(eth_block, tx, geth_trace)?;
+            block_access_trace.extend(tx_access_trace);
+        }
+
+        Ok(AccessSet::from(block_access_trace))
+    }
+
+    /// Step 3. Query geth for all accounts, storage keys, and codes from
+    /// Accesses
+    pub async fn get_state(
+        &self,
+        block_num: u64,
+        access_set: AccessSet,
+    ) -> Result<
+        (
+            Vec<eth_types::EIP1186ProofResponse>,
+            HashMap<Address, Vec<u8>>,
+        ),
+        Error,
+    > {
+        let mut proofs = Vec::new();
+        for (address, key_set) in access_set.state {
+            let mut keys: Vec<Word> = key_set.iter().cloned().collect();
+            keys.sort();
+            let proof = self
+                .cli
+                .get_proof(address, keys, (block_num - 1).into())
+                .await
+                .unwrap();
+            proofs.push(proof);
+        }
+        let mut codes: HashMap<Address, Vec<u8>> = HashMap::new();
+        for address in access_set.code {
+            let code = self
+                .cli
+                .get_code(address, (block_num - 1).into())
+                .await
+                .unwrap();
+            codes.insert(address, code);
+        }
+        Ok((proofs, codes))
+    }
+
+    /// Step 4. Build a partial StateDB from step 3
+    pub fn build_state_code_db(
+        &self,
+        proofs: Vec<eth_types::EIP1186ProofResponse>,
+        codes: HashMap<Address, Vec<u8>>,
+    ) -> (StateDB, CodeDB) {
+        let mut sdb = StateDB::new();
+        for proof in proofs {
+            let mut storage = HashMap::new();
+            for storage_proof in proof.storage_proof {
+                storage.insert(storage_proof.key, storage_proof.value);
+            }
+            sdb.set_account(
+                &proof.address,
+                state_db::Account {
+                    nonce: proof.nonce,
+                    balance: proof.balance,
+                    storage,
+                    code_hash: proof.code_hash,
+                },
+            )
+        }
+
+        let mut code_db = CodeDB::new();
+        for (_address, code) in codes {
+            code_db.insert(code.clone());
+        }
+        (sdb, code_db)
+    }
+
+    /// Step 5. For each step in TxExecTraces, gen the associated ops and state
+    /// circuit inputs
+    pub fn gen_inputs_from_state(
+        &self,
+        sdb: StateDB,
+        code_db: CodeDB,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<CircuitInputBuilder, Error> {
+        let mut builder = CircuitInputBuilder::new(
+            sdb,
+            code_db,
+            eth_block,
+            self.constants.clone(),
+        );
+        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[tx_index];
+            builder.handle_tx(tx, geth_trace)?;
+        }
+        Ok(builder)
+    }
+
+    /// Perform all the steps to generate the circuit inputs
+    pub async fn gen_inputs(
+        &self,
+        block_num: u64,
+    ) -> Result<CircuitInputBuilder, Error> {
+        let (eth_block, geth_traces) = self.get_block(block_num).await?;
+        let access_set = self.get_state_accesses(&eth_block, &geth_traces)?;
+        let (proofs, codes) = self.get_state(block_num, access_set).await?;
+        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let builder = self.gen_inputs_from_state(
+            state_db,
+            code_db,
+            &eth_block,
+            &geth_traces,
+        )?;
+        Ok(builder)
+    }
 }
 
 #[cfg(test)]

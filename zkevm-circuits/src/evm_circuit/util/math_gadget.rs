@@ -200,6 +200,194 @@ impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
     }
 }
 
+/// Construction of 2 256-bit words mutiplication and result (modulo 2**256),
+/// which is useful for opcode MUL, DIV, SDIV and xxxMOD
+#[derive(Clone, Debug)]
+pub(crate) struct MulWordsGadget<F> {
+    a: util::Word<F>,
+    b: util::Word<F>,
+    product: util::Word<F>,
+    //here we execute a multi-limbs multiplication, see spec or
+    //https://hackmd.io/HL0QhGUeQoSgIBt2el6fHA
+    // a, b and product is divided into 4 64-bit digits, call them a0 ~ a3, b0
+    // ~ b3 ... a * b = a0 * b0 + a1 * b0 ..., and let
+    // t0 = a0 * b0, contribute to 0 ~ 128 bit
+    // t1 = a0 * b1 + a1 * b0, contribute to 64 ~ 193 bit (include the carry)
+    // t2 = a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
+    // t3 =  a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
+    //
+    // so t0 ~ t1 include all contributions to the low 256bit of product,
+    // with a maxium 68bit radix (the part higher than 256bit) v1
+    // it is similar that we have v0 as the radix of contributions
+    // to the low 128bit of the product
+    // we can slightly relax the constraint of v0/v1 to 72bit so just
+    // use 9 bytes for them
+    v0: [Cell<F>; 9],
+    v1: [Cell<F>; 9],
+    /* finally we just prove:
+     *  t0 + t1 = <low 128 bit of product> + <radix v0>
+     *  t2 + t3 + <radix v0> = <high 128 bit of product> + <radix v1> */
+}
+
+impl<F: FieldExt> MulWordsGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        a: util::Word<F>,
+        b: util::Word<F>,
+    ) -> Self {
+        let product = cb.query_word();
+        let v0 = array_init::array_init(|_| cb.query_byte());
+        let v1 = array_init::array_init(|_| cb.query_byte());
+
+        let mut a_limbs = vec![];
+        let mut b_limbs = vec![];
+        let mut c_limbs = vec![];
+        for virtual_idx in 0..4 {
+            let now_idx = (virtual_idx * 8) as usize;
+            a_limbs.push(from_bytes::expr(&a.cells[now_idx..now_idx + 8]));
+            b_limbs.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
+            c_limbs
+                .push(from_bytes::expr(&product.cells[now_idx..now_idx + 8]));
+        }
+
+        let t0 = a_limbs[0].clone() * b_limbs[0].clone();
+        let t1 = a_limbs[0].clone() * b_limbs[1].clone()
+            + a_limbs[1].clone() * b_limbs[0].clone();
+        let t2 = a_limbs[0].clone() * b_limbs[2].clone()
+            + a_limbs[1].clone() * b_limbs[1].clone()
+            + a_limbs[2].clone() * b_limbs[0].clone();
+        let t3 = a_limbs[0].clone() * b_limbs[3].clone()
+            + a_limbs[1].clone() * b_limbs[2].clone()
+            + a_limbs[2].clone() * b_limbs[1].clone()
+            + a_limbs[3].clone() * b_limbs[0].clone();
+
+        let cur_v0 = from_bytes::expr(&v0[..]);
+        let cur_v1 = from_bytes::expr(&v1[..]);
+
+        //radix_constant_64 == 2^64
+        //radix_constant_128 == 2^128
+        let radix_constant_64 = pow_of_two_expr(64);
+        let radix_constant_128 = pow_of_two_expr(128);
+        cb.require_equal(
+            "mul(multipliers_lo) == product_lo + radix_lo ⋅ 2^128",
+            cur_v0.clone() * radix_constant_128.clone(),
+            t0.expr() + t1.expr() * radix_constant_64.clone()
+                - (c_limbs[0].clone()
+                    + c_limbs[1].clone() * radix_constant_64.clone()),
+        );
+        cb.require_equal(
+            "mul(multipliers_high) == product_high + radix_high ⋅ 2^128",
+            cur_v1 * radix_constant_128,
+            cur_v0 + t2.expr() + t3.expr() * radix_constant_64.clone()
+                - (c_limbs[2].clone() + c_limbs[3].clone() * radix_constant_64),
+        );
+
+        Self {
+            a,
+            b,
+            product,
+            v0,
+            v1,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        a: Word,
+        b: Word,
+        product: Word,
+    ) -> Result<(), Error> {
+        self.assign_witness(region, offset, &a, &b, &product)?;
+        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+        self.product
+            .assign(region, offset, Some(product.to_le_bytes()))?;
+        Ok(())
+    }
+
+    pub(crate) fn product(&self) -> &util::Word<F> {
+        &self.product
+    }
+
+    //assign t0 ~ t3 and v0, v1
+    fn assign_witness(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        wa: &Word,
+        wb: &Word,
+        wc: &Word,
+    ) -> Result<(), Error> {
+        use num::BigUint;
+
+        let a = BigUint::from_bytes_le(&wa.to_le_bytes());
+        let b = BigUint::from_bytes_le(&wb.to_le_bytes());
+        let c = BigUint::from_bytes_le(&wc.to_le_bytes());
+        let constant_64 = BigUint::from(1u128 << 64);
+        let constant_128 = constant_64.clone() * constant_64.clone();
+        let a_limbs = a.to_u64_digits();
+        let b_limbs = b.to_u64_digits();
+        let c_limbs = c.to_u64_digits();
+        let mut t_digits = vec![];
+        for total_idx in 0..4 {
+            let mut rhs_sum = BigUint::from(0u128);
+            for a_id in 0..=total_idx {
+                let (a_idx, b_idx) =
+                    (a_id as usize, (total_idx - a_id) as usize);
+                let tmp_a = if a_limbs.len() > a_idx {
+                    BigUint::from(a_limbs[a_idx])
+                } else {
+                    BigUint::from(0u128)
+                };
+                let tmp_b = if b_limbs.len() > b_idx {
+                    BigUint::from(b_limbs[b_idx])
+                } else {
+                    BigUint::from(0u128)
+                };
+                rhs_sum = rhs_sum.clone() + tmp_a * tmp_b;
+            }
+            t_digits.push(rhs_sum);
+        }
+
+        let mut c_now = vec![];
+        for idx in 0..4 {
+            c_now.push(if c_limbs.len() > idx {
+                BigUint::from(c_limbs[idx])
+            } else {
+                BigUint::from(0u128)
+            })
+        }
+        let v0 = (constant_64.clone() * &t_digits[1] + &t_digits[0]
+            - &c_now[0]
+            - constant_64.clone() * &c_now[1])
+            / &constant_128;
+        let v1 = (constant_64.clone() * &t_digits[3] + &v0 + &t_digits[2]
+            - &c_now[2]
+            - constant_64 * &c_now[3])
+            / &constant_128;
+
+        v0.to_bytes_le()
+            .into_iter()
+            .zip(self.v0.iter())
+            .try_for_each(|(bt, assignee)| -> Result<(), Error> {
+                assignee.assign(region, offset, Some(F::from(bt as u64)))?;
+                Ok(())
+            })?;
+
+        v1.to_bytes_le()
+            .into_iter()
+            .zip(self.v1.iter())
+            .try_for_each(|(bt, assignee)| -> Result<(), Error> {
+                assignee.assign(region, offset, Some(F::from(bt as u64)))?;
+                Ok(())
+            })?;
+
+        Ok(())
+    }
+}
+
 /// Requires that the passed in value is within the specified range.
 /// `NUM_BYTES` is required to be `<= 31`.
 #[derive(Clone, Debug)]

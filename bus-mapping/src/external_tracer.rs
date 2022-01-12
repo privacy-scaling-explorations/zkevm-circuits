@@ -150,6 +150,6 @@ mod trace_test {
 
         let block =
             mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
-        assert_eq!(block.geth_trace.struct_logs[2].memory.0.len(), 0)
+        assert_eq!(block.geth_trace.struct_logs[2].memory.0.len(), 0);
     }
 }

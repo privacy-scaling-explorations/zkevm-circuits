@@ -1952,13 +1952,16 @@ dependencies = [
  "bus-mapping",
  "env_logger",
  "ethers",
+ "halo2",
  "lazy_static",
  "log",
+ "pairing_bn256",
  "pretty_assertions",
  "serde",
  "serde_json",
  "tokio",
  "url",
+ "zkevm-circuits",
 ]
 
 [[package]]

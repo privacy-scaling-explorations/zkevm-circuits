@@ -11,11 +11,14 @@ ethers = "0.6"
 serde_json = "1.0.66"
 serde = {version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping"}
+zkevm-circuits = { path = "../zkevm-circuits"}
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"
 log = "0.4.14"
 env_logger = "0.9"
+halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79d287032f1b5f94beb661b3fb42" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
@@ -24,3 +27,4 @@ pretty_assertions = "1.0.0"
 default = []
 rpc = []
 circuit_input_builder = []
+circuits = []
