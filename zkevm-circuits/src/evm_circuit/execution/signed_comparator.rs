@@ -223,8 +223,6 @@ mod test {
         witness,
     };
 
-    use std::convert::TryInto;
-
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {
             PUSH32(b)
@@ -238,30 +236,7 @@ mod test {
     }
 
     #[test]
-    // TODO(rohit): rename this once lookup error is debugged
-    fn alice() {
-        let zero = Word::from_big_endian(&[0u8; 32]);
-        let minus_1 = Word::from_big_endian(&[255u8; 32]);
-        test_ok(OpcodeId::SLT, minus_1, zero);
-        test_ok(OpcodeId::SGT, zero, minus_1);
-    }
-
-    #[test]
-    // TODO(rohit): rename this once lookup error is debugged
-    fn bob() {
-        let zero = Word::from_big_endian(&[0u8; 32]);
-        let plus_1 = {
-            let mut bytes = vec![0u8; 32];
-            bytes[31] = 1u8;
-            Word::from_big_endian(&bytes)
-        };
-        test_ok(OpcodeId::SLT, zero, plus_1);
-        test_ok(OpcodeId::SGT, plus_1, zero);
-    }
-
-    #[test]
-    // TODO(rohit): rename this once lookup error is debugged
-    fn charlie() {
+    fn signed_comparator_gadget_a_b_neg() {
         let minus_1 = Word::from_big_endian(&[255u8; 32]);
         let minus_2 = {
             let mut bytes = vec![255u8; 32];
@@ -269,12 +244,13 @@ mod test {
             Word::from_big_endian(&bytes)
         };
         test_ok(OpcodeId::SLT, minus_2, minus_1);
+        test_ok(OpcodeId::SGT, minus_2, minus_1);
+        test_ok(OpcodeId::SLT, minus_1, minus_2);
         test_ok(OpcodeId::SGT, minus_1, minus_2);
     }
 
     #[test]
-    // TODO(rohit): rename this once lookup error is debugged
-    fn dave() {
+    fn signed_comparator_gadget_a_b_pos() {
         let plus_1 = {
             let mut bytes = vec![0u8; 32];
             bytes[31] = 1u8;
@@ -282,56 +258,38 @@ mod test {
         };
         let plus_2 = plus_1 + 1;
         test_ok(OpcodeId::SLT, plus_1, plus_2);
+        test_ok(OpcodeId::SGT, plus_1, plus_2);
+        test_ok(OpcodeId::SLT, plus_2, plus_1);
         test_ok(OpcodeId::SGT, plus_2, plus_1);
     }
 
     #[test]
-    #[ignore]
-    fn signed_comparator_gadget_simple() {
-        let zero = Word::from_big_endian(&[0u8; 32]);
-        let minus_1 = Word::from_big_endian(&[255u8; 32]);
-        let minus_2 = {
-            let mut bytes = vec![255u8; 32];
-            bytes[31] = 254u8;
-            let bytes: [u8; 32] = bytes.try_into().unwrap();
-            Word::from_big_endian(&bytes)
-        };
-        let plus_1 = {
-            let mut bytes = vec![0u8; 32];
-            bytes[31] = 1u8;
-            let bytes: [u8; 32] = bytes.try_into().unwrap();
-            Word::from_big_endian(&bytes)
-        };
-        let plus_2 = {
-            let mut bytes = vec![0u8; 32];
-            bytes[31] = 2u8;
-            let bytes: [u8; 32] = bytes.try_into().unwrap();
-            Word::from_big_endian(&bytes)
-        };
-
-        // SLT
-        test_ok(OpcodeId::SLT, minus_1, zero);
-        test_ok(OpcodeId::SLT, zero, plus_1);
-        test_ok(OpcodeId::SLT, plus_1, plus_2);
-        test_ok(OpcodeId::SLT, minus_2, zero);
-        test_ok(OpcodeId::SLT, minus_2, plus_1);
-        test_ok(OpcodeId::SLT, minus_2, minus_1);
-
-        //// SGT
-        test_ok(OpcodeId::SGT, minus_1, minus_2);
-        test_ok(OpcodeId::SGT, zero, minus_1);
-        test_ok(OpcodeId::SGT, plus_1, zero);
-        test_ok(OpcodeId::SGT, plus_2, plus_1);
-        test_ok(OpcodeId::SGT, plus_1, minus_1);
-        test_ok(OpcodeId::SGT, plus_1, minus_2);
+    fn signed_comparator_gadget_a_b_eq_hi_pos() {
+        let a = Word::from_big_endian(&[[1u8; 16], [2u8; 16]].concat());
+        let b = Word::from_big_endian(&[[1u8; 16], [3u8; 16]].concat());
+        test_ok(OpcodeId::SLT, a, b);
+        test_ok(OpcodeId::SGT, a, b);
+        test_ok(OpcodeId::SLT, b, a);
+        test_ok(OpcodeId::SGT, b, a);
     }
 
     #[test]
-    #[ignore]
+    fn signed_comparator_gadget_a_b_eq_hi_neg() {
+        let a = Word::from_big_endian(&[[129u8; 16], [2u8; 16]].concat());
+        let b = Word::from_big_endian(&[[129u8; 16], [3u8; 16]].concat());
+        test_ok(OpcodeId::SLT, a, b);
+        test_ok(OpcodeId::SGT, a, b);
+        test_ok(OpcodeId::SLT, b, a);
+        test_ok(OpcodeId::SGT, b, a);
+    }
+
+    #[test]
     fn signed_comparator_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
         test_ok(OpcodeId::SLT, a, b);
         test_ok(OpcodeId::SGT, a, b);
+        test_ok(OpcodeId::SLT, b, a);
+        test_ok(OpcodeId::SGT, b, a);
     }
 }
