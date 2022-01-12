@@ -94,6 +94,15 @@ impl<F: FieldExt> EvmCircuit<F> {
     ) -> Result<(), Error> {
         self.execution.assign_block(layouter, block)
     }
+
+    /// Assign exact steps in block without padding for unit test purpose
+    pub fn assign_block_exact(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+    ) -> Result<(), Error> {
+        self.execution.assign_block_exact(layouter, block)
+    }
 }
 
 #[cfg(test)]
@@ -106,11 +115,12 @@ mod test {
     };
     use bus_mapping::eth_types::Word;
     use halo2::{
-        arithmetic::FieldExt,
+        arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
+    use pairing::bn256::Fr as Fp;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -134,6 +144,10 @@ mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
+    }
+
+    pub(crate) fn rand_fp() -> Fp {
+        Fp::rand()
     }
 
     #[derive(Clone)]
@@ -335,7 +349,9 @@ mod test {
                 &self.block.bytecodes,
                 self.block.randomness,
             )?;
-            config.evm_circuit.assign_block(&mut layouter, &self.block)
+            config
+                .evm_circuit
+                .assign_block_exact(&mut layouter, &self.block)
         }
     }
 

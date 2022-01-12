@@ -19,6 +19,7 @@ use halo2::{
 use std::collections::HashMap;
 
 mod add;
+mod begin_tx;
 mod bitwise;
 mod byte;
 mod comparator;
@@ -37,6 +38,7 @@ mod signextend;
 mod stop;
 mod swap;
 use add::AddGadget;
+use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
@@ -76,11 +78,13 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
     q_step: Selector,
+    q_step_first: Selector,
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     add_gadget: AddGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
+    begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -113,6 +117,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         BytecodeTable: LookupTable<F, 4>,
     {
         let q_step = meta.complex_selector();
+        let q_step_first = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
@@ -132,28 +137,44 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         meta.create_gate("Constrain execution state", |meta| {
             let q_step = meta.query_selector(q_step);
+            let q_step_first = meta.query_selector(q_step_first);
 
             // Only one of execution_state should be enabled
-            let sum_to_one = step_curr
-                .state
-                .execution_state
-                .iter()
-                .fold(1.expr(), |acc, cell| acc - cell.expr());
+            let sum_to_one = (
+                "Only one of execution_state should be enabled",
+                step_curr
+                    .state
+                    .execution_state
+                    .iter()
+                    .fold(1.expr(), |acc, cell| acc - cell.expr()),
+            );
 
             // Cells representation for execution_state should be bool.
-            let bool_checks = step_curr
-                .state
-                .execution_state
-                .iter()
-                .map(|cell| cell.expr() * (1.expr() - cell.expr()));
+            let bool_checks =
+                step_curr.state.execution_state.iter().map(|cell| {
+                    (
+                        "Representation for execution_state should be bool",
+                        cell.expr() * (1.expr() - cell.expr()),
+                    )
+                });
+
+            // TODO: ExecutionState transition needs to be constraint to avoid
+            // transition from non-terminator to BeginTx.
+
+            let first_step_check = {
+                let begin_tx_selector =
+                    step_curr.execution_state_selector(ExecutionState::BeginTx);
+                std::iter::once((
+                    "First step should be BeginTx",
+                    q_step_first * (begin_tx_selector - 1.expr()),
+                ))
+            };
 
             std::iter::once(sum_to_one)
                 .chain(bool_checks)
-                .map(move |poly| q_step.clone() * poly)
+                .map(move |(name, poly)| (name, q_step.clone() * poly))
+                .chain(first_step_check)
         });
-
-        // TODO: ExecutionState transition needs to be constraint to avoid
-        // transition from non-terminator to BeginTx.
 
         // Use qs_byte_lookup as selector to do byte range lookup on each advice
         // column. In this way, ExecutionGadget could enable the byte range
@@ -181,6 +202,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 Self::configure_gadget(
                     meta,
                     q_step,
+                    q_step_first,
                     &randomness,
                     &step_curr,
                     &step_next,
@@ -192,9 +214,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         let config = Self {
             q_step,
+            q_step_first,
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
+            begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -227,9 +251,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
+        q_step_first: Selector,
         randomness: &Expression<F>,
         step_curr: &Step<F>,
         step_next: &Step<F>,
@@ -245,20 +271,26 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         let gadget = G::configure(&mut cb);
 
-        let (constraints, lookups, presets) = cb.build();
+        let (constraints, constraints_first_step, lookups, presets) =
+            cb.build();
         assert!(
             presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
         );
 
-        if !constraints.is_empty() {
-            meta.create_gate(G::NAME, |meta| {
-                let q_step = meta.query_selector(q_step);
+        for (selector, constraints) in [
+            (q_step, constraints),
+            (q_step_first, constraints_first_step),
+        ] {
+            if !constraints.is_empty() {
+                meta.create_gate(G::NAME, |meta| {
+                    let selector = meta.query_selector(selector);
 
-                constraints.into_iter().map(move |(name, constraint)| {
-                    (name, q_step.clone() * constraint)
-                })
-            });
+                    constraints.into_iter().map(move |(name, constraint)| {
+                        (name, selector.clone() * constraint)
+                    })
+                });
+            }
         }
 
         // Push lookups of this ExecutionState to independent_lookups for
@@ -356,6 +388,46 @@ impl<F: FieldExt> ExecutionConfig<F> {
                         let call = &transaction.calls[step.call_idx];
 
                         self.q_step.enable(&mut region, offset)?;
+                        if offset == 0 {
+                            self.q_step_first.enable(&mut region, offset)?;
+                        }
+
+                        self.assign_exec_step(
+                            &mut region,
+                            offset,
+                            block,
+                            transaction,
+                            call,
+                            step,
+                        )?;
+
+                        offset += STEP_HEIGHT;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+
+        // TODO: Pad leftover region to the desired capacity
+
+        Ok(())
+    }
+
+    /// Assign exact steps in block without padding for unit test purpose
+    pub fn assign_block_exact(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "Execution step",
+            |mut region| {
+                let mut offset = 0;
+                for transaction in &block.txs {
+                    for step in &transaction.steps {
+                        let call = &transaction.calls[step.call_idx];
+
+                        self.q_step.enable(&mut region, offset)?;
                         self.assign_exec_step(
                             &mut region,
                             offset,
@@ -406,6 +478,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         }
 
         match step.execution_state {
+            ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::ADD => assign_exec_step!(self.add_gadget),
             ExecutionState::MUL => assign_exec_step!(self.mul_gadget),
