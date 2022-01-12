@@ -410,11 +410,11 @@ pub(crate) struct StepState<F> {
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
     pub(crate) stack_pointer: Cell<F>,
-    /// Gas left in the transaction
+    /// The amount of gas left
     pub(crate) gas_left: Cell<F>,
     /// Memory size in words (32 bytes)
     pub(crate) memory_word_size: Cell<F>,
-    /// The counter for state write
+    /// The counter for state writes
     pub(crate) state_write_counter: Cell<F>,
 }
 
