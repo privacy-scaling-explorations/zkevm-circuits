@@ -70,7 +70,7 @@ mod msize_tests {
         state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1023),
-            Word::from(0x3_u64),
+            Word::from(96), // 3 words, 96 bytes
         );
 
         tx.steps_mut().push(step);
