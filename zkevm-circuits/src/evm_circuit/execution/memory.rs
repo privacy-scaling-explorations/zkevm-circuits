@@ -63,7 +63,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_size.expr(),
+            cb.curr.state.memory_word_size.expr(),
             from_bytes::expr(&address.cells)
                 + 1.expr()
                 + (is_not_mstore8.clone() * 31.expr()),
@@ -126,7 +126,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
-            memory_size: To(memory_expansion.next_memory_size()),
+            memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
@@ -193,7 +193,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         self.memory_expansion.assign(
             region,
             offset,
-            step.memory_size,
+            step.memory_word_size(),
             address.as_u64() + 1 + if is_mstore8 == F::one() { 0 } else { 31 },
         )?;
 

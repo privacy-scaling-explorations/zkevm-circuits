@@ -51,7 +51,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         // Get the next memory size and the gas cost for this memory access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_size.expr(),
+            cb.curr.state.memory_word_size.expr(),
             address_low::expr(&address)
                 + 1.expr()
                 + (is_not_mstore8 * 31.expr()),
@@ -129,7 +129,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         self.memory_expansion.assign(
             region,
             offset,
-            step.memory_size,
+            step.memory_word_size(),
             address_low::value::<F>(address.to_le_bytes())
                 + 1
                 + if is_mstore8 == F::one() { 0 } else { 31 },

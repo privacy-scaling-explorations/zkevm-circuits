@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
-    param::STACK_CAPACITY,
+    param::{NUM_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
@@ -223,17 +223,36 @@ pub struct Call<F> {
 
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
-    pub call_idx: usize,
+    /// The call index
+    pub call_id: usize,
+    /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<usize>,
+    /// The execution state for the step
     pub execution_state: ExecutionState,
+    /// The Read/Write counter before the step
     pub rw_counter: usize,
+    /// The program counter
     pub program_counter: u64,
+    /// The stack pointer
     pub stack_pointer: usize,
+    /// The amount of gas left
     pub gas_left: u64,
+    /// The gas cost in this step
     pub gas_cost: u64,
+    /// The memory size in bytes
     pub memory_size: u64,
+    /// The counter for state writes
     pub state_write_counter: usize,
+    /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+}
+
+impl ExecStep {
+    pub fn memory_word_size(&self) -> u64 {
+        // The memory size must be multiple of words (32 bytes)
+        assert_eq!(self.memory_size % NUM_BYTES_WORD as u64, 0);
+        self.memory_size / NUM_BYTES_WORD as u64
+    }
 }
 
 #[derive(Debug)]
@@ -547,6 +566,7 @@ fn step_convert(
     ops_len: (usize, usize, usize),
 ) -> ExecStep {
     let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
+    // TODO: call_id is not set in the ExecStep
     let result = ExecStep {
         rw_indices: step
             .bus_mapping_instance
@@ -572,7 +592,7 @@ fn step_convert(
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
         opcode: Some(step.op),
-        memory_size: step.memory_size as u64 / 32, /* memory size in word */
+        memory_size: step.memory_size as u64,
         ..Default::default()
     };
     result
