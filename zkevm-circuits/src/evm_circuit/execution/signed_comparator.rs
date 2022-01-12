@@ -58,12 +58,12 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // (32 cells) integers. This means, the first bit denotes the sign
         // of the absolute value in the rest of the 255 bits. This means the
         // number is negative if the most significant cell >= 128
-        // (0b10000000). `a` and `b` being in the big-endian notation, the
-        // most-significant byte is the first byte.
+        // (0b10000000). `a` and `b` being in the little-endian notation, the
+        // most-significant byte is the last byte.
         let sign_check_a =
-            LtGadget::construct(cb, a.cells[0].expr(), 128.expr());
+            LtGadget::construct(cb, a.cells[31].expr(), 128.expr());
         let sign_check_b =
-            LtGadget::construct(cb, b.cells[0].expr(), 128.expr());
+            LtGadget::construct(cb, b.cells[31].expr(), 128.expr());
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
@@ -80,13 +80,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // b_hi) && (a_lo < b_lo)))
         let lt_lo = LtGadget::construct(
             cb,
-            from_bytes::expr(&a.cells[16..32]),
-            from_bytes::expr(&b.cells[16..32]),
+            from_bytes::expr(&a.cells[0..16]),
+            from_bytes::expr(&b.cells[0..16]),
         );
         let comparison_hi = ComparisonGadget::construct(
             cb,
-            from_bytes::expr(&a.cells[0..16]),
-            from_bytes::expr(&b.cells[0..16]),
+            from_bytes::expr(&a.cells[16..32]),
+            from_bytes::expr(&b.cells[16..32]),
         );
         let a_lt_b_lo = lt_lo.expr();
         let (a_lt_b_hi, a_eq_b_hi) = comparison_hi.expr();
@@ -95,32 +95,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // negative. This selector will be used after handling the cases
         // where either only a or only b are negative.
         //
-        // if a > 0 && b > 0:
+        // if (a > 0 && b > 0) || (a < 0 && b < 0):
         //      a < b -> (a_hi < b_hi) ? 1 : (a_hi == b_hi) * (a_lo < b_lo)
-        // else if a < 0 && b < 0:
-        //      a < b -> (a_hi < b_hi) ? 0 : ~((a_hi == b_hi) * (a_lo < b_lo))
-        let a_b_positive =
-            and::expr(&[sign_check_a_lt.clone(), sign_check_b_lt.clone()]);
-        let a_b_negative = and::expr(&[
-            1.expr() - sign_check_a_lt.clone(),
-            1.expr() - sign_check_b_lt.clone(),
-        ]);
-        let a_lt_b = select::expr(
-            a_b_positive,
-            select::expr(
-                a_lt_b_hi.clone(),
-                1.expr(),
-                a_eq_b_hi.clone() * a_lt_b_lo.clone(),
-            ),
-            and::expr(&[
-                a_b_negative,
-                select::expr(
-                    a_lt_b_hi,
-                    0.expr(),
-                    1.expr() - (a_eq_b_hi * a_lt_b_lo),
-                ),
-            ]),
-        );
+        // for example, for 8bit signed int, -1 is 0xff and -2 is 0xfe,
+        //     -2 < -1 and 0xfe < 0xff
+        let a_lt_b = select::expr(a_lt_b_hi, 1.expr(), a_eq_b_hi * a_lt_b_lo);
 
         // Add a trivial selector: if only a or only b is negative we have the
         // result.
@@ -199,34 +178,34 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
             indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
 
         // Assign to the sign check gadgets. Since both a and b are in the
-        // big-endian form, the most significant byte is the first byte.
+        // little-endian form, the most significant byte is the last byte.
         self.sign_check_a.assign(
             region,
             offset,
-            F::from(a[0] as u64),
+            F::from(a[31] as u64),
             F::from(128u64),
         )?;
         self.sign_check_b.assign(
             region,
             offset,
-            F::from(b[0] as u64),
+            F::from(b[31] as u64),
             F::from(128u64),
         )?;
 
         // Assign to the comparison gadgets. The first 16 bytes are assigned to
-        // the `hi` comparison while the last 16 bytes are assigned to
-        // the `lo` less-than gadget.
+        // the `lo` less-than gadget while the last 16 bytes are assigned to
+        // the `hi` comparison.
         self.lt_lo.assign(
-            region,
-            offset,
-            from_bytes::value(&a[16..32]),
-            from_bytes::value(&b[16..32]),
-        )?;
-        self.comparison_hi.assign(
             region,
             offset,
             from_bytes::value(&a[0..16]),
             from_bytes::value(&b[0..16]),
+        )?;
+        self.comparison_hi.assign(
+            region,
+            offset,
+            from_bytes::value(&a[16..32]),
+            from_bytes::value(&b[16..32]),
         )?;
 
         self.a.assign(region, offset, Some(a))?;
