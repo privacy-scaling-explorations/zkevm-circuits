@@ -1,7 +1,6 @@
 use crate::{
     arith_helpers::{convert_b13_coef, B13, B9},
     common::LANE_SIZE,
-    gates::gate_helpers::biguint_mod,
 };
 
 use std::convert::TryInto;
@@ -72,7 +71,7 @@ pub const STEP3_RANGE: u64 = 169;
 
 /// Get the block count from an input chunks
 ///
-/// The input is chunks of a base 13 number in descending order of signiticance.
+/// The input is chunks of a base 13 number in big endian.
 /// For example, if the input is `[1, 12, 3, 7]`, it represents a coefficient
 /// `1*13^3 + 12*13^2 + 3*13 + 7`. The example only happens when `step = 4`. If
 /// we have a `step = 3`, the first chunk must be 0. It could be the case that
@@ -84,7 +83,7 @@ pub const STEP3_RANGE: u64 = 169;
 /// block count to be 170.
 ///
 /// This would fail the final block count check.
-pub fn get_block_count(b13_chunks: [u64; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
+pub fn get_block_count(b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
     // could be 0, 1, 2, 3, 4
     let non_zero_chunk_count = BASE_NUM_OF_CHUNKS as usize
         - b13_chunks.iter().take_while(|x| **x == 0).count();
@@ -93,20 +92,13 @@ pub fn get_block_count(b13_chunks: [u64; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
 }
 
 pub fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
-    // b13_chunks is in descending order of more significant chunk
-    let b13_chunks: [u64; BASE_NUM_OF_CHUNKS as usize] = {
-        let mut x = input_coef;
-        let mut b13_chunks: Vec<u64> = vec![];
-        for _ in 0..BASE_NUM_OF_CHUNKS {
-            b13_chunks.push(biguint_mod(&x, B13));
-            x /= B13;
-        }
-        b13_chunks.reverse();
-        b13_chunks.try_into().unwrap()
-    };
-    let output_coef: u64 = b13_chunks.iter().fold(0, |acc, b13_chunk| {
-        let b9_chunk = convert_b13_coef(*b13_chunk);
-        acc * B9 + b9_chunk
+    let mut b13_chunks = input_coef.to_radix_le(B13.into());
+    b13_chunks.resize(BASE_NUM_OF_CHUNKS as usize, 0);
+    b13_chunks.reverse();
+    let b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize] =
+        b13_chunks.try_into().unwrap();
+    let output_coef: u64 = b13_chunks.iter().fold(0, |acc, &b13_chunk| {
+        acc * B9 as u64 + convert_b13_coef(b13_chunk) as u64
     });
     let block_count = get_block_count(b13_chunks);
     (block_count, output_coef)

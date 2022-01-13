@@ -29,9 +29,9 @@ pub fn f_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {
     Option::from(BigUint::from_bytes_le(&x.to_bytes()[..]))
 }
 
-pub fn biguint_mod(x: &BigUint, modulus: u64) -> u64 {
-    match (x % modulus).to_u64_digits().first() {
-        Some(d) => *d,
-        None => 0u64,
-    }
+pub fn biguint_mod(x: &BigUint, modulus: u8) -> u8 {
+    x.to_radix_le(modulus.into())
+        .first()
+        .copied()
+        .unwrap_or_default()
 }
