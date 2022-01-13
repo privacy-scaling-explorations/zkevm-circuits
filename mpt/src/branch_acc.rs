@@ -13,7 +13,8 @@ use crate::param::{HASH_WIDTH, R_TABLE_LEN};
 #[derive(Clone, Debug)]
 pub(crate) struct BranchAccConfig {}
 
-// BranchAccChip verifies the random linear combination for the branch.
+// BranchAccChip verifies the random linear combination for the branch which is then used
+// to check the hash of a branch.
 pub(crate) struct BranchAccChip<F> {
     config: BranchAccConfig,
     _marker: PhantomData<F>,

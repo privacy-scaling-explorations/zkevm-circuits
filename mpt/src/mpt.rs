@@ -15,9 +15,9 @@ use crate::{
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
     branch_acc::BranchAccChip, leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
-    leaf_value::LeafValueChip, param::LAYOUT_OFFSET,
+    leaf_value::LeafValueChip, param::LAYOUT_OFFSET, branch_acc_init::BranchAccInitChip,
 };
-use crate::{branch_acc::BranchAccConfig, param::WITNESS_ROW_WIDTH};
+use crate::{param::WITNESS_ROW_WIDTH};
 use crate::{
     param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START,
@@ -72,8 +72,6 @@ pub struct MPTConfig<F> {
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
-    branch_acc_s_chip: BranchAccConfig,
-    branch_acc_c_chip: BranchAccConfig,
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -664,126 +662,11 @@ impl<F: FieldExt> MPTConfig<F> {
             // TODO:
             // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
             // empty nodes have 128 at s_advices[0] and 0 everywhere else;
-            // non-empty nodes have 32 values ...
-
-            // TODO: is_branch_child is followed by is_compact_leaf
-            // TODO: is_compact_leaf is followed by is_keccak_leaf
 
             // TODO: constraints for branch init
 
             constraints
-        });
-
-        meta.create_gate("branch init accumulator", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let is_branch_init_cur =
-                meta.query_advice(is_branch_init, Rotation::cur());
-
-            let mut constraints = vec![];
-
-            // check branch accumulator S in row 0
-            let branch_acc_s_cur = meta.query_advice(acc_s, Rotation::cur());
-            let branch_acc_c_cur = meta.query_advice(acc_c, Rotation::cur());
-            let branch_mult_s_cur =
-                meta.query_advice(acc_mult_s, Rotation::cur());
-            let branch_mult_c_cur =
-                meta.query_advice(acc_mult_c, Rotation::cur());
-
-            let two_rlp_bytes_s = meta.query_advice(s_rlp1, Rotation::cur());
-            let three_rlp_bytes_s = meta.query_advice(s_rlp2, Rotation::cur());
-
-            let two_rlp_bytes_c =
-                meta.query_advice(s_advices[0], Rotation::cur());
-            let three_rlp_bytes_c =
-                meta.query_advice(s_advices[1], Rotation::cur());
-
-            // TODO: two_rlp_bytes and three_rlp_bytes are bools for S and C
-            // TODO: two_rlp_bytes + three_rlp_bytes = 1 for S and C
-
-            let s_rlp1 = meta.query_advice(s_advices[2], Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_advices[3], Rotation::cur());
-            let s_rlp3 = meta.query_advice(s_advices[4], Rotation::cur());
-
-            let c_rlp1 = meta.query_advice(s_advices[5], Rotation::cur());
-            let c_rlp2 = meta.query_advice(s_advices[6], Rotation::cur());
-            let c_rlp3 = meta.query_advice(s_advices[7], Rotation::cur());
-
-            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * acc_r;
-            constraints.push((
-                "branch accumulator S row 0",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * two_rlp_bytes_s.clone()
-                    * (acc_s_two - branch_acc_s_cur.clone()),
-            ));
-
-            let mult_s_two = Expression::Constant(acc_r * acc_r);
-            constraints.push((
-                "branch mult S row 0",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * two_rlp_bytes_s
-                    * (mult_s_two - branch_mult_s_cur.clone()),
-            ));
-
-            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * acc_r;
-            constraints.push((
-                "branch accumulator C row 0",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * two_rlp_bytes_c.clone()
-                    * (acc_c_two - branch_acc_c_cur.clone()),
-            ));
-
-            let mult_c_two = Expression::Constant(acc_r * acc_r);
-            constraints.push((
-                "branch mult C row 0",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * two_rlp_bytes_c
-                    * (mult_c_two - branch_mult_c_cur.clone()),
-            ));
-
-            //
-
-            let acc_s_three = s_rlp1 + s_rlp2 * acc_r + s_rlp3 * acc_r * acc_r;
-            constraints.push((
-                "branch accumulator S row 0 (3)",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * three_rlp_bytes_s.clone()
-                    * (acc_s_three - branch_acc_s_cur),
-            ));
-
-            let mult_s_three = Expression::Constant(acc_r * acc_r * acc_r);
-            constraints.push((
-                "branch mult S row 0 (3)",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * three_rlp_bytes_s
-                    * (mult_s_three - branch_mult_s_cur),
-            ));
-
-            let acc_c_three = c_rlp1 + c_rlp2 * acc_r + c_rlp3 * acc_r * acc_r;
-            constraints.push((
-                "branch accumulator C row 0 (3)",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * three_rlp_bytes_c.clone()
-                    * (acc_c_three - branch_acc_c_cur),
-            ));
-
-            let mult_c_three = Expression::Constant(acc_r * acc_r * acc_r);
-            constraints.push((
-                "branch mult C row 0 (3)",
-                q_enable
-                    * is_branch_init_cur
-                    * three_rlp_bytes_c
-                    * (mult_c_three - branch_mult_c_cur),
-            ));
-
-            constraints
-        });
+        }); 
 
         meta.create_gate("keccak constraints", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -916,6 +799,9 @@ impl<F: FieldExt> MPTConfig<F> {
             }
 
             // sel1 - denoting whether leaf is empty at modified_node.
+            // When sel1 = 1, s_advices need to be [128, 0, ..., 0].
+            // If sel1 = 1, there is no leaf at this position (value is being added or deleted)
+            // and we don't check the hash of it in leaf_value.
             let c128 = Expression::Constant(F::from(128));
             let sel1_cur = meta.query_advice(sel1, Rotation::cur());
 
@@ -943,6 +829,9 @@ impl<F: FieldExt> MPTConfig<F> {
             }
 
             // sel2 - denoting whether leaf is empty at modified_node.
+            // When sel2 = 1, c_advices need to be [128, 0, ..., 0].
+            // If sel2 = 1, there is no leaf at this position (value is being added or deleted)
+            // and we don't check the hash of it in leaf_value.
             let sel2_cur = meta.query_advice(sel2, Rotation::cur());
 
             // s_advices[0] = 128
@@ -1274,7 +1163,23 @@ impl<F: FieldExt> MPTConfig<F> {
             constraints
         });
 
-        let branch_acc_s_chip = BranchAccChip::<F>::configure(
+        BranchAccInitChip::<F>::configure(
+            meta,
+    |meta| {
+                meta.query_advice(is_branch_init, Rotation::cur()) *
+                meta.query_selector(q_enable)
+            },
+            s_rlp1,
+            s_rlp2,
+            s_advices,
+            acc_s,
+            acc_mult_s,
+            acc_c,
+            acc_mult_c,
+            acc_r,
+        );
+
+        BranchAccChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first =
@@ -1291,7 +1196,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
         );
 
-        let branch_acc_c_chip = BranchAccChip::<F>::configure(
+        BranchAccChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first =
@@ -1563,8 +1468,6 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             r_table,
-            branch_acc_s_chip,
-            branch_acc_c_chip,
             key_rlc,
             key_rlc_mult,
             keccak_table,
