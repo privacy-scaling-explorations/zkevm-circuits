@@ -284,6 +284,13 @@ mod test {
     }
 
     #[test]
+    fn signed_comparator_gadget_a_eq_b() {
+        let a = rand_word();
+        test_ok(OpcodeId::SLT, a, a);
+        test_ok(OpcodeId::SGT, a, a);
+    }
+
+    #[test]
     fn signed_comparator_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
