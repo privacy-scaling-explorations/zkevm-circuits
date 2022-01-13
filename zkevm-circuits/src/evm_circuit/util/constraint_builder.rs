@@ -421,9 +421,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.tx_context_lookup(id, field_tag.expr(), cell.expr());
+        self.tx_context_lookup(id, field_tag, index, cell.expr());
         cell
     }
 
@@ -431,16 +432,18 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
     ) -> Word<F> {
         let word = self.query_word();
-        self.tx_context_lookup(id, field_tag.expr(), word.expr());
+        self.tx_context_lookup(id, field_tag, index, word.expr());
         word
     }
 
-    fn tx_context_lookup(
+    pub(crate) fn tx_context_lookup(
         &mut self,
         id: Expression<F>,
-        field_tag: Expression<F>,
+        field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
         value: Expression<F>,
     ) {
         self.add_lookup(
@@ -448,7 +451,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             Lookup::Tx {
                 id,
                 field_tag,
-                index: 0.expr(),
+                index: index.unwrap_or_else(|| 0.expr()),
                 value,
             },
         );
@@ -758,24 +761,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
             ],
         );
-    }
-
-    // Tx
-
-    pub(crate) fn tx_lookup(
-        &mut self,
-        tx_id: Expression<F>,
-        tag: TxContextFieldTag,
-        index: Option<Expression<F>>,
-        value: Expression<F>,
-    ) {
-        let index = index.unwrap_or_else(|| 0.expr());
-        self.add_lookup(Lookup::Tx {
-            id: tx_id,
-            field_tag: tag.expr(),
-            index,
-            value,
-        });
     }
 
     // Validation
