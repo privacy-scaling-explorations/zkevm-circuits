@@ -42,7 +42,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         sel2: Column<Advice>,
         first_nibble: Column<Advice>,
         r_table: Vec<Expression<F>>,
-        r_mult_table: [Column<Fixed>; 3],
+        fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> LeafKeyInAddedBranchConfig {
         let config = LeafKeyInAddedBranchConfig {};
@@ -820,15 +820,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             constraints.push((
                 Expression::Constant(F::from(FixedTableTag::RMult as u64)),
-                meta.query_fixed(r_mult_table[0], Rotation::cur()),
+                meta.query_fixed(fixed_table[0], Rotation::cur()),
             ));
             constraints.push((
                 q_enable.clone() * (key_len + two) * is_short.clone(), // when short, there are 2 RLP meta data
-                meta.query_fixed(r_mult_table[1], Rotation::cur()),
+                meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
                 q_enable.clone() * acc_mult * is_short,
-                meta.query_fixed(r_mult_table[2], Rotation::cur()),
+                meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));
 
             constraints
@@ -850,15 +850,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             constraints.push((
                 Expression::Constant(F::from(FixedTableTag::RMult as u64)),
-                meta.query_fixed(r_mult_table[0], Rotation::cur()),
+                meta.query_fixed(fixed_table[0], Rotation::cur()),
             ));
             constraints.push((
                 q_enable.clone() * (key_len + three) * is_long.clone(), // when long, there are 3 RLP meta data
-                meta.query_fixed(r_mult_table[1], Rotation::cur()),
+                meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
                 q_enable.clone() * acc_mult * is_long,
-                meta.query_fixed(r_mult_table[2], Rotation::cur()),
+                meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));
 
             constraints

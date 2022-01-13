@@ -13,11 +13,12 @@ use crate::{
     account_leaf_key::AccountLeafKeyChip,
     account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
-    branch_acc::BranchAccChip, leaf_key::LeafKeyChip,
+    branch::BranchChip, branch_acc::BranchAccChip,
+    branch_acc_init::BranchAccInitChip, leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
-    leaf_value::LeafValueChip, param::LAYOUT_OFFSET, branch_acc_init::BranchAccInitChip,
+    leaf_value::LeafValueChip, param::LAYOUT_OFFSET,
 };
-use crate::{param::WITNESS_ROW_WIDTH};
+use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
     param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START,
@@ -242,433 +243,42 @@ impl<F: FieldExt> MPTConfig<F> {
             is_at_first_nibble,
         );
 
-        // TODO: nil rows have 0 everywhere except in s_rlp2 and c_rlp2
-        // TODO: RLP
+        BranchChip::<F>::configure(
+            meta,
+            q_enable,
+            q_not_first,
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            is_branch_init,
+            is_branch_child,
+            is_last_branch_child,
+            node_index,
+            is_modified,
+            modified_node,
+            is_at_first_nibble,
+            first_nibble,
+            fixed_table.clone(),
+        );
 
-        // Range check for s_advices and c_advices being bytes.
-        for ind in 0..HASH_WIDTH {
-            meta.lookup_any(|meta| {
-                // We check every row except branch init.
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let mut constraints = vec![];
-                let is_branch_init =
-                    meta.query_advice(is_branch_init, Rotation::cur());
+        BranchKeyChip::<F>::configure(
+            meta,
+            q_not_first,
+            not_first_level,
+            is_branch_init,
+            is_account_leaf_storage_codehash_c,
+            modified_node,
+            sel1,
+            sel2,
+            key_rlc,
+            key_rlc_mult,
+            acc_r,
+        );
 
-                let one = Expression::Constant(F::one());
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                constraints.push((
-                    Expression::Constant(F::from(FixedTableTag::Range256 as u64)),
-                    meta.query_fixed(fixed_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    q_not_first.clone() * s * (one - is_branch_init),
-                    meta.query_fixed(fixed_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            });
-            
-            meta.lookup_any(|meta| {
-                // We check every row except branch init.
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let mut constraints = vec![];
-                let is_branch_init =
-                    meta.query_advice(is_branch_init, Rotation::cur());
-
-                let one = Expression::Constant(F::one());
-                let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                constraints.push((
-                    Expression::Constant(F::from(FixedTableTag::Range256 as u64)),
-                    meta.query_fixed(fixed_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    q_not_first.clone() * c * (one - is_branch_init),
-                    meta.query_fixed(fixed_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            });
-        }
-
-        meta.create_gate("branch equalities", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-
-            let mut constraints = vec![];
-
-            let is_branch_child_cur =
-                meta.query_advice(is_branch_child, Rotation::cur());
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-            let modified_node =
-                meta.query_advice(modified_node, Rotation::cur());
-            let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_first_nibble =
-                meta.query_advice(is_at_first_nibble, Rotation::cur());
-            let first_nibble = meta.query_advice(first_nibble, Rotation::cur());
-
-            // is_modified is:
-            //   0 when node_index_cur != modified_node
-            //   1 when node_index_cur == modified_node (it's checked elsewhere for booleanity)
-            constraints.push((
-                "is modified",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * is_modified.clone()
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-
-            // is_at_first_nibble is:
-            //   0 when node_index_cur != first_nibble
-            //   1 when node_index_cur == first_nibble (it's checked elsewhere for booleanity)
-            constraints.push((
-                "is at first nibble",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * is_at_first_nibble.clone()
-                    * (node_index_cur.clone() - first_nibble.clone()),
-            ));
-
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-
-            constraints.push((
-                "rlp 1",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp1 - c_rlp1)
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-            constraints.push((
-                "rlp 2",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp2 - c_rlp2)
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-
-            for (ind, col) in s_advices.iter().enumerate() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                constraints.push((
-                    "s = c when NOT is_modified",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (s.clone() - c.clone())
-                        * (node_index_cur.clone() - modified_node.clone()),
-                ));
-
-                // When it's NOT placeholder branch, is_modified = is_at_first_nibble.
-                // When it's placeholder branch, is_modified != is_at_first_nibble.
-                // This is used instead of having is_branch_s_placeholder and is_branch_c_placeholder columns -
-                // we only have this info in branch init where we don't need additional columns.
-                // When there is a placeholder branch, there are only two nodes - one at is_modified
-                // and one at is_at_first_nibble - at other positions there need to be nil nodes.
-                
-                // TODO: This might be optimized once the check for branch is added - check
-                // that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte is 128.
-                // So, only s_rlp2 could be checked here instead of all s and c.
-                constraints.push((
-                    "s = 0 when placeholder and is neither is_modified or is_at_first_nibble",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (is_modified.clone() - is_at_first_nibble.clone()) // this is 0 when NOT placeholder
-                        * (one.clone() - is_modified.clone())
-                        * (one.clone() - is_at_first_nibble.clone())
-                        * s
-                ));
-                constraints.push((
-                    "c = 0 when placeholder and is neither is_modified or is_at_first_nibble",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (is_modified.clone() - is_at_first_nibble.clone()) // this is 0 when NOT placeholder
-                        * (one.clone() - is_modified.clone())
-                        * (one.clone() - is_at_first_nibble.clone())
-                        * c
-                ));
-            }
-
-            // TODO: use permutation argument for s = c.
-
-            // TODO: use permutation argument to make sure modified_node is the same in all branch rows.
-
-            // TODO: use permutation argument to make sure first_nibble is the same in all branch rows.
-
-            constraints
-        });
-
-        meta.create_gate("branch children", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let not_first_level =
-                meta.query_fixed(not_first_level, Rotation::cur());
-
-            let mut constraints = vec![];
-            let is_branch_child_prev =
-                meta.query_advice(is_branch_child, Rotation::prev());
-            let is_branch_child_cur =
-                meta.query_advice(is_branch_child, Rotation::cur());
-            let is_branch_init_prev =
-                meta.query_advice(is_branch_init, Rotation::prev());
-            let is_last_branch_child_prev =
-                meta.query_advice(is_last_branch_child, Rotation::prev());
-            let is_last_branch_child_cur =
-                meta.query_advice(is_last_branch_child, Rotation::cur());
-
-            // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
-            // It's actually more complex that just sum = 1.
-            // For example, we have to allow is_last_branch_child to have value 1 only
-            // when is_branch_child. So we need to add constraint like:
-            // (is_branch_child - is_last_branch_child) * is_last_branch_child
-            // There are already constraints "is last branch child 1 and 2" below
-            // to make sure that is_last_branch_child is 1 only when node_index = 15.
-
-            // TODO: not_first_level constraints (needs to be 0 or 1 and needs to
-            // be strictly decreasing)
-
-            // if we have branch child, we can only have branch child or branch init in the previous row
-            constraints.push((
-                "before branch children",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * (is_branch_child_prev.clone() - one.clone())
-                    * (is_branch_init_prev.clone() - one.clone()),
-            ));
-
-            // If we have is_branch_init in the previous row, we have
-            // is_branch_child with node_index = 0 in the current row.
-            constraints.push((
-                "first branch children 1",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * (is_branch_child_cur.clone() - one.clone()), // is_branch_child has to be 1
-            ));
-            // We could have only one constraint using sum, but then we would need
-            // to limit node_index (to prevent values like -1). Now, node_index is
-            // limited by ensuring it's first value is 0, its last value is 15,
-            // and it's increasing by 1.
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-            constraints.push((
-                "first branch children 2",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * node_index_cur.clone(), // node_index has to be 0
-            ));
-
-            // When is_branch_child changes back to 0, previous node_index has to be 15.
-            let node_index_prev =
-                meta.query_advice(node_index, Rotation::prev());
-            constraints.push((
-                "last branch children",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
-                    * (is_branch_child_prev.clone()
-                        - is_branch_child_cur.clone()) // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
-                    * (node_index_prev
-                        - Expression::Constant(F::from(15_u64))), // node_index has to be 15
-            ));
-
-            // When node_index is not 15, is_last_branch_child needs to be 0.
-            constraints.push((
-                "is last branch child 1",
-                q_not_first.clone()
-                    * is_last_branch_child_cur
-                    * (node_index_cur.clone() // for this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
-                        - Expression::Constant(F::from(15_u64))),
-            ));
-            // When node_index is 15, is_last_branch_child needs to be 1.
-            constraints.push((
-                "is last branch child 2",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
-                    * (is_last_branch_child_prev - one.clone())
-                    * (is_branch_child_prev
-                        - is_branch_child_cur.clone()), // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
-            ));
-
-            // node_index is increasing by 1 for is_branch_child
-            let node_index_prev =
-                meta.query_advice(node_index, Rotation::prev());
-            constraints.push((
-                "node index increasing for branch children",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (node_index_cur.clone() - node_index_prev - one.clone()),
-            ));
-
-            // modified_node needs to be the same for all branch nodes
-            let modified_node_prev =
-                meta.query_advice(modified_node, Rotation::prev());
-            let modified_node_cur =
-                meta.query_advice(modified_node, Rotation::cur());
-            constraints.push((
-                "modified node the same for all branch children",
-                q_not_first.clone()
-                    * is_branch_child_cur
-                    * node_index_cur // ignore if node_index = 0
-                    * (modified_node_cur.clone() - modified_node_prev),
-            ));
-
-            // For the first branch node (node_index = 0), the key rlc needs to be:
-            // key_rlc = key_rlc::Rotation(-19) + modified_node * key_rlc_mult
-            // Note: we check this in the first branch node (after branch init),
-            // Rotation(-19) lands into the previous first branch node, that's because
-            // branch has 1 (init) + 16 (children) + 2 (extension nodes for S and C) rows
-
-            // We need to check whether we are in the first storage level, we can do this
-            // by checking whether is_account_leaf_storage_codehash_c is true in the previous row.
-
-            // -2 because we are in the first branch child and -1 is branch init row, -2 is
-            // account leaf storage codehash when we are in the first storage proof level
-            let is_account_leaf_storage_codehash_prev = meta
-                .query_advice(is_account_leaf_storage_codehash_c, Rotation(-2));
-
-            let c16 = Expression::Constant(F::from(16));
-            // If sel1 = 1, then modified_node is multiplied by 16.
-            // If sel2 = 1, then modified_node is multiplied by 1.
-            // NOTE: modified_node presents nibbles: n0, n1, ...
-            // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-            let sel1_prev = meta.query_advice(sel1, Rotation(-20));
-            let sel2_prev = meta.query_advice(sel2, Rotation(-20));
-            // Rotation(-20) lands into previous branch init.
-            let sel1_cur = meta.query_advice(sel1, Rotation::prev());
-            let sel2_cur = meta.query_advice(sel2, Rotation::prev());
-
-            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-19));
-            let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
-            let key_rlc_mult_prev =
-                meta.query_advice(key_rlc_mult, Rotation(-19));
-            let key_rlc_mult_cur =
-                meta.query_advice(key_rlc_mult, Rotation::cur());
-            constraints.push((
-                "first branch children key_rlc sel1",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * sel1_cur.clone()
-                    * (key_rlc_cur.clone()
-                        - key_rlc_prev.clone()
-                        - modified_node_cur.clone() * c16.clone()
-                            * key_rlc_mult_prev.clone()),
-            ));
-            constraints.push((
-                "first branch children key_rlc sel2",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * sel2_cur.clone()
-                    * (key_rlc_cur.clone()
-                        - key_rlc_prev
-                        - modified_node_cur.clone()
-                            * key_rlc_mult_prev.clone()),
-            ));
-
-            constraints.push((
-                "first branch children key_rlc_mult sel1",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * sel1_cur.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
-            ));
-            constraints.push((
-                "first branch children key_rlc_mult sel2",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * sel2_cur.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * acc_r),
-            ));
-
-            constraints.push((
-                "first branch children sel1 0->1->0->...",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (sel1_cur.clone() + sel1_prev - one.clone()),
-            ));
-            constraints.push((
-                "first branch children sel2 0->1->0->...",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (sel2_cur.clone() + sel2_prev - one.clone()),
-            ));
-
-            // Key (which actually means account address) in first level in account proof.
-            constraints.push((
-                "account first level key_rlc",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_cur.clone()
-                        - modified_node_cur.clone() * c16.clone()),
-            ));
-            constraints.push((
-                "account first level key_rlc_mult",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur.clone() - one.clone()),
-            ));
-            // First sel1 is 1, first sel2 is 0.
-            constraints.push((
-                "account first level key_rlc sel1",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-            constraints.push((
-                "account first level key_rlc sel2",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level)
-                    * is_branch_init_prev.clone()
-                    * sel2_cur.clone(),
-            ));
-
-            // First storage level.
-            constraints.push((
-                "storage first level key_rlc",
-                q_not_first.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_cur - modified_node_cur * c16),
-            ));
-            constraints.push((
-                "storage first level key_rlc_mult",
-                q_not_first.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur - one.clone()),
-            ));
-            // First sel1 is 1, first sel2 is 0.
-            constraints.push((
-                "storage first level key_rlc sel1",
-                q_not_first.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur - one.clone()),
-            ));
-            constraints.push((
-                "storage first level key_rlc sel2",
-                q_not_first
-                    * is_account_leaf_storage_codehash_prev
-                    * is_branch_init_prev
-                    * sel2_cur,
-            ));
-
-            // TODO:
-            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
-            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
-
-            // TODO: constraints for branch init
-
-            constraints
-        }); 
-
-        meta.create_gate("keccak constraints", |meta| {
+        meta.create_gate("hash constraints", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
             let mut constraints = vec![];
@@ -1165,9 +775,9 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchAccInitChip::<F>::configure(
             meta,
-    |meta| {
-                meta.query_advice(is_branch_init, Rotation::cur()) *
-                meta.query_selector(q_enable)
+            |meta| {
+                meta.query_advice(is_branch_init, Rotation::cur())
+                    * meta.query_selector(q_enable)
             },
             s_rlp1,
             s_rlp2,
@@ -1878,6 +1488,7 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
+    // TODO: split assign
     pub(crate) fn assign(
         &self,
         mut layouter: impl Layouter<F>,
