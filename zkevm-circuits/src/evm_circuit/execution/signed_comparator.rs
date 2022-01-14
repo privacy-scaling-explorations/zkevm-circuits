@@ -47,17 +47,17 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         let a = cb.query_word();
         let b = cb.query_word();
 
-        // The Signed Comparator gadget is used for both opcodes [SLT]() and
-        // [SGT](). Depending on whether the opcode is SLT or SGT, we
+        // The Signed Comparator gadget is used for both opcodes SLT and SGT.
+        // Depending on whether the opcode is SLT or SGT, we
         // swap the order in which the inputs are placed on the stack.
         let is_sgt =
             IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::SGT.expr());
 
-        // Both `a` and `b` are to be treated as two's complement signed 256-bit
+        // Both a and b are to be treated as two's complement signed 256-bit
         // (32 cells) integers. This means, the first bit denotes the sign
         // of the absolute value in the rest of the 255 bits. This means the
         // number is negative if the most significant cell >= 128
-        // (0b10000000). `a` and `b` being in the little-endian notation, the
+        // (0b10000000). a and b being in the little-endian notation, the
         // most-significant byte is the last byte.
         let sign_check_a =
             LtGadget::construct(cb, a.cells[31].expr(), 128.expr());
@@ -66,11 +66,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
-        let sign_check_a_lt = sign_check_a.expr();
-        let sign_check_b_lt = sign_check_b.expr();
+        let a_pos = sign_check_a.expr();
+        let b_pos = sign_check_b.expr();
 
         // We require the comparison check only for the cases where:
-        // (a < 0 && b < 0) || (a > 0 && b > 0).
+        // (a < 0 && b < 0) || (a >= 0 && b >= 0).
         // We ignore the equality expression since we only care about the LT
         // check.
         // By `lo` we mean the low bytes, and `hi` stands for the more
@@ -96,22 +96,21 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         //
         // if (a > 0 && b > 0) || (a < 0 && b < 0):
         //      a < b -> (a_hi < b_hi) ? 1 : (a_hi == b_hi) * (a_lo < b_lo)
-        // for example, for 8bit signed int, -1 is 0xff and -2 is 0xfe,
+        //
+        // for e.g.: consider 8-bit signed integers -1 (0xff) and -2 (0xfe):
         //     -2 < -1 and 0xfe < 0xff
         let a_lt_b = select::expr(a_lt_b_hi, 1.expr(), a_eq_b_hi * a_lt_b_lo);
 
         // Add a trivial selector: if only a or only b is negative we have the
         // result.
-        // result = if a < 0 && b > 0, slt = 1.
-        // result = if b < 0 && a > 0, slt = 0.
-        let a_negative =
-            (1.expr() - sign_check_a_lt.expr()) * sign_check_b_lt.expr();
-        let b_negative =
-            (1.expr() - sign_check_b_lt.expr()) * sign_check_a_lt.expr();
+        // result = if a < 0 && b >= 0, slt = 1.
+        // result = if b < 0 && a >= 0, slt = 0.
+        let a_neg_b_pos = (1.expr() - a_pos.expr()) * b_pos.expr();
+        let b_neg_a_pos = (1.expr() - b_pos.expr()) * a_pos.expr();
         let result = select::expr(
-            a_negative,
+            a_neg_b_pos,
             1.expr(),
-            select::expr(b_negative, 0.expr(), a_lt_b),
+            select::expr(b_neg_a_pos, 0.expr(), a_lt_b),
         );
 
         // Pop a and b from the stack, push the result on the stack.
