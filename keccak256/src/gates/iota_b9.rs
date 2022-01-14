@@ -1,5 +1,6 @@
 use crate::arith_helpers::*;
 use crate::common::*;
+use crate::gates::gate_helpers::biguint_to_f;
 use crate::keccak_arith::*;
 use halo2::circuit::Cell;
 use halo2::circuit::Layouter;
@@ -265,7 +266,7 @@ impl<F: FieldExt> IotaB9Config<F> {
             in_biguint[(x, y)] = convert_b2_to_b9(
                 state[(x, y)].clone().try_into().expect("Conversion err"),
             );
-            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
 
         // Compute out state
@@ -279,6 +280,7 @@ impl<F: FieldExt> IotaB9Config<F> {
 mod tests {
     use super::*;
     use crate::common::{PERMUTATION, ROUND_CONSTANTS};
+    use crate::gates::gate_helpers::biguint_to_f;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
@@ -399,7 +401,7 @@ mod tests {
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
+            .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
             .collect();
 
         // (flag = 0) -> Out state is checked as constraints are applied.
@@ -551,7 +553,7 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
 
         // Test for the 25 rounds
@@ -571,7 +573,7 @@ mod tests {
 
             let constants: Vec<Fp> = ROUND_CONSTANTS
                 .iter()
-                .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
+                .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
                 .collect();
 
             let prover =

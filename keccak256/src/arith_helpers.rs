@@ -3,7 +3,6 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use pairing::arithmetic::FieldExt;
-use pairing::bn256::Fr as Fp;
 use std::ops::{Index, IndexMut};
 
 pub const B2: u8 = 2;
@@ -186,21 +185,6 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .take(1)
         .next()
         .unwrap_or(0)
-}
-
-pub fn big_uint_to_field<F: FieldExt>(a: &BigUint) -> F {
-    let mut b: [u64; 4] = [0; 4];
-    let mut iter = a.iter_u64_digits();
-
-    for i in &mut b {
-        *i = match &iter.next() {
-            Some(x) => *x,
-            None => 0u64,
-        };
-    }
-
-    // Workarround since `FieldExt` does not impl `from_raw`.
-    F::from_bytes(&Fp::from_raw(b).to_bytes()).unwrap()
 }
 
 /// This function allows us to inpect coefficients of big-numbers in different

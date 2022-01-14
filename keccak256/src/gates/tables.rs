@@ -231,7 +231,7 @@ impl<F: FieldExt> BaseInfo<F> {
     ) -> Result<(Vec<F>, Vec<F>, F), Error> {
         // big-endian
         let input_chunks: Vec<u8> = {
-            let raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
+            let raw = f_to_biguint(input);
             let mut v = raw.to_radix_le(self.input_base.into());
             assert!(v.len() <= self.max_chunks);
             // fill 0 to max chunks

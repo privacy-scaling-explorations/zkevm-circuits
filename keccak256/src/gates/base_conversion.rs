@@ -298,8 +298,7 @@ mod tests {
         let input = 12345678u64;
         let circuit = MyCircuit::<Fp> {
             input_b2_lane: Fp::from(input),
-            output_b13_lane: biguint_to_f::<Fp>(&convert_b2_to_b13(input))
-                .unwrap(),
+            output_b13_lane: biguint_to_f::<Fp>(&convert_b2_to_b13(input)),
         };
         let k = 17;
 
