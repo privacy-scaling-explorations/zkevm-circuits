@@ -3,12 +3,13 @@ use crate::evm_circuit::{
     param::STACK_CAPACITY,
     step::ExecutionState,
     table::{
-        AccountFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
+        TxContextFieldTag,
     },
     util::RandomLinearCombination,
 };
 use bus_mapping::{
-    eth_types::{Address, ToLittleEndian, ToScalar, Word},
+    eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word},
     evm::OpcodeId,
 };
 use halo2::arithmetic::{BaseExt, FieldExt};
@@ -23,6 +24,81 @@ pub struct Block<F> {
     pub txs: Vec<Transaction<F>>,
     pub rws: Vec<Rw>,
     pub bytecodes: Vec<Bytecode>,
+    pub context: BlockContext<F>,
+}
+
+#[derive(Debug, Default)]
+pub struct BlockContext<F> {
+    pub coinbase: Address, // u160
+    pub gas_limit: u64,
+    pub block_number: F,
+    pub time: u64,
+    pub difficulty: Word,
+    pub base_fee: Word,
+    pub previous_block_hashes: Vec<Word>,
+}
+
+impl<F: FieldExt> BlockContext<F> {
+    pub fn table_assignments(&self, randomness: F) -> Vec<[F; 3]> {
+        [
+            vec![
+                [
+                    F::from(BlockContextFieldTag::Coinbase as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.coinbase.to_word().to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::zero(),
+                    F::from(self.gas_limit),
+                ],
+                [
+                    F::from(BlockContextFieldTag::BlockNumber as u64),
+                    F::zero(),
+                    self.block_number,
+                ],
+                [
+                    F::from(BlockContextFieldTag::Time as u64),
+                    F::zero(),
+                    F::from(self.time),
+                ],
+                [
+                    F::from(BlockContextFieldTag::Difficulty as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.difficulty.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::BaseFee as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.base_fee.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+            ],
+            self.previous_block_hashes
+                .iter()
+                .enumerate()
+                .map(|(idx, hash)| {
+                    [
+                        F::from(BlockContextFieldTag::BlockHash as u64),
+                        self.block_number - F::from((idx + 1) as u64),
+                        RandomLinearCombination::random_linear_combine(
+                            hash.to_le_bytes(),
+                            randomness,
+                        ),
+                    ]
+                })
+                .collect(),
+        ]
+        .concat()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -454,6 +530,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::JUMPI => ExecutionState::JUMPI,
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
+            OpcodeId::COINBASE => ExecutionState::COINBASE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -543,8 +620,15 @@ pub fn block_convert(
     let mut storage_ops = b.container.sorted_storage();
     storage_ops.sort_by_key(|s| usize::from(s.rwc()));
 
+    // converting to block context
+    let context = BlockContext {
+        coinbase: b.block_const.coinbase,
+        ..Default::default()
+    };
+
     let mut block = Block {
         randomness,
+        context,
         txs: b
             .txs()
             .iter()

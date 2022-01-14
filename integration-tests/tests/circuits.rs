@@ -186,6 +186,7 @@ mod test_evm_circuit {
             let tx_table = [(); 4].map(|_| meta.advice_column());
             let rw_table = [(); 8].map(|_| meta.advice_column());
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
+            let block_table = [(); 3].map(|_| meta.advice_column());
             let randomness = meta.instance_column();
 
             Self::Config {
@@ -198,6 +199,7 @@ mod test_evm_circuit {
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    block_table,
                 ),
             }
         }

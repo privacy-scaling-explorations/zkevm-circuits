@@ -11,26 +11,30 @@ use serde::Serialize;
 /// chain to be used as setup for the external tracer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BlockConstants {
-    hash: Hash,
-    coinbase: Address,
-    timestamp: Word,
-    number: U64,
-    difficulty: Word,
-    gas_limit: Word,
-    chain_id: Word,
-    base_fee: Word,
+    /// hash
+    pub hash: Hash,
+    /// coinbase
+    pub coinbase: Address,
+    /// time
+    pub timestamp: Word,
+    /// number
+    pub number: U64,
+    /// difficulty
+    pub difficulty: Word,
+    /// gas limit
+    pub gas_limit: Word,
+    /// chain id
+    pub chain_id: Word,
+    /// base fee
+    pub base_fee: Word,
 }
 
 impl BlockConstants {
     /// Generate a BlockConstants from an ethereum block, useful for testing.
-    pub fn from_eth_block<TX>(
-        block: &Block<TX>,
-        chain_id: &Word,
-        &coinbase: &Address,
-    ) -> Self {
+    pub fn from_eth_block<TX>(block: &Block<TX>, chain_id: &Word) -> Self {
         Self {
             hash: block.hash.unwrap(),
-            coinbase,
+            coinbase: block.author,
             timestamp: block.timestamp,
             number: block.number.unwrap(),
             difficulty: block.difficulty,

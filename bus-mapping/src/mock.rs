@@ -22,10 +22,7 @@ lazy_static! {
 
 /// Generate a new mock chain constants, useful for tests.
 pub fn new_chain_constants() -> eth_types::ChainConstants {
-    ChainConstants {
-        chain_id: CHAIN_ID,
-        coinbase: *COINBASE,
-    }
+    ChainConstants { chain_id: CHAIN_ID }
 }
 
 /// Generate a new mock block with preloaded data, useful for tests.
@@ -94,7 +91,9 @@ pub struct BlockData {
     /// Transaction from geth
     pub eth_tx: eth_types::Transaction,
     /// Constants
-    pub ctants: ChainConstants,
+    pub c_constant: ChainConstants,
+    /// Constants
+    pub b_constant: BlockConstants,
     /// Execution Trace from geth
     pub geth_trace: eth_types::GethExecTrace,
 }
@@ -112,18 +111,17 @@ impl BlockData {
         let eth_block = new_block();
         let mut eth_tx = new_tx(&eth_block);
         eth_tx.gas = Word::from(gas.0);
-        let ctants = new_chain_constants();
-        let block_ctants = BlockConstants::from_eth_block(
+        let c_constant = new_chain_constants();
+        let b_constant = BlockConstants::from_eth_block(
             &eth_block,
-            &Word::from(ctants.chain_id),
-            &ctants.coinbase,
+            &Word::from(c_constant.chain_id),
         );
         let tracer_tx = external_tracer::Transaction::from_eth_tx(&eth_tx);
         let geth_trace = eth_types::GethExecTrace {
             gas: Gas(eth_tx.gas.as_u64()),
             failed: false,
             struct_logs: external_tracer::trace(
-                &block_ctants,
+                &b_constant,
                 &tracer_tx,
                 accounts,
             )?
@@ -148,7 +146,8 @@ impl BlockData {
             code_db,
             eth_block,
             eth_tx,
-            ctants,
+            c_constant,
+            b_constant,
             geth_trace,
         })
     }
@@ -220,7 +219,11 @@ impl BlockData {
     ) -> Self {
         let eth_block = new_block();
         let eth_tx = new_tx(&eth_block);
-        let ctants = new_chain_constants();
+        let c_constant = new_chain_constants();
+        let b_constant = BlockConstants::from_eth_block(
+            &eth_block,
+            &Word::from(c_constant.chain_id),
+        );
         let geth_trace = eth_types::GethExecTrace {
             gas: Gas(eth_tx.gas.as_u64()),
             failed: false,
@@ -233,7 +236,8 @@ impl BlockData {
             code_db,
             eth_block,
             eth_tx,
-            ctants,
+            c_constant,
+            b_constant,
             geth_trace,
         }
     }
@@ -245,7 +249,8 @@ impl BlockData {
             self.sdb.clone(),
             self.code_db.clone(),
             &self.eth_block,
-            self.ctants.clone(),
+            self.c_constant.clone(),
+            self.b_constant.clone(),
         )
     }
 }

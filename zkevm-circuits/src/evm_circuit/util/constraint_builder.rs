@@ -437,6 +437,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         });
     }
 
+    // block
+    pub(crate) fn block_lookup(
+        &mut self,
+        tag: Expression<F>,
+        number: Option<Expression<F>>,
+        val: Expression<F>,
+    ) {
+        self.add_lookup(Lookup::Block {
+            field_tag: tag,
+            number: number.unwrap_or_else(|| 0.expr()),
+            value: val,
+        });
+    }
+
     // Rw
 
     /// Add a Lookup::Rw without increasing the rw_counter_offset, which is

@@ -22,6 +22,7 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod coinbase;
 mod comparator;
 mod dup;
 mod error_oog_pure_memory;
@@ -37,10 +38,12 @@ mod push;
 mod signextend;
 mod stop;
 mod swap;
+
 use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
@@ -100,21 +103,24 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
+    coinbase_gadget: CoinbaseGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
-    pub(crate) fn configure<TxTable, RwTable, BytecodeTable>(
+    pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         randomness: Column<Instance>,
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
+        block_table: BlockTable,
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
+        BlockTable: LookupTable<F, 3>,
     {
         let q_step = meta.complex_selector();
         let q_step_first = meta.complex_selector();
@@ -234,6 +240,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
+            coinbase_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -245,6 +252,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            block_table,
             independent_lookups,
         );
 
@@ -300,18 +308,21 @@ impl<F: FieldExt> ExecutionConfig<F> {
         gadget
     }
 
-    fn configure_lookup<TxTable, RwTable, BytecodeTable>(
+    #[allow(clippy::too_many_arguments)]
+    fn configure_lookup<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
+        block_table: BlockTable,
         independent_lookups: Vec<Vec<Lookup<F>>>,
     ) where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
+        BlockTable: LookupTable<F, 3>,
     {
         // Because one and only one ExecutionState is enabled at a step, we then
         // know only one of independent_lookups will be enabled at a step, so we
@@ -372,6 +383,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         lookup!(Table::Tx, tx_table);
         lookup!(Table::Rw, rw_table);
         lookup!(Table::Bytecode, bytecode_table);
+        lookup!(Table::Block, block_table);
     }
 
     pub fn assign_block(
@@ -500,6 +512,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }

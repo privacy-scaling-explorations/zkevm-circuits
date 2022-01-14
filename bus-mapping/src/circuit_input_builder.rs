@@ -9,6 +9,7 @@ use crate::evm::{
     StackAddress,
 };
 use crate::exec_trace::OperationRef;
+use crate::external_tracer::BlockConstants;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
 use crate::operation::{MemoryOp, Op, Operation, StackOp, RW};
@@ -175,8 +176,10 @@ impl BlockContext {
 /// Circuit Input related to a block.
 #[derive(Debug)]
 pub struct Block {
-    /// Constants associated to this block and the chain.
-    pub constants: ChainConstants,
+    /// Constants associated to the chain.
+    pub chain_const: ChainConstants,
+    /// Constants associated to the block.
+    pub block_const: BlockConstants,
     /// Container of operations done in this block.
     pub container: OperationContainer,
     txs: Vec<Transaction>,
@@ -187,10 +190,12 @@ impl Block {
     /// Create a new block.
     pub fn new<TX>(
         _eth_block: &eth_types::Block<TX>,
-        constants: ChainConstants,
+        chain_const: ChainConstants,
+        block_const: BlockConstants,
     ) -> Self {
         Self {
-            constants,
+            chain_const,
+            block_const,
             container: OperationContainer::new(),
             txs: Vec::new(),
             code: HashMap::new(),
@@ -821,12 +826,13 @@ impl<'a> CircuitInputBuilder {
         sdb: StateDB,
         code_db: CodeDB,
         eth_block: &eth_types::Block<TX>,
-        constants: ChainConstants,
+        chain_const: ChainConstants,
+        block_const: BlockConstants,
     ) -> Self {
         Self {
             sdb,
             code_db,
-            block: Block::new(eth_block, constants),
+            block: Block::new(eth_block, chain_const, block_const),
             block_ctx: BlockContext::new(),
         }
     }
@@ -1210,7 +1216,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
     pub async fn new(client: GethClient<P>) -> Result<Self, Error> {
         let constants = ChainConstants {
-            coinbase: client.get_coinbase().await?,
             chain_id: client.get_chain_id().await?,
         };
         Ok(Self {
@@ -1327,6 +1332,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             code_db,
             eth_block,
             self.constants.clone(),
+            BlockConstants::from_eth_block(
+                eth_block,
+                &Word::from(self.constants.chain_id),
+            ),
         );
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];

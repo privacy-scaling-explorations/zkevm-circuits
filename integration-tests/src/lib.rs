@@ -64,7 +64,6 @@ pub fn get_provider() -> Provider<Http> {
 pub async fn get_chain_constants() -> ChainConstants {
     let client = get_client();
     ChainConstants {
-        coinbase: client.get_coinbase().await.unwrap(),
         chain_id: client.get_chain_id().await.unwrap(),
     }
 }
