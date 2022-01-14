@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::NUM_BYTES_PROGRAM_COUNTER,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -24,7 +24,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct JumpiGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
+    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
     condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
 }
@@ -35,10 +35,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
+        let destination = cb.query_rlc();
         let condition = cb.query_cell();
 
         // Pop the value from the stack
@@ -111,7 +108,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
             region,
             offset,
             Some(
-                destination.to_le_bytes()[..NUM_BYTES_PROGRAM_COUNTER]
+                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
                     .try_into()
                     .unwrap(),
             ),

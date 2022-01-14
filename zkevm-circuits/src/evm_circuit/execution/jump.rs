@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::NUM_BYTES_PROGRAM_COUNTER,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -22,7 +22,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct JumpGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
+    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
@@ -31,10 +31,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
+        let destination = cb.query_rlc();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
@@ -83,7 +80,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
             region,
             offset,
             Some(
-                destination.to_le_bytes()[..NUM_BYTES_PROGRAM_COUNTER]
+                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
                     .try_into()
                     .unwrap(),
             ),

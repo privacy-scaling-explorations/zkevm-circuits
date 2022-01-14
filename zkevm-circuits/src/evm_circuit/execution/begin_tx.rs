@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_GAS_SIZE_IN_BYTES, STACK_CAPACITY},
+        param::{N_BYTES_GAS, STACK_CAPACITY},
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
@@ -38,7 +38,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
 }
