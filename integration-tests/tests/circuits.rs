@@ -1,10 +1,12 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
+use halo2::arithmetic::BaseExt;
 use halo2::dev::MockProver;
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
+use pairing::bn256::Fr;
 use zkevm_circuits::evm_circuit::witness::block_convert;
 use zkevm_circuits::state_circuit::StateCircuit;
 
@@ -276,6 +278,8 @@ mod test_evm_circuit {
 
 #[tokio::test]
 async fn test_evm_circuit_block_a() {
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr;
     use test_evm_circuit::*;
 
     log_init();
@@ -292,13 +296,16 @@ async fn test_evm_circuit_block_a() {
         .0
         .get(&code_hash)
         .expect("code_hash not found");
-    let block = block_convert(bytecode, &builder.block);
+    let block = block_convert(Fr::rand(), bytecode, &builder.block);
     run_test_circuit_complete_fixed_table(block)
         .expect("evm_circuit verification failed");
 }
 
 #[tokio::test]
 async fn test_state_circuit_block_a() {
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr;
+
     log_init();
     let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
     let cli = get_client();
@@ -325,6 +332,8 @@ async fn test_state_circuit_block_a() {
         MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
     let circuit = StateCircuit::<
+        Fr,
+        true,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -332,6 +341,7 @@ async fn test_state_circuit_block_a() {
         STACK_ADDRESS_MAX,
         STORAGE_ROWS_MAX,
     > {
+        randomness: Fr::rand(),
         memory_ops,
         stack_ops,
         storage_ops,
