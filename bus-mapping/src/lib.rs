@@ -56,6 +56,7 @@
 //!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
 //! };
 //! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+//! use bus_mapping::external_tracer::BlockConstants;
 //! use pairing::arithmetic::FieldExt;
 //!
 //! let input_trace = r#"
@@ -107,7 +108,6 @@
 //! "#;
 //!
 //! let ctants = ChainConstants{
-//!     coinbase: Address::zero(),
 //!     chain_id: 0,
 //! };
 //!
@@ -117,8 +117,16 @@
 //! let mut sdb = StateDB::new();
 //! sdb.set_account(&Address::zero(), state_db::Account::zero());
 //!
-//! let mut builder =
-//!     CircuitInputBuilder::new(sdb, CodeDB::new(), &eth_block, ctants);
+//! let mut builder = CircuitInputBuilder::new(
+//!     sdb,
+//!     CodeDB::new(),
+//!     &eth_block,
+//!     ctants.clone(),
+//!     BlockConstants::from_eth_block(
+//!         &eth_block,
+//!         &Word::from(ctants.chain_id),
+//!     ),
+//! );
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
