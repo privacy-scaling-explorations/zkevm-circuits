@@ -69,7 +69,7 @@ pub struct MPTConfig<F> {
     acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
     // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
-    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
+    // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie - but no branch is added or turned into leaf)
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
@@ -1558,7 +1558,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             c_words = self.convert_into_words(&c_hash);
 
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 1 {
-                                // We put hash of a nibble that drifted down to the added branch.
+                                // We put hash of a node that moved down to the added branch.
                                 // This is needed to check the hash of leaf_in_added_branch.
                                 s_hash = witness
                                     [ind + 1 + first_nibble as usize]
@@ -1568,7 +1568,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                             if row[IS_BRANCH_C_PLACEHOLDER_POS] == 1 {
                                 c_hash = witness
-                                    [ind + 1 + modified_node as usize]
+                                    [ind + 1 + first_nibble as usize]
                                     [C_START..C_START + HASH_WIDTH]
                                     .to_vec();
                                 c_words = self.convert_into_words(&c_hash);

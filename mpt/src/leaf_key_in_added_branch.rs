@@ -49,7 +49,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
         // TODO: after key_len there are 0s
 
-        // TODO: sel1 and sel2 are not turned around when placeholder C
+        let one = Expression::Constant(F::from(1_u64));
+        let c16 = Expression::Constant(F::from(16_u64));
+        let c32 = Expression::Constant(F::from(32_u64));
+        let c48 = Expression::Constant(F::from(48_u64));
+        let c248 = Expression::Constant(F::from(248_u64));
 
         // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row) is added
         // to RLC, finally lookup is used to check the hash that
@@ -141,8 +145,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let rot_branch_init = -23;
                 let rot_leaf_key_s = -4;
                 let rot_leaf_key_c = -2;
-                let c32 = Expression::Constant(F::from(32_u64));
-                let c48 = Expression::Constant(F::from(48_u64));
 
                 // sel1 and sel2 are in init branch
                 let sel2 = meta.query_advice(sel2, Rotation(rot_branch_init));
@@ -209,7 +211,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel2.clone()
                         * is_short.clone()
-                        * (s_advices0 - c32),
+                        * (s_advices0 - c32.clone()),
                 ));
 
                 constraints.push((
@@ -226,7 +228,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel2.clone()
                         * is_short.clone()
-                        * (s_advices0_prev_c - first_nibble - c48),
+                        * (s_advices0_prev_c - first_nibble - c48.clone()),
                 ));
 
                 for col in s_advices.iter().skip(1) {
@@ -297,11 +299,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let rot_branch_init = -23;
                 let rot_leaf_key_s = -4;
                 let rot_leaf_key_c = -2;
-                let one = Expression::Constant(F::from(1_u64));
-                let c16 = Expression::Constant(F::from(16_u64));
-                let c32 = Expression::Constant(F::from(32_u64));
-                let c48 = Expression::Constant(F::from(48_u64));
-
+                
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(sel1, Rotation(rot_branch_init));
 
@@ -343,7 +341,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel1.clone()
                         * is_short.clone()
-                        * (s_rlp2 - s_rlp2_prev_c + one),
+                        * (s_rlp2 - s_rlp2_prev_c + one.clone()),
                 ));
 
                 let s_advices0_prev_s = meta.query_advice(s_advices[0], Rotation(rot_leaf_key_s));
@@ -353,7 +351,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
                 // Any rotation that lands into branch children can be used.
                 let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
-                let second_nibble = s_advices1 - first_nibble * c16;
+                let second_nibble = s_advices1 - first_nibble * c16.clone();
 
                 constraints.push((
                     "Leaf key differs first nibble s_advices[0] prev placeholder s",
@@ -385,7 +383,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel1.clone()
                         * is_short.clone()
-                        * (s_advices0_prev_c - c32),
+                        * (s_advices0_prev_c - c32.clone()),
                 ));
 
                 for ind in 2..HASH_WIDTH {
@@ -451,9 +449,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let rot_branch_init = -23;
                 let rot_leaf_key_s = -4;
                 let rot_leaf_key_c = -2;
-                let c32 = Expression::Constant(F::from(32_u64));
-                let c48 = Expression::Constant(F::from(48_u64));
-
+                
                 // sel1 and sel2 are in init branch
                 let sel2 = meta.query_advice(sel2, Rotation(rot_branch_init));
 
@@ -464,7 +460,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_s_placeholder.clone()
                         * sel2.clone()
                         * is_long.clone()
-                        * (s_rlp1.clone() - c48.clone()),
+                        * (s_rlp1.clone() - c248.clone()),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_rlp1 placeholder c",
@@ -472,7 +468,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel2.clone()
                         * is_long.clone()
-                        * (s_rlp1.clone() - c48.clone()),
+                        * (s_rlp1.clone() - c248.clone()),
                 ));
 
                 let s_rlp2_prev_s = meta.query_advice(s_rlp2, Rotation(rot_leaf_key_s));
@@ -537,7 +533,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel2.clone()
                         * is_long.clone()
-                        * (s_advices1 - c32),
+                        * (s_advices1 - c32.clone()),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_advices[1] placeholder s",
@@ -553,7 +549,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel2.clone()
                         * is_long.clone()
-                        * (s_advices1_prev_c - first_nibble - c48),
+                        * (s_advices1_prev_c - first_nibble - c48.clone()),
                 ));
 
                 for col in s_advices.iter().skip(2) {
@@ -645,11 +641,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let rot_branch_init = -23;
                 let rot_leaf_key_s = -4;
                 let rot_leaf_key_c = -2;
-                let one = Expression::Constant(F::from(1_u64));
-                let c16 = Expression::Constant(F::from(16_u64));
-                let c32 = Expression::Constant(F::from(32_u64));
-                let c48 = Expression::Constant(F::from(48_u64));
-
+                
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(sel1, Rotation(rot_branch_init));
 
@@ -664,7 +656,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_s_placeholder.clone()
                         * sel1.clone()
                         * is_long.clone()
-                        * (s_rlp1.clone() - c48.clone()),
+                        * (s_rlp1.clone() - c248.clone()),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_rlp2 placeholder s",
@@ -681,7 +673,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel1.clone()
                         * is_long.clone()
-                        * (s_rlp1 - c48.clone()),
+                        * (s_rlp1 - c248.clone()),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_rlp2 placeholder c",
@@ -719,7 +711,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
                 // Any rotation that lands into branch children can be used.
                 let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
-                let second_nibble = s_advices2 - first_nibble * c16;
+                let second_nibble = s_advices2 - first_nibble * c16.clone();
 
                 constraints.push((
                     "Leaf key differs first nibble s_advices[1] prev placeholder s",
@@ -909,10 +901,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation(rot_val));
                 if !r_wrapped {
-                    rlc = rlc + s * r_table[rind].clone();
+                    rlc = rlc + s * acc_mult.clone() * r_table[rind].clone();
                 } else {
                     rlc = rlc
-                        + s * r_table[rind].clone()
+                        + s * acc_mult.clone() * r_table[rind].clone()
                             * r_table[R_TABLE_LEN - 1].clone();
                 }
                 if rind == R_TABLE_LEN - 1 {
@@ -972,10 +964,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation(rot_val));
                 if !r_wrapped {
-                    rlc = rlc + s * r_table[rind].clone();
+                    rlc = rlc + s * acc_mult.clone() * r_table[rind].clone();
                 } else {
                     rlc = rlc
-                        + s * r_table[rind].clone()
+                        + s * acc_mult.clone() * r_table[rind].clone()
                             * r_table[R_TABLE_LEN - 1].clone();
                 }
                 if rind == R_TABLE_LEN - 1 {
@@ -1013,36 +1005,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             constraints
         });
-
-        // TODO: "when placeholder" constraints - the branch that is parallel to the placeholder
-        // branch needs to be checked to have exactly two non empty leaves: one is at is_modified
-        // and one at is_at_first_nibble (is_modified is checked in leaf_key and leaf_value).
-        // the leaf at first_nibble needs to be the same as the leaf at is_modified
-        // in the previous branch (and at parallel position)
-        /*
-        meta.create_gate("branch placeholder", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let is_branch_init_cur =
-                meta.query_advice(is_branch_init, Rotation::cur());
-
-            let mut constraints = vec![];
-
-            let is_branch_s_placeholder = meta.query_advice(
-                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
-                Rotation(-16),
-            );
-
-            constraints.push((
-                "branch mult C row 0 (3)",
-                q_enable
-                    * is_branch_init_cur
-                    * three_rlp_bytes_c
-                    * (mult_c_three - branch_mult_c_cur),
-            ));
-
-            constraints
-        });
-        */
 
         config
     }
