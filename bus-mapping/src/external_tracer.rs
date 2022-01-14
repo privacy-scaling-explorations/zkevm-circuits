@@ -31,10 +31,7 @@ pub struct BlockConstants {
 
 impl BlockConstants {
     /// Generate a BlockConstants from an ethereum block, useful for testing.
-    pub fn from_eth_block<TX>(
-        block: &Block<TX>,
-        chain_id: &Word,
-    ) -> Self {
+    pub fn from_eth_block<TX>(block: &Block<TX>, chain_id: &Word) -> Self {
         Self {
             hash: block.hash.unwrap(),
             coinbase: block.author,

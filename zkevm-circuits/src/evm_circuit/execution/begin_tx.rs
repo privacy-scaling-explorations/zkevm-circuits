@@ -548,6 +548,7 @@ mod test {
             ]
             .concat(),
             bytecodes: vec![bytecode],
+            ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }

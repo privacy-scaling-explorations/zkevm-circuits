@@ -3,7 +3,8 @@ use crate::evm_circuit::{
     param::STACK_CAPACITY,
     step::ExecutionState,
     table::{
-        AccountFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,BlockContextFieldTag
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
+        TxContextFieldTag,
     },
     util::RandomLinearCombination,
 };

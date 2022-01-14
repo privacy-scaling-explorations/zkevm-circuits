@@ -1332,7 +1332,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             code_db,
             eth_block,
             self.constants.clone(),
-            BlockConstants::from_eth_block(&eth_block, &Word::from(self.constants.chain_id)),
+            BlockConstants::from_eth_block(
+                eth_block,
+                &Word::from(self.constants.chain_id),
+            ),
         );
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
