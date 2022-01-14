@@ -87,10 +87,6 @@ impl Clone for StateBigInt {
     }
 }
 
-pub fn mod_u64(a: &BigUint, b: u64) -> u64 {
-    (a % b).iter_u64_digits().take(1).next().unwrap_or(0)
-}
-
 pub fn convert_b2_to_b13(a: u64) -> Lane13 {
     let mut lane13: BigUint = Zero::zero();
     for i in 0..64 {
@@ -209,17 +205,11 @@ pub fn big_uint_to_field<F: FieldExt>(a: &BigUint) -> F {
 
 /// This function allows us to inpect coefficients of big-numbers in different
 /// bases.
-pub fn inspect(x: BigUint, name: &str, base: u64) {
-    let mut raw = x.clone();
-    let mut info: Vec<(u32, u64)> = vec![];
-
-    for i in 0..65 {
-        let remainder: u64 = mod_u64(&raw, base);
-        raw /= base;
-        if remainder != 0 {
-            info.push((i, remainder));
-        }
-    }
+pub fn inspect(x: BigUint, name: &str, base: u8) {
+    let mut chunks = x.to_radix_le(base.into());
+    chunks.resize(65, 0);
+    let info: Vec<(usize, u8)> =
+        (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
