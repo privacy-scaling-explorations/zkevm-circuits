@@ -1,14 +1,14 @@
 use crate::common::State;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use num_traits::{One, Zero};
+use num_traits::Zero;
 use pairing::arithmetic::FieldExt;
 use pairing::bn256::Fr as Fp;
 use std::ops::{Index, IndexMut};
 
-pub const B2: u64 = 2;
-pub const B13: u64 = 13;
-pub const B9: u64 = 9;
+pub const B2: u8 = 2;
+pub const B13: u8 = 13;
+pub const B9: u8 = 9;
 
 /// Base 9 coef mapper scalers
 /// f_logic(x1, x2, x3, x4) = x1 ^ (!x2 & x3) ^ x4
@@ -16,10 +16,10 @@ pub const B9: u64 = 9;
 /// where x1, x2, x3, x4 are binary.
 /// We have the property that `0 <= f_arith(...) < 9` and
 /// the map from `f_arith(...)` to `f_logic(...)` is injective.
-pub const A1: u64 = 2u64;
-pub const A2: u64 = 1u64;
-pub const A3: u64 = 3u64;
-pub const A4: u64 = 2u64;
+pub const A1: u8 = 2;
+pub const A2: u8 = 1;
+pub const A3: u8 = 3;
+pub const A4: u8 = 2;
 
 pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
@@ -87,10 +87,6 @@ impl Clone for StateBigInt {
     }
 }
 
-pub fn mod_u64(a: &BigUint, b: u64) -> u64 {
-    (a % b).iter_u64_digits().take(1).next().unwrap_or(0)
-}
-
 pub fn convert_b2_to_b13(a: u64) -> Lane13 {
     let mut lane13: BigUint = Zero::zero();
     for i in 0..64 {
@@ -117,7 +113,7 @@ pub fn convert_b2_to_b9(a: u64) -> Lane9 {
 ///
 /// For example, if we have 5 bits set and 7 bits unset, then we have `x` as 5
 /// and the xor result to be 1.
-pub fn convert_b13_coef(x: u64) -> u64 {
+pub fn convert_b13_coef(x: u8) -> u8 {
     assert!(x < 13);
     x & 1
 }
@@ -127,55 +123,49 @@ pub fn convert_b13_coef(x: u64) -> u64 {
 ///
 /// The input `x` is a chunk of a base 9 number and it represents the arithmatic
 /// result of `2*a + b + 3*c + 2*d`, where `a`, `b`, `c`, and `d` each is a bit.
-pub fn convert_b9_coef(x: u64) -> u64 {
+pub fn convert_b9_coef(x: u8) -> u8 {
     assert!(x < 9);
-    let bit_table: [u64; 9] = [0, 0, 1, 1, 0, 0, 1, 1, 0];
+    let bit_table: [u8; 9] = [0, 0, 1, 1, 0, 0, 1, 1, 0];
     bit_table[x as usize]
 }
 
+// We assume the input comes from Theta step and has 65 chunks
 pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
-    let mut base = BigUint::from(B9).pow(rot);
-    let mut special_chunk = Zero::zero();
-    let mut raw = x;
-    let mut acc: Lane9 = Zero::zero();
-
-    for i in 0..65 {
-        let remainder: u64 = mod_u64(&raw, B13);
-        if i == 0 || i == 64 {
-            special_chunk += remainder;
-        } else {
-            acc += convert_b13_coef(remainder) * base.clone();
-        }
-        raw /= B13;
-        base *= B9;
-        if i == 63 - rot {
-            base = One::one();
-        }
-    }
-    acc += convert_b13_coef(special_chunk) * BigUint::from(B9).pow(rot);
-    acc
+    // 65 chunks
+    let mut chunks = x.to_radix_le(B13.into());
+    chunks.resize(65, 0);
+    // 0 and 64 was separated in Theta, we now combined them together
+    let special = chunks.get(0).unwrap() + chunks.get(64).unwrap();
+    // middle 63 chunks
+    let middle = chunks.get(1..64).unwrap();
+    // split at offset
+    let (left, right) = middle.split_at(63 - rot as usize);
+    // rotated has 64 chunks
+    // left is rotated right, and the right is wrapped over to left
+    // with the special chunk in the middle
+    let rotated: Vec<u8> = right
+        .iter()
+        .chain(vec![special].iter())
+        .chain(left.iter())
+        .map(|&x| convert_b13_coef(x))
+        .collect_vec();
+    BigUint::from_radix_le(&rotated, B9.into()).unwrap_or_default()
 }
 
 pub fn convert_lane<F>(
     lane: BigUint,
-    from_base: u64,
-    to_base: u64,
+    from_base: u8,
+    to_base: u8,
     coef_transform: F,
 ) -> BigUint
 where
-    F: Fn(u64) -> u64,
+    F: Fn(u8) -> u8,
 {
-    let mut base: BigUint = One::one();
-    let mut raw = lane;
-    let mut acc: BigUint = Zero::zero();
-
-    for _ in 0..64 {
-        let remainder: u64 = mod_u64(&raw, B9);
-        acc += coef_transform(remainder) * base.clone();
-        raw /= from_base;
-        base *= to_base;
-    }
-    acc
+    let chunks = lane.to_radix_be(from_base.into());
+    let converted_chunks: Vec<u8> =
+        chunks.iter().map(|&x| coef_transform(x)).collect();
+    BigUint::from_radix_be(&converted_chunks, to_base.into())
+        .unwrap_or_default()
 }
 
 pub fn convert_b9_lane_to_b13(x: Lane9) -> Lane13 {
@@ -215,17 +205,11 @@ pub fn big_uint_to_field<F: FieldExt>(a: &BigUint) -> F {
 
 /// This function allows us to inpect coefficients of big-numbers in different
 /// bases.
-pub fn inspect(x: BigUint, name: &str, base: u64) {
-    let mut raw = x.clone();
-    let mut info: Vec<(u32, u64)> = vec![];
-
-    for i in 0..65 {
-        let remainder: u64 = mod_u64(&raw, base);
-        raw /= base;
-        if remainder != 0 {
-            info.push((i, remainder));
-        }
-    }
+pub fn inspect(x: BigUint, name: &str, base: u8) {
+    let mut chunks = x.to_radix_le(base.into());
+    chunks.resize(65, 0);
+    let info: Vec<(usize, u8)> =
+        (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
@@ -282,4 +266,35 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(
         .collect();
     arr[0..N].copy_from_slice(&vector[0..N]);
     arr
+}
+
+pub fn f_from_radix_be<F: FieldExt>(buf: &[u8], base: u8) -> F {
+    let base = F::from(base.into());
+    buf.iter()
+        .fold(F::zero(), |acc, &x| acc * base + F::from(x.into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_bigint::BigUint;
+    #[test]
+    fn test_convert_b13_lane_to_b9() {
+        // the number 1 is chosen that `convert_b13_coef` has no effect
+        let mut a = vec![0, 1, 1, 1];
+        a.resize(65, 0);
+        let lane = BigUint::from_radix_le(&a, B13.into()).unwrap_or_default();
+        assert_eq!(
+            convert_b13_lane_to_b9(lane.clone(), 0),
+            BigUint::from_radix_le(&a, B9.into()).unwrap_or_default()
+        );
+
+        // rotate by 4
+        let mut b = vec![0, 0, 0, 0, 0, 1, 1, 1];
+        b.resize(65, 0);
+        assert_eq!(
+            convert_b13_lane_to_b9(lane, 4),
+            BigUint::from_radix_le(&b, B9.into()).unwrap_or_default()
+        );
+    }
 }

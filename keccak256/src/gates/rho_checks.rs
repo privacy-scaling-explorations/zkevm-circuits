@@ -178,16 +178,16 @@ struct RotatingVariables {
     block_count: Option<u32>,
     // step2 acc and step3 acc
     block_count_acc: [u32; 2],
-    low_value: u64,
-    high_value: Option<u64>,
+    low_value: u8,
+    high_value: Option<u8>,
 }
 
 impl RotatingVariables {
     fn from(lane_base_13: BigUint, rotation: u32) -> Result<Self, Error> {
         let chunk_idx = 1;
         let step = get_step_size(chunk_idx, rotation);
-        let input_raw = lane_base_13.clone() / B13;
-        let input_coef = input_raw.clone() % B13.pow(step);
+        let input_raw = lane_base_13.clone() / (B13 as u64);
+        let input_coef = input_raw.clone() % (B13 as u64).pow(step);
         let input_power_of_base = BigUint::from(B13);
         let input_acc = lane_base_13.clone();
         let (block_count, output_coef) =
@@ -204,7 +204,7 @@ impl RotatingVariables {
         if step == 2 || step == 3 {
             block_count_acc[(step - 2) as usize] += block_count;
         }
-        let low_value: u64 = biguint_mod(&lane_base_13, B13);
+        let low_value = biguint_mod(&lane_base_13, B13);
         Ok(Self {
             rotation,
             chunk_idx,
@@ -228,16 +228,18 @@ impl RotatingVariables {
         let mut new = self.clone();
         new.chunk_idx += self.step;
         new.step = get_step_size(new.chunk_idx, self.rotation);
-        new.input_raw /= B13.pow(self.step);
-        new.input_coef = new.input_raw.clone() % B13.pow(new.step);
-        new.input_power_of_base *= B13.pow(self.step);
+        let input_pow_of_step = (B13 as u64).pow(self.step);
+        new.input_raw /= input_pow_of_step;
+        new.input_coef = new.input_raw.clone() % (B13 as u64).pow(new.step);
+        new.input_power_of_base *= input_pow_of_step;
         new.input_acc -=
             self.input_power_of_base.clone() * self.input_coef.clone();
+        let output_pow_of_step = (B9 as u64).pow(self.step);
         new.output_power_of_base =
             if is_at_rotation_offset(new.chunk_idx, self.rotation) {
                 BigUint::one()
             } else {
-                self.output_power_of_base.clone() * B9.pow(self.step)
+                self.output_power_of_base.clone() * output_pow_of_step
             };
         new.output_acc +=
             self.output_power_of_base.clone() * self.output_coef.clone();
@@ -250,11 +252,11 @@ impl RotatingVariables {
             );
             new.block_count = None;
             new.high_value = Some(biguint_mod(&self.input_raw, B13));
-            let high = new.high_value.unwrap();
+            let high: u8 = new.high_value.unwrap();
             new.output_coef =
                 BigUint::from(convert_b13_coef(high + self.low_value));
-            let expect =
-                new.low_value + high * BigUint::from(B13).pow(LANE_SIZE);
+            let expect = (new.low_value as u64)
+                + (high as u64) * BigUint::from(B13).pow(LANE_SIZE);
             assert_eq!(
                 new.input_acc,
                 expect,
@@ -431,7 +433,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             fix_cols,
         );
 
-        let power_of_b13 = F::from(B13).pow(&[chunk_idx.into(), 0, 0, 0]);
+        let power_of_b13 =
+            F::from(B13.into()).pow(&[chunk_idx.into(), 0, 0, 0]);
 
         // | coef | 13**x | acc       |
         // |------|-------|-----------|
@@ -451,7 +454,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
                 q_enable * (acc_next - acc + coef * power_of_base),
             )]
         });
-        let power_of_b9 = F::from(B9).pow(&[
+        let power_of_b9 = F::from(B9.into()).pow(&[
             ((rotation + chunk_idx) % LANE_SIZE).into(),
             0,
             0,
@@ -573,8 +576,9 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                 .query_advice(base_9_acc, Rotation::next())
                 - meta.query_advice(base_9_acc, Rotation::cur());
             let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
-            let pow_of_9 =
-                Expression::Constant(F::from(B9).pow(&[rotation, 0, 0, 0]));
+            let pow_of_9 = Expression::Constant(
+                F::from(B9.into()).pow(&[rotation, 0, 0, 0]),
+            );
             vec![(
                 "delta_base_9_acc === (high_value + low_value) * 9**rotation",
                 meta.query_selector(q_enable)

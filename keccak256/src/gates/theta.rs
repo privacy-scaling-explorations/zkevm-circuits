@@ -50,7 +50,7 @@ impl<F: FieldExt> ThetaConfig<F> {
                         meta.query_advice(state[5 * x + y], Rotation::cur());
                     let right = old_state
                         + column_sum[(x + 4) % 5].clone()
-                        + Expression::Constant(F::from(B13))
+                        + Expression::Constant(F::from(B13.into()))
                             * column_sum[(x + 1) % 5].clone();
                     q_enable.clone() * (new_state - right)
                 })

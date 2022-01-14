@@ -1,4 +1,6 @@
-use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, B13, B2, B9};
+use crate::arith_helpers::{
+    convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9,
+};
 use crate::common::LANE_SIZE;
 use crate::gates::rho_helpers::{get_block_count, BASE_NUM_OF_CHUNKS};
 use halo2::{
@@ -12,7 +14,6 @@ use std::marker::PhantomData;
 
 use itertools::Itertools;
 
-use crate::arith_helpers::mod_u64;
 use crate::gates::gate_helpers::f_to_biguint;
 
 const MAX_CHUNKS: usize = 64;
@@ -45,13 +46,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         || "base 13",
                         self.base13,
                         i,
-                        || {
-                            Ok(F::from(
-                                b13_chunks
-                                    .iter()
-                                    .fold(0, |acc, x| acc * B13 + *x),
-                            ))
-                        },
+                        || Ok(f_from_radix_be::<F>(&b13_chunks, B13)),
                     )?;
 
                     table.assign_cell(
@@ -59,9 +54,11 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         self.base9,
                         i,
                         || {
-                            Ok(F::from(b13_chunks.iter().fold(0, |acc, x| {
-                                acc * B9 + convert_b13_coef(*x)
-                            })))
+                            let converted_chunks: Vec<u8> = b13_chunks
+                                .iter()
+                                .map(|&x| convert_b13_coef(x))
+                                .collect_vec();
+                            Ok(f_from_radix_be::<F>(&converted_chunks, B9))
                         },
                     )?;
                     table.assign_cell(
@@ -138,15 +135,16 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
                 for i in 0..B13 {
                     for j in 0..(B13 - i) {
                         let (low, high) = (i, j);
-                        let last_chunk = F::from(low)
-                            + F::from(high)
-                                * F::from(B13).pow(&[
+                        let last_chunk = F::from(low.into())
+                            + F::from(high.into())
+                                * F::from(B13.into()).pow(&[
                                     LANE_SIZE as u64,
                                     0,
                                     0,
                                     0,
                                 ]);
-                        let output_coef = F::from(convert_b13_coef(low + high));
+                        let output_coef =
+                            F::from(convert_b13_coef(low + high).into());
                         table.assign_cell(
                             || "last chunk",
                             self.last_chunk,
@@ -198,8 +196,8 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct BaseInfo<F> {
-    input_base: u64,
-    output_base: u64,
+    input_base: u8,
+    output_base: u8,
     // How many chunks we perform in a lookup?
     num_chunks: usize,
     // How many chunks in total
@@ -211,10 +209,10 @@ pub(crate) struct BaseInfo<F> {
 
 impl<F: FieldExt> BaseInfo<F> {
     pub fn input_pob(&self) -> F {
-        F::from(self.input_base.pow(self.num_chunks as u32))
+        F::from(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
     pub fn output_pob(&self) -> F {
-        F::from(self.output_base.pow(self.num_chunks as u32))
+        F::from(self.output_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
 
     pub fn slice_count(self) -> usize {
@@ -232,31 +230,20 @@ impl<F: FieldExt> BaseInfo<F> {
         input: F,
     ) -> Result<(Vec<F>, Vec<F>, F), Error> {
         // big-endian
-        let input_chunks: Vec<u64> = {
-            let mut raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
-            // little endian
-            let mut input_chunks: Vec<u64> = (0..self.max_chunks)
-                .map(|_| {
-                    let remainder: u64 = mod_u64(&raw, self.input_base);
-                    raw /= self.input_base;
-                    remainder
-                })
-                .collect();
-            // big endian
-            input_chunks.reverse();
-            input_chunks
+        let input_chunks: Vec<u8> = {
+            let raw = f_to_biguint(input).ok_or(Error::Synthesis)?;
+            let mut v = raw.to_radix_le(self.input_base.into());
+            assert!(v.len() <= self.max_chunks);
+            // fill 0 to max chunks
+            v.resize(self.max_chunks, 0);
+            // v is big-endian now
+            v.reverse();
+            v
         };
         let input_coefs: Vec<F> = input_chunks
             .chunks(self.num_chunks)
-            .map(|chunks| {
-                let coef = chunks
-                    .iter()
-                    // big endian
-                    .fold(0, |acc, &x| acc * self.input_base + x);
-                F::from(coef)
-            })
+            .map(|chunks| f_from_radix_be(chunks, self.input_base))
             .collect();
-
         let convert_chunk = match self.input_base {
             B2 => |x| x,
             B13 => convert_b13_coef,
@@ -264,19 +251,17 @@ impl<F: FieldExt> BaseInfo<F> {
             _ => unreachable!(),
         };
         let output: F = {
-            let output_base = F::from(self.output_base);
-            input_chunks.iter().fold(F::zero(), |acc, &x| {
-                acc * output_base + F::from(convert_chunk(x))
-            })
+            let converted_chunks: Vec<u8> =
+                input_chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
+            f_from_radix_be(&converted_chunks, self.output_base)
         };
 
         let output_coefs: Vec<F> = input_chunks
             .chunks(self.num_chunks)
             .map(|chunks| {
-                let coef = chunks.iter().fold(0, |acc, &x| {
-                    acc * self.output_base + convert_chunk(x)
-                });
-                F::from(coef)
+                let converted_chunks: Vec<u8> =
+                    chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
+                f_from_radix_be(&converted_chunks, self.output_base)
             })
             .collect();
         Ok((input_coefs, output_coefs, output))
@@ -309,38 +294,20 @@ impl<F: FieldExt> FromBinaryTableConfig<F> {
                         || "base 2",
                         self.base2,
                         i,
-                        || {
-                            Ok(F::from(
-                                b2_chunks
-                                    .iter()
-                                    .fold(0, |acc, x| acc * B2 + *x),
-                            ))
-                        },
+                        || Ok(f_from_radix_be::<F>(&b2_chunks, B2)),
                     )?;
 
                     table.assign_cell(
                         || "base 9",
                         self.base9,
                         i,
-                        || {
-                            Ok(F::from(
-                                b2_chunks
-                                    .iter()
-                                    .fold(0, |acc, x| acc * B9 + *x),
-                            ))
-                        },
+                        || Ok(f_from_radix_be::<F>(&b2_chunks, B9)),
                     )?;
                     table.assign_cell(
                         || "base 13",
                         self.base13,
                         i,
-                        || {
-                            Ok(F::from(
-                                b2_chunks
-                                    .iter()
-                                    .fold(0, |acc, x| acc * B13 + *x),
-                            ))
-                        },
+                        || Ok(f_from_radix_be::<F>(&b2_chunks, B13)),
                     )?;
                 }
                 Ok(())
@@ -396,33 +363,23 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
                         || "base 9",
                         self.base9,
                         i,
-                        || {
-                            Ok(F::from(
-                                b9_chunks
-                                    .iter()
-                                    .fold(0, |acc, x| acc * B9 + *x),
-                            ))
-                        },
+                        || Ok(f_from_radix_be::<F>(&b9_chunks, B9)),
                     )?;
+                    let converted_chunks: Vec<u8> = b9_chunks
+                        .iter()
+                        .map(|&x| convert_b9_coef(x))
+                        .collect_vec();
                     table.assign_cell(
                         || "base 13",
                         self.base13,
                         i,
-                        || {
-                            Ok(F::from(b9_chunks.iter().fold(0, |acc, x| {
-                                acc * B13 + convert_b9_coef(*x)
-                            })))
-                        },
+                        || Ok(f_from_radix_be::<F>(&converted_chunks, B13)),
                     )?;
                     table.assign_cell(
                         || "base 2",
                         self.base2,
                         i,
-                        || {
-                            Ok(F::from(b9_chunks.iter().fold(0, |acc, x| {
-                                acc * B2 + convert_b9_coef(*x)
-                            })))
-                        },
+                        || Ok(f_from_radix_be::<F>(&converted_chunks, B2)),
                     )?;
                 }
                 Ok(())
