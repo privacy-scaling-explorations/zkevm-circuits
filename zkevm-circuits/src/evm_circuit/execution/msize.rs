@@ -84,7 +84,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{test_util::run_test_circuits};
+    use crate::test_util::run_test_circuits;
     use bus_mapping::{bytecode, eth_types::Word};
 
     #[test]

@@ -1,12 +1,10 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
-use halo2::arithmetic::BaseExt;
 use halo2::dev::MockProver;
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
-use pairing::bn256::Fr;
 use zkevm_circuits::evm_circuit::witness::block_convert;
 use zkevm_circuits::state_circuit::StateCircuit;
 

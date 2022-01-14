@@ -106,8 +106,8 @@ mod test {
     use crate::{
         evm_circuit::test::rand_word,
         test_util::{
-            get_fixed_table, run_test_circuits_with_config,
-            BytecodeTestConfig, FixedTableConfig,
+            get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig,
+            FixedTableConfig,
         },
     };
     use bus_mapping::{bytecode, eth_types::Word};

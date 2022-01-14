@@ -81,10 +81,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::{test::rand_word},
-        test_util::run_test_circuits,
-    };
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
     use bus_mapping::{bytecode, eth_types::Word};
 
     fn test_ok(value: Word) {

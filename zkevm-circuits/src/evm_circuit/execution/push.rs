@@ -155,10 +155,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::{test::rand_bytes},
-        test_util::run_test_circuits,
-    };
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
     use bus_mapping::{bytecode, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {

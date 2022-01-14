@@ -88,10 +88,7 @@ impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
 #[cfg(test)]
 
 mod test {
-    use crate::{
-        evm_circuit::{test::rand_word},
-        test_util::run_test_circuits,
-    };
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
     use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, value: Word) {

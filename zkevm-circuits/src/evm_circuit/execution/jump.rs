@@ -93,10 +93,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::{test::rand_range},
-        test_util::run_test_circuits,
-    };
+    use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
     use bus_mapping::bytecode;
 
     fn test_ok(destination: usize) {

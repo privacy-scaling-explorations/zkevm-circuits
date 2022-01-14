@@ -18,9 +18,7 @@ use halo2::{
     poly::Rotation,
 };
 
-
 use pairing::arithmetic::FieldExt;
-
 
 /*
 Example state table:
@@ -1325,6 +1323,7 @@ mod tests {
     use bus_mapping::mock;
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
+    use halo2::arithmetic::BaseExt;
     use halo2::dev::{
         MockProver, VerifyFailure::ConstraintNotSatisfied,
         VerifyFailure::Lookup,

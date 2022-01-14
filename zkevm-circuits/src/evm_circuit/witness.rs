@@ -1,20 +1,18 @@
 #![allow(missing_docs)]
-use crate::{
-    evm_circuit::{
-        param::STACK_CAPACITY,
-        step::ExecutionState,
-        table::{
-            AccountFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+use crate::evm_circuit::{
+    param::STACK_CAPACITY,
+    step::ExecutionState,
+    table::{
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
         TxContextFieldTag,
-        },
-        util::RandomLinearCombination,
     },
+    util::RandomLinearCombination,
 };
 use bus_mapping::{
     eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word},
     evm::OpcodeId,
 };
-use halo2::arithmetic::{FieldExt};
+use halo2::arithmetic::FieldExt;
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;

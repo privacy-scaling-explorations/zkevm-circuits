@@ -109,7 +109,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::rand_word};
+    use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
     use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
 
