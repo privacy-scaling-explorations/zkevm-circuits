@@ -3,9 +3,10 @@ use crate::{
     common::LANE_SIZE,
 };
 
-use std::convert::TryInto;
-
+use itertools::Itertools;
 use num_bigint::BigUint;
+use num_traits::Zero;
+use std::convert::TryInto;
 
 pub const BASE_NUM_OF_CHUNKS: u32 = 4;
 
@@ -104,6 +105,163 @@ pub fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
     (block_count, output_coef)
 }
 
+#[derive(Debug, Clone)]
+pub struct Slice {
+    coef: BigUint,
+    power_of_base: BigUint,
+    pre_acc: BigUint,
+    post_acc: BigUint,
+}
+
+#[derive(Debug, Clone)]
+pub struct OverflowDetector {
+    current_block_count: u32,
+    step2_acc: u32,
+    step3_acc: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Conversion {
+    chunk_idx: u32,
+    step: u32,
+    input: Slice,
+    output: Slice,
+    overflow_detector: OverflowDetector,
+}
+
+const RHO_LANE_SIZE: usize = 65;
+
+#[derive(Debug, Clone)]
+pub struct RhoLane {
+    lane: BigUint,
+    rotation: u32,
+    // base13 in little endian
+    chunks: [u8; RHO_LANE_SIZE],
+    special_high: u8,
+    special_low: u8,
+}
+
+impl RhoLane {
+    pub fn new(lane: BigUint, rotation: u32) -> Self {
+        assert!(
+            lane.lt(&BigUint::from(B13).pow(RHO_LANE_SIZE as u32)),
+            "lane too big"
+        );
+        let mut chunks = lane.to_radix_le(B13.into());
+        chunks.resize(RHO_LANE_SIZE, 0);
+        let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
+        let special_high = *chunks.get(64).unwrap();
+        let special_low = *chunks.get(0).unwrap();
+        assert!(special_high + special_low < 13, "invalid Rho input lane");
+        Self {
+            lane,
+            rotation,
+            chunks,
+            special_high,
+            special_low,
+        }
+    }
+
+    pub fn get_rotated_chunks(&self) -> [u8; 64] {
+        let special = self.special_high + self.special_low;
+        let middle = self.chunks.get(1..64).unwrap();
+        // split at offset
+        let (left, right) = middle.split_at(63 - self.rotation as usize);
+        // rotated has 64 chunks
+        // left is rotated right, and the right is wrapped over to left
+        // with the special chunk in the middle
+        let rotated: Vec<u8> = right
+            .iter()
+            .chain(vec![special].iter())
+            .chain(left.iter())
+            .map(|&x| convert_b13_coef(x))
+            .collect_vec();
+        rotated.try_into().unwrap()
+    }
+    pub fn get_output_lane(self) -> BigUint {
+        let rotated_chunks = self.get_rotated_chunks();
+        BigUint::from_radix_le(&rotated_chunks, B9.into()).unwrap_or_default()
+    }
+
+    pub fn get_full_witness(&self) -> Vec<Conversion> {
+        let mut input_acc = self.lane.clone();
+        let mut output_acc = BigUint::zero();
+        let mut step2_acc: u32 = 0;
+        let mut step3_acc: u32 = 0;
+        let output: Vec<Conversion> = slice_lane(self.rotation)
+            .iter()
+            .map(|&(chunk_idx, step)| {
+                let chunks = self
+                    .chunks
+                    .get(chunk_idx as usize..(chunk_idx + step) as usize)
+                    .unwrap();
+                let input = {
+                    let coef = BigUint::from_radix_le(chunks, B13.into())
+                        .unwrap_or_default();
+                    let power_of_base = BigUint::from(B13).pow(chunk_idx);
+                    let pre_acc = input_acc.clone();
+                    input_acc -= &coef * &power_of_base;
+                    let post_acc = input_acc.clone();
+                    Slice {
+                        coef,
+                        power_of_base,
+                        pre_acc,
+                        post_acc,
+                    }
+                };
+                let output = {
+                    let converted_chunks = chunks
+                        .iter()
+                        .map(|&x| convert_b13_coef(x))
+                        .collect_vec();
+                    let coef =
+                        BigUint::from_radix_le(&converted_chunks, B9.into())
+                            .unwrap_or_default();
+                    let power = (chunk_idx + self.rotation) % LANE_SIZE;
+                    let power_of_base = BigUint::from(B9).pow(power);
+                    let pre_acc = output_acc.clone();
+                    output_acc += &coef * &power_of_base;
+                    let post_acc = output_acc.clone();
+                    Slice {
+                        coef,
+                        power_of_base,
+                        pre_acc,
+                        post_acc,
+                    }
+                };
+                let overflow_detector = {
+                    let mut v = chunks.to_vec();
+                    // pad to 4 chunks
+                    v.resize(BASE_NUM_OF_CHUNKS as usize, 0);
+                    // to big endian
+                    v.reverse();
+                    let chunks_be: [u8; BASE_NUM_OF_CHUNKS as usize] =
+                        v.try_into().unwrap();
+                    let current_block_count = get_block_count(chunks_be);
+                    match step {
+                        2 => step2_acc += current_block_count,
+                        3 => step3_acc += current_block_count,
+                        _ => {}
+                    };
+                    OverflowDetector {
+                        current_block_count,
+                        step2_acc,
+                        step3_acc,
+                    }
+                };
+                Conversion {
+                    chunk_idx,
+                    step,
+                    input,
+                    output,
+                    overflow_detector,
+                }
+            })
+            .collect_vec();
+        output
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +309,13 @@ mod tests {
             STEP3_RANGE,
             (STEP_COUNTS[step3 - 1] * OVERFLOW_TRANSFORM[step3]).into()
         );
+    }
+    #[test]
+    fn test_rho_lane_rotation() {
+        let x = BigUint::from(1234567890u64);
+        let lane = RhoLane::new(x, 0);
+        println!("lane {:?}", lane);
+        println!("rotated {:?}", lane.clone().get_rotated_chunks());
+        println!("witness {:?}", lane.get_full_witness());
     }
 }
