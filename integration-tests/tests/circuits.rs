@@ -22,6 +22,7 @@ mod test_evm_circuit {
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::*,
+        poly::Rotation,
     };
     use zkevm_circuits::evm_circuit::{
         param::STEP_HEIGHT,
@@ -187,7 +188,21 @@ mod test_evm_circuit {
             let rw_table = [(); 8].map(|_| meta.advice_column());
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
-            let randomness = meta.instance_column();
+
+            let power_of_randomness = {
+                let columns = [(); 31].map(|_| meta.instance_column());
+                let mut power_of_randomness = None;
+
+                meta.create_gate("", |meta| {
+                    power_of_randomness = Some(columns.map(|column| {
+                        meta.query_instance(column, Rotation::cur())
+                    }));
+
+                    [Expression::Constant(F::zero())]
+                });
+
+                power_of_randomness.unwrap()
+            };
 
             Self::Config {
                 tx_table,
@@ -195,7 +210,7 @@ mod test_evm_circuit {
                 bytecode_table,
                 evm_circuit: EvmCircuit::configure(
                     meta,
-                    randomness,
+                    power_of_randomness,
                     tx_table,
                     rw_table,
                     bytecode_table,
