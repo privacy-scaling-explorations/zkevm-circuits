@@ -11,6 +11,9 @@ pub struct BlockCount<F> {
 
 pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 
+/// Convert a bigUint value to FieldExt
+///
+/// We assume the input value is smaller than the field size
 pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F {
     let mut x_bytes = x.to_bytes_le();
     assert!(
