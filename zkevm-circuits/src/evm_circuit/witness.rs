@@ -27,17 +27,25 @@ pub struct Block<F> {
     pub rws: Vec<Rw>,
     /// Bytecode used in the block
     pub bytecodes: Vec<Bytecode>,
+    /// The block context
     pub context: BlockContext<F>,
 }
 
 #[derive(Debug, Default)]
 pub struct BlockContext<F> {
-    pub coinbase: Address, // u160
+    /// The address of the miner for the block
+    pub coinbase: Address,
+    /// The gas limit of the block
     pub gas_limit: u64,
+    /// The block number
     pub block_number: F,
+    /// The timestamp of the block
     pub time: u64,
+    /// The difficulty of the blcok
     pub difficulty: Word,
+    /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
+    /// The hash of previous blocks
     pub previous_block_hashes: Vec<Word>,
 }
 
@@ -218,22 +226,40 @@ impl<F: FieldExt> Transaction<F> {
 
 #[derive(Debug, Default)]
 pub struct Call<F> {
+    /// The call index in the Transaction calls
     pub id: usize,
+    /// Indicate if the call is the root call
     pub is_root: bool,
+    /// Indicate if the call is a create call
     pub is_create: bool,
+    /// The identifier of current executed bytecode
     pub opcode_source: F,
+    /// The `rw_counter` at the end of reversion of a call if it has
+    /// `is_persistent == false`
     pub rw_counter_end_of_reversion: usize,
+    /// The call index of caller
     pub caller_call_id: usize,
+    /// The depth in the call stack
     pub depth: usize,
+    /// The caller address
     pub caller_address: Address,
+    /// The callee address
     pub callee_address: Address,
+    /// The call data offset in the memory
     pub call_data_offset: usize,
+    /// The length of call data
     pub call_data_length: usize,
+    /// The return data offset in the memory
     pub return_data_offset: usize,
+    /// The length of return data
     pub return_data_length: usize,
+    /// The ether amount of the transaction
     pub value: Word,
+    /// TBD, Han will update this field
     pub result: Word,
+    /// Indicate if this call and all its caller have `is_success == true`
     pub is_persistent: bool,
+    /// Indicate if it's a static call
     pub is_static: bool,
 }
 
