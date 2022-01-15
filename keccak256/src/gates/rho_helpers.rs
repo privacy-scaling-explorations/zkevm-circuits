@@ -1,5 +1,5 @@
 use crate::{
-    arith_helpers::{convert_b13_coef, B13, B2, B9},
+    arith_helpers::{convert_b13_coef, convert_b13_lane_to_b9, B13, B2, B9},
     common::LANE_SIZE,
 };
 
@@ -25,11 +25,6 @@ pub fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
         return LANE_SIZE - chunk_idx;
     }
     BASE_NUM_OF_CHUNKS
-}
-
-/// This is the point where power of 9 starts from 1
-pub fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
-    chunk_idx == LANE_SIZE - rotation
 }
 
 /// Slice the lane into chunk indices and steps
@@ -92,48 +87,46 @@ pub fn get_block_count(b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
     OVERFLOW_TRANSFORM[non_zero_chunk_count]
 }
 
-pub fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
-    let mut b13_chunks = input_coef.to_radix_le(B13.into());
-    b13_chunks.resize(BASE_NUM_OF_CHUNKS as usize, 0);
-    b13_chunks.reverse();
-    let b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize] =
-        b13_chunks.try_into().unwrap();
-    let output_coef: u64 = b13_chunks.iter().fold(0, |acc, &b13_chunk| {
-        acc * B9 as u64 + convert_b13_coef(b13_chunk) as u64
-    });
-    let block_count = get_block_count(b13_chunks);
-    (block_count, output_coef)
-}
-
 #[derive(Debug, Clone)]
 pub struct Slice {
-    coef: BigUint,
-    power_of_base: BigUint,
-    pre_acc: BigUint,
-    post_acc: BigUint,
+    pub coef: BigUint,
+    pub power_of_base: BigUint,
+    pub pre_acc: BigUint,
 }
 
 #[derive(Debug, Clone)]
 pub struct OverflowDetector {
-    current_block_count: u32,
-    step2_acc: u32,
-    step3_acc: u32,
+    pub block_count: u32,
+    pub step2_acc: u32,
+    pub step3_acc: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct Conversion {
     chunk_idx: u32,
     step: u32,
-    input: Slice,
-    output: Slice,
-    overflow_detector: OverflowDetector,
+    pub input: Slice,
+    pub output: Slice,
+    pub overflow_detector: OverflowDetector,
+}
+
+pub struct Special {
+    pub input: BigUint,
+    pub output_acc_pre: BigUint,
+    pub output_acc_post: BigUint,
+    pub output_coef: u8,
 }
 
 const RHO_LANE_SIZE: usize = 65;
 
 #[derive(Debug, Clone)]
 pub struct RhoLane {
-    lane: BigUint,
+    // base 13. 65 chunks
+    input: BigUint,
+    // base 9
+    pub output: BigUint,
+    // output in binary, useful to check against plain rho output
+    output_b2: u64,
     rotation: u32,
     // base13 in little endian
     chunks: [u8; RHO_LANE_SIZE],
@@ -142,19 +135,29 @@ pub struct RhoLane {
 }
 
 impl RhoLane {
-    pub fn new(lane: BigUint, rotation: u32) -> Self {
+    pub fn new(input: BigUint, rotation: u32) -> Self {
         assert!(
-            lane.lt(&BigUint::from(B13).pow(RHO_LANE_SIZE as u32)),
+            input.lt(&BigUint::from(B13).pow(RHO_LANE_SIZE as u32)),
             "lane too big"
         );
-        let mut chunks = lane.to_radix_le(B13.into());
+        let mut chunks = input.to_radix_le(B13.into());
         chunks.resize(RHO_LANE_SIZE, 0);
         let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
         let special_high = *chunks.get(64).unwrap();
         let special_low = *chunks.get(0).unwrap();
-        assert!(special_high + special_low < 13, "invalid Rho input lane");
+        assert!(special_high + special_low < B13, "invalid Rho input lane");
+        let output = convert_b13_lane_to_b9(input.clone(), rotation);
+        let output_b2 =
+            *BigUint::from_radix_le(&output.to_radix_le(B9.into()), B2.into())
+                .unwrap_or_default()
+                .to_u64_digits()
+                .first()
+                .unwrap_or(&0);
+
         Self {
-            lane,
+            input,
+            output,
+            output_b2,
             rotation,
             chunks,
             special_high,
@@ -162,43 +165,12 @@ impl RhoLane {
         }
     }
 
-    pub fn get_rotated_chunks(&self) -> [u8; 64] {
-        let special = self.special_high + self.special_low;
-        let middle = self.chunks.get(1..64).unwrap();
-        assert_eq!(middle.len(), 63);
-        // split at offset
-        let (left, right) = middle.split_at(63 - self.rotation as usize);
-        // left is rotated right, and the right is wrapped over to left
-        // with the special chunk in the middle
-        let rotated: Vec<u8> = right
-            .iter()
-            .chain(vec![special].iter())
-            .chain(left.iter())
-            .map(|&x| convert_b13_coef(x))
-            .collect_vec();
-        assert_eq!(rotated.len(), LANE_SIZE as usize, "rotated has 64 chunks");
-        rotated.try_into().unwrap()
-    }
-    /// This is where we use in the circuit
-    pub fn get_output_lane(&self) -> BigUint {
-        let rotated_chunks = self.get_rotated_chunks();
-        BigUint::from_radix_le(&rotated_chunks, B9.into()).unwrap_or_default()
-    }
-
-    /// This is for debugging use, we can check against the normal rho output
-    pub fn get_rho_binary_output(&self) -> u64 {
-        let rotated_chunks = self.get_rotated_chunks();
-        let b = BigUint::from_radix_le(&rotated_chunks, B2.into())
-            .unwrap_or_default();
-        b.iter_u64_digits().collect_vec()[0]
-    }
-
-    pub fn get_full_witness(&self) -> Vec<Conversion> {
-        let mut input_acc = self.lane.clone();
+    pub fn get_full_witness(&self) -> (Vec<Conversion>, Special) {
+        let mut input_acc = self.input.clone();
         let mut output_acc = BigUint::zero();
         let mut step2_acc: u32 = 0;
         let mut step3_acc: u32 = 0;
-        let output: Vec<Conversion> = slice_lane(self.rotation)
+        let conversions: Vec<Conversion> = slice_lane(self.rotation)
             .iter()
             .map(|&(chunk_idx, step)| {
                 let chunks = self
@@ -211,12 +183,10 @@ impl RhoLane {
                     let power_of_base = BigUint::from(B13).pow(chunk_idx);
                     let pre_acc = input_acc.clone();
                     input_acc -= &coef * &power_of_base;
-                    let post_acc = input_acc.clone();
                     Slice {
                         coef,
                         power_of_base,
                         pre_acc,
-                        post_acc,
                     }
                 };
                 let output = {
@@ -231,12 +201,10 @@ impl RhoLane {
                     let power_of_base = BigUint::from(B9).pow(power);
                     let pre_acc = output_acc.clone();
                     output_acc += &coef * &power_of_base;
-                    let post_acc = output_acc.clone();
                     Slice {
                         coef,
                         power_of_base,
                         pre_acc,
-                        post_acc,
                     }
                 };
                 let overflow_detector = {
@@ -247,14 +215,14 @@ impl RhoLane {
                     v.reverse();
                     let chunks_be: [u8; BASE_NUM_OF_CHUNKS as usize] =
                         v.try_into().unwrap();
-                    let current_block_count = get_block_count(chunks_be);
+                    let block_count = get_block_count(chunks_be);
                     match step {
-                        2 => step2_acc += current_block_count,
-                        3 => step3_acc += current_block_count,
+                        2 => step2_acc += block_count,
+                        3 => step3_acc += block_count,
                         _ => {}
                     };
                     OverflowDetector {
-                        current_block_count,
+                        block_count,
                         step2_acc,
                         step3_acc,
                     }
@@ -269,7 +237,21 @@ impl RhoLane {
             })
             .collect_vec();
         self.sanity_check(&input_acc);
-        output
+        let special = {
+            let input = input_acc;
+            let output_acc_pre = output_acc;
+            let output_coef =
+                convert_b13_coef(self.special_high + self.special_low);
+            let output_acc_post = &output_acc_pre
+                + output_coef * BigUint::from(B9 as u64).pow(self.rotation);
+            Special {
+                input,
+                output_acc_pre,
+                output_acc_post,
+                output_coef,
+            }
+        };
+        (conversions, special)
     }
 
     /// After we run down the input accumulator for the normal chunks,
@@ -363,10 +345,8 @@ mod tests {
         let rotation = 5;
         let lane = RhoLane::new(rho_arith_lane, rotation);
 
-        assert_eq!(
-            lane.get_rho_binary_output(),
-            rho_bin_input.rotate_left(rotation)
-        );
-        assert_eq!(lane.get_full_witness().len(), slice_lane(rotation).len());
+        let (conversions, special) = lane.get_full_witness();
+        assert_eq!(conversions.len(), slice_lane(rotation).len());
+        assert_eq!(special.output_acc_post, lane.output);
     }
 }
