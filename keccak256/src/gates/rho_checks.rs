@@ -362,7 +362,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 region.constrain_equal(lane_base_13.0, cell)?;
 
                 let mut rv = RotatingVariables::from(
-                    f_to_biguint(lane_base_13.1).ok_or(Error::Synthesis)?,
+                    f_to_biguint(lane_base_13.1),
                     self.rotation,
                 )?;
                 let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
@@ -507,11 +507,11 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         rv: &RotatingVariables,
     ) -> Result<BlockCount2<F>, Error> {
         assert_eq!(
-            biguint_to_f::<F>(&rv.input_power_of_base)?,
+            biguint_to_f::<F>(&rv.input_power_of_base),
             self.power_of_b13
         );
         assert_eq!(
-            biguint_to_f::<F>(&rv.output_power_of_base)?,
+            biguint_to_f::<F>(&rv.output_power_of_base),
             self.power_of_b9
         );
         self.q_enable.enable(region, offset)?;
@@ -522,25 +522,25 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             || format!("Input Coef {}", self.chunk_idx),
             self.adv.input.coef,
             offset,
-            || biguint_to_f::<F>(&rv.input_coef),
+            || Ok(biguint_to_f::<F>(&rv.input_coef)),
         )?;
         region.assign_advice(
             || "Input accumulator",
             self.adv.input.acc,
             offset,
-            || biguint_to_f::<F>(&rv.input_acc),
+            || Ok(biguint_to_f::<F>(&rv.input_acc)),
         )?;
         region.assign_advice(
             || "Output Coef",
             self.adv.output.coef,
             offset,
-            || biguint_to_f::<F>(&rv.output_coef),
+            || Ok(biguint_to_f::<F>(&rv.output_coef)),
         )?;
         region.assign_advice(
             || "Output accumulator",
             self.adv.output.acc,
             offset,
-            || biguint_to_f::<F>(&rv.output_acc),
+            || Ok(biguint_to_f::<F>(&rv.output_acc)),
         )?;
         let block_counts = self.block_count_acc_config.assign_region(
             region,
@@ -612,19 +612,19 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             || "input_acc",
             self.base_13_acc,
             offset,
-            || biguint_to_f::<F>(&rv.input_acc),
+            || Ok(biguint_to_f::<F>(&rv.input_acc)),
         )?;
         region.assign_advice(
             || "ouput_acc",
             self.base_9_acc,
             offset,
-            || biguint_to_f::<F>(&rv.output_acc),
+            || Ok(biguint_to_f::<F>(&rv.output_acc)),
         )?;
         region.assign_advice(
             || "last_b9_coef",
             self.last_b9_coef,
             offset,
-            || biguint_to_f::<F>(&rv.output_coef),
+            || Ok(biguint_to_f::<F>(&rv.output_coef)),
         )?;
 
         let rv_final = rv.finalize();
@@ -634,7 +634,7 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
             offset + 1,
             || Ok(F::zero()),
         )?;
-        let value = biguint_to_f::<F>(&rv_final.output_acc)?;
+        let value = biguint_to_f::<F>(&rv_final.output_acc);
         let cell = region.assign_advice(
             || "input_acc",
             self.base_9_acc,

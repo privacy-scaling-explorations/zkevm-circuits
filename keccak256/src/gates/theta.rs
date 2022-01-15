@@ -109,6 +109,7 @@ impl<F: FieldExt> ThetaConfig<F> {
 mod tests {
     use super::*;
     use crate::common::*;
+    use crate::gates::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -202,12 +203,12 @@ mod tests {
 
         for (x, y) in (0..5).cartesian_product(0..5) {
             in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
-            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
+            in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
         let s1_arith = KeccakFArith::theta(&in_biguint);
         let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            out_state[5 * x + y] = big_uint_to_field(&s1_arith[(x, y)]);
+            out_state[5 * x + y] = biguint_to_f(&s1_arith[(x, y)]);
         }
 
         let circuit = MyCircuit::<Fp> {

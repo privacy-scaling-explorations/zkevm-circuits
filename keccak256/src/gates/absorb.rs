@@ -1,5 +1,6 @@
 use crate::arith_helpers::*;
 use crate::common::*;
+use crate::gates::gate_helpers::biguint_to_f;
 use crate::keccak_arith::*;
 use halo2::circuit::Cell;
 use halo2::circuit::Layouter;
@@ -177,9 +178,8 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 state[(x, y)].clone().try_into().expect("Conversion err"),
             );
             next_biguint[(x, y)] = convert_b2_to_b9(next_input[x][y]);
-            in_state[5 * x + y] = big_uint_to_field(&in_biguint[(x, y)]);
-            in_next_input_25[5 * x + y] =
-                big_uint_to_field(&next_biguint[(x, y)]);
+            in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
+            in_next_input_25[5 * x + y] = biguint_to_f(&next_biguint[(x, y)]);
         }
 
         let mut in_next_input_17 = [Fp::zero(); ABSORB_NEXT_INPUTS];
