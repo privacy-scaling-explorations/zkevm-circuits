@@ -112,6 +112,7 @@ pub struct Transaction<F> {
     pub nonce: u64,
     /// The gas limit of the transaction
     pub gas: u64,
+    /// The gas price
     pub gas_price: Word,
     /// The caller address
     pub caller_address: Address,
@@ -125,6 +126,7 @@ pub struct Transaction<F> {
     pub call_data: Vec<u8>,
     /// The call data length
     pub call_data_length: usize,
+    /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
     /// The calls made in the transaction
     pub calls: Vec<Call<F>>,
