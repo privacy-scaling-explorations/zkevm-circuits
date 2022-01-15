@@ -5,9 +5,10 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::eth_types::{ToLittleEndian, Word};
+use bus_mapping::eth_types::{ToLittleEndian, ToScalar, Word};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use std::convert::TryFrom;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
@@ -174,16 +175,8 @@ impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
 
         let carry_lo = (sum_of_addends_lo - sum_lo) >> 128;
         let carry_hi = (sum_of_addends_hi + carry_lo - sum_hi) >> 128;
-        self.carry_lo.assign(
-            region,
-            offset,
-            Some(F::from(carry_lo.low_u64())),
-        )?;
-        self.carry_hi.assign(
-            region,
-            offset,
-            Some(F::from(carry_hi.low_u64())),
-        )?;
+        self.carry_lo.assign(region, offset, carry_lo.to_scalar())?;
+        self.carry_hi.assign(region, offset, carry_hi.to_scalar())?;
 
         Ok(())
     }
@@ -463,9 +456,12 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
 
         let mut assign_quotient =
             |cells: &[Cell<F>], value: Word| -> Result<(), Error> {
-                for (cell, byte) in
-                    cells.iter().zip(value.low_u64().to_le_bytes().iter())
-                {
+                for (cell, byte) in cells.iter().zip(
+                    u64::try_from(value)
+                        .map_err(|_| Error::Synthesis)?
+                        .to_le_bytes()
+                        .iter(),
+                ) {
                     cell.assign(region, offset, Some(F::from(*byte as u64)))?;
                 }
                 Ok(())

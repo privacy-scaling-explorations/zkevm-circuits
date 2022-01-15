@@ -130,7 +130,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address_low::value::<F>(address.to_le_bytes())
+            [address_low::value(address.to_le_bytes())
                 + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 

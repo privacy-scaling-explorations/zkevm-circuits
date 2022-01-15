@@ -328,6 +328,7 @@ mod test {
         eth_types::{self, Address, ToLittleEndian, ToWord, Word},
         evm::{GasCost, OpcodeId},
     };
+    use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 20 };
@@ -355,8 +356,8 @@ mod test {
             randomness,
             txs: vec![Transaction {
                 id: 1,
-                nonce: tx.nonce.low_u64(),
-                gas: tx.gas.low_u64(),
+                nonce: tx.nonce.try_into().unwrap(),
+                gas: tx.gas.try_into().unwrap(),
                 gas_price: tx.gas_price.unwrap_or_else(Word::zero),
                 caller_address: tx.from,
                 callee_address: tx.to.unwrap_or_else(Address::zero),
