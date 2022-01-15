@@ -131,8 +131,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
             offset,
             step.memory_word_size(),
             [address_low::value::<F>(address.to_le_bytes())
-                + 1
-                + if is_mstore8 == F::one() { 0 } else { 31 }],
+                + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
         // Gas insufficient check

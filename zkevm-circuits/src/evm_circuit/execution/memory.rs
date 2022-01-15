@@ -193,9 +193,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address.as_u64()
-                + 1
-                + if is_mstore8 == F::one() { 0 } else { 31 }],
+            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
         Ok(())
