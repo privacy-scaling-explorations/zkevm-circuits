@@ -1,5 +1,5 @@
 use crate::{
-    arith_helpers::{convert_b13_coef, B13, B9},
+    arith_helpers::{convert_b13_coef, B13, B2, B9},
     common::LANE_SIZE,
 };
 
@@ -165,9 +165,9 @@ impl RhoLane {
     pub fn get_rotated_chunks(&self) -> [u8; 64] {
         let special = self.special_high + self.special_low;
         let middle = self.chunks.get(1..64).unwrap();
+        assert_eq!(middle.len(), 63);
         // split at offset
         let (left, right) = middle.split_at(63 - self.rotation as usize);
-        // rotated has 64 chunks
         // left is rotated right, and the right is wrapped over to left
         // with the special chunk in the middle
         let rotated: Vec<u8> = right
@@ -176,11 +176,21 @@ impl RhoLane {
             .chain(left.iter())
             .map(|&x| convert_b13_coef(x))
             .collect_vec();
+        assert_eq!(rotated.len(), LANE_SIZE as usize, "rotated has 64 chunks");
         rotated.try_into().unwrap()
     }
-    pub fn get_output_lane(self) -> BigUint {
+    /// This is where we use in the circuit
+    pub fn get_output_lane(&self) -> BigUint {
         let rotated_chunks = self.get_rotated_chunks();
         BigUint::from_radix_le(&rotated_chunks, B9.into()).unwrap_or_default()
+    }
+
+    /// This is for debugging use, we can check against the normal rho output
+    pub fn get_rho_binary_output(&self) -> u64 {
+        let rotated_chunks = self.get_rotated_chunks();
+        let b = BigUint::from_radix_le(&rotated_chunks, B2.into())
+            .unwrap_or_default();
+        b.iter_u64_digits().collect_vec()[0]
     }
 
     pub fn get_full_witness(&self) -> Vec<Conversion> {
@@ -258,7 +268,25 @@ impl RhoLane {
                 }
             })
             .collect_vec();
+        self.sanity_check(&input_acc);
         output
+    }
+
+    /// After we run down the input accumulator for the normal chunks,
+    /// the remaining value should be equal to what the special chunks
+    /// represent
+    fn sanity_check(&self, input_acc: &BigUint) {
+        let expect = (self.special_low as u64)
+            + (self.special_high as u64) * BigUint::from(B13).pow(LANE_SIZE);
+        assert_eq!(
+            *input_acc,
+            expect,
+            "input_acc got: {:?}  expect: {:?} = low({:?}) + high({:?}) * 13**64",
+            input_acc,
+            expect,
+            self.special_low,
+            self.special_high,
+        );
     }
 }
 
@@ -312,10 +340,33 @@ mod tests {
     }
     #[test]
     fn test_rho_lane_rotation() {
-        let x = BigUint::from(1234567890u64);
-        let lane = RhoLane::new(x, 0);
-        println!("lane {:?}", lane);
-        println!("rotated {:?}", lane.clone().get_rotated_chunks());
-        println!("witness {:?}", lane.get_full_witness());
+        // Chosen such that special chunks are all 0
+        // The special chunks transformed (high+low) value is 0 too
+        let rho_arith_input_chunks = [0, 5, 4, 3, 2, 1];
+        let rho_arith_lane =
+            BigUint::from_radix_le(&rho_arith_input_chunks, B13.into())
+                .unwrap_or_default();
+        let rho_chunks_transformed_no_special = [5, 4, 3, 2, 1]
+            .iter()
+            .map(|&x| convert_b13_coef(x))
+            .collect_vec();
+        assert_eq!(rho_chunks_transformed_no_special, [1, 0, 1, 0, 1]);
+        // We need to add back the transformed value of special chunks.
+        let rho_chunks_transformed = [0, 1, 0, 1, 0, 1];
+        let rho_bin_input: u64 =
+            BigUint::from_radix_le(&rho_chunks_transformed, B2.into())
+                .unwrap_or_default()
+                .iter_u64_digits()
+                .collect_vec()[0];
+        assert_eq!(rho_bin_input, 42);
+
+        let rotation = 5;
+        let lane = RhoLane::new(rho_arith_lane, rotation);
+
+        assert_eq!(
+            lane.get_rho_binary_output(),
+            rho_bin_input.rotate_left(rotation)
+        );
+        assert_eq!(lane.get_full_witness().len(), slice_lane(rotation).len());
     }
 }
