@@ -19,10 +19,13 @@ use std::convert::TryInto;
 
 #[derive(Debug, Default)]
 pub struct Block<F> {
-    // randomness for random linear combination
+    /// The randomness for random linear combination
     pub randomness: F,
+    /// Transactions in the block
     pub txs: Vec<Transaction<F>>,
+    /// Read write events in the RwTable
     pub rws: Vec<Rw>,
+    /// Bytecode used in the block
     pub bytecodes: Vec<Bytecode>,
     pub context: BlockContext<F>,
 }
@@ -103,18 +106,29 @@ impl<F: FieldExt> BlockContext<F> {
 
 #[derive(Debug, Default)]
 pub struct Transaction<F> {
+    /// The transaction index in the block
     pub id: usize,
+    /// The sender account nounce of the transaction
     pub nonce: u64,
+    /// The gas limit of the transaction
     pub gas: u64,
     pub gas_price: Word,
+    /// The caller address
     pub caller_address: Address,
+    /// The callee address
     pub callee_address: Address,
+    /// Whether it's a create transaction
     pub is_create: bool,
+    /// The ether amount of the transaction
     pub value: Word,
+    /// The call data
     pub call_data: Vec<u8>,
+    /// The call data length
     pub call_data_length: usize,
     pub call_data_gas_cost: u64,
+    /// The calls made in the transaction
     pub calls: Vec<Call<F>>,
+    /// The steps executioned in the transaction
     pub steps: Vec<ExecStep>,
 }
 
@@ -223,8 +237,8 @@ pub struct Call<F> {
 
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
-    /// The call index
-    pub call_id: usize,
+    /// The index in the Transaction calls
+    pub call_index: usize,
     /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<usize>,
     /// The execution state for the step
@@ -566,7 +580,7 @@ fn step_convert(
     ops_len: (usize, usize, usize),
 ) -> ExecStep {
     let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
-    // TODO: call_id is not set in the ExecStep
+    // TODO: call_index is not set in the ExecStep
     let result = ExecStep {
         rw_indices: step
             .bus_mapping_instance

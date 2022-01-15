@@ -391,7 +391,8 @@ pub(crate) struct StepState<F> {
     pub(crate) execution_state: Vec<Cell<F>>,
     /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
-    /// The call index
+    /// The unique identifier of call in the whole proof, using the
+    /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
     /// Whether the call is root call
     pub(crate) is_root: Cell<F>,
