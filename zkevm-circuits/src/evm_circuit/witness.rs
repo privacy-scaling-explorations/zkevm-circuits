@@ -226,7 +226,8 @@ impl<F: FieldExt> Transaction<F> {
 
 #[derive(Debug, Default)]
 pub struct Call<F> {
-    /// The call index in the Transaction calls
+    /// The unique identifier of call in the whole proof, using the
+    /// `rw_counter` at the call step.
     pub id: usize,
     /// Indicate if the call is the root call
     pub is_root: bool,
