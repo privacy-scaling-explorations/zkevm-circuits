@@ -41,6 +41,8 @@ impl<F: FieldExt> BranchChip<F> {
     ) -> BranchConfig {
         let config = BranchConfig {};
         let one = Expression::Constant(F::one());
+ 
+        // TODO: constraints for branch init
 
         // Range check for s_advices and c_advices being bytes.
         for ind in 0..HASH_WIDTH {
@@ -93,9 +95,104 @@ impl<F: FieldExt> BranchChip<F> {
             });
         }
 
+        // Empty nodes have 0 at s_rlp2, have 128 at s_advices[0] and 0 everywhere else:
+        // [0, 0, 128, 0, ..., 0]
+        // While non-empty nodes have 160 at s_rlp2 and then any byte at *_advices:
+        // [0, 160, a0, ..., a31]
+        meta.create_gate("empty and non-empty", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let mut constraints = vec![];
+
+            let is_branch_child_cur =
+                meta.query_advice(is_branch_child, Rotation::cur());
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+
+            constraints.push((
+                "s_rlp1 = 0",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * s_rlp1
+            ));
+            constraints.push((
+                "c_rlp1 = 0",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * c_rlp1
+            ));
+
+            let c128 = Expression::Constant(F::from(128_u64));
+            let c160 = Expression::Constant(F::from(160_u64));
+
+            // In empty nodes: s_rlp2 = 0. In non-empty nodes: s_rlp2 = 160.
+            constraints.push((
+                "s_rlp2 = 0 or s_rlp2 = 160",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * s_rlp2.clone() * (s_rlp2.clone() - c160.clone())
+            ));
+            constraints.push((
+                "c_rlp2 = 0 or c_rlp2 = 160",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * c_rlp2.clone() * (c_rlp2.clone() - c160.clone())
+            ));
+
+            // No further constraints needed for non-empty nodes (rlp2 needs to be 160
+            // and values need to be bytes which is constrained by the lookups
+            // on s_advices and c_advices).
+
+            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+            constraints.push((
+                "s_advices[0] = 128 in empty",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * (s_rlp2.clone() - c160.clone()) * (s_advice0 - c128.clone()) // If s_rlp2 = 0, then s_advices[0] can be any value (0-255).
+            ));
+            let c_advice0 = meta.query_advice(c_advices[0], Rotation::cur());
+            constraints.push((
+                "c_advices[0] = 128 in empty",
+                q_enable.clone()
+                    * is_branch_child_cur.clone()
+                    * (c_rlp2.clone() - c160.clone()) * (c_advice0 - c128) // If c_rlp2 = 0, then c_advices[0] can be any value (0-255).
+            ));
+
+            for col in s_advices.iter().skip(1) {
+                let s = meta.query_advice(*col, Rotation::cur());
+                constraints.push((
+                    "s_advices[i] = 0 for i > 0 in empty",
+                    q_enable.clone()
+                        * is_branch_child_cur.clone()
+                        * (s_rlp2.clone() - c160.clone()) * s
+                ));
+            }
+            for col in c_advices.iter().skip(1) {
+                let c = meta.query_advice(*col, Rotation::cur());
+                constraints.push((
+                    "c_advices[i] = 0 for i > 0 in empty",
+                    q_enable.clone()
+                        * is_branch_child_cur.clone()
+                        * (c_rlp2.clone() - c160.clone()) * c
+                ));
+            }
+
+            // Note that the attacker could put 160 in an empty node (the constraints
+            // above doesn't/can't prevent this) and thus try to
+            // modify the branch RLC (used for checking the hash of a branch), like:
+            // [0, 160, 128, 0, ..., 0]
+            // But then the constraints related to branch RLP would fail - first RLP bytes
+            // specifies the length of the stream and this value is checked with
+            // the actual length - the actual length being computed as 33 values in
+            // non-empty nodes and 1 value in empty node.
+
+            constraints
+        });
+
+
         meta.create_gate("branch equalities", |meta| {
             let q_enable = meta.query_selector(q_enable);
-
             let mut constraints = vec![];
 
             let is_branch_child_cur =
@@ -130,19 +227,10 @@ impl<F: FieldExt> BranchChip<F> {
                     * (node_index_cur.clone() - first_nibble.clone()),
             ));
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
-            constraints.push((
-                "rlp 1",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp1 - c_rlp1)
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
+            // We don't need to compare s_rlp1 = c_rlp1 because both are always 0 in branch children.
             constraints.push((
                 "rlp 2",
                 q_enable.clone()
@@ -308,13 +396,7 @@ impl<F: FieldExt> BranchChip<F> {
                     * node_index_cur // ignore if node_index = 0
                     * (modified_node_cur.clone() - modified_node_prev),
             ));
-
-            // TODO:
-            // empty nodes have 0 at s_rlp2, while non-empty nodes have 160;
-            // empty nodes have 128 at s_advices[0] and 0 everywhere else;
-
-            // TODO: constraints for branch init
-
+ 
             constraints
         });
 
