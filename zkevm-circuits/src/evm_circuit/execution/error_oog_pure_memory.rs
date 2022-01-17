@@ -24,6 +24,9 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
     // Allow memory size to expand to 5 bytes, because memory address could be
     // at most 2^40 - 1, after constant division by 32, the memory word size
     // then could be at most 2^35 - 1.
+    // So generic N_BYTES_MEMORY_WORD_SIZE for MemoryExpansionGadget needs to
+    // be larger by 1 than normal usage (to be 5), to be able to contain
+    // number up to 2^35 - 1.
     memory_expansion:
         MemoryExpansionGadget<F, 1, { N_BYTES_MEMORY_WORD_SIZE + 1 }>,
     // Even memory size at most could be 2^35 - 1, the qudratic part of memory
