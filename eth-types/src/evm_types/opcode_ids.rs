@@ -498,7 +498,7 @@ impl OpcodeId {
             OpcodeId::SMOD => GasCost::FAST,
             OpcodeId::ADDMOD => GasCost::MID,
             OpcodeId::MULMOD => GasCost::MID,
-            OpcodeId::EXP => GasCost::ZERO,
+            OpcodeId::EXP => GasCost::SLOW,
             OpcodeId::SIGNEXTEND => GasCost::FAST,
             OpcodeId::LT => GasCost::FASTEST,
             OpcodeId::GT => GasCost::FASTEST,
