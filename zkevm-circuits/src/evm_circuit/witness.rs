@@ -116,7 +116,7 @@ impl<F: FieldExt> BlockContext<F> {
 pub struct Transaction<F> {
     /// The transaction index in the block
     pub id: usize,
-    /// The sender account nounce of the transaction
+    /// The sender account nonce of the transaction
     pub nonce: u64,
     /// The gas limit of the transaction
     pub gas: u64,
@@ -292,7 +292,9 @@ pub struct ExecStep {
 
 impl ExecStep {
     pub fn memory_word_size(&self) -> u64 {
-        // The memory size must be multiple of words (32 bytes)
+        // EVM always pads the memory size to word size
+        // https://github.com/ethereum/go-ethereum/blob/master/core/vm/interpreter.go#L212-L216
+        // Thus, the memory size must be a multiple of 32 bytes.
         assert_eq!(self.memory_size % NUM_BYTES_WORD as u64, 0);
         self.memory_size / NUM_BYTES_WORD as u64
     }
