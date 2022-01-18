@@ -113,7 +113,9 @@ mod test {
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         witness,
     };
-    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::Word;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {

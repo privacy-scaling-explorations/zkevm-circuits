@@ -13,7 +13,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::eth_types::U256;
+use eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,

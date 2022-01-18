@@ -88,7 +88,8 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness,
     };
-    use bus_mapping::{bytecode, eth_types::Word};
+    use bus_mapping::bytecode;
+    use eth_types::Word;
 
     #[test]
     fn test_ok() {

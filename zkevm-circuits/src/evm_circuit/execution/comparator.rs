@@ -15,7 +15,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -175,7 +176,9 @@ mod test {
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         witness,
     };
-    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::Word;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word, _c: Word) {
         let bytecode = bytecode! {

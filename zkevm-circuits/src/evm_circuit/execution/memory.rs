@@ -18,7 +18,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -207,11 +208,9 @@ mod test {
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         witness,
     };
-    use bus_mapping::{
-        bytecode,
-        eth_types::Word,
-        evm::{Gas, GasCost, OpcodeId},
-    };
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::{Gas, GasCost, OpcodeId};
+    use eth_types::Word;
     use std::iter;
 
     fn test_ok(

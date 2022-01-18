@@ -8,17 +8,12 @@ authors = ["CPerezz <c.perezbaro@gmail.com>"]
 eth-types = { path = "../eth-types" }
 ethers-core = "0.6"
 ethers-providers = "0.6"
-ff = "0.11"
 geth-utils = { path = "../geth-utils" }
-hex = "0.4"
 itertools = "0.10"
 lazy_static = "1.4"
 log = "0.4.14"
-pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
-regex = "1.5.4"
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
-uint = "0.9.1"
 
 [dev-dependencies]
 url = "2.2.2"

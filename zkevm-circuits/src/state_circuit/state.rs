@@ -3,8 +3,8 @@ use crate::gadget::{
     monotone::{MonotoneChip, MonotoneConfig},
     Variable,
 };
-use bus_mapping::eth_types::ToScalar;
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
+use eth_types::ToScalar;
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
@@ -1257,18 +1257,15 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus_mapping::address;
     use bus_mapping::bytecode;
-    use bus_mapping::eth_types::Word;
-    use bus_mapping::evm::{MemoryAddress, RWCounter, StackAddress};
     use bus_mapping::mock;
-
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
+    use eth_types::evm_types::{MemoryAddress, RWCounter, StackAddress};
+    use eth_types::{address, Word};
     use halo2::dev::{
         MockProver, VerifyFailure::ConstraintNotSatisfied,
         VerifyFailure::Lookup,
     };
-
     use pairing::bn256::Fr as Fp;
 
     macro_rules! test_state_circuit {
