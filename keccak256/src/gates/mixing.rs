@@ -203,6 +203,7 @@ impl<F: FieldExt> MixingConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, PERMUTATION, ROUND_CONSTANTS};
+    use crate::gates::gate_helpers::biguint_to_f;
     use halo2::circuit::Layouter;
     use halo2::plonk::{ConstraintSystem, Error};
     use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
@@ -325,12 +326,12 @@ mod tests {
 
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_field(&convert_b2_to_b13(*num)))
+            .map(|num| biguint_to_f(&convert_b2_to_b13(*num)))
             .collect();
 
         let constants_b9: Vec<Fp> = ROUND_CONSTANTS
             .iter()
-            .map(|num| big_uint_to_field(&convert_b2_to_b9(*num)))
+            .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
             .collect();
 
         // With flag set to false, we don't mix. And so we should obtain Absorb

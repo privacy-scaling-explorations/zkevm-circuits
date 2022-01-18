@@ -387,10 +387,16 @@ impl ExecutionState {
 
 #[derive(Clone, Debug)]
 pub(crate) struct StepState<F> {
+    /// The execution state for the step
     pub(crate) execution_state: Vec<Cell<F>>,
+    /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
+    /// The unique identifier of call in the whole proof, using the
+    /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
+    /// Whether the call is root call
     pub(crate) is_root: Cell<F>,
+    /// Whether the call is a create call
     pub(crate) is_create: Cell<F>,
     // This is the identifier of current executed bytecode, which is used to
     // lookup current executed opcode and used to do code copy. In most time,
@@ -401,10 +407,15 @@ pub(crate) struct StepState<F> {
     // issue https://github.com/appliedzkp/zkevm-specs/issues/73 for more
     // discussion.
     pub(crate) opcode_source: Cell<F>,
+    /// The program counter
     pub(crate) program_counter: Cell<F>,
+    /// The stack pointer
     pub(crate) stack_pointer: Cell<F>,
+    /// The amount of gas left
     pub(crate) gas_left: Cell<F>,
-    pub(crate) memory_size: Cell<F>,
+    /// Memory size in words (32 bytes)
+    pub(crate) memory_word_size: Cell<F>,
+    /// The counter for state writes
     pub(crate) state_write_counter: Cell<F>,
 }
 
@@ -458,7 +469,7 @@ impl<F: FieldExt> Step<F> {
                 program_counter: cells.pop_front().unwrap(),
                 stack_pointer: cells.pop_front().unwrap(),
                 gas_left: cells.pop_front().unwrap(),
-                memory_size: cells.pop_front().unwrap(),
+                memory_word_size: cells.pop_front().unwrap(),
                 state_write_counter: cells.pop_front().unwrap(),
             }
         };
@@ -548,10 +559,10 @@ impl<F: FieldExt> Step<F> {
             offset,
             Some(F::from(step.gas_left)),
         )?;
-        self.state.memory_size.assign(
+        self.state.memory_word_size.assign(
             region,
             offset,
-            Some(F::from(step.memory_size as u64)),
+            Some(F::from(step.memory_word_size())),
         )?;
         self.state.state_write_counter.assign(
             region,

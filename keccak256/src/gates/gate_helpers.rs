@@ -1,12 +1,7 @@
-use halo2::{circuit::Cell, plonk::Error};
+use halo2::circuit::Cell;
 use num_bigint::BigUint;
 use pairing::arithmetic::FieldExt;
-
-#[derive(Debug, Clone)]
-pub struct Lane<F> {
-    pub cell: Cell,
-    pub value: F,
-}
+use std::convert::TryInto;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BlockCount<F> {
@@ -16,17 +11,23 @@ pub struct BlockCount<F> {
 
 pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 
-pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> Result<F, Error> {
-    let mut word = [0; 32];
-    let x_bytes = x.to_bytes_le();
-    let len = x_bytes.len();
-    assert!(len <= 32, "expect len <=32 but got {}", len);
-    word[..len].clone_from_slice(&x_bytes[..len]);
-    Option::from(F::from_bytes(&word)).ok_or(Error::Synthesis)
+/// Convert a bigUint value to FieldExt
+///
+/// We assume the input value is smaller than the field size
+pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F {
+    let mut x_bytes = x.to_bytes_le();
+    assert!(
+        x_bytes.len() <= 32,
+        "expect len <=32 but got {}",
+        x_bytes.len()
+    );
+    x_bytes.resize(32, 0);
+    let x_bytes: [u8; 32] = x_bytes.try_into().unwrap();
+    F::from_bytes(&x_bytes).unwrap()
 }
 
-pub fn f_to_biguint<F: FieldExt>(x: F) -> Option<BigUint> {
-    Option::from(BigUint::from_bytes_le(&x.to_bytes()[..]))
+pub fn f_to_biguint<F: FieldExt>(x: F) -> BigUint {
+    BigUint::from_bytes_le(&x.to_bytes())
 }
 
 pub fn biguint_mod(x: &BigUint, modulus: u8) -> u8 {

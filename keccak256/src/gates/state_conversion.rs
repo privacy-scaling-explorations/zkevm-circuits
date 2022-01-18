@@ -218,7 +218,7 @@ mod tests {
             .unwrap();
         let out_state: [Fp; 25] = in_state_flat
             .iter()
-            .map(|&x| biguint_to_f::<Fp>(&convert_b2_to_b13(*x)).unwrap())
+            .map(|&x| biguint_to_f::<Fp>(&convert_b2_to_b13(*x)))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
