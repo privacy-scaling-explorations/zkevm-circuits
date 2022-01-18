@@ -503,12 +503,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 + cb.state_write_counter_offset.expr();
             // Swap value and value_prev respect to tag
             match tag {
-                // TODO:
-                RwTableTag::TxAccessListAccount => values.swap(2, 3),
+                RwTableTag::TxAccessListAccount => values.swap(3, 4),
                 RwTableTag::TxAccessListStorageSlot => values.swap(3, 4),
-                RwTableTag::Account => values.swap(2, 3),
+                RwTableTag::Account => values.swap(3, 4),
                 RwTableTag::AccountStorage => values.swap(3, 4),
-                RwTableTag::AccountDestructed => values.swap(2, 3),
+                RwTableTag::AccountDestructed => values.swap(3, 4),
+                RwTableTag::TxRefund => values.swap(3, 4),
                 _ => {}
             }
 
