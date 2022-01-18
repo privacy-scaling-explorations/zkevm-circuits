@@ -1230,7 +1230,12 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         let shift_mod_by_64_pow = cb.query_cell();
         let shift_mod_by_8 = cb.query_cell();
 
-        //we split shift to the equation: shift == shift_div_by_64 * 64 + shift_mod_by_64_div_by_8 * 8 + shift_mod_by_8
+        // rename variable:
+        // shift_div_by_64 :a
+        // shift_mod_by_64_div_by_8:b
+        // shift_mod_by_8:c
+        // we split shift to the equation:
+        // shift == a * 64 + b * 8 + c
         let shift_mod_by_64 =
             8.expr() * shift_mod_by_64_div_by_8.expr() + shift_mod_by_8.expr();
         cb.require_equal(
@@ -1239,7 +1244,8 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             shift_div_by_64.expr() * 64.expr() + shift_mod_by_64.clone(),
         );
 
-        //merge 8 8-bit cell for a 64-bit expression for a, a_slice_front, a_slice_back, b
+        // merge 8 8-bit cell for a 64-bit expression
+        // for a, a_slice_front, a_slice_back, b
         let mut a_digits = vec![];
         let mut a_slice_front_digits = vec![];
         let mut a_slice_back_digits = vec![];
@@ -1257,7 +1263,7 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         let mut shr_constraints =
             (0..4).map(|_| 0.expr()).collect::<Vec<Expression<F>>>();
         for transplacement in (0_usize)..(4_usize) {
-            //generate the polynomial depends on the shift_div_by_64
+            // generate the polynomial depends on the shift_div_by_64
             let select_transplacement_polynomial =
                 generate_lagrange_base_polynomial(
                     shift_div_by_64.clone(),
@@ -1290,8 +1296,9 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             )
         );
 
-        //for i in [0,3]
-        //a_slice_back_digits[i] + a_slice_front_digits * shift_mod_by_64_pow == a_digits[i]
+        // for i in 0..4
+        // a_slice_back_digits[i] + a_slice_front_digits * shift_mod_by_64_pow
+        // == a_digits[i]
         for idx in 0..4 {
             cb.require_equal(
                 "a[idx] == a_slice_back[idx] + a_slice_front[idx] * shift_mod_by_64_pow",
@@ -1300,7 +1307,7 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             );
         }
 
-        //check serveral higher cells equal to zero for slice_back and slice_front
+        // check serveral higher cells == 0 for slice_back and slice_front
         let mut equal_to_zero = 0.expr();
         for digit_transplacement in 0..8 {
             let select_transplacement_polynomial =
@@ -1324,8 +1331,8 @@ impl<F: FieldExt> ShrWordsGadget<F> {
                 }
             }
         }
-        //i = 1..32
-        //check shift[i] == 0
+        // for i in 1..32
+        // check shift[i] == 0
         for idx in 1..32 {
             equal_to_zero = equal_to_zero + shift.cells[idx].expr();
         }
@@ -1335,7 +1342,7 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         );
 
         //check the specific 4 cells in 0..(1 << shift_mod_by_8).
-        //check another specific 4 cells in 0..(1 << (8 - shift_mod_by_8))
+        //check another specific 4 cells in 0..(1 << (8 - shift_mod_by_8)).
         for virtual_idx in 0..4 {
             let mut slice_bits_polynomial = vec![0.expr(), 0.expr()];
             for digit_transplacement in 0..8 {
@@ -1373,9 +1380,9 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             });
         }
 
-        //check equal:
-        //2^shift_mod_by_64 == shift_mod_by_64_pow
-        //2^(8-shift_mod_by_64) == shift_mod_by_64_decpow
+        // check:
+        // 2^shift_mod_by_64 == shift_mod_by_64_pow
+        // 2^(8-shift_mod_by_64) == shift_mod_by_64_decpow
         cb.add_lookup(Lookup::Fixed {
             tag: FixedTableTag::Pow64.expr(),
             values: [
