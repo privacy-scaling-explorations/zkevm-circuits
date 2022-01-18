@@ -237,7 +237,7 @@ pub(crate) enum Lookup<F> {
         /// all tags.
         tag: Expression<F>,
         /// Values corresponding to the tag.
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 7],
     },
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.
