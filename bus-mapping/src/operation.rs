@@ -6,12 +6,13 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{MemoryAddress, RWCounter, StackAddress};
-use crate::eth_types::{Address, Word};
 pub use container::OperationContainer;
+pub use eth_types::evm_types::{MemoryAddress, RWCounter, StackAddress};
+
 use core::cmp::Ordering;
 use core::fmt;
 use core::fmt::Debug;
+use eth_types::{Address, Word};
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

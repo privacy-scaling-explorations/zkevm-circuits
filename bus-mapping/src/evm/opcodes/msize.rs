@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, Word};
 use crate::{operation::RW, Error};
+use eth_types::{GethExecStep, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSIZE`](crate::evm::OpcodeId::MSIZE)
@@ -34,10 +34,10 @@ mod msize_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::Word,
-        evm::StackAddress,
         mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::Word;
 
     #[test]
     fn msize_opcode_impl() -> Result<(), Error> {

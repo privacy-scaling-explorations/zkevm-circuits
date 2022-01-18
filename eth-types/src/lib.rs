@@ -300,15 +300,15 @@ impl<'de> Deserialize<'de> for GethExecStep {
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
+pub struct ResultGethExecTraces(pub Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
 /// `GethExecutionTrace`s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecTrace {
-    pub(crate) result: GethExecTrace,
+pub struct ResultGethExecTrace {
+    pub result: GethExecTrace,
 }
 
 #[derive(Deserialize, Debug, Eq, PartialEq)]
@@ -387,8 +387,7 @@ impl<'de> Deserialize<'de> for GethExecTrace {
 macro_rules! address {
     ($addr_hex:expr) => {{
         use std::str::FromStr;
-        $crate::Address::from_str(&$addr_hex)
-            .expect("invalid hex Address")
+        $crate::Address::from_str(&$addr_hex).expect("invalid hex Address")
     }};
 }
 
@@ -396,8 +395,7 @@ macro_rules! address {
 /// Create a [`Word`] from a hex string.  Panics on invalid input.
 macro_rules! word {
     ($word_hex:expr) => {
-        $crate::Word::from_str_radix(&$word_hex, 16)
-            .expect("invalid hex Word")
+        $crate::Word::from_str_radix(&$word_hex, 16).expect("invalid hex Word")
     };
 }
 
@@ -510,8 +508,8 @@ mod tests {
 #[cfg(test)]
 mod eth_types_test {
     use super::*;
-    use crate::Word;
     use crate::Error;
+    use crate::Word;
     use std::str::FromStr;
 
     #[test]

@@ -218,9 +218,6 @@
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 
 extern crate alloc;
-mod error;
-#[macro_use]
-pub(crate) mod macros;
 pub mod evm;
 pub mod exec_trace;
 pub mod external_tracer;
@@ -228,10 +225,8 @@ pub mod operation;
 #[macro_use]
 pub mod bytecode;
 pub mod circuit_input_builder;
-#[macro_use]
-pub mod eth_types;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod rpc;
 pub mod state_db;
-pub use error::Error;
+pub use eth_types::Error;
