@@ -49,12 +49,12 @@
 //!
 //! ```rust
 //! use bus_mapping::Error;
-//! use bus_mapping::evm::Gas;
 //! use bus_mapping::mock;
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
-//! use bus_mapping::eth_types::{
+//! use eth_types::{
 //!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
 //! };
+//! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 //! use bus_mapping::external_tracer::BlockConstants;
 //! use pairing::arithmetic::FieldExt;
