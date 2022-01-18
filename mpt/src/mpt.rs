@@ -1390,6 +1390,8 @@ impl<F: FieldExt> MPTConfig<F> {
         s_words: &[u64],
         c_words: &[u64],
         first_nibble: u8,
+        s_rlp1: i32,
+        c_rlp1: i32,
         offset: usize,
     ) -> Result<(), Error> {
         self.assign_row(
@@ -1443,6 +1445,19 @@ impl<F: FieldExt> MPTConfig<F> {
             self.key_rlc_mult,
             offset,
             || Ok(key_rlc_mult),
+        )?;
+
+        region.assign_advice(
+            || "s_rlp1",
+            self.s_rlp1,
+            offset,
+            || Ok(F::from(s_rlp1 as u64)),
+        )?;
+        region.assign_advice(
+            || "c_rlp1",
+            self.c_rlp1,
+            offset,
+            || Ok(F::from(c_rlp1 as u64)),
         )?;
 
         Ok(())
@@ -1516,6 +1531,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
 
                     let mut first_nibble: u8 = 0; // needed when leaf turned into branch and leaf moves into a branch where it's at first_nibble position
+                    let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
+                    let mut rlp_len_rem_c: i32 = 0;
 
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
@@ -1622,6 +1639,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::from(row[BRANCH_0_S_START + 2] as u64)
                                         * acc_mult_s;
                                 acc_mult_s *= self.acc_r;
+
+                                rlp_len_rem_s =
+                                    row[BRANCH_0_S_START + 1] as i32 * 256
+                                        + row[BRANCH_0_S_START + 2] as i32;
+                            } else {
+                                rlp_len_rem_s =
+                                    row[BRANCH_0_S_START + 1] as i32;
                             }
 
                             acc_c = F::from(row[BRANCH_0_C_START] as u64)
@@ -1634,6 +1658,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::from(row[BRANCH_0_C_START + 2] as u64)
                                         * acc_mult_c;
                                 acc_mult_c *= self.acc_r;
+
+                                rlp_len_rem_c =
+                                    row[BRANCH_0_C_START + 1] as i32 * 256
+                                        + row[BRANCH_0_C_START + 2] as i32;
+                            } else {
+                                rlp_len_rem_c =
+                                    row[BRANCH_0_C_START + 1] as i32;
                             }
 
                             self.assign_acc(
@@ -1686,6 +1717,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                 || Ok(F::one()),
                             )?;
 
+                            if row[S_RLP_START + 1] == 160 {
+                                rlp_len_rem_s -= 33;
+                            } else {
+                                rlp_len_rem_s -= 1;
+                            }
+                            if row[C_RLP_START + 1] == 160 {
+                                rlp_len_rem_c -= 33;
+                            } else {
+                                rlp_len_rem_c -= 1;
+                            }
+
                             if node_index == 0 {
                                 if key_rlc_sel {
                                     key_rlc += F::from(modified_node as u64)
@@ -1708,6 +1750,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &s_words,
                                     &c_words,
                                     first_nibble,
+                                    rlp_len_rem_s,
+                                    rlp_len_rem_c,
                                     offset,
                                 )?;
                             } else {
@@ -1725,6 +1769,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &s_words,
                                     &c_words,
                                     first_nibble,
+                                    rlp_len_rem_s,
+                                    rlp_len_rem_c,
                                     offset,
                                 )?;
                                 // sel1 is to distinguish whether s_words is [128, 0, 0, 0].

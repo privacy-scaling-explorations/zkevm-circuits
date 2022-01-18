@@ -34,6 +34,16 @@ impl<F: FieldExt> BranchAccInitChip<F> {
     ) -> BranchAccInitConfig {
         let config = BranchAccInitConfig {};
 
+        // TODO: constraints for branch init
+
+        // Short RLP, meta data contains two bytes: 248, 81
+        // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
+        // The length of RLP stream is: 81.
+
+        // Long RLP, meta data contains three bytes: 249, 2, 17
+        // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
+        // The length of RLP stream is: 2 * 256 + 17.
+
         meta.create_gate("branch init accumulator", |meta| {
             let q_enable = q_enable(meta);
 

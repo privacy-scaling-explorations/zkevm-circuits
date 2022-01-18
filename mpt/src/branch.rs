@@ -8,7 +8,7 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{mpt::FixedTableTag, param::HASH_WIDTH};
+use crate::{mpt::FixedTableTag, param::{HASH_WIDTH, RLP_NUM, BRANCH_0_S_START}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchConfig {}
@@ -42,8 +42,6 @@ impl<F: FieldExt> BranchChip<F> {
         let config = BranchConfig {};
         let one = Expression::Constant(F::one());
  
-        // TODO: constraints for branch init
-
         // Range check for s_advices and c_advices being bytes.
         for ind in 0..HASH_WIDTH {
             meta.lookup_any(|meta| {
@@ -105,23 +103,11 @@ impl<F: FieldExt> BranchChip<F> {
 
             let is_branch_child_cur =
                 meta.query_advice(is_branch_child, Rotation::cur());
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
-            constraints.push((
-                "s_rlp1 = 0",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * s_rlp1
-            ));
-            constraints.push((
-                "c_rlp1 = 0",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * c_rlp1
-            ));
+            // Note that s_rlp1 and c_rlp1 store RLP stream length data (subtracted
+            // by the number of bytes in branch rows until that position).
 
             let c128 = Expression::Constant(F::from(128_u64));
             let c160 = Expression::Constant(F::from(160_u64));
@@ -283,6 +269,52 @@ impl<F: FieldExt> BranchChip<F> {
             // TODO: use permutation argument to make sure modified_node is the same in all branch rows.
 
             // TODO: use permutation argument to make sure first_nibble is the same in all branch rows.
+
+            constraints
+        });
+
+        meta.create_gate("RLP length", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let mut constraints = vec![]; 
+
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
+            let two_rlp_bytes_s = meta.query_advice(s_rlp1, Rotation::prev());
+            let three_rlp_bytes_s = meta.query_advice(s_rlp2, Rotation::prev());
+            let two_rlp_bytes_c = meta.query_advice(c_rlp1, Rotation::prev());
+            let three_rlp_bytes_c = meta.query_advice(c_rlp2, Rotation::prev());
+            
+            let rlp_byte0_s = meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
+            let rlp_byte1_s = meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 1], Rotation::prev());
+            let rlp_byte2_s = meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 2], Rotation::prev());
+
+            let one = Expression::Constant(F::one());
+            let c32 = Expression::Constant(F::from(32_u64));
+            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+
+            let s_rlp1_cur =
+                meta.query_advice(s_rlp1, Rotation::cur());
+            let s_rlp2_cur =
+                meta.query_advice(s_rlp2, Rotation::cur());
+
+            // s bytes in this row:
+            // If empty, then s_rlp2 = 0:
+            // s_rlp2 * c160_inv * c32 + 1 = 1
+            // If non-empty, then s_rlp2 = 160:
+            // s_rlp2 * c160_inv * c32 + 1 = 33
+            let s_bytes =  s_rlp2_cur * c160_inv * c32 + one;
+
+            // is_branch_child with node_index = 0
+            constraints.push((
+                "first branch children two RLP bytes S",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * two_rlp_bytes_s
+                    * (rlp_byte1_s - s_bytes - s_rlp1_cur)
+            ));
+
+            // TODO: for C node_index = 0, for node_index > 0, final s_rlp1 and c_rlp1
+            // need to be 0
 
             constraints
         });
