@@ -67,7 +67,7 @@ pub trait Op: Eq + Ord {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
-/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of the
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct MemoryOp {
@@ -149,7 +149,7 @@ impl Ord for MemoryOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
-/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of the
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StackOp {
@@ -231,7 +231,7 @@ impl Ord for StackOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
-/// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
+/// implied by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StorageOp {
