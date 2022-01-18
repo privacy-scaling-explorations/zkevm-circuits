@@ -198,7 +198,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
             program_counter: To(0.expr()),
             stack_pointer: To(STACK_CAPACITY.expr()),
             gas_left: To(gas_left),
-            memory_size: To(0.expr()),
+            memory_word_size: To(0.expr()),
             state_write_counter: To(2.expr()),
         });
 

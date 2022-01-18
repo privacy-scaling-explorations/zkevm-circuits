@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::NUM_BYTES_WORD,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -33,7 +34,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
         cb.require_equal(
             "Constrain memory_size equal to stack value",
             from_bytes::expr(&bytes),
-            cb.curr.state.memory_size.expr(),
+            cb.curr.state.memory_word_size.expr() * NUM_BYTES_WORD.expr(),
         );
 
         // Push the value on the stack
@@ -72,7 +73,6 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-
         self.value.assign(
             region,
             offset,
@@ -91,7 +91,7 @@ mod test {
     use bus_mapping::{bytecode, eth_types::Word};
 
     #[test]
-    fn test_ok() {
+    fn msize_gadget() {
         let address = Word::from(0x10);
         let value = Word::from_big_endian(&(1..33).collect::<Vec<_>>());
         let bytecode = bytecode! {

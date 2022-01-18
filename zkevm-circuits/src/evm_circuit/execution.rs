@@ -386,7 +386,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_idx];
+                        let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
                         if offset == 0 {
@@ -426,7 +426,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_idx];
+                        let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
                         self.assign_exec_step(

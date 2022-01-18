@@ -45,7 +45,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
-    pub(crate) memory_size: Transition<Expression<F>>,
+    pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) state_write_counter: Transition<Expression<F>>,
 }
 
@@ -322,10 +322,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 step_state_transition.gas_left,
             ),
             (
-                "State transition constrain of memory_size",
-                &self.curr.state.memory_size,
-                &self.next.state.memory_size,
-                step_state_transition.memory_size,
+                "State transition constrain of memory_word_size",
+                &self.curr.state.memory_word_size,
+                &self.next.state.memory_word_size,
+                step_state_transition.memory_word_size,
             ),
             (
                 "State transition constrain of state_write_counter",

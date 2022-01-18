@@ -6,6 +6,8 @@ pub(crate) const NUM_CELLS_STEP_STATE: usize = 10;
 
 // The number of bytes an u64 has.
 pub(crate) const NUM_BYTES_U64: usize = 8;
+// The number of bytes in EVM word.
+pub(crate) const NUM_BYTES_WORD: usize = 32;
 
 /// The maximum number of bytes that a field element
 /// can be broken down into without causing the value it

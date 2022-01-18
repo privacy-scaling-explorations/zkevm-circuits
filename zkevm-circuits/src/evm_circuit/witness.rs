@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
-    param::STACK_CAPACITY,
+    param::{NUM_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
@@ -19,22 +19,33 @@ use std::convert::TryInto;
 
 #[derive(Debug, Default)]
 pub struct Block<F> {
-    // randomness for random linear combination
+    /// The randomness for random linear combination
     pub randomness: F,
+    /// Transactions in the block
     pub txs: Vec<Transaction<F>>,
+    /// Read write events in the RwTable
     pub rws: Vec<Rw>,
+    /// Bytecode used in the block
     pub bytecodes: Vec<Bytecode>,
+    /// The block context
     pub context: BlockContext<F>,
 }
 
 #[derive(Debug, Default)]
 pub struct BlockContext<F> {
-    pub coinbase: Address, // u160
+    /// The address of the miner for the block
+    pub coinbase: Address,
+    /// The gas limit of the block
     pub gas_limit: u64,
+    /// The block number
     pub block_number: F,
+    /// The timestamp of the block
     pub time: u64,
+    /// The difficulty of the blcok
     pub difficulty: Word,
+    /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
+    /// The hash of previous blocks
     pub previous_block_hashes: Vec<Word>,
 }
 
@@ -103,18 +114,31 @@ impl<F: FieldExt> BlockContext<F> {
 
 #[derive(Debug, Default)]
 pub struct Transaction<F> {
+    /// The transaction index in the block
     pub id: usize,
+    /// The sender account nonce of the transaction
     pub nonce: u64,
+    /// The gas limit of the transaction
     pub gas: u64,
+    /// The gas price
     pub gas_price: Word,
+    /// The caller address
     pub caller_address: Address,
+    /// The callee address
     pub callee_address: Address,
+    /// Whether it's a create transaction
     pub is_create: bool,
+    /// The ether amount of the transaction
     pub value: Word,
+    /// The call data
     pub call_data: Vec<u8>,
+    /// The call data length
     pub call_data_length: usize,
+    /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// The calls made in the transaction
     pub calls: Vec<Call<F>>,
+    /// The steps executioned in the transaction
     pub steps: Vec<ExecStep>,
 }
 
@@ -202,38 +226,78 @@ impl<F: FieldExt> Transaction<F> {
 
 #[derive(Debug, Default)]
 pub struct Call<F> {
+    /// The unique identifier of call in the whole proof, using the
+    /// `rw_counter` at the call step.
     pub id: usize,
+    /// Indicate if the call is the root call
     pub is_root: bool,
+    /// Indicate if the call is a create call
     pub is_create: bool,
+    /// The identifier of current executed bytecode
     pub opcode_source: F,
+    /// The `rw_counter` at the end of reversion of a call if it has
+    /// `is_persistent == false`
     pub rw_counter_end_of_reversion: usize,
+    /// The call index of caller
     pub caller_call_id: usize,
+    /// The depth in the call stack
     pub depth: usize,
+    /// The caller address
     pub caller_address: Address,
+    /// The callee address
     pub callee_address: Address,
+    /// The call data offset in the memory
     pub call_data_offset: usize,
+    /// The length of call data
     pub call_data_length: usize,
+    /// The return data offset in the memory
     pub return_data_offset: usize,
+    /// The length of return data
     pub return_data_length: usize,
+    /// The ether amount of the transaction
     pub value: Word,
+    /// TBD, Han will update this field
     pub result: Word,
+    /// Indicate if this call and all its caller have `is_success == true`
     pub is_persistent: bool,
+    /// Indicate if it's a static call
     pub is_static: bool,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
-    pub call_idx: usize,
+    /// The index in the Transaction calls
+    pub call_index: usize,
+    /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<usize>,
+    /// The execution state for the step
     pub execution_state: ExecutionState,
+    /// The Read/Write counter before the step
     pub rw_counter: usize,
+    /// The program counter
     pub program_counter: u64,
+    /// The stack pointer
     pub stack_pointer: usize,
+    /// The amount of gas left
     pub gas_left: u64,
+    /// The gas cost in this step
     pub gas_cost: u64,
+    /// The memory size in bytes
     pub memory_size: u64,
+    /// The counter for state writes
     pub state_write_counter: usize,
+    /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+}
+
+impl ExecStep {
+    pub fn memory_word_size(&self) -> u64 {
+        // EVM always pads the memory size to word size
+        // https://github.com/ethereum/go-ethereum/blob/master/core/vm/interpreter.go#L212-L216
+        // Thus, the memory size must be a multiple of 32 bytes.
+        assert_eq!(self.memory_size % NUM_BYTES_WORD as u64, 0);
+        self.memory_size / NUM_BYTES_WORD as u64
+    }
 }
 
 #[derive(Debug)]
@@ -547,6 +611,7 @@ fn step_convert(
     ops_len: (usize, usize, usize),
 ) -> ExecStep {
     let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
+    // TODO: call_index is not set in the ExecStep
     let result = ExecStep {
         rw_indices: step
             .bus_mapping_instance
@@ -572,7 +637,7 @@ fn step_convert(
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
         opcode: Some(step.op),
-        memory_size: step.memory_size as u64 / 32, /* memory size in word */
+        memory_size: step.memory_size as u64,
         ..Default::default()
     };
     result
