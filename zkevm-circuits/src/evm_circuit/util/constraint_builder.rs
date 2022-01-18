@@ -535,7 +535,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             true.expr(),
             RwTableTag::TxAccessListAccount,
-            [tx_id, account_address, 0.expr(), value, value_prev, 0.expr(), 0.expr()],
+            [
+                tx_id,
+                account_address,
+                0.expr(),
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
         );
     }
 
