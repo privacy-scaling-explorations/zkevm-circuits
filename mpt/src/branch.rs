@@ -8,7 +8,7 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{mpt::FixedTableTag, param::{HASH_WIDTH, RLP_NUM, BRANCH_0_S_START}};
+use crate::{mpt::FixedTableTag, param::{HASH_WIDTH, RLP_NUM, BRANCH_0_S_START, BRANCH_0_C_START}};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchConfig {}
@@ -284,37 +284,91 @@ impl<F: FieldExt> BranchChip<F> {
             let two_rlp_bytes_c = meta.query_advice(c_rlp1, Rotation::prev());
             let three_rlp_bytes_c = meta.query_advice(c_rlp2, Rotation::prev());
             
-            let rlp_byte0_s = meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
             let rlp_byte1_s = meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 1], Rotation::prev());
             let rlp_byte2_s = meta.query_advice(s_advices[BRANCH_0_S_START - RLP_NUM + 2], Rotation::prev());
+            let rlp_byte1_c = meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM + 1], Rotation::prev());
+            let rlp_byte2_c = meta.query_advice(s_advices[BRANCH_0_C_START - RLP_NUM + 2], Rotation::prev());
 
             let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32_u64));
+            let c256 = Expression::Constant(F::from(256_u64));
             let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
 
             let s_rlp1_cur =
                 meta.query_advice(s_rlp1, Rotation::cur());
             let s_rlp2_cur =
                 meta.query_advice(s_rlp2, Rotation::cur());
+            let c_rlp1_cur =
+                meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2_cur =
+                meta.query_advice(c_rlp2, Rotation::cur());
 
             // s bytes in this row:
             // If empty, then s_rlp2 = 0:
             // s_rlp2 * c160_inv * c32 + 1 = 1
             // If non-empty, then s_rlp2 = 160:
             // s_rlp2 * c160_inv * c32 + 1 = 33
-            let s_bytes =  s_rlp2_cur * c160_inv * c32 + one;
+            let s_bytes =  s_rlp2_cur * c160_inv.clone() * c32.clone() + one.clone();
+            let c_bytes =  c_rlp2_cur * c160_inv * c32 + one.clone();
+
+            // Short:
+            // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
+            // Long:
+            // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
 
             // is_branch_child with node_index = 0
             constraints.push((
-                "first branch children two RLP bytes S",
+                "first branch children two RLP meta bytes S",
                 q_not_first.clone()
                     * is_branch_init_prev.clone()
                     * two_rlp_bytes_s
-                    * (rlp_byte1_s - s_bytes - s_rlp1_cur)
+                    * (rlp_byte1_s.clone() - s_bytes.clone() - s_rlp1_cur.clone())
+            ));
+            constraints.push((
+                "first branch children two RLP meta bytes C",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * two_rlp_bytes_c
+                    * (rlp_byte1_c.clone() - c_bytes.clone() - c_rlp1_cur.clone())
+            ));
+            constraints.push((
+                "first branch children three RLP meta bytes S",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * three_rlp_bytes_s
+                    * (rlp_byte1_s * c256.clone() + rlp_byte2_s - s_bytes.clone() - s_rlp1_cur.clone())
+            ));
+            constraints.push((
+                "first branch children three RLP meta bytes C",
+                q_not_first.clone()
+                    * is_branch_init_prev.clone()
+                    * three_rlp_bytes_c
+                    * (rlp_byte1_c * c256 + rlp_byte2_c - c_bytes.clone() - c_rlp1_cur.clone())
             ));
 
-            // TODO: for C node_index = 0, for node_index > 0, final s_rlp1 and c_rlp1
-            // need to be 0
+            // is_branch_child with node_index > 0
+            let is_branch_child_cur =
+                meta.query_advice(is_branch_child, Rotation::cur());
+            let s_rlp1_prev =
+                meta.query_advice(s_rlp1, Rotation::prev());
+            let c_rlp1_prev =
+                meta.query_advice(c_rlp1, Rotation::prev());
+            constraints.push((
+                "branch children (node_index > 0) S",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (s_rlp1_prev - s_bytes.clone() - s_rlp1_cur.clone())
+            ));
+            constraints.push((
+                "branch children (node_index > 0) C",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (c_rlp1_prev - c_bytes.clone() - c_rlp1_cur.clone())
+            ));
+
+            // TODO: in final branch child s_rlp1 and c_rlp1 need to be 0
 
             constraints
         });
