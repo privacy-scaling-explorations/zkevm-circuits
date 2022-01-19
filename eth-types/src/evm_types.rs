@@ -52,11 +52,9 @@ impl ProgramCounter {
     }
 }
 
-/// Wrapper type over `usize` which represents the global counter associated to
-/// an [`ExecStep`](crate::circuit_input_builder::ExecStep) or
-/// [`Operation`](crate::operation::Operation). The purpose of the
-/// `RWCounter` is to enforce that each Opcode/Instruction and Operation is
-/// unique and just executed once.
+/// Wrapper type over `usize` which represents the global counter The purpose of
+/// the /// `RWCounter` is to enforce that each Opcode/Instruction and Operation
+/// is unique and just executed once.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct RWCounter(pub usize);
 
@@ -103,8 +101,7 @@ impl RWCounter {
     }
 }
 
-/// Defines the gas left to perate in a
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// Defines the gas left to perate.
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
@@ -116,8 +113,7 @@ impl fmt::Debug for Gas {
     }
 }
 
-/// Defines the gas consumed by an
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// Defines the gas consumption.
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]

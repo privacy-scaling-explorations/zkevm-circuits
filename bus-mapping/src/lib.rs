@@ -40,7 +40,7 @@
 //! execution trace from an EVM, you can parse it and construct an
 //! `ExecutionTrace` instance from it. That will automatically fill all of the
 //! bus-mapping instances of each
-//! [`GethExecStep`](crate::eth_types::GethExecStep).  Then the
+//! [`GethExecStep`](eth_types::GethExecStep).  Then the
 //! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder)
 //! will fill in an
 //! [`OperationContainer`](crate::operation::container::OperationContainer)
