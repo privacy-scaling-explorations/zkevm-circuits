@@ -1529,6 +1529,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
+                    let mut is_branch_s_placeholder = false;
+                    let mut is_branch_c_placeholder = false;
 
                     let mut first_nibble: u8 = 0; // needed when leaf turned into branch and leaf moves into a branch where it's at first_nibble position
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
@@ -1582,6 +1584,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     [S_START..S_START + HASH_WIDTH]
                                     .to_vec();
                                 s_words = self.convert_into_words(&s_hash);
+                                is_branch_s_placeholder = true
+                            } else {
+                                is_branch_s_placeholder = false
                             }
                             if row[IS_BRANCH_C_PLACEHOLDER_POS] == 1 {
                                 c_hash = witness
@@ -1589,6 +1594,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     [C_START..C_START + HASH_WIDTH]
                                     .to_vec();
                                 c_words = self.convert_into_words(&c_hash);
+                                is_branch_c_placeholder = true
+                            } else {
+                                is_branch_c_placeholder = false
                             }
                             // If no placeholder branch, we set first_nibble = modified_node. This
                             // is needed just to make some other constraints (s_keccak/c_keccak
@@ -2003,9 +2011,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 |key_rlc: &mut F,
                                  key_rlc_mult: &mut F,
                                  start: usize| {
+                                    // That means we had key_rlc_sel=true when setting rlc last time,
+                                    // that means we have nibble+48 in s_advices[0].
                                     if !key_rlc_sel {
-                                        // That means we had key_rlc_sel=true when setting rlc last time,
-                                        // that means we have nibble+48 in s_advices[0].
                                         *key_rlc += F::from(
                                             (row[start + 1] - 48) as u64,
                                         ) * *key_rlc_mult;
@@ -2073,20 +2081,29 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // For leaf S and leaf C we need to start with the same rlc.
                                 let mut key_rlc_new = key_rlc;
                                 let mut key_rlc_mult_new = key_rlc_mult;
-                                compute_key_rlc(
-                                    &mut key_rlc_new,
-                                    &mut key_rlc_mult_new,
-                                    start,
-                                );
-                                region.assign_advice(
-                                    || "assign key_rlc".to_string(),
-                                    self.key_rlc,
-                                    offset,
-                                    || Ok(key_rlc_new),
-                                )?;
+
+                                if (!is_branch_s_placeholder
+                                    && row[row.len() - 1] == 2)
+                                    || (!is_branch_c_placeholder
+                                        && row[row.len() - 1] == 3)
+                                {
+                                    // No need for key_rlc in leaves under placeholder branch.
+                                    compute_key_rlc(
+                                        &mut key_rlc_new,
+                                        &mut key_rlc_mult_new,
+                                        start,
+                                    );
+                                    region.assign_advice(
+                                        || "assign key_rlc".to_string(),
+                                        self.key_rlc,
+                                        offset,
+                                        || Ok(key_rlc_new),
+                                    )?;
+                                }
                             }
 
                             if row[row.len() - 1] == 6 {
+                                // account leaf key is the same for S and C
                                 acc_s = F::zero();
                                 acc_mult_s = F::one();
                                 // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len

@@ -281,14 +281,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 // Note that due to placeholder branch, sel1 and sel2 are turned around.
 
                 // [226, 160, 32,          7 * 16 + 5, 8 * 16 + 9,
-                // [226, 159, 32 + 16 + 5, 8 * 16 + 9,
+                // [225, 159, 32 + 16 + 5, 8 * 16 + 9,
 
                 // The first nibble (7 in the example) is in s_advices[1],
                 // this nibble is removed in leaf_key_in_added_branch.
                 // The second nibble in s_advices[1] (5 in the example) moves
                 // in leaf_key_in_added_branch into s_advices[0].
 
-                // So, s_rlp1 is the same in both rows.
+                // So, s_rlp1 differs by 1.
                 // Also s_rlp2 is smaller for 1 in added branch.
                 // Further,
                 // s_advices[0]_leaf_key_in_added_branch = 32 + 16 + second_nibble
@@ -316,7 +316,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_s_placeholder.clone()
                         * sel1.clone()
                         * is_short.clone()
-                        * (s_rlp1.clone() - s_rlp1_prev_s),
+                        * (s_rlp1.clone() - s_rlp1_prev_s + one.clone()),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_rlp2 placeholder s",
@@ -333,7 +333,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel1.clone()
                         * is_short.clone()
-                        * (s_rlp1 - s_rlp1_prev_c),
+                        * (s_rlp1 - s_rlp1_prev_c + one.clone()),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_rlp2 placeholder c",
@@ -346,12 +346,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
                 let s_advices0_prev_s = meta.query_advice(s_advices[0], Rotation(rot_leaf_key_s));
                 let s_advices0_prev_c = meta.query_advice(s_advices[0], Rotation(rot_leaf_key_c));
+                let s_advices1_prev_s = meta.query_advice(s_advices[1], Rotation(rot_leaf_key_s));
+                let s_advices1_prev_c = meta.query_advice(s_advices[1], Rotation(rot_leaf_key_c));
                 let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
-                let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
 
                 // Any rotation that lands into branch children can be used.
                 let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
-                let second_nibble = s_advices1 - first_nibble * c16.clone();
+                let second_nibble_s = s_advices1_prev_s - first_nibble.clone() * c16.clone();
+                let second_nibble_c = s_advices1_prev_c - first_nibble * c16.clone();
 
                 constraints.push((
                     "Leaf key differs first nibble s_advices[0] prev placeholder s",
@@ -359,7 +361,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_s_placeholder.clone()
                         * sel1.clone()
                         * is_short.clone()
-                        * (s_advices0.clone() - c48.clone() - second_nibble.clone()),
+                        * (s_advices0.clone() - c48.clone() - second_nibble_s),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_advices[0] prev placeholder c",
@@ -367,7 +369,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel1.clone()
                         * is_short.clone()
-                        * (s_advices0 - c48.clone() - second_nibble),
+                        * (s_advices0 - c48.clone() - second_nibble_c),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_advices[0] placeholder s",
@@ -645,10 +647,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 // sel1 and sel2 are in init branch
                 let sel1 = meta.query_advice(sel1, Rotation(rot_branch_init));
 
-                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
                 let s_rlp2_prev_s = meta.query_advice(s_rlp2, Rotation(rot_leaf_key_s));
                 let s_rlp2_prev_c = meta.query_advice(s_rlp2, Rotation(rot_leaf_key_c));
+                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
                 let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+
+                // Note that s_rlp1 (=248) in leaf S and C above needs to be checked in leaf_key.
                 
                 constraints.push((
                     "Leaf key differs first nibble s_rlp1 placeholder s",
@@ -706,12 +710,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
                 let s_advices1_prev_s = meta.query_advice(s_advices[1], Rotation(rot_leaf_key_s));
                 let s_advices1_prev_c = meta.query_advice(s_advices[1], Rotation(rot_leaf_key_c));
+                let s_advices2_prev_s = meta.query_advice(s_advices[2], Rotation(rot_leaf_key_s));
+                let s_advices2_prev_c = meta.query_advice(s_advices[2], Rotation(rot_leaf_key_c));
                 let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
-                let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
 
                 // Any rotation that lands into branch children can be used.
                 let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
-                let second_nibble = s_advices2 - first_nibble * c16.clone();
+                let second_nibble_s = s_advices2_prev_s - first_nibble.clone() * c16.clone();
+                let second_nibble_c = s_advices2_prev_c - first_nibble * c16.clone();
 
                 constraints.push((
                     "Leaf key differs first nibble s_advices[1] prev placeholder s",
@@ -719,7 +725,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_s_placeholder.clone()
                         * sel1.clone()
                         * is_long.clone()
-                        * (s_advices1.clone() - c48.clone() - second_nibble.clone()),
+                        * (s_advices1.clone() - c48.clone() - second_nibble_s),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_advices[1] prev placeholder c",
@@ -727,7 +733,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                         * is_branch_c_placeholder.clone()
                         * sel1.clone()
                         * is_long.clone()
-                        * (s_advices1 - c48.clone() - second_nibble),
+                        * (s_advices1 - c48.clone() - second_nibble_c),
                 ));
                 constraints.push((
                     "Leaf key differs first nibble s_advices[1] placeholder s",
