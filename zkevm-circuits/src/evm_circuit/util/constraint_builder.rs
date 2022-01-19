@@ -5,7 +5,7 @@ use crate::{
             AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
             RwTableTag, TxContextFieldTag,
         },
-        util::{Cell, Word},
+        util::{Cell, RandomLinearCombination, Word},
     },
     util::Expr,
 };
@@ -189,7 +189,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_word(&mut self) -> Word<F> {
-        Word::new(self.query_bytes(), self.power_of_randomness)
+        self.query_rlc()
+    }
+
+    pub(crate) fn query_rlc<const N: usize>(
+        &mut self,
+    ) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(
+            self.query_bytes(),
+            self.power_of_randomness,
+        )
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {

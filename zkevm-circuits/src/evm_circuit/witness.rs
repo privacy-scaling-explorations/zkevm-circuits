@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
-    param::{NUM_BYTES_WORD, STACK_CAPACITY},
+    param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
@@ -295,8 +295,8 @@ impl ExecStep {
         // EVM always pads the memory size to word size
         // https://github.com/ethereum/go-ethereum/blob/master/core/vm/interpreter.go#L212-L216
         // Thus, the memory size must be a multiple of 32 bytes.
-        assert_eq!(self.memory_size % NUM_BYTES_WORD as u64, 0);
-        self.memory_size / NUM_BYTES_WORD as u64
+        assert_eq!(self.memory_size % N_BYTES_WORD as u64, 0);
+        self.memory_size / N_BYTES_WORD as u64
     }
 }
 
@@ -472,7 +472,7 @@ impl Rw {
                 value_prev,
             } => {
                 let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce => F::from(value.low_u64()),
+                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
                     _ => RandomLinearCombination::random_linear_combine(
                         value.to_le_bytes(),
                         randomness,
@@ -512,7 +512,7 @@ impl Rw {
                     CallContextFieldTag::CallerAddress
                     | CallContextFieldTag::CalleeAddress
                     | CallContextFieldTag::Result => value.to_scalar().unwrap(),
-                    _ => F::from(value.low_u64()),
+                    _ => value.to_scalar().unwrap(),
                 },
                 F::zero(),
                 F::zero(),
