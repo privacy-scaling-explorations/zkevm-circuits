@@ -114,8 +114,7 @@ use crate::gates::{
 use halo2::{
     circuit::{Cell, Layouter, Region},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Selector,
-        TableColumn,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
     },
     poly::Rotation,
 };
@@ -124,8 +123,10 @@ use std::iter;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
-struct RunningSumAdvices {
+struct RunningSumColumns {
     coef: Column<Advice>,
+    /// power of base
+    pob: Column<Fixed>,
     acc: Column<Advice>,
 }
 #[derive(Debug, Clone)]
@@ -136,139 +137,115 @@ pub struct BlockCountAdvices {
 }
 
 #[derive(Debug, Clone)]
-pub struct RhoAdvices {
-    input: RunningSumAdvices,
-    output: RunningSumAdvices,
+pub struct RhoColumns {
+    input: RunningSumColumns,
+    output: RunningSumColumns,
     bc: BlockCountAdvices,
-}
-
-impl From<[Column<Advice>; 7]> for RhoAdvices {
-    fn from(cols: [Column<Advice>; 7]) -> Self {
-        let input = RunningSumAdvices {
-            coef: cols[0],
-            acc: cols[1],
-        };
-        let output = RunningSumAdvices {
-            coef: cols[2],
-            acc: cols[3],
-        };
-        let bc = BlockCountAdvices {
-            block_count: cols[4],
-            step2_acc: cols[5],
-            step3_acc: cols[6],
-        };
-        Self { input, output, bc }
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
-    adv: RhoAdvices,
-    chunk_rotate_convert_configs: Vec<ChunkRotateConversionConfig<F>>,
+    chunk_rotate_convert_config: ChunkRotateConversionConfig<F>,
     special_chunk_config: SpecialChunkConfig<F>,
-    lane_xy: (usize, usize),
     rotation: u32,
+    lane_idx: usize,
 }
 
 impl<F: FieldExt> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        lane_xy: (usize, usize),
-        adv: RhoAdvices,
-        axiliary: [Column<Advice>; 2],
-        base13_to_9: [TableColumn; 3],
-        special: [TableColumn; 2],
+        lane_idx: usize,
+        lane: Column<Advice>,
+        base13_to_9_table: Base13toBase9TableConfig<F>,
+        special_chunk_table: SpecialChunkTableConfig<F>,
     ) -> Self {
-        meta.enable_equality(adv.input.acc.into());
-        meta.enable_equality(adv.output.acc.into());
+        meta.enable_equality(lane.into());
         let q_is_special = meta.complex_selector();
-        let rotation = ROTATION_CONSTANTS[lane_xy.0][lane_xy.1];
-        let slices = slice_lane(rotation);
-        let chunk_rotate_convert_configs = slices
-            .iter()
-            .map(|(chunk_idx, step)| {
-                ChunkRotateConversionConfig::configure(
-                    meta,
-                    adv.clone(),
-                    base13_to_9,
-                    *chunk_idx,
-                    rotation,
-                    *step,
-                )
-            })
-            .collect::<Vec<_>>();
-        let special_chunk_config = SpecialChunkConfig::configure(
-            meta,
-            q_is_special,
-            adv.input.acc,
-            adv.output.acc,
-            axiliary[0],
-            special,
-            rotation as u64,
-        );
+        let rotation = {
+            let x = lane_idx % 5;
+            let y = lane_idx / 5;
+            ROTATION_CONSTANTS[x][y]
+        };
 
-        Self {
-            adv,
-            chunk_rotate_convert_configs,
-            special_chunk_config,
-            lane_xy,
-            rotation,
-        }
+        let q_normal = meta.complex_selector();
+        let q_special = meta.complex_selector();
+        let input_coef = meta.advice_column();
+        let input_pob = meta.fixed_column();
+        let input_acc = meta.advice_column();
+        let output_coef = meta.advice_column();
+        let output_pob = meta.fixed_column();
+        let output_acc = meta.advice_column();
+        let overflow_detector = meta.advice_column();
+
+        meta.enable_equality(input_acc.into());
+        meta.enable_equality(output_acc.into());
+
+        // | coef | 13**x | acc       |
+        // |------|-------|-----------|
+        // |  a   |  b    | c         |
+        // |  ... | ...   | c - a * b |
+        meta.create_gate("Running down input", |meta| {
+            let q_enable = meta.query_selector(q_normal);
+            let coef = meta.query_advice(input_coef, Rotation::cur());
+            let pob = meta.query_fixed(input_pob, Rotation::cur());
+            let acc = meta.query_advice(input_acc, Rotation::cur());
+            let acc_next = meta.query_advice(input_acc, Rotation::next());
+            vec![(
+                "delta_acc === - coef * power_of_base",
+                q_enable * (acc_next - acc + coef * pob),
+            )]
+        });
+        // | coef | 9**x  |    acc |
+        // |------|-------|--------|
+        // |  a   |  b    |      0 |
+        // |  ... | ...   |  a * b |
+        meta.create_gate("Running up for output", |meta| {
+            let q_enable = meta.query_selector(q_normal);
+            let coef = meta.query_advice(output_coef, Rotation::cur());
+            let pob = meta.query_fixed(output_pob, Rotation::cur());
+            let acc = meta.query_advice(output_acc, Rotation::cur());
+            let acc_next = meta.query_advice(output_acc, Rotation::next());
+            vec![(
+                "delta_acc === coef * power_of_base",
+                q_enable * (acc_next - acc.clone() - coef * pob),
+            )]
+        });
+
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_normal);
+            let base13_coef = meta.query_advice(input_coef, Rotation::cur());
+            let base9_coef = meta.query_advice(output_coef, Rotation::cur());
+            let od = meta.query_advice(overflow_detector, Rotation::cur());
+
+            vec![
+                (q_enable.clone() * base13_coef, base13_to_9_table.base13),
+                (q_enable.clone() * base9_coef, base13_to_9_table.base9),
+                (q_enable * od, base13_to_9_table.block_count),
+            ]
+        });
+
+        Self { rotation, lane_idx }
     }
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
         lane_base_13: (Cell, F),
     ) -> Result<((Cell, F), BlockCount2<F>), Error> {
-        let (lane, block_counts) = layouter.assign_region(
-            || format!("LRCC {:?}", self.lane_xy),
-            |mut region| {
-                let mut offset = 0;
-                let cell = region.assign_advice(
-                    || "base_13_col",
-                    self.adv.input.acc,
-                    offset,
-                    || Ok(lane_base_13.1),
-                )?;
-                region.constrain_equal(lane_base_13.0, cell)?;
+        let (conversions, special) =
+            RhoLane::new(f_to_biguint(lane_base_13.1), self.rotation)
+                .get_full_witness();
 
-                let (conversions, special) =
-                    RhoLane::new(f_to_biguint(lane_base_13.1), self.rotation)
-                        .get_full_witness();
-
-                let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
-                    .chunk_rotate_convert_configs
-                    .iter()
-                    .zip(conversions.iter())
-                    .map(|(config, conv)| {
-                        let block_counts =
-                            config.assign_region(&mut region, offset, conv)?;
-                        offset += 1;
-                        Ok(block_counts)
-                    })
-                    .collect();
-                let all_block_counts = all_block_counts?;
-                let block_counts =
-                    all_block_counts.last().ok_or(Error::Synthesis)?;
-                let lane = self.special_chunk_config.assign_region(
-                    &mut region,
-                    offset,
-                    special,
-                )?;
-                Ok((lane, *block_counts))
-            },
+        let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
+            .chunk_rotate_convert_config
+            .assign_region(region, offset: usize, conv: &Conversion);
+        let all_block_counts = all_block_counts?;
+        let block_counts = all_block_counts.last().ok_or(Error::Synthesis)?;
+        let lane = self.special_chunk_config.assign_region(
+            &mut region,
+            offset,
+            special,
         )?;
-        Ok((lane, block_counts))
-    }
-
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.chunk_rotate_convert_configs[0]
-            .base_13_to_base_9_lookup
-            .load(layouter)?;
-        self.special_chunk_config
-            .special_chunk_table_config
-            .load(layouter)?;
-        Ok(())
+        Ok((lane, *block_counts))
     }
 }
 
@@ -276,81 +253,37 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
 pub struct ChunkRotateConversionConfig<F> {
     q_enable: Selector,
     q_is_first: Selector,
-    adv: RhoAdvices,
-    power_of_b13: F,
-    power_of_b9: F,
-    base_13_to_base_9_lookup: Base13toBase9TableConfig<F>,
+    adv: RhoColumns,
     block_count_acc_config: BlockCountAccConfig<F>,
-    chunk_idx: u32,
 }
 
 impl<F: FieldExt> ChunkRotateConversionConfig<F> {
     fn configure(
         meta: &mut ConstraintSystem<F>,
-        adv: RhoAdvices,
-        fix_cols: [TableColumn; 3],
-        chunk_idx: u32,
-        rotation: u32,
-        step: u32,
+        lane: Column<Advice>,
+        base13_to_9_table: Base13toBase9TableConfig<F>,
     ) -> Self {
         let q_enable = meta.complex_selector();
         let q_is_first = meta.complex_selector();
-        let base_13_to_base_9_lookup = Base13toBase9TableConfig::configure(
-            meta,
-            q_enable,
-            adv.input.coef,
-            adv.output.coef,
-            adv.bc.block_count,
-            fix_cols,
-        );
 
-        let power_of_b13 =
-            F::from(B13.into()).pow(&[chunk_idx.into(), 0, 0, 0]);
-
-        // | coef | 13**x | acc       |
-        // |------|-------|-----------|
-        // |  a   |  b    | c         |
-        // |  ... | ...   | c - a * b |
-        meta.create_gate("Running down input", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let coef = meta.query_advice(adv.input.coef, Rotation::cur());
-            let power_of_base = Expression::Constant(power_of_b13);
-            let acc = meta.query_advice(adv.input.acc, Rotation::cur());
-            let acc_next = meta.query_advice(adv.input.acc, Rotation::next());
-            // We assumed the first acc is enforced by the copy constraint
-            // so no need to add is_first check constraint here
-            vec![(
-                "delta_acc === - coef * power_of_base", /* running down for
-                                                         * input */
-                q_enable * (acc_next - acc + coef * power_of_base),
-            )]
-        });
-        let power_of_b9 = F::from(B9.into()).pow(&[
-            ((rotation + chunk_idx) % LANE_SIZE).into(),
-            0,
-            0,
-            0,
-        ]);
-        // | coef | 9**x  |    acc |
-        // |------|-------|--------|
-        // |  a   |  b    |      0 |
-        // |  ... | ...   |  a * b |
-        meta.create_gate("Running up for output", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let q_is_first = meta.query_selector(q_is_first);
-            let coef = meta.query_advice(adv.output.coef, Rotation::cur());
-            let power_of_base = Expression::Constant(power_of_b9);
-            let acc = meta.query_advice(adv.output.acc, Rotation::cur());
-            let acc_next = meta.query_advice(adv.output.acc, Rotation::next());
-            vec![
-                (
-                    "delta_acc === coef * power_of_base", /* running up for
-                                                           * output */
-                    q_enable * (acc_next - acc.clone() - coef * power_of_base),
-                ),
-                ("first acc to be 0", q_is_first * acc),
-            ]
-        });
+        let adv = {
+            let input = RunningSumColumns {
+                coef: meta.advice_column(),
+                pob: meta.fixed_column(),
+                acc: meta.advice_column(),
+            };
+            let output = RunningSumColumns {
+                coef: meta.advice_column(),
+                pob: meta.fixed_column(),
+                acc: meta.advice_column(),
+            };
+            let bc = BlockCountAdvices {
+                block_count: meta.advice_column(),
+                step2_acc: meta.advice_column(),
+                step3_acc: meta.advice_column(),
+            };
+            RhoColumns { input, output, bc }
+        };
 
         let block_count_acc_config = BlockCountAccConfig::configure(
             meta,
@@ -363,11 +296,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             q_enable,
             q_is_first,
             adv,
-            power_of_b13,
-            power_of_b9,
-            base_13_to_base_9_lookup,
             block_count_acc_config,
-            chunk_idx,
         }
     }
 
@@ -377,14 +306,6 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         offset: usize,
         conv: &Conversion,
     ) -> Result<BlockCount2<F>, Error> {
-        assert_eq!(
-            biguint_to_f::<F>(&conv.input.power_of_base),
-            self.power_of_b13
-        );
-        assert_eq!(
-            biguint_to_f::<F>(&conv.output.power_of_base),
-            self.power_of_b9
-        );
         self.q_enable.enable(region, offset)?;
         if offset == 0 {
             self.q_is_first.enable(region, 0)?;
@@ -434,13 +355,13 @@ pub struct SpecialChunkConfig<F> {
 impl<F: FieldExt> SpecialChunkConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
         base_13_acc: Column<Advice>,
         base_9_acc: Column<Advice>,
         last_b9_coef: Column<Advice>,
-        special: [TableColumn; 2],
+        special_chunk_table_config: SpecialChunkTableConfig<F>,
         rotation: u64,
     ) -> Self {
+        let q_enable = meta.complex_selector();
         meta.create_gate("validate base_9_acc", |meta| {
             let delta_base_9_acc = meta
                 .query_advice(base_9_acc, Rotation::next())
@@ -455,13 +376,23 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                     * (delta_base_9_acc - last_b9_coef * pow_of_9),
             )]
         });
-        let special_chunk_table_config = SpecialChunkTableConfig::configure(
-            meta,
-            q_enable,
-            base_13_acc,
-            last_b9_coef,
-            special,
-        );
+
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let base_13_acc = meta.query_advice(base_13_acc, Rotation::cur());
+            let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
+
+            vec![
+                (
+                    q_enable.clone() * base_13_acc,
+                    special_chunk_table_config.last_chunk,
+                ),
+                (
+                    q_enable * last_b9_coef,
+                    special_chunk_table_config.output_coef,
+                ),
+            ]
+        });
         Self {
             q_enable,
             last_b9_coef,

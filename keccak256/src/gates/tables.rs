@@ -22,9 +22,9 @@ const NUM_OF_B9_CHUNKS: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
-    base13: TableColumn,
-    base9: TableColumn,
-    block_count: TableColumn,
+    pub base13: TableColumn,
+    pub base9: TableColumn,
+    pub block_count: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -80,34 +80,13 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        base13_coef: Column<Advice>,
-        base9_coef: Column<Advice>,
-        block_count: Column<Advice>,
-        fixed: [TableColumn; 3],
-    ) -> Self {
-        let config = Self {
-            base13: fixed[0],
-            base9: fixed[1],
-            block_count: fixed[2],
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            base13: meta.lookup_table_column(),
+            base9: meta.lookup_table_column(),
+            block_count: meta.lookup_table_column(),
             _marker: PhantomData,
-        };
-
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
-            let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
-            let bc = meta.query_advice(block_count, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * base13_coef, config.base13),
-                (q_enable.clone() * base9_coef, config.base9),
-                (q_enable * bc, config.block_count),
-            ]
-        });
-        config
+        }
     }
 }
 
@@ -116,8 +95,8 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
 /// - The last output coef: `convert_b13_coef(high_value + low_value)`
 #[derive(Debug, Clone)]
 pub struct SpecialChunkTableConfig<F> {
-    last_chunk: TableColumn,
-    output_coef: TableColumn,
+    pub last_chunk: TableColumn,
+    pub output_coef: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -165,32 +144,12 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        last_chunk_advice: Column<Advice>,
-        output_coef_advice: Column<Advice>,
-        cols: [TableColumn; 2],
-    ) -> Self {
-        let config = Self {
-            last_chunk: cols[0],
-            output_coef: cols[1],
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            last_chunk: meta.lookup_table_column(),
+            output_coef: meta.lookup_table_column(),
             _marker: PhantomData,
-        };
-        // Lookup for special chunk conversion
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let last_chunk_advice =
-                meta.query_advice(last_chunk_advice, Rotation::cur());
-            let output_coef_advice =
-                meta.query_advice(output_coef_advice, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * last_chunk_advice, config.last_chunk),
-                (q_enable * output_coef_advice, config.output_coef),
-            ]
-        });
-        config
+        }
     }
 }
 

@@ -1,13 +1,14 @@
 use crate::gates::{
     gate_helpers::BlockCount2,
     rho_checks::{
-        BlockCountFinalConfig, LaneRotateConversionConfig, RhoAdvices,
+        BlockCountFinalConfig, LaneRotateConversionConfig
     },
+    tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 
 use halo2::{
     circuit::{Cell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
@@ -18,42 +19,37 @@ pub struct RhoConfig<F> {
     state: [Column<Advice>; 25],
     state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
     final_block_count_config: BlockCountFinalConfig<F>,
+    base13_to_9_table: Base13toBase9TableConfig<F>,
+    special_chunk_table: SpecialChunkTableConfig<F>,
 }
 
 impl<F: FieldExt> RhoConfig<F> {
-    pub const OFFSET: usize = 2;
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        adv: &RhoAdvices,
-        axiliary: [Column<Advice>; 2],
-        base13_to_9: [TableColumn; 3],
-        special: [TableColumn; 2],
+        base13_to_9_table: Base13toBase9TableConfig<F>,
+        special_chunk_table: SpecialChunkTableConfig<F>,
     ) -> Self {
-        for lane in state.iter() {
-            meta.enable_equality((*lane).into());
-        }
-        let state_rotate_convert_configs = (0..5)
-            .cartesian_product(0..5)
-            .map(|(x, y)| {
+        let state_rotate_convert_configs = state.iter().enumerate()
+            .map(|(idx, &lane)| {
                 LaneRotateConversionConfig::configure(
                     meta,
-                    (x, y),
-                    adv.clone(),
-                    axiliary,
-                    base13_to_9,
-                    special,
+                    idx,
+                    lane,
+                    base13_to_9_table,
+                    special_chunk_table,
                 )
             })
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        let final_block_count_config =
-            BlockCountFinalConfig::configure(meta, axiliary);
+        let final_block_count_config = BlockCountFinalConfig::configure(meta);
         Self {
             state,
             state_rotate_convert_configs,
             final_block_count_config,
+            base13_to_9_table,
+            special_chunk_table,
         }
     }
     pub fn assign_rotation_checks(
