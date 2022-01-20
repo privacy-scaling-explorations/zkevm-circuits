@@ -2,7 +2,7 @@
 name = "eth-types"
 version = "0.1.0"
 edition = "2021"
-authors = ["CPerezz <c.perezbaro@gmail.com>"]
+authors = ["The appliedzkp team"]
 
 [dependencies]
 ethers-core = "0.6"
