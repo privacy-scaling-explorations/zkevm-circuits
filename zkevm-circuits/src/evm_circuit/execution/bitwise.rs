@@ -47,14 +47,17 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
         let tag = FixedTableTag::BitwiseAnd.expr()
             + (opcode.expr() - OpcodeId::AND.as_u64().expr());
         for idx in 0..32 {
-            cb.add_lookup(Lookup::Fixed {
-                tag: tag.clone(),
-                values: [
-                    a.cells[idx].expr(),
-                    b.cells[idx].expr(),
-                    c.cells[idx].expr(),
-                ],
-            });
+            cb.add_lookup(
+                "Bitwise lookup",
+                Lookup::Fixed {
+                    tag: tag.clone(),
+                    values: [
+                        a.cells[idx].expr(),
+                        b.cells[idx].expr(),
+                        c.cells[idx].expr(),
+                    ],
+                },
+            );
         }
 
         // State transition
