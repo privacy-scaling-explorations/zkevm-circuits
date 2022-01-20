@@ -5,13 +5,12 @@ use crate::exec_trace::OperationRef;
 use crate::external_tracer::BlockConstants;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
-use crate::operation::{MemoryOp, Op, Operation, StackOp, RW};
+use crate::operation::{MemoryOp, Op, Operation, RWCounter, StackOp, RW};
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{
-    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, RWCounter,
-    StackAddress,
+    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
 };
 use eth_types::{
     self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash,

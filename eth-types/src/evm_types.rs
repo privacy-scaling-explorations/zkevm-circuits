@@ -52,55 +52,6 @@ impl ProgramCounter {
     }
 }
 
-/// Wrapper type over `usize` which represents the global counter. The purpose
-/// of the `RWCounter` is to enforce that each Opcode/Instruction and Operation
-/// is unique and just executed once.
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct RWCounter(pub usize);
-
-impl fmt::Debug for RWCounter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{}", self.0))
-    }
-}
-
-impl From<RWCounter> for usize {
-    fn from(addr: RWCounter) -> usize {
-        addr.0
-    }
-}
-
-impl From<usize> for RWCounter {
-    fn from(rwc: usize) -> Self {
-        RWCounter(rwc)
-    }
-}
-
-impl Default for RWCounter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RWCounter {
-    /// Create a new RWCounter with the initial default value
-    pub fn new() -> Self {
-        Self(1)
-    }
-
-    /// Increase Self by one
-    pub fn inc(&mut self) {
-        self.0 += 1;
-    }
-
-    /// Increase Self by one and return the value before the increase.
-    pub fn inc_pre(&mut self) -> Self {
-        let pre = *self;
-        self.inc();
-        pre
-    }
-}
-
 /// Defines the gas left to perate.
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,

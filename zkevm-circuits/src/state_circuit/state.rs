@@ -1259,8 +1259,10 @@ mod tests {
     use super::*;
     use bus_mapping::bytecode;
     use bus_mapping::mock;
-    use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
-    use eth_types::evm_types::{MemoryAddress, RWCounter, StackAddress};
+    use bus_mapping::operation::{
+        MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW,
+    };
+    use eth_types::evm_types::{MemoryAddress, StackAddress};
     use eth_types::{address, Word};
     use halo2::dev::{
         MockProver, VerifyFailure::ConstraintNotSatisfied,
