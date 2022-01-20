@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
-    opcodes::{ids::OpcodeId, Opcode},
+    opcode_ids::OpcodeId,
     stack::{Stack, StackAddress},
     storage::Storage,
 };
@@ -18,7 +18,7 @@ pub use {
 #[derive(
     Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
 )]
-pub struct ProgramCounter(pub(crate) usize);
+pub struct ProgramCounter(pub usize);
 
 impl fmt::Debug for ProgramCounter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -52,13 +52,11 @@ impl ProgramCounter {
     }
 }
 
-/// Wrapper type over `usize` which represents the global counter associated to
-/// an [`ExecStep`](crate::circuit_input_builder::ExecStep) or
-/// [`Operation`](crate::operation::Operation). The purpose of the
-/// `RWCounter` is to enforce that each Opcode/Instruction and Operation is
-/// unique and just executed once.
+/// Wrapper type over `usize` which represents the global counter. The purpose
+/// of the `RWCounter` is to enforce that each Opcode/Instruction and Operation
+/// is unique and just executed once.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct RWCounter(pub(crate) usize);
+pub struct RWCounter(pub usize);
 
 impl fmt::Debug for RWCounter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -103,8 +101,7 @@ impl RWCounter {
     }
 }
 
-/// Defines the gas left to perate in a
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// Defines the gas left to perate.
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
@@ -116,12 +113,11 @@ impl fmt::Debug for Gas {
     }
 }
 
-/// Defines the gas consumed by an
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// Defines the gas consumption.
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
-pub struct GasCost(pub(crate) u64);
+pub struct GasCost(pub u64);
 
 impl fmt::Debug for GasCost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -342,6 +342,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "log",
+ "pairing_bn256",
  "pretty_assertions",
  "serde",
  "serde_json",
