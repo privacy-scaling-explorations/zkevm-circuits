@@ -1,5 +1,17 @@
 //! Ethereum and Evm types used to deserialize responses from web3 / geth.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+// Temporary until we have more of the crate implemented.
+#![allow(dead_code)]
+// We want to have UPPERCASE idents sometimes.
+#![allow(non_snake_case)]
+// Catch documentation errors caused by code changes.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_docs)]
+//#![deny(unsafe_code)] Allowed now until we find a
+// better way to handle downcasting from Operation into it's variants.
+#![allow(clippy::upper_case_acronyms)] // Too pedantic
+
 #[macro_use]
 pub mod macros;
 #[macro_use]
