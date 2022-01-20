@@ -1,7 +1,7 @@
 name: GH Actions Prover Benches on PR
 on:
   pull_request:
-    types: [ labeled ]
+    types: [ labeled ,  ready_for_review]
 jobs:
   Prover_benchmarking_Automation:
     if: ${{ github.event.label.name == 'exec_prover_bench' }}
