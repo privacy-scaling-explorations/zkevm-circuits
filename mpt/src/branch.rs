@@ -368,7 +368,23 @@ impl<F: FieldExt> BranchChip<F> {
                     * (c_rlp1_prev - c_bytes.clone() - c_rlp1_cur.clone())
             ));
 
-            // TODO: in final branch child s_rlp1 and c_rlp1 need to be 0
+            // In final branch child s_rlp1 and c_rlp1 need to be 1 (because RLP length
+            // specifies also ValueNode which occupies 1 byte).
+            // TODO: ValueNode
+            let is_last_branch_child =
+                meta.query_advice(is_last_branch_child, Rotation::cur());
+                constraints.push((
+                "branch last child S",
+                q_not_first.clone()
+                    * is_last_branch_child.clone()
+                    * (s_rlp1_cur.clone() - one.clone())
+            ));
+            constraints.push((
+                "branch last child C",
+                q_not_first.clone()
+                    * is_last_branch_child.clone()
+                    * (c_rlp1_cur.clone() - one)
+            ));
 
             constraints
         });
