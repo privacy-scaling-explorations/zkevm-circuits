@@ -4,7 +4,7 @@ on:
     types: [ labeled ,  ready_for_review]
 jobs:
   Prover_benchmarking_Automation:
-    if: ${{ github.event.label.name == 'exec_prover_bench' }}
+    if: ${{ github.event.label.name == 'benchmarks' }}
     runs-on: self-hosted
     env:
       PR_NUMBER: ${{ github.event.number }}
