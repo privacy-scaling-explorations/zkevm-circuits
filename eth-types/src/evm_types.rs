@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
-    opcode_ids::OpcodeId,
+    opcodes::{ids::OpcodeId, Opcode},
     stack::{Stack, StackAddress},
     storage::Storage,
 };
@@ -18,7 +18,7 @@ pub use {
 #[derive(
     Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
 )]
-pub struct ProgramCounter(pub usize);
+pub struct ProgramCounter(pub(crate) usize);
 
 impl fmt::Debug for ProgramCounter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -52,11 +52,13 @@ impl ProgramCounter {
     }
 }
 
-/// Wrapper type over `usize` which represents the global counter The purpose of
-/// the /// `RWCounter` is to enforce that each Opcode/Instruction and Operation
-/// is unique and just executed once.
+/// Wrapper type over `usize` which represents the global counter associated to
+/// an [`ExecStep`](crate::circuit_input_builder::ExecStep) or
+/// [`Operation`](crate::operation::Operation). The purpose of the
+/// `RWCounter` is to enforce that each Opcode/Instruction and Operation is
+/// unique and just executed once.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct RWCounter(pub usize);
+pub struct RWCounter(pub(crate) usize);
 
 impl fmt::Debug for RWCounter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -101,7 +103,8 @@ impl RWCounter {
     }
 }
 
-/// Defines the gas left to perate.
+/// Defines the gas left to perate in a
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
@@ -113,7 +116,8 @@ impl fmt::Debug for Gas {
     }
 }
 
-/// Defines the gas consumption.
+/// Defines the gas consumed by an
+/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(
     Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
 )]
@@ -160,6 +164,10 @@ impl GasCost {
     pub const TX: Self = Self(21000);
     /// Constant cost for creation transaction
     pub const CREATION_TX: Self = Self(53000);
+    /// Denominator of quadratic part of memory expansion gas cost
+    pub const MEMORY_EXPANSION_QUAD_DENOMINATOR: Self = Self(512);
+    /// Coefficient of linear part of memory expansion gas cost
+    pub const MEMORY_EXPANSION_LINEAR_COEFF: Self = Self(3);
 }
 
 impl GasCost {
