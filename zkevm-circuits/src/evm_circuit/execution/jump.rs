@@ -92,10 +92,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_range, run_test_circuit_incomplete_fixed_table},
-        witness,
-    };
+    use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
     use bus_mapping::bytecode;
 
     fn test_ok(destination: usize) {
@@ -113,8 +110,7 @@ mod test {
             JUMPDEST
             STOP
         });
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]

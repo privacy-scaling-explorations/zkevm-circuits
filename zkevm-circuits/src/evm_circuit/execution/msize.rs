@@ -83,9 +83,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness,
-    };
+    use crate::test_util::run_test_circuits;
     use bus_mapping::{bytecode, eth_types::Word};
 
     #[test]
@@ -100,7 +98,7 @@ mod test {
             MSIZE
             STOP
         };
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 }

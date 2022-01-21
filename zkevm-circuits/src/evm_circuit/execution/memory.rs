@@ -202,15 +202,17 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        witness,
+
+    use crate::{
+        evm_circuit::test::rand_word,
+        test_util::{run_test_circuits_with_config, BytecodeTestConfig},
     };
     use bus_mapping::{
         bytecode,
         eth_types::Word,
-        evm::{Gas, GasCost, OpcodeId},
+        evm::{GasCost, OpcodeId},
     };
+
     use std::iter;
 
     fn test_ok(
@@ -228,21 +230,17 @@ mod test {
             STOP
         };
 
-        let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
-        let mut block_trace =
-            bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
-                &bytecode, gas,
-            )
-            .unwrap();
-        block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
-            [bytecode.get_pos("start")..]
-            .to_vec();
-        let mut builder = block_trace.new_circuit_input_builder();
-        builder
-            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
-            .unwrap();
-        let block = witness::block_convert(bytecode.code(), &builder.block);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        let test_config = BytecodeTestConfig {
+            gas_limit: gas_cost + 100_000,
+            // we have to disable state circit now, since the memory size used
+            // here is too large
+            enable_state_circuit_test: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            run_test_circuits_with_config(bytecode, test_config),
+            Ok(())
+        );
     }
 
     #[test]
@@ -254,7 +252,6 @@ mod test {
             38913,
             3074206,
         );
-
         test_ok(
             OpcodeId::MLOAD,
             Word::from(0x12FFFF),

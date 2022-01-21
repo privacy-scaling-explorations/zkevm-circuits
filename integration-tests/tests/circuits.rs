@@ -290,6 +290,8 @@ mod test_evm_circuit {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr;
     use test_evm_circuit::*;
 
     let cli = get_client();
@@ -303,7 +305,7 @@ async fn test_evm_circuit_block(block_num: u64) {
         .0
         .get(&code_hash)
         .expect("code_hash not found");
-    let block = block_convert(bytecode, &builder.block);
+    let block = block_convert(Fr::rand(), bytecode, &builder.block);
     run_test_circuit_complete_fixed_table(block)
         .expect("evm_circuit verification failed");
 }
@@ -323,6 +325,9 @@ async fn test_evm_circuit_block_deploy_greeter() {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr;
+
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
@@ -346,6 +351,8 @@ async fn test_state_circuit_block(block_num: u64) {
         MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
     let circuit = StateCircuit::<
+        Fr,
+        true,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -353,6 +360,7 @@ async fn test_state_circuit_block(block_num: u64) {
         STACK_ADDRESS_MAX,
         STORAGE_ROWS_MAX,
     > {
+        randomness: Fr::rand(),
         memory_ops,
         stack_ops,
         storage_ops,
