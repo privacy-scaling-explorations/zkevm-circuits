@@ -14,7 +14,8 @@ use crate::{
     account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
     branch::BranchChip, branch_acc::BranchAccChip,
-    branch_acc_init::BranchAccInitChip, hash_in_parent::HashInParentChip,
+    branch_acc_init::BranchAccInitChip,
+    branch_hash_in_parent::BranchHashInParentChip, branch_rows::BranchRowsChip,
     helpers::into_words_expr, leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip, param::LAYOUT_OFFSET,
@@ -264,226 +265,49 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        meta.create_gate("hash constraints", |meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+        BranchRowsChip::<F>::configure(
+            meta,
+            q_not_first,
+            is_branch_child,
+            s_keccak,
+            s_advices,
+            node_index,
+            is_modified,
+            is_at_first_nibble,
+            sel1,
+        );
 
-            let mut constraints = vec![];
-            let is_branch_child_cur =
-                meta.query_advice(is_branch_child, Rotation::cur());
+        BranchRowsChip::<F>::configure(
+            meta,
+            q_not_first,
+            is_branch_child,
+            c_keccak,
+            c_advices,
+            node_index,
+            is_modified,
+            is_at_first_nibble,
+            sel2,
+        );
 
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-
-            /*
-            TODO for leaf:
-            Let's say we have a leaf n where
-                n.Key = [10,6,3,5,7,0,1,2,12,1,10,3,10,14,0,10,1,7,13,3,0,4,12,9,9,2,0,3,1,0,3,8,2,13,9,6,8,14,11,12,12,4,11,1,7,7,1,15,4,1,12,6,11,3,0,4,2,0,5,11,5,7,0,16]
-                n.Val = [2].
-            Before put in a proof, a leaf is hashed:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/proof.go#L78
-            But before being hashed, Key is put in compact form:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L110
-            Key becomes:
-                [58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112]
-            Then the node is RLP encoded:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L157
-            RLP:
-                [226,160,58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112,2]
-            Finally, the RLP is hashed:
-                [32,34,39,131,73,65,47,37,211,142,206,231,172,16,11,203,33,107,30,7,213,226,2,174,55,216,4,117,220,10,186,68]
-
-            In a proof (witness), we have [226, 160, ...] in columns s_rlp1, s_rlp2, ...
-            Constraint 1: We need to compute a hash of this value and compare it with [32, 34, ...] which should be
-                one of the branch children. lookup ...
-                Constraint 1.1: s_keccak, c_keccak the same for all 16 children
-                Constraint 1.2: for key = ind: s_keccak = converted s_advice and c_keccak = converted c_advice
-                Constraint 1.3: we add additional row for a leaf prepared for keccak (17 words),
-                  we do a lookup on this 17 words in s_keccak / c_keccak
-            Constraint 2: We need to convert it back to non-compact format to get the remaining key.
-                We need to verify the key until now (in nodes above) concatenated with the remaining key
-                gives us the key where the storage change is happening.
-            */
-
-            // s_keccak is the same for all is_branch_child rows.
-            // This is to enable easier comparison when in leaf row
-            // where we need to compare the keccak output is the same as keccak of the modified node,
-            // this way we just rotate back to one of the branch children rows and we get s_keccak there
-            // (otherwise we would need iterate over all branch children rows (many rotations) and check
-            // that at is_modified the value corresponds).
-            for column in s_keccak.iter() {
-                let s_keccak_prev =
-                    meta.query_advice(*column, Rotation::prev());
-                let s_keccak_cur = meta.query_advice(*column, Rotation::cur());
-                constraints.push((
-                    "s_keccak the same for all branch children",
-                    q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (s_keccak_cur.clone() - s_keccak_prev),
-                ));
-            }
-            // c_keccak is the same for all is_branch_child rows.
-            for column in c_keccak.iter() {
-                let c_keccak_prev =
-                    meta.query_advice(*column, Rotation::prev());
-                let c_keccak_cur = meta.query_advice(*column, Rotation::cur());
-                constraints.push((
-                    "c_keccak the same for all branch children",
-                    q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (c_keccak_cur.clone() - c_keccak_prev),
-                ));
-            }
-
-            // TODO: replace constraints above with permutation argument - for s_keccak and
-            // c_keccak being the same in all branch children (similarly needs to be done
-            // for sel1 and sel2 below).
-
-            // NOTE: the reason why s_keccak and c_keccak need to be the same in all branch
-            // children is that we need to check s_keccak and c_keccak in is_modified row,
-            // but we don't know in advance at which position (in branch) is this row.
-
-            // s_keccak and c_keccak correspond to s and c at the modified index
-            let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_first_nibble =
-                meta.query_advice(is_at_first_nibble, Rotation::cur());
-
-            let mut s_hash = vec![];
-            let mut c_hash = vec![];
-            for (ind, column) in s_advices.iter().enumerate() {
-                s_hash.push(meta.query_advice(*column, Rotation::cur()));
-                c_hash.push(meta.query_advice(c_advices[ind], Rotation::cur()));
-            }
-            let s_advices_words = into_words_expr(s_hash);
-            let c_advices_words = into_words_expr(c_hash);
-
-            // When it's NOT placeholder branch, is_modified = is_at_first_nibble.
-            // When it's placeholder branch, is_modified != is_at_first_nibble.
-            // This is used instead of having is_branch_s_placeholder and is_branch_c_placeholder columns -
-            // we only have this info in branch init where we don't need additional columns.
-
-            for (ind, column) in s_keccak.iter().enumerate() {
-                // In placeholder branch (when is_modified != is_at_first_nibble) the following
-                // constraint could be satisfied by attacker by putting hash of is_modified (while
-                // it should be is_at_first_nibble), but then the attacker would need to
-                // use is_modified node for leaf_key_in_added_branch (hash of it is in keccak
-                // at is_at_first_nibble), but then the constraint of leaf_in_added_branch having
-                // the same key (TODO this constraint in leaf_key_in_added_branch) except for
-                // the first nibble will fail.
-                let s_keccak_cur = meta.query_advice(*column, Rotation::cur());
-                // Needs to correspond when is_modified or is_at_first_nibble.
-                constraints.push((
-                    "s_keccak correspond to s_advices at the modified index",
-                    q_not_first.clone()
-                        * is_branch_child_cur.clone()
-                        * is_at_first_nibble.clone() // is_at_first_nibble = is_modified when NOT placeholder
-                        * is_modified.clone()
-                        * (s_advices_words[ind].clone() - s_keccak_cur),
-                ));
-            }
-            for (ind, column) in c_keccak.iter().enumerate() {
-                let c_keccak_cur = meta.query_advice(*column, Rotation::cur());
-                // Needs to correspond when is_modified or is_at_first_nibble.
-                constraints.push((
-                    "c_keccak correspond to c_advices at the modified index",
-                    q_not_first.clone()
-                        * is_branch_child_cur.clone()
-                        * is_at_first_nibble.clone() // is_at_first_nibble = is_modified when NOT placeholder
-                        * is_modified.clone()
-                        * (c_advices_words[ind].clone() - c_keccak_cur),
-                ));
-            }
-
-            // sel1 - denoting whether leaf is empty at modified_node.
-            // When sel1 = 1, s_advices need to be [128, 0, ..., 0].
-            // If sel1 = 1, there is no leaf at this position (value is being added or deleted)
-            // and we don't check the hash of it in leaf_value.
-            let c128 = Expression::Constant(F::from(128));
-            let sel1_cur = meta.query_advice(sel1, Rotation::cur());
-
-            // s_advices[0] = 128
-            let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
-            constraints.push((
-                "branch child sel1 s_advices0",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * is_modified.clone()
-                    * (s_advices0 - c128.clone())
-                    * sel1_cur.clone(),
-            ));
-            // s_advices[i] = 0 for i > 0
-            for column in s_advices.iter().skip(1) {
-                let s = meta.query_advice(*column, Rotation::cur());
-                constraints.push((
-                    "branch child sel1 s_advices",
-                    q_not_first.clone()
-                        * is_branch_child_cur.clone()
-                        * is_modified.clone()
-                        * s
-                        * sel1_cur.clone(),
-                ));
-            }
-
-            // sel2 - denoting whether leaf is empty at modified_node.
-            // When sel2 = 1, c_advices need to be [128, 0, ..., 0].
-            // If sel2 = 1, there is no leaf at this position (value is being added or deleted)
-            // and we don't check the hash of it in leaf_value.
-            let sel2_cur = meta.query_advice(sel2, Rotation::cur());
-
-            // s_advices[0] = 128
-            let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
-            constraints.push((
-                "branch child sel2 c_advices0",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * is_modified.clone()
-                    * (c_advices0 - c128.clone())
-                    * sel2_cur.clone(),
-            ));
-            // c_advices[i] = 0 for i > 0
-            for column in c_advices.iter().skip(1) {
-                let c = meta.query_advice(*column, Rotation::cur());
-                constraints.push((
-                    "branch child sel2 c_advices",
-                    q_not_first.clone()
-                        * is_branch_child_cur.clone()
-                        * is_modified.clone()
-                        * c
-                        * sel2_cur.clone(),
-                ));
-            }
-
-            // TODO: constraint for is_modified = is_at_first_nibble, to do this
-            // we can check modified_node = first_nibble in branch init and then check
-            // in each branch node: modified_node_prev = modified_node_cur and
-            // first_nibble_prev = first_nibble_cur, this way we can use only Rotation(-1).
-
-            // TODO: sel1 and sel2 - need to be the same in all branch children
-
-            constraints
-        });
-
-        HashInParentChip::<F>::configure(
+        BranchHashInParentChip::<F>::configure(
             meta,
             not_first_level,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             s_keccak,
-            s_advices,
             acc_s,
             acc_mult_s,
             keccak_table,
         );
 
-        HashInParentChip::<F>::configure(
+        BranchHashInParentChip::<F>::configure(
             meta,
             not_first_level,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             c_keccak,
-            c_advices,
             acc_c,
             acc_mult_c,
             keccak_table,

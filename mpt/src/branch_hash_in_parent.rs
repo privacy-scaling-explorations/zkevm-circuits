@@ -9,14 +9,14 @@ use std::marker::PhantomData;
 use crate::param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
 
 #[derive(Clone, Debug)]
-pub(crate) struct HashInParentConfig {}
+pub(crate) struct BranchHashInParentConfig {}
 
-pub(crate) struct HashInParentChip<F> {
-    config: HashInParentConfig,
+pub(crate) struct BranchHashInParentChip<F> {
+    config: BranchHashInParentConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> HashInParentChip<F> {
+impl<F: FieldExt> BranchHashInParentChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         not_first_level: Column<Fixed>,
@@ -24,12 +24,11 @@ impl<F: FieldExt> HashInParentChip<F> {
         is_last_branch_child: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-        advices: [Column<Advice>; HASH_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-    ) -> HashInParentConfig {
-        let config = HashInParentConfig {};
+    ) -> BranchHashInParentConfig {
+        let config = BranchHashInParentConfig {};
         let one = Expression::Constant(F::from(1_u64));
 
         // TODO: account first level branch hash for S and C - compared to root
@@ -58,7 +57,7 @@ impl<F: FieldExt> HashInParentChip<F> {
                 meta.query_advice(is_branch_placeholder, Rotation(-16));
             let acc = meta.query_advice(acc, Rotation::cur());
 
-            // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
+            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let c128 = Expression::Constant(F::from(128));
             let mult = meta.query_advice(acc_mult, Rotation::cur());
             let branch_acc = acc + c128 * mult;
@@ -94,7 +93,7 @@ impl<F: FieldExt> HashInParentChip<F> {
         config
     }
 
-    pub fn construct(config: HashInParentConfig) -> Self {
+    pub fn construct(config: BranchHashInParentConfig) -> Self {
         Self {
             config,
             _marker: PhantomData,
@@ -102,8 +101,8 @@ impl<F: FieldExt> HashInParentChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for HashInParentChip<F> {
-    type Config = HashInParentConfig;
+impl<F: FieldExt> Chip<F> for BranchHashInParentChip<F> {
+    type Config = BranchHashInParentConfig;
     type Loaded = ();
 
     fn config(&self) -> &Self::Config {
