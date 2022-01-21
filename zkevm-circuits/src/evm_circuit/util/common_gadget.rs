@@ -37,14 +37,17 @@ impl<F: FieldExt> SameContextGadget<F> {
         dynamic_gas_cost: Option<Expression<F>>,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
-        cb.add_lookup(Lookup::Fixed {
-            tag: FixedTableTag::ResponsibleOpcode.expr(),
-            values: [
-                cb.execution_state().as_u64().expr(),
-                opcode.expr(),
-                0.expr(),
-            ],
-        });
+        cb.add_lookup(
+            "Responsible opcode lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::ResponsibleOpcode.expr(),
+                values: [
+                    cb.execution_state().as_u64().expr(),
+                    opcode.expr(),
+                    0.expr(),
+                ],
+            },
+        );
 
         let mut gas_cost = cb
             .execution_state()

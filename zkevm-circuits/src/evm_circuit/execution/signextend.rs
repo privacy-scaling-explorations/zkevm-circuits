@@ -87,7 +87,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             // selector is the sum of the current and all previous `is_selected`
             // values.
             cb.require_equal(
-                "Constrain selector == 1 when is_selected == 1 || previous selector == 1", 
+                "Constrain selector == 1 when is_selected == 1 || previous selector == 1",
                 is_selected.clone()
                     + if idx > 0 {
                         selectors[idx - 1].expr()
@@ -102,10 +102,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
         // This will use the most significant bit of the selected byte to return
         // the sign byte, which is a byte with all its bits set to the
         // sign of the selected byte.
-        cb.add_lookup(Lookup::Fixed {
-            tag: FixedTableTag::SignByte.expr(),
-            values: [selected_byte, sign_byte.expr(), 0.expr()],
-        });
+        cb.add_lookup(
+            "SignByte lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::SignByte.expr(),
+                values: [selected_byte, sign_byte.expr(), 0.expr()],
+            },
+        );
 
         // Verify the result.
         // The LSB always remains the same, all other bytes with their selector
