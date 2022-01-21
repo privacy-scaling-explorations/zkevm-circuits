@@ -89,7 +89,11 @@ pub(crate) struct BusMapping<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
-    const VANITY_CHECK: bool,
+    // When SANITY_CHECK is true, max_address/global_counter/stack_address are
+    // required to be in the range of
+    // MEMORY_ADDRESS_MAX/GLOBAL_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
+    // synthesis
+    const SANITY_CHECK: bool,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
@@ -120,7 +124,7 @@ pub struct Config<
 
 impl<
         F: FieldExt,
-        const VANITY_CHECK: bool,
+        const SANITY_CHECK: bool,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -130,7 +134,7 @@ impl<
     >
     Config<
         F,
-        VANITY_CHECK,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -722,7 +726,7 @@ impl<
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
             let address = F::from_bytes(&op.address().to_le_bytes()).unwrap();
-            if VANITY_CHECK && address > F::from(MEMORY_ADDRESS_MAX as u64) {
+            if SANITY_CHECK && address > F::from(MEMORY_ADDRESS_MAX as u64) {
                 panic!(
                     "memory address out of range {:?} > {}",
                     address, MEMORY_ADDRESS_MAX
@@ -787,7 +791,7 @@ impl<
         let mut offset = MEMORY_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
-            if VANITY_CHECK && usize::from(*op.address()) > STACK_ADDRESS_MAX {
+            if SANITY_CHECK && usize::from(*op.address()) > STACK_ADDRESS_MAX {
                 panic!("stack address out of range");
             }
             let address = F::from(usize::from(*op.address()) as u64);
@@ -1087,7 +1091,7 @@ impl<
             }
         };
 
-        if VANITY_CHECK && global_counter > GLOBAL_COUNTER_MAX {
+        if SANITY_CHECK && global_counter > GLOBAL_COUNTER_MAX {
             panic!("global_counter out of range");
         }
         let global_counter = {
@@ -1200,7 +1204,7 @@ impl<
 #[derive(Default)]
 pub struct StateCircuit<
     F: FieldExt,
-    const VANITY_CHECK: bool,
+    const SANITY_CHECK: bool,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
@@ -1220,7 +1224,7 @@ pub struct StateCircuit<
 
 impl<
         F: FieldExt,
-        const VANITY_CHECK: bool,
+        const SANITY_CHECK: bool,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -1230,7 +1234,7 @@ impl<
     >
     StateCircuit<
         F,
-        VANITY_CHECK,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -1257,7 +1261,7 @@ impl<
 
 impl<
         F: FieldExt,
-        const VANITY_CHECK: bool,
+        const SANITY_CHECK: bool,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -1267,7 +1271,7 @@ impl<
     > Circuit<F>
     for StateCircuit<
         F,
-        VANITY_CHECK,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -1278,7 +1282,7 @@ impl<
 {
     type Config = Config<
         F,
-        VANITY_CHECK,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,

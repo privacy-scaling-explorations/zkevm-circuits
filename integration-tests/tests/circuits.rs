@@ -312,9 +312,6 @@ async fn test_evm_circuit_block(block_num: u64) {
 
 #[tokio::test]
 async fn test_evm_circuit_block_transfer_0() {
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr;
-
     log_init();
     let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
     test_evm_circuit_block(*block_num).await;
@@ -328,6 +325,9 @@ async fn test_evm_circuit_block_deploy_greeter() {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr;
+
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
