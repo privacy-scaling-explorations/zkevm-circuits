@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::MAX_GAS_SIZE_IN_BYTES,
+        param::N_BYTES_GAS,
         table::{AccountFieldTag, FixedTableTag, Lookup},
         util::{
             constraint_builder::{
@@ -26,7 +26,7 @@ use halo2::{
 #[derive(Clone, Debug)]
 pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
 impl<F: FieldExt> SameContextGadget<F> {

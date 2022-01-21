@@ -3,7 +3,7 @@
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 use zkevm_circuits::evm_circuit::{witness::Block, EvmCircuit};
 
@@ -25,11 +25,14 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
         let rw_table = [(); 8].map(|_| meta.advice_column());
         let bytecode_table = [(); 4].map(|_| meta.advice_column());
         let block_table = [(); 3].map(|_| meta.advice_column());
-        let randomness = meta.instance_column();
+        // Use constant expression to mock constant instance column for a more
+        // reasonable benchmark.
+        let power_of_randomness =
+            [(); 31].map(|_| Expression::Constant(F::one()));
 
         EvmCircuit::configure(
             meta,
-            randomness,
+            power_of_randomness,
             tx_table,
             rw_table,
             bytecode_table,
@@ -94,7 +97,7 @@ mod evm_circ_benches {
         let proof_message =
             format!("EVM Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
-        create_proof(&params, &pk, &[circuit], &[&[&[]]], &mut transcript)
+        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
             .unwrap();
         let proof = transcript.finalize();
         end_timer!(start2);
@@ -106,7 +109,7 @@ mod evm_circ_benches {
 
         // Bench verification time
         let start3 = start_timer!(|| "EVM Proof verification");
-        verify_proof(&params, pk.get_vk(), &[&[&[]]], &mut transcript).unwrap();
+        verify_proof(&params, pk.get_vk(), &[&[]], &mut transcript).unwrap();
         end_timer!(start3);
     }
 }

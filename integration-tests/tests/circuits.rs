@@ -22,6 +22,7 @@ mod test_evm_circuit {
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::*,
+        poly::Rotation,
     };
     use zkevm_circuits::evm_circuit::{
         param::STEP_HEIGHT,
@@ -187,7 +188,21 @@ mod test_evm_circuit {
             let rw_table = [(); 8].map(|_| meta.advice_column());
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
-            let randomness = meta.instance_column();
+
+            let power_of_randomness = {
+                let columns = [(); 31].map(|_| meta.instance_column());
+                let mut power_of_randomness = None;
+
+                meta.create_gate("", |meta| {
+                    power_of_randomness = Some(columns.map(|column| {
+                        meta.query_instance(column, Rotation::cur())
+                    }));
+
+                    [Expression::Constant(F::zero())]
+                });
+
+                power_of_randomness.unwrap()
+            };
 
             Self::Config {
                 tx_table,
@@ -195,7 +210,7 @@ mod test_evm_circuit {
                 bytecode_table,
                 evm_circuit: EvmCircuit::configure(
                     meta,
-                    randomness,
+                    power_of_randomness,
                     tx_table,
                     rw_table,
                     bytecode_table,
@@ -274,18 +289,14 @@ mod test_evm_circuit {
     }
 }
 
-#[tokio::test]
-async fn test_evm_circuit_block_a() {
+async fn test_evm_circuit_block(block_num: u64) {
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr;
     use test_evm_circuit::*;
 
-    log_init();
-    let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
     let cli = get_client();
-
     let cli = BuilderClient::new(cli).await.unwrap();
-    let builder = cli.gen_inputs(*block_num).await.unwrap();
+    let builder = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate evm_circuit proof
     let code_hash = builder.block.txs()[0].calls()[0].code_hash;
@@ -300,16 +311,26 @@ async fn test_evm_circuit_block_a() {
 }
 
 #[tokio::test]
-async fn test_state_circuit_block_a() {
+async fn test_evm_circuit_block_transfer_0() {
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
     log_init();
-    let (block_num, _address) = GEN_DATA.deployments.get("Greeter").unwrap();
-    let cli = get_client();
+    let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
+    test_evm_circuit_block(*block_num).await;
+}
 
+#[tokio::test]
+async fn test_evm_circuit_block_deploy_greeter() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
+    test_evm_circuit_block(*block_num).await;
+}
+
+async fn test_state_circuit_block(block_num: u64) {
+    let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
-    let builder = cli.gen_inputs(*block_num).await.unwrap();
+    let builder = cli.gen_inputs(block_num).await.unwrap();
 
     // Generate state proof
     let stack_ops = builder.block.container.sorted_stack();
@@ -349,4 +370,18 @@ async fn test_state_circuit_block_a() {
     let prover =
         MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
     prover.verify().expect("state_circuit verification failed");
+}
+
+#[tokio::test]
+async fn test_state_circuit_block_transfer_0() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
+    test_state_circuit_block(*block_num).await;
+}
+
+#[tokio::test]
+async fn test_state_circuit_block_deploy_greeter() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
+    test_state_circuit_block(*block_num).await;
 }

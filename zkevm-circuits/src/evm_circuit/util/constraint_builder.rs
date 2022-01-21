@@ -5,7 +5,7 @@ use crate::{
             AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
             RwTableTag, TxContextFieldTag,
         },
-        util::{Cell, Word},
+        util::{Cell, RandomLinearCombination, Word},
     },
     util::Expr,
 };
@@ -13,7 +13,7 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-const MAX_DEGREE: usize = 2usize.pow(3) + 1 + 32;
+const MAX_DEGREE: usize = 2usize.pow(3) + 1;
 // Degree added for expressions used in lookups.
 const LOOKUP_DEGREE: usize = 3;
 
@@ -45,14 +45,14 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
-    pub(crate) memory_size: Transition<Expression<F>>,
+    pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) state_write_counter: Transition<Expression<F>>,
 }
 
 pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
-    randomness: Expression<F>,
+    power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
@@ -69,13 +69,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: &'a Step<F>,
         next: &'a Step<F>,
-        randomness: Expression<F>,
+        power_of_randomness: &'a [Expression<F>; 31],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
             curr,
             next,
-            randomness,
+            power_of_randomness,
             execution_state,
             constraints: Vec::new(),
             constraints_first_step: Vec::new(),
@@ -150,8 +150,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn randomness(&self) -> Expression<F> {
-        self.randomness.clone()
+    pub(crate) fn power_of_randomness(&self) -> &[Expression<F>] {
+        self.power_of_randomness
     }
 
     pub(crate) fn execution_state(&self) -> ExecutionState {
@@ -189,7 +189,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_word(&mut self) -> Word<F> {
-        Word::new(self.query_bytes(), self.randomness.clone())
+        self.query_rlc()
+    }
+
+    pub(crate) fn query_rlc<const N: usize>(
+        &mut self,
+    ) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(
+            self.query_bytes(),
+            self.power_of_randomness,
+        )
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -322,10 +331,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 step_state_transition.gas_left,
             ),
             (
-                "State transition constrain of memory_size",
-                &self.curr.state.memory_size,
-                &self.next.state.memory_size,
-                step_state_transition.memory_size,
+                "State transition constrain of memory_word_size",
+                &self.curr.state.memory_word_size,
+                &self.next.state.memory_word_size,
+                step_state_transition.memory_word_size,
             ),
             (
                 "State transition constrain of state_write_counter",

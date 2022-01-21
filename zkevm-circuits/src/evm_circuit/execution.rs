@@ -11,9 +11,7 @@ use crate::{
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
-    plonk::{
-        Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
-    },
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use std::collections::HashMap;
@@ -35,6 +33,7 @@ mod mul;
 mod pc;
 mod pop;
 mod push;
+mod signed_comparator;
 mod signextend;
 mod stop;
 mod swap;
@@ -56,6 +55,7 @@ use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
@@ -99,6 +99,7 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
@@ -109,7 +110,7 @@ pub(crate) struct ExecutionConfig<F> {
 impl<F: FieldExt> ExecutionConfig<F> {
     pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
-        randomness: Column<Instance>,
+        power_of_randomness: [Expression<F>; 31],
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
@@ -126,15 +127,6 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
-
-        let randomness = {
-            let mut expr = None;
-            meta.create_gate("Query randomness", |meta| {
-                expr = Some(meta.query_instance(randomness, Rotation::cur()));
-                vec![0.expr()]
-            });
-            expr.unwrap()
-        };
 
         let step_curr = Step::new(meta, qs_byte_lookup, advices, false);
         let step_next = Step::new(meta, qs_byte_lookup, advices, true);
@@ -209,7 +201,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     meta,
                     q_step,
                     q_step_first,
-                    &randomness,
+                    &power_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut independent_lookups,
@@ -236,6 +228,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
@@ -264,7 +257,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
         q_step_first: Selector,
-        randomness: &Expression<F>,
+        power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         independent_lookups: &mut Vec<Vec<Lookup<F>>>,
@@ -273,7 +266,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let mut cb = ConstraintBuilder::new(
             step_curr,
             step_next,
-            randomness.clone(),
+            power_of_randomness,
             G::EXECUTION_STATE,
         );
 
@@ -397,7 +390,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_idx];
+                        let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
                         if offset == 0 {
@@ -437,7 +430,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_idx];
+                        let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
                         self.assign_exec_step(
@@ -499,6 +492,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 assign_exec_step!(self.signextend_gadget)
             }
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
+            ExecutionState::SCMP => {
+                assign_exec_step!(self.signed_comparator_gadget)
+            }
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),

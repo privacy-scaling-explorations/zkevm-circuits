@@ -119,8 +119,6 @@ use halo2::{
     },
     poly::Rotation,
 };
-use num_bigint::BigUint;
-use num_traits::{One, Zero};
 use pairing::arithmetic::FieldExt;
 use std::iter;
 use std::marker::PhantomData;
@@ -160,131 +158,6 @@ impl From<[Column<Advice>; 7]> for RhoAdvices {
             step3_acc: cols[6],
         };
         Self { input, output, bc }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RotatingVariables {
-    rotation: u32,
-    chunk_idx: u32,
-    step: u32,
-    input_raw: BigUint,
-    input_coef: BigUint,
-    input_power_of_base: BigUint,
-    input_acc: BigUint,
-    output_coef: BigUint,
-    output_power_of_base: BigUint,
-    output_acc: BigUint,
-    block_count: Option<u32>,
-    // step2 acc and step3 acc
-    block_count_acc: [u32; 2],
-    low_value: u64,
-    high_value: Option<u64>,
-}
-
-impl RotatingVariables {
-    fn from(lane_base_13: BigUint, rotation: u32) -> Result<Self, Error> {
-        let chunk_idx = 1;
-        let step = get_step_size(chunk_idx, rotation);
-        let input_raw = lane_base_13.clone() / B13;
-        let input_coef = input_raw.clone() % B13.pow(step);
-        let input_power_of_base = BigUint::from(B13);
-        let input_acc = lane_base_13.clone();
-        let (block_count, output_coef) =
-            get_block_count_and_output_coef(input_coef.clone());
-        let output_coef = BigUint::from(output_coef);
-        let output_power_of_base = if is_at_rotation_offset(chunk_idx, rotation)
-        {
-            BigUint::one()
-        } else {
-            BigUint::from(B9).pow(rotation + chunk_idx)
-        };
-        let output_acc = BigUint::zero();
-        let mut block_count_acc = [0; 2];
-        if step == 2 || step == 3 {
-            block_count_acc[(step - 2) as usize] += block_count;
-        }
-        let low_value: u64 = biguint_mod(&lane_base_13, B13);
-        Ok(Self {
-            rotation,
-            chunk_idx,
-            step,
-            input_raw,
-            input_coef,
-            input_power_of_base,
-            input_acc,
-            output_coef,
-            output_power_of_base,
-            output_acc,
-            block_count: Some(block_count),
-            block_count_acc,
-            low_value,
-            high_value: None,
-        })
-    }
-
-    fn next(&self) -> Self {
-        assert!(self.chunk_idx < LANE_SIZE);
-        let mut new = self.clone();
-        new.chunk_idx += self.step;
-        new.step = get_step_size(new.chunk_idx, self.rotation);
-        new.input_raw /= B13.pow(self.step);
-        new.input_coef = new.input_raw.clone() % B13.pow(new.step);
-        new.input_power_of_base *= B13.pow(self.step);
-        new.input_acc -=
-            self.input_power_of_base.clone() * self.input_coef.clone();
-        new.output_power_of_base =
-            if is_at_rotation_offset(new.chunk_idx, self.rotation) {
-                BigUint::one()
-            } else {
-                self.output_power_of_base.clone() * B9.pow(self.step)
-            };
-        new.output_acc +=
-            self.output_power_of_base.clone() * self.output_coef.clone();
-        // Case of last chunk, aka special chunks
-        if new.chunk_idx >= LANE_SIZE {
-            assert!(
-                new.input_raw.is_zero(),
-                "Expect raw input at last chunk should be zero, but got {:?}",
-                new.input_raw
-            );
-            new.block_count = None;
-            new.high_value = Some(biguint_mod(&self.input_raw, B13));
-            let high = new.high_value.unwrap();
-            new.output_coef =
-                BigUint::from(convert_b13_coef(high + self.low_value));
-            let expect =
-                new.low_value + high * BigUint::from(B13).pow(LANE_SIZE);
-            assert_eq!(
-                new.input_acc,
-                expect,
-                "input_acc got: {:?}  expect: {:?} = low({:?}) + high({:?}) * 13**64",
-                new.input_acc,
-                expect,
-                new.low_value,
-                high,
-            );
-            return new;
-        }
-        let (block_count, usual_output_coef) =
-            get_block_count_and_output_coef(new.input_coef.clone());
-        new.output_coef = BigUint::from(usual_output_coef);
-        new.block_count = Some(block_count);
-        if new.step == 2 || new.step == 3 {
-            assert!(
-                block_count < 13,
-                "expect block count < 13 but got {}",
-                block_count
-            );
-            new.block_count_acc[(new.step - 2) as usize] += block_count;
-        }
-        new
-    }
-    fn finalize(&self) -> Self {
-        let mut new = self.clone();
-        new.output_acc +=
-            self.output_power_of_base.clone() * self.output_coef.clone();
-        new
     }
 }
 
@@ -359,18 +232,18 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 )?;
                 region.constrain_equal(lane_base_13.0, cell)?;
 
-                let mut rv = RotatingVariables::from(
-                    f_to_biguint(lane_base_13.1).ok_or(Error::Synthesis)?,
-                    self.rotation,
-                )?;
+                let (conversions, special) =
+                    RhoLane::new(f_to_biguint(lane_base_13.1), self.rotation)
+                        .get_full_witness();
+
                 let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
                     .chunk_rotate_convert_configs
                     .iter()
-                    .map(|config| {
+                    .zip(conversions.iter())
+                    .map(|(config, conv)| {
                         let block_counts =
-                            config.assign_region(&mut region, offset, &rv)?;
+                            config.assign_region(&mut region, offset, conv)?;
                         offset += 1;
-                        rv = rv.next();
                         Ok(block_counts)
                     })
                     .collect();
@@ -380,7 +253,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 let lane = self.special_chunk_config.assign_region(
                     &mut region,
                     offset,
-                    &rv,
+                    special,
                 )?;
                 Ok((lane, *block_counts))
             },
@@ -431,7 +304,8 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             fix_cols,
         );
 
-        let power_of_b13 = F::from(B13).pow(&[chunk_idx.into(), 0, 0, 0]);
+        let power_of_b13 =
+            F::from(B13.into()).pow(&[chunk_idx.into(), 0, 0, 0]);
 
         // | coef | 13**x | acc       |
         // |------|-------|-----------|
@@ -451,7 +325,7 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
                 q_enable * (acc_next - acc + coef * power_of_base),
             )]
         });
-        let power_of_b9 = F::from(B9).pow(&[
+        let power_of_b9 = F::from(B9.into()).pow(&[
             ((rotation + chunk_idx) % LANE_SIZE).into(),
             0,
             0,
@@ -501,14 +375,14 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        rv: &RotatingVariables,
+        conv: &Conversion,
     ) -> Result<BlockCount2<F>, Error> {
         assert_eq!(
-            biguint_to_f::<F>(&rv.input_power_of_base)?,
+            biguint_to_f::<F>(&conv.input.power_of_base),
             self.power_of_b13
         );
         assert_eq!(
-            biguint_to_f::<F>(&rv.output_power_of_base)?,
+            biguint_to_f::<F>(&conv.output.power_of_base),
             self.power_of_b9
         );
         self.q_enable.enable(region, offset)?;
@@ -519,31 +393,30 @@ impl<F: FieldExt> ChunkRotateConversionConfig<F> {
             || format!("Input Coef {}", self.chunk_idx),
             self.adv.input.coef,
             offset,
-            || biguint_to_f::<F>(&rv.input_coef),
+            || Ok(biguint_to_f::<F>(&conv.input.coef)),
         )?;
         region.assign_advice(
             || "Input accumulator",
             self.adv.input.acc,
             offset,
-            || biguint_to_f::<F>(&rv.input_acc),
+            || Ok(biguint_to_f::<F>(&conv.input.pre_acc)),
         )?;
         region.assign_advice(
             || "Output Coef",
             self.adv.output.coef,
             offset,
-            || biguint_to_f::<F>(&rv.output_coef),
+            || Ok(biguint_to_f::<F>(&conv.output.coef)),
         )?;
         region.assign_advice(
             || "Output accumulator",
             self.adv.output.acc,
             offset,
-            || biguint_to_f::<F>(&rv.output_acc),
+            || Ok(biguint_to_f::<F>(&conv.output.pre_acc)),
         )?;
         let block_counts = self.block_count_acc_config.assign_region(
             region,
             offset,
-            rv.block_count.ok_or(Error::Synthesis)?,
-            rv.block_count_acc,
+            &conv.overflow_detector,
         )?;
         Ok(block_counts)
     }
@@ -573,8 +446,9 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
                 .query_advice(base_9_acc, Rotation::next())
                 - meta.query_advice(base_9_acc, Rotation::cur());
             let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
-            let pow_of_9 =
-                Expression::Constant(F::from(B9).pow(&[rotation, 0, 0, 0]));
+            let pow_of_9 = Expression::Constant(
+                F::from(B9.into()).pow(&[rotation, 0, 0, 0]),
+            );
             vec![(
                 "delta_base_9_acc === (high_value + low_value) * 9**rotation",
                 meta.query_selector(q_enable)
@@ -600,37 +474,34 @@ impl<F: FieldExt> SpecialChunkConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        rv: &RotatingVariables,
+        special: Special,
     ) -> Result<(Cell, F), Error> {
         self.q_enable.enable(region, offset)?;
-        rv.high_value.ok_or(Error::Synthesis).unwrap();
         region.assign_advice(
             || "input_acc",
             self.base_13_acc,
             offset,
-            || biguint_to_f::<F>(&rv.input_acc),
+            || Ok(biguint_to_f::<F>(&special.input)),
         )?;
         region.assign_advice(
             || "ouput_acc",
             self.base_9_acc,
             offset,
-            || biguint_to_f::<F>(&rv.output_acc),
+            || Ok(biguint_to_f::<F>(&special.output_acc_pre)),
         )?;
         region.assign_advice(
             || "last_b9_coef",
             self.last_b9_coef,
             offset,
-            || biguint_to_f::<F>(&rv.output_coef),
+            || Ok(F::from(special.output_coef as u64)),
         )?;
-
-        let rv_final = rv.finalize();
         region.assign_advice(
             || "input_acc",
             self.base_13_acc,
             offset + 1,
             || Ok(F::zero()),
         )?;
-        let value = biguint_to_f::<F>(&rv_final.output_acc)?;
+        let value = biguint_to_f::<F>(&special.output_acc_post);
         let cell = region.assign_advice(
             || "input_acc",
             self.base_9_acc,
@@ -740,42 +611,38 @@ impl<F: FieldExt> BlockCountAccConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        block_count: u32,
-        block_count_acc: [u32; 2],
+        ofdet: &OverflowDetector,
     ) -> Result<BlockCount2<F>, Error> {
         if offset == 0 {
             self.q_first.enable(region, 0)?;
         } else {
             self.q_rest.enable(region, offset)?;
         }
-
-        let block_count = F::from(block_count.into());
-        let acc = block_count_acc.map(|x| F::from(x.into()));
         region.assign_advice(
             || format!("block count step{}", self.step),
             self.bc.block_count,
             offset,
-            || Ok(block_count),
+            || Ok(F::from(ofdet.block_count.into())),
         )?;
-        let cell = region.assign_advice(
-            || "step 2 bc acc",
-            self.bc.step2_acc,
-            offset,
-            || Ok(acc[0]),
-        )?;
-        let step2 = BlockCount {
-            cell,
-            value: acc[0],
+        let step2 = {
+            let value = F::from(ofdet.step2_acc.into());
+            let cell = region.assign_advice(
+                || "step 2 bc acc",
+                self.bc.step2_acc,
+                offset,
+                || Ok(value),
+            )?;
+            BlockCount { cell, value }
         };
-        let cell = region.assign_advice(
-            || "step 3 bc acc",
-            self.bc.step3_acc,
-            offset,
-            || Ok(acc[1]),
-        )?;
-        let step3 = BlockCount {
-            cell,
-            value: acc[1],
+        let step3 = {
+            let value = F::from(ofdet.step3_acc.into());
+            let cell = region.assign_advice(
+                || "step 3 bc acc",
+                self.bc.step3_acc,
+                offset,
+                || Ok(value),
+            )?;
+            BlockCount { cell, value }
         };
         Ok((step2, step3))
     }

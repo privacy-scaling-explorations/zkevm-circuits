@@ -124,7 +124,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
                     )
                 }
             }),
-            cb.randomness(),
+            cb.power_of_randomness(),
         );
 
         // Pop the byte index and the value from the stack, push the result on

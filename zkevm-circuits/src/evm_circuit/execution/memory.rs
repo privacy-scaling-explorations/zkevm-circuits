@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_GAS_SIZE_IN_BYTES, NUM_ADDRESS_BYTES_USED},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -27,7 +27,7 @@ pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
     address: MemoryAddress<F>,
     value: Word<F>,
-    memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
 }
@@ -41,7 +41,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
-        let address = MemoryAddress::new(cb.query_bytes(), cb.randomness());
+        let address = cb.query_rlc();
         let value = cb.query_word();
 
         // Check if this is an MLOAD
@@ -62,10 +62,10 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_size.expr(),
-            from_bytes::expr(&address.cells)
+            cb.curr.state.memory_word_size.expr(),
+            [from_bytes::expr(&address.cells)
                 + 1.expr()
-                + (is_not_mstore8.clone() * 31.expr()),
+                + (is_not_mstore8.clone() * 31.expr())],
         );
 
         /* Stack operations */
@@ -125,7 +125,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
-            memory_size: To(memory_expansion.next_memory_size()),
+            memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
@@ -165,7 +165,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             Some(
-                address.to_le_bytes()[..NUM_ADDRESS_BYTES_USED]
+                address.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
                     .unwrap(),
             ),
@@ -192,8 +192,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         self.memory_expansion.assign(
             region,
             offset,
-            step.memory_size,
-            address.as_u64() + 1 + if is_mstore8 == F::one() { 0 } else { 31 },
+            step.memory_word_size(),
+            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
         Ok(())

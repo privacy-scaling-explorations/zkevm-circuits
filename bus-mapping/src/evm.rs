@@ -164,6 +164,10 @@ impl GasCost {
     pub const TX: Self = Self(21000);
     /// Constant cost for creation transaction
     pub const CREATION_TX: Self = Self(53000);
+    /// Denominator of quadratic part of memory expansion gas cost
+    pub const MEMORY_EXPANSION_QUAD_DENOMINATOR: Self = Self(512);
+    /// Coefficient of linear part of memory expansion gas cost
+    pub const MEMORY_EXPANSION_LINEAR_COEFF: Self = Self(3);
 }
 
 impl GasCost {

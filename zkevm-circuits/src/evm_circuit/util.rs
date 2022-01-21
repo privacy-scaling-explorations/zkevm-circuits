@@ -1,4 +1,4 @@
-use crate::{evm_circuit::param::MAX_MEMORY_SIZE_IN_BYTES, util::Expr};
+use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
 use bus_mapping::eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
@@ -88,18 +88,27 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
 
     pub(crate) fn random_linear_combine_expr(
         bytes: [Expression<F>; N],
-        randomness: Expression<F>,
+        power_of_randomness: &[Expression<F>],
     ) -> Expression<F> {
-        bytes.iter().rev().fold(0.expr(), |acc, byte| {
-            acc * randomness.clone() + byte.clone()
-        })
+        assert!(bytes.len() <= power_of_randomness.len() + 1);
+
+        let mut rlc = bytes[0].clone();
+        for (byte, randomness) in
+            bytes[1..].iter().zip(power_of_randomness.iter())
+        {
+            rlc = rlc + byte.clone() * randomness.clone();
+        }
+        rlc
     }
 
-    pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
+    pub(crate) fn new(
+        cells: [Cell<F>; N],
+        power_of_randomness: &[Expression<F>],
+    ) -> Self {
         Self {
             expression: Self::random_linear_combine_expr(
                 cells.clone().map(|cell| cell.expr()),
-                randomness,
+                power_of_randomness,
             ),
             cells,
         }
@@ -131,7 +140,7 @@ impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
 pub(crate) type MemoryAddress<F> =
-    RandomLinearCombination<F, MAX_MEMORY_SIZE_IN_BYTES>;
+    RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {
@@ -209,11 +218,14 @@ pub(crate) mod select {
 
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
-    use crate::{evm_circuit::param::MAX_BYTES_FIELD, util::Expr};
+    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
-        assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
+        assert!(
+            bytes.len() <= MAX_N_BYTES_INTEGER,
+            "Too many bytes to compose an integer in field"
+        );
         let mut value = 0.expr();
         let mut multiplier = F::one();
         for byte in bytes.iter() {
@@ -224,7 +236,10 @@ pub(crate) mod from_bytes {
     }
 
     pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
-        assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
+        assert!(
+            bytes.len() <= MAX_N_BYTES_INTEGER,
+            "Too many bytes to compose an integer in field"
+        );
         let mut value = F::zero();
         let mut multiplier = F::one();
         for byte in bytes.iter() {

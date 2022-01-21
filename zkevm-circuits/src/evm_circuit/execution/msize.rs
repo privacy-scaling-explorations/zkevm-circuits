@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_WORD,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -13,7 +14,6 @@ use crate::{
     },
     util::Expr,
 };
-use array_init::array_init;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -28,16 +28,16 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        let value = cb.query_rlc();
+
         // memory_size is limited to 64 bits so we only consider 8 bytes
-        let bytes = array_init(|_| cb.query_cell());
         cb.require_equal(
             "Constrain memory_size equal to stack value",
-            from_bytes::expr(&bytes),
-            cb.curr.state.memory_size.expr(),
+            from_bytes::expr(&value.cells),
+            cb.curr.state.memory_word_size.expr() * N_BYTES_WORD.expr(),
         );
 
         // Push the value on the stack
-        let value = RandomLinearCombination::new(bytes, cb.randomness());
         cb.stack_push(value.expr());
 
         // State transition
@@ -71,11 +71,10 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-
         self.value.assign(
             region,
             offset,
-            Some(step.memory_size.to_le_bytes()),
+            Some((step.memory_size as u64).to_le_bytes()),
         )?;
 
         Ok(())
@@ -88,7 +87,7 @@ mod test {
     use bus_mapping::{bytecode, eth_types::Word};
 
     #[test]
-    fn test_ok() {
+    fn msize_gadget() {
         let address = Word::from(0x10);
         let value = Word::from_big_endian(&(1..33).collect::<Vec<_>>());
         let bytecode = bytecode! {

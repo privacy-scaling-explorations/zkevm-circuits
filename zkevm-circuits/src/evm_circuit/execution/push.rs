@@ -95,7 +95,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
         );
 
         // Push the value on the stack
-        let value = Word::new(bytes, cb.randomness());
+        let value = Word::new(bytes, cb.power_of_randomness());
         cb.stack_push(value.expr());
 
         // State transition
