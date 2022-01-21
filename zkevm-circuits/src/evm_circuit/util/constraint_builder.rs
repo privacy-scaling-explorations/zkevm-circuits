@@ -575,7 +575,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value: Expression<F>,
     ) {
         self.rw_lookup(
-            "AccountAccessList read",
+            "Account read",
             false.expr(),
             RwTableTag::Account,
             [
