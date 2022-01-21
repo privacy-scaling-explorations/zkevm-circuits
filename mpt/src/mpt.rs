@@ -595,10 +595,19 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_keccak,
-            c_keccak,
-            s_advices,
+            s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             acc_s,
             acc_mult_s,
+            keccak_table,
+        );
+
+        HashInParentChip::<F>::configure(
+            meta,
+            not_first_level,
+            is_account_leaf_storage_codehash_c,
+            is_last_branch_child,
+            c_keccak,
+            s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             acc_c,
             acc_mult_c,
             keccak_table,
