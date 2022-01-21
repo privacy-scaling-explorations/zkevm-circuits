@@ -17,10 +17,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::{ToLittleEndian, ToScalar},
-    evm::GasCost,
-};
+use eth_types::evm_types::GasCost;
+use eth_types::{ToLittleEndian, ToScalar};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -323,11 +321,8 @@ mod test {
         util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
-    use bus_mapping::{
-        address,
-        eth_types::{self, Address, ToLittleEndian, ToWord, Word},
-        evm::{GasCost, OpcodeId},
-    };
+    use eth_types::evm_types::{GasCost, OpcodeId};
+    use eth_types::{self, address, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, result: bool) {

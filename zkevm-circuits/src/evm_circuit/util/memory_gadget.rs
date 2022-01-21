@@ -14,10 +14,8 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{
-    eth_types::{ToLittleEndian, U256},
-    evm::GasCost,
-};
+use eth_types::evm_types::GasCost;
+use eth_types::{ToLittleEndian, U256};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryInto;

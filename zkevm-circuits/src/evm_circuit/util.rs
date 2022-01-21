@@ -1,5 +1,5 @@
 use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
-use bus_mapping::eth_types::U256;
+use eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Region},
