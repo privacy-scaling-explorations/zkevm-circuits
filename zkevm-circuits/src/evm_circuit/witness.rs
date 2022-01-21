@@ -10,7 +10,7 @@ use crate::evm_circuit::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
-use halo2::arithmetic::{BaseExt, FieldExt};
+use halo2::arithmetic::FieldExt;
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
@@ -667,10 +667,10 @@ fn tx_convert(
 }
 
 pub fn block_convert(
+    randomness: Fp,
     bytecode: &[u8],
     b: &bus_mapping::circuit_input_builder::Block,
 ) -> Block<Fp> {
-    let randomness = Fp::rand();
     let bytecode = Bytecode::new(bytecode.to_vec());
 
     // here stack_ops/memory_ops/etc are merged into a single array
@@ -726,18 +726,4 @@ pub fn block_convert(
     // TODO add storage ops
 
     block
-}
-
-pub fn build_block_from_trace_code_at_start(
-    bytecode: &bus_mapping::bytecode::Bytecode,
-) -> Block<Fp> {
-    let block =
-        bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
-            bytecode,
-        )
-        .unwrap();
-    let mut builder = block.new_circuit_input_builder();
-    builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-    block_convert(bytecode.code(), &builder.block)
 }

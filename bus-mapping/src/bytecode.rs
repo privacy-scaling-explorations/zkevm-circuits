@@ -5,7 +5,7 @@ use eth_types::Word;
 use std::collections::HashMap;
 
 /// EVM Bytecode
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Bytecode {
     code: Vec<u8>,
     num_opcodes: usize,

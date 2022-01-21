@@ -107,11 +107,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // result = if b < 0 && a >= 0, slt = 0.
         let a_neg_b_pos = (1.expr() - a_pos.expr()) * b_pos.expr();
         let b_neg_a_pos = (1.expr() - b_pos.expr()) * a_pos.expr();
-        let result = select::expr(
-            a_neg_b_pos,
-            1.expr(),
-            select::expr(b_neg_a_pos, 0.expr(), a_lt_b),
-        );
+
+        // Only one of the following 3 condition can be true
+        //   a_neg_b_pos => result = 1
+        //   b_neg_a_pos => result = 0
+        //   1 - a_neg_b_pos - b_neg_a_pos => result = a_lt_b
+        let result = a_neg_b_pos.clone()
+            + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b;
 
         // Pop a and b from the stack, push the result on the stack.
         cb.stack_pop(select::expr(is_sgt.expr(), b.expr(), a.expr()));
@@ -219,10 +221,7 @@ mod test {
     use eth_types::evm_types::OpcodeId;
     use eth_types::Word;
 
-    use crate::evm_circuit::{
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        witness,
-    };
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -232,8 +231,7 @@ mod test {
             .write_op(opcode)
             STOP
         };
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]
