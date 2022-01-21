@@ -14,7 +14,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::eth_types::ToLittleEndian;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]

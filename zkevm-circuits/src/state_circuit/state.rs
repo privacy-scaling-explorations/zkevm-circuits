@@ -6,9 +6,8 @@ use crate::{
         Variable,
     },
 };
-use bus_mapping::eth_types::ToLittleEndian;
-use bus_mapping::eth_types::ToScalar;
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
+use eth_types::{ToLittleEndian, ToScalar};
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
@@ -1320,19 +1319,18 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus_mapping::address;
     use bus_mapping::bytecode;
-    use bus_mapping::eth_types::Word;
-    use bus_mapping::evm::{MemoryAddress, RWCounter, StackAddress};
     use bus_mapping::mock;
-
-    use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
+    use bus_mapping::operation::{
+        MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW,
+    };
+    use eth_types::evm_types::{MemoryAddress, StackAddress};
+    use eth_types::{address, Word};
     use halo2::arithmetic::BaseExt;
     use halo2::dev::{
         MockProver, VerifyFailure::ConstraintNotSatisfied,
         VerifyFailure::Lookup,
     };
-
     use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit {

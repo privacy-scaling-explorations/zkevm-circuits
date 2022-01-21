@@ -119,7 +119,7 @@ pub(crate) mod test {
         },
         util::Expr,
     };
-    use bus_mapping::eth_types::Word;
+    use eth_types::Word;
     use halo2::{
         arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},

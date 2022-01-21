@@ -111,7 +111,9 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 mod test {
     use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
-    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::Word;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {

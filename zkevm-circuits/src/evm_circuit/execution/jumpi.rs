@@ -17,7 +17,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -126,7 +127,8 @@ mod test {
         evm_circuit::test::{rand_range, rand_word},
         test_util::run_test_circuits,
     };
-    use bus_mapping::{bytecode, eth_types::Word};
+    use bus_mapping::bytecode;
+    use eth_types::Word;
 
     fn test_ok(destination: usize, condition: Word) {
         assert!((68..(1 << 24) - 1).contains(&destination));

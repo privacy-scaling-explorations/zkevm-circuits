@@ -13,7 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -97,7 +98,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::Word;
 
     fn test_ok(opcode: OpcodeId, lhs: Word, rhs: Word) {
         let n = (opcode.as_u8() - OpcodeId::SWAP1.as_u8() + 1) as usize;

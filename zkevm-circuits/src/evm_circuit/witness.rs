@@ -8,10 +8,8 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::{
-    eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word},
-    evm::OpcodeId,
-};
+use eth_types::evm_types::OpcodeId;
+use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2::arithmetic::FieldExt;
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};

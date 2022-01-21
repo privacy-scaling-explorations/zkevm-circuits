@@ -3,9 +3,9 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
-use bus_mapping::eth_types::{Address, ChainConstants};
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
+use eth_types::{Address, ChainConstants};
 use ethers::{
     abi,
     core::k256::ecdsa::SigningKey,

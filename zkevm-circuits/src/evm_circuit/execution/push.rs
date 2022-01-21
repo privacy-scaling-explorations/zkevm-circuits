@@ -14,7 +14,8 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]

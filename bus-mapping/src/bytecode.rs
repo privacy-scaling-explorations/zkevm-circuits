@@ -1,7 +1,7 @@
 //! EVM byte code generator
 
-use crate::eth_types::Word;
 use crate::evm::OpcodeId;
+use eth_types::Word;
 use std::collections::HashMap;
 
 /// EVM Bytecode

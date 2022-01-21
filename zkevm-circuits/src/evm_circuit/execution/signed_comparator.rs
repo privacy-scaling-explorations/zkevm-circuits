@@ -15,8 +15,8 @@ use crate::{
     },
     util::Expr,
 };
-
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT
@@ -217,7 +217,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::Word;
 
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
 

@@ -1,4 +1,4 @@
-use bus_mapping::evm::Gas;
+use eth_types::evm_types::Gas;
 use halo2::{
     arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
