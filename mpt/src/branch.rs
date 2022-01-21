@@ -216,7 +216,8 @@ impl<F: FieldExt> BranchChip<F> {
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
-            // We don't need to compare s_rlp1 = c_rlp1 because both are always 0 in branch children.
+            // We don't need to compare s_rlp1 = c_rlp1 because there is stored
+            // info about S and C RLP length
             constraints.push((
                 "rlp 2",
                 q_enable.clone()

@@ -5,6 +5,7 @@ pub mod branch;
 pub mod branch_acc;
 pub mod branch_acc_init;
 pub mod branch_key;
+pub mod hash_in_parent;
 pub mod leaf_key;
 pub mod leaf_key_in_added_branch;
 pub mod leaf_value;

@@ -43,6 +43,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
 
+        // TODO: if key is of length 1, then there is one less byte in RLP meta data
+        // (this is easier seen in extension nodes, it will probably be difficult
+        // to generate such test for normal ShortNode)
+
         // Checking leaf RLC is ok - this value is then taken in the next row, where
         // leaf value is added to RLC, finally lookup is used to check the hash that
         // corresponds to this RLC is in the parent branch.
