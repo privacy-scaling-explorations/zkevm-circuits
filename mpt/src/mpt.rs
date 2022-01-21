@@ -15,8 +15,10 @@ use crate::{
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
     branch::BranchChip, branch_acc::BranchAccChip,
     branch_acc_init::BranchAccInitChip, hash_in_parent::HashInParentChip,
-    leaf_key::LeafKeyChip, leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
+    helpers::into_words_expr, leaf_key::LeafKeyChip,
+    leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip, param::LAYOUT_OFFSET,
+    storage_root_in_account_leaf::StorageRootChip,
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
@@ -203,22 +205,6 @@ impl<F: FieldExt> MPTConfig<F> {
         // If big endian would be used:
         // rlc = rlc * acc_r + row[i],
         // the rlc would be multiplied by acc_r when row[i] = 0.
-
-        // Turn 32 hash cells into 4 cells containing keccak words.
-        let into_words_expr = |hash: Vec<Expression<F>>| {
-            let mut words = vec![];
-            for i in 0..4 {
-                let mut word = Expression::Constant(F::zero());
-                let mut exp = Expression::Constant(F::one());
-                for j in 0..8 {
-                    word = word + hash[i * 8 + j].clone() * exp.clone();
-                    exp = exp * Expression::Constant(F::from(256));
-                }
-                words.push(word)
-            }
-
-            words
-        };
 
         SelectorsChip::<F>::configure(
             meta,
@@ -472,130 +458,19 @@ impl<F: FieldExt> MPTConfig<F> {
             // in each branch node: modified_node_prev = modified_node_cur and
             // first_nibble_prev = first_nibble_cur, this way we can use only Rotation(-1).
 
-            // TODO: permutation argument for sel1 and sel2 - need to be the same in all
-            // branch children
+            // TODO: sel1 and sel2 - need to be the same in all branch children
 
             constraints
         });
-
-        // Storage first level branch hash for S - root in last account leaf.
-        // TODO: S and C can be in the same lookup, but it's easier to debug if we have two.
-        meta.lookup_any(|meta| {
-            let not_first_level =
-                meta.query_fixed(not_first_level, Rotation::cur());
-
-            // -17 because we are in the last branch child (-16 takes us to branch init)
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(-17),
-            );
-
-            // We need to do the lookup only if we are in the last branch child.
-            let is_last_branch_child =
-                meta.query_advice(is_last_branch_child, Rotation::cur());
-
-            let acc_s = meta.query_advice(acc_s, Rotation::cur());
-
-            // TODO: acc_s currently doesn't have branch ValueNode info (which 128 if nil)
-            let c128 = Expression::Constant(F::from(128));
-            let mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
-            let branch_acc_s1 = acc_s + c128 * mult_s;
-
-            let mut s_hash = vec![];
-            for column in s_advices.iter() {
-                // s (account leaf) key (-20), s nonce balance (-19), s storage codehash (-18),
-                // c storage codehash (-17),
-                s_hash.push(meta.query_advice(*column, Rotation(-18)));
-            }
-            let storage_root_words = into_words_expr(s_hash);
-
-            let mut constraints = vec![];
-            constraints.push((
-                not_first_level.clone()
-                    * is_last_branch_child.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * branch_acc_s1, // TODO: replace with acc_s once ValueNode is added
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
-            for (ind, word) in storage_root_words.iter().enumerate() {
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * is_last_branch_child.clone()
-                        * is_account_leaf_storage_codehash_prev.clone()
-                        * word.clone(),
-                    keccak_table_i,
-                ));
-            }
-
-            constraints
-        });
-
-        // Storage first level branch hash for C - root in last account leaf.
-        meta.lookup_any(|meta| {
-            let not_first_level =
-                meta.query_fixed(not_first_level, Rotation::cur());
-
-            // -17 because we are in the last branch child (-16 takes us to branch init)
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(-17),
-            );
-
-            // We need to do the lookup only if we are in the last branch child.
-            let is_last_branch_child =
-                meta.query_advice(is_last_branch_child, Rotation::cur());
-
-            let acc_c = meta.query_advice(acc_c, Rotation::cur());
-
-            // TODO: acc_c currently doesn't have branch ValueNode info (which 128 if nil)
-            let c128 = Expression::Constant(F::from(128));
-            let mult_c = meta.query_advice(acc_mult_c, Rotation::cur());
-            let branch_acc_c1 = acc_c + c128 * mult_c;
-
-            let mut c_hash = vec![];
-            // storage root is always in s_advices
-            for column in s_advices.iter() {
-                // s (account leaf) key (-20), s nonce balance (-19), s storage codehash (-18),
-                // c storage codehash (-17),
-                c_hash.push(meta.query_advice(*column, Rotation(-17)));
-            }
-            let storage_root_words = into_words_expr(c_hash);
-
-            let mut constraints = vec![];
-            constraints.push((
-                not_first_level.clone()
-                    * is_last_branch_child.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * branch_acc_c1, // TODO: replace with acc_s once ValueNode is added
-                meta.query_fixed(keccak_table[0], Rotation::cur()),
-            ));
-            for (ind, word) in storage_root_words.iter().enumerate() {
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * is_last_branch_child.clone()
-                        * is_account_leaf_storage_codehash_prev.clone()
-                        * word.clone(),
-                    keccak_table_i,
-                ));
-            }
-
-            constraints
-        });
-
-        // TODO: account first level branch hash for S and C - compared to root
-        // TODO: move hashing checks in separate chips (hash_in_parent)
 
         HashInParentChip::<F>::configure(
             meta,
             not_first_level,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
-            s_keccak,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_keccak,
+            s_advices,
             acc_s,
             acc_mult_s,
             keccak_table,
@@ -606,11 +481,36 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
-            c_keccak,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            c_keccak,
+            c_advices,
             acc_c,
             acc_mult_c,
             keccak_table,
+        );
+
+        StorageRootChip::<F>::configure(
+            meta,
+            not_first_level,
+            is_account_leaf_storage_codehash_c,
+            is_last_branch_child,
+            s_advices,
+            acc_s,
+            acc_mult_s,
+            keccak_table,
+            true,
+        );
+
+        StorageRootChip::<F>::configure(
+            meta,
+            not_first_level,
+            is_account_leaf_storage_codehash_c,
+            is_last_branch_child,
+            s_advices, // s_advices (and not c_advices) is correct
+            acc_c,
+            acc_mult_c,
+            keccak_table,
+            false,
         );
 
         // Check hash of a leaf.
