@@ -41,6 +41,7 @@ mod pc;
 mod pop;
 mod push;
 mod selfbalance;
+mod shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -72,6 +73,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
+use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -133,6 +135,7 @@ pub(crate) struct ExecutionConfig<F> {
     timestamp_gadget: TimestampGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sload_gadget: SloadGadget<F>,
+    shr_gadget: ShrGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -260,6 +263,7 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
@@ -530,6 +534,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CopyToMemory => {
                 assign_exec_step!(self.copy_to_memory_gadget)
             }
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
