@@ -853,14 +853,21 @@ pub struct ShrWordsGadget<F> {
     a: util::Word<F>,
     shift: util::Word<F>,
     b: util::Word<F>,
+    // slice_front means the higher part of split digit
+    // slice_back means the lower part of the split digit
     a_slice_front: [Cell<F>; 32],
     a_slice_back: [Cell<F>; 32],
+    // shift_div64, shift_mod64_div8, shift_mod8
+    // is used to seperate shift[0]
     shift_div64: Cell<F>,
     shift_mod64_div8: Cell<F>,
     shift_mod64_decpow: Cell<F>, // means 2^(8-shift_mod64)
     shift_mod64_pow: Cell<F>,    // means 2^shift_mod64
     shift_mod8: Cell<F>,
+    // if combination of shift[1..32] == 0
+    // shift_overflow will be equal to 0, otherwise 1.
     shift_overflow: Cell<F>,
+    // is_zero will check combination of shift[1..32] == 0
     is_zero: IsZeroGadget<F>,
 }
 impl<F: FieldExt> ShrWordsGadget<F> {
@@ -879,6 +886,7 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         let shift_mod8 = cb.query_cell();
         let shift_overflow = cb.query_bool();
 
+        // check (combination of shift[1..32] == 0) == 1 - shift_overflow
         let mut sum = 0.expr();
         (1..32).for_each(|idx| sum = sum.clone() + shift.cells[idx].expr());
         let is_zero = IsZeroGadget::construct(cb, sum);
@@ -918,6 +926,8 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             b_digits.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
         }
 
+        // check combination of a_slice_back_digits and a_slice_front_digits
+        // == b_digits
         let mut shr_constraints =
             (0..4).map(|_| 0.expr()).collect::<Vec<Expression<F>>>();
         for transplacement in (0_usize)..(4_usize) {
