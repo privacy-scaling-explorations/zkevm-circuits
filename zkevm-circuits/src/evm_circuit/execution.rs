@@ -103,11 +103,11 @@ pub(crate) struct ExecutionConfig<F> {
     push_gadget: PushGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
+    shr_gadget: ShrGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
-    shr_gadget: ShrGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
