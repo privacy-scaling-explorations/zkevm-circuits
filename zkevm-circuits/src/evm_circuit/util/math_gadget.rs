@@ -832,11 +832,11 @@ fn generate_lagrange_base_polynomial<F: FieldExt>(
     idx: u64,
     domain_size: u64,
 ) -> Expression<F> {
-    let mut base_ploy = 1.expr();
+    let mut base_poly = 1.expr();
     let mut accumulated_inverse = 1.expr();
     for x in 0..domain_size {
         if x != idx {
-            base_ploy = base_ploy * (cell.expr() - x.expr());
+            base_poly = base_poly * (cell.expr() - x.expr());
             let inverse = if x < idx {
                 F::from_u128((idx - x) as u128).invert().unwrap()
             } else {
@@ -845,7 +845,7 @@ fn generate_lagrange_base_polynomial<F: FieldExt>(
             accumulated_inverse = accumulated_inverse * inverse;
         }
     }
-    base_ploy * accumulated_inverse
+    base_poly * accumulated_inverse
 }
 
 #[derive(Clone, Debug)]
