@@ -2,7 +2,6 @@
 //! types from geth / web3 and outputs the circuit inputs.
 use crate::evm::opcodes::gen_associated_ops;
 use crate::exec_trace::OperationRef;
-use crate::external_tracer::BlockConstants;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
 use crate::operation::{MemoryOp, Op, Operation, RWCounter, StackOp, RW};
@@ -13,8 +12,8 @@ use eth_types::evm_types::{
     Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
 };
 use eth_types::{
-    self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash,
-    ToAddress, ToBigEndian, Word,
+    self, Address, BlockConstants, ChainConstants, GethExecStep, GethExecTrace,
+    Hash, ToAddress, ToBigEndian, Word,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, HashMap, HashSet};

@@ -6,7 +6,8 @@ members = [
     "geth-utils",
     "integration-tests",
     "circuit-benchmarks",
-    "eth-types"
+    "eth-types",
+    "external-tracer"
 ]
 
 [patch.crates-io]

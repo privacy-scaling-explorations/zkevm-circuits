@@ -1,75 +1,10 @@
 //! This module generates traces by connecting to an external tracer
-use crate::Error;
 use eth_types::{
-    self, fix_geth_trace_memory_size, Address, Block, Bytes, GethExecStep,
-    Hash, Word, U64,
+    self, fix_geth_trace_memory_size, Address, BlockConstants, Bytes, Error,
+    GethExecStep, Word,
 };
 use geth_utils;
 use serde::Serialize;
-
-/// Definition of all of the constants related to an Ethereum block and
-/// chain to be used as setup for the external tracer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct BlockConstants {
-    /// hash
-    pub hash: Hash,
-    /// coinbase
-    pub coinbase: Address,
-    /// time
-    pub timestamp: Word,
-    /// number
-    pub number: U64,
-    /// difficulty
-    pub difficulty: Word,
-    /// gas limit
-    pub gas_limit: Word,
-    /// chain id
-    pub chain_id: Word,
-    /// base fee
-    pub base_fee: Word,
-}
-
-impl BlockConstants {
-    /// Generate a BlockConstants from an ethereum block, useful for testing.
-    pub fn from_eth_block<TX>(block: &Block<TX>, chain_id: &Word) -> Self {
-        Self {
-            hash: block.hash.unwrap(),
-            coinbase: block.author,
-            timestamp: block.timestamp,
-            number: block.number.unwrap(),
-            difficulty: block.difficulty,
-            gas_limit: block.gas_limit,
-            chain_id: *chain_id,
-            base_fee: block.base_fee_per_gas.unwrap(),
-        }
-    }
-}
-
-impl BlockConstants {
-    #[allow(clippy::too_many_arguments)]
-    /// Generates a new `BlockConstants` instance from it's fields.
-    pub fn new(
-        hash: Hash,
-        coinbase: Address,
-        timestamp: Word,
-        number: U64,
-        difficulty: Word,
-        gas_limit: Word,
-        chain_id: Word,
-        base_fee: Word,
-    ) -> BlockConstants {
-        BlockConstants {
-            hash,
-            coinbase,
-            timestamp,
-            number,
-            difficulty,
-            gas_limit,
-            chain_id,
-            base_fee,
-        }
-    }
-}
 
 /// Definition of all of the constants related to an Ethereum transaction.
 #[derive(Debug, Clone, Serialize)]

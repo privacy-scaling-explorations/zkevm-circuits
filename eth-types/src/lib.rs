@@ -28,7 +28,7 @@ pub use ethers_core::types::{
     U256, U64,
 };
 use pairing::arithmetic::FieldExt;
-use serde::{de, Deserialize};
+use serde::{de, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
@@ -160,6 +160,68 @@ impl<F: FieldExt> ToScalar<F> for Address {
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         bytes.reverse();
         F::from_bytes(&bytes).into()
+    }
+}
+
+/// Definition of all of the constants related to an Ethereum block and
+/// chain to be used as setup for the external tracer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BlockConstants {
+    /// hash
+    pub hash: Hash,
+    /// coinbase
+    pub coinbase: Address,
+    /// time
+    pub timestamp: Word,
+    /// number
+    pub number: U64,
+    /// difficulty
+    pub difficulty: Word,
+    /// gas limit
+    pub gas_limit: Word,
+    /// chain id
+    pub chain_id: Word,
+    /// base fee
+    pub base_fee: Word,
+}
+
+impl BlockConstants {
+    #[allow(clippy::too_many_arguments)]
+    /// Generates a new `BlockConstants` instance from it's fields.
+    pub fn new(
+        hash: Hash,
+        coinbase: Address,
+        timestamp: Word,
+        number: U64,
+        difficulty: Word,
+        gas_limit: Word,
+        chain_id: Word,
+        base_fee: Word,
+    ) -> BlockConstants {
+        BlockConstants {
+            hash,
+            coinbase,
+            timestamp,
+            number,
+            difficulty,
+            gas_limit,
+            chain_id,
+            base_fee,
+        }
+    }
+
+    /// Generate a BlockConstants from an ethereum block, useful for testing.
+    pub fn from_eth_block<TX>(block: &Block<TX>, chain_id: &Word) -> Self {
+        Self {
+            hash: block.hash.unwrap(),
+            coinbase: block.author,
+            timestamp: block.timestamp,
+            number: block.number.unwrap(),
+            difficulty: block.difficulty,
+            gas_limit: block.gas_limit,
+            chain_id: *chain_id,
+            base_fee: block.base_fee_per_gas.unwrap(),
+        }
     }
 }
 

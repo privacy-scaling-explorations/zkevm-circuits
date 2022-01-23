@@ -220,7 +220,6 @@
 extern crate alloc;
 pub mod evm;
 pub mod exec_trace;
-pub mod external_tracer;
 pub mod operation;
 #[macro_use]
 pub mod bytecode;

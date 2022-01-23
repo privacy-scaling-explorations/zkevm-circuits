@@ -338,7 +338,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-providers",
- "geth-utils",
+ "external-tracer",
  "itertools",
  "lazy_static",
  "log",
@@ -1371,6 +1371,16 @@ checksum = "658f19728920138342f68408b7cf7644d90d4784353d8ebc32e7e8663dbe45fa"
 dependencies = [
  "cmake",
  "pkg-config",
+]
+
+[[package]]
+name = "external-tracer"
+version = "0.1.0"
+dependencies = [
+ "eth-types",
+ "geth-utils",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
