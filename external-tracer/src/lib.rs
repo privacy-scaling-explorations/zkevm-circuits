@@ -9,7 +9,6 @@ use eth_types::{
     self, fix_geth_trace_memory_size, Address, Block, Bytes, ChainConstants,
     Error, GethExecStep, GethExecTrace, Hash, Word, U64,
 };
-use geth_utils;
 use serde::Serialize;
 
 /// Create a new block with a single tx that executes the code found in the
