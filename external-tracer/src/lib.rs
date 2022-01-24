@@ -70,7 +70,7 @@ pub fn create_tx_by_steps(geth_steps: Vec<GethExecStep>) -> GethData {
 }
 
 /// Generate a new mock block with preloaded data, useful for tests.
-fn new_block() -> Block<()> {
+pub fn new_block() -> Block<()> {
     eth_types::Block {
         hash: Some(Hash::zero()),
         parent_hash: Hash::zero(),
@@ -97,15 +97,8 @@ fn new_block() -> Block<()> {
     }
 }
 
-/// Generate a new mock chain constants, useful for tests.
-fn new_chain_constants() -> eth_types::ChainConstants {
-    ChainConstants {
-        chain_id: MOCK_CHAIN_ID,
-    }
-}
-
 /// Generate a new mock transaction with preloaded data, useful for tests.
-fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
+pub fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
     eth_types::Transaction {
         hash: Hash::zero(),
         nonce: Word::zero(),
@@ -126,6 +119,13 @@ fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
         max_priority_fee_per_gas: Some(Word::zero()),
         max_fee_per_gas: Some(Word::zero()),
         chain_id: Some(Word::from(MOCK_CHAIN_ID)),
+    }
+}
+
+/// Generate a new mock chain constants, useful for tests.
+fn new_chain_constants() -> eth_types::ChainConstants {
+    ChainConstants {
+        chain_id: MOCK_CHAIN_ID,
     }
 }
 

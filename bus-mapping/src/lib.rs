@@ -55,8 +55,8 @@
 //!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
 //! };
 //! use eth_types::evm_types::Gas;
+//! use eth_types::geth_types::BlockConstants;
 //! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
-//! use bus_mapping::external_tracer::BlockConstants;
 //! use pairing::arithmetic::FieldExt;
 //!
 //! let input_trace = r#"
