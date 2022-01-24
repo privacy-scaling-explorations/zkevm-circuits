@@ -6,7 +6,7 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
+use crate::param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchHashInParentConfig {}
@@ -23,6 +23,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
+        is_extension_node: Column<Advice>,
         sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
@@ -57,6 +58,9 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 meta.query_advice(is_branch_placeholder, Rotation(-16));
             let acc = meta.query_advice(acc, Rotation::cur());
 
+            let is_extension_node =
+                meta.query_advice(is_extension_node, Rotation(-16));
+
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let c128 = Expression::Constant(F::from(128));
             let mult = meta.query_advice(acc_mult, Rotation::cur());
@@ -68,6 +72,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                     * is_last_branch_child.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_extension_node.clone())
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -82,6 +87,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                         * (one.clone()
                             - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
                         * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_extension_node.clone())
                         * keccak,
                     keccak_table_i,
                 ));

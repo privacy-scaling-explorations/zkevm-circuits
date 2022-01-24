@@ -13,12 +13,16 @@ use crate::{
     account_leaf_key::AccountLeafKeyChip,
     account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
-    branch::BranchChip, branch_acc::BranchAccChip,
+    branch::BranchChip,
+    branch_acc::BranchAccChip,
     branch_acc_init::BranchAccInitChip,
-    branch_hash_in_parent::BranchHashInParentChip, branch_rows::BranchRowsChip,
-    helpers::into_words_expr, leaf_key::LeafKeyChip,
+    branch_hash_in_parent::BranchHashInParentChip,
+    branch_rows::BranchRowsChip,
+    extension_node::ExtensionNodeChip,
+    leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
-    leaf_value::LeafValueChip, param::LAYOUT_OFFSET,
+    leaf_value::LeafValueChip,
+    param::{IS_EXTENSION_NODE_POS, LAYOUT_OFFSET},
     storage_root_in_account_leaf::StorageRootChip,
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
@@ -31,6 +35,33 @@ use crate::{
     },
     selectors::SelectorsChip,
 };
+
+/*
+    MPT circuit contains S and C columns (other columns are mostly selectors).
+
+    With S columns the prover proves the knowledge of key1/val1 that is in the
+    trie with rootS.
+
+    With C columns the prover proves the knowledge of key1/val2 that is in the
+    trie with rootC. Note that key is the same for both S and C, whereas value
+    is different. The prover thus proves the knowledge how to change value at key
+    key1 from val1 to val2 that results the root being changed from rootS to rootC.
+
+    The branch contains 16 nodes which are stored in 16 rows.
+    A row looks like:
+    [0,        160,      123,    ...,  148,     0,        160,    232,    ..., 92     ]
+    [rlp1 (S), rlp2 (S), b0 (S), ...,  b31 (S), rlp1 (C), rlp2 C, b0 (C), ..., b31 (C)]
+
+    Values bi (S) and bi(C) present hash of a node. Thus, the first half of a row
+    is a S node:
+    [rlp1, rlp2, b0, ..., b31]
+
+    The second half of the row is a C node (same structure):
+    [rlp1, rlp2, b0, ..., b31]
+
+    We start with top level branch and then we follow branches (could be also extension
+    nodes) down to the leaf.
+*/
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
@@ -295,6 +326,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
             s_keccak,
             acc_s,
             acc_mult_s,
@@ -307,11 +339,23 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
             c_keccak,
             acc_c,
             acc_mult_c,
             keccak_table,
         );
+
+        /* TODO
+        ExtensionNodeChip::<F>::configure(
+            meta,
+            not_first_level,
+            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            acc_s,
+            acc_mult_s,
+            keccak_table,
+        );
+        */
 
         StorageRootChip::<F>::configure(
             meta,

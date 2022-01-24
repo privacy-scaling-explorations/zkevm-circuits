@@ -131,7 +131,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
 
             let one = Expression::Constant(F::one());
-            let c16 = Expression::Constant(F::from(16));
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
 
