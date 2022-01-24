@@ -112,8 +112,8 @@
 //! };
 //!
 //! // We use some mock data as context for the trace
-//! let eth_block = mock::new_block();
-//! let eth_tx = mock::new_tx(&eth_block);
+//! let eth_block = external_tracer::new_block();
+//! let eth_tx = external_tracer::new_tx(&eth_block);
 //! let mut sdb = StateDB::new();
 //! sdb.set_account(&Address::zero(), state_db::Account::zero());
 //!
