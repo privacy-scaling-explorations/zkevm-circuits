@@ -61,12 +61,15 @@ pub fn run_test_circuits_with_config(
     config: BytecodeTestConfig,
 ) -> Result<(), Vec<VerifyFailure>> {
     // Step 1: execute the bytecode and get trace
+    let accounts = [bus_mapping::mock::new_tracer_account(&bytecode)];
+    let geth_data = external_tracer::create_tx_by_accounts(
+        &accounts,
+        Gas(config.gas_limit),
+    )
+    .unwrap();
     let block_trace =
-        bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
-            &bytecode,
-            Gas(config.gas_limit),
-        )
-        .unwrap();
+        bus_mapping::mock::BlockData::new_single_tx_trace(&accounts, geth_data)
+            .unwrap();
     let mut builder = block_trace.new_circuit_input_builder();
     builder
         .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)

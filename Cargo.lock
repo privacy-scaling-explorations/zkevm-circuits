@@ -3976,6 +3976,7 @@ dependencies = [
  "criterion",
  "digest 0.7.6",
  "eth-types",
+ "external-tracer",
  "ff 0.11.0",
  "halo2",
  "num",

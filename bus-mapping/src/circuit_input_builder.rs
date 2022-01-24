@@ -11,9 +11,10 @@ use core::fmt::Debug;
 use eth_types::evm_types::{
     Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
 };
+use eth_types::geth_types::BlockConstants;
 use eth_types::{
-    self, Address, BlockConstants, ChainConstants, GethExecStep, GethExecTrace,
-    Hash, ToAddress, ToBigEndian, Word,
+    self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash,
+    ToAddress, ToBigEndian, Word,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
