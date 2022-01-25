@@ -53,7 +53,6 @@ impl<F: FieldExt> IotaB13Config<F> {
                 // `PoisonedConstraints` and each gate equation
                 // can be satisfied while enforcing the correct gate logic.
                 let flag = meta.query_advice(round_ctant_b13, Rotation::next());
-
                 // Note also that we want to enable the gate when `is_mixing` is
                 // true. (flag = 1).
                 meta.query_selector(q_mixing) * flag
@@ -95,7 +94,7 @@ impl<F: FieldExt> IotaB13Config<F> {
                 self.assign_round_ctant_b13(&mut region, offset, absolute_row)?;
 
                 offset += 1;
-                // Copy flag at `round_ctant_b9` at offset + 1
+                // Copy flag at `round_ctant_b13` at offset + 1
                 self.copy_flag(&mut region, offset, flag)?;
                 // Assign out state at offset + 1
                 self.assign_state(&mut region, offset, out_state)
@@ -271,7 +270,7 @@ mod tests {
                 let (in_state, flag) = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
-                        // Witness `is_missing` flag
+                        // Witness `is_mixing` flag
                         let cell = region.assign_advice(
                             || "witness is_missing",
                             config.round_ctant_b13,
@@ -319,7 +318,7 @@ mod tests {
             [0, 0, 0, 0, 0],
         ];
         let (in_state, out_state) =
-            IotaB13Config::compute_circ_states(input1.into(), PERMUTATION);
+            IotaB13Config::compute_circ_states(input1.into(), PERMUTATION - 1);
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -333,7 +332,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
-                round_ctant: PERMUTATION,
+                round_ctant: PERMUTATION - 1,
                 flag: true,
                 _marker: PhantomData,
             };
@@ -349,7 +348,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                round_ctant: PERMUTATION,
+                round_ctant: PERMUTATION - 1,
                 flag: true,
                 _marker: PhantomData,
             };
@@ -367,7 +366,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                round_ctant: PERMUTATION,
+                round_ctant: PERMUTATION - 1,
                 flag: false,
                 _marker: PhantomData,
             };

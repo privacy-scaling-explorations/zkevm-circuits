@@ -50,7 +50,7 @@ impl<F: FieldExt> IotaB9Config<F> {
         meta.create_gate("iota_b9 in steady state", |meta| {
             let q_enable = meta.query_selector(q_not_last);
             let state_00 = meta.query_advice(state[0], Rotation::cur())
-                + (Expression::Constant(F::from(2))
+                + (Expression::Constant(F::from(A4))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
             let next_lane = meta.query_advice(state[0], Rotation::next());
             vec![q_enable * (state_00 - next_lane)]
@@ -68,8 +68,9 @@ impl<F: FieldExt> IotaB9Config<F> {
             };
 
             let state_00 = meta.query_advice(state[0], Rotation::cur())
-                + (Expression::Constant(F::from(2))
+                + (Expression::Constant(F::from(A4))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
+
             let next_lane = meta.query_advice(state[0], Rotation::next());
             vec![q_enable * (state_00 - next_lane)]
         });
@@ -397,10 +398,8 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let (in_state, out_state) = IotaB9Config::compute_circ_states(
-            input1.into(),
-            common::PERMUTATION,
-        );
+        let (in_state, out_state) =
+            IotaB9Config::compute_circ_states(input1.into(), PERMUTATION - 1);
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -413,7 +412,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
-                round_ctant: PERMUTATION,
+                round_ctant: PERMUTATION - 1,
                 flag: false,
                 _marker: PhantomData,
             };
@@ -433,7 +432,7 @@ mod tests {
                 // Add wrong out_state that should cause the verification to
                 // fail.
                 out_state: in_state,
-                round_ctant: PERMUTATION,
+                round_ctant: PERMUTATION - 1,
                 flag: false,
                 _marker: PhantomData,
             };
@@ -451,7 +450,7 @@ mod tests {
             // Use a nonsensical out_state to verify that the gate is not
             // checked.
             out_state: in_state,
-            round_ctant: PERMUTATION,
+            round_ctant: PERMUTATION - 1,
             flag: true,
             _marker: PhantomData,
         };
@@ -559,7 +558,7 @@ mod tests {
             in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
 
-        // Test for the 25 rounds
+        // Test for the 24 rounds
         for (round_idx, round_val) in
             ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION)
         {
