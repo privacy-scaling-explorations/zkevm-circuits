@@ -12,6 +12,8 @@ pub enum Error {
     MemAddressParsing,
     /// Error while parsing a `StackAddress`.
     StackAddressParsing,
+    /// Error while trying to convert to an incorrect `OpcodeId`.
+    InvalidOpConversion,
     /// Error while trying to access an invalid/empty Stack location.
     InvalidStackPointer,
     /// Error while trying to access an invalid/empty Memory location.
