@@ -6,8 +6,7 @@ use crate::gates::rho_helpers::{get_block_count, BASE_NUM_OF_CHUNKS};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
-    poly::Rotation,
+    plonk::{ConstraintSystem, Error, TableColumn},
 };
 use std::convert::TryInto;
 use std::marker::PhantomData;

@@ -105,14 +105,14 @@
 //! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 170
 //! and fail the final sum check.
 use crate::arith_helpers::*;
-use crate::common::{LANE_SIZE, ROTATION_CONSTANTS};
+use crate::common::ROTATION_CONSTANTS;
 use crate::gates::{
     gate_helpers::*,
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 use halo2::{
-    circuit::{Cell, Layouter, Region},
+    circuit::{Cell, Layouter},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
     },
@@ -134,7 +134,7 @@ pub struct LaneRotateConversionConfig<F> {
     output_coef: Column<Advice>,
     output_pob: Column<Fixed>,
     output_acc: Column<Advice>,
-    overflow_detector: Column<Advice>,
+    pub overflow_detector: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
@@ -143,13 +143,13 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         lane_idx: usize,
         lane: Column<Advice>,
-        base13_to_9_table: Base13toBase9TableConfig<F>,
-        special_chunk_table: SpecialChunkTableConfig<F>,
+        base13_to_9_table: &Base13toBase9TableConfig<F>,
+        special_chunk_table: &SpecialChunkTableConfig<F>,
     ) -> Self {
         meta.enable_equality(lane.into());
         let rotation = {
-            let x = lane_idx % 5;
-            let y = lane_idx / 5;
+            let x = lane_idx / 5;
+            let y = lane_idx % 5;
             ROTATION_CONSTANTS[x][y]
         };
 
@@ -162,6 +162,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let output_pob = meta.fixed_column();
         let output_acc = meta.advice_column();
         let overflow_detector = meta.advice_column();
+
+        let constant = meta.fixed_column();
+        meta.enable_constant(constant);
 
         meta.enable_equality(input_acc.into());
         meta.enable_equality(output_acc.into());
@@ -227,10 +230,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                 (q_special * output_coef, special_chunk_table.output_coef),
             ]
         });
-
-        let step2_acc = SumConfig::configure(meta, overflow_detector);
-        let step3_acc = SumConfig::configure(meta, overflow_detector);
-
         Self {
             rotation,
             lane_idx,
@@ -258,12 +257,11 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             || "lane rotate conversion",
             |mut region| {
                 let slices = slice_lane(self.rotation);
-                let (od_cells, step2_od, step3_od) = {
-                    let mut od_cells = Vec::with_capacity(slices.len());
+                let (step2_od, step3_od) = {
                     let mut step2_od: Vec<(Cell, F)> = vec![];
                     let mut step3_od: Vec<(Cell, F)> = vec![];
-                    for (offset, ((chunk_idx, step), conv)) in
-                        slices.iter().zip(conversions).enumerate()
+                    for (offset, (&(chunk_idx, step), conv)) in
+                        slices.iter().zip(conversions.iter()).enumerate()
                     {
                         self.q_normal.enable(&mut region, offset)?;
                         region.assign_advice(
@@ -273,7 +271,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             || Ok(biguint_to_f::<F>(&conv.input.coef)),
                         )?;
                         region.assign_fixed(
-                            || format!("Input power of base"),
+                            || "Input power of base",
                             self.input_pob,
                             offset,
                             || Ok(biguint_to_f::<F>(&conv.input.power_of_base)),
@@ -296,10 +294,14 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             || Ok(biguint_to_f::<F>(&conv.output.coef)),
                         )?;
                         region.assign_fixed(
-                            || format!("Output power of base"),
+                            || "Output power of base",
                             self.output_pob,
                             offset,
-                            || Ok(biguint_to_f::<F>(&conv.input.power_of_base)),
+                            || {
+                                Ok(biguint_to_f::<F>(
+                                    &conv.output.power_of_base,
+                                ))
+                            },
                         )?;
                         {
                             let cell = region.assign_advice(
@@ -322,6 +324,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                                 offset,
                                 || Ok(value),
                             )?;
+                            if step == 1 {
+                                region.constrain_constant(cell, F::zero())?;
+                            }
                             (cell, value)
                         };
                         match step {
@@ -329,28 +334,27 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             3 => step3_od.push(od),
                             _ => {}
                         }
-                        od_cells.push(od);
                     }
-                    (od_cells, step2_od, step3_od)
+                    (step2_od, step3_od)
                 };
                 // special chunks
                 let output_lane = {
                     let offset = slices.len();
                     self.q_special.enable(&mut region, offset)?;
                     region.assign_advice(
-                        || format!("Special Input acc",),
+                        || "Special Input acc",
                         self.input_acc,
                         offset,
                         || Ok(biguint_to_f::<F>(&special.input)),
                     )?;
                     region.assign_advice(
-                        || format!("Special output coef",),
+                        || "Special output coef",
                         self.output_coef,
                         offset,
                         || Ok(F::from(special.output_coef.into())),
                     )?;
                     region.assign_fixed(
-                        || format!("Special output power of base"),
+                        || "Special output power of base",
                         self.output_pob,
                         offset,
                         || {
@@ -363,16 +367,16 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                         },
                     )?;
                     region.assign_advice(
-                        || format!("Special output acc pre",),
-                        self.output_coef,
+                        || "Special output acc pre",
+                        self.output_acc,
                         offset,
                         || Ok(biguint_to_f::<F>(&special.output_acc_pre)),
                     )?;
                     let lane = {
                         let value = biguint_to_f::<F>(&special.output_acc_post);
                         let cell = region.assign_advice(
-                            || format!("Special output acc post",),
-                            self.output_coef,
+                            || "Special output acc post",
+                            self.output_acc,
                             offset + 1,
                             || Ok(value),
                         )?;
@@ -394,14 +398,13 @@ pub struct SumConfig<F> {
     _marker: PhantomData<F>,
 }
 impl<F: FieldExt> SumConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        x: Column<Advice>,
-    ) -> Self {
-        meta.enable_equality(x.into());
+    // We assume the input columns are all copiable
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
+        let x = meta.advice_column();
         let sum = meta.advice_column();
 
+        meta.enable_equality(x.into());
         meta.enable_equality(sum.into());
 
         meta.create_gate("sum", |meta| {
@@ -427,7 +430,7 @@ impl<F: FieldExt> SumConfig<F> {
         layouter.assign_region(
             || "running sum",
             |mut region| {
-                let sum = F::zero();
+                let mut sum = F::zero();
                 let mut offset = 0;
                 for &(cell_from, value) in xs.iter() {
                     let cell_to = region.assign_advice(
@@ -462,163 +465,35 @@ impl<F: FieldExt> SumConfig<F> {
     }
 }
 
-/// Gates to check if block counts are accumulated correctly
 #[derive(Debug, Clone)]
-pub struct BlockCountAccConfig<F> {
-    bc: BlockCountAdvices,
-    step: u32,
-    q_first: Selector,
-    q_rest: Selector,
-    _marker: PhantomData<F>,
-}
-
-impl<F: FieldExt> BlockCountAccConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_all: Selector,
-        bc: BlockCountAdvices,
-        step: u32,
-    ) -> Self {
-        let q_first = meta.complex_selector();
-        let q_rest = meta.complex_selector();
-        if step == 1 {
-            meta.create_gate("block count step 1", |meta| {
-                let q_all = meta.query_selector(q_all);
-                let block_count =
-                    meta.query_advice(bc.block_count, Rotation::cur());
-                vec![("block_count === 0", q_all * block_count)]
-            });
-        }
-        meta.create_gate("first row", |meta| {
-            let q_first = meta.query_selector(q_first);
-            let block_count =
-                meta.query_advice(bc.block_count, Rotation::cur());
-            let step2_acc = meta.query_advice(bc.step2_acc, Rotation::cur());
-            let step3_acc = meta.query_advice(bc.step3_acc, Rotation::cur());
-            vec![match step {
-                2 => (
-                    "first step2_acc === block_count",
-                    q_first * (step2_acc - block_count),
-                ),
-                3 => (
-                    "first step3_acc === block_count",
-                    q_first * (step3_acc - block_count),
-                ),
-                1 | 4 => ("1 or 4", Expression::Constant(F::zero())),
-                _ => unreachable!(),
-            }]
-        });
-
-        meta.create_gate("Running up block count", |meta| {
-            let q_rest = meta.query_selector(q_rest);
-            let block_count =
-                meta.query_advice(bc.block_count, Rotation::cur());
-            let step2_acc = meta.query_advice(bc.step2_acc, Rotation::cur());
-            let step2_acc_prev =
-                meta.query_advice(bc.step2_acc, Rotation::prev());
-            let step3_acc = meta.query_advice(bc.step3_acc, Rotation::cur());
-            let step3_acc_prev =
-                meta.query_advice(bc.step3_acc, Rotation::prev());
-
-            let step2_poly = {
-                if step == 2 {
-                    (
-                        "delta_step2 === block_count",
-                        step2_acc - step2_acc_prev - block_count.clone(),
-                    )
-                } else {
-                    ("delta_step2 === 0", step2_acc - step2_acc_prev)
-                }
-            };
-            let step3_poly = {
-                if step == 3 {
-                    (
-                        "delta_step3 === block_count",
-                        step3_acc - step3_acc_prev - block_count,
-                    )
-                } else {
-                    ("delta_step3 === 0", step3_acc - step3_acc_prev)
-                }
-            };
-
-            vec![step2_poly, step3_poly]
-                .iter()
-                .map(|(name, poly)| (*name, q_rest.clone() * poly.clone()))
-                .collect::<Vec<_>>()
-        });
-
-        Self {
-            bc,
-            step,
-            q_first,
-            q_rest,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn assign_region(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        ofdet: &OverflowDetector,
-    ) -> Result<BlockCount2<F>, Error> {
-        if offset == 0 {
-            self.q_first.enable(region, 0)?;
-        } else {
-            self.q_rest.enable(region, offset)?;
-        }
-        region.assign_advice(
-            || format!("block count step{}", self.step),
-            self.bc.block_count,
-            offset,
-            || Ok(F::from(ofdet.block_count.into())),
-        )?;
-        let step2 = {
-            let value = F::from(ofdet.step2_acc.into());
-            let cell = region.assign_advice(
-                || "step 2 bc acc",
-                self.bc.step2_acc,
-                offset,
-                || Ok(value),
-            )?;
-            BlockCount { cell, value }
-        };
-        let step3 = {
-            let value = F::from(ofdet.step3_acc.into());
-            let cell = region.assign_advice(
-                || "step 3 bc acc",
-                self.bc.step3_acc,
-                offset,
-                || Ok(value),
-            )?;
-            BlockCount { cell, value }
-        };
-        Ok((step2, step3))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BlockCountFinalConfig<F> {
+pub struct OverflowCheckConfig<F> {
     q_enable: Selector,
-    block_count_cols: [Column<Advice>; 2],
-    _marker: PhantomData<F>,
+    step2_sum_config: SumConfig<F>,
+    step3_sum_config: SumConfig<F>,
+    step2_acc: Column<Advice>,
+    step3_acc: Column<Advice>,
 }
-impl<F: FieldExt> BlockCountFinalConfig<F> {
+impl<F: FieldExt> OverflowCheckConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        block_count_cols: [Column<Advice>; 2],
+        cols_to_copy: Vec<Column<Advice>>,
     ) -> Self {
-        let q_enable = meta.complex_selector();
-        for column in block_count_cols.iter() {
-            meta.enable_equality((*column).into());
+        for &col in cols_to_copy.iter() {
+            meta.enable_equality(col.into());
         }
+        let step2_sum_config = SumConfig::configure(meta);
+        let step3_sum_config = SumConfig::configure(meta);
 
-        meta.create_gate("block count final check", |meta| {
+        let q_enable = meta.complex_selector();
+        let step2_acc = meta.advice_column();
+        let step3_acc = meta.advice_column();
+        meta.enable_equality(step2_acc.into());
+        meta.enable_equality(step3_acc.into());
+
+        meta.create_gate("overflow check", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let step2_acc =
-                meta.query_advice(block_count_cols[0], Rotation::cur());
-            let step3_acc =
-                meta.query_advice(block_count_cols[1], Rotation::cur());
+            let step2_acc = meta.query_advice(step2_acc, Rotation::cur());
+            let step3_acc = meta.query_advice(step3_acc, Rotation::cur());
             let one = Expression::Constant(F::one());
             iter::empty()
                 .chain(Some((
@@ -643,38 +518,47 @@ impl<F: FieldExt> BlockCountFinalConfig<F> {
 
         Self {
             q_enable,
-            block_count_cols,
-            _marker: PhantomData,
+            step2_sum_config,
+            step3_sum_config,
+            step2_acc,
+            step3_acc,
         }
     }
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        block_count_cells: [BlockCount2<F>; 25],
+        step2_cells: Vec<(Cell, F)>,
+        step3_cells: Vec<(Cell, F)>,
     ) -> Result<(), Error> {
+        let step2_sum =
+            self.step2_sum_config.assign_region(layouter, step2_cells)?;
+        let step3_sum =
+            self.step3_sum_config.assign_region(layouter, step3_cells)?;
         layouter.assign_region(
-            || "final block count",
+            || "Overflow range check",
             |mut region| {
-                for (offset, bc) in block_count_cells.iter().enumerate() {
-                    self.q_enable.enable(&mut region, offset)?;
-                    let cell_1 = region.assign_advice(
-                        || format!("block_count step2 acc lane {}", offset),
-                        self.block_count_cols[0],
+                let offset = 0;
+                self.q_enable.enable(&mut region, offset)?;
+                {
+                    let cell = region.assign_advice(
+                        || "Step2 sum",
+                        self.step2_acc,
                         offset,
-                        || Ok(bc.0.value),
+                        || Ok(step2_sum.1),
                     )?;
-                    region.constrain_equal(cell_1, bc.0.cell)?;
-                    let cell_2 = region.assign_advice(
-                        || format!("block_count step3 acc lane {}", offset),
-                        self.block_count_cols[1],
+                    region.constrain_equal(cell, step2_sum.0)?;
+                }
+                {
+                    let cell = region.assign_advice(
+                        || "Step3 sum",
+                        self.step3_acc,
                         offset,
-                        || Ok(bc.1.value),
+                        || Ok(step3_sum.1),
                     )?;
-                    region.constrain_equal(cell_2, bc.1.cell)?;
+                    region.constrain_equal(cell, step3_sum.0)?;
                 }
                 Ok(())
             },
-        )?;
-        Ok(())
+        )
     }
 }
