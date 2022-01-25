@@ -255,7 +255,7 @@ pub mod test {
             Block, Bytecode, Call, ExecStep, GadgetExtraData, Rw, Transaction,
         },
     };
-    use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+    use eth_types::{evm_types::OpcodeId, ToLittleEndian};
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
     use std::collections::HashMap;

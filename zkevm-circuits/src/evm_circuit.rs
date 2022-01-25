@@ -109,7 +109,7 @@ pub(crate) mod test {
         },
         util::Expr,
     };
-    use eth_types::{Word, GasCost};
+    use eth_types::{evm_types::GasCost, Word};
     use halo2::{
         arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},

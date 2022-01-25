@@ -439,7 +439,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "Tx lookup",
             Lookup::Tx {
                 id,
-                field_tag,
+                field_tag: field_tag.expr(),
                 index: index.unwrap_or_else(|| 0.expr()),
                 value,
             },

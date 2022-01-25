@@ -21,7 +21,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::eth_types::ToLittleEndian;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -255,9 +255,9 @@ mod test {
         util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
-    use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::{GasCost, OpcodeId},
+    use eth_types::{
+        evm_types::{GasCost, OpcodeId},
+        ToBigEndian, ToLittleEndian, Word,
     };
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
