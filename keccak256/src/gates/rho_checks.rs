@@ -76,34 +76,34 @@
 //! instead we use the following technique.
 //!
 //! We define the [`crate::gates::rho_helpers::OVERFLOW_TRANSFORM`] to map
-//! `step` to a value `block_count`. We also add a column in
-//! [`crate::gates::tables::Base13toBase9TableConfig`] to lookup `block_count`.
-//! We sum up all the block_counts across 25 lanes, for each step 1, step 2, and
-//! step 3. At the end of the Rho step we perform the final block count range
-//! check in [`BlockCountFinalConfig`].
+//! `step` to a value `overflow_detector`. We also add a column in
+//! [`crate::gates::tables::Base13toBase9TableConfig`] to lookup
+//! `overflow_detector`. We sum up all the overflow_detectors across 25 lanes,
+//! for each step 1, step 2, and step 3. At the end of the Rho step we perform
+//! the final overflow detector range check in [`OverflowCheckConfig`].
 //!
 //! The `OVERFLOW_TRANSFORM` maps step 1 to 0, step 2 to 1, step 3 to 13, and
 //! step 4 to 170. It is defined that any possible overflow would result the
-//! final block count check to fail.
+//! final overflow detector check to fail.
 //!
 //! It would be better explained if we enumerate all the possible cases:
 //!
 //! The sum of the step 1 should be 0.
 //! So that if prover witness any more than 1 non-zero chunks, the
-//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 1,
-//! 13, or 170 and fail the final sum check.
+//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a overflow
+//! detector 1, 13, or 170 and fail the final sum check.
 //!
 //! The sum of the step 2 should be less than or equal to 1 times all numbers of
 //! step 2, which can be counted at setup time to be 12. So that if prover
 //! witness any more than 2 non-zero chunks, the
-//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 13
-//! or 170 and fail the final sum check.
+//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a overflow
+//! detector 13 or 170 and fail the final sum check.
 //!
 //! The sum of the step 3 should be less than or equal to 13 times all numbers
 //! of step 3, which can be counted at setup time to be 13. So that if prover
 //! witness any more than 3 non-zero chunks, the
-//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a block count 170
-//! and fail the final sum check.
+//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a overflow
+//! detector 170 and fail the final sum check.
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
 use crate::gates::{
@@ -213,7 +213,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             vec![
                 (q_normal.clone() * base13_coef, base13_to_9_table.base13),
                 (q_normal.clone() * base9_coef, base13_to_9_table.base9),
-                (q_normal * od, base13_to_9_table.block_count),
+                (q_normal * od, base13_to_9_table.overflow_detector),
             ]
         });
 
@@ -315,9 +315,8 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             }
                         }
                         let od = {
-                            let value = F::from(
-                                conv.overflow_detector.block_count.into(),
-                            );
+                            let value =
+                                F::from(conv.overflow_detector.value.into());
                             let cell = region.assign_advice(
                                 || "Overflow detector",
                                 self.overflow_detector,

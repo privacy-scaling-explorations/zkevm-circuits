@@ -86,7 +86,7 @@ impl<F: FieldExt> RhoConfig<F> {
             .flatten()
             .collect::<Vec<_>>();
         self.overflow_check_config.assign_region(
-            &mut layouter.namespace(|| "Final block count check"),
+            &mut layouter.namespace(|| "Final overflow check"),
             step2_od_join,
             step3_od_join,
         )?;

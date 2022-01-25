@@ -2,7 +2,7 @@ use crate::arith_helpers::{
     convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9,
 };
 use crate::common::LANE_SIZE;
-use crate::gates::rho_helpers::{get_block_count, BASE_NUM_OF_CHUNKS};
+use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Layouter,
@@ -23,7 +23,7 @@ const NUM_OF_B9_CHUNKS: usize = 5;
 pub struct Base13toBase9TableConfig<F> {
     pub base13: TableColumn,
     pub base9: TableColumn,
-    pub block_count: TableColumn,
+    pub overflow_detector: TableColumn,
     _marker: PhantomData<F>,
 }
 
@@ -61,12 +61,12 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         },
                     )?;
                     table.assign_cell(
-                        || "block_count",
-                        self.block_count,
+                        || "overflow_detector",
+                        self.overflow_detector,
                         i,
                         || {
                             Ok(F::from(
-                                get_block_count(
+                                get_overflow_detector(
                                     b13_chunks.clone().try_into().unwrap(),
                                 )
                                 .into(),
@@ -83,7 +83,7 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         Self {
             base13: meta.lookup_table_column(),
             base9: meta.lookup_table_column(),
-            block_count: meta.lookup_table_column(),
+            overflow_detector: meta.lookup_table_column(),
             _marker: PhantomData,
         }
     }
