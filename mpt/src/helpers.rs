@@ -1,5 +1,10 @@
-use halo2::plonk::Expression;
+use halo2::{
+    plonk::{Advice, Column, Expression, VirtualCells},
+    poly::Rotation,
+};
 use pairing::arithmetic::FieldExt;
+
+use crate::param::R_TABLE_LEN;
 
 // Turn 32 hash cells into 4 cells containing keccak words.
 pub fn into_words_expr<F: FieldExt>(
@@ -17,4 +22,35 @@ pub fn into_words_expr<F: FieldExt>(
     }
 
     words
+}
+
+// TODO: use this function in all chips
+pub fn compute_rlc<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    advices: Vec<Column<Advice>>,
+    mut rind: usize,
+    mult: Expression<F>,
+    r_table: Vec<Expression<F>>,
+) -> Expression<F> {
+    let mut r_wrapped = false;
+    let mut rlc = Expression::Constant(F::zero());
+    for col in advices.iter() {
+        let s = meta.query_advice(*col, Rotation::cur());
+        if !r_wrapped {
+            rlc = rlc + s * r_table[rind].clone() * mult.clone();
+        } else {
+            rlc = rlc
+                + s * r_table[rind].clone()
+                    * r_table[R_TABLE_LEN - 1].clone()
+                    * mult.clone();
+        }
+        if rind == R_TABLE_LEN - 1 {
+            rind = 0;
+            r_wrapped = true;
+        } else {
+            rind += 1;
+        }
+    }
+
+    rlc
 }

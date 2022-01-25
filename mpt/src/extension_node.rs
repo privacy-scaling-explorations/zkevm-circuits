@@ -1,13 +1,15 @@
 use halo2::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed},
+    plonk::{
+        Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells,
+    },
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::into_words_expr,
+    helpers::{compute_rlc, into_words_expr},
     param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
 };
 
@@ -22,13 +24,21 @@ pub(crate) struct ExtensionNodeChip<F> {
 impl<F: FieldExt> ExtensionNodeChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+        not_first_level: Column<Fixed>,
         q_not_first: Column<Fixed>,
-        is_last_branch_child: Column<Advice>,
-        is_extension_node: Column<Advice>,
+        s_rlp1: Column<Advice>,
+        s_rlp2: Column<Advice>,
+        c_rlp2: Column<Advice>,
+        s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
-        acc: Column<Advice>,
-        acc_mult: Column<Advice>,
+        acc_s: Column<Advice>,
+        acc_mult_s: Column<Advice>,
+        acc_c: Column<Advice>,
+        acc_mult_c: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+        r_table: Vec<Expression<F>>,
         is_s: bool,
     ) -> ExtensionNodeConfig {
         let config = ExtensionNodeConfig {};
@@ -89,8 +99,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         Key extension is [9, 5].
 
         Two constraints are needed:
-          - the hash of extension node (extension node RLC hash is needed) needs to be
-            checked whether it's at modified_node in branch1
+          - the hash of extension node (extension node RLC is needed) needs to be
+            checked whether it's in branch1
           - the hash of branch2 is in extension node.
 
         Also, it needs to be checked that key extension corresponds to key1 (not in this chip).
@@ -113,40 +123,22 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
         // Check whether branch hash is in extension node row.
         meta.lookup_any(|meta| {
+            let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
-            let mut rot_into_last_child = -1;
+            let mut acc = meta.query_advice(acc_s, Rotation(-1));
+            let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
             if !is_s {
-                rot_into_last_child = -2;
+                acc = meta.query_advice(acc_c, Rotation(-2));
+                mult = meta.query_advice(acc_mult_c, Rotation(-2));
             }
-
-            // We need to do the lookup only if we are in the last branch child.
-            let is_after_last_branch_child = meta.query_advice(
-                is_last_branch_child,
-                Rotation(rot_into_last_child),
-            );
-
-            // is_extension_node is in branch init row
-            let mut is_extension_node_cur =
-                meta.query_advice(is_extension_node, Rotation(-17));
-            if !is_s {
-                is_extension_node_cur =
-                    meta.query_advice(is_extension_node, Rotation(-18));
-            }
-
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let acc = meta.query_advice(acc, Rotation(rot_into_last_child));
             let c128 = Expression::Constant(F::from(128));
-            let mult =
-                meta.query_advice(acc_mult, Rotation(rot_into_last_child));
             let branch_acc = acc + c128 * mult;
 
             let mut constraints = vec![];
             constraints.push((
-                q_not_first.clone()
-                    * is_after_last_branch_child.clone()
-                    * is_extension_node_cur.clone()
-                    * branch_acc, // TODO: replace with acc once ValueNode is added
+                q_not_first.clone() * q_enable.clone() * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
@@ -160,10 +152,80 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
-                    q_not_first.clone()
-                        * is_after_last_branch_child.clone()
-                        * is_extension_node_cur.clone()
-                        * word.clone(),
+                    q_not_first.clone() * q_enable.clone() * word.clone(),
+                    keccak_table_i,
+                ));
+            }
+
+            constraints
+        });
+
+        // TODO: check that key bytes are 0 after key len
+
+        // Check whether RLC are properly computed.
+        meta.create_gate("Extension node RLC", |meta| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let mut rlc = s_rlp1;
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            rlc = rlc + s_rlp2 * r_table[0].clone();
+
+            let s_advices_rlc =
+                compute_rlc(meta, s_advices.to_vec(), 1, one, r_table.clone());
+            rlc = rlc + s_advices_rlc;
+
+            let acc_s = meta.query_advice(acc_s, Rotation::cur());
+            constraints.push((
+                "acc_s",
+                q_not_first.clone() * q_enable.clone() * (rlc - acc_s.clone()),
+            ));
+
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            let c160 = Expression::Constant(F::from(160_u64));
+            constraints.push((
+                "c_rlp2",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (c_rlp2.clone() - c160),
+            ));
+
+            let acc_mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
+            rlc = acc_s + c_rlp2 * acc_mult_s.clone();
+
+            let c_advices_rlc =
+                compute_rlc(meta, c_advices.to_vec(), 0, acc_mult_s, r_table);
+            rlc = rlc + c_advices_rlc;
+
+            let acc_c = meta.query_advice(acc_c, Rotation::cur());
+            constraints.push(("acc_c", q_not_first * q_enable * (rlc - acc_c)));
+
+            constraints
+        });
+
+        // Check whether extension node hash is in parent branch.
+        meta.lookup_any(|meta| {
+            let q_enable = q_enable(meta);
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            let mut constraints = vec![];
+
+            let acc_c = meta.query_advice(acc_c, Rotation::cur());
+            constraints.push((
+                not_first_level.clone() * q_enable.clone() * acc_c,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+
+            for (ind, column) in sc_keccak.iter().enumerate() {
+                // Any rotation that lands into branch can be used instead of -21.
+                let keccak = meta.query_advice(*column, Rotation(-21));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone() * q_enable.clone() * keccak,
                     keccak_table_i,
                 ));
             }

@@ -348,25 +348,63 @@ impl<F: FieldExt> MPTConfig<F> {
 
         ExtensionNodeChip::<F>::configure(
             meta,
+            |meta| {
+                // We need to do the lookup only if we are one after last branch child.
+                let is_after_last_branch_child =
+                    meta.query_advice(is_last_branch_child, Rotation(-1));
+                // is_extension_node is in branch init row
+                let is_extension_node = meta.query_advice(
+                    s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                    Rotation(-17),
+                );
+
+                is_after_last_branch_child * is_extension_node
+            },
+            not_first_level,
             q_not_first,
-            is_last_branch_child,
-            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            s_rlp1,
+            s_rlp2,
+            c_rlp2,
+            s_advices,
             c_advices,
             acc_s,
             acc_mult_s,
+            acc_c,
+            acc_mult_c,
             keccak_table,
+            s_keccak,
+            r_table.clone(),
             true,
         );
 
         ExtensionNodeChip::<F>::configure(
             meta,
+            |meta| {
+                // We need to do the lookup only if we are two after last branch child.
+                let is_after_last_branch_child =
+                    meta.query_advice(is_last_branch_child, Rotation(-2));
+                // is_extension_node is in branch init row
+                let is_extension_node = meta.query_advice(
+                    s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                    Rotation(-18),
+                );
+
+                is_after_last_branch_child * is_extension_node
+            },
+            not_first_level,
             q_not_first,
-            is_last_branch_child,
-            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            s_rlp1,
+            s_rlp2,
+            c_rlp2,
+            s_advices,
             c_advices,
+            acc_s,
+            acc_mult_s,
             acc_c,
             acc_mult_c,
             keccak_table,
+            c_keccak,
+            r_table.clone(),
             false,
         );
 
@@ -1240,6 +1278,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     {
                         if ind == 19_usize && row[row.len() - 1] == 0 {
                             // when the first branch ends
+                            // TODO: what if extension node is first
                             not_first_level = F::one();
                         }
                         region.assign_fixed(
@@ -1930,6 +1969,48 @@ impl<F: FieldExt> MPTConfig<F> {
                                     acc_s,
                                     acc_mult_s,
                                     F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
+                            } else if (row[row.len() - 1] == 16
+                                || row[row.len() - 1] == 17)
+                                && row[0] != 0
+                            {
+                                // row[0] != 0 just to avoid usize problems below (when row doesn't need to be assigned)
+
+                                // Intermediate RLC value and mult (after key)
+                                // to know which mult we need to use in c_advices.
+                                acc_s = F::zero();
+                                acc_mult_s = F::one();
+                                let len: usize;
+                                if row[0] == 226 {
+                                    // key length is 1
+                                    len = 2 // [226, key]
+                                } else {
+                                    len = (row[1] - 128) as usize + 2;
+                                }
+                                compute_acc_and_mult(
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    0,
+                                    len,
+                                );
+
+                                // Final RLC value.
+                                acc_c = acc_s;
+                                acc_mult_c = acc_mult_s;
+                                compute_acc_and_mult(
+                                    &mut acc_c,
+                                    &mut acc_mult_c,
+                                    C_RLP_START + 1,
+                                    HASH_WIDTH + 1,
+                                );
+
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    acc_c,
                                     F::zero(),
                                     offset,
                                 )?;
