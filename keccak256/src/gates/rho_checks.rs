@@ -123,32 +123,19 @@ use std::iter;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
-struct RunningSumColumns {
-    coef: Column<Advice>,
-    /// power of base
-    pob: Column<Fixed>,
-    acc: Column<Advice>,
-}
-#[derive(Debug, Clone)]
-pub struct BlockCountAdvices {
-    block_count: Column<Advice>,
-    step2_acc: Column<Advice>,
-    step3_acc: Column<Advice>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RhoColumns {
-    input: RunningSumColumns,
-    output: RunningSumColumns,
-    bc: BlockCountAdvices,
-}
-
-#[derive(Debug, Clone)]
 pub struct LaneRotateConversionConfig<F> {
-    chunk_rotate_convert_config: ChunkRotateConversionConfig<F>,
-    special_chunk_config: SpecialChunkConfig<F>,
     rotation: u32,
     lane_idx: usize,
+    q_normal: Selector,
+    q_special: Selector,
+    input_coef: Column<Advice>,
+    input_pob: Column<Fixed>,
+    input_acc: Column<Advice>,
+    output_coef: Column<Advice>,
+    output_pob: Column<Fixed>,
+    output_acc: Column<Advice>,
+    overflow_detector: Column<Advice>,
+    _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> LaneRotateConversionConfig<F> {
@@ -160,7 +147,6 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         special_chunk_table: SpecialChunkTableConfig<F>,
     ) -> Self {
         meta.enable_equality(lane.into());
-        let q_is_special = meta.complex_selector();
         let rotation = {
             let x = lane_idx % 5;
             let y = lane_idx / 5;
@@ -179,20 +165,21 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
 
         meta.enable_equality(input_acc.into());
         meta.enable_equality(output_acc.into());
+        meta.enable_equality(overflow_detector.into());
 
         // | coef | 13**x | acc       |
         // |------|-------|-----------|
         // |  a   |  b    | c         |
         // |  ... | ...   | c - a * b |
         meta.create_gate("Running down input", |meta| {
-            let q_enable = meta.query_selector(q_normal);
+            let q_normal = meta.query_selector(q_normal);
             let coef = meta.query_advice(input_coef, Rotation::cur());
             let pob = meta.query_fixed(input_pob, Rotation::cur());
             let acc = meta.query_advice(input_acc, Rotation::cur());
             let acc_next = meta.query_advice(input_acc, Rotation::next());
             vec![(
                 "delta_acc === - coef * power_of_base",
-                q_enable * (acc_next - acc + coef * pob),
+                q_normal * (acc_next - acc + coef * pob),
             )]
         });
         // | coef | 9**x  |    acc |
@@ -200,247 +187,278 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         // |  a   |  b    |      0 |
         // |  ... | ...   |  a * b |
         meta.create_gate("Running up for output", |meta| {
-            let q_enable = meta.query_selector(q_normal);
+            let q_normal = meta.query_selector(q_normal);
+            let q_special = meta.query_selector(q_special);
             let coef = meta.query_advice(output_coef, Rotation::cur());
             let pob = meta.query_fixed(output_pob, Rotation::cur());
             let acc = meta.query_advice(output_acc, Rotation::cur());
             let acc_next = meta.query_advice(output_acc, Rotation::next());
-            vec![(
-                "delta_acc === coef * power_of_base",
-                q_enable * (acc_next - acc.clone() - coef * pob),
-            )]
+            // delta_acc === coef * power_of_base
+            let poly = acc_next - acc.clone() - coef * pob;
+            vec![
+                ("check for q_normal", q_normal * poly.clone()),
+                ("check for q_special", q_special * poly),
+            ]
         });
 
         meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_normal);
+            let q_normal = meta.query_selector(q_normal);
             let base13_coef = meta.query_advice(input_coef, Rotation::cur());
             let base9_coef = meta.query_advice(output_coef, Rotation::cur());
             let od = meta.query_advice(overflow_detector, Rotation::cur());
 
             vec![
-                (q_enable.clone() * base13_coef, base13_to_9_table.base13),
-                (q_enable.clone() * base9_coef, base13_to_9_table.base9),
-                (q_enable * od, base13_to_9_table.block_count),
+                (q_normal.clone() * base13_coef, base13_to_9_table.base13),
+                (q_normal.clone() * base9_coef, base13_to_9_table.base9),
+                (q_normal * od, base13_to_9_table.block_count),
             ]
         });
 
-        Self { rotation, lane_idx }
+        meta.lookup(|meta| {
+            let q_special = meta.query_selector(q_special);
+            let input_acc = meta.query_advice(input_acc, Rotation::cur());
+            let output_coef = meta.query_advice(output_coef, Rotation::cur());
+
+            vec![
+                (
+                    q_special.clone() * input_acc,
+                    special_chunk_table.last_chunk,
+                ),
+                (q_special * output_coef, special_chunk_table.output_coef),
+            ]
+        });
+
+        let step2_acc = SumConfig::configure(meta, overflow_detector);
+        let step3_acc = SumConfig::configure(meta, overflow_detector);
+
+        Self {
+            rotation,
+            lane_idx,
+            q_normal,
+            q_special,
+            input_coef,
+            input_pob,
+            input_acc,
+            output_coef,
+            output_pob,
+            output_acc,
+            overflow_detector,
+            _marker: PhantomData,
+        }
     }
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
         lane_base_13: (Cell, F),
-    ) -> Result<((Cell, F), BlockCount2<F>), Error> {
+    ) -> Result<((Cell, F), Vec<(Cell, F)>, Vec<(Cell, F)>), Error> {
         let (conversions, special) =
             RhoLane::new(f_to_biguint(lane_base_13.1), self.rotation)
                 .get_full_witness();
-
-        let all_block_counts: Result<Vec<BlockCount2<F>>, Error> = self
-            .chunk_rotate_convert_config
-            .assign_region(region, offset: usize, conv: &Conversion);
-        let all_block_counts = all_block_counts?;
-        let block_counts = all_block_counts.last().ok_or(Error::Synthesis)?;
-        let lane = self.special_chunk_config.assign_region(
-            &mut region,
-            offset,
-            special,
-        )?;
-        Ok((lane, *block_counts))
+        layouter.assign_region(
+            || "lane rotate conversion",
+            |mut region| {
+                let slices = slice_lane(self.rotation);
+                let (od_cells, step2_od, step3_od) = {
+                    let mut od_cells = Vec::with_capacity(slices.len());
+                    let mut step2_od: Vec<(Cell, F)> = vec![];
+                    let mut step3_od: Vec<(Cell, F)> = vec![];
+                    for (offset, ((chunk_idx, step), conv)) in
+                        slices.iter().zip(conversions).enumerate()
+                    {
+                        self.q_normal.enable(&mut region, offset)?;
+                        region.assign_advice(
+                            || format!("Input Coef {}", chunk_idx),
+                            self.input_coef,
+                            offset,
+                            || Ok(biguint_to_f::<F>(&conv.input.coef)),
+                        )?;
+                        region.assign_fixed(
+                            || format!("Input power of base"),
+                            self.input_pob,
+                            offset,
+                            || Ok(biguint_to_f::<F>(&conv.input.power_of_base)),
+                        )?;
+                        {
+                            let cell = region.assign_advice(
+                                || "Input accumulator",
+                                self.input_acc,
+                                offset,
+                                || Ok(biguint_to_f::<F>(&conv.input.pre_acc)),
+                            )?;
+                            if offset == 0 {
+                                region.constrain_equal(lane_base_13.0, cell)?;
+                            }
+                        }
+                        region.assign_advice(
+                            || "Output Coef",
+                            self.output_coef,
+                            offset,
+                            || Ok(biguint_to_f::<F>(&conv.output.coef)),
+                        )?;
+                        region.assign_fixed(
+                            || format!("Output power of base"),
+                            self.output_pob,
+                            offset,
+                            || Ok(biguint_to_f::<F>(&conv.input.power_of_base)),
+                        )?;
+                        {
+                            let cell = region.assign_advice(
+                                || "Output accumulator",
+                                self.output_acc,
+                                offset,
+                                || Ok(biguint_to_f::<F>(&conv.output.pre_acc)),
+                            )?;
+                            if offset == 0 {
+                                region.constrain_constant(cell, F::zero())?;
+                            }
+                        }
+                        let od = {
+                            let value = F::from(
+                                conv.overflow_detector.block_count.into(),
+                            );
+                            let cell = region.assign_advice(
+                                || "Overflow detector",
+                                self.overflow_detector,
+                                offset,
+                                || Ok(value),
+                            )?;
+                            (cell, value)
+                        };
+                        match step {
+                            2 => step2_od.push(od),
+                            3 => step3_od.push(od),
+                            _ => {}
+                        }
+                        od_cells.push(od);
+                    }
+                    (od_cells, step2_od, step3_od)
+                };
+                // special chunks
+                let output_lane = {
+                    let offset = slices.len();
+                    self.q_special.enable(&mut region, offset)?;
+                    region.assign_advice(
+                        || format!("Special Input acc",),
+                        self.input_acc,
+                        offset,
+                        || Ok(biguint_to_f::<F>(&special.input)),
+                    )?;
+                    region.assign_advice(
+                        || format!("Special output coef",),
+                        self.output_coef,
+                        offset,
+                        || Ok(F::from(special.output_coef.into())),
+                    )?;
+                    region.assign_fixed(
+                        || format!("Special output power of base"),
+                        self.output_pob,
+                        offset,
+                        || {
+                            Ok(F::from(B9.into()).pow(&[
+                                self.rotation.into(),
+                                0,
+                                0,
+                                0,
+                            ]))
+                        },
+                    )?;
+                    region.assign_advice(
+                        || format!("Special output acc pre",),
+                        self.output_coef,
+                        offset,
+                        || Ok(biguint_to_f::<F>(&special.output_acc_pre)),
+                    )?;
+                    let lane = {
+                        let value = biguint_to_f::<F>(&special.output_acc_post);
+                        let cell = region.assign_advice(
+                            || format!("Special output acc post",),
+                            self.output_coef,
+                            offset + 1,
+                            || Ok(value),
+                        )?;
+                        (cell, value)
+                    };
+                    lane
+                };
+                Ok((output_lane, step2_od, step3_od))
+            },
+        )
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ChunkRotateConversionConfig<F> {
+pub struct SumConfig<F> {
     q_enable: Selector,
-    q_is_first: Selector,
-    adv: RhoColumns,
-    block_count_acc_config: BlockCountAccConfig<F>,
+    x: Column<Advice>,
+    sum: Column<Advice>,
+    _marker: PhantomData<F>,
 }
-
-impl<F: FieldExt> ChunkRotateConversionConfig<F> {
-    fn configure(
-        meta: &mut ConstraintSystem<F>,
-        lane: Column<Advice>,
-        base13_to_9_table: Base13toBase9TableConfig<F>,
-    ) -> Self {
-        let q_enable = meta.complex_selector();
-        let q_is_first = meta.complex_selector();
-
-        let adv = {
-            let input = RunningSumColumns {
-                coef: meta.advice_column(),
-                pob: meta.fixed_column(),
-                acc: meta.advice_column(),
-            };
-            let output = RunningSumColumns {
-                coef: meta.advice_column(),
-                pob: meta.fixed_column(),
-                acc: meta.advice_column(),
-            };
-            let bc = BlockCountAdvices {
-                block_count: meta.advice_column(),
-                step2_acc: meta.advice_column(),
-                step3_acc: meta.advice_column(),
-            };
-            RhoColumns { input, output, bc }
-        };
-
-        let block_count_acc_config = BlockCountAccConfig::configure(
-            meta,
-            q_enable,
-            adv.bc.clone(),
-            step,
-        );
-
-        Self {
-            q_enable,
-            q_is_first,
-            adv,
-            block_count_acc_config,
-        }
-    }
-
-    fn assign_region(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        conv: &Conversion,
-    ) -> Result<BlockCount2<F>, Error> {
-        self.q_enable.enable(region, offset)?;
-        if offset == 0 {
-            self.q_is_first.enable(region, 0)?;
-        }
-        region.assign_advice(
-            || format!("Input Coef {}", self.chunk_idx),
-            self.adv.input.coef,
-            offset,
-            || Ok(biguint_to_f::<F>(&conv.input.coef)),
-        )?;
-        region.assign_advice(
-            || "Input accumulator",
-            self.adv.input.acc,
-            offset,
-            || Ok(biguint_to_f::<F>(&conv.input.pre_acc)),
-        )?;
-        region.assign_advice(
-            || "Output Coef",
-            self.adv.output.coef,
-            offset,
-            || Ok(biguint_to_f::<F>(&conv.output.coef)),
-        )?;
-        region.assign_advice(
-            || "Output accumulator",
-            self.adv.output.acc,
-            offset,
-            || Ok(biguint_to_f::<F>(&conv.output.pre_acc)),
-        )?;
-        let block_counts = self.block_count_acc_config.assign_region(
-            region,
-            offset,
-            &conv.overflow_detector,
-        )?;
-        Ok(block_counts)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SpecialChunkConfig<F> {
-    q_enable: Selector,
-    last_b9_coef: Column<Advice>,
-    base_13_acc: Column<Advice>,
-    base_9_acc: Column<Advice>,
-    special_chunk_table_config: SpecialChunkTableConfig<F>,
-}
-
-impl<F: FieldExt> SpecialChunkConfig<F> {
+impl<F: FieldExt> SumConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        base_13_acc: Column<Advice>,
-        base_9_acc: Column<Advice>,
-        last_b9_coef: Column<Advice>,
-        special_chunk_table_config: SpecialChunkTableConfig<F>,
-        rotation: u64,
+        x: Column<Advice>,
     ) -> Self {
-        let q_enable = meta.complex_selector();
-        meta.create_gate("validate base_9_acc", |meta| {
-            let delta_base_9_acc = meta
-                .query_advice(base_9_acc, Rotation::next())
-                - meta.query_advice(base_9_acc, Rotation::cur());
-            let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
-            let pow_of_9 = Expression::Constant(
-                F::from(B9.into()).pow(&[rotation, 0, 0, 0]),
-            );
-            vec![(
-                "delta_base_9_acc === (high_value + low_value) * 9**rotation",
-                meta.query_selector(q_enable)
-                    * (delta_base_9_acc - last_b9_coef * pow_of_9),
-            )]
-        });
+        meta.enable_equality(x.into());
+        let q_enable = meta.selector();
+        let sum = meta.advice_column();
 
-        meta.lookup(|meta| {
+        meta.enable_equality(sum.into());
+
+        meta.create_gate("sum", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            let base_13_acc = meta.query_advice(base_13_acc, Rotation::cur());
-            let last_b9_coef = meta.query_advice(last_b9_coef, Rotation::cur());
-
-            vec![
-                (
-                    q_enable.clone() * base_13_acc,
-                    special_chunk_table_config.last_chunk,
-                ),
-                (
-                    q_enable * last_b9_coef,
-                    special_chunk_table_config.output_coef,
-                ),
-            ]
+            let x = meta.query_advice(x, Rotation::cur());
+            let sum_next = meta.query_advice(sum, Rotation::next());
+            let sum = meta.query_advice(sum, Rotation::cur());
+            vec![q_enable * (sum_next - sum - x)]
         });
         Self {
             q_enable,
-            last_b9_coef,
-            base_13_acc,
-            base_9_acc,
-            special_chunk_table_config,
+            x,
+            sum,
+            _marker: PhantomData,
         }
     }
-    fn assign_region(
+    pub fn assign_region(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        special: Special,
+        layouter: &mut impl Layouter<F>,
+        xs: Vec<(Cell, F)>,
     ) -> Result<(Cell, F), Error> {
-        self.q_enable.enable(region, offset)?;
-        region.assign_advice(
-            || "input_acc",
-            self.base_13_acc,
-            offset,
-            || Ok(biguint_to_f::<F>(&special.input)),
-        )?;
-        region.assign_advice(
-            || "ouput_acc",
-            self.base_9_acc,
-            offset,
-            || Ok(biguint_to_f::<F>(&special.output_acc_pre)),
-        )?;
-        region.assign_advice(
-            || "last_b9_coef",
-            self.last_b9_coef,
-            offset,
-            || Ok(F::from(special.output_coef as u64)),
-        )?;
-        region.assign_advice(
-            || "input_acc",
-            self.base_13_acc,
-            offset + 1,
-            || Ok(F::zero()),
-        )?;
-        let value = biguint_to_f::<F>(&special.output_acc_post);
-        let cell = region.assign_advice(
-            || "input_acc",
-            self.base_9_acc,
-            offset + 1,
-            || Ok(value),
-        )?;
+        debug_assert!(xs.len() > 1);
+        layouter.assign_region(
+            || "running sum",
+            |mut region| {
+                let sum = F::zero();
+                let mut offset = 0;
+                for &(cell_from, value) in xs.iter() {
+                    let cell_to = region.assign_advice(
+                        || "x",
+                        self.x,
+                        offset,
+                        || Ok(value),
+                    )?;
+                    region.constrain_equal(cell_to, cell_from)?;
+                    region.assign_advice(
+                        || "sum",
+                        self.sum,
+                        offset,
+                        || Ok(sum),
+                    )?;
+                    sum += value;
+                    offset += 1;
+                }
+                let sum = {
+                    let cell = region.assign_advice(
+                        || "last sum",
+                        self.sum,
+                        offset,
+                        || Ok(sum),
+                    )?;
+                    (cell, sum)
+                };
 
-        Ok((cell, value))
+                Ok(sum)
+            },
+        )
     }
 }
 
