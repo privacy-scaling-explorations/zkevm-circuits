@@ -10,15 +10,15 @@
 //!
 //! We call the a coefficient of the polynomial a chunk.
 //!
-//! The output chunks represent the output bits of the lane in binary, where b0
-//! is the least significant bit and b63 is the most significant bit.
+//! The output chunks represent the output bits of the lane in binary, in little
+//! endian.
 //!
 //! Note that the input lane is special because it's an output from the Theta
 //! step, so it has 65 chunks. It holds that `0 <= a0 + a64 < 13`. We refer a0
 //! to be low value and a64 high value.
 //!
 //! In the Rho step we perform the **rotation** of chunk positions and the
-//! **convertion** from base 13 to base 9.
+//! **conversion** from base 13 to base 9.
 //!
 //! More formally speaking, we have a transform `T`, where `bi = T(aj)` for some
 //! `i`, `j`, and `ai` is not special chunks.
@@ -40,7 +40,7 @@
 //! The goal is to check the conversion from the base 13 input lane to the base
 //! 9 output lane is sound.
 //!
-//! ### The Essential
+//! ### The Normal Slices
 //!
 //! For each lane, we split up the lane in slices of chunks.
 //! - We run down the input accumulator by subtracting each `input_coef *
