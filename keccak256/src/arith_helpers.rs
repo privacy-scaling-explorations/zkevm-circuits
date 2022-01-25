@@ -24,6 +24,7 @@ pub const A4: u8 = 2;
 pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
 
+#[derive(Debug)]
 pub struct StateBigInt {
     pub(crate) xy: Vec<BigUint>,
 }
@@ -130,6 +131,7 @@ pub fn convert_b9_coef(x: u8) -> u8 {
 }
 
 // We assume the input comes from Theta step and has 65 chunks
+// expecting outputs from theta gate
 pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     // 65 chunks
     let mut chunks = x.to_radix_le(B13.into());
@@ -196,9 +198,14 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     let info: Vec<(usize, u8)> =
         (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
+    if !raw.is_zero() {
+        println!("WARNING {} has non zero remainder {:?}", name, raw);
+    }
 }
 
-pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
+pub fn state_to_biguint<F: FieldExt, const N: usize>(
+    state: [F; N],
+) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
