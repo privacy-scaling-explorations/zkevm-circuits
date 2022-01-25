@@ -197,7 +197,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
             let acc = meta.query_advice(output_acc, Rotation::cur());
             let acc_next = meta.query_advice(output_acc, Rotation::next());
             // delta_acc === coef * power_of_base
-            let poly = acc_next - acc.clone() - coef * pob;
+            let poly = acc_next - acc - coef * pob;
             vec![
                 ("check for q_normal", q_normal * poly.clone()),
                 ("check for q_special", q_special * poly),
@@ -371,7 +371,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                         offset,
                         || Ok(biguint_to_f::<F>(&special.output_acc_pre)),
                     )?;
-                    let lane = {
+                    {
                         let value = biguint_to_f::<F>(&special.output_acc_post);
                         let cell = region.assign_advice(
                             || "Special output acc post",
@@ -380,8 +380,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             || Ok(value),
                         )?;
                         (cell, value)
-                    };
-                    lane
+                    }
                 };
                 Ok((output_lane, step2_od, step3_od))
             },
