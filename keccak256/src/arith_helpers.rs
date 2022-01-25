@@ -16,10 +16,10 @@ pub const B9: u8 = 9;
 /// where x1, x2, x3, x4 are binary.
 /// We have the property that `0 <= f_arith(...) < 9` and
 /// the map from `f_arith(...)` to `f_logic(...)` is injective.
-pub const A1: u8 = 2;
-pub const A2: u8 = 1;
-pub const A3: u8 = 3;
-pub const A4: u8 = 2;
+pub const A1: u64 = 2;
+pub const A2: u64 = 1;
+pub const A3: u64 = 3;
+pub const A4: u64 = 2;
 
 pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
@@ -198,9 +198,9 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     let info: Vec<(usize, u8)> =
         (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
-    if !raw.is_zero() {
-        println!("WARNING {} has non zero remainder {:?}", name, raw);
-    }
+    // if !raw.is_zero() {
+    //     println!("WARNING {} has non zero remainder {:?}", name, raw);
+    // }
 }
 
 pub fn state_to_biguint<F: FieldExt, const N: usize>(
