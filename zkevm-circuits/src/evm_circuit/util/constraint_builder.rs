@@ -1,9 +1,9 @@
 use crate::{
     evm_circuit::{
-        step::{ExecutionState, Preset, Step},
+        step::{ExecutionState, Step},
         table::{
             AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, TxContextFieldTag,
+            RwTableTag, Table, TxContextFieldTag,
         },
         util::{Cell, Word},
     },
@@ -12,16 +12,15 @@ use crate::{
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
-// Max degree allowed in all expressions passing through the ConstraintBuilder.
-const MAX_DEGREE: usize = 2usize.pow(3) + 1;
-// Degree added for expressions used in lookups.
-const LOOKUP_DEGREE: usize = 3;
+use super::{
+    random_linear_combine, CellColumn, CellManager, CellType,
+    IntermediateResult,
+};
 
-#[derive(Clone, Debug, Default)]
-struct StepRowUsage {
-    next_idx: usize,
-    is_byte_lookup_enabled: bool,
-}
+// Max degree allowed in all expressions passing through the ConstraintBuilder.
+const MAX_DEGREE: usize = 2;
+// Degree added for expressions used in lookups.
+const LOOKUP_DEGREE: usize = 1;
 
 pub(crate) enum Transition<T> {
     Same,
@@ -50,29 +49,34 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
 }
 
 pub(crate) struct ConstraintBuilder<'a, F> {
+    pub(crate) cell_manager: CellManager<F>,
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
     power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
-    lookups: Vec<Lookup<F>>,
-    row_usages: Vec<StepRowUsage>,
+    pub(crate) lookups: Vec<Lookup<F>>,
     rw_counter_offset: usize,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
     state_write_counter_offset: usize,
     condition: Option<Expression<F>>,
+    pub(crate) intermediate_results: Vec<IntermediateResult<F>>,
+    pub(crate) num_bytes: usize,
+    pub(crate) num_cells: usize,
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
+        cell_manager: CellManager<F>,
         curr: &'a Step<F>,
         next: &'a Step<F>,
         power_of_randomness: &'a [Expression<F>; 31],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
+            cell_manager,
             curr,
             next,
             power_of_randomness,
@@ -80,12 +84,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             constraints: Vec::new(),
             constraints_first_step: Vec::new(),
             lookups: Vec::new(),
-            row_usages: vec![StepRowUsage::default(); curr.rows.len()],
             rw_counter_offset: 0,
             program_counter_offset: 0,
             stack_pointer_offset: 0,
             state_write_counter_offset: 0,
             condition: None,
+            intermediate_results: Vec::new(),
+            num_bytes: 0,
+            num_cells: 0,
         }
     }
 
@@ -95,40 +101,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) -> (
         Vec<(&'static str, Expression<F>)>,
         Vec<(&'static str, Expression<F>)>,
-        Vec<Lookup<F>>,
-        Vec<Preset<F>>,
+        Vec<CellColumn<F>>,
+        Vec<IntermediateResult<F>>,
     ) {
-        let mut constraints = self.constraints;
-        let mut presets = Vec::new();
-
-        for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter()) {
-            if usage.is_byte_lookup_enabled {
-                constraints.push((
-                    "Enable byte lookup",
-                    row.qs_byte_lookup.expr() - 1.expr(),
-                ));
-            }
-
-            presets.extend(
-                row.cells[usage.next_idx..]
-                    .iter()
-                    .map(|cell| (cell.clone(), F::zero())),
-            );
-            presets.push((
-                row.qs_byte_lookup.clone(),
-                if usage.is_byte_lookup_enabled {
-                    F::one()
-                } else {
-                    F::zero()
-                },
-            ));
-        }
-
         let execution_state_selector =
             self.curr.execution_state_selector(self.execution_state);
 
         (
-            constraints
+            self.constraints
                 .into_iter()
                 .map(|(name, constraint)| {
                     (name, execution_state_selector.clone() * constraint)
@@ -140,13 +120,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                     (name, execution_state_selector.clone() * constraint)
                 })
                 .collect(),
-            self.lookups
-                .into_iter()
-                .map(|lookup| {
-                    lookup.conditional(execution_state_selector.clone())
-                })
-                .collect(),
-            presets,
+            self.cell_manager.columns,
+            self.intermediate_results,
         )
     }
 
@@ -173,19 +148,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Query
 
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false);
+        let cell = self.query_cell();
         self.require_boolean("Constrain cell to be a bool", cell.expr());
         cell
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(true);
-        cell
-    }
-
-    pub(crate) fn query_cell(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false);
-        cell
+        self.num_bytes += 1;
+        self.query_cell_with_type(CellType::Lookup(Table::Fixed))
     }
 
     pub(crate) fn query_word(&mut self) -> Word<F> {
@@ -193,38 +163,32 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_cells::<N>(true)
+        self.num_bytes += N;
+        self.query_bytes_dyn(N).try_into().unwrap()
     }
 
-    fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
-        let mut cells = Vec::with_capacity(N);
+    pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
+        self.query_cells(CellType::Lookup(Table::Fixed), count)
+    }
 
-        // Iterate rows to find cell that matches the is_byte requirement.
-        for (row, usage) in
-            self.curr.rows.iter().zip(self.row_usages.iter_mut())
-        {
-            // If this row doesn't match the is_byte requirement and is already
-            // used, skip this row.
-            if usage.is_byte_lookup_enabled != is_byte && usage.next_idx > 0 {
-                continue;
-            }
+    pub(crate) fn query_cell(&mut self) -> Cell<F> {
+        self.query_cell_with_type(CellType::General)
+    }
 
-            // Enable the byte range lookup for this row if queried cells are
-            // required to be bytes.
-            if usage.next_idx == 0 && is_byte {
-                usage.is_byte_lookup_enabled = true;
-            }
+    pub(crate) fn query_cell_with_type(
+        &mut self,
+        cell_type: CellType,
+    ) -> Cell<F> {
+        self.query_cells(cell_type, 1).first().unwrap().clone()
+    }
 
-            let n = row.cells.len().min(usage.next_idx + N - cells.len());
-            cells.extend(row.cells[usage.next_idx..n].iter().cloned());
-            usage.next_idx = n;
-
-            if cells.len() == N {
-                return cells.try_into().unwrap();
-            }
-        }
-
-        unreachable!("not enough cells for query")
+    fn query_cells(
+        &mut self,
+        cell_type: CellType,
+        count: usize,
+    ) -> Vec<Cell<F>> {
+        self.num_cells += count;
+        self.cell_manager.query_cells(cell_type, count)
     }
 
     // Common
@@ -756,6 +720,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
         };
+
+        let constraint =
+            self.rebuild_constraint(name, constraint, MAX_DEGREE);
+
         self.validate_degree(constraint.degree());
         self.constraints.push((name, constraint));
     }
@@ -778,7 +746,139 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             Some(condition) => lookup.conditional(condition.clone()),
             None => lookup,
         };
-        self.validate_degree(lookup.degree() + LOOKUP_DEGREE);
+
+        let lookup_expr = self.rebuild_constraint(
+            "Lookup",
+            random_linear_combine(
+                lookup.input_exprs(),
+                self.power_of_randomness,
+            ),
+            MAX_DEGREE,
+        );
+
+        self.add_intermediate_constraint(
+            "Lookup intermediate",
+            lookup_expr,
+            CellType::Lookup(lookup.table()),
+        );
+
         self.lookups.push(lookup);
+    }
+
+    pub(crate) fn add_intermediate_constraint(
+        &mut self,
+        name: &'static str,
+        expr: Expression<F>,
+        cell_type: CellType,
+    ) -> Expression<F> {
+        let result = self.find_intermediate_constraint(expr.clone(), cell_type);
+        match result {
+            Some(cell) => cell.expr(),
+            None => {
+                let cell = self.query_cell_with_type(cell_type);
+
+                // Require the intermediate result to equal the intermediate
+                // value
+                let name = format!("{} (intermediate result)", name);
+                self.constraints.push((
+                    Box::leak(name.into_boxed_str()),
+                    cell.expr() - expr.clone(),
+                ));
+
+                self.intermediate_results.push(IntermediateResult {
+                    cell_type,
+                    cell: cell.clone(),
+                    expr,
+                });
+                cell.expr()
+            }
+        }
+    }
+
+    pub(crate) fn find_intermediate_constraint(
+        &mut self,
+        expr: Expression<F>,
+        cell_type: CellType,
+    ) -> Option<Cell<F>> {
+        let code = expr.generate_code();
+        for result in self.intermediate_results.iter() {
+            if result.cell_type == cell_type
+                && result.expr.generate_code() == code
+            {
+                return Some(result.cell.clone());
+            }
+        }
+        None
+    }
+
+    pub(crate) fn rebuild_constraint(
+        &mut self,
+        name: &'static str,
+        expr: Expression<F>,
+        max_degree: usize,
+    ) -> Expression<F> {
+        if expr.degree() > max_degree {
+            match expr {
+                Expression::Negated(poly) => Expression::Negated(Box::new(
+                    self.rebuild_constraint(name, *poly, max_degree),
+                )),
+                Expression::Scaled(poly, v) => Expression::Scaled(
+                    Box::new(self.rebuild_constraint(name, *poly, max_degree)),
+                    v,
+                ),
+                Expression::Sum(a, b) => {
+                    let a = if a.degree() > max_degree {
+                        self.rebuild_constraint(name, *a, max_degree)
+                    } else {
+                        *a
+                    };
+                    let b = if b.degree() > max_degree {
+                        self.rebuild_constraint(name, *b, max_degree)
+                    } else {
+                        *b
+                    };
+                    a + b
+                }
+                Expression::Product(a, b) => {
+                    let mut a = (*a).clone();
+                    let mut b = (*b).clone();
+                    while a.degree() + b.degree() > max_degree {
+                        if a.degree() >= b.degree() {
+                            a = if a.degree() > max_degree {
+                                self.rebuild_constraint(
+                                    name,
+                                    a.clone(),
+                                    max_degree,
+                                )
+                            } else {
+                                self.add_intermediate_constraint(
+                                    name,
+                                    a.clone(),
+                                    CellType::General,
+                                )
+                            }
+                        } else {
+                            b = if b.degree() > max_degree {
+                                self.rebuild_constraint(
+                                    name,
+                                    b.clone(),
+                                    max_degree,
+                                )
+                            } else {
+                                self.add_intermediate_constraint(
+                                    name,
+                                    b.clone(),
+                                    CellType::General,
+                                )
+                            };
+                        }
+                    }
+                    a * b
+                }
+                _ => expr.clone(),
+            }
+        } else {
+            expr.clone()
+        }
     }
 }

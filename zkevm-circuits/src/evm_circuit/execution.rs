@@ -1,9 +1,12 @@
 use crate::{
     evm_circuit::{
         param::{STEP_HEIGHT, STEP_WIDTH},
-        step::{ExecutionState, Preset, Step},
-        table::{FixedTableTag, Lookup, LookupTable, Table},
-        util::constraint_builder::ConstraintBuilder,
+        step::{ExecutionState, Step},
+        table::{LookupTable, Table},
+        util::{
+            constraint_builder::ConstraintBuilder, random_linear_combine,
+            CellType,
+        },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
@@ -12,7 +15,6 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
-    poly::Rotation,
 };
 use std::collections::HashMap;
 
@@ -58,6 +60,8 @@ use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
+use super::util::{CachedRegion, CellColumn, IntermediateResult};
+
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
 
@@ -67,7 +71,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction<F>,
@@ -81,7 +85,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step: Selector,
     q_step_first: Selector,
     step: Step<F>,
-    presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
+    intermediates_map: HashMap<ExecutionState, Vec<IntermediateResult<F>>>,
     add_gadget: AddGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
@@ -122,13 +126,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
     {
         let q_step = meta.complex_selector();
         let q_step_first = meta.complex_selector();
-        let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, qs_byte_lookup, advices, false);
-        let step_next = Step::new(meta, qs_byte_lookup, advices, true);
-        let mut independent_lookups = Vec::new();
-        let mut presets_map = HashMap::new();
+        let step_curr = Step::new(meta, advices, false);
+        let step_next = Step::new(meta, advices, true);
 
         meta.create_gate("Constrain execution state", |meta| {
             let q_step = meta.query_selector(q_step);
@@ -141,7 +142,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     .state
                     .execution_state
                     .iter()
-                    .fold(1.expr(), |acc, cell| acc - cell.expr()),
+                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
             );
 
             // Cells representation for execution_state should be bool.
@@ -149,7 +150,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 step_curr.state.execution_state.iter().map(|cell| {
                     (
                         "Representation for execution_state should be bool",
-                        cell.expr() * (1.expr() - cell.expr()),
+                        cell.expr() * (1u64.expr() - cell.expr()),
                     )
                 });
 
@@ -161,7 +162,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     step_curr.execution_state_selector(ExecutionState::BeginTx);
                 std::iter::once((
                     "First step should be BeginTx",
-                    q_step_first * (begin_tx_selector - 1.expr()),
+                    q_step_first * (begin_tx_selector - 1u64.expr()),
                 ))
             };
 
@@ -171,27 +172,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 .chain(first_step_check)
         });
 
-        // Use qs_byte_lookup as selector to do byte range lookup on each advice
-        // column. In this way, ExecutionGadget could enable the byte range
-        // lookup by enable qs_byte_lookup.
-        for advice in advices {
-            meta.lookup_any(|meta| {
-                let advice = meta.query_advice(advice, Rotation::cur());
-                let qs_byte_lookup =
-                    meta.query_advice(qs_byte_lookup, Rotation::cur());
-
-                vec![
-                    qs_byte_lookup.clone() * FixedTableTag::Range256.expr(),
-                    qs_byte_lookup * advice,
-                    0.expr(),
-                    0.expr(),
-                ]
-                .into_iter()
-                .zip(fixed_table.table_exprs(meta).to_vec().into_iter())
-                .collect::<Vec<_>>()
-            });
-        }
-
+        let mut intermediates_map = HashMap::new();
+        let mut columns = step_curr.cell_manager.columns.clone();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -201,8 +183,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     &power_of_randomness,
                     &step_curr,
                     &step_next,
-                    &mut independent_lookups,
-                    &mut presets_map,
+                    &mut intermediates_map,
+                    &mut columns,
                 )
             };
         }
@@ -231,18 +213,18 @@ impl<F: FieldExt> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             step: step_curr,
-            presets_map,
+            intermediates_map,
         };
 
         Self::configure_lookup(
             meta,
-            q_step,
             fixed_table,
             tx_table,
             rw_table,
             bytecode_table,
             block_table,
-            independent_lookups,
+            &power_of_randomness,
+            &columns,
         );
 
         config
@@ -256,10 +238,20 @@ impl<F: FieldExt> ExecutionConfig<F> {
         power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
-        independent_lookups: &mut Vec<Vec<Lookup<F>>>,
-        presets_map: &mut HashMap<ExecutionState, Vec<Preset<F>>>,
+        intermediates_map: &mut HashMap<
+            ExecutionState,
+            Vec<IntermediateResult<F>>,
+        >,
+        columns: &mut Vec<CellColumn<F>>,
     ) -> G {
+        // Setup the cell manager to the latest layout
+        let mut cell_manager = step_curr.cell_manager.clone();
+        for (to, from) in cell_manager.columns.iter_mut().zip(columns.iter()) {
+            to.cell_type = from.cell_type;
+        }
+
         let mut cb = ConstraintBuilder::new(
+            cell_manager,
             step_curr,
             step_next,
             power_of_randomness,
@@ -267,13 +259,30 @@ impl<F: FieldExt> ExecutionConfig<F> {
         );
 
         let gadget = G::configure(&mut cb);
+        println!(
+            "{}: {} lookups, {} intermediates, {} cells ({} bytes)",
+            G::NAME,
+            cb.lookups.len(),
+            cb.intermediate_results.len(),
+            cb.num_cells,
+            cb.num_bytes
+        );
 
-        let (constraints, constraints_first_step, lookups, presets) =
-            cb.build();
+        let (
+            constraints,
+            constraints_first_step,
+            new_columns,
+            intermediate_results,
+        ) = cb.build();
         assert!(
-            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
+            intermediates_map
+                .insert(G::EXECUTION_STATE, intermediate_results)
+                .is_none(),
             "execution state already configured"
         );
+
+        // Copy the updated column layout
+        *columns = new_columns;
 
         for (selector, constraints) in [
             (q_step, constraints),
@@ -290,89 +299,53 @@ impl<F: FieldExt> ExecutionConfig<F> {
             }
         }
 
-        // Push lookups of this ExecutionState to independent_lookups for
-        // further configuration in configure_lookup.
-        independent_lookups.push(lookups);
-
         gadget
     }
 
     #[allow(clippy::too_many_arguments)]
     fn configure_lookup<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
-        q_step: Selector,
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
         block_table: BlockTable,
-        independent_lookups: Vec<Vec<Lookup<F>>>,
+        power_of_randomness: &[Expression<F>; 31],
+        columns: &[CellColumn<F>],
     ) where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {
-        // Because one and only one ExecutionState is enabled at a step, we then
-        // know only one of independent_lookups will be enabled at a step, so we
-        // can add up them together to reduce the amount of lookup arguments.
-        // This map holds all added up independent lookups as accumulated
-        // lookups, and will be used in configuring lookup arguments later.
-        let mut acc_lookups_of_table = HashMap::new();
-
-        for lookups in independent_lookups {
-            let mut index_of_table = HashMap::new();
-
-            for lookup in lookups {
-                let table = lookup.table();
-                let acc_lookups =
-                    acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
-                let index = index_of_table.entry(table).or_insert(0);
-
-                if *index == acc_lookups.len() {
-                    acc_lookups.push(lookup.input_exprs());
-                } else {
-                    // Add up independent lookup together
-                    for (acc, expr) in acc_lookups[*index]
-                        .iter_mut()
-                        .zip(lookup.input_exprs().into_iter())
-                    {
-                        *acc = acc.clone() + expr;
-                    }
-                }
-                *index += 1;
+        let mut num_lookups = 0;
+        for column in columns.iter() {
+            //println!("{} -> {:?}", column.index, column.cell_type);
+            if let CellType::Lookup(table) = column.cell_type {
+                meta.lookup_any(|meta| {
+                    let table_expressions = match table {
+                        Table::Fixed => {
+                            fixed_table.table_exprs(meta).to_vec()
+                        }
+                        Table::Tx => tx_table.table_exprs(meta).to_vec(),
+                        Table::Rw => rw_table.table_exprs(meta).to_vec(),
+                        Table::Bytecode => {
+                            bytecode_table.table_exprs(meta).to_vec()
+                        }
+                        Table::Block => {
+                            block_table.table_exprs(meta).to_vec()
+                        }
+                    };
+                    let table = random_linear_combine(
+                        table_expressions,
+                        power_of_randomness,
+                    );
+                    vec![(column.expr.clone(), table)]
+                });
+                num_lookups += 1;
             }
         }
-
-        macro_rules! lookup {
-            ($id:path, $table:ident) => {
-                if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
-                    for input_exprs in acc_lookups {
-                        meta.lookup_any(|meta| {
-                            let q_step = meta.query_selector(q_step);
-                            input_exprs
-                                .into_iter()
-                                .zip(
-                                    $table
-                                        .table_exprs(meta)
-                                        .to_vec()
-                                        .into_iter(),
-                                )
-                                .map(|(input, table)| {
-                                    (q_step.clone() * input, table)
-                                })
-                                .collect::<Vec<_>>()
-                        });
-                    }
-                }
-            };
-        }
-
-        lookup!(Table::Fixed, fixed_table);
-        lookup!(Table::Tx, tx_table);
-        lookup!(Table::Rw, rw_table);
-        lookup!(Table::Bytecode, bytecode_table);
-        lookup!(Table::Block, block_table);
+        println!("num lookups/row: {}", num_lookups);
     }
 
     pub fn assign_block(
@@ -393,7 +366,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             self.q_step_first.enable(&mut region, offset)?;
                         }
 
-                        self.assign_exec_step(
+                        self.assign_exec_step_temp(
                             &mut region,
                             offset,
                             block,
@@ -429,7 +402,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
                         let call = &transaction.calls[step.call_idx];
 
                         self.q_step.enable(&mut region, offset)?;
-                        self.assign_exec_step(
+                        //if offset == 0 {
+                        //    self.q_step_first.enable(&mut region, offset)?;
+                        //}
+
+                        self.assign_exec_step_temp(
                             &mut region,
                             offset,
                             block,
@@ -446,7 +423,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         )
     }
 
-    fn assign_exec_step(
+    fn assign_exec_step_temp(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -455,20 +432,18 @@ impl<F: FieldExt> ExecutionConfig<F> {
         call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.step.assign_exec_step(region, offset, call, step)?;
+        println!("Step {}", offset);
 
-        for (cell, value) in self
-            .presets_map
-            .get(&step.execution_state)
-            .expect("not implemented")
-        {
-            cell.assign(region, offset, Some(*value))?;
-        }
+        let mut cached_region =
+            CachedRegion::<'_, '_, F>::new(region, block.randomness);
+
+        self.step
+            .assign_exec_step(&mut cached_region, offset, call, step)?;
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
                 $gadget.assign_exec_step(
-                    region,
+                    &mut cached_region,
                     offset,
                     block,
                     transaction,
@@ -506,6 +481,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
             _ => unimplemented!(),
+        }
+
+        for intermediate in self
+            .intermediates_map
+            .get(&step.execution_state)
+            .expect("not implemented")
+        {
+            intermediate.assign(&mut cached_region, offset)?;
         }
 
         Ok(())

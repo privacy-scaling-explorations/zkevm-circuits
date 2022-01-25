@@ -1,3 +1,4 @@
+use super::CachedRegion;
 use crate::evm_circuit::{
     param::MAX_MEMORY_SIZE_IN_BYTES,
     util::{
@@ -9,7 +10,7 @@ use crate::evm_circuit::{
 use crate::util::Expr;
 use bus_mapping::evm::GasCost;
 use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
@@ -72,7 +73,7 @@ impl<F: FieldExt> MemorySizeGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         address: Address,
     ) -> Result<MemorySize, Error> {
@@ -171,7 +172,7 @@ impl<F: FieldExt, const MAX_QUAD_COST_IN_BYTES: usize>
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         curr_memory_size: MemorySize,
         address: Address,

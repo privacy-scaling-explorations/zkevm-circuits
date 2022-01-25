@@ -12,14 +12,14 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::MemoryExpansionGadget,
-            select, MemoryAddress, Word,
+            select, CachedRegion, MemoryAddress, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -148,7 +148,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

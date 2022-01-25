@@ -9,14 +9,14 @@ use crate::{
             },
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
-            select, Word,
+            select, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
@@ -111,7 +111,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

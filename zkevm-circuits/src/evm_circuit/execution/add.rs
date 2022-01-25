@@ -8,14 +8,14 @@ use crate::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             math_gadget::{AddWordsGadget, PairSelectGadget},
-            select,
+            select, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
 // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
@@ -78,7 +78,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

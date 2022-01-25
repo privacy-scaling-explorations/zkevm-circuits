@@ -8,14 +8,14 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
-            Word,
+            CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BitwiseGadget<F> {
@@ -81,7 +81,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

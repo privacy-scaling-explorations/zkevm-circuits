@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
-            sum, Cell, Word,
+            sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -15,7 +15,7 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
@@ -124,7 +124,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

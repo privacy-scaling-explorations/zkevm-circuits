@@ -7,14 +7,14 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
-            Cell, Word,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PopGadget<F> {
@@ -56,7 +56,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

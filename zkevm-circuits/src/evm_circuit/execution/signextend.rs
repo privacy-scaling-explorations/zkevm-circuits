@@ -10,7 +10,7 @@ use crate::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            select, sum, Cell, Word,
+            select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -18,7 +18,7 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SignextendGadget<F> {
@@ -87,7 +87,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             // selector is the sum of the current and all previous `is_selected`
             // values.
             cb.require_equal(
-                "Constrain selector == 1 when is_selected == 1 || previous selector == 1", 
+                "Constrain selector == 1 when is_selected == 1 || previous selector == 1",
                 is_selected.clone()
                     + if idx > 0 {
                         selectors[idx - 1].expr()
@@ -161,7 +161,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

@@ -1,5 +1,5 @@
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 32;
+pub(crate) const STEP_WIDTH: usize = 45;
 /// Step height
 pub const STEP_HEIGHT: usize = 14;
 pub(crate) const NUM_CELLS_STEP_STATE: usize = 10;

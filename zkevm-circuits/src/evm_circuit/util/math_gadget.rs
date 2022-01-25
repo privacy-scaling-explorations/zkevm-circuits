@@ -1,3 +1,4 @@
+use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::MAX_BYTES_FIELD,
@@ -10,7 +11,7 @@ use crate::{
 };
 use bus_mapping::eth_types::{ToLittleEndian, Word};
 use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
@@ -49,7 +50,7 @@ impl<F: FieldExt> IsZeroGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
@@ -86,7 +87,7 @@ impl<F: FieldExt> IsEqualGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -154,7 +155,7 @@ impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         addends: [Word; N],
         sum: Word,
@@ -293,7 +294,7 @@ impl<F: FieldExt> MulWordsGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         a: Word,
         b: Word,
@@ -314,7 +315,7 @@ impl<F: FieldExt> MulWordsGadget<F> {
     //assign t0 ~ t3 and v0, v1
     fn assign_witness(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         wa: &Word,
         wb: &Word,
@@ -445,7 +446,7 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         multiplicand: Word,
         multiplier: u64,
@@ -520,7 +521,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: F,
     ) -> Result<(), Error> {
@@ -577,7 +578,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -634,7 +635,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -692,7 +693,7 @@ impl<F: FieldExt> PairSelectGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: F,
         a: F,
@@ -758,7 +759,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         numerator: u128,
     ) -> Result<(u128, u128), Error> {
@@ -807,7 +808,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> MaxGadget<F, NUM_BYTES> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         lhs: F,
         rhs: F,

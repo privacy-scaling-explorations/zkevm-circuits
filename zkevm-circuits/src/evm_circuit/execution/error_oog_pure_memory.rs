@@ -7,14 +7,14 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
-            Cell, Word,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGPureMemoryGadget<F> {
@@ -96,7 +96,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

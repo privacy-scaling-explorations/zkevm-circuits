@@ -23,9 +23,9 @@ impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
 
 #[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
-    Range16 = 1,
+    Range256 = 0,
+    Range16,
     Range32,
-    Range256,
     Range512,
     SignByte,
     BitwiseAnd,
@@ -37,9 +37,9 @@ pub enum FixedTableTag {
 impl FixedTableTag {
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
+            Self::Range256,
             Self::Range16,
             Self::Range32,
-            Self::Range256,
             Self::Range512,
             Self::SignByte,
             Self::BitwiseAnd,
@@ -54,47 +54,47 @@ impl FixedTableTag {
     pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
+            Self::Range256 => {
+                Box::new((0..256).map(move |value| {
+                    [F::from(value), F::zero(), F::zero(), tag]
+                }))
+            }
             Self::Range16 => {
                 Box::new((0..16).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
+                    [F::from(value), F::zero(), F::zero(), tag]
                 }))
             }
             Self::Range32 => {
                 Box::new((0..32).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
-                }))
-            }
-            Self::Range256 => {
-                Box::new((0..256).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
+                    [F::from(value), F::zero(), F::zero(), tag]
                 }))
             }
             Self::Range512 => {
                 Box::new((0..512).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
+                    [F::from(value), F::zero(), F::zero(), tag]
                 }))
             }
             Self::SignByte => Box::new((0..256).map(move |value| {
                 [
-                    tag,
                     F::from(value),
                     F::from((value >> 7) * 0xFFu64),
                     F::zero(),
+                    tag,
                 ]
             })),
             Self::BitwiseAnd => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    [tag, F::from(lhs), F::from(rhs), F::from(lhs & rhs)]
+                    [F::from(lhs), F::from(rhs), F::from(lhs & rhs), tag]
                 })
             })),
             Self::BitwiseOr => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    [tag, F::from(lhs), F::from(rhs), F::from(lhs | rhs)]
+                    [F::from(lhs), F::from(rhs), F::from(lhs | rhs), tag]
                 })
             })),
             Self::BitwiseXor => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)]
+                    [F::from(lhs), F::from(rhs), F::from(lhs ^ rhs), tag]
                 })
             })),
             Self::ResponsibleOpcode => Box::new(
@@ -102,10 +102,10 @@ impl FixedTableTag {
                     execution_state.responsible_opcodes().into_iter().map(
                         move |opcode| {
                             [
-                                tag,
                                 F::from(execution_state.as_u64()),
                                 F::from(opcode.as_u64()),
                                 F::zero(),
+                                tag,
                             ]
                         },
                     )
@@ -285,7 +285,7 @@ impl<F: FieldExt> Lookup<F> {
     pub(crate) fn input_exprs(&self) -> Vec<Expression<F>> {
         match self {
             Self::Fixed { tag, values } => {
-                [vec![tag.clone()], values.to_vec()].concat()
+                [values.to_vec(), vec![tag.clone()]].concat()
             }
             Self::Tx {
                 id,

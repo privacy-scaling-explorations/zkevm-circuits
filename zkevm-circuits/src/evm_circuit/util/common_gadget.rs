@@ -1,3 +1,4 @@
+use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::MAX_GAS_SIZE_IN_BYTES,
@@ -16,7 +17,6 @@ use crate::{
 use bus_mapping::eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
-    circuit::Region,
     plonk::{Error, Expression},
 };
 
@@ -83,7 +83,7 @@ impl<F: FieldExt> SameContextGadget<F> {
 
     pub(crate) fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -166,7 +166,7 @@ impl<F: FieldExt> TransferWithGasFeeGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         (sender_balance, sender_balance_prev): (U256, U256),
         (receiver_balance, receiver_balance_prev): (U256, U256),

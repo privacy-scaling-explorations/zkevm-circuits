@@ -11,7 +11,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
-            select, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +21,7 @@ use bus_mapping::{
     eth_types::{ToLittleEndian, ToScalar},
     evm::GasCost,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -224,7 +224,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction<F>,

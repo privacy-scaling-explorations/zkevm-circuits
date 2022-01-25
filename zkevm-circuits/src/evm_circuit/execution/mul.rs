@@ -8,12 +8,13 @@ use crate::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             math_gadget::MulWordsGadget,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 // MulGadget verifies MUL: a * b mod 2^256 is equal to c,
 #[derive(Clone, Debug)]
@@ -64,7 +65,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

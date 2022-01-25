@@ -8,7 +8,7 @@ use crate::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            sum, Word,
+            sum, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -16,7 +16,7 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ByteGadget<F> {
@@ -102,7 +102,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

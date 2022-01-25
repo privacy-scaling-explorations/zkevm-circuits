@@ -11,14 +11,14 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsZeroGadget,
-            select, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -91,7 +91,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,

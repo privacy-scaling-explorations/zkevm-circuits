@@ -7,12 +7,13 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2::{arithmetic::FieldExt, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpdestGadget<F> {
@@ -43,7 +44,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         _: &Block<F>,
         _: &Transaction<F>,
