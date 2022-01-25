@@ -6,7 +6,10 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
+use crate::{
+    helpers::into_words_expr,
+    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtensionNodeConfig {}
@@ -19,11 +22,14 @@ pub(crate) struct ExtensionNodeChip<F> {
 impl<F: FieldExt> ExtensionNodeChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        not_first_level: Column<Fixed>,
+        q_not_first: Column<Fixed>,
+        is_last_branch_child: Column<Advice>,
         is_extension_node: Column<Advice>,
+        c_advices: [Column<Advice>; HASH_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        is_s: bool,
     ) -> ExtensionNodeConfig {
         let config = ExtensionNodeConfig {};
         let one = Expression::Constant(F::from(1_u64));
@@ -107,42 +113,60 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
         // Check whether branch hash is in extension node row.
         meta.lookup_any(|meta| {
-            let not_first_level =
-                meta.query_fixed(not_first_level, Rotation::cur());
-            // TODO: not_first_level?
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
 
-            let acc = meta.query_advice(acc, Rotation(-2));
+            let mut rot_into_last_child = -1;
+            if !is_s {
+                rot_into_last_child = -2;
+            }
 
-            let is_extension_node =
-                meta.query_advice(is_extension_node, Rotation(-18));
+            // We need to do the lookup only if we are in the last branch child.
+            let is_after_last_branch_child = meta.query_advice(
+                is_last_branch_child,
+                Rotation(rot_into_last_child),
+            );
+
+            // is_extension_node is in branch init row
+            let mut is_extension_node_cur =
+                meta.query_advice(is_extension_node, Rotation(-17));
+            if !is_s {
+                is_extension_node_cur =
+                    meta.query_advice(is_extension_node, Rotation(-18));
+            }
 
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+            let acc = meta.query_advice(acc, Rotation(rot_into_last_child));
             let c128 = Expression::Constant(F::from(128));
-            let mult = meta.query_advice(acc_mult, Rotation(-2));
+            let mult =
+                meta.query_advice(acc_mult, Rotation(rot_into_last_child));
             let branch_acc = acc + c128 * mult;
 
             let mut constraints = vec![];
             constraints.push((
-                not_first_level.clone()
-                    * is_extension_node.clone()
+                q_not_first.clone()
+                    * is_after_last_branch_child.clone()
+                    * is_extension_node_cur.clone()
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            // TODO: express ext row c_advices in words
-            /*
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                // Any rotation that lands into branch can be used instead of -19.
-                let keccak = meta.query_advice(*column, Rotation(-19));
+
+            let mut sc_hash = vec![];
+            // Note: extension node has branch hash always in c_advices.
+            for column in c_advices.iter() {
+                sc_hash.push(meta.query_advice(*column, Rotation::cur()));
+            }
+            let words = into_words_expr(sc_hash);
+            for (ind, word) in words.iter().enumerate() {
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
-                    not_first_level.clone()
-                        * is_extension_node.clone()
-                        * keccak,
+                    q_not_first.clone()
+                        * is_after_last_branch_child.clone()
+                        * is_extension_node_cur.clone()
+                        * word.clone(),
                     keccak_table_i,
                 ));
             }
-            */
 
             constraints
         });

@@ -346,16 +346,29 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
         );
 
-        /* TODO
         ExtensionNodeChip::<F>::configure(
             meta,
-            not_first_level,
+            q_not_first,
+            is_last_branch_child,
             s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            c_advices,
             acc_s,
             acc_mult_s,
             keccak_table,
+            true,
         );
-        */
+
+        ExtensionNodeChip::<F>::configure(
+            meta,
+            q_not_first,
+            is_last_branch_child,
+            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            c_advices,
+            acc_c,
+            acc_mult_c,
+            keccak_table,
+            false,
+        );
 
         StorageRootChip::<F>::configure(
             meta,

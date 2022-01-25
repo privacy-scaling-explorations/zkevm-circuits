@@ -1,7 +1,7 @@
 use halo2::{
     circuit::Chip,
     plonk::{
-        Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells, Selector,
+        Advice, Column, ConstraintSystem, Expression, Fixed, Selector,
     },
     poly::Rotation,
 };
