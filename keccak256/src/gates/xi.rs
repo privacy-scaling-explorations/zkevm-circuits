@@ -77,7 +77,7 @@ impl<F: FieldExt> XiConfig<F> {
         layouter.assign_region(
             || "Xi assignation",
             |mut region| {
-                let mut offset = 0;
+                let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
                 for (idx, lane) in state.iter().enumerate() {
                     let obtained_cell = region.assign_advice(
