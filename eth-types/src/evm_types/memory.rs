@@ -1,6 +1,6 @@
 //! Doc this
-use crate::eth_types::{DebugByte, ToBigEndian, Word};
 use crate::Error;
+use crate::{DebugByte, ToBigEndian, Word};
 use core::convert::TryFrom;
 use core::ops::{
     Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign,
@@ -10,7 +10,7 @@ use std::fmt;
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) usize);
+pub struct MemoryAddress(pub usize);
 
 impl fmt::Debug for MemoryAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -168,7 +168,7 @@ define_mul_assign_variants!(LHS = MemoryAddress, RHS = MemoryAddress);
 /// Represents a snapshot of the EVM memory state at a certain
 /// execution step height.
 #[derive(Clone, Eq, PartialEq)]
-pub struct Memory(pub(crate) Vec<u8>);
+pub struct Memory(pub Vec<u8>);
 
 impl fmt::Debug for Memory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -276,11 +276,6 @@ impl Memory {
             &self[addr..addr + MemoryAddress::from(32)],
         ))
     }
-
-    /// Returns the size of memory in words
-    pub fn size(&self) -> usize {
-        self.0.len() >> 5
-    }
 }
 
 #[cfg(test)]
@@ -344,21 +339,6 @@ mod memory_tests {
             mem_map.read_word(MemoryAddress::from(0x40))?,
             Word::from(0x80)
         );
-
-        Ok(())
-    }
-
-    #[test]
-    fn mem_size_works() -> Result<(), Error> {
-        let mem_map = Memory(
-            [Word::from(0), Word::from(0), Word::from(0x80)]
-                .iter()
-                .flat_map(|w| w.to_be_bytes())
-                .collect(),
-        );
-
-        // There are 3 words in memory
-        assert_eq!(mem_map.size(), 3);
 
         Ok(())
     }

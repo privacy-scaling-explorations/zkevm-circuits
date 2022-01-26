@@ -5,7 +5,7 @@ use crate::{
             AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
             RwTableTag, Table, TxContextFieldTag,
         },
-        util::{Cell, Word},
+        util::{Cell, RandomLinearCombination, Word},
     },
     util::Expr,
 };
@@ -44,7 +44,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
-    pub(crate) memory_size: Transition<Expression<F>>,
+    pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) state_write_counter: Transition<Expression<F>>,
 }
 
@@ -56,7 +56,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
-    pub(crate) lookups: Vec<Lookup<F>>,
+    pub(crate) lookups: Vec<(&'static str, Lookup<F>)>,
     rw_counter_offset: usize,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
@@ -159,7 +159,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_word(&mut self) -> Word<F> {
-        Word::new(self.query_bytes(), self.power_of_randomness)
+        self.query_rlc()
+    }
+
+    pub(crate) fn query_rlc<const N: usize>(
+        &mut self,
+    ) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(
+            self.query_bytes(),
+            self.power_of_randomness,
+        )
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -286,10 +295,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 step_state_transition.gas_left,
             ),
             (
-                "State transition constrain of memory_size",
-                &self.curr.state.memory_size,
-                &self.next.state.memory_size,
-                step_state_transition.memory_size,
+                "State transition constrain of memory_word_size",
+                &self.curr.state.memory_word_size,
+                &self.next.state.memory_word_size,
+                step_state_transition.memory_word_size,
             ),
             (
                 "State transition constrain of state_write_counter",
@@ -313,17 +322,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Fixed
 
     pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {
-        let tag = match range {
-            16 => FixedTableTag::Range16,
-            32 => FixedTableTag::Range32,
-            256 => FixedTableTag::Range256,
-            512 => FixedTableTag::Range512,
+        let (name, tag) = match range {
+            16 => ("Range16", FixedTableTag::Range16),
+            32 => ("Range32", FixedTableTag::Range32),
+            256 => ("Range256", FixedTableTag::Range256),
+            512 => ("Range512", FixedTableTag::Range512),
             _ => unimplemented!(),
         };
-        self.add_lookup(Lookup::Fixed {
-            tag: tag.expr(),
-            values: [value, 0.expr(), 0.expr()],
-        });
+        self.add_lookup(
+            name,
+            Lookup::Fixed {
+                tag: tag.expr(),
+                values: [value, 0.expr(), 0.expr()],
+            },
+        );
     }
 
     // Opcode
@@ -355,6 +367,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             is_root_create.clone(),
         );
         self.add_lookup(
+            "Opcode lookup",
             Lookup::Bytecode {
                 hash: self.curr.state.opcode_source.expr(),
                 index,
@@ -393,12 +406,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         field_tag: Expression<F>,
         value: Expression<F>,
     ) {
-        self.add_lookup(Lookup::Tx {
-            id,
-            field_tag,
-            index: 0.expr(),
-            value,
-        });
+        self.add_lookup(
+            "Tx lookup",
+            Lookup::Tx {
+                id,
+                field_tag,
+                index: 0.expr(),
+                value,
+            },
+        );
     }
 
     // block
@@ -408,11 +424,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         number: Option<Expression<F>>,
         val: Expression<F>,
     ) {
-        self.add_lookup(Lookup::Block {
-            field_tag: tag,
-            number: number.unwrap_or_else(|| 0.expr()),
-            value: val,
-        });
+        self.add_lookup(
+            "Block lookup",
+            Lookup::Block {
+                field_tag: tag,
+                number: number.unwrap_or_else(|| 0.expr()),
+                value: val,
+            },
+        );
     }
 
     // Rw
@@ -421,28 +440,34 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     /// useful for state reversion or dummuy lookup.
     fn rw_lookup_with_counter(
         &mut self,
+        name: &'static str,
         counter: Expression<F>,
         is_write: Expression<F>,
         tag: RwTableTag,
         values: [Expression<F>; 5],
     ) {
-        self.add_lookup(Lookup::Rw {
-            counter,
-            is_write,
-            tag: tag.expr(),
-            values,
-        });
+        self.add_lookup(
+            name,
+            Lookup::Rw {
+                counter,
+                is_write,
+                tag: tag.expr(),
+                values,
+            },
+        );
     }
 
     /// Add a Lookup::Rw and increase the rw_counter_offset, useful in normal
     /// cases.
     fn rw_lookup(
         &mut self,
+        name: &'static str,
         is_write: Expression<F>,
         tag: RwTableTag,
         values: [Expression<F>; 5],
     ) {
         self.rw_lookup_with_counter(
+            name,
             self.curr.state.rw_counter.expr() + self.rw_counter_offset.expr(),
             is_write,
             tag,
@@ -453,12 +478,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     fn state_write_with_reversion(
         &mut self,
+        name: &'static str,
         tag: RwTableTag,
         mut values: [Expression<F>; 5],
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) {
-        self.rw_lookup(true.expr(), tag, values.clone());
+        self.rw_lookup(name, true.expr(), tag, values.clone());
 
         // Revert if is_persistent is 0
         self.condition(1.expr() - is_persistent, |cb| {
@@ -476,6 +502,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             }
 
             cb.rw_lookup_with_counter(
+                name,
                 rw_counter_end_of_reversion - state_write_counter,
                 true.expr(),
                 tag,
@@ -496,6 +523,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
     ) {
         self.rw_lookup(
+            "AccountAccessList write",
             true.expr(),
             RwTableTag::TxAccessListAccount,
             [tx_id, account_address, value, value_prev, 0.expr()],
@@ -511,6 +539,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value: Expression<F>,
     ) {
         self.rw_lookup(
+            "Account read",
             false.expr(),
             RwTableTag::Account,
             [
@@ -531,6 +560,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
     ) {
         self.rw_lookup(
+            "Account write",
             true.expr(),
             RwTableTag::Account,
             [
@@ -553,6 +583,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         rw_counter_end_of_reversion: Expression<F>,
     ) {
         self.state_write_with_reversion(
+            "Account write with reversion",
             RwTableTag::Account,
             [
                 account_address,
@@ -585,6 +616,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value: Expression<F>,
     ) {
         self.rw_lookup(
+            "CallContext lookup",
             false.expr(),
             RwTableTag::CallContext,
             [
@@ -620,6 +652,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value: Expression<F>,
     ) {
         self.rw_lookup(
+            "Stack lookup",
             is_write,
             RwTableTag::Stack,
             [
@@ -641,6 +674,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         byte: Expression<F>,
     ) {
         self.rw_lookup(
+            "Memory lookup",
             is_write,
             RwTableTag::Memory,
             [
@@ -661,6 +695,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         byte: Expression<F>,
     ) {
         self.rw_lookup_with_counter(
+            "Memory lookup",
             rw_counter,
             is_write,
             RwTableTag::Memory,
@@ -676,10 +711,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Validation
 
-    pub(crate) fn validate_degree(&self, degree: usize) {
+    pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         assert!(
             degree <= MAX_DEGREE,
-            "Expression degree too high: {} > {}",
+            "Expression {} degree too high: {} > {}",
+            name,
             degree,
             MAX_DEGREE,
         );
@@ -724,7 +760,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let constraint =
             self.rebuild_constraint(name, constraint, MAX_DEGREE);
 
-        self.validate_degree(constraint.degree());
+        self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
     }
 
@@ -737,11 +773,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
         };
-        self.validate_degree(constraint.degree());
+        self.validate_degree(constraint.degree(), name);
         self.constraints_first_step.push((name, constraint));
     }
 
-    pub(crate) fn add_lookup(&mut self, lookup: Lookup<F>) {
+    pub(crate) fn add_lookup(&mut self, name: &'static str, lookup: Lookup<F>) {
         let lookup = match &self.condition {
             Some(condition) => lookup.conditional(condition.clone()),
             None => lookup,
@@ -762,7 +798,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             CellType::Lookup(lookup.table()),
         );
 
-        self.lookups.push(lookup);
+        self.lookups.push((name, lookup));
     }
 
     pub(crate) fn add_intermediate_constraint(

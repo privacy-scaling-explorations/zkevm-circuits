@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, Word};
 use crate::{operation::RW, Error};
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSIZE`](crate::evm::OpcodeId::MSIZE)
@@ -16,12 +16,10 @@ impl Opcode for Msize {
     ) -> Result<(), Error> {
         let step = &steps[0];
 
-        // Get value result from next step's memory and do stack write
-        let mem_size_value = Word::from(steps[1].memory.size() as u32);
         state.push_stack_op(
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
-            mem_size_value,
+            steps[1].stack.last()?,
         );
 
         Ok(())
@@ -34,10 +32,10 @@ mod msize_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::Word,
-        evm::StackAddress,
         mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::Word;
 
     #[test]
     fn msize_opcode_impl() -> Result<(), Error> {
@@ -72,7 +70,7 @@ mod msize_tests {
         state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1023),
-            Word::from(0x3_u64),
+            Word::from(96), // 3 words, 96 bytes
         );
 
         tx.steps_mut().push(step);

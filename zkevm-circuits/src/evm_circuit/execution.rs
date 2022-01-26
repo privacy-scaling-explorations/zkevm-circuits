@@ -35,6 +35,7 @@ mod mul;
 mod pc;
 mod pop;
 mod push;
+mod signed_comparator;
 mod signextend;
 mod stop;
 mod swap;
@@ -56,6 +57,7 @@ use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
@@ -101,6 +103,7 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
@@ -207,6 +210,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
@@ -359,14 +363,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_idx];
+                        let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
                         if offset == 0 {
                             self.q_step_first.enable(&mut region, offset)?;
                         }
 
-                        self.assign_exec_step_temp(
+                        self.assign_exec_step(
                             &mut region,
                             offset,
                             block,
@@ -399,14 +403,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_idx];
+                        let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
-                        //if offset == 0 {
-                        //    self.q_step_first.enable(&mut region, offset)?;
-                        //}
-
-                        self.assign_exec_step_temp(
+                        self.assign_exec_step(
                             &mut region,
                             offset,
                             block,
@@ -423,7 +423,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         )
     }
 
-    fn assign_exec_step_temp(
+    fn assign_exec_step(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -463,6 +463,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 assign_exec_step!(self.signextend_gadget)
             }
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
+            ExecutionState::SCMP => {
+                assign_exec_step!(self.signed_comparator_gadget)
+            }
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
