@@ -154,7 +154,7 @@ pub enum RwTableTag {
 }
 
 impl RwTableTag {
-    pub fn can_write_with_reversion(self) -> bool {
+    pub fn is_reversible(self) -> bool {
         return matches!(
             self,
             RwTableTag::TxAccessListAccount

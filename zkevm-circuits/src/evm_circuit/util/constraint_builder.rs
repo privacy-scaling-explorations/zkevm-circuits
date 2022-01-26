@@ -501,8 +501,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             // Calculate state_write_counter so far
             let state_write_counter = cb.curr.state.state_write_counter.expr()
                 + cb.state_write_counter_offset.expr();
+
             // Swap value and value_prev respect to tag
-            if tag.can_write_with_reversion() {
+            if tag.is_reversible() {
                 values.swap(3, 4)
             };
 
