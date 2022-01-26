@@ -155,15 +155,15 @@ pub enum RwTableTag {
 
 impl RwTableTag {
     pub fn can_write_with_reversion(self) -> bool {
-        return match self {
-            RwTableTag::TxAccessListAccount => true,
-            RwTableTag::TxAccessListStorageSlot => true,
-            RwTableTag::TxRefund => true,
-            RwTableTag::Account => true,
-            RwTableTag::AccountStorage => true,
-            RwTableTag::AccountDestructed => true,
-            _ => false,
-        };
+        return matches!(
+            self,
+            RwTableTag::TxAccessListAccount
+                | RwTableTag::TxAccessListStorageSlot
+                | RwTableTag::TxRefund
+                | RwTableTag::Account
+                | RwTableTag::AccountStorage
+                | RwTableTag::AccountDestructed
+        );
     }
 }
 
