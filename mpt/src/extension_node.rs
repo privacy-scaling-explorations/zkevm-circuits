@@ -342,6 +342,44 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
+        // Check whether extension node S and C have the same key.
+        if !is_s {
+            meta.create_gate("Extension node key same for S and C", |meta| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
+
+                let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation::prev());
+                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+                let s_rlp2_prev = meta.query_advice(s_rlp2, Rotation::prev());
+                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+
+                constraints.push((
+                    "s_rlp1",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (s_rlp1 - s_rlp1_prev),
+                ));
+                constraints.push((
+                    "s_rlp2",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (s_rlp2 - s_rlp2_prev),
+                ));
+                for col in s_advices.iter() {
+                    let s_prev = meta.query_advice(*col, Rotation::prev());
+                    let s = meta.query_advice(*col, Rotation::cur());
+                    constraints.push((
+                        "s_advices",
+                        q_not_first.clone() * q_enable.clone() * (s - s_prev),
+                    ));
+                }
+
+                constraints
+            });
+        }
+
         // Check whether extension node hash is in parent branch.
         meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);

@@ -23,7 +23,8 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_NODE_POS,
+        IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
+        IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
         IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET,
     },
     storage_root_in_account_leaf::StorageRootChip,
@@ -1271,6 +1272,18 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
                     let mut rlp_len_rem_c: i32 = 0;
 
+                    let compute_acc_and_mult =
+                        |row: &Vec<u8>,
+                         acc: &mut F,
+                         mult: &mut F,
+                         start: usize,
+                         len: usize| {
+                            for i in 0..len {
+                                *acc += F::from(row[start + i] as u64) * *mult;
+                                *mult *= self.acc_r;
+                            }
+                        };
+
                     // TODO: constraints for not_first_level - avoid having not_first_level
                     // being set wrongly (further down in rows)
                     let mut not_first_level = F::zero();
@@ -1475,6 +1488,52 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
 
                             if node_index == 0 {
+                                /*
+                                if witness[offset - 1][IS_EXTENSION_NODE_POS]
+                                    == 1
+                                // extension node
+                                {
+                                    // For key RLC, we need to first take into account
+                                    // extension node key.
+                                    // witness[offset + 16]
+                                    let tag = witness[ind + 16][0];
+                                    println!("{:?}", tag);
+
+                                    let is_even = witness[offset - 1]
+                                        [IS_EXTENSION_EVEN_KEY_LEN_POS];
+                                    let is_odd = witness[offset - 1]
+                                        [IS_EXTENSION_ODD_KEY_LEN_POS];
+                                    let is_short = witness[offset - 1]
+                                        [IS_EXTENSION_KEY_SHORT_POS];
+                                    let is_long = witness[offset - 1]
+                                        [IS_EXTENSION_KEY_LONG_POS];
+                                    if key_rlc_sel {
+                                        if is_even == 1 {
+                                            if is_long == 1 {
+                                                compute_acc_and_mult(
+                                                    row,
+                                                    &mut acc_s,
+                                                    &mut acc_mult_s,
+                                                    0,
+                                                    1,
+                                                );
+                                            }
+                                        }
+
+                                        key_rlc +=
+                                            F::from(modified_node as u64)
+                                                * F::from(16)
+                                                * key_rlc_mult;
+                                        // key_rlc_mult stays the same
+                                    } else {
+                                        key_rlc +=
+                                            F::from(modified_node as u64)
+                                                * key_rlc_mult;
+                                        key_rlc_mult *= self.acc_r;
+                                    }
+                                    // key_rlc_sel = !key_rlc_sel; // TODO
+                                }
+                                */
                                 if key_rlc_sel {
                                     key_rlc += F::from(modified_node as u64)
                                         * F::from(16)
@@ -1576,7 +1635,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             let c128 = F::from(128_u64);
                             let c160 = F::from(160_u64);
 
-                            let compute_acc_and_mult =
+                            let compute_branch_acc_and_mult =
                                 |branch_acc: &mut F,
                                  branch_mult: &mut F,
                                  rlp_start: usize,
@@ -1598,13 +1657,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             // TODO: add branch ValueNode info
 
-                            compute_acc_and_mult(
+                            compute_branch_acc_and_mult(
                                 &mut acc_s,
                                 &mut acc_mult_s,
                                 S_RLP_START,
                                 S_START,
                             );
-                            compute_acc_and_mult(
+                            compute_branch_acc_and_mult(
                                 &mut acc_c,
                                 &mut acc_mult_c,
                                 C_RLP_START,
@@ -1732,19 +1791,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                         .ok();
                                 };
 
-                            // assign leaf accumulator that will be used as keccak input
-                            let compute_acc_and_mult =
-                                |acc: &mut F,
-                                 mult: &mut F,
-                                 start: usize,
-                                 len: usize| {
-                                    for i in 0..len {
-                                        *acc += F::from(row[start + i] as u64)
-                                            * *mult;
-                                        *mult *= self.acc_r;
-                                    }
-                                };
-
                             let compute_key_rlc =
                                 |key_rlc: &mut F,
                                  key_rlc_mult: &mut F,
@@ -1759,6 +1805,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                         let len = row[start] as usize - 128;
                                         compute_acc_and_mult(
+                                            row,
                                             key_rlc,
                                             key_rlc_mult,
                                             start + 2,
@@ -1767,6 +1814,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     } else {
                                         let len = row[start] as usize - 128;
                                         compute_acc_and_mult(
+                                            row,
                                             key_rlc,
                                             key_rlc_mult,
                                             start + 2,
@@ -1794,6 +1842,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     len = (row[1] - 128) as usize + 2;
                                 }
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     0,
@@ -1876,6 +1925,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row[row.len() - 1] == 7 {
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     S_START - 2,
@@ -1883,6 +1933,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 );
                                 // c_rlp1, c_rlp2
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     C_START - 2,
@@ -1890,6 +1941,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 );
                                 // nonce
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     S_START,
@@ -1900,6 +1952,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 let acc_mult_tmp = acc_mult_s;
                                 // balance
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     C_START,
@@ -1929,6 +1982,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                                 // storage
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     S_START - 1,
@@ -1936,6 +1990,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 );
                                 // code hash
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     C_START - 1,
@@ -1966,6 +2021,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     len = (row[1] - 128) as usize + 2;
                                 }
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     0,
@@ -1998,6 +2054,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     len = (row[1] - 128) as usize + 2;
                                 }
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_s,
                                     &mut acc_mult_s,
                                     0,
@@ -2008,6 +2065,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 acc_c = acc_s;
                                 acc_mult_c = acc_mult_s;
                                 compute_acc_and_mult(
+                                    row,
                                     &mut acc_c,
                                     &mut acc_mult_c,
                                     C_RLP_START + 1,
