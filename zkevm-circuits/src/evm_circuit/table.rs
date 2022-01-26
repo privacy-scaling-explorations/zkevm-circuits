@@ -153,6 +153,20 @@ pub enum RwTableTag {
     Memory,
 }
 
+impl RwTableTag {
+    pub fn can_write_with_reversion(self) -> bool {
+        return match self {
+            RwTableTag::TxAccessListAccount => true,
+            RwTableTag::TxAccessListStorageSlot => true,
+            RwTableTag::TxRefund => true,
+            RwTableTag::Account => true,
+            RwTableTag::AccountStorage => true,
+            RwTableTag::AccountDestructed => true,
+            _ => false,
+        };
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum AccountFieldTag {
     Nonce = 1,
