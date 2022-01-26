@@ -24,6 +24,9 @@ impl<F: FieldExt> BranchKeyChip<F> {
         not_first_level: Column<Fixed>, // to avoid rotating back when in the first branch (for key rlc)
         is_branch_init: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_extension_node: Column<Advice>,
+        is_extension_key_even: Column<Advice>,
+        is_extension_key_odd: Column<Advice>,
         modified_node: Column<Advice>, // index of the modified node
         // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
         // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
@@ -56,6 +59,12 @@ impl<F: FieldExt> BranchKeyChip<F> {
                 meta.query_advice(is_branch_init, Rotation::prev());
             let modified_node_cur =
                 meta.query_advice(modified_node, Rotation::cur());
+            let is_extension_node =
+                meta.query_advice(is_extension_node, Rotation::prev());
+            let is_extension_key_even =
+                meta.query_advice(is_extension_key_even, Rotation::prev());
+            let is_extension_key_odd =
+                meta.query_advice(is_extension_key_odd, Rotation::prev());
 
             // -2 because we are in the first branch child and -1 is branch init row, -2 is
             // account leaf storage codehash when we are in the first storage proof level
@@ -84,6 +93,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * (one.clone() - is_extension_node.clone())
                     * sel1_cur.clone()
                     * (key_rlc_cur.clone()
                         - key_rlc_prev.clone()
@@ -95,6 +105,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * (one.clone() - is_extension_node.clone())
                     * sel2_cur.clone()
                     * (key_rlc_cur.clone()
                         - key_rlc_prev
@@ -107,6 +118,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * (one.clone() - is_extension_node.clone())
                     * sel1_cur.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
             ));
@@ -115,10 +127,97 @@ impl<F: FieldExt> BranchKeyChip<F> {
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
+                    * (one.clone() - is_extension_node.clone())
                     * sel2_cur.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * acc_r),
             ));
 
+            // Key (which actually means account address) in first level in account proof.
+            constraints.push((
+                "account first level key_rlc",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_cur.clone()
+                        - modified_node_cur.clone() * c16.clone()),
+            ));
+            constraints.push((
+                "account first level key_rlc_mult",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_mult_cur.clone() - one.clone()),
+            ));
+
+            // First storage level.
+            constraints.push((
+                "storage first level key_rlc",
+                q_not_first.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_cur - modified_node_cur * c16),
+            ));
+            constraints.push((
+                "storage first level key_rlc_mult",
+                q_not_first.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * (key_rlc_mult_cur - one.clone()),
+            ));
+
+            // Key RLC for extension node is checked in extension_node,
+            // however, sel1 & sel2 are checked here (to avoid additional rotations).
+
+            // First sel1 is 1, first sel2 is 0 (account proof).
+            constraints.push((
+                "account first level key_rlc sel1",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * (sel1_cur.clone() - one.clone()),
+            ));
+            constraints.push((
+                "account first level key_rlc sel2",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * sel2_cur.clone(),
+            ));
+            // If extension node, sel1 and sel2 in first level depend on the extension key (even/odd).
+            constraints.push((
+                "account first level key_rlc sel1 (extension node)",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level.clone())
+                    * is_extension_node.clone()
+                    * is_branch_init_prev.clone()
+                    * (sel1_cur.clone() - one.clone()),
+            ));
+
+            // First sel1 is 1, first sel2 is 0 (storage proof).
+            constraints.push((
+                "storage first level key_rlc sel1",
+                q_not_first.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * (sel1_cur.clone() - one.clone()),
+            ));
+            constraints.push((
+                "storage first level key_rlc sel2",
+                q_not_first
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * is_branch_init_prev.clone()
+                    * sel2_cur.clone(),
+            ));
+
+            // (sel1, sel2) goes (1,0) -> (0,1) -> (1,0) -> (0,1) -> (1,0) -> ...
             constraints.push((
                 "first branch children sel1 0->1->0->...",
                 not_first_level.clone()
@@ -132,69 +231,6 @@ impl<F: FieldExt> BranchKeyChip<F> {
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
                     * (sel2_cur.clone() + sel2_prev - one.clone()),
-            ));
-
-            // Key (which actually means account address) in first level in account proof.
-            constraints.push((
-                "account first level key_rlc",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_cur.clone()
-                        - modified_node_cur.clone() * c16.clone()),
-            ));
-            constraints.push((
-                "account first level key_rlc_mult",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur.clone() - one.clone()),
-            ));
-            // First sel1 is 1, first sel2 is 0.
-            constraints.push((
-                "account first level key_rlc sel1",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-            constraints.push((
-                "account first level key_rlc sel2",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level)
-                    * is_branch_init_prev.clone()
-                    * sel2_cur.clone(),
-            ));
-
-            // First storage level.
-            constraints.push((
-                "storage first level key_rlc",
-                q_not_first.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_cur - modified_node_cur * c16),
-            ));
-            constraints.push((
-                "storage first level key_rlc_mult",
-                q_not_first.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur - one.clone()),
-            ));
-            // First sel1 is 1, first sel2 is 0.
-            constraints.push((
-                "storage first level key_rlc sel1",
-                q_not_first.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur - one.clone()),
-            ));
-            constraints.push((
-                "storage first level key_rlc sel2",
-                q_not_first
-                    * is_account_leaf_storage_codehash_prev
-                    * is_branch_init_prev
-                    * sel2_cur,
             ));
 
             constraints

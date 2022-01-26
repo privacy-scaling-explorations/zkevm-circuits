@@ -22,7 +22,10 @@ use crate::{
     leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
-    param::{IS_EXTENSION_NODE_POS, LAYOUT_OFFSET},
+    param::{
+        IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_NODE_POS,
+        IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET,
+    },
     storage_root_in_account_leaf::StorageRootChip,
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
@@ -288,6 +291,9 @@ impl<F: FieldExt> MPTConfig<F> {
             not_first_level,
             is_branch_init,
             is_account_leaf_storage_codehash_c,
+            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            s_advices[IS_EXTENSION_EVEN_KEY_LEN_POS - LAYOUT_OFFSET],
+            s_advices[IS_EXTENSION_ODD_KEY_LEN_POS - LAYOUT_OFFSET],
             modified_node,
             sel1,
             sel2,
@@ -373,6 +379,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_c,
             keccak_table,
             s_keccak,
+            fixed_table.clone(),
             r_table.clone(),
             true,
         );
@@ -404,6 +411,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_c,
             keccak_table,
             c_keccak,
+            fixed_table.clone(),
             r_table.clone(),
             false,
         );
@@ -1265,6 +1273,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
                     let mut rlp_len_rem_c: i32 = 0;
 
+                    // TODO: constraints for not_first_level - avoid having not_first_level
+                    // being set wrongly (further down in rows)
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness

@@ -22,3 +22,4 @@ pub const FIRST_NIBBLE_POS: usize = 13;
 pub const IS_EXTENSION_NODE_POS: usize = 14;
 pub const IS_EXTENSION_EVEN_KEY_LEN_POS: usize = 15;
 pub const IS_EXTENSION_ODD_KEY_LEN_POS: usize = 16;
+pub const EXTENSION_KEY_LEN_HALF_POS: usize = 17;

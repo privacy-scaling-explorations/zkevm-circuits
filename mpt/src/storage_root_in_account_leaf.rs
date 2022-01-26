@@ -33,6 +33,8 @@ impl<F: FieldExt> StorageRootChip<F> {
     ) -> StorageRootConfig {
         let config = StorageRootConfig {};
 
+        // TODO: if there is extension node instead of branch at first level
+
         // Storage first level branch hash - root in last account leaf.
         meta.lookup_any(|meta| {
             let not_first_level =
