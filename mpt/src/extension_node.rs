@@ -12,9 +12,10 @@ use crate::{
     helpers::{compute_rlc, into_words_expr},
     mpt::FixedTableTag,
     param::{
-        EXTENSION_KEY_LEN_HALF_POS, HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS,
-        IS_EXTENSION_NODE_POS, IS_EXTENSION_ODD_KEY_LEN_POS,
-        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
+        HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
+        IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
+        IS_EXTENSION_ODD_KEY_LEN_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+        LAYOUT_OFFSET,
     },
 };
 
@@ -116,14 +117,13 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         acc_mult_c: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-        fixed_table: [Column<Fixed>; 3],
         r_table: Vec<Expression<F>>,
         is_s: bool,
     ) -> ExtensionNodeConfig {
         let config = ExtensionNodeConfig {};
         let one = Expression::Constant(F::from(1_u64));
         let c128 = Expression::Constant(F::from(128));
-        let c228 = Expression::Constant(F::from(228));
+        let c226 = Expression::Constant(F::from(226));
         let mut rot_into_branch_init = -17;
         if !is_s {
             rot_into_branch_init = -18;
@@ -144,6 +144,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
+
+            // NOTE: is_key_even and is_key_odd is for number of nibbles that
+            // are compactly encoded.
             let is_key_even = meta.query_advice(
                 s_advices[IS_EXTENSION_EVEN_KEY_LEN_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
@@ -152,8 +155,12 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 s_advices[IS_EXTENSION_ODD_KEY_LEN_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
-            let key_len_half = meta.query_advice(
-                s_advices[EXTENSION_KEY_LEN_HALF_POS - LAYOUT_OFFSET],
+            let is_short = meta.query_advice(
+                s_advices[IS_EXTENSION_KEY_SHORT_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_long = meta.query_advice(
+                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
             let bool_check_is_extension_node = is_extension_node.clone()
@@ -162,6 +169,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 is_key_even.clone() * (one.clone() - is_key_even.clone());
             let bool_check_is_key_odd =
                 is_key_odd.clone() * (one.clone() - is_key_odd.clone());
+            let bool_check_is_short =
+                is_short.clone() * (one.clone() - is_short.clone());
+            let bool_check_is_long =
+                is_long.clone() * (one.clone() - is_long.clone());
 
             constraints.push((
                 "bool is_extension_node",
@@ -177,6 +188,14 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 "bool is_key_odd",
                 q_not_first.clone() * q_enable.clone() * bool_check_is_key_odd,
             ));
+            constraints.push((
+                "bool is_short",
+                q_not_first.clone() * q_enable.clone() * bool_check_is_short,
+            ));
+            constraints.push((
+                "bool is_long",
+                q_not_first.clone() * q_enable.clone() * bool_check_is_long,
+            ));
 
             constraints.push((
                 "is_key_even + is_key_odd = 1",
@@ -184,74 +203,57 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     * q_enable.clone()
                     * (is_key_even.clone() + is_key_odd.clone() - one.clone()),
             ));
+            constraints.push((
+                "is_short + is_long = 1",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (is_short.clone() + is_long.clone() - one.clone()),
+            ));
 
             /*
-            To prove that key_len is even we need to prove there exists key_len_half
-            such that key_len = 2 * key_len_half && key_len_half < (field_modulus-1)/2.
-            To prove that key_len is odd we need to prove there exists key_len_half
-            such that key_len-1 = 2 * key_len_half && key_len_half < (field_modulus-1)/2.
-            We check key_len_half being small enough in the lookup below.
-
-            If key_len = 1
+            If key_len = 1 (is_short = 1, is_long = 0)
             [226,16,160,172,105,12...
             there is no byte specifying key length, but in this case the first byte is 226.
             So, when s_rlp1 = 226, we need to ensure is_key_odd = 1, is_key_even = 0
             (is_key_even = 0 can be omitted because of the constraints above).
 
-            If key_len > 1
+            If key_len > 1 (is_short = 0, is_long = 1)
             [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
             the second byte specifies the key_len (we need to subract 128 to get it).
-
             */
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
 
+            // This prevents setting is_short = 1 when it's not short (s_rlp1 > 226 in that case):
+            // Using this constraints and bool & sum (is_short + is_long) constraints above
+            // the selectors are ensured to be set properly.
             constraints.push((
-                "key_len corresponds to is_key_even and is_key_odd (key len = 1)",
+                "is_short implies s_rlp1 = 226",
                 q_not_first.clone()
                     * q_enable.clone()
-                    * (s_rlp1 - c228) // to ignore this check when key_len > 1
-                    * (is_key_odd.clone() - one.clone())
+                    * is_short.clone()
+                    * (s_rlp1 - c226),
             ));
-
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let key_len = c128.clone() - s_rlp2;
-            let two = Expression::Constant(F::from(2_u64));
-
             constraints.push((
-                "key_len corresponds to is_key_even and is_key_odd (key len > 1)",
+                "is_short implies is_key_odd",
                 q_not_first.clone()
                     * q_enable.clone()
-                    * is_key_even * (key_len.clone() - two.clone() * key_len_half.clone())
-                    * is_key_odd * (key_len - one.clone() - two * key_len_half)
+                    * is_short.clone()
+                    * is_key_odd.clone(),
             ));
 
-            constraints
-        });
-
-        // To prove that key_len is even we need to prove there exists key_len_half
-        // such that key_len = 2 * key_len_half && key_len_half < (field_modulus-1)/2.
-        // However, key_len_half will always be much smaller because key_len can be at
-        // most 64 (because these are nibbles, not bytes).
-        // So we can use FixedTableTag::Range256 which we already have (if Range32 table
-        // is to be added, we could use this one).
-        meta.lookup_any(|meta| {
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let q_enable = q_enable(meta);
-
-            let mut constraints = vec![];
-            let key_len_half = meta.query_advice(
-                s_advices[EXTENSION_KEY_LEN_HALF_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-
+            // This prevents setting is_key_even = 1 when it's not even,
+            // because when it's not even s_advices0 != 0 (hexToCompact adds 16).
+            // Using this constraints and bool & sum (is_key_even + is_key_odd) constraints above
+            // the selectors are ensured to be set properly.
             constraints.push((
-                Expression::Constant(F::from(FixedTableTag::Range256 as u64)),
-                meta.query_fixed(fixed_table[0], Rotation::cur()),
-            ));
-            constraints.push((
-                q_not_first.clone() * q_enable * key_len_half,
-                meta.query_fixed(fixed_table[1], Rotation::cur()),
+                "is_long & is_key_even implies s_advices0 = 0",
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * is_long.clone()
+                    * is_key_even.clone()
+                    * s_advices0,
             ));
 
             constraints

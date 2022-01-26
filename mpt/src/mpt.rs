@@ -379,7 +379,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_c,
             keccak_table,
             s_keccak,
-            fixed_table.clone(),
             r_table.clone(),
             true,
         );
@@ -411,7 +410,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_c,
             keccak_table,
             c_keccak,
-            fixed_table.clone(),
             r_table.clone(),
             false,
         );

@@ -190,12 +190,15 @@ impl<F: FieldExt> BranchKeyChip<F> {
                     * sel2_cur.clone(),
             ));
             // If extension node, sel1 and sel2 in first level depend on the extension key (even/odd).
+            // If key is even, the constraints stay the same. If key is odd, the constraints get
+            // turned around.
             constraints.push((
                 "account first level key_rlc sel1 (extension node)",
                 q_not_first.clone()
                     * (one.clone() - not_first_level.clone())
                     * is_extension_node.clone()
                     * is_branch_init_prev.clone()
+                    * is_extension_key_even.clone()
                     * (sel1_cur.clone() - one.clone()),
             ));
 
