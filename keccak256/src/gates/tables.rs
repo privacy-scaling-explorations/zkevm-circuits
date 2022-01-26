@@ -240,8 +240,11 @@ impl<F: FieldExt> BaseInfo<F> {
             v.reverse();
             v
         };
+        // Use rchunks + rev so that the remainder chunks stay at the big-endian
+        // side
         let input_coefs: Vec<F> = input_chunks
-            .chunks(self.num_chunks)
+            .rchunks(self.num_chunks)
+            .rev()
             .map(|chunks| f_from_radix_be(chunks, self.input_base))
             .collect();
         let convert_chunk = match self.input_base {
@@ -257,7 +260,8 @@ impl<F: FieldExt> BaseInfo<F> {
         };
 
         let output_coefs: Vec<F> = input_chunks
-            .chunks(self.num_chunks)
+            .rchunks(self.num_chunks)
+            .rev()
             .map(|chunks| {
                 let converted_chunks: Vec<u8> =
                     chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
