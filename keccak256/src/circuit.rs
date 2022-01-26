@@ -6,7 +6,7 @@ use super::gates::{
 use crate::{
     arith_helpers::*,
     common::{ABSORB_NEXT_INPUTS, PERMUTATION, ROUND_CONSTANTS},
-    gates::rho_checks::RhoAdvices,
+    gates::tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 use crate::{gates::mixing::MixingConfig, keccak_arith::*};
 use halo2::{
@@ -57,25 +57,9 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
         let rho_config = {
-            let cols: [Column<Advice>; 7] = state[0..7].try_into().unwrap();
-            let adv = RhoAdvices::from(cols);
-            let axiliary = [state[8], state[9]];
-
-            let base13_to_9 = [
-                meta.lookup_table_column(),
-                meta.lookup_table_column(),
-                meta.lookup_table_column(),
-            ];
-            let special =
-                [meta.lookup_table_column(), meta.lookup_table_column()];
-            RhoConfig::configure(
-                meta,
-                state,
-                &adv,
-                axiliary,
-                base13_to_9,
-                special,
-            )
+            let base13_to_9 = Base13toBase9TableConfig::configure(meta);
+            let special_chunk_table = SpecialChunkTableConfig::configure(meta);
+            RhoConfig::configure(meta, state, base13_to_9, special_chunk_table)
         };
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
@@ -182,10 +166,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
             // rho
             state = {
                 // assignment
-                let next_state =
-                    self.rho_config.assign_rotation_checks(layouter, state)?;
-                self.rho_config.assign_region(layouter, next_state)?;
-                next_state
+                self.rho_config.assign_rotation_checks(layouter, state)?
             };
             // Outputs in base-9 which is what Pi requires
 
