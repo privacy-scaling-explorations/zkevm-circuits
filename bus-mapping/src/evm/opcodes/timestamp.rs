@@ -3,11 +3,11 @@ mod timestamp_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        evm::StackAddress,
         mock,
         operation::RW,
         Error,
     };
+    use eth_types::evm_types::StackAddress;
     use pretty_assertions::assert_eq;
 
     #[test]

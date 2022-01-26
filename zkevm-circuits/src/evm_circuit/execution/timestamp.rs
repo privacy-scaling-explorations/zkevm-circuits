@@ -1,4 +1,4 @@
-use crate::evm_circuit::param::NUM_BYTES_U64;
+use crate::evm_circuit::param::N_BYTES_U64;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -22,7 +22,7 @@ use std::convert::TryFrom;
 #[derive(Clone, Debug)]
 pub(crate) struct TimestampGadget<F> {
     same_context: SameContextGadget<F>,
-    value: RandomLinearCombination<F, { NUM_BYTES_U64 }>,
+    value: RandomLinearCombination<F, N_BYTES_U64>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
@@ -90,9 +90,7 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness,
-    };
+    use crate::test_util::run_test_circuits;
     use bus_mapping::bytecode;
 
     fn test_ok() {
@@ -101,8 +99,7 @@ mod test {
             TIMESTAMP
             STOP
         };
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
     #[test]
     fn timestamp_gadget_test() {
