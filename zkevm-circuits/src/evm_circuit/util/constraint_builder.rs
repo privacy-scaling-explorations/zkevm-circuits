@@ -757,8 +757,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             None => constraint,
         };
 
-        let constraint =
-            self.rebuild_constraint(name, constraint, MAX_DEGREE);
+        let constraint = self.rebuild_constraint(name, constraint, MAX_DEGREE);
 
         self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));

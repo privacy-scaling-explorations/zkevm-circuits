@@ -145,7 +145,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     .state
                     .execution_state
                     .iter()
-                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
+                    .fold(1.expr(), |acc, cell| acc - cell.expr()),
             );
 
             // Cells representation for execution_state should be bool.
@@ -153,7 +153,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 step_curr.state.execution_state.iter().map(|cell| {
                     (
                         "Representation for execution_state should be bool",
-                        cell.expr() * (1u64.expr() - cell.expr()),
+                        cell.expr() * (1.expr() - cell.expr()),
                     )
                 });
 
@@ -165,7 +165,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     step_curr.execution_state_selector(ExecutionState::BeginTx);
                 std::iter::once((
                     "First step should be BeginTx",
-                    q_step_first * (begin_tx_selector - 1u64.expr()),
+                    q_step_first * (begin_tx_selector - 1.expr()),
                 ))
             };
 
@@ -328,17 +328,13 @@ impl<F: FieldExt> ExecutionConfig<F> {
             if let CellType::Lookup(table) = column.cell_type {
                 meta.lookup_any(|meta| {
                     let table_expressions = match table {
-                        Table::Fixed => {
-                            fixed_table.table_exprs(meta).to_vec()
-                        }
+                        Table::Fixed => fixed_table.table_exprs(meta).to_vec(),
                         Table::Tx => tx_table.table_exprs(meta).to_vec(),
                         Table::Rw => rw_table.table_exprs(meta).to_vec(),
                         Table::Bytecode => {
                             bytecode_table.table_exprs(meta).to_vec()
                         }
-                        Table::Block => {
-                            block_table.table_exprs(meta).to_vec()
-                        }
+                        Table::Block => block_table.table_exprs(meta).to_vec(),
                     };
                     let table = random_linear_combine(
                         table_expressions,

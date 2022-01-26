@@ -9,7 +9,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
-            select, Word, CachedRegion,
+            select, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
