@@ -166,7 +166,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let mut state = in_state;
 
         // First 23 rounds
-        for round in 0..PERMUTATION {
+        for round in 0..PERMUTATION - 1 {
             // State in base-13
             // theta
             state = {
@@ -202,6 +202,11 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 // assignment
                 self.xi_config.assign_state(layouter, state, out_state)?
             };
+
+            // Last round before Mixing does not run IotaB9 nor BaseConversion
+            if round == PERMUTATION - 2 {
+                break;
+            }
 
             // iota_b9
             state = {
@@ -249,7 +254,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     Some(state_to_state_bigint::<F, ABSORB_NEXT_INPUTS>(state))
                 })
                 .as_ref(),
-            (PERMUTATION - 1).try_into().unwrap(),
+            *ROUND_CONSTANTS.last().unwrap(),
         );
 
         let mix_res = self.mixing_config.assign_state(
@@ -335,7 +340,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 
-    #[ignore]
     #[test]
     fn test_keccak_round() {
         #[derive(Default)]
@@ -388,7 +392,7 @@ mod tests {
                 config.load(&mut layouter)?;
                 let offset: usize = 0;
 
-                let (in_state, flag) = layouter.assign_region(
+                let (in_state, _) = layouter.assign_region(
                     || "Keccak round Wittnes & flag assignation",
                     |mut region| {
                         // Witness `state`
