@@ -343,6 +343,7 @@ mod tests {
                 &self,
                 layouter: &mut impl Layouter<F>,
             ) -> Result<(), Error> {
+                self.keccak_conf.rho_config.load(layouter)?;
                 self.table.load(layouter)?;
                 Ok(())
             }
