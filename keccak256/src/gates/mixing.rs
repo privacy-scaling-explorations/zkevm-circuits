@@ -253,6 +253,11 @@ impl<F: FieldExt> MixingConfig<F> {
                     out_vec.try_into().unwrap()
                 };
 
+                println!(
+                    "OUT_STATE_INSIDE {:#?}",
+                    split_state_cells(out_state)
+                );
+
                 Ok(out_state)
             },
         )
@@ -330,7 +335,7 @@ impl<F: FieldExt> MixingConfig<F> {
             )
         }?;
 
-        self.assign_out_mixing_states(
+        let mixing_res = self.assign_out_mixing_states(
             layouter,
             flag_bool,
             flag,
@@ -338,7 +343,19 @@ impl<F: FieldExt> MixingConfig<F> {
             mix_res,
             non_mix_res,
             out_state,
-        )
+        )?;
+
+        if !flag_bool {
+            println!(
+                "NON MIXING_RES INSIDE {:#?}",
+                split_state_cells(non_mix_res)
+            );
+            println!("MIXING_RES INSIDE {:#?}", split_state_cells(mix_res));
+            return Ok(non_mix_res);
+        } else {
+            println!("MIXING_RES INSIDE {:#?}", split_state_cells(mix_res));
+            Ok(mixing_res)
+        }
     }
 
     /// Copies the `[(Cell,F);25]` to the passed [Column<Advice>; 25].
