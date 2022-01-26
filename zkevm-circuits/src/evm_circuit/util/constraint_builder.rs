@@ -18,9 +18,9 @@ use super::{
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-const MAX_DEGREE: usize = 2;
+const MAX_DEGREE: usize = 3;
 // Degree added for expressions used in lookups.
-const LOOKUP_DEGREE: usize = 1;
+//const LOOKUP_DEGREE: usize = 1;
 
 pub(crate) enum Transition<T> {
     Same,

@@ -112,7 +112,6 @@ impl<F: FieldExt> EvmCircuit<F> {
 mod test {
     use crate::{
         evm_circuit::{
-            param::STEP_HEIGHT,
             table::FixedTableTag,
             witness::{Block, BlockContext, Bytecode, Rw, Transaction},
             EvmCircuit,
@@ -445,12 +444,14 @@ mod test {
                 .sum::<usize>(),
         ));
 
+        // cs.blinding_factors() + 1
+        let num_unusable_rows = 31;
+
         let power_of_randomness = (1..32)
             .map(|exp| {
                 vec![
                     block.randomness.pow(&[exp, 0, 0, 0]);
-                    block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
-                        * STEP_HEIGHT
+                    (1 << k) - num_unusable_rows
                 ]
             })
             .collect();

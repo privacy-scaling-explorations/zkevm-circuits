@@ -81,10 +81,10 @@ pub(crate) fn random_linear_combine<F: FieldExt>(
     assert!(expressions.len() <= power_of_randomness.len() + 1);
 
     let mut rlc = expressions[0].clone();
-    for (expr, _randomness) in
+    for (expr, randomness) in
         expressions[1..].iter().zip(power_of_randomness.iter())
     {
-        rlc = rlc + expr.clone()/* * randomness.clone()*/ * 123456u64.expr();
+        rlc = rlc + expr.clone() * randomness.clone();
     }
     rlc
 }
@@ -318,27 +318,19 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        let res = self.region.assign_advice(
-            &|| annotation().into(),
-            column,
-            offset,
-            &mut || to().map(|v| v.into()),
-        );
-
-        //let res = self.region.assign_advice(annotation, column, offset, to);
-
         // Cache the value
         let value: F = to().unwrap().into().evaluate();
         if column.index() >= self.advice.len() {
             self.advice.resize(column.index() + 1, vec![]);
         }
-        let column = &mut self.advice[column.index()];
-        if column.len() <= offset {
-            column.resize(offset + 1, F::zero());
+        let advice = &mut self.advice[column.index()];
+        if advice.len() <= offset {
+            advice.resize(offset + 1, F::zero());
         }
-        column[offset] = value;
+        advice[offset] = value;
 
-        res
+        // Actually set the value
+        self.region.assign_advice(annotation, column, offset, to)
     }
 
     pub fn get_fixed(
