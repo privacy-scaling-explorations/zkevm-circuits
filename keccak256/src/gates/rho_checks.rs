@@ -431,6 +431,7 @@ impl<F: FieldExt> SumConfig<F> {
                 let mut sum = F::zero();
                 let mut offset = 0;
                 for &(cell_from, value) in xs.iter() {
+                    self.q_enable.enable(&mut region, offset)?;
                     let cell_to = region.assign_advice(
                         || "x",
                         self.x,
