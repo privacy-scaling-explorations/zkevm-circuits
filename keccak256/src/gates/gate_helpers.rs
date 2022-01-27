@@ -16,7 +16,7 @@ pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 /// We assume the input value is smaller than the field size
 pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F {
     let mut x_bytes = x.to_bytes_le();
-    assert!(
+    debug_assert!(
         x_bytes.len() <= 32,
         "expect len <=32 but got {}",
         x_bytes.len()

@@ -748,7 +748,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
-        assert!(
+        debug_assert!(
             degree <= MAX_DEGREE,
             "Expression {} degree too high: {} > {}",
             name,
@@ -764,7 +764,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        assert!(
+        debug_assert!(
             self.condition.is_none(),
             "Nested condition is not supported"
         );

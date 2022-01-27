@@ -274,7 +274,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         let (constraints, constraints_first_step, lookups, presets) =
             cb.build();
-        assert!(
+        debug_assert!(
             presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
         );
