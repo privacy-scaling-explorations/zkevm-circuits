@@ -264,7 +264,7 @@ impl<F: FieldExt> MixingConfig<F> {
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         flag_bool: bool,
-        next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
+        next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
         absolute_row: usize,
     ) -> Result<[(Cell, F); 25], Error> {
         // Enforce flag constraints and witness them.
@@ -298,7 +298,7 @@ impl<F: FieldExt> MixingConfig<F> {
                 // Compute out_absorb state.
                 state_bigint_to_field(KeccakFArith::absorb(
                     &state_to_biguint(split_state_cells(in_state)),
-                    &state_to_state_bigint::<F, ABSORB_NEXT_INPUTS>(
+                    &state_to_state_bigint::<F, NEXT_INPUTS_LANES>(
                         next_mixing.unwrap_or_default(),
                     ),
                 )),
@@ -392,7 +392,7 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
+            next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
             // This usize is indeed pointing the exact row of the
             // ROUND_CTANTS we want to use.
             round_ctant: usize,

@@ -50,18 +50,18 @@ impl<F: FieldExt> AbsorbConfig<F> {
             // which will then enable or disable the gate.
             let q_enable = {
                 // We query the flag value from the `state` `Advice` column at
-                // rotation curr and position = `ABSORB_NEXT_INPUTS + 1`
+                // rotation curr and position = `NEXT_INPUTS_LANES + 1`
                 // and multiply to it the active selector so that we avoid the
                 // `PoisonedConstraints` and each gate equation
                 // can be satisfied while enforcing the correct gate logic.
                 let flag = meta
-                    .query_advice(state[ABSORB_NEXT_INPUTS], Rotation::cur());
+                    .query_advice(state[NEXT_INPUTS_LANES], Rotation::cur());
                 // Note also that we want to enable the gate when `is_mixing` is
                 // true. (flag = 1). See the flag computation above.
                 meta.query_selector(q_mixing) * flag
             };
 
-            (0..ABSORB_NEXT_INPUTS)
+            (0..NEXT_INPUTS_LANES)
                 .map(|idx| {
                     let val = meta.query_advice(state[idx], Rotation::prev())
                         + (Expression::Constant(F::from(A4))
@@ -87,11 +87,11 @@ impl<F: FieldExt> AbsorbConfig<F> {
         region: &mut Region<F>,
         offset: usize,
         flag: (Cell, F),
-        next_input: [F; ABSORB_NEXT_INPUTS],
+        next_input: [F; NEXT_INPUTS_LANES],
     ) -> Result<(Cell, F), Error> {
         // Generate next_input in base-9.
         let mut next_mixing =
-            state_to_biguint::<F, ABSORB_NEXT_INPUTS>(next_input);
+            state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
         for (x, y) in (0..5).cartesian_product(0..5) {
             if x >= 3 && y >= 1 {
                 break;
@@ -101,7 +101,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )
         }
         let next_input =
-            state_bigint_to_field::<F, ABSORB_NEXT_INPUTS>(next_mixing);
+            state_bigint_to_field::<F, NEXT_INPUTS_LANES>(next_mixing);
 
         // Assign next_mixing at offset = 1
         for (idx, lane) in next_input.iter().enumerate() {
@@ -115,8 +115,8 @@ impl<F: FieldExt> AbsorbConfig<F> {
 
         // Assign flag at last column(17th) of the offset = 1 row.
         let obtained_cell = region.assign_advice(
-            || format!("assign next_input {}", ABSORB_NEXT_INPUTS),
-            self.state[ABSORB_NEXT_INPUTS],
+            || format!("assign next_input {}", NEXT_INPUTS_LANES),
+            self.state[NEXT_INPUTS_LANES],
             offset,
             || Ok(flag.1),
         )?;
@@ -132,7 +132,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         // Passed in base-2 and converted internally after witnessing it.
-        next_input: [F; ABSORB_NEXT_INPUTS],
+        next_input: [F; NEXT_INPUTS_LANES],
         flag: (Cell, F),
     ) -> Result<([(Cell, F); 25], (Cell, F)), Error> {
         layouter.assign_region(
@@ -205,7 +205,7 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            next_input: [F; ABSORB_NEXT_INPUTS],
+            next_input: [F; NEXT_INPUTS_LANES],
             is_mixing: bool,
             _marker: PhantomData<F>,
         }
@@ -243,7 +243,7 @@ mod tests {
                         let offset = 1;
                         let cell = region.assign_advice(
                             || "assign is_mising",
-                            config.state[ABSORB_NEXT_INPUTS + 1],
+                            config.state[NEXT_INPUTS_LANES + 1],
                             offset,
                             || Ok(val),
                         )?;

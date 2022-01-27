@@ -5,7 +5,7 @@ use super::gates::{
 };
 use crate::{
     arith_helpers::*,
-    common::{ABSORB_NEXT_INPUTS, PERMUTATION, ROUND_CONSTANTS},
+    common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     gates::tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 use crate::{gates::mixing::MixingConfig, keccak_arith::*};
@@ -145,7 +145,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         in_state: [(Cell, F); 25],
         out_state: [F; 25],
         flag: bool,
-        next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
+        next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
     ) -> Result<[(Cell, F); 25], Error> {
         let mut state = in_state;
 
@@ -232,7 +232,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
             &state_to_biguint(split_state_cells(state)),
             next_mixing
                 .and_then(|state| {
-                    Some(state_to_state_bigint::<F, ABSORB_NEXT_INPUTS>(state))
+                    Some(state_to_state_bigint::<F, NEXT_INPUTS_LANES>(state))
                 })
                 .as_ref(),
             *ROUND_CONSTANTS.last().unwrap(),
@@ -312,7 +312,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{State, ABSORB_NEXT_INPUTS, ROUND_CONSTANTS};
+    use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
     use crate::gates::gate_helpers::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{ConstraintSystem, Error};
@@ -327,7 +327,7 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            next_mixing: Option<[F; ABSORB_NEXT_INPUTS]>,
+            next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
             // flag
             is_mixing: bool,
         }
@@ -457,8 +457,8 @@ mod tests {
             state_bigint_to_field(out_state_non_mix);
 
         // Generate next_input (tho one that is not None) in the form `[F;17]`
-        // Generate next_input as `[Fp;ABSORB_NEXT_INPUTS]`
-        let next_input_fp: [Fp; ABSORB_NEXT_INPUTS] =
+        // Generate next_input as `[Fp;NEXT_INPUTS_LANES]`
+        let next_input_fp: [Fp; NEXT_INPUTS_LANES] =
             state_bigint_to_field(StateBigInt::from(next_input));
 
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS
