@@ -77,12 +77,13 @@ impl<F: FieldExt> BranchKeyChip<F> {
             // NOTE: modified_node presents nibbles: n0, n1, ...
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
             let sel1_prev = meta.query_advice(sel1, Rotation(-20));
-            let sel2_prev = meta.query_advice(sel2, Rotation(-20));
             // Rotation(-20) lands into previous branch init.
             let sel1_cur = meta.query_advice(sel1, Rotation::prev());
             let sel2_cur = meta.query_advice(sel2, Rotation::prev());
 
-            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-19));
+            // -2 lands us into extension C row where extension key RLC is stored or
+            // branch RLC is copied (if it's not extension node).
+            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-2));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
             let key_rlc_mult_prev =
                 meta.query_advice(key_rlc_mult, Rotation(-19));
@@ -170,6 +171,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
             ));
 
             // Selector constraints (sel1, sel2)
+
             constraints.push((
                 "sel1 is bool",
                 q_not_first.clone()

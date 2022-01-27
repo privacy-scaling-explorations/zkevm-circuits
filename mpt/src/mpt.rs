@@ -19,6 +19,7 @@ use crate::{
     branch_hash_in_parent::BranchHashInParentChip,
     branch_rows::BranchRowsChip,
     extension_node::ExtensionNodeChip,
+    extension_node_key::ExtensionNodeKeyChip,
     leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
@@ -413,6 +414,24 @@ impl<F: FieldExt> MPTConfig<F> {
             c_keccak,
             r_table.clone(),
             false,
+        );
+
+        ExtensionNodeKeyChip::<F>::configure(
+            meta,
+            q_not_first,
+            not_first_level,
+            is_branch_init,
+            is_branch_child,
+            is_last_branch_child,
+            is_account_leaf_storage_codehash_c,
+            s_rlp2,
+            s_advices,
+            modified_node,
+            sel1,
+            sel2,
+            key_rlc,
+            key_rlc_mult,
+            r_table.clone(),
         );
 
         StorageRootChip::<F>::configure(
@@ -1488,16 +1507,15 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
 
                             if node_index == 0 {
-                                /*
                                 if witness[offset - 1][IS_EXTENSION_NODE_POS]
                                     == 1
-                                // extension node
+                                // Extension node
+                                // We need nibbles here to be able to compute key RLC
                                 {
                                     // For key RLC, we need to first take into account
                                     // extension node key.
                                     // witness[offset + 16]
-                                    let tag = witness[ind + 16][0];
-                                    println!("{:?}", tag);
+                                    let ext_row = &witness[ind + 16];
 
                                     let is_even = witness[offset - 1]
                                         [IS_EXTENSION_EVEN_KEY_LEN_POS];
@@ -1508,18 +1526,50 @@ impl<F: FieldExt> MPTConfig<F> {
                                     let is_long = witness[offset - 1]
                                         [IS_EXTENSION_KEY_LONG_POS];
                                     if key_rlc_sel {
-                                        if is_even == 1 {
-                                            if is_long == 1 {
-                                                compute_acc_and_mult(
-                                                    row,
-                                                    &mut acc_s,
-                                                    &mut acc_mult_s,
-                                                    0,
-                                                    1,
-                                                );
-                                            }
+                                        // Note: it can't be is_even = 1 && is_short = 1.
+                                        if is_even == 1 && is_long == 1 {
+                                            // extension node part:
+                                            compute_acc_and_mult(
+                                                ext_row,
+                                                &mut key_rlc,
+                                                &mut key_rlc_mult,
+                                                3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
+                                                ext_row[1] as usize - 128 - 1, // -1 because the first byte is 0 (is_even)
+                                            );
+                                            // branch part:
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * F::from(16)
+                                                    * key_rlc_mult;
+                                            // key_rlc_mult stays the same
+                                            key_rlc_sel = !key_rlc_sel;
+                                        } else if is_odd == 1 && is_long == 1 {
+                                            /*
+                                            compute_acc_and_mult(
+                                                ext_row,
+                                                &mut key_rlc,
+                                                &mut key_rlc_mult,
+                                                3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
+                                                ext_row[1] as usize - 128 - 1, // -1 because the first byte is 0 (is_even)
+                                            );
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * F::from(16)
+                                                    * key_rlc_mult;
+                                            // key_rlc_mult stays the same
+                                            */
                                         }
-
+                                    } else {
+                                        /*
+                                        key_rlc +=
+                                            F::from(modified_node as u64)
+                                                * key_rlc_mult;
+                                        key_rlc_mult *= self.acc_r;
+                                        */
+                                    }
+                                    // key_rlc_sel = !key_rlc_sel; // TODO
+                                } else {
+                                    if key_rlc_sel {
                                         key_rlc +=
                                             F::from(modified_node as u64)
                                                 * F::from(16)
@@ -1531,20 +1581,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 * key_rlc_mult;
                                         key_rlc_mult *= self.acc_r;
                                     }
-                                    // key_rlc_sel = !key_rlc_sel; // TODO
+                                    key_rlc_sel = !key_rlc_sel;
                                 }
-                                */
-                                if key_rlc_sel {
-                                    key_rlc += F::from(modified_node as u64)
-                                        * F::from(16)
-                                        * key_rlc_mult;
-                                    // key_rlc_mult stays the same
-                                } else {
-                                    key_rlc += F::from(modified_node as u64)
-                                        * key_rlc_mult;
-                                    key_rlc_mult *= self.acc_r;
-                                }
-                                key_rlc_sel = !key_rlc_sel;
                                 self.assign_branch_row(
                                     &mut region,
                                     node_index,
@@ -1676,6 +1714,20 @@ impl<F: FieldExt> MPTConfig<F> {
                                 acc_c,
                                 acc_mult_c,
                                 offset,
+                            )?;
+
+                            // This is to avoid Poisoned Constraint in extension_node_key.
+                            region.assign_advice(
+                                || "assign key_rlc".to_string(),
+                                self.key_rlc,
+                                offset,
+                                || Ok(key_rlc),
+                            )?;
+                            region.assign_advice(
+                                || "assign key_rlc_mult".to_string(),
+                                self.key_rlc_mult,
+                                offset,
+                                || Ok(key_rlc_mult),
                             )?;
 
                             offset += 1;
@@ -2036,49 +2088,101 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     offset,
                                 )?;
-                            } else if (row[row.len() - 1] == 16
-                                || row[row.len() - 1] == 17)
-                                && row[0] != 0
-                            {
-                                // row[0] != 0 just to avoid usize problems below (when row doesn't need to be assigned)
+                            } else if row[row.len() - 1] == 16 {
+                                if witness[offset - 17][IS_EXTENSION_NODE_POS]
+                                    == 1
+                                {
+                                    // Intermediate RLC value and mult (after key)
+                                    // to know which mult we need to use in c_advices.
+                                    acc_s = F::zero();
+                                    acc_mult_s = F::one();
+                                    let len: usize;
+                                    if row[0] == 226 {
+                                        // key length is 1
+                                        len = 2 // [226, key]
+                                    } else {
+                                        len = (row[1] - 128) as usize + 2;
+                                    }
+                                    compute_acc_and_mult(
+                                        row,
+                                        &mut acc_s,
+                                        &mut acc_mult_s,
+                                        0,
+                                        len,
+                                    );
 
-                                // Intermediate RLC value and mult (after key)
-                                // to know which mult we need to use in c_advices.
-                                acc_s = F::zero();
-                                acc_mult_s = F::one();
-                                let len: usize;
-                                if row[0] == 226 {
-                                    // key length is 1
-                                    len = 2 // [226, key]
-                                } else {
-                                    len = (row[1] - 128) as usize + 2;
+                                    // Final RLC value.
+                                    acc_c = acc_s;
+                                    acc_mult_c = acc_mult_s;
+                                    compute_acc_and_mult(
+                                        row,
+                                        &mut acc_c,
+                                        &mut acc_mult_c,
+                                        C_RLP_START + 1,
+                                        HASH_WIDTH + 1,
+                                    );
+
+                                    self.assign_acc(
+                                        &mut region,
+                                        acc_s,
+                                        acc_mult_s,
+                                        acc_c,
+                                        F::zero(),
+                                        offset,
+                                    )?;
                                 }
-                                compute_acc_and_mult(
-                                    row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
-                                    0,
-                                    len,
-                                );
-
-                                // Final RLC value.
-                                acc_c = acc_s;
-                                acc_mult_c = acc_mult_s;
-                                compute_acc_and_mult(
-                                    row,
-                                    &mut acc_c,
-                                    &mut acc_mult_c,
-                                    C_RLP_START + 1,
-                                    HASH_WIDTH + 1,
-                                );
-
-                                self.assign_acc(
-                                    &mut region,
-                                    acc_s,
-                                    acc_mult_s,
-                                    acc_c,
-                                    F::zero(),
+                                region.assign_advice(
+                                    || "assign key_rlc".to_string(),
+                                    self.key_rlc,
                                     offset,
+                                    || Ok(key_rlc),
+                                )?;
+                                region.assign_advice(
+                                    || "assign key_rlc_mult".to_string(),
+                                    self.key_rlc_mult,
+                                    offset,
+                                    || Ok(key_rlc_mult),
+                                )?;
+                            } else if row[row.len() - 1] == 17 {
+                                if witness[offset - 18][IS_EXTENSION_NODE_POS]
+                                    == 1
+                                {
+                                    // We use intermediate value from previous row.
+                                    // Final RLC value.
+                                    acc_c = acc_s;
+                                    acc_mult_c = acc_mult_s;
+                                    compute_acc_and_mult(
+                                        row,
+                                        &mut acc_c,
+                                        &mut acc_mult_c,
+                                        C_RLP_START + 1,
+                                        HASH_WIDTH + 1,
+                                    );
+
+                                    self.assign_acc(
+                                        &mut region,
+                                        acc_s,
+                                        acc_mult_s,
+                                        acc_c,
+                                        F::zero(),
+                                        offset,
+                                    )?;
+                                }
+
+                                // This sets branch Key RLC when it's not extension node (to avoid
+                                // additional rotations).
+                                // It sets extension node RLC otherwise.
+                                region.assign_advice(
+                                    || "assign key_rlc".to_string(),
+                                    self.key_rlc,
+                                    offset,
+                                    || Ok(key_rlc),
+                                )?;
+                                region.assign_advice(
+                                    || "assign key_rlc_mult".to_string(),
+                                    self.key_rlc_mult,
+                                    offset,
+                                    || Ok(key_rlc_mult),
                                 )?;
                             }
 

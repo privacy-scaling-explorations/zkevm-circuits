@@ -30,12 +30,13 @@ pub fn compute_rlc<F: FieldExt>(
     advices: Vec<Column<Advice>>,
     mut rind: usize,
     mult: Expression<F>,
+    rotation: i32,
     r_table: Vec<Expression<F>>,
 ) -> Expression<F> {
     let mut r_wrapped = false;
     let mut rlc = Expression::Constant(F::zero());
     for col in advices.iter() {
-        let s = meta.query_advice(*col, Rotation::cur());
+        let s = meta.query_advice(*col, Rotation(rotation));
         if !r_wrapped {
             rlc = rlc + s * r_table[rind].clone() * mult.clone();
         } else {

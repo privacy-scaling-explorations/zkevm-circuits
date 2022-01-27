@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{compute_rlc, into_words_expr},
-    mpt::FixedTableTag,
     param::{
         HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
         IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
@@ -305,21 +304,37 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+            let mut rot = 0;
+            if !is_s {
+                rot = -1;
+            }
+
+            // s_rlp1, s_rlp2, s_advices need to be the same in both extension rows. However,
+            // to make space for nibble witnesses, we put nibbles in extension row C s_advices.
+            // So we use s_advices from S row.
+
+            let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot));
             let mut rlc = s_rlp1;
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+            let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot));
             rlc = rlc + s_rlp2 * r_table[0].clone();
 
-            let s_advices_rlc =
-                compute_rlc(meta, s_advices.to_vec(), 1, one, r_table.clone());
+            let s_advices_rlc = compute_rlc(
+                meta,
+                s_advices.to_vec(),
+                1,
+                one,
+                rot,
+                r_table.clone(),
+            );
             rlc = rlc + s_advices_rlc;
 
-            let acc_s = meta.query_advice(acc_s, Rotation::cur());
+            let acc_s = meta.query_advice(acc_s, Rotation(rot));
             constraints.push((
                 "acc_s",
                 q_not_first.clone() * q_enable.clone() * (rlc - acc_s.clone()),
             ));
 
+            // We use rotation 0 in both cases from now on:
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             let c160 = Expression::Constant(F::from(160_u64));
             constraints.push((
@@ -332,8 +347,14 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let acc_mult_s = meta.query_advice(acc_mult_s, Rotation::cur());
             rlc = acc_s + c_rlp2 * acc_mult_s.clone();
 
-            let c_advices_rlc =
-                compute_rlc(meta, c_advices.to_vec(), 0, acc_mult_s, r_table);
+            let c_advices_rlc = compute_rlc(
+                meta,
+                c_advices.to_vec(),
+                0,
+                acc_mult_s,
+                0,
+                r_table,
+            );
             rlc = rlc + c_advices_rlc;
 
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
@@ -342,43 +363,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
-        // Check whether extension node S and C have the same key.
-        if !is_s {
-            meta.create_gate("Extension node key same for S and C", |meta| {
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
-
-                let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation::prev());
-                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-                let s_rlp2_prev = meta.query_advice(s_rlp2, Rotation::prev());
-                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-
-                constraints.push((
-                    "s_rlp1",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (s_rlp1 - s_rlp1_prev),
-                ));
-                constraints.push((
-                    "s_rlp2",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * (s_rlp2 - s_rlp2_prev),
-                ));
-                for col in s_advices.iter() {
-                    let s_prev = meta.query_advice(*col, Rotation::prev());
-                    let s = meta.query_advice(*col, Rotation::cur());
-                    constraints.push((
-                        "s_advices",
-                        q_not_first.clone() * q_enable.clone() * (s - s_prev),
-                    ));
-                }
-
-                constraints
-            });
-        }
+        // TODO: check nibbles in C correspond to bytes in S
 
         // Check whether extension node hash is in parent branch.
         meta.lookup_any(|meta| {
