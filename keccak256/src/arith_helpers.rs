@@ -198,9 +198,6 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     let info: Vec<(usize, u8)> =
         (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
-    // if !raw.is_zero() {
-    //     println!("WARNING {} has non zero remainder {:?}", name, raw);
-    // }
 }
 
 pub fn state_to_biguint<F: FieldExt, const N: usize>(

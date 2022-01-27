@@ -150,7 +150,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let mut state = in_state;
 
         // First 23 rounds
-        for round in 0..PERMUTATION - 1 {
+        for round in 0..PERMUTATION {
             // State in base-13
             // theta
             state = {
@@ -185,7 +185,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
             };
 
             // Last round before Mixing does not run IotaB9 nor BaseConversion
-            if round == PERMUTATION - 2 {
+            if round == PERMUTATION - 1 {
                 break;
             }
 
@@ -280,7 +280,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     }
                     out_vec.try_into().unwrap()
                 };
-                println!("OUT_RES_INSIDE {:#?}", split_state_cells(out_state));
+
                 Ok(out_state)
             },
         )
@@ -455,8 +455,6 @@ mod tests {
         let out_state_mix: [Fp; 25] = state_bigint_to_field(out_state_mix);
         let out_state_non_mix: [Fp; 25] =
             state_bigint_to_field(out_state_non_mix);
-
-        println!("NON_MIX_RES_OUTSIDE {:#?}", out_state_non_mix);
 
         // Generate next_input (tho one that is not None) in the form `[F;17]`
         // Generate next_input as `[Fp;ABSORB_NEXT_INPUTS]`
