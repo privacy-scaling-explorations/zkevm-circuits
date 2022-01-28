@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{AddWordsGadget, PairSelectGadget},
             select,
         },
@@ -62,12 +60,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,

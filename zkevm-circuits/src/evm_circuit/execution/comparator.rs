@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
             select, Word,
@@ -42,12 +40,10 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         let b = cb.query_word();
 
         // Check if opcode is EQ
-        let is_eq =
-            IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());
+        let is_eq = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());
         // Check if opcode is GT. For GT we swap the stack inputs so that we
         // actually do greater than instead of smaller than.
-        let is_gt =
-            IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::GT.expr());
+        let is_gt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::GT.expr());
 
         // `a[0..16] <= b[0..16]`
         let comparison_lo = ComparisonGadget::construct(
@@ -92,12 +88,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -144,8 +135,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         } else {
             [step.rw_indices[0], step.rw_indices[1]]
         };
-        let [a, b] =
-            indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
+        let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
 
         // `a[0..16] <= b[0..16]`
         self.comparison_lo.assign(

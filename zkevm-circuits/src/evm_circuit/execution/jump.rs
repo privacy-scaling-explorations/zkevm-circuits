@@ -52,12 +52,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,

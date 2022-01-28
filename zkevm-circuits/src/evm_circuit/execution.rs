@@ -148,20 +148,18 @@ impl<F: FieldExt> ExecutionConfig<F> {
             );
 
             // Cells representation for execution_state should be bool.
-            let bool_checks =
-                step_curr.state.execution_state.iter().map(|cell| {
-                    (
-                        "Representation for execution_state should be bool",
-                        cell.expr() * (1.expr() - cell.expr()),
-                    )
-                });
+            let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
+                (
+                    "Representation for execution_state should be bool",
+                    cell.expr() * (1.expr() - cell.expr()),
+                )
+            });
 
             // TODO: ExecutionState transition needs to be constraint to avoid
             // transition from non-terminator to BeginTx.
 
             let first_step_check = {
-                let begin_tx_selector =
-                    step_curr.execution_state_selector(ExecutionState::BeginTx);
+                let begin_tx_selector = step_curr.execution_state_selector(ExecutionState::BeginTx);
                 std::iter::once((
                     "First step should be BeginTx",
                     q_step_first * (begin_tx_selector - 1.expr()),
@@ -180,8 +178,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         for advice in advices {
             meta.lookup_any(|meta| {
                 let advice = meta.query_advice(advice, Rotation::cur());
-                let qs_byte_lookup =
-                    meta.query_advice(qs_byte_lookup, Rotation::cur());
+                let qs_byte_lookup = meta.query_advice(qs_byte_lookup, Rotation::cur());
 
                 vec![
                     qs_byte_lookup.clone() * FixedTableTag::Range256.expr(),
@@ -272,8 +269,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         let gadget = G::configure(&mut cb);
 
-        let (constraints, constraints_first_step, lookups, presets) =
-            cb.build();
+        let (constraints, constraints_first_step, lookups, presets) = cb.build();
         assert!(
             presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
@@ -287,17 +283,16 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 meta.create_gate(G::NAME, |meta| {
                     let selector = meta.query_selector(selector);
 
-                    constraints.into_iter().map(move |(name, constraint)| {
-                        (name, selector.clone() * constraint)
-                    })
+                    constraints
+                        .into_iter()
+                        .map(move |(name, constraint)| (name, selector.clone() * constraint))
                 });
             }
         }
 
         // Push lookups of this ExecutionState to independent_lookups for
         // further configuration in configure_lookup.
-        independent_lookups
-            .push(lookups.iter().map(|(_, lookup)| lookup.clone()).collect());
+        independent_lookups.push(lookups.iter().map(|(_, lookup)| lookup.clone()).collect());
 
         gadget
     }
@@ -330,8 +325,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
             for lookup in lookups {
                 let table = lookup.table();
-                let acc_lookups =
-                    acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
+                let acc_lookups = acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
                 let index = index_of_table.entry(table).or_insert(0);
 
                 if *index == acc_lookups.len() {
@@ -357,15 +351,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             let q_step = meta.query_selector(q_step);
                             input_exprs
                                 .into_iter()
-                                .zip(
-                                    $table
-                                        .table_exprs(meta)
-                                        .to_vec()
-                                        .into_iter(),
-                                )
-                                .map(|(input, table)| {
-                                    (q_step.clone() * input, table)
-                                })
+                                .zip($table.table_exprs(meta).to_vec().into_iter())
+                                .map(|(input, table)| (q_step.clone() * input, table))
                                 .collect::<Vec<_>>()
                         });
                     }
@@ -398,14 +385,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             self.q_step_first.enable(&mut region, offset)?;
                         }
 
-                        self.assign_exec_step(
-                            &mut region,
-                            offset,
-                            block,
-                            transaction,
-                            call,
-                            step,
-                        )?;
+                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
 
                         offset += STEP_HEIGHT;
                     }
@@ -434,14 +414,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                         let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
-                        self.assign_exec_step(
-                            &mut region,
-                            offset,
-                            block,
-                            transaction,
-                            call,
-                            step,
-                        )?;
+                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
 
                         offset += STEP_HEIGHT;
                     }
@@ -472,14 +445,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
-                $gadget.assign_exec_step(
-                    region,
-                    offset,
-                    block,
-                    transaction,
-                    call,
-                    step,
-                )?
+                $gadget.assign_exec_step(region, offset, block, transaction, call, step)?
             };
         }
 
