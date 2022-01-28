@@ -221,39 +221,43 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             the second byte specifies the key_len (we need to subract 128 to get it).
             */
 
-            let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-            let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
+            // In C we have nibbles, we check below only for S.
+            if is_s {
+                let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
+                let s_advices0 =
+                    meta.query_advice(s_advices[0], Rotation::cur());
 
-            // This prevents setting is_short = 1 when it's not short (s_rlp1 > 226 in that case):
-            // Using this constraints and bool & sum (is_short + is_long) constraints above
-            // the selectors are ensured to be set properly.
-            constraints.push((
-                "is_short implies s_rlp1 = 226",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * is_short.clone()
-                    * (s_rlp1 - c226),
-            ));
-            constraints.push((
-                "is_short implies is_key_odd",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * is_short.clone()
-                    * is_key_odd.clone(),
-            ));
+                // This prevents setting is_short = 1 when it's not short (s_rlp1 > 226 in that case):
+                // Using this constraints and bool & sum (is_short + is_long) constraints above
+                // the selectors are ensured to be set properly.
+                constraints.push((
+                    "is_short implies s_rlp1 = 226",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_short.clone()
+                        * (s_rlp1 - c226),
+                ));
+                constraints.push((
+                    "is_short implies is_key_odd",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_short.clone()
+                        * (is_key_odd.clone() - one.clone()),
+                ));
 
-            // This prevents setting is_key_even = 1 when it's not even,
-            // because when it's not even s_advices0 != 0 (hexToCompact adds 16).
-            // Using this constraints and bool & sum (is_key_even + is_key_odd) constraints above
-            // the selectors are ensured to be set properly.
-            constraints.push((
-                "is_long & is_key_even implies s_advices0 = 0",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * is_long.clone()
-                    * is_key_even.clone()
-                    * s_advices0,
-            ));
+                // This prevents setting is_key_even = 1 when it's not even,
+                // because when it's not even s_advices0 != 0 (hexToCompact adds 16).
+                // Using this constraints and bool & sum (is_key_even + is_key_odd) constraints above
+                // the selectors are ensured to be set properly.
+                constraints.push((
+                    "is_long & is_key_even implies s_advices0 = 0",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * is_long.clone()
+                        * is_key_even.clone()
+                        * s_advices0,
+                ));
+            }
 
             constraints
         });

@@ -130,7 +130,9 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.fixed_column();
 
-        let acc_r = F::one(); // having one to enable key RLC check, TODO: generate from commitments
+        // having 2 to enable key RLC check (not using 1 to enable proper checks of mult too)
+        // TODO: generate from commitments
+        let acc_r = F::one() + F::one();
 
         let one = Expression::Constant(F::one());
         let mut r_table = vec![];
@@ -1263,8 +1265,8 @@ impl<F: FieldExt> MPTConfig<F> {
         &self,
         mut layouter: impl Layouter<F>,
         witness: &[Vec<u8>],
-        account_key_rlc: i32, // to be removed when integrated with state circuit
-        storage_key_rlc: i32, // to be removed when integrated with state circuit
+        account_key_rlc: u64, // to be removed when integrated with state circuit
+        storage_key_rlc: u64, // to be removed when integrated with state circuit
     ) {
         layouter
             .assign_region(
@@ -1285,6 +1287,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut acc_mult_c = F::zero();
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
+                    let mut extension_node_rlc = F::zero();
+                    let mut extension_node_rlc_mult = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
                     let mut is_branch_s_placeholder = false;
                     let mut is_branch_c_placeholder = false;
@@ -1518,6 +1522,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // extension node key.
                                     // witness[offset + 16]
                                     let ext_row = &witness[ind + 16];
+                                    extension_node_rlc = key_rlc;
+                                    extension_node_rlc_mult = key_rlc_mult;
 
                                     let is_even = witness[offset - 1]
                                         [IS_EXTENSION_EVEN_KEY_LEN_POS];
@@ -1533,11 +1539,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                             // extension node part:
                                             compute_acc_and_mult(
                                                 ext_row,
-                                                &mut key_rlc,
-                                                &mut key_rlc_mult,
+                                                &mut extension_node_rlc,
+                                                &mut extension_node_rlc_mult,
                                                 3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
                                                 ext_row[1] as usize - 128 - 1, // -1 because the first byte is 0 (is_even)
                                             );
+                                            key_rlc = extension_node_rlc;
+                                            key_rlc_mult =
+                                                extension_node_rlc_mult;
                                             // branch part:
                                             key_rlc +=
                                                 F::from(modified_node as u64)
@@ -2149,13 +2158,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
                                     offset,
-                                    || Ok(key_rlc),
+                                    || Ok(extension_node_rlc),
                                 )?;
                                 region.assign_advice(
                                     || "assign key_rlc_mult".to_string(),
                                     self.key_rlc_mult,
                                     offset,
-                                    || Ok(key_rlc_mult),
+                                    || Ok(extension_node_rlc_mult),
                                 )?;
                             } else if row[row.len() - 1] == 17 {
                                 if witness[offset - 18][IS_EXTENSION_NODE_POS]
@@ -2190,13 +2199,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
                                     offset,
-                                    || Ok(key_rlc),
+                                    || Ok(extension_node_rlc),
                                 )?;
                                 region.assign_advice(
                                     || "assign key_rlc_mult".to_string(),
                                     self.key_rlc_mult,
                                     offset,
-                                    || Ok(key_rlc_mult),
+                                    || Ok(extension_node_rlc_mult),
                                 )?;
                             }
 
@@ -2372,8 +2381,8 @@ mod tests {
         struct MyCircuit<F> {
             _marker: PhantomData<F>,
             witness: Vec<Vec<u8>>,
-            account_key_rlc: i32, // for testing purposes only
-            storage_key_rlc: i32, // for testing purposes only
+            account_key_rlc: u64, // for testing purposes only
+            storage_key_rlc: u64, // for testing purposes only
         }
 
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
@@ -2433,14 +2442,14 @@ mod tests {
                 let mut parts = path.to_str().unwrap().split("-");
                 parts.next();
                 let account_key_rlc =
-                    parts.next().unwrap().parse::<i32>().unwrap();
+                    parts.next().unwrap().parse::<u64>().unwrap();
                 let storage_key_rlc = parts
                     .next()
                     .unwrap()
                     .split(".")
                     .next()
                     .unwrap()
-                    .parse::<i32>()
+                    .parse::<u64>()
                     .unwrap();
                 let file = std::fs::File::open(path);
                 let reader = std::io::BufReader::new(file.unwrap());
