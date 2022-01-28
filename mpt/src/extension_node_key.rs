@@ -118,7 +118,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "branch key RLC is copied to extension row C when !is_exension_node",
                     q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisened Constraint
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
                     * is_extension_c.clone()
                     * (key_rlc_cur.clone() - key_rlc_prev)
                     * (one.clone() - is_extension_node.clone()),
@@ -127,7 +127,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "branch key RLC MULT is copied to extension row C when !is_exension_node",
                     q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisened Constraint
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
                     * is_extension_c.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev)
                     * (one.clone() - is_extension_node.clone()),
@@ -149,7 +149,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "account first level long even",
                     q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisened Constraint
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
                     * (one.clone() - not_first_level.clone())
                     * is_extension_node.clone()
                     * is_extension_c.clone()

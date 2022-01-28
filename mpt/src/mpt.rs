@@ -130,7 +130,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.fixed_column();
 
-        let acc_r = F::rand(); // TODO: generate from commitments
+        let acc_r = F::one(); // having one to enable key RLC check, TODO: generate from commitments
 
         let one = Expression::Constant(F::one());
         let mut r_table = vec![];
@@ -1263,6 +1263,8 @@ impl<F: FieldExt> MPTConfig<F> {
         &self,
         mut layouter: impl Layouter<F>,
         witness: &[Vec<u8>],
+        account_key_rlc: i32, // to be removed when integrated with state circuit
+        storage_key_rlc: i32, // to be removed when integrated with state circuit
     ) {
         layouter
             .assign_region(
@@ -1938,6 +1940,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                         offset,
                                         || Ok(key_rlc_new),
                                     )?;
+
+                                    // TODO: remove once integrated with state circuit
+                                    assert_eq!(
+                                        F::from(storage_key_rlc as u64),
+                                        key_rlc_new,
+                                    );
                                 }
                             }
 
@@ -1974,6 +1982,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(key_rlc_new),
                                 )?;
+
+                                // TODO: remove once integrated with state circuit
+                                assert_eq!(
+                                    F::from(account_key_rlc as u64),
+                                    key_rlc_new,
+                                );
                             } else if row[row.len() - 1] == 7 {
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
@@ -2358,6 +2372,8 @@ mod tests {
         struct MyCircuit<F> {
             _marker: PhantomData<F>,
             witness: Vec<Vec<u8>>,
+            account_key_rlc: i32, // for testing purposes only
+            storage_key_rlc: i32, // for testing purposes only
         }
 
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
@@ -2387,7 +2403,13 @@ mod tests {
                 }
 
                 config.load(&mut layouter, to_be_hashed)?;
-                config.assign(layouter, &self.witness);
+                // account_key_rlc and storage_key_rlc to be removed once integrated with state circuit
+                config.assign(
+                    layouter,
+                    &self.witness,
+                    self.account_key_rlc,
+                    self.storage_key_rlc,
+                );
 
                 Ok(())
             }
@@ -2407,52 +2429,32 @@ mod tests {
                 }
             })
             .for_each(|f| {
-                let file = std::fs::File::open(f.path());
+                let path = f.path();
+                let mut parts = path.to_str().unwrap().split("-");
+                parts.next();
+                let account_key_rlc =
+                    parts.next().unwrap().parse::<i32>().unwrap();
+                let storage_key_rlc = parts
+                    .next()
+                    .unwrap()
+                    .split(".")
+                    .next()
+                    .unwrap()
+                    .parse::<i32>()
+                    .unwrap();
+                let file = std::fs::File::open(path);
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
                 let circuit = MyCircuit::<Fp> {
                     _marker: PhantomData,
                     witness: w,
+                    account_key_rlc,
+                    storage_key_rlc,
                 };
 
                 let prover =
                     MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
-
-                /*
-                const K: u32 = 4;
-                let params: Params<EqAffine> = Params::new(K);
-                let empty_circuit = MyCircuit::<pallas::Base> {
-                    _marker: PhantomData,
-                    witness: vec![],
-                };
-
-                let vk = keygen_vk(&params, &empty_circuit)
-                    .expect("keygen_vk should not fail");
-
-                let pk = keygen_pk(&params, vk, &empty_circuit)
-                    .expect("keygen_pk should not fail");
-
-                let mut transcript =
-                    Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-                create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
-                    .expect("proof generation should not fail");
-                let proof = transcript.finalize();
-
-                let msm = params.empty_msm();
-                let mut transcript =
-                    Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-                let guard = verify_proof(
-                    &params,
-                    pk.get_vk(),
-                    msm,
-                    &[],
-                    &mut transcript,
-                )
-                .unwrap();
-                let msm = guard.clone().use_challenges();
-                assert!(msm.eval());
-                */
             });
     }
 }
