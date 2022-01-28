@@ -150,7 +150,7 @@ macro_rules! bytecode_internal {
     ($code:ident, ) => {};
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        debug_assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
         let n = $crate::evm::OpcodeId::$x.as_u8()
             - $crate::evm::OpcodeId::PUSH1.as_u8()
             + 1;
@@ -159,7 +159,7 @@ macro_rules! bytecode_internal {
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        debug_assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
         $code.write_op($crate::evm::OpcodeId::$x);
         $crate::bytecode_internal!($code, $($rest)*);
     }};
