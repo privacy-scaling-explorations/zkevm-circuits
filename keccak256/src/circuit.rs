@@ -26,9 +26,9 @@ pub struct KeccakFConfig<F: FieldExt> {
     iota_b9_config: IotaB9Config<F>,
     base_conversion_config: StateBaseConversion<F>,
     mixing_config: MixingConfig<F>,
-    state: [Column<Advice>; 25],
+    pub state: [Column<Advice>; 25],
     q_out: Selector,
-    _is_mixing_flag: Column<Advice>,
+    pub _is_mixing_flag: Column<Advice>,
     _base_conv_activator: Column<Advice>,
 }
 
@@ -137,6 +137,10 @@ impl<F: FieldExt> KeccakFConfig<F> {
             _is_mixing_flag,
             _base_conv_activator,
         }
+    }
+
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.rho_config.load(layouter)
     }
 
     pub fn assign_all(

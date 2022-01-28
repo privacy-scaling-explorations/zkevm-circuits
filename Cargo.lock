@@ -471,6 +471,8 @@ dependencies = [
  "bus-mapping",
  "ff 0.11.0",
  "halo2",
+ "itertools",
+ "keccak256",
  "pairing_bn256",
  "rand",
  "rand_xorshift",
