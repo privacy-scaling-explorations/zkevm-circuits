@@ -60,8 +60,7 @@ mod swap_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -78,8 +77,7 @@ mod swap_tests {
                 test_builder.block_ctx.rwc,
                 0,
             );
-            let mut state_ref =
-                test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+            let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
             let a_pos = StackAddress(1024 - 6);
             let b_pos = StackAddress(1024 - 5 + i * 2);

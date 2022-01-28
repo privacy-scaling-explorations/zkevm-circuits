@@ -6,9 +6,7 @@ use crate::external_tracer::BlockConstants;
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use eth_types::evm_types::Gas;
-use eth_types::{
-    self, address, Address, Bytes, ChainConstants, Hash, Word, U64,
-};
+use eth_types::{self, address, Address, Bytes, ChainConstants, Hash, Word, U64};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
@@ -113,20 +111,13 @@ impl BlockData {
         let mut eth_tx = new_tx(&eth_block);
         eth_tx.gas = Word::from(gas.0);
         let c_constant = new_chain_constants();
-        let b_constant = BlockConstants::from_eth_block(
-            &eth_block,
-            &Word::from(c_constant.chain_id),
-        );
+        let b_constant =
+            BlockConstants::from_eth_block(&eth_block, &Word::from(c_constant.chain_id));
         let tracer_tx = external_tracer::Transaction::from_eth_tx(&eth_tx);
         let geth_trace = eth_types::GethExecTrace {
             gas: Gas(eth_tx.gas.as_u64()),
             failed: false,
-            struct_logs: external_tracer::trace(
-                &b_constant,
-                &tracer_tx,
-                accounts,
-            )?
-            .to_vec(),
+            struct_logs: external_tracer::trace(&b_constant, &tracer_tx, accounts)?.to_vec(),
         };
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
@@ -157,9 +148,7 @@ impl BlockData {
     /// account with address 0x0 (which can call code in the other accounts).
     /// The trace will be generated automatically with the external_tracer
     /// from the accounts code.
-    fn new_single_tx_trace_accounts(
-        accounts: &[external_tracer::Account],
-    ) -> Result<Self, Error> {
+    fn new_single_tx_trace_accounts(accounts: &[external_tracer::Account]) -> Result<Self, Error> {
         Self::new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64))
     }
 
@@ -174,10 +163,7 @@ impl BlockData {
     /// Create a new block with a single tx with the given gas limit that
     /// executes the code passed by argument.  The trace will be generated
     /// automatically with the external_tracer from the code.
-    pub fn new_single_tx_trace_code_gas(
-        code: &Bytecode,
-        gas: Gas,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace_code_gas(code: &Bytecode, gas: Gas) -> Result<Self, Error> {
         let tracer_account = new_tracer_account(code);
         Self::new_single_tx_trace_accounts_gas(&[tracer_account], gas)
     }
@@ -185,46 +171,32 @@ impl BlockData {
     /// Create a new block with a single tx that executes the code_a passed by
     /// argument, with code_b deployed at address 0x123.  The trace will be
     /// generated automatically with the external_tracer from the code.
-    pub fn new_single_tx_trace_code_2(
-        code_a: &Bytecode,
-        code_b: &Bytecode,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace_code_2(code_a: &Bytecode, code_b: &Bytecode) -> Result<Self, Error> {
         let tracer_account_a = new_tracer_account(code_a);
         let mut tracer_account_b = new_tracer_account(code_b);
-        tracer_account_b.address =
-            address!("0x0000000000000000000000000000000000000123");
-        Self::new_single_tx_trace_accounts(&[
-            tracer_account_a,
-            tracer_account_b,
-        ])
+        tracer_account_b.address = address!("0x0000000000000000000000000000000000000123");
+        Self::new_single_tx_trace_accounts(&[tracer_account_a, tracer_account_b])
     }
 
     /// Create a new block with a single tx that executes the code passed by
     /// argument.  The trace will be generated automatically with the
     /// external_tracer from the code.  The trace steps will start at the
     /// "start" position as tagged in the code.
-    pub fn new_single_tx_trace_code_at_start(
-        code: &Bytecode,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace_code_at_start(code: &Bytecode) -> Result<Self, Error> {
         let mut mock = Self::new_single_tx_trace_code(code)?;
-        mock.geth_trace.struct_logs =
-            mock.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
+        mock.geth_trace.struct_logs = mock.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
         Ok(mock)
     }
 
     /// Create a new block with a single tx that leads to the geth_steps passed
     /// by argument.  The returned BlockData contains an empty StateDB and
     /// CodeDB.
-    pub fn new_single_tx_geth_steps(
-        geth_steps: Vec<eth_types::GethExecStep>,
-    ) -> Self {
+    pub fn new_single_tx_geth_steps(geth_steps: Vec<eth_types::GethExecStep>) -> Self {
         let eth_block = new_block();
         let eth_tx = new_tx(&eth_block);
         let c_constant = new_chain_constants();
-        let b_constant = BlockConstants::from_eth_block(
-            &eth_block,
-            &Word::from(c_constant.chain_id),
-        );
+        let b_constant =
+            BlockConstants::from_eth_block(&eth_block, &Word::from(c_constant.chain_id));
         let geth_trace = eth_types::GethExecTrace {
             gas: Gas(eth_tx.gas.as_u64()),
             failed: false,

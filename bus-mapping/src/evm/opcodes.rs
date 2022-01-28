@@ -60,10 +60,8 @@ fn dummy_gen_associated_ops(
     Ok(())
 }
 
-type FnGenAssociatedOps = fn(
-    state: &mut CircuitInputStateRef,
-    next_steps: &[GethExecStep],
-) -> Result<(), Error>;
+type FnGenAssociatedOps =
+    fn(state: &mut CircuitInputStateRef, next_steps: &[GethExecStep]) -> Result<(), Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {

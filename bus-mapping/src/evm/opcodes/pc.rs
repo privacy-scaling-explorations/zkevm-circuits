@@ -16,11 +16,7 @@ impl Opcode for Pc {
         let step = &steps[0];
         // Get value result from next step and do stack write
         let value = steps[1].stack.last()?;
-        state.push_stack_op(
-            RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
-            value,
-        );
+        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value);
 
         Ok(())
     }
@@ -49,8 +45,7 @@ mod pc_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -66,15 +61,10 @@ mod pc_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last Stack write
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress::from(1024 - 3),
-            Word::from(0x4),
-        );
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1024 - 3), Word::from(0x4));
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);

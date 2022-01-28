@@ -3,8 +3,7 @@ use crate::evm_circuit::{
     param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -338,11 +337,8 @@ impl Bytecode {
                 if self.push_data_left > 0 {
                     is_code = false;
                     self.push_data_left -= 1;
-                } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8())
-                    .contains(&byte)
-                {
-                    self.push_data_left =
-                        byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
+                } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(&byte) {
+                    self.push_data_left = byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
                 }
 
                 self.idx += 1;
@@ -505,8 +501,7 @@ impl Rw {
                 F::from(*field_tag as u64),
                 F::zero(),
                 match field_tag {
-                    CallContextFieldTag::OpcodeSource
-                    | CallContextFieldTag::Value => {
+                    CallContextFieldTag::OpcodeSource | CallContextFieldTag::Value => {
                         RandomLinearCombination::random_linear_combine(
                             value.to_le_bytes(),
                             randomness,
@@ -534,10 +529,7 @@ impl Rw {
                 F::from(*call_id as u64),
                 F::from(*stack_pointer as u64),
                 F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    value.to_le_bytes(),
-                    randomness,
-                ),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
                 F::zero(),
                 F::zero(),
                 F::zero(),
@@ -627,9 +619,7 @@ fn step_convert(
                 let index = x.as_usize() - 1;
                 match x.target() {
                     bus_mapping::operation::Target::Stack => index,
-                    bus_mapping::operation::Target::Memory => {
-                        index + stack_ops_len
-                    }
+                    bus_mapping::operation::Target::Memory => index + stack_ops_len,
                     bus_mapping::operation::Target::Storage => {
                         index + stack_ops_len + memory_ops_len
                     }
@@ -728,9 +718,7 @@ pub fn block_convert(
         rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
         call_id: 1,
-        memory_address: u64::from_le_bytes(
-            s.op().address().to_le_bytes()[..8].try_into().unwrap(),
-        ),
+        memory_address: u64::from_le_bytes(s.op().address().to_le_bytes()[..8].try_into().unwrap()),
         byte: s.op().value(),
     }));
     // TODO add storage ops
