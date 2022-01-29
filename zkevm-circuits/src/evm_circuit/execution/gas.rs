@@ -94,8 +94,12 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
-    use bus_mapping::bytecode;
+    use crate::{
+        evm_circuit::{test::run_test_circuit, witness::block_convert},
+        test_util::{run_test_circuits, BytecodeTestConfig},
+    };
+    use bus_mapping::{bytecode, mock::BlockData};
+    use eth_types::evm_types::Gas;
 
     fn test_ok() {
         let bytecode = bytecode! {
@@ -109,5 +113,37 @@ mod test {
     #[test]
     fn gas_gadget_simple() {
         test_ok();
+    }
+
+    #[test]
+    fn gas_gadget_incorrect_deduction() {
+        let bytecode = bytecode! {
+            #[start]
+            GAS
+            STOP
+        };
+        let config = BytecodeTestConfig::default();
+        let block_trace = BlockData::new_single_tx_trace_code_gas(
+            &bytecode,
+            Gas(config.gas_limit),
+        )
+        .expect("could not build block trace");
+        let mut builder = block_trace.new_circuit_input_builder();
+        builder
+            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
+            .expect("could not handle block tx");
+        let mut block =
+            block_convert(config.randomness, bytecode.code(), &builder.block);
+
+        // The above block has 2 steps (GAS and STOP). We forcefully assign a
+        // wrong `gas_left` value for the second step, to assert that
+        // the circuit verification fails for this scenario.
+        assert_eq!(block.txs.len(), 1);
+        assert_eq!(block.txs[0].steps.len(), 2);
+        block.txs[0].steps[1].gas_left -= 1;
+
+        assert!(
+            run_test_circuit(block, config.evm_circuit_lookup_tags).is_err()
+        );
     }
 }
