@@ -1,8 +1,7 @@
 //! This module generates traces by connecting to an external tracer
 use crate::Error;
 use eth_types::{
-    self, fix_geth_trace_memory_size, Address, Block, Bytes, GethExecStep,
-    Hash, Word, U64,
+    self, fix_geth_trace_memory_size, Address, Block, Bytes, GethExecStep, Hash, Word, U64,
 };
 use geth_utils;
 use serde::Serialize;
@@ -124,9 +123,8 @@ pub fn trace(
     };
 
     // Get the trace
-    let trace_string =
-        geth_utils::trace(&serde_json::to_string(&geth_config).unwrap())
-            .map_err(|_| Error::TracingError)?;
+    let trace_string = geth_utils::trace(&serde_json::to_string(&geth_config).unwrap())
+        .map_err(|_| Error::TracingError)?;
 
     let mut trace: Vec<GethExecStep> =
         serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
@@ -152,8 +150,7 @@ mod trace_test {
             STOP
         };
 
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
         assert_eq!(block.geth_trace.struct_logs[2].memory.0.len(), 0);
     }
 }

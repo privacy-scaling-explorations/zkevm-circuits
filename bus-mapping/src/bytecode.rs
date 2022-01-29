@@ -63,12 +63,7 @@ impl Bytecode {
         }
         // Check if the full value could be pushed
         for byte in bytes.iter().skip(n) {
-            debug_assert!(
-                *byte == 0u8,
-                "value too big for PUSH{}: {}",
-                n,
-                value
-            );
+            debug_assert!(*byte == 0u8, "value too big for PUSH{}: {}", n, value);
         }
         self
     }
