@@ -146,7 +146,8 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
-    use bus_mapping::{bytecode, evm::OpcodeId};
+    use eth_types::bytecode;
+    use eth_types::evm_types::OpcodeId;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
         assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);

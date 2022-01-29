@@ -338,10 +338,10 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-providers",
- "external-tracer",
  "itertools",
  "lazy_static",
  "log",
+ "mock",
  "pairing_bn256",
  "pretty_assertions",
  "serde",
@@ -2161,6 +2161,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mock"
+version = "0.1.0"
+dependencies = [
+ "eth-types",
+ "external-tracer",
+ "lazy_static",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3976,9 +3985,9 @@ dependencies = [
  "criterion",
  "digest 0.7.6",
  "eth-types",
- "external-tracer",
  "ff 0.11.0",
  "halo2",
+ "mock",
  "num",
  "pairing_bn256",
  "paste",

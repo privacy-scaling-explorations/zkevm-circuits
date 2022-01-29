@@ -1,20 +1,7 @@
 //! Types needed for generating Ethereum traces
 
-use crate::{address, Address, Block, Bytes, ChainConstants, GethExecTrace, Hash, Word, U64};
-use lazy_static::lazy_static;
+use crate::{Address, Block, Bytes, ChainConstants, GethExecTrace, Hash, Word, U64};
 use serde::Serialize;
-
-/// Mock chain ID
-pub const MOCK_CHAIN_ID: u64 = 1338;
-
-/// Mock gas
-pub const MOCK_GAS: u64 = 1_000_000u64;
-
-lazy_static! {
-    /// Mock coinbase value
-    pub static ref MOCK_COINBASE: Address =
-        address!("0x00000000000000000000000000000000c014ba5e");
-}
 
 /// Definition of all of the data related to an account.
 #[derive(Debug, Clone, Serialize)]
@@ -124,4 +111,6 @@ pub struct GethData {
     pub b_constant: BlockConstants,
     /// Execution Trace from geth
     pub geth_trace: GethExecTrace,
+    /// Accounts
+    pub accounts: Vec<Account>,
 }

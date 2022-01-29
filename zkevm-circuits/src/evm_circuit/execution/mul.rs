@@ -74,9 +74,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {

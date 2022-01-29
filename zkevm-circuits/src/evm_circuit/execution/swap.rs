@@ -91,9 +91,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(opcode: OpcodeId, lhs: Word, rhs: Word) {
         let n = (opcode.as_u8() - OpcodeId::SWAP1.as_u8() + 1) as usize;

@@ -105,8 +105,7 @@ mod test {
             get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig, FixedTableConfig,
         },
     };
-    use bus_mapping::bytecode;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(a: Word, b: Word) {
         let bytecode = bytecode! {

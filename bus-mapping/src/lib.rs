@@ -49,7 +49,6 @@
 //!
 //! ```rust
 //! use bus_mapping::Error;
-//! use bus_mapping::mock;
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use eth_types::{
 //!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
@@ -112,8 +111,8 @@
 //! };
 //!
 //! // We use some mock data as context for the trace
-//! let eth_block = external_tracer::new_block();
-//! let eth_tx = external_tracer::new_tx(&eth_block);
+//! let eth_block = mock::new_block();
+//! let eth_tx = mock::new_tx(&eth_block);
 //! let mut sdb = StateDB::new();
 //! sdb.set_account(&Address::zero(), state_db::Account::zero());
 //!
@@ -218,15 +217,13 @@
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 
 extern crate alloc;
+pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;
-pub mod operation;
-#[macro_use]
-pub mod bytecode;
-pub mod circuit_input_builder;
 pub(crate) mod geth_errors;
 pub mod mock;
+pub mod operation;
 pub mod rpc;
 pub mod state_db;
 pub use error::Error;

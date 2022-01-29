@@ -83,9 +83,8 @@ impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
 
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(opcode: OpcodeId, value: Word) {
         let n = (opcode.as_u8() - OpcodeId::DUP1.as_u8() + 1) as usize;
