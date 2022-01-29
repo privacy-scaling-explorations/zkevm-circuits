@@ -1251,9 +1251,7 @@ mod tests {
     use super::*;
     use bus_mapping::bytecode;
     use bus_mapping::mock;
-    use bus_mapping::operation::{
-        MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW,
-    };
+    use bus_mapping::operation::{MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW};
     use eth_types::evm_types::{Gas, MemoryAddress, StackAddress};
     use eth_types::geth_types::MOCK_GAS;
     use eth_types::{address, Word};
@@ -1950,11 +1948,8 @@ mod tests {
             STOP
         };
         let accounts = [bus_mapping::mock::new_tracer_account(&bytecode)];
-        let geth_data =
-            external_tracer::create_tx_by_accounts(&accounts, Gas(MOCK_GAS))
-                .unwrap();
-        let mut block =
-            mock::BlockData::new_single_tx_trace(&accounts, geth_data).unwrap();
+        let geth_data = external_tracer::create_tx_by_accounts(&accounts, Gas(MOCK_GAS)).unwrap();
+        let mut block = mock::BlockData::new_single_tx_trace(&accounts, geth_data).unwrap();
         block.slice_from_code_start(&bytecode);
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();

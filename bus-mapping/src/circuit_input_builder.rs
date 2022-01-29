@@ -8,9 +8,7 @@ use crate::operation::{MemoryOp, Op, Operation, RWCounter, StackOp, RW};
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
-use eth_types::evm_types::{
-    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
-};
+use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
 use eth_types::geth_types::BlockConstants;
 use eth_types::{
     self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word,

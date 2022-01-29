@@ -2,12 +2,11 @@
 
 use eth_types::evm_types::Gas;
 use eth_types::geth_types::{
-    Account, BlockConstants, GethData, Transaction, MOCK_CHAIN_ID,
-    MOCK_COINBASE,
+    Account, BlockConstants, GethData, Transaction, MOCK_CHAIN_ID, MOCK_COINBASE,
 };
 use eth_types::{
-    self, fix_geth_trace_memory_size, Address, Block, Bytes, ChainConstants,
-    Error, GethExecStep, GethExecTrace, Hash, Word, U64,
+    self, fix_geth_trace_memory_size, Address, Block, Bytes, ChainConstants, Error, GethExecStep,
+    GethExecTrace, Hash, Word, U64,
 };
 use serde::Serialize;
 
@@ -16,18 +15,12 @@ use serde::Serialize;
 /// with the given gas limit.
 /// The trace will be generated automatically with the external_tracer
 /// from the accounts code.
-pub fn create_tx_by_accounts(
-    accounts: &[Account],
-    gas: Gas,
-) -> Result<GethData, Error> {
+pub fn create_tx_by_accounts(accounts: &[Account], gas: Gas) -> Result<GethData, Error> {
     let eth_block = new_block();
     let mut eth_tx = new_tx(&eth_block);
     eth_tx.gas = Word::from(gas.0);
     let c_constant = new_chain_constants();
-    let b_constant = BlockConstants::from_eth_block(
-        &eth_block,
-        &Word::from(c_constant.chain_id),
-    );
+    let b_constant = BlockConstants::from_eth_block(&eth_block, &Word::from(c_constant.chain_id));
     let tracer_tx = Transaction::from_eth_tx(&eth_tx);
     let geth_trace = GethExecTrace {
         gas: Gas(eth_tx.gas.as_u64()),
@@ -50,10 +43,7 @@ pub fn create_tx_by_steps(geth_steps: Vec<GethExecStep>) -> GethData {
     let eth_block = new_block();
     let eth_tx = new_tx(&eth_block);
     let c_constant = new_chain_constants();
-    let b_constant = BlockConstants::from_eth_block(
-        &eth_block,
-        &Word::from(c_constant.chain_id),
-    );
+    let b_constant = BlockConstants::from_eth_block(&eth_block, &Word::from(c_constant.chain_id));
     let geth_trace = eth_types::GethExecTrace {
         gas: Gas(eth_tx.gas.as_u64()),
         failed: false,
@@ -149,9 +139,8 @@ fn trace(
     };
 
     // Get the trace
-    let trace_string =
-        geth_utils::trace(&serde_json::to_string(&geth_config).unwrap())
-            .map_err(|_| Error::TracingError)?;
+    let trace_string = geth_utils::trace(&serde_json::to_string(&geth_config).unwrap())
+        .map_err(|_| Error::TracingError)?;
 
     let mut trace: Vec<GethExecStep> =
         serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;

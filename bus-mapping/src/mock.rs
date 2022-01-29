@@ -4,9 +4,7 @@ use crate::bytecode::Bytecode;
 use crate::circuit_input_builder::CircuitInputBuilder;
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
-use eth_types::geth_types::{
-    Account, BlockConstants, GethData, Transaction, MOCK_COINBASE,
-};
+use eth_types::geth_types::{Account, BlockConstants, GethData, Transaction, MOCK_COINBASE};
 use eth_types::{self, Address, Bytes, ChainConstants, Word};
 use std::collections::HashMap;
 
@@ -49,10 +47,7 @@ impl BlockData {
     /// Create a new block with a single tx that executes the code found in the
     /// account with address 0x0 (which can call code in the other accounts),
     /// with the given Geth data.
-    pub fn new_single_tx_trace(
-        accounts: &[Account],
-        geth_data: GethData,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace(accounts: &[Account], geth_data: GethData) -> Result<Self, Error> {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
         for account in accounts {
@@ -80,8 +75,7 @@ impl BlockData {
 
     /// Slice trace steps to start at the "start" position as tagged in code.
     pub fn slice_from_code_start(&mut self, code: &Bytecode) {
-        self.geth_trace.struct_logs =
-            self.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
+        self.geth_trace.struct_logs = self.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
     }
 }
 
@@ -91,11 +85,8 @@ impl BlockData {
     /// account with address 0x0 (which can call code in the other accounts).
     /// The trace will be generated automatically with the external_tracer
     /// from the accounts code.
-    fn new_single_tx_trace_accounts(
-        accounts: &[Account],
-    ) -> Result<Self, Error> {
-        let geth_data =
-            external_tracer::create_tx_by_accounts(accounts, Gas(MOCK_GAS))?;
+    fn new_single_tx_trace_accounts(accounts: &[Account]) -> Result<Self, Error> {
+        let geth_data = external_tracer::create_tx_by_accounts(accounts, Gas(MOCK_GAS))?;
         Self::new_single_tx_trace(accounts, geth_data)
     }
 
@@ -110,10 +101,7 @@ impl BlockData {
     /// Create a new block with a single tx with the given gas limit that
     /// executes the code passed by argument. The trace will be generated
     /// automatically with the external_tracer from the code.
-    pub fn new_single_tx_trace_code_gas(
-        code: &Bytecode,
-        gas: Gas,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace_code_gas(code: &Bytecode, gas: Gas) -> Result<Self, Error> {
         let accounts = [new_tracer_account(code)];
         let geth_data = external_tracer::create_tx_by_accounts(&accounts, gas)?;
         Self::new_single_tx_trace(&accounts, geth_data)
@@ -142,9 +130,7 @@ impl BlockData {
     /// Create a new block with a single tx that leads to the geth_steps passed
     /// by argument. The returned BlockData contains an empty StateDB and
     /// CodeDB.
-    pub fn new_single_tx_geth_steps(
-        geth_steps: Vec<eth_types::GethExecStep>,
-    ) -> Self {
+    pub fn new_single_tx_geth_steps(geth_steps: Vec<eth_types::GethExecStep>) -> Self {
         let geth_data = external_tracer::create_tx_by_steps(geth_steps);
         let sdb = StateDB::new();
         let code_db = CodeDB::new();

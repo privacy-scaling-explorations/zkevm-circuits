@@ -1,9 +1,6 @@
 //! Types needed for generating Ethereum traces
 
-use crate::{
-    address, Address, Block, Bytes, ChainConstants, GethExecTrace, Hash, Word,
-    U64,
-};
+use crate::{address, Address, Block, Bytes, ChainConstants, GethExecTrace, Hash, Word, U64};
 use lazy_static::lazy_static;
 use serde::Serialize;
 
