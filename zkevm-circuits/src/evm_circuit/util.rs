@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
 use eth_types::U256;
 use halo2::{
@@ -297,16 +299,27 @@ pub(crate) fn split_u256(value: &U256) -> (U256, U256) {
 pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
-    randomness: F,
+    power_of_randomness: [F; 31],
+    width_start: usize,
+    height_start: usize,
 }
 
 impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     /// New cached region
-    pub(crate) fn new(region: &'r mut Region<'b, F>, randomness: F) -> Self {
+    pub(crate) fn new(
+        region: &'r mut Region<'b, F>,
+        power_of_randomness: [F; 31],
+        width: usize,
+        height: usize,
+        width_start: usize,
+        height_start: usize,
+    ) -> Self {
         Self {
             region,
-            advice: vec![],
-            randomness,
+            advice: vec![vec![F::zero(); height]; width],
+            power_of_randomness,
+            width_start,
+            height_start,
         }
     }
 
@@ -326,14 +339,8 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     {
         // Cache the value
         let value: F = to().unwrap().into().evaluate();
-        if column.index() >= self.advice.len() {
-            self.advice.resize(column.index() + 1, vec![]);
-        }
-        let advice = &mut self.advice[column.index()];
-        if advice.len() <= offset {
-            advice.resize(offset + 1, F::zero());
-        }
-        advice[offset] = value;
+        self.advice[column.index() - self.width_start]
+            [offset - self.height_start] = value;
 
         // Actually set the value
         self.region.assign_advice(annotation, column, offset, to)
@@ -354,7 +361,8 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         column_index: usize,
         rotation: Rotation,
     ) -> F {
-        self.advice[column_index][((row_index as i32) + rotation.0) as usize]
+        self.advice[column_index - self.width_start]
+            [(((row_index - self.height_start) as i32) + rotation.0) as usize]
     }
 
     pub fn get_instance(
@@ -363,7 +371,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         column_index: usize,
         _rotation: Rotation,
     ) -> F {
-        self.randomness.pow(&[(column_index + 1) as u64, 0, 0, 0])
+        self.power_of_randomness[column_index]
     }
 }
 

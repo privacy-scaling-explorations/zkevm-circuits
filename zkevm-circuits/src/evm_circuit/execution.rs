@@ -14,9 +14,12 @@ use crate::{
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
+    },
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::TryInto};
+use ark_std::{start_timer, end_timer};
 
 mod add;
 mod begin_tx;
@@ -86,6 +89,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 pub(crate) struct ExecutionConfig<F> {
     q_step: Selector,
     q_step_first: Selector,
+    advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     intermediates_map: HashMap<ExecutionState, Vec<IntermediateResult<F>>>,
     add_gadget: AddGadget<F>,
@@ -195,6 +199,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let config = Self {
             q_step,
             q_step_first,
+            advices,
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
@@ -263,14 +268,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
         );
 
         let gadget = G::configure(&mut cb);
-        println!(
+        /*println!(
             "{}: {} lookups, {} intermediates, {} cells ({} bytes)",
             G::NAME,
             cb.lookups.len(),
             cb.intermediate_results.len(),
             cb.num_cells,
             cb.num_bytes
-        );
+        );*/
 
         let (
             constraints,
@@ -353,6 +358,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
+        let power_of_randomness = (1..32)
+            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
+            .collect::<Vec<F>>()
+            .try_into()
+            .unwrap();
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -373,6 +383,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             transaction,
                             call,
                             step,
+                            power_of_randomness,
                         )?;
 
                         offset += STEP_HEIGHT;
@@ -393,6 +404,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
+        let power_of_randomness = (1..32)
+            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
+            .collect::<Vec<F>>()
+            .try_into()
+            .unwrap();
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -409,6 +425,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             transaction,
                             call,
                             step,
+                            power_of_randomness,
                         )?;
 
                         offset += STEP_HEIGHT;
@@ -427,11 +444,16 @@ impl<F: FieldExt> ExecutionConfig<F> {
         transaction: &Transaction<F>,
         call: &Call<F>,
         step: &ExecStep,
+        power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
-        println!("Step {}", offset);
-
-        let mut cached_region =
-            CachedRegion::<'_, '_, F>::new(region, block.randomness);
+        let mut cached_region = CachedRegion::<'_, '_, F>::new(
+            region,
+            power_of_randomness,
+            STEP_WIDTH,
+            STEP_HEIGHT,
+            self.advices[0].index(),
+            offset,
+       );
 
         self.step
             .assign_exec_step(&mut cached_region, offset, call, step)?;
