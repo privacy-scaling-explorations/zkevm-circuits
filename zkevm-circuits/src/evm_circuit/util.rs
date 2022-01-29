@@ -25,11 +25,7 @@ pub(crate) struct Cell<F> {
 }
 
 impl<F: FieldExt> Cell<F> {
-    pub(crate) fn new(
-        meta: &mut VirtualCells<F>,
-        column: Column<Advice>,
-        rotation: usize,
-    ) -> Self {
+    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>, rotation: usize) -> Self {
         Self {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
             column,
@@ -93,18 +89,13 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         assert!(bytes.len() <= power_of_randomness.len() + 1);
 
         let mut rlc = bytes[0].clone();
-        for (byte, randomness) in
-            bytes[1..].iter().zip(power_of_randomness.iter())
-        {
+        for (byte, randomness) in bytes[1..].iter().zip(power_of_randomness.iter()) {
             rlc = rlc + byte.clone() * randomness.clone();
         }
         rlc
     }
 
-    pub(crate) fn new(
-        cells: [Cell<F>; N],
-        power_of_randomness: &[Expression<F>],
-    ) -> Self {
+    pub(crate) fn new(cells: [Cell<F>; N], power_of_randomness: &[Expression<F>]) -> Self {
         Self {
             expression: Self::random_linear_combine_expr(
                 cells.clone().map(|cell| cell.expr()),
@@ -124,9 +115,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
             self.cells
                 .iter()
                 .zip(bytes.iter())
-                .map(|(cell, byte)| {
-                    cell.assign(region, offset, Some(F::from(*byte as u64)))
-                })
+                .map(|(cell, byte)| cell.assign(region, offset, Some(F::from(*byte as u64))))
                 .collect()
         })
     }
@@ -139,8 +128,7 @@ impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 }
 
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
-pub(crate) type MemoryAddress<F> =
-    RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
+pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {
@@ -195,11 +183,7 @@ pub(crate) mod select {
         selector.clone() * when_true + (1.expr() - selector) * when_false
     }
 
-    pub(crate) fn value<F: FieldExt>(
-        selector: F,
-        when_true: F,
-        when_false: F,
-    ) -> F {
+    pub(crate) fn value<F: FieldExt>(selector: F, when_true: F, when_false: F) -> F {
         selector * when_true + (F::one() - selector) * when_false
     }
 

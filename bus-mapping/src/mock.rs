@@ -122,27 +122,18 @@ impl BlockData {
     /// Create a new block with a single tx that executes the code_a passed by
     /// argument, with code_b deployed at address 0x123. The trace will be
     /// generated automatically with the external_tracer from the code.
-    pub fn new_single_tx_trace_code_2(
-        code_a: &Bytecode,
-        code_b: &Bytecode,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace_code_2(code_a: &Bytecode, code_b: &Bytecode) -> Result<Self, Error> {
         let tracer_account_a = new_tracer_account(code_a);
         let mut tracer_account_b = new_tracer_account(code_b);
-        tracer_account_b.address =
-            address!("0x0000000000000000000000000000000000000123");
-        Self::new_single_tx_trace_accounts(&[
-            tracer_account_a,
-            tracer_account_b,
-        ])
+        tracer_account_b.address = address!("0x0000000000000000000000000000000000000123");
+        Self::new_single_tx_trace_accounts(&[tracer_account_a, tracer_account_b])
     }
 
     /// Create a new block with a single tx that executes the code passed by
     /// argument. The trace will be generated automatically with the
     /// external_tracer from the code. The trace steps will start at the
     /// "start" position as tagged in the code.
-    pub fn new_single_tx_trace_code_at_start(
-        code: &Bytecode,
-    ) -> Result<Self, Error> {
+    pub fn new_single_tx_trace_code_at_start(code: &Bytecode) -> Result<Self, Error> {
         let mut mock = Self::new_single_tx_trace_code(code)?;
         mock.slice_from_code_start(code);
         Ok(mock)

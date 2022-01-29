@@ -71,8 +71,7 @@ mod sload_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -88,14 +87,9 @@ mod sload_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
         // Add StackOp associated to the stack pop.
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1023),
-            Word::from(0x0u32),
-        );
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x0u32));
         // Add StorageOp associated to the storage read.
         state_ref.push_op(StorageOp::new(
             RW::READ,
@@ -105,11 +99,7 @@ mod sload_tests {
             Word::from(0x6fu32),
         ));
         // Add StackOp associated to the stack push.
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress::from(1023),
-            Word::from(0x6fu32),
-        );
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), Word::from(0x6fu32));
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
 

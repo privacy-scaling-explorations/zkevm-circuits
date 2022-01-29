@@ -72,12 +72,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
             stack_pointer: Delta(2.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -98,12 +93,9 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [destination, condition] = [step.rw_indices[0], step.rw_indices[1]]
-            .map(|idx| block.rws[idx].stack_value());
-        let condition = Word::random_linear_combine(
-            condition.to_le_bytes(),
-            block.randomness,
-        );
+        let [destination, condition] =
+            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let condition = Word::random_linear_combine(condition.to_le_bytes(), block.randomness);
 
         self.destination.assign(
             region,
