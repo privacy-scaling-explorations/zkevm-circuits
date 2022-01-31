@@ -86,7 +86,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         bytes: [Expression<F>; N],
         power_of_randomness: &[Expression<F>],
     ) -> Expression<F> {
-        assert!(bytes.len() <= power_of_randomness.len() + 1);
+        debug_assert!(bytes.len() <= power_of_randomness.len() + 1);
 
         let mut rlc = bytes[0].clone();
         for (byte, randomness) in bytes[1..].iter().zip(power_of_randomness.iter()) {
@@ -206,7 +206,7 @@ pub(crate) mod from_bytes {
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
-        assert!(
+        debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );
@@ -220,7 +220,7 @@ pub(crate) mod from_bytes {
     }
 
     pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
-        assert!(
+        debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );

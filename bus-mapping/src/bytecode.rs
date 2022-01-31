@@ -50,7 +50,7 @@ impl Bytecode {
 
     /// Push
     pub fn push(&mut self, n: usize, value: Word) -> &mut Self {
-        assert!((1..=32).contains(&n), "invalid push");
+        debug_assert!((1..=32).contains(&n), "invalid push");
 
         // Write the op code
         self.write_op_internal(OpcodeId::PUSH1.as_u8() + ((n - 1) as u8));
@@ -63,7 +63,7 @@ impl Bytecode {
         }
         // Check if the full value could be pushed
         for byte in bytes.iter().skip(n) {
-            assert!(*byte == 0u8, "value too big for PUSH{}: {}", n, value);
+            debug_assert!(*byte == 0u8, "value too big for PUSH{}: {}", n, value);
         }
         self
     }
@@ -76,7 +76,7 @@ impl Bytecode {
 
     /// Insert marker
     pub fn insert_marker(&mut self, marker: &str, pos: usize) {
-        assert!(
+        debug_assert!(
             !self.markers.contains_key(marker),
             "marker already used: {}",
             marker
@@ -145,7 +145,7 @@ macro_rules! bytecode_internal {
     ($code:ident, ) => {};
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        debug_assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
         let n = $crate::evm::OpcodeId::$x.as_u8()
             - $crate::evm::OpcodeId::PUSH1.as_u8()
             + 1;
@@ -154,7 +154,7 @@ macro_rules! bytecode_internal {
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        debug_assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
         $code.write_op($crate::evm::OpcodeId::$x);
         $crate::bytecode_internal!($code, $($rest)*);
     }};

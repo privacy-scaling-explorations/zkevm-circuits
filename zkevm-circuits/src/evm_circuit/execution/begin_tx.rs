@@ -541,7 +541,7 @@ mod test {
         // Transfer random ether, successfully
         test_ok(
             mock_tx(
-                Some(Word::from(rand_range(0..=10u64.pow(20)))),
+                Some(Word::from(rand_range(0..=u64::MAX))),
                 None,
                 None,
                 vec![],
@@ -563,7 +563,7 @@ mod test {
         // Transfer random ether, tx reverts
         test_ok(
             mock_tx(
-                Some(Word::from(rand_range(0..=10u64.pow(20)))),
+                Some(Word::from(rand_range(0..=u64::MAX))),
                 None,
                 None,
                 vec![],

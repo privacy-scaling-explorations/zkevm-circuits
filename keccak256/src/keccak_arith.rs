@@ -164,7 +164,7 @@ impl Sponge {
     }
 
     pub fn absorb(&self, state: &mut State, message: &[u8]) {
-        assert!(
+        debug_assert!(
             message.len() % self.rate == 0,
             "Message is not divisible entirely by bytes rate"
         );

@@ -63,8 +63,8 @@ impl StateBigInt {
 impl Index<(usize, usize)> for StateBigInt {
     type Output = BigUint;
     fn index(&self, xy: (usize, usize)) -> &Self::Output {
-        assert!(xy.0 < 5);
-        assert!(xy.1 < 5);
+        debug_assert!(xy.0 < 5);
+        debug_assert!(xy.1 < 5);
 
         &self.xy[xy.0 * 5 + xy.1]
     }
@@ -72,8 +72,8 @@ impl Index<(usize, usize)> for StateBigInt {
 
 impl IndexMut<(usize, usize)> for StateBigInt {
     fn index_mut(&mut self, xy: (usize, usize)) -> &mut Self::Output {
-        assert!(xy.0 < 5);
-        assert!(xy.1 < 5);
+        debug_assert!(xy.0 < 5);
+        debug_assert!(xy.1 < 5);
 
         &mut self.xy[xy.0 * 5 + xy.1]
     }
@@ -113,7 +113,7 @@ pub fn convert_b2_to_b9(a: u64) -> Lane9 {
 /// For example, if we have 5 bits set and 7 bits unset, then we have `x` as 5
 /// and the xor result to be 1.
 pub fn convert_b13_coef(x: u8) -> u8 {
-    assert!(x < 13);
+    debug_assert!(x < 13);
     x & 1
 }
 
@@ -123,7 +123,7 @@ pub fn convert_b13_coef(x: u8) -> u8 {
 /// The input `x` is a chunk of a base 9 number and it represents the arithmatic
 /// result of `2*a + b + 3*c + 2*d`, where `a`, `b`, `c`, and `d` each is a bit.
 pub fn convert_b9_coef(x: u8) -> u8 {
-    assert!(x < 9);
+    debug_assert!(x < 9);
     let bit_table: [u8; 9] = [0, 0, 1, 1, 0, 0, 1, 1, 0];
     bit_table[x as usize]
 }
@@ -209,7 +209,7 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> Stat
         // and refactoring `State` will be done once the
         // keccak_all_togheter is done.
         .map(|bytes| {
-            assert!(bytes[8..32] == vec![0u8; 24]);
+            debug_assert!(bytes[8..32] == vec![0u8; 24]);
             let mut arr = [0u8; 8];
             arr.copy_from_slice(&bytes[0..8]);
             u64::from_le_bytes(arr)
