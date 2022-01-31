@@ -84,7 +84,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::run_test_circuits;
-    use bus_mapping::bytecode;
+    use eth_types::bytecode;
 
     fn test_ok() {
         let bytecode = bytecode! {

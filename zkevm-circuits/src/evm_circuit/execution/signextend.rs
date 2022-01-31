@@ -204,8 +204,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
-    use eth_types::{ToLittleEndian, Word};
+    use eth_types::{bytecode, ToLittleEndian, Word};
 
     fn test_ok(index: Word, value: Word, _result: Word) {
         let bytecode = bytecode! {

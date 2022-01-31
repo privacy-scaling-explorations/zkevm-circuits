@@ -30,13 +30,9 @@ impl Opcode for Jump {
 #[cfg(test)]
 mod jump_tests {
     use super::*;
-    use crate::{
-        bytecode,
-        circuit_input_builder::{ExecStep, TransactionContext},
-        mock,
-    };
+    use crate::circuit_input_builder::{ExecStep, TransactionContext};
     use eth_types::evm_types::StackAddress;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -57,7 +53,9 @@ mod jump_tests {
         });
 
         // Get the execution steps from the external tracer
-        let block = mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();

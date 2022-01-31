@@ -119,8 +119,7 @@ mod test {
         evm_circuit::test::{rand_range, rand_word},
         test_util::run_test_circuits,
     };
-    use bus_mapping::bytecode;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(destination: usize, condition: Word) {
         assert!((68..(1 << 24) - 1).contains(&destination));

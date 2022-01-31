@@ -199,9 +199,8 @@ mod test {
         evm_circuit::test::rand_word,
         test_util::{run_test_circuits_with_config, BytecodeTestConfig},
     };
-    use bus_mapping::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
     use std::iter;
 
     fn test_ok(opcode: OpcodeId, address: Word, value: Word, _memory_size: u64, gas_cost: u64) {

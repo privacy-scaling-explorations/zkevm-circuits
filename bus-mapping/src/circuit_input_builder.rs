@@ -2,7 +2,6 @@
 //! types from geth / web3 and outputs the circuit inputs.
 use crate::evm::opcodes::gen_associated_ops;
 use crate::exec_trace::OperationRef;
-use crate::external_tracer::BlockConstants;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
 use crate::operation::{MemoryOp, Op, Operation, RWCounter, StackOp, RW};
@@ -10,6 +9,7 @@ use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
+use eth_types::geth_types::BlockConstants;
 use eth_types::{
     self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word,
 };
@@ -1308,9 +1308,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 #[cfg(test)]
 mod tracer_tests {
     use super::*;
-    use crate::{bytecode, bytecode::Bytecode, mock, state_db::Account};
+    use crate::state_db::Account;
     use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
-    use eth_types::{address, word, ToWord, Word};
+    use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
     use lazy_static::lazy_static;
     use pretty_assertions::assert_eq;
     use std::iter::FromIterator;
@@ -1327,7 +1327,7 @@ mod tracer_tests {
     }
 
     impl CircuitInputBuilderTx {
-        fn new(block: &mock::BlockData, geth_step: &GethExecStep) -> Self {
+        fn new(block: &crate::mock::BlockData, geth_step: &GethExecStep) -> Self {
             let mut builder = block.new_circuit_input_builder();
             let tx = builder.new_tx(&block.eth_tx).unwrap();
             Self {
@@ -1387,9 +1387,9 @@ mod tracer_tests {
                  PUSH2(0xab)
                  STOP
         };
-        let block =
-            mock::BlockData::new_single_tx_trace_code_gas(&code, Gas(1_000_000_000_000_000u64))
-                .unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_gas(&code, Gas(1_000_000_000_000_000u64)).unwrap(),
+        );
         let struct_logs = &block.geth_trace.struct_logs;
 
         // get last CALL
@@ -1442,7 +1442,9 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last CALL
         let (index, step) = block
@@ -1533,7 +1535,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last CREATE2
         let (index, step) = block
@@ -1653,7 +1657,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last RETURN
         let (index, step) = block
@@ -1739,7 +1745,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last RETURN
         let (index, step) = block
@@ -1826,7 +1834,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last RETURN
         let (index, step) = block
@@ -1900,7 +1910,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get first STOP
         let (index, step) = block
@@ -1954,7 +1966,9 @@ mod tracer_tests {
             STOP
         };
         let index = 1; // JUMP
-        let block = mock::BlockData::new_single_tx_trace_code(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
         assert_eq!(block.geth_trace.struct_logs.len(), 2);
         let step = &block.geth_trace.struct_logs[index];
         let next_step = block.geth_trace.struct_logs.get(index + 1);
@@ -1981,7 +1995,9 @@ mod tracer_tests {
             PUSH2(0xaa)
         };
         let index = 8; // JUMP
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code).unwrap(),
+        );
         let step = &block.geth_trace.struct_logs[index];
         let next_step = block.geth_trace.struct_logs.get(index + 1);
         assert!(check_err_invalid_jump(step, next_step));
@@ -2012,7 +2028,9 @@ mod tracer_tests {
             STOP
         };
         let index = 2; // REVERT
-        let block = mock::BlockData::new_single_tx_trace_code(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
         assert_eq!(block.geth_trace.struct_logs.len(), 3);
         let step = &block.geth_trace.struct_logs[index];
         let next_step = block.geth_trace.struct_logs.get(index + 1);
@@ -2040,7 +2058,9 @@ mod tracer_tests {
             PUSH2(0xaa)
         };
         let index = 10; // REVERT
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code).unwrap(),
+        );
         let step = &block.geth_trace.struct_logs[index];
         let next_step = block.geth_trace.struct_logs.get(index + 1);
         assert!(check_err_execution_reverted(step, next_step));
@@ -2077,7 +2097,9 @@ mod tracer_tests {
             PUSH2(0xaa)
         };
         let index = 10; // STOP
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code).unwrap(),
+        );
         let step = &block.geth_trace.struct_logs[index];
         let next_step = block.geth_trace.struct_logs.get(index + 1);
 
@@ -2128,7 +2150,9 @@ mod tracer_tests {
             PUSH1(0x00) // offset
             RETURN
         };
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last RETURNDATACOPY
         let (index, step) = block
@@ -2163,7 +2187,9 @@ mod tracer_tests {
             PUSH32(0x100_0000_0000_0000_0000_u128) // offset
             MSTORE
         };
-        let block = mock::BlockData::new_single_tx_trace_code(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
 
         let index = 2; // MSTORE
         let step = &block.geth_trace.struct_logs[index];
@@ -2184,7 +2210,9 @@ mod tracer_tests {
         let mut code = bytecode::Bytecode::default();
         code.write_op(OpcodeId::PC);
         code.write(0x0f);
-        let block = mock::BlockData::new_single_tx_trace_code(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
 
         let index = block.geth_trace.struct_logs.len() - 1; // 0x0f
         let step = &block.geth_trace.struct_logs[index];
@@ -2226,7 +2254,9 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         let index = 9; // SSTORE
         let step = &block.geth_trace.struct_logs[index];
@@ -2249,7 +2279,9 @@ mod tracer_tests {
             PUSH1(0x1)
             PUSH1(0x2)
         };
-        let block = mock::BlockData::new_single_tx_trace_code_gas(&code, Gas(4)).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_gas(&code, Gas(4)).unwrap(),
+        );
         let struct_logs = block.geth_trace.struct_logs;
 
         assert_eq!(struct_logs[1].error, Some(GETH_ERR_OUT_OF_GAS.to_string()));
@@ -2262,7 +2294,9 @@ mod tracer_tests {
         for i in 0..1025 {
             code.push(2, Word::from(i));
         }
-        let block = mock::BlockData::new_single_tx_trace_code(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
 
         let index = block.geth_trace.struct_logs.len() - 1; // PUSH2
         let step = &block.geth_trace.struct_logs[index];
@@ -2285,7 +2319,9 @@ mod tracer_tests {
         let code = bytecode! {
             SWAP5
         };
-        let block = mock::BlockData::new_single_tx_trace_code(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
 
         let index = 0; // SWAP5
         let step = &block.geth_trace.struct_logs[index];
@@ -2356,7 +2392,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get RETURN
         let (index_return, _) = block
@@ -2441,7 +2479,9 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
 
         // get last RETURN
         let (index_return, _) = block
@@ -2513,7 +2553,9 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
-        let block = mock::BlockData::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap(),
+        );
         let access_trace =
             gen_state_access_trace(&block.eth_block, &block.eth_tx, &block.geth_trace).unwrap();
 

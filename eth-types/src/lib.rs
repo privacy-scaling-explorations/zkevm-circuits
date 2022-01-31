@@ -16,8 +16,12 @@
 pub mod macros;
 #[macro_use]
 pub mod error;
+#[macro_use]
+pub mod bytecode;
 pub mod evm_types;
+pub mod geth_types;
 
+pub use bytecode::Bytecode;
 pub use error::Error;
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};

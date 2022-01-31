@@ -48,22 +48,18 @@ impl Default for BytecodeTestConfig {
     }
 }
 
-pub fn run_test_circuits(
-    bytecode: bus_mapping::bytecode::Bytecode,
-) -> Result<(), Vec<VerifyFailure>> {
+pub fn run_test_circuits(bytecode: eth_types::Bytecode) -> Result<(), Vec<VerifyFailure>> {
     run_test_circuits_with_config(bytecode, BytecodeTestConfig::default())
 }
 
 pub fn run_test_circuits_with_config(
-    bytecode: bus_mapping::bytecode::Bytecode,
+    bytecode: eth_types::Bytecode,
     config: BytecodeTestConfig,
 ) -> Result<(), Vec<VerifyFailure>> {
     // Step 1: execute the bytecode and get trace
-    let block_trace = bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
-        &bytecode,
-        Gas(config.gas_limit),
-    )
-    .unwrap();
+    let block_trace = bus_mapping::mock::BlockData::new_from_geth_data(
+        mock::new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit)).unwrap(),
+    );
     let mut builder = block_trace.new_circuit_input_builder();
     builder
         .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)

@@ -599,8 +599,8 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
     }
 }
 
-impl From<&bus_mapping::bytecode::Bytecode> for Bytecode {
-    fn from(b: &bus_mapping::bytecode::Bytecode) -> Self {
+impl From<&eth_types::Bytecode> for Bytecode {
+    fn from(b: &eth_types::Bytecode) -> Self {
         Bytecode::new(b.to_vec())
     }
 }

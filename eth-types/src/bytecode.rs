@@ -1,7 +1,7 @@
 //! EVM byte code generator
 
-use crate::evm::OpcodeId;
-use eth_types::Word;
+use crate::evm_types::OpcodeId;
+use crate::Word;
 use std::collections::HashMap;
 
 /// EVM Bytecode
@@ -145,17 +145,17 @@ macro_rules! bytecode_internal {
     ($code:ident, ) => {};
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        debug_assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
-        let n = $crate::evm::OpcodeId::$x.as_u8()
-            - $crate::evm::OpcodeId::PUSH1.as_u8()
+        debug_assert!($crate::evm_types::OpcodeId::$x.is_push(), "invalid push");
+        let n = $crate::evm_types::OpcodeId::$x.as_u8()
+            - $crate::evm_types::OpcodeId::PUSH1.as_u8()
             + 1;
         $code.push(n as usize, $v.into());
         $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        debug_assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
-        $code.write_op($crate::evm::OpcodeId::$x);
+        debug_assert!(!$crate::evm_types::OpcodeId::$x.is_push(), "invalid push");
+        $code.write_op($crate::evm_types::OpcodeId::$x);
         $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Marker
