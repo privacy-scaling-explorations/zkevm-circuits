@@ -136,7 +136,7 @@ pub struct RhoLane {
 
 impl RhoLane {
     pub fn new(input: BigUint, rotation: u32) -> Self {
-        assert!(
+        debug_assert!(
             input.lt(&BigUint::from(B13).pow(RHO_LANE_SIZE as u32)),
             "lane too big"
         );
@@ -145,7 +145,7 @@ impl RhoLane {
         let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
         let special_high = *chunks.get(64).unwrap();
         let special_low = *chunks.get(0).unwrap();
-        assert!(special_high + special_low < B13, "invalid Rho input lane");
+        debug_assert!(special_high + special_low < B13, "invalid Rho input lane");
         let output = convert_b13_lane_to_b9(input.clone(), rotation);
         let output_b2 = *BigUint::from_radix_le(&output.to_radix_le(B9.into()), B2.into())
             .unwrap_or_default()

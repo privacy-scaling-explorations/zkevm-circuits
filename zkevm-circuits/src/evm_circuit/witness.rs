@@ -561,7 +561,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
         // TODO: error reporting. (errors are defined in
         // circuit_input_builder.rs)
-        assert!(step.error.is_none());
+        debug_assert!(step.error.is_none());
         if step.op.is_dup() {
             return ExecutionState::DUP;
         }

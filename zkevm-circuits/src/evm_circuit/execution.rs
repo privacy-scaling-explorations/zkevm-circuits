@@ -270,8 +270,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
-        assert!(
-            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
+        let insert_result = presets_map.insert(G::EXECUTION_STATE, presets);
+        debug_assert!(
+            insert_result.is_none(),
             "execution state already configured"
         );
 

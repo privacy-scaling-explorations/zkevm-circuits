@@ -172,7 +172,7 @@ impl<F: FieldExt> BaseInfo<F> {
         let input_chunks: Vec<u8> = {
             let raw = f_to_biguint(input);
             let mut v = raw.to_radix_le(self.input_base.into());
-            assert!(v.len() <= self.max_chunks);
+            debug_assert!(v.len() <= self.max_chunks);
             // fill 0 to max chunks
             v.resize(self.max_chunks, 0);
             // v is big-endian now
