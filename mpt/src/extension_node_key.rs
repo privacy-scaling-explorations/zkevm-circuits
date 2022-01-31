@@ -114,6 +114,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let key_rlc_prev_level = meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
 
+            let mult_diff_cur = meta.query_advice(mult_diff, Rotation::cur());
+            let mult_diff_prev = meta.query_advice(mult_diff, Rotation::prev());
+
             let key_rlc_mult_prev = meta.query_advice(key_rlc_mult, Rotation::prev());
             let key_rlc_mult_prev_level = meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch));
             let key_rlc_mult_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
@@ -136,6 +139,13 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * is_branch_child_prev.clone()
                     * is_branch_child_cur.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
+            ));
+            constraints.push((
+                "branch key MULT diff same over all branch children with index > 0",
+                q_not_first.clone()
+                    * is_branch_child_prev.clone()
+                    * is_branch_child_cur.clone()
+                    * (mult_diff_cur.clone() - mult_diff_prev.clone()),
             ));
 
             constraints.push((
