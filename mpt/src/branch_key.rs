@@ -206,7 +206,8 @@ impl<F: FieldExt> BranchKeyChip<F> {
             ));
             // If extension node, sel1 and sel2 in first level depend on the extension key (even/odd).
             // If key is even, the constraints stay the same. If key is odd, the constraints get
-            // turned around.
+            // turned around. Note that even/odd means for key nibbles (what we actually need here) and
+            // not for key length in RLP (how many bytes key occupies in RLP).
             constraints.push((
                 "account first level key_rlc sel1 = 1 (extension node even key)",
                 q_not_first.clone()

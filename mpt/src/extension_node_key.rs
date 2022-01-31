@@ -50,6 +50,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let mut constraints = vec![];
 
             let rot_into_branch_init = -18;
+            // Could be used any rotation into previous branch, because key RLC is the same in all
+            // branch children:
+            let rot_into_prev_branch = rot_into_branch_init - 3;
             let c16 = Expression::Constant(F::from(16));
 
             let is_extension_node = meta.query_advice(
@@ -92,48 +95,93 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 meta.query_advice(is_branch_init, Rotation::prev());
             let is_branch_child_prev =
                 meta.query_advice(is_branch_child, Rotation::prev());
+            let is_branch_child_cur =
+                meta.query_advice(is_branch_child, Rotation::cur());
 
             // Any rotation that lands into branch children can be used:
             let modified_node_cur =
                 meta.query_advice(modified_node, Rotation(-2));
 
+            let is_extension_s_row =
+                meta.query_advice(is_last_branch_child, Rotation(-1));
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
 
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation::prev());
-            let key_rlc_prev_level = meta.query_advice(key_rlc, Rotation(rot_into_branch_init-1));
+            let key_rlc_prev_level = meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());
 
             let key_rlc_mult_prev = meta.query_advice(key_rlc_mult, Rotation::prev());
-            let key_rlc_mult_prev_level = meta.query_advice(key_rlc_mult, Rotation(rot_into_branch_init-1));
+            let key_rlc_mult_prev_level = meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch));
             let key_rlc_mult_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
+
+            // Any rotation into branch children can be used:
+            let key_rlc_branch = meta.query_advice(key_rlc, Rotation(rot_into_branch_init+1));
             let key_rlc_mult_branch = meta.query_advice(key_rlc_mult, Rotation(rot_into_branch_init+1));
 
             constraints.push((
-                "branch key RLC is copied to extension row C when !is_exension_node",
-                    q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
-                    * is_extension_c_row.clone()
-                    * (key_rlc_cur.clone() - key_rlc_prev.clone())
-                    * (one.clone() - is_extension_node.clone()),
-            )); 
+                "branch key RLC same over all branch children with index > 0",
+                q_not_first.clone()
+                    * is_branch_child_prev.clone()
+                    * is_branch_child_cur.clone()
+                    * (key_rlc_cur.clone() - key_rlc_prev.clone()),
+            ));
             constraints.push((
-                "branch key RLC MULT is copied to extension row C when !is_exension_node",
-                    q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
-                    * is_extension_c_row.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone())
-                    * (one.clone() - is_extension_node.clone()),
+                "branch key RLC MULT same over all branch children with index > 0",
+                q_not_first.clone()
+                    * is_branch_child_prev.clone()
+                    * is_branch_child_cur.clone()
+                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
             ));
 
+            constraints.push((
+                "extension node row S key RLC is the same as branch key RLC when NOT extension node",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
+                    * is_extension_s_row.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * (key_rlc_cur.clone() - key_rlc_prev.clone()),
+            ));
+            constraints.push((
+                "extension node row S key RLC mult is the same as branch key RLC when NOT extension node",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
+                    * is_extension_s_row.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
+            ));
+
+            constraints.push((
+                "extension node row C key RLC is the same as branch key RLC when NOT extension node",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
+                    * is_extension_c_row.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * (key_rlc_cur.clone() - key_rlc_prev.clone()),
+            ));
+            constraints.push((
+                "extension node row C key RLC mult is the same as branch key RLC when NOT extension node",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
+                    * is_extension_c_row.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
+            ));
+
+            
             // First level in account proof:
 
-            let mut first_level_long_even_rlc = compute_rlc(
+            let s_advices1 = meta.query_advice(s_advices[1], Rotation::prev());
+
+            // skip 1 because s_advices[0] is 0 and doesn't contain any key info
+            let mut first_level_long_even_rlc = s_advices1.clone() + compute_rlc(
                 meta,
                 s_advices.iter().skip(1).map(|v| *v).collect_vec(),
-                1,
+                0,
                 one.clone(),
                 -1,
                 r_table.clone(),
@@ -170,20 +218,24 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
 
             // Not first level:
+
             // TODO: check key_rlp_mult (using lookup table and key len)
 
-            let long_even_rlc = key_rlc_prev_level.clone() + compute_rlc(
+            let mut long_even_rlc = key_rlc_prev_level.clone() +
+                s_advices1 * key_rlc_mult_prev_level.clone();
+            // skip 1 because s_advices[0] is 0 and doesn't contain any key info, and skip another 1
+            // because s_advices[1] is not to be multiplied by any r_table element (as it's in compute_rlc).
+            long_even_rlc = long_even_rlc.clone() + compute_rlc(
                 meta,
-                s_advices.iter().skip(1).map(|v| *v).collect_vec(),
-                1,
+                s_advices.iter().skip(2).map(|v| *v).collect_vec(),
+                0,
                 key_rlc_mult_prev_level.clone(),
                 -1,
                 r_table.clone(),
             );
 
-            /*
             constraints.push((
-                "long even sel1",
+                "long even sel1 extension",
                 not_first_level.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
                     * is_extension_node.clone()
@@ -191,9 +243,25 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * is_key_even.clone()
                     * is_long.clone()
                     * sel1.clone()
-                    * (key_rlc_cur.clone() - long_even_rlc.clone() - modified_node_cur.clone() * c16.clone() * key_rlc_mult_prev_level.clone())
+                    * (key_rlc_cur.clone() - long_even_rlc.clone())
             ));
-            */
+            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
+            // because we first have branch rows and then extension rows):
+            constraints.push((
+                "long even sel1 branch",
+                not_first_level.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                    * is_extension_node.clone()
+                    * is_extension_c_row.clone()
+                    * is_key_even.clone()
+                    * is_long.clone()
+                    * sel1.clone()
+                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                        c16.clone() * modified_node_cur.clone() * key_rlc_mult_branch.clone())
+            ));
+            // TODO: extension -> branch mult constraint - depends on key len -
+            // branch_mult = extension_mult * r^key_len
+            /*
             constraints.push((
                 "long even sel2",
                 not_first_level.clone()
@@ -205,6 +273,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * sel2.clone()
                     * (key_rlc_cur.clone() - long_even_rlc.clone() - modified_node_cur.clone() * key_rlc_mult_prev_level.clone())
             ));
+            */
 
 
             constraints

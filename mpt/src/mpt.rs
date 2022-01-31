@@ -1513,6 +1513,11 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
 
                             if node_index == 0 {
+                                // If it's not extension node, rlc and rlc_mult in extension row
+                                // will be the same as for branch rlc.
+                                extension_node_rlc = key_rlc;
+                                extension_node_rlc_mult = key_rlc_mult;
+
                                 if witness[offset - 1][IS_EXTENSION_NODE_POS]
                                     == 1
                                 // Extension node
@@ -1522,8 +1527,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // extension node key.
                                     // witness[offset + 16]
                                     let ext_row = &witness[ind + 16];
-                                    extension_node_rlc = key_rlc;
-                                    extension_node_rlc_mult = key_rlc_mult;
 
                                     let is_even = witness[offset - 1]
                                         [IS_EXTENSION_EVEN_KEY_LEN_POS];
@@ -1609,16 +1612,15 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else {
-                                // assigning key_rlc and key_rlc_mult to avoid the possibility
-                                // of bugs when wrong rotation would retrieve correct values
-                                // and these values wouldn't be checked with constraints
-                                // (constraints check only branch node with node_index=0)
+                                // Note that key_rlc and key_rlc_mult are set the same in all
+                                // branch children to avoid some rotations - constraint for this
+                                // equality is in extension_node_key.
                                 self.assign_branch_row(
                                     &mut region,
                                     node_index,
                                     modified_node,
-                                    F::zero(),
-                                    F::zero(),
+                                    key_rlc,
+                                    key_rlc_mult,
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
