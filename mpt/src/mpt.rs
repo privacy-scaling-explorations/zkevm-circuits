@@ -1307,7 +1307,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
                     let mut extension_node_rlc = F::zero();
-                    let mut extension_node_rlc_mult = F::one();
                     let mut mult_diff = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
                     let mut is_branch_s_placeholder = false;
@@ -1536,7 +1535,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // If it's not extension node, rlc and rlc_mult in extension row
                                 // will be the same as for branch rlc.
                                 extension_node_rlc = key_rlc;
-                                extension_node_rlc_mult = key_rlc_mult;
 
                                 if witness[offset - 1][IS_EXTENSION_NODE_POS]
                                     == 1
@@ -1565,7 +1563,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                             compute_acc_and_mult(
                                                 ext_row,
                                                 &mut extension_node_rlc,
-                                                &mut extension_node_rlc_mult,
+                                                &mut key_rlc_mult,
                                                 3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
                                                 key_len,
                                             );
@@ -1574,8 +1572,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 mult_diff *= self.acc_r;
                                             }
                                             key_rlc = extension_node_rlc;
-                                            key_rlc_mult =
-                                                extension_node_rlc_mult;
                                             // branch part:
                                             key_rlc +=
                                                 F::from(modified_node as u64)
@@ -1604,7 +1600,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     (ext_row[1] - 16) as u64,
                                                 ) * F::from(16)
                                                     * key_rlc_mult;
-                                            // extension_node_rlc_mult stays the same
                                             mult_diff = F::one();
                                             key_rlc = extension_node_rlc;
                                             // branch part:
@@ -2219,12 +2214,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(extension_node_rlc),
                                 )?;
-                                region.assign_advice(
-                                    || "assign key_rlc_mult".to_string(),
-                                    self.key_rlc_mult,
-                                    offset,
-                                    || Ok(extension_node_rlc_mult),
-                                )?;
                             } else if row[row.len() - 1] == 17 {
                                 if witness[offset - 18][IS_EXTENSION_NODE_POS]
                                     == 1
@@ -2259,12 +2248,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     self.key_rlc,
                                     offset,
                                     || Ok(extension_node_rlc),
-                                )?;
-                                region.assign_advice(
-                                    || "assign key_rlc_mult".to_string(),
-                                    self.key_rlc_mult,
-                                    offset,
-                                    || Ok(extension_node_rlc_mult),
                                 )?;
                             }
 
