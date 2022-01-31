@@ -32,6 +32,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
 
+        // TODO: acc_mult_prev check using mult_diff
+
         meta.create_gate("account leaf storage codehash", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];

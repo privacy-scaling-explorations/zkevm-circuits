@@ -114,6 +114,7 @@ pub struct MPTConfig<F> {
     r_table: Vec<Expression<F>>,
     key_rlc: Column<Advice>, // used first for account address, then for storage key
     key_rlc_mult: Column<Advice>,
+    mult_diff: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
     _marker: PhantomData<F>,
@@ -232,6 +233,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let key_rlc = meta.advice_column();
         let key_rlc_mult = meta.advice_column();
+        let mult_diff = meta.advice_column();
 
         // NOTE: key_rlc_mult wouldn't be needed if we would have
         // big endian instead of little endian. However, then it would be much more
@@ -433,6 +435,8 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             key_rlc,
             key_rlc_mult,
+            mult_diff,
+            fixed_table.clone(),
             r_table.clone(),
         );
 
@@ -837,6 +841,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table,
             key_rlc,
             key_rlc_mult,
+            mult_diff,
             keccak_table,
             fixed_table,
             _marker: PhantomData,
@@ -968,6 +973,13 @@ impl<F: FieldExt> MPTConfig<F> {
         region.assign_advice(
             || "assign key rlc mult".to_string(),
             self.key_rlc_mult,
+            offset,
+            || Ok(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || "assign mult diff".to_string(),
+            self.mult_diff,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1143,6 +1155,7 @@ impl<F: FieldExt> MPTConfig<F> {
         key: u8,
         key_rlc: F,
         key_rlc_mult: F,
+        mult_diff: F,
         row: &[u8],
         s_words: &[u64],
         c_words: &[u64],
@@ -1202,6 +1215,12 @@ impl<F: FieldExt> MPTConfig<F> {
             self.key_rlc_mult,
             offset,
             || Ok(key_rlc_mult),
+        )?;
+        region.assign_advice(
+            || "mult diff",
+            self.mult_diff,
+            offset,
+            || Ok(mult_diff),
         )?;
 
         region.assign_advice(
@@ -1289,6 +1308,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc_mult = F::one();
                     let mut extension_node_rlc = F::zero();
                     let mut extension_node_rlc_mult = F::one();
+                    let mut mult_diff = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
                     let mut is_branch_s_placeholder = false;
                     let mut is_branch_c_placeholder = false;
@@ -1540,13 +1560,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                         // Note: it can't be is_even = 1 && is_short = 1.
                                         if is_even == 1 && is_long == 1 {
                                             // extension node part:
+                                            let key_len =
+                                                ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
                                             compute_acc_and_mult(
                                                 ext_row,
                                                 &mut extension_node_rlc,
                                                 &mut extension_node_rlc_mult,
                                                 3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
-                                                ext_row[1] as usize - 128 - 1, // -1 because the first byte is 0 (is_even)
+                                                key_len,
                                             );
+                                            mult_diff = F::one();
+                                            for _ in 0..key_len {
+                                                mult_diff *= self.acc_r;
+                                            }
                                             key_rlc = extension_node_rlc;
                                             key_rlc_mult =
                                                 extension_node_rlc_mult;
@@ -1603,6 +1629,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     modified_node,
                                     key_rlc,
                                     key_rlc_mult,
+                                    mult_diff,
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
@@ -1621,6 +1648,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     modified_node,
                                     key_rlc,
                                     key_rlc_mult,
+                                    mult_diff,
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
