@@ -1598,14 +1598,43 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     * key_rlc_mult;
                                             // key_rlc_mult stays the same
                                             */
+                                        } else if is_short == 1 {
+                                            extension_node_rlc +=
+                                                F::from(
+                                                    (ext_row[1] - 16) as u64,
+                                                ) * F::from(16)
+                                                    * key_rlc_mult;
+                                            // extension_node_rlc_mult stays the same
+                                            mult_diff = F::one();
+                                            key_rlc = extension_node_rlc;
+                                            // branch part:
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * key_rlc_mult;
+                                            key_rlc_mult *=
+                                                key_rlc_mult * self.acc_r;
                                         }
                                     } else {
-                                        /*
-                                        key_rlc +=
-                                            F::from(modified_node as u64)
+                                        if is_even == 1 && is_long == 1 {
+                                        } else if is_odd == 1 && is_long == 1 {
+                                        } else if is_short == 1 {
+                                            extension_node_rlc += F::from(
+                                                (ext_row[1] - 16) as u64,
+                                            )
                                                 * key_rlc_mult;
-                                        key_rlc_mult *= self.acc_r;
-                                        */
+
+                                            mult_diff = self.acc_r;
+                                            key_rlc = extension_node_rlc;
+
+                                            key_rlc_mult *=
+                                                key_rlc_mult * self.acc_r;
+                                            // branch part:
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * F::from(16)
+                                                    * key_rlc_mult;
+                                            // key_rlc_sel stays the same
+                                        }
                                     }
                                     // key_rlc_sel = !key_rlc_sel; // TODO
                                 } else {

@@ -285,20 +285,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff)
             ));
 
-            /*
-            constraints.push((
-                "long even sel2",
-                not_first_level.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone()
-                    * is_key_even.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_cur.clone() - long_even_rlc.clone() - modified_node_cur.clone() * key_rlc_mult_prev_level.clone())
-            ));
-            */
-
 
             constraints
         });
