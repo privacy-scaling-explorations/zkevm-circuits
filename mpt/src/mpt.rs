@@ -1523,11 +1523,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if key_rlc_sel {
                                     if is_even && is_long {
                                         sel1 = F::one();
+                                    } else if is_odd && is_long {
+                                        sel2 = F::one();
                                     } else if is_short {
                                         sel2 = F::one();
                                     }
                                 } else {
-                                    if is_short {
+                                    if is_even && is_long {
+                                        sel2 = F::one();
+                                    } else if is_odd && is_long {
+                                        sel1 = F::one();
+                                    } else if is_short {
                                         sel1 = F::one();
                                     }
                                 }
@@ -1607,20 +1613,51 @@ impl<F: FieldExt> MPTConfig<F> {
                                             // key_rlc_mult stays the same
                                             key_rlc_sel = !key_rlc_sel;
                                         } else if is_odd && is_long {
-                                            /*
-                                            compute_acc_and_mult(
-                                                ext_row,
-                                                &mut key_rlc,
-                                                &mut key_rlc_mult,
-                                                3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
-                                                ext_row[1] as usize - 128 - 1, // -1 because the first byte is 0 (is_even)
-                                            );
-                                            key_rlc +=
-                                                F::from(modified_node as u64)
+                                            // extension node part:
+                                            extension_node_rlc +=
+                                                F::from(
+                                                    (ext_row[2] - 16) as u64,
+                                                ) * F::from(16)
+                                                    * key_rlc_mult;
+
+                                            let ext_row_c = &witness[ind + 17];
+                                            let key_len =
+                                                ext_row[1] as usize - 128 - 1;
+
+                                            mult_diff = F::one();
+                                            for k in 0..key_len {
+                                                let second_nibble =
+                                                    ext_row_c[S_START + k];
+                                                let first_nibble = (ext_row
+                                                    [3 + k]
+                                                    - second_nibble)
+                                                    / 16;
+                                                assert_eq!(
+                                                    first_nibble * 16
+                                                        + second_nibble,
+                                                    ext_row[3 + k],
+                                                );
+                                                extension_node_rlc += F::from(
+                                                    first_nibble as u64,
+                                                )
+                                                    * key_rlc_mult;
+
+                                                key_rlc_mult *= self.acc_r;
+                                                mult_diff *= self.acc_r;
+
+                                                extension_node_rlc += F::from(
+                                                    second_nibble as u64,
+                                                )
                                                     * F::from(16)
                                                     * key_rlc_mult;
-                                            // key_rlc_mult stays the same
-                                            */
+                                            }
+
+                                            key_rlc = extension_node_rlc;
+                                            // branch part:
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * key_rlc_mult;
+                                            key_rlc_mult *= self.acc_r;
                                         } else if is_short {
                                             extension_node_rlc +=
                                                 F::from(
@@ -1639,7 +1676,77 @@ impl<F: FieldExt> MPTConfig<F> {
                                         }
                                     } else {
                                         if is_even && is_long {
+                                            // extension node part:
+                                            let ext_row_c = &witness[ind + 17];
+                                            let key_len =
+                                                ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+
+                                            mult_diff = F::one();
+                                            for k in 0..key_len {
+                                                let second_nibble =
+                                                    ext_row_c[S_START + k];
+                                                let first_nibble = (ext_row
+                                                    [3 + k]
+                                                    - second_nibble)
+                                                    / 16;
+                                                assert_eq!(
+                                                    first_nibble * 16
+                                                        + second_nibble,
+                                                    ext_row[3 + k],
+                                                );
+                                                extension_node_rlc += F::from(
+                                                    first_nibble as u64,
+                                                )
+                                                    * key_rlc_mult;
+
+                                                key_rlc_mult *= self.acc_r;
+                                                mult_diff *= self.acc_r;
+
+                                                extension_node_rlc +=
+                                                    F::from(16)
+                                                        * F::from(
+                                                            second_nibble
+                                                                as u64,
+                                                        )
+                                                        * key_rlc_mult;
+                                            }
+
+                                            key_rlc = extension_node_rlc;
+                                            // branch part:
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * key_rlc_mult;
+                                            key_rlc_mult *= self.acc_r;
+                                            key_rlc_sel = !key_rlc_sel;
                                         } else if is_odd && is_long {
+                                            extension_node_rlc += F::from(
+                                                (ext_row[2] - 16) as u64,
+                                            )
+                                                * key_rlc_mult;
+
+                                            key_rlc_mult *= self.acc_r;
+
+                                            let key_len =
+                                                ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
+
+                                            compute_acc_and_mult(
+                                                ext_row,
+                                                &mut extension_node_rlc,
+                                                &mut key_rlc_mult,
+                                                3, // first two positions are RLPs, third position is 0 (because is_even), we start with fourth
+                                                key_len,
+                                            );
+                                            mult_diff = F::one();
+                                            for _ in 0..key_len {
+                                                mult_diff *= self.acc_r;
+                                            }
+                                            key_rlc = extension_node_rlc;
+                                            // branch part:
+                                            key_rlc +=
+                                                F::from(modified_node as u64)
+                                                    * F::from(16)
+                                                    * key_rlc_mult;
+                                            // key_rlc_mult stays the same
                                         } else if is_short {
                                             extension_node_rlc += F::from(
                                                 (ext_row[1] - 16) as u64,

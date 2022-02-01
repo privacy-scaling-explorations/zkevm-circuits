@@ -367,7 +367,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
-        // TODO: check nibbles in C correspond to bytes in S
+        // Correspondence between nibbles in C and bytes in S is checked in extension_node_key.
 
         // Check whether extension node hash is in parent branch.
         meta.lookup_any(|meta| {

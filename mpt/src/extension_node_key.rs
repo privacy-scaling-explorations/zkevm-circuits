@@ -53,6 +53,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         let one = Expression::Constant(F::one());
         let c128 = Expression::Constant(F::from(128));
 
+        // TODO: s_advices 0 after key len
+
         meta.create_gate("extension node key", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level =
@@ -268,11 +270,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             // Not first level:
 
-            let mut long_even_rlc = key_rlc_prev_level.clone() +
+            let mut long_even_rlc_sel1 = key_rlc_prev_level.clone() +
                 s_advices1 * key_rlc_mult_prev_level.clone();
             // skip 1 because s_advices[0] is 0 and doesn't contain any key info, and skip another 1
             // because s_advices[1] is not to be multiplied by any r_table element (as it's in compute_rlc).
-            long_even_rlc = long_even_rlc.clone() + compute_rlc(
+            long_even_rlc_sel1 = long_even_rlc_sel1.clone() + compute_rlc(
                 meta,
                 s_advices.iter().skip(2).map(|v| *v).collect_vec(),
                 0,
@@ -290,7 +292,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * is_key_even.clone()
                     * is_long.clone()
                     * sel1.clone()
-                    * (key_rlc_cur.clone() - long_even_rlc.clone())
+                    * (key_rlc_cur.clone() - long_even_rlc_sel1.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
@@ -320,6 +322,26 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
 
             // TODO: long even sel2
+            let c16inv = Expression::Constant(F::from(16).invert().unwrap());
+            for ind in 0..HASH_WIDTH-1 {
+                let s = meta.query_advice(s_advices[1+ind], Rotation::prev());
+                let second_nibble = meta.query_advice(s_advices[ind], Rotation::cur());
+                let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
+                constraints.push((
+                    "long even sel2 nibbles",
+                    not_first_level.clone()
+                        * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                        * is_extension_node.clone()
+                        * is_extension_c_row.clone()
+                        * is_key_even.clone()
+                        * is_long.clone()
+                        * sel2.clone()
+                        * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
+                ));
+            }
+            
+
+            // short:
 
             let short_sel1_rlc = key_rlc_prev_level.clone() +
                 (s_rlp2.clone() - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
