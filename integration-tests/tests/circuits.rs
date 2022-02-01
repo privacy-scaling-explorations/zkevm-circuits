@@ -282,6 +282,13 @@ async fn test_evm_circuit_block_deploy_greeter() {
     test_evm_circuit_block(*block_num).await;
 }
 
+#[tokio::test]
+async fn test_evm_circuit_block_multiple_transfers_0() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Multiple transfers 0").unwrap();
+    test_evm_circuit_block(*block_num).await;
+}
+
 async fn test_state_circuit_block(block_num: u64) {
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
@@ -334,5 +341,12 @@ async fn test_state_circuit_block_transfer_0() {
 async fn test_state_circuit_block_deploy_greeter() {
     log_init();
     let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
+    test_state_circuit_block(*block_num).await;
+}
+
+#[tokio::test]
+async fn test_state_circuit_block_multiple_transfers_0() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Multiple transfers 0").unwrap();
     test_state_circuit_block(*block_num).await;
 }
