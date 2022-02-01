@@ -1316,6 +1316,12 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
                     let mut rlp_len_rem_c: i32 = 0;
 
+                    let mut is_extension_node = false;
+                    let mut is_even = false;
+                    let mut is_odd = false;
+                    let mut is_short = false;
+                    let mut is_long = false;
+
                     let compute_acc_and_mult =
                         |row: &Vec<u8>,
                          acc: &mut F,
@@ -1491,10 +1497,38 @@ impl<F: FieldExt> MPTConfig<F> {
                             // needs to be considered in leaf rows.
                             let mut sel1 = F::zero();
                             let mut sel2 = F::zero();
-                            if key_rlc_sel {
-                                sel1 = F::one();
+                            // extension node:
+                            is_extension_node =
+                                witness[offset][IS_EXTENSION_NODE_POS] == 1;
+                            is_even = witness[offset]
+                                [IS_EXTENSION_EVEN_KEY_LEN_POS]
+                                == 1;
+                            is_odd = witness[offset]
+                                [IS_EXTENSION_ODD_KEY_LEN_POS]
+                                == 1;
+                            is_short = witness[offset]
+                                [IS_EXTENSION_KEY_SHORT_POS]
+                                == 1;
+                            is_long =
+                                witness[offset][IS_EXTENSION_KEY_LONG_POS] == 1;
+                            // end of extension node
+
+                            if !is_extension_node {
+                                if key_rlc_sel {
+                                    sel1 = F::one();
+                                } else {
+                                    sel2 = F::one();
+                                }
                             } else {
-                                sel2 = F::one();
+                                if key_rlc_sel {
+                                    if is_even && is_long {
+                                        sel1 = F::one();
+                                    }
+                                } else {
+                                    if is_short {
+                                        sel1 = F::one();
+                                    }
+                                }
                             }
                             region.assign_advice(
                                 || "assign sel1".to_string(),
@@ -1536,8 +1570,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // will be the same as for branch rlc.
                                 extension_node_rlc = key_rlc;
 
-                                if witness[offset - 1][IS_EXTENSION_NODE_POS]
-                                    == 1
+                                if is_extension_node
                                 // Extension node
                                 // We need nibbles here to be able to compute key RLC
                                 {
@@ -1546,17 +1579,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // witness[offset + 16]
                                     let ext_row = &witness[ind + 16];
 
-                                    let is_even = witness[offset - 1]
-                                        [IS_EXTENSION_EVEN_KEY_LEN_POS];
-                                    let is_odd = witness[offset - 1]
-                                        [IS_EXTENSION_ODD_KEY_LEN_POS];
-                                    let is_short = witness[offset - 1]
-                                        [IS_EXTENSION_KEY_SHORT_POS];
-                                    let is_long = witness[offset - 1]
-                                        [IS_EXTENSION_KEY_LONG_POS];
                                     if key_rlc_sel {
                                         // Note: it can't be is_even = 1 && is_short = 1.
-                                        if is_even == 1 && is_long == 1 {
+                                        if is_even && is_long {
                                             // extension node part:
                                             let key_len =
                                                 ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
@@ -1579,7 +1604,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     * key_rlc_mult;
                                             // key_rlc_mult stays the same
                                             key_rlc_sel = !key_rlc_sel;
-                                        } else if is_odd == 1 && is_long == 1 {
+                                        } else if is_odd && is_long {
                                             /*
                                             compute_acc_and_mult(
                                                 ext_row,
@@ -1594,7 +1619,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     * key_rlc_mult;
                                             // key_rlc_mult stays the same
                                             */
-                                        } else if is_short == 1 {
+                                        } else if is_short {
                                             extension_node_rlc +=
                                                 F::from(
                                                     (ext_row[1] - 16) as u64,
@@ -1610,9 +1635,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 key_rlc_mult * self.acc_r;
                                         }
                                     } else {
-                                        if is_even == 1 && is_long == 1 {
-                                        } else if is_odd == 1 && is_long == 1 {
-                                        } else if is_short == 1 {
+                                        if is_even && is_long {
+                                        } else if is_odd && is_long {
+                                        } else if is_short {
                                             extension_node_rlc += F::from(
                                                 (ext_row[1] - 16) as u64,
                                             )
@@ -1628,10 +1653,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 F::from(modified_node as u64)
                                                     * F::from(16)
                                                     * key_rlc_mult;
-                                            // key_rlc_sel stays the same
                                         }
                                     }
-                                    // key_rlc_sel = !key_rlc_sel; // TODO
                                 } else {
                                     if key_rlc_sel {
                                         key_rlc +=

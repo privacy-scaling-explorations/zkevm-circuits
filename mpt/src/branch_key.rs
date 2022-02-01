@@ -274,13 +274,13 @@ impl<F: FieldExt> BranchKeyChip<F> {
                     * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
             ));
             constraints.push((
-                "sel1 0->1->0->... (extension node odd key)",
+                "extension node odd key stays the same",
                 not_first_level.clone()
                     * is_branch_init_prev.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
                     * is_extension_node.clone()
                     * is_extension_key_odd.clone()
-                    * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
+                    * (sel1_cur.clone() - sel1_prev.clone()),
             ));
 
             constraints
