@@ -94,21 +94,13 @@ impl<F: FieldExt> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        num_rows: usize,
+        exact: bool,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block)
-    }
-
-    /// Assign exact steps in block without padding for unit test purpose
-    pub fn assign_block_exact(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        self.execution.assign_block_exact(layouter, block)
+        self.execution.assign_block(layouter, block, num_rows, exact)
     }
 }
 
-#[cfg(test)]
 pub(crate) mod test {
     use crate::{
         evm_circuit::{
@@ -131,6 +123,8 @@ pub(crate) mod test {
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
+
+    use super::param::MAX_STEP_HEIGHT;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -325,18 +319,21 @@ pub(crate) mod test {
     }
 
     #[derive(Default)]
-    pub(crate) struct TestCircuit<F> {
+    pub struct TestCircuit<F> {
         block: Block<F>,
+        k: u32,
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
     impl<F> TestCircuit<F> {
         pub fn new(
             block: Block<F>,
+            k: u32,
             fixed_table_tags: Vec<FixedTableTag>,
         ) -> Self {
             Self {
                 block,
+                k,
                 fixed_table_tags,
             }
         }
@@ -418,7 +415,7 @@ pub(crate) mod test {
             )?;
             config
                 .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+                .assign_block(&mut layouter, &self.block, 2usize.pow(self.k), true)
         }
     }
 
@@ -455,7 +452,7 @@ pub(crate) mod test {
                 ]
             })
             .collect();
-        let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
+        let circuit = TestCircuit::<F>::new(block, k, fixed_table_tags);
 
         let prover =
             MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();

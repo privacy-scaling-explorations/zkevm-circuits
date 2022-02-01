@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::{STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::{LookupTable, Table},
         util::{
@@ -16,10 +16,9 @@ use halo2::{
     circuit::{Layouter, Region},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
-    },
+    }, poly::Rotation,
 };
 use std::{collections::HashMap, convert::TryInto};
-use ark_std::{start_timer, end_timer};
 
 mod add;
 mod begin_tx;
@@ -87,11 +86,14 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
-    q_step: Selector,
+    q_step: Column<Advice>,
     q_step_first: Selector,
+    num_rows_until_next_step: Column<Advice>,
+    num_rows_inv: Column<Advice>,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     intermediates_map: HashMap<ExecutionState, Vec<IntermediateResult<F>>>,
+    height_map: HashMap<ExecutionState, usize>,
     add_gadget: AddGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
@@ -131,15 +133,16 @@ impl<F: FieldExt> ExecutionConfig<F> {
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {
-        let q_step = meta.complex_selector();
+        let q_step = meta.advice_column();
         let q_step_first = meta.complex_selector();
+        let num_rows_until_next_step = meta.advice_column();
+        let num_rows_inv = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, advices, false);
-        let step_next = Step::new(meta, advices, true);
+        let step_curr = Step::new(meta, &advices, 0);
 
         meta.create_gate("Constrain execution state", |meta| {
-            let q_step = meta.query_selector(q_step);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
 
             // Only one of execution_state should be enabled
@@ -179,18 +182,52 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 .chain(first_step_check)
         });
 
+        meta.create_gate("Constrain q_step first row", |meta| {
+            let q_step = meta.query_advice(q_step, Rotation::cur());
+            let q_step_first = meta.query_selector(q_step_first);
+
+            // q_step needs to be enabled on the first row
+            vec![q_step_first * (1.expr() - q_step)]
+        });
+
+        meta.create_gate("Constrain num_rows_left", |meta| {
+            let num_rows_left_prev = meta.query_advice(num_rows_until_next_step, Rotation::prev());
+            let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
+
+            let q_step = meta.query_advice(q_step, Rotation::cur());
+
+            // num_rows_left_cur := num_rows_left_prev - 1
+            vec![(1.expr() - q_step) * (num_rows_left_cur - (num_rows_left_prev - 1.expr()))]
+        });
+
+        meta.create_gate("Constrain num_rows_left inv", |meta| {
+            let value = meta.query_advice(num_rows_until_next_step, Rotation::cur());
+            let inverse = meta.query_advice(num_rows_inv, Rotation::cur());
+            // TODO: actually use this to set q_step
+            //let q_step = meta.query_advice(q_step, Rotation::cur());
+
+            let is_zero = 1.expr() - (value.clone() * inverse.expr());
+            vec![
+                value * is_zero.clone(),
+                inverse.expr() * is_zero.clone(),
+            ]
+        });
+
         let mut intermediates_map = HashMap::new();
+        let mut height_map = HashMap::new();
         let mut columns = step_curr.cell_manager.columns.clone();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
                     meta,
+                    &advices,
                     q_step,
                     q_step_first,
+                    num_rows_until_next_step,
                     &power_of_randomness,
                     &step_curr,
-                    &step_next,
                     &mut intermediates_map,
+                    &mut height_map,
                     &mut columns,
                 )
             };
@@ -199,6 +236,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let config = Self {
             q_step,
             q_step_first,
+            num_rows_until_next_step,
+            num_rows_inv,
             advices,
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
@@ -223,6 +262,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             coinbase_gadget: configure_gadget!(),
             step: step_curr,
             intermediates_map,
+            height_map,
         };
 
         Self::configure_lookup(
@@ -242,15 +282,17 @@ impl<F: FieldExt> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
-        q_step: Selector,
+        advices: &[Column<Advice>],
+        q_step: Column<Advice>,
         q_step_first: Selector,
+        num_rows_until_next_step: Column<Advice>,
         power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
-        step_next: &Step<F>,
         intermediates_map: &mut HashMap<
             ExecutionState,
             Vec<IntermediateResult<F>>,
         >,
+        height_map: &mut HashMap<ExecutionState,usize>,
         columns: &mut Vec<CellColumn<F>>,
     ) -> G {
         // Setup the cell manager to the latest layout
@@ -259,10 +301,17 @@ impl<F: FieldExt> ExecutionConfig<F> {
             to.cell_type = from.cell_type;
         }
 
+        let mut num_rows = 0.expr();
+        meta.create_gate("OPCODE height", |meta| {
+            num_rows = meta.query_advice(num_rows_until_next_step, Rotation::cur());
+            vec![0.expr()]
+        });
+
         let mut cb = ConstraintBuilder::new(
+            meta,
+            advices,
             cell_manager,
             step_curr,
-            step_next,
             power_of_randomness,
             G::EXECUTION_STATE,
         );
@@ -277,10 +326,20 @@ impl<F: FieldExt> ExecutionConfig<F> {
             cb.num_bytes
         );*/
 
+        let height = cb.cell_manager.get_height();
+        println!("{}: {}", G::NAME, height);
+        assert!(
+            height_map
+                .insert(G::EXECUTION_STATE, height)
+                .is_none(),
+            "execution state already configured"
+        );
+
+        cb.require_equal("OPCODE height", (height - 1).expr(), num_rows);
+
         let (
             constraints,
             constraints_first_step,
-            new_columns,
             intermediate_results,
         ) = cb.build();
         assert!(
@@ -290,22 +349,22 @@ impl<F: FieldExt> ExecutionConfig<F> {
             "execution state already configured"
         );
 
-        // Copy the updated column layout
-        *columns = new_columns;
+        if !constraints.is_empty() {
+            meta.create_gate(G::NAME, |meta| {
+                let selector = meta.query_advice(q_step, Rotation::cur());
+                constraints.into_iter().map(move |(name, constraint)| {
+                    (name, selector.clone() * constraint)
+                })
+            });
+        }
 
-        for (selector, constraints) in [
-            (q_step, constraints),
-            (q_step_first, constraints_first_step),
-        ] {
-            if !constraints.is_empty() {
-                meta.create_gate(G::NAME, |meta| {
-                    let selector = meta.query_selector(selector);
-
-                    constraints.into_iter().map(move |(name, constraint)| {
-                        (name, selector.clone() * constraint)
-                    })
-                });
-            }
+        if !constraints_first_step.is_empty() {
+            meta.create_gate(G::NAME, |meta| {
+                let selector = meta.query_selector(q_step_first);
+                constraints_first_step.into_iter().map(move |(name, constraint)| {
+                    (name, selector.clone() * constraint)
+                })
+            });
         }
 
         gadget
@@ -357,24 +416,32 @@ impl<F: FieldExt> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        num_rows: usize,
+        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
             .collect::<Vec<F>>()
             .try_into()
             .unwrap();
+
         layouter.assign_region(
             || "Execution step",
             |mut region| {
+                if !exact {
+                    self.q_step_first.enable(&mut region, 0)?;
+                }
                 let mut offset = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
                         let call = &transaction.calls[step.call_index];
 
-                        self.q_step.enable(&mut region, offset)?;
-                        if offset == 0 {
-                            self.q_step_first.enable(&mut region, offset)?;
-                        }
+                        region.assign_advice(
+                            || "step selector",
+                            self.q_step,
+                            offset,
+                            || Ok(F::one()),
+                        )?;
 
                         self.assign_exec_step(
                             &mut region,
@@ -386,54 +453,50 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             power_of_randomness,
                         )?;
 
-                        offset += STEP_HEIGHT;
+                        let height = *self.height_map.get(&step.execution_state).unwrap();
+                        for idx in 0..height {
+                            let value = F::from((height - idx - 1) as u64);
+                            region.assign_advice(
+                                || "step height",
+                                self.num_rows_until_next_step,
+                                offset + idx,
+                                || Ok(value),
+                            )?;
+                            region.assign_advice(
+                                || "step height inv",
+                                self.num_rows_inv,
+                                offset + idx,
+                                || Ok(value.invert().unwrap_or(F::zero())),
+                            )?;
+                        }
+
+                        offset += height;
                     }
                 }
+
+                let mut value = F::zero();
+                while offset < num_rows {
+                    value -= F::one();
+                    region.assign_advice(
+                        || "step height",
+                        self.num_rows_until_next_step,
+                        offset,
+                        || Ok(value),
+                    )?;
+                    region.assign_advice(
+                        || "step height inv",
+                        self.num_rows_inv,
+                        offset,
+                        || Ok(value.invert().unwrap_or(F::zero())),
+                    )?;
+                    offset += 1;
+                }
+
                 Ok(())
             },
         )?;
 
-        // TODO: Pad leftover region to the desired capacity
-
         Ok(())
-    }
-
-    /// Assign exact steps in block without padding for unit test purpose
-    pub fn assign_block_exact(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        let power_of_randomness = (1..32)
-            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
-            .collect::<Vec<F>>()
-            .try_into()
-            .unwrap();
-        layouter.assign_region(
-            || "Execution step",
-            |mut region| {
-                let mut offset = 0;
-                for transaction in &block.txs {
-                    for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_index];
-
-                        self.q_step.enable(&mut region, offset)?;
-                        self.assign_exec_step(
-                            &mut region,
-                            offset,
-                            block,
-                            transaction,
-                            call,
-                            step,
-                            power_of_randomness,
-                        )?;
-
-                        offset += STEP_HEIGHT;
-                    }
-                }
-                Ok(())
-            },
-        )
     }
 
     fn assign_exec_step(
@@ -450,7 +513,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             region,
             power_of_randomness,
             STEP_WIDTH,
-            STEP_HEIGHT,
+            MAX_STEP_HEIGHT,
             self.advices[0].index(),
             offset,
        );

@@ -421,7 +421,7 @@ pub(crate) enum CellType {
 pub(crate) struct CellColumn<F> {
     pub(crate) index: usize,
     pub(crate) cell_type: CellType,
-    pub(crate) num_used: usize,
+    pub(crate) height: usize,
     pub(crate) expr: Expression<F>,
 }
 
@@ -439,26 +439,42 @@ impl<F: FieldExt> CellManager<F> {
         width: usize,
         height: usize,
         advices: &[Column<Advice>],
-        is_next_step: bool,
+        height_offset: usize,
     ) -> Self {
+
+        let lookup_configs = vec![
+            (Table::Fixed, 16),
+            (Table::Tx, 1),
+            (Table::Rw, 4),
+            (Table::Bytecode, 4),
+            (Table::Block, 1),
+        ];
+
         assert_eq!(advices.len(), width);
-        let offset = if is_next_step { height } else { 0 };
         let mut cells = Vec::with_capacity(height * width);
         let mut columns = Vec::with_capacity(height);
         meta.create_gate("Query rows for step", |meta| {
             for c in 0..width {
                 for r in 0..height {
-                    cells.push(Cell::new(meta, advices[c], offset + r));
+                    cells.push(Cell::new(meta, advices[c], height_offset + r));
                 }
                 columns.push(CellColumn {
                     index: c,
-                    cell_type: CellType::None,
-                    num_used: 0,
+                    cell_type: CellType::General,
+                    height: 0,
                     expr: cells[c * height].expr(),
                 });
             }
             vec![0.expr()]
         });
+
+        let mut counter = 0;
+        for config in lookup_configs {
+            for _ in 0usize..config.1 {
+                columns[width - counter - 1].cell_type = CellType::Lookup(config.0);
+                counter += 1;
+            }
+        }
 
         Self {
             width,
@@ -478,9 +494,9 @@ impl<F: FieldExt> CellManager<F> {
             let column_idx = self.find_column(cell_type);
             let column = &mut self.columns[column_idx];
             cells.push(
-                self.cells[column_idx * self.height + column.num_used].clone(),
+                self.cells[column_idx * self.height + column.height].clone(),
             );
-            column.num_used += 1;
+            column.height += 1;
         }
         cells
     }
@@ -491,15 +507,58 @@ impl<F: FieldExt> CellManager<F> {
     }
 
     fn find_column(&mut self, cell_type: CellType) -> usize {
-        for column in self.columns.iter_mut() {
-            if (column.cell_type == cell_type
-                || column.cell_type == CellType::None)
-                && column.num_used < self.height
-            {
-                column.cell_type = cell_type;
-                return column.index;
+        let mut best_index: Option<usize> = None;
+        let mut best_height = self.height + 1;
+        for column in self.columns.iter() {
+            if column.cell_type == cell_type {
+                if column.height < best_height {
+                    best_index = Some(column.index);
+                    best_height = column.height;
+                }
             }
         }
-        unreachable!("not enough cells for query")
+        //println!("{:?} -> {},{}", cell_type, best_index.unwrap_or(1000), best_height);
+        match best_index {
+            Some(index) => index,
+            None => unreachable!(format!("not enough cells for query: {:?}", cell_type)),
+        }
+    }
+
+    pub(crate) fn get_height(&self) -> usize {
+        let types = vec![
+            CellType::General,
+            CellType::Lookup(Table::Fixed),
+            CellType::Lookup(Table::Tx),
+            CellType::Lookup(Table::Rw),
+            CellType::Lookup(Table::Bytecode),
+            CellType::Lookup(Table::Block),
+        ];
+
+        /*for column in self.columns.iter() {
+            println!("{:?} -> {}", column.cell_type, column.height);
+        }*/
+
+        let mut height = 0usize;
+        for t in types {
+            let mut col_height = 0usize;
+            let mut count = 0usize;
+            let mut type_count = 0usize;
+            for column in self.columns.iter() {
+                if column.cell_type == t {
+                    type_count += 1;
+                    count += column.height;
+                    if column.height > col_height {
+                        col_height = column.height;
+                    }
+                }
+            }
+            //println!("{:?} x {} -> {} ({})", t, type_count, col_height, count);
+
+            if col_height > height {
+                height = col_height;
+            }
+        }
+
+        height
     }
 }

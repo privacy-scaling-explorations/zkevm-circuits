@@ -9,11 +9,12 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, plonk::Expression};
+use ff::Field;
+use halo2::{arithmetic::FieldExt, plonk::{Expression, ConstraintSystem, Column, Advice}};
 use std::convert::TryInto;
 
 use super::{
-    random_linear_combine, CellColumn, CellManager, CellType,
+    random_linear_combine, CellManager, CellType,
     IntermediateResult,
 };
 
@@ -48,10 +49,11 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) state_write_counter: Transition<Expression<F>>,
 }
 
-pub(crate) struct ConstraintBuilder<'a, F> {
+pub(crate) struct ConstraintBuilder<'a, F: Field> {
+    pub(crate) meta: &'a mut ConstraintSystem<F>,
+    advices: &'a [Column<Advice>],
     pub(crate) cell_manager: CellManager<F>,
     pub(crate) curr: &'a Step<F>,
-    pub(crate) next: &'a Step<F>,
     power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
     constraints: Vec<(&'static str, Expression<F>)>,
@@ -69,16 +71,18 @@ pub(crate) struct ConstraintBuilder<'a, F> {
 
 impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
+        meta: &'a mut ConstraintSystem<F>,
+        advices: &'a [Column<Advice>],
         cell_manager: CellManager<F>,
         curr: &'a Step<F>,
-        next: &'a Step<F>,
         power_of_randomness: &'a [Expression<F>; 31],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
+            meta,
+            advices,
             cell_manager,
             curr,
-            next,
             power_of_randomness,
             execution_state,
             constraints: Vec::new(),
@@ -101,7 +105,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) -> (
         Vec<(&'static str, Expression<F>)>,
         Vec<(&'static str, Expression<F>)>,
-        Vec<CellColumn<F>>,
         Vec<IntermediateResult<F>>,
     ) {
         let execution_state_selector =
@@ -120,7 +123,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                     (name, execution_state_selector.clone() * constraint)
                 })
                 .collect(),
-            self.cell_manager.columns,
             self.intermediate_results,
         )
     }
@@ -245,65 +247,67 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         step_state_transition: StepStateTransition<F>,
     ) {
+        let height = self.cell_manager.get_height();
+        let next = Step::new(self.meta, self.advices, height);
         for (name, curr, next, transition) in vec![
             (
                 "State transition constrain of rw_counter",
                 &self.curr.state.rw_counter,
-                &self.next.state.rw_counter,
+                &next.state.rw_counter,
                 step_state_transition.rw_counter,
             ),
             (
                 "State transition constrain of call_id",
                 &self.curr.state.call_id,
-                &self.next.state.call_id,
+                &next.state.call_id,
                 step_state_transition.call_id,
             ),
             (
                 "State transition constrain of is_root",
                 &self.curr.state.is_root,
-                &self.next.state.is_root,
+                &next.state.is_root,
                 step_state_transition.is_root,
             ),
             (
                 "State transition constrain of is_create",
                 &self.curr.state.is_create,
-                &self.next.state.is_create,
+                &next.state.is_create,
                 step_state_transition.is_create,
             ),
             (
                 "State transition constrain of opcode_source",
                 &self.curr.state.opcode_source,
-                &self.next.state.opcode_source,
+                &next.state.opcode_source,
                 step_state_transition.opcode_source,
             ),
             (
                 "State transition constrain of program_counter",
                 &self.curr.state.program_counter,
-                &self.next.state.program_counter,
+                &next.state.program_counter,
                 step_state_transition.program_counter,
             ),
             (
                 "State transition constrain of stack_pointer",
                 &self.curr.state.stack_pointer,
-                &self.next.state.stack_pointer,
+                &next.state.stack_pointer,
                 step_state_transition.stack_pointer,
             ),
             (
                 "State transition constrain of gas_left",
                 &self.curr.state.gas_left,
-                &self.next.state.gas_left,
+                &next.state.gas_left,
                 step_state_transition.gas_left,
             ),
             (
                 "State transition constrain of memory_word_size",
                 &self.curr.state.memory_word_size,
-                &self.next.state.memory_word_size,
+                &next.state.memory_word_size,
                 step_state_transition.memory_word_size,
             ),
             (
                 "State transition constrain of state_write_counter",
                 &self.curr.state.state_write_counter,
-                &self.next.state.state_write_counter,
+                &next.state.state_write_counter,
                 step_state_transition.state_write_counter,
             ),
         ] {

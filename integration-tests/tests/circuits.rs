@@ -25,7 +25,7 @@ mod test_evm_circuit {
         poly::Rotation,
     };
     use zkevm_circuits::evm_circuit::{
-        param::STEP_HEIGHT,
+        param::MAX_STEP_HEIGHT,
         table::FixedTableTag,
         witness::{Block, Bytecode, Rw, Transaction},
         EvmCircuit,
@@ -243,7 +243,7 @@ mod test_evm_circuit {
                 &self.block.bytecodes,
                 self.block.randomness,
             )?;
-            config.evm_circuit.assign_block(&mut layouter, &self.block)
+            config.evm_circuit.assign_block(&mut layouter, &self.block, false)
         }
     }
 
@@ -279,9 +279,9 @@ mod test_evm_circuit {
             vec![
                 block.randomness;
                 block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
-                    * STEP_HEIGHT
+                    * MAX_STEP_HEIGHT
             ];
-        let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
+        let circuit = TestCircuit::<F>::new(block, k, fixed_table_tags);
 
         let prover =
             MockProver::<F>::run(k, &circuit, vec![randomness]).unwrap();

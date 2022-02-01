@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::{STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         util::Cell,
         witness::{Call, ExecStep},
     },
@@ -428,15 +428,15 @@ pub(crate) struct Step<F> {
 impl<F: FieldExt> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
-        advices: [Column<Advice>; STEP_WIDTH],
-        is_next_step: bool,
+        advices: &[Column<Advice>],
+        height_offset: usize,
     ) -> Self {
         let mut cell_manager = CellManager::new(
             meta,
             STEP_WIDTH,
-            STEP_HEIGHT,
+            MAX_STEP_HEIGHT,
             &advices,
-            is_next_step,
+            height_offset,
         );
         let state = {
             StepState {
