@@ -1,6 +1,4 @@
-use crate::{
-    circuit_input_builder::CircuitInputStateRef, operation::RW, Error,
-};
+use crate::{circuit_input_builder::CircuitInputStateRef, operation::RW, Error};
 use eth_types::GethExecStep;
 
 use super::Opcode;
@@ -16,11 +14,7 @@ impl Opcode for Gas {
         let step = &next_steps[0];
         // Get value result from next step and do stack write
         let value = next_steps[1].stack.last()?;
-        state.push_stack_op(
-            RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
-            value,
-        );
+        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value);
         Ok(())
     }
 }
@@ -55,14 +49,9 @@ mod gas_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress::from(1022),
-            Word::from(gas_left),
-        );
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1022), Word::from(gas_left));
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);

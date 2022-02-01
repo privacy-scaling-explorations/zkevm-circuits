@@ -5,9 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -38,8 +36,7 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
         cb.require_equal(
             "Constraint: gas left equal to stack value",
             from_bytes::expr(&gas_left.cells),
-            cb.curr.state.gas_left.expr()
-                - OpcodeId::GAS.constant_gas_cost().expr(),
+            cb.curr.state.gas_left.expr() - OpcodeId::GAS.constant_gas_cost().expr(),
         );
 
         // Construct the value and push it to stack.
@@ -52,12 +49,7 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -123,17 +115,13 @@ mod test {
             STOP
         };
         let config = BytecodeTestConfig::default();
-        let block_trace = BlockData::new_single_tx_trace_code_gas(
-            &bytecode,
-            Gas(config.gas_limit),
-        )
-        .expect("could not build block trace");
+        let block_trace = BlockData::new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit))
+            .expect("could not build block trace");
         let mut builder = block_trace.new_circuit_input_builder();
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .expect("could not handle block tx");
-        let mut block =
-            block_convert(config.randomness, bytecode.code(), &builder.block);
+        let mut block = block_convert(config.randomness, bytecode.code(), &builder.block);
 
         // The above block has 2 steps (GAS and STOP). We forcefully assign a
         // wrong `gas_left` value for the second step, to assert that
@@ -142,8 +130,6 @@ mod test {
         assert_eq!(block.txs[0].steps.len(), 2);
         block.txs[0].steps[1].gas_left -= 1;
 
-        assert!(
-            run_test_circuit(block, config.evm_circuit_lookup_tags).is_err()
-        );
+        assert!(run_test_circuit(block, config.evm_circuit_lookup_tags).is_err());
     }
 }
