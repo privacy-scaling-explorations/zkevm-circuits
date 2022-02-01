@@ -90,8 +90,9 @@ mod test {
         evm_circuit::{test::run_test_circuit, witness::block_convert},
         test_util::{run_test_circuits, BytecodeTestConfig},
     };
-    use bus_mapping::{bytecode, mock::BlockData};
-    use eth_types::evm_types::Gas;
+    use bus_mapping::mock::BlockData;
+    use eth_types::{bytecode, evm_types::Gas};
+    use mock::new_single_tx_trace_code_gas;
 
     fn test_ok() {
         let bytecode = bytecode! {
@@ -115,8 +116,10 @@ mod test {
             STOP
         };
         let config = BytecodeTestConfig::default();
-        let block_trace = BlockData::new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit))
-            .expect("could not build block trace");
+        let block_trace = BlockData::new_from_geth_data(
+            new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit))
+                .expect("could not build block trace"),
+        );
         let mut builder = block_trace.new_circuit_input_builder();
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)

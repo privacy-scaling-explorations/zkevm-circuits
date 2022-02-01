@@ -22,19 +22,18 @@ impl Opcode for Gas {
 #[cfg(test)]
 mod gas_tests {
     use crate::{
-        bytecode,
-        bytecode::Bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
         evm::OpcodeId,
-        mock,
+        mock::BlockData,
         operation::StackAddress,
     };
-    use eth_types::Word;
+    use eth_types::{bytecode, bytecode::Bytecode, Word};
+    use mock::new_single_tx_trace_code_at_start;
 
     use super::*;
 
     fn test_ok(code: Bytecode, gas_left: u64) -> Result<(), Error> {
-        let block = mock::BlockData::new_single_tx_trace_code_at_start(&code)?;
+        let block = BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code)?);
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace)?;
