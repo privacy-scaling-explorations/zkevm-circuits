@@ -1,6 +1,7 @@
 //! Definition of each opcode of the EVM.
 mod coinbase;
 mod dup;
+mod gas;
 mod jump;
 mod jumpdest;
 mod jumpi;
@@ -24,6 +25,7 @@ use log::warn;
 
 use self::push::Push;
 use dup::Dup;
+use gas::Gas;
 use jump::Jump;
 use jumpdest::Jumpdest;
 use jumpi::Jumpi;
@@ -59,10 +61,8 @@ fn dummy_gen_associated_ops(
     Ok(())
 }
 
-type FnGenAssociatedOps = fn(
-    state: &mut CircuitInputStateRef,
-    next_steps: &[GethExecStep],
-) -> Result<(), Error>;
+type FnGenAssociatedOps =
+    fn(state: &mut CircuitInputStateRef, next_steps: &[GethExecStep]) -> Result<(), Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
@@ -128,7 +128,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::JUMPI => Jumpi::gen_associated_ops,
         OpcodeId::PC => Pc::gen_associated_ops,
         OpcodeId::MSIZE => Msize::gen_associated_ops,
-        // OpcodeId::GAS => {},
+        OpcodeId::GAS => Gas::gen_associated_ops,
         OpcodeId::JUMPDEST => Jumpdest::gen_associated_ops,
         OpcodeId::PUSH1 => Push::<1>::gen_associated_ops,
         OpcodeId::PUSH2 => Push::<2>::gen_associated_ops,
