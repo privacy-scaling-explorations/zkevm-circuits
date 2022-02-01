@@ -90,6 +90,10 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Rotation(rot_into_branch_init),
             );
 
+            // sel1 and sel2 determines whether branch modified_node needs to be
+            // multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
+            // also (together with extension node key length) whether the extension
+            // node key nibble needs to be multiplied by 16 or not.
             let sel1 =
                 meta.query_advice(sel1, Rotation(rot_into_branch_init));
             let sel2 =
@@ -318,7 +322,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // TODO: long even sel2
 
             let short_sel1_rlc = key_rlc_prev_level.clone() +
-                (s_rlp2 - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
+                (s_rlp2.clone() - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
             constraints.push((
                 "short sel1 extension",
                 not_first_level.clone()
@@ -353,7 +357,41 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * r_table[0].clone())
             ));
 
-            // TODO: short sel2
+            let short_sel2_rlc = key_rlc_prev_level.clone() +
+                c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
+            constraints.push((
+                "short sel2 extension",
+                not_first_level.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                    * is_extension_node.clone()
+                    * is_extension_c_row.clone()
+                    * is_short.clone()
+                    * sel2.clone()
+                    * (key_rlc_cur.clone() - short_sel2_rlc.clone())
+            ));
+            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
+            // because we first have branch rows and then extension rows):
+            constraints.push((
+                "short sel2 branch",
+                not_first_level.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                    * is_extension_node.clone()
+                    * is_extension_c_row.clone()
+                    * is_short.clone()
+                    * sel2.clone()
+                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                        modified_node_cur.clone() * key_rlc_mult_prev_level.clone())
+            ));
+            constraints.push((
+                "short sel2 branch mult",
+                not_first_level.clone()
+                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                    * is_extension_node.clone()
+                    * is_extension_c_row.clone()
+                    * is_short.clone()
+                    * sel2.clone()
+                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * r_table[0].clone())
+            ));
 
             constraints
         });

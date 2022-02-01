@@ -1523,6 +1523,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if key_rlc_sel {
                                     if is_even && is_long {
                                         sel1 = F::one();
+                                    } else if is_short {
+                                        sel2 = F::one();
                                     }
                                 } else {
                                     if is_short {
@@ -1625,14 +1627,15 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     (ext_row[1] - 16) as u64,
                                                 ) * F::from(16)
                                                     * key_rlc_mult;
-                                            mult_diff = F::one();
+                                            // mult_diff is not needed in this case (is_short
+                                            // always has only one nibble and we can use
+                                            // this information)
                                             key_rlc = extension_node_rlc;
                                             // branch part:
                                             key_rlc +=
                                                 F::from(modified_node as u64)
                                                     * key_rlc_mult;
-                                            key_rlc_mult *=
-                                                key_rlc_mult * self.acc_r;
+                                            key_rlc_mult *= self.acc_r;
                                         }
                                     } else {
                                         if is_even && is_long {
@@ -1643,11 +1646,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                             )
                                                 * key_rlc_mult;
 
-                                            mult_diff = self.acc_r;
+                                            // mult_diff is not needed in this case (is_short
+                                            // always has only one nibble and we can use
+                                            // this information)
                                             key_rlc = extension_node_rlc;
 
-                                            key_rlc_mult *=
-                                                key_rlc_mult * self.acc_r;
+                                            key_rlc_mult *= self.acc_r;
                                             // branch part:
                                             key_rlc +=
                                                 F::from(modified_node as u64)
