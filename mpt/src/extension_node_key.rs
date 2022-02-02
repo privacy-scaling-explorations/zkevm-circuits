@@ -291,7 +291,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 -1,
                 r_table.clone(),
             );
-
             constraints.push((
                 "long even sel1 extension",
                     long_even.clone()
@@ -425,13 +424,53 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
             constraints.push((
                 "long odd sel1 branch mult",
-                    long_odd
+                    long_odd.clone()
                     * sel1.clone()
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone() * r_table[0].clone())
                     // mult_diff is checked in a lookup below
             ));
+    
+            /* 
+            Example:
+            bytes: [228, 130, 16 + 3, 137, 0, ...]
+            nibbles: [5, 0, ...]
+            */
+            let mut long_odd_sel2_rlc = key_rlc_prev_level.clone() +
+                (s_advices0 - c16.clone()) * key_rlc_mult_prev_level.clone();
+            // skip 1 because s_advices[0] has already been taken into account
+            long_odd_sel2_rlc = long_odd_sel2_rlc.clone() + compute_rlc(
+                meta,
+                s_advices.iter().skip(1).map(|v| *v).collect_vec(),
+                0,
+                key_rlc_mult_prev_level.clone(),
+                -1,
+                r_table.clone(),
+            );
+            constraints.push((
+                "long odd sel2 extension",
+                    long_odd.clone()
+                    * sel2.clone()
+                    * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
+            ));
+            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
+            // because we first have branch rows and then extension rows):
+            constraints.push((
+                "long odd sel2 branch",
+                    long_odd.clone()
+                    * sel2.clone()
+                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                        c16.clone() * modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
+            ));
+            constraints.push((
+                "long odd sel2 branch mult",
+                    long_odd.clone()
+                    * sel2.clone()
+                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone())
+                    // mult_diff is checked in a lookup below
+            ));
 
             // short:
+
             let short = not_first_level.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
                     * is_extension_node.clone()
@@ -555,8 +594,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let long_odd = get_long_odd(meta);
 
             let long_even_sel1 = long_even.clone() * sel1.clone();
-            let long_even_sel2 = long_even * sel2;
-            let long_odd_sel1 = long_odd * sel1;
+            let long_even_sel2 = long_even * sel2.clone();
+            let long_odd_sel1 = long_odd.clone() * sel1;
+            let long_odd_sel2 = long_odd * sel2;
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
             let key_len = s_rlp2 - c128.clone() - one.clone(); // -1 because long short has 0 in s_advices[0]
@@ -570,12 +610,17 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 (long_even_sel1.clone()
                     + long_even_sel2.clone()
-                    + long_odd_sel1.clone())
+                    + long_odd_sel1.clone()
+                    + long_odd_sel2.clone())
                     * key_len,
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
-                (long_even_sel1 + long_even_sel2 + long_odd_sel1) * mult_diff,
+                (long_even_sel1
+                    + long_even_sel2
+                    + long_odd_sel1
+                    + long_odd_sel2)
+                    * mult_diff,
                 meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));
 
