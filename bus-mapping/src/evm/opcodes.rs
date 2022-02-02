@@ -15,7 +15,7 @@ mod sload;
 mod stackonlyop;
 mod stop;
 mod swap;
-
+mod timestamp;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::evm::OpcodeId;
 use crate::Error;
@@ -24,7 +24,6 @@ use eth_types::GethExecStep;
 use log::warn;
 
 use self::push::Push;
-use coinbase::Coinbase;
 use dup::Dup;
 use gas::Gas;
 use jump::Jump;
@@ -111,8 +110,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::RETURNDATACOPY => {},
         // OpcodeId::EXTCODEHASH => {},
         // OpcodeId::BLOCKHASH => {},
-        OpcodeId::COINBASE => Coinbase::gen_associated_ops,
-        // OpcodeId::TIMESTAMP => {},
+        OpcodeId::COINBASE => StackOnlyOpcode::<0>::gen_associated_ops,
+        OpcodeId::TIMESTAMP => StackOnlyOpcode::<0>::gen_associated_ops,
         // OpcodeId::NUMBER => {},
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},

@@ -594,6 +594,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
+            OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
             OpcodeId::GAS => ExecutionState::GAS,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
@@ -686,6 +687,7 @@ pub fn block_convert(
     // converting to block context
     let context = BlockContext {
         coinbase: b.block_const.coinbase,
+        time: b.block_const.timestamp.try_into().unwrap(),
         ..Default::default()
     };
 

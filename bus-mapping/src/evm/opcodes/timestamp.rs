@@ -1,21 +1,20 @@
 #[cfg(test)]
-mod coinbase_tests {
+mod timestamp_tests {
     use crate::{
         circuit_input_builder::{ExecStep, TransactionContext},
         mock::BlockData,
         operation::RW,
         Error,
     };
-    use eth_types::evm_types::StackAddress;
-    use eth_types::{bytecode, ToWord};
+    use eth_types::{bytecode, evm_types::StackAddress};
     use mock::new_single_tx_trace_code_at_start;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn coinbase_opcode_impl() -> Result<(), Error> {
+    fn timestamp_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
             #[start]
-            COINBASE
+            TIMESTAMP
             STOP
         };
 
@@ -30,7 +29,7 @@ mod coinbase_tests {
         let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate step corresponding to COINBASE
+        // Generate step corresponding to TIMESTAMP
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
@@ -43,7 +42,7 @@ mod coinbase_tests {
         state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1024 - 1),
-            block.b_constant.coinbase.to_word(),
+            block.b_constant.timestamp,
         );
 
         tx.steps_mut().push(step);
