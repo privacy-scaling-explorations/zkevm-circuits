@@ -122,6 +122,7 @@ pub struct MPTConfig<F> {
 
 pub enum FixedTableTag {
     RMult,
+    Range16,
     Range256,
 }
 
@@ -2515,6 +2516,24 @@ impl<F: FieldExt> MPTConfig<F> {
                         self.fixed_table[0],
                         offset,
                         || Ok(F::from(FixedTableTag::Range256 as u64)),
+                    )?;
+
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from(ind as u64)),
+                    )?;
+
+                    offset += 1;
+                }
+
+                for ind in 0..16 {
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from(FixedTableTag::Range16 as u64)),
                     )?;
 
                     region.assign_fixed(
