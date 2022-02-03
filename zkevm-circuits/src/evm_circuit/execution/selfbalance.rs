@@ -18,7 +18,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct SelfbalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    caller_address: Cell<F>,
+    callee_address: Cell<F>,
     self_balance: Word<F>,
 }
 
@@ -28,16 +28,16 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let caller_address = cb.query_cell();
+        let callee_address = cb.query_cell();
         cb.call_context_lookup(
             None,
-            CallContextFieldTag::CallerAddress,
-            caller_address.expr(),
+            CallContextFieldTag::CalleeAddress,
+            callee_address.expr(),
         );
 
         let self_balance = cb.query_rlc();
         cb.account_read(
-            caller_address.expr(),
+            callee_address.expr(),
             AccountFieldTag::Balance,
             self_balance.expr(),
         );
@@ -56,7 +56,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
         Self {
             same_context,
             self_balance,
-            caller_address,
+            callee_address,
         }
     }
 
@@ -71,8 +71,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        self.caller_address
-            .assign(region, offset, call.caller_address.to_scalar())?;
+        self.callee_address
+            .assign(region, offset, call.callee_address.to_scalar())?;
 
         let self_balance = block.rws[step.rw_indices[2]].stack_value();
         self.self_balance
@@ -108,7 +108,7 @@ mod test {
         );
 
         let self_balance = 2532312423450046u64;
-        let caller_address = address!("0x000000440000000000330aa00000000440000f5e");
+        let callee_address = address!("0x000000440000000000330aa00000000440000f5e");
 
         let tx_id = 1;
         let call_id = 1;
@@ -120,7 +120,7 @@ mod test {
             randomness,
             txs: vec![Transaction {
                 id: tx_id,
-                caller_address,
+                callee_address,
                 steps: vec![
                     ExecStep {
                         execution_state: ExecutionState::SELFBALANCE,
@@ -146,7 +146,7 @@ mod test {
                     id: 1,
                     is_root: true,
                     is_create: false,
-                    caller_address,
+                    callee_address,
                     opcode_source: RandomLinearCombination::random_linear_combine(
                         bytecode.hash.to_le_bytes(),
                         randomness,
@@ -160,13 +160,13 @@ mod test {
                     call_id,
                     rw_counter: 1,
                     is_write: false,
-                    field_tag: CallContextFieldTag::CallerAddress,
-                    value: caller_address.to_word(),
+                    field_tag: CallContextFieldTag::CalleeAddress,
+                    value: callee_address.to_word(),
                 },
                 Rw::Account {
                     rw_counter: 2,
                     is_write: false,
-                    account_address: caller_address,
+                    account_address: callee_address,
                     field_tag: AccountFieldTag::Balance,
                     value: Word::from(self_balance),
                     value_prev: Word::from(self_balance),
