@@ -34,6 +34,7 @@ mod mul;
 mod pc;
 mod pop;
 mod push;
+mod selfbalance;
 mod signed_comparator;
 mod signextend;
 mod stop;
@@ -58,6 +59,7 @@ use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use selfbalance::SelfbalanceGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
@@ -111,6 +113,7 @@ pub(crate) struct ExecutionConfig<F> {
     msize_gadget: MsizeGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
+    selfbalance_gadget: SelfbalanceGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
@@ -232,6 +235,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            selfbalance_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
@@ -489,6 +493,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::TIMESTAMP => {
                 assign_exec_step!(self.timestamp_gadget)
             }
+            ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
