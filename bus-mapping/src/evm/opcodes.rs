@@ -11,6 +11,7 @@ mod mstore;
 mod pc;
 mod pop;
 mod push;
+mod selfbalance;
 mod sload;
 mod stackonlyop;
 mod stop;
@@ -116,7 +117,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
         // OpcodeId::CHAINID => {},
-        // OpcodeId::SELFBALANCE => {},
+        OpcodeId::SELFBALANCE => StackOnlyOpcode::<0>::gen_associated_ops,
         // OpcodeId::BASEFEE => {},
         OpcodeId::POP => Pop::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
