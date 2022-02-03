@@ -1,0 +1,18 @@
+name: Prover Bench on halo2 PR
+on:
+  workflow_dispatch:
+    inputs:
+      event-type:
+        required: true
+        type: string
+      ghuser:
+        required: true
+        type: string
+      revision:
+        required: true
+        type: string
+jobs:
+  Exec ProverBench on halo2 PR:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.event_name }} event has been received due to a ${{ github.event.inputs.event-type }}. User ${{ github.event.inputs.ghuser }} wants to run prover bench due to halo2 version ${{ github.event.inputs.revision }}"
