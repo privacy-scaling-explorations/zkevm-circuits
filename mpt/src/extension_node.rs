@@ -105,6 +105,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         not_first_level: Column<Fixed>,
         q_not_first: Column<Fixed>,
+        is_account_leaf_storage_codehash_c: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp2: Column<Advice>,
@@ -326,7 +327,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 meta,
                 s_advices.to_vec(),
                 1,
-                one,
+                one.clone(),
                 rot,
                 r_table.clone(),
             );
@@ -370,16 +371,26 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         // Correspondence between nibbles in C and bytes in S is checked in extension_node_key.
 
         // Check whether extension node hash is in parent branch.
+        // Don't check if it's first storage level (see storage_root_in_account_leaf).
         meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
+            let is_account_leaf_storage_codehash_c = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_branch_init - 1),
+            );
+
             let mut constraints = vec![];
 
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
             constraints.push((
-                not_first_level.clone() * q_enable.clone() * acc_c,
+                not_first_level.clone()
+                    * q_enable.clone()
+                    * (one.clone()
+                        - is_account_leaf_storage_codehash_c.clone())
+                    * acc_c,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
@@ -389,7 +400,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
-                    not_first_level.clone() * q_enable.clone() * keccak,
+                    not_first_level.clone()
+                        * q_enable.clone()
+                        * (one.clone()
+                            - is_account_leaf_storage_codehash_c.clone())
+                        * keccak,
                     keccak_table_i,
                 ));
             }

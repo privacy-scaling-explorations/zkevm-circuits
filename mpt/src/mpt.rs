@@ -375,6 +375,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             not_first_level,
             q_not_first,
+            is_account_leaf_storage_codehash_c,
             s_rlp1,
             s_rlp2,
             c_rlp2,
@@ -406,6 +407,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             not_first_level,
             q_not_first,
+            is_account_leaf_storage_codehash_c,
             s_rlp1,
             s_rlp2,
             c_rlp2,
@@ -449,6 +451,8 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             acc_s,
             acc_mult_s,
+            acc_c,
+            acc_mult_c,
             keccak_table,
             true,
         );
@@ -459,6 +463,8 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices, // s_advices (and not c_advices) is correct
+            acc_s,
+            acc_mult_s,
             acc_c,
             acc_mult_c,
             keccak_table,

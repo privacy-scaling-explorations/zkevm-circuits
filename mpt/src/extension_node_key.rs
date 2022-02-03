@@ -203,6 +203,13 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             // First level in account proof:
 
+            let account_first = q_not_first.clone()
+                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
+                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
+                    * (one.clone() - not_first_level.clone())
+                    * is_extension_node.clone()
+                    * is_extension_c_row.clone();
+
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::prev());
             let s_advices1 = meta.query_advice(s_advices[1], Rotation::prev());
@@ -219,55 +226,69 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             first_level_long_even_rlc = first_level_long_even_rlc + modified_node_cur.clone() * c16.clone();
             constraints.push((
                 "account first level long even",
-                    q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
-                    * (one.clone() - not_first_level.clone())
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone()
+                account_first.clone()
                     * is_key_even.clone()
                     * is_long.clone()
                     * (first_level_long_even_rlc.clone() - key_rlc_cur.clone())
             )); // TODO: prepare test
 
-            let mut first_level_short_rlc = s_rlp2.clone() * c16.clone();
-            first_level_short_rlc = first_level_short_rlc + modified_node_cur.clone();
+            let first_level_short_ext_rlc =
+                (s_rlp2.clone() - c16.clone()) * c16.clone(); // -16 because of hexToCompact
+            let first_level_short_branch_rlc = first_level_short_ext_rlc.clone() + modified_node_cur.clone();
             constraints.push((
-                "account first level short",
-                    q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // to prevent Poisoned Constraint due to rotation for is_extension_node
-                    * (one.clone() - is_branch_child_prev.clone()) // to prevent Poisoned Constraint
-                    * (one.clone() - not_first_level.clone())
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone()
+                "account first level short extension",
+                account_first.clone()
+                * is_short.clone()
+                    * (first_level_short_ext_rlc.clone() - key_rlc_cur.clone())
+            )); // TODO: prepare test
+            constraints.push((
+                "account first level short branch",
+                account_first.clone()
                     * is_short.clone()
-                    * (first_level_short_rlc.clone() - key_rlc_cur.clone())
+                    * (first_level_short_branch_rlc.clone() - key_rlc_branch.clone())
+            )); // TODO: prepare test
+            constraints.push((
+                "account first level short branch mult",
+                account_first.clone()
+                    * is_short.clone()
+                    * (r_table[0].clone() - key_rlc_mult_branch.clone())
             )); // TODO: prepare test
 
-            // TODO: all cases for first level account proof
+            // TODO: long odd for first level account proof
 
             // First storage level:
 
-            constraints.push((
-                "storage first level long even",
-                not_first_level.clone()
+            let storage_first = not_first_level.clone()
                     * is_account_leaf_storage_codehash_prev.clone()
                     * is_extension_node.clone()
-                    * is_extension_c_row.clone()
+                    * is_extension_c_row.clone();
+
+            constraints.push((
+                "storage first level long even",
+                storage_first.clone()
                     * is_key_even.clone()
                     * is_long.clone()
                     * (first_level_long_even_rlc - key_rlc_cur.clone())
             )); // TODO: prepare test
 
             constraints.push((
-                "storage first level short",
-                not_first_level.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone()
+                "storage first level short extension",
+                storage_first.clone()
                     * is_short.clone()
-                    * (first_level_short_rlc - key_rlc_cur.clone())
-            )); // TODO: prepare test
+                    * (first_level_short_ext_rlc - key_rlc_cur.clone())
+            ));
+            constraints.push((
+                "storage first level short branch",
+                storage_first.clone()
+                    * is_short.clone()
+                    * (first_level_short_branch_rlc - key_rlc_branch.clone())
+            ));
+            constraints.push((
+                "storage first level short branch mult",
+                storage_first.clone()
+                    * is_short.clone()
+                    * (r_table[0].clone() - key_rlc_mult_branch.clone())
+            ));
 
             // Not first level:
 
