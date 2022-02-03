@@ -215,26 +215,43 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let s_advices1 = meta.query_advice(s_advices[1], Rotation::prev());
 
             // skip 1 because s_advices[0] is 0 and doesn't contain any key info
-            let mut first_level_long_even_rlc = s_advices1.clone() + compute_rlc(
+            // and skip another 1 because s_advices[1] is multiplied by 1
+            let mut first_level_long_even_ext_rlc = s_advices1.clone() + compute_rlc(
                 meta,
-                s_advices.iter().skip(1).map(|v| *v).collect_vec(),
+                s_advices.iter().skip(2).map(|v| *v).collect_vec(),
                 0,
                 one.clone(),
                 -1,
                 r_table.clone(),
             );
-            first_level_long_even_rlc = first_level_long_even_rlc + modified_node_cur.clone() * c16.clone();
+            let mut first_level_long_even_branch_rlc =
+                first_level_long_even_ext_rlc.clone() + c16.clone() * modified_node_cur.clone() * mult_diff.clone();
             constraints.push((
-                "account first level long even",
+                "account first level long even extension",
                 account_first.clone()
                     * is_key_even.clone()
                     * is_long.clone()
-                    * (first_level_long_even_rlc.clone() - key_rlc_cur.clone())
+                    * (first_level_long_even_ext_rlc.clone() - key_rlc_cur.clone())
             )); // TODO: prepare test
+            constraints.push((
+                "account first level long even branch",
+                account_first.clone()
+                    * is_key_even.clone()
+                    * is_long.clone()
+                    * (first_level_long_even_branch_rlc.clone() - key_rlc_branch.clone())
+            ));
+            constraints.push((
+                "account first level long even branch mult",
+                account_first.clone()
+                    * is_key_even.clone()
+                    * is_long.clone()
+                    * (mult_diff.clone() - key_rlc_mult_branch.clone())
+            ));
 
             let first_level_short_ext_rlc =
                 (s_rlp2.clone() - c16.clone()) * c16.clone(); // -16 because of hexToCompact
-            let first_level_short_branch_rlc = first_level_short_ext_rlc.clone() + modified_node_cur.clone();
+            let first_level_short_branch_rlc =
+                first_level_short_ext_rlc.clone() + modified_node_cur.clone();
             constraints.push((
                 "account first level short extension",
                 account_first.clone()
@@ -246,13 +263,13 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 account_first.clone()
                     * is_short.clone()
                     * (first_level_short_branch_rlc.clone() - key_rlc_branch.clone())
-            )); // TODO: prepare test
+            ));
             constraints.push((
                 "account first level short branch mult",
                 account_first.clone()
                     * is_short.clone()
                     * (r_table[0].clone() - key_rlc_mult_branch.clone())
-            )); // TODO: prepare test
+            ));
 
             // TODO: long odd for first level account proof
 
@@ -264,12 +281,26 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * is_extension_c_row.clone();
 
             constraints.push((
-                "storage first level long even",
+                "storage first level long even extension",
                 storage_first.clone()
                     * is_key_even.clone()
                     * is_long.clone()
-                    * (first_level_long_even_rlc - key_rlc_cur.clone())
+                    * (first_level_long_even_ext_rlc - key_rlc_cur.clone())
             )); // TODO: prepare test
+            constraints.push((
+                "storage first level long even branch",
+                storage_first.clone()
+                    * is_key_even.clone()
+                    * is_long.clone()
+                    * (first_level_long_even_branch_rlc - key_rlc_branch.clone())
+            ));
+            constraints.push((
+                "storage first level long even branch mult",
+                storage_first.clone()
+                    * is_key_even.clone()
+                    * is_long.clone()
+                    * (mult_diff.clone() - key_rlc_mult_branch.clone())
+            ));
 
             constraints.push((
                 "storage first level short extension",
