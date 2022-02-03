@@ -1,22 +1,13 @@
-use halo2::circuit::Cell;
 use num_bigint::BigUint;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
-
-#[derive(Debug, Clone, Copy)]
-pub struct BlockCount<F> {
-    pub cell: Cell,
-    pub value: F,
-}
-
-pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 
 /// Convert a bigUint value to FieldExt
 ///
 /// We assume the input value is smaller than the field size
 pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F {
     let mut x_bytes = x.to_bytes_le();
-    assert!(
+    debug_assert!(
         x_bytes.len() <= 32,
         "expect len <=32 but got {}",
         x_bytes.len()

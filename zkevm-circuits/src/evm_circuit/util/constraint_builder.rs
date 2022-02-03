@@ -2,8 +2,8 @@ use crate::{
     evm_circuit::{
         step::{ExecutionState, Preset, Step},
         table::{
-            AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, TxContextFieldTag,
+            AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
+            TxContextFieldTag,
         },
         util::{Cell, RandomLinearCombination, Word},
     },
@@ -103,10 +103,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
         for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter()) {
             if usage.is_byte_lookup_enabled {
-                constraints.push((
-                    "Enable byte lookup",
-                    row.qs_byte_lookup.expr() - 1.expr(),
-                ));
+                constraints.push(("Enable byte lookup", row.qs_byte_lookup.expr() - 1.expr()));
             }
 
             presets.extend(
@@ -124,27 +121,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ));
         }
 
-        let execution_state_selector =
-            self.curr.execution_state_selector(self.execution_state);
+        let execution_state_selector = self.curr.execution_state_selector(self.execution_state);
 
         (
             constraints
                 .into_iter()
-                .map(|(name, constraint)| {
-                    (name, execution_state_selector.clone() * constraint)
-                })
+                .map(|(name, constraint)| (name, execution_state_selector.clone() * constraint))
                 .collect(),
             self.constraints_first_step
                 .into_iter()
-                .map(|(name, constraint)| {
-                    (name, execution_state_selector.clone() * constraint)
-                })
+                .map(|(name, constraint)| (name, execution_state_selector.clone() * constraint))
                 .collect(),
             self.lookups
                 .into_iter()
-                .map(|(name, lookup)| {
-                    (name, lookup.conditional(execution_state_selector.clone()))
-                })
+                .map(|(name, lookup)| (name, lookup.conditional(execution_state_selector.clone())))
                 .collect(),
             presets,
         )
@@ -192,13 +182,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.query_rlc()
     }
 
-    pub(crate) fn query_rlc<const N: usize>(
-        &mut self,
-    ) -> RandomLinearCombination<F, N> {
-        RandomLinearCombination::<F, N>::new(
-            self.query_bytes(),
-            self.power_of_randomness,
-        )
+    pub(crate) fn query_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.power_of_randomness)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -209,9 +194,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let mut cells = Vec::with_capacity(N);
 
         // Iterate rows to find cell that matches the is_byte requirement.
-        for (row, usage) in
-            self.curr.rows.iter().zip(self.row_usages.iter_mut())
-        {
+        for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter_mut()) {
             // If this row doesn't match the is_byte requirement and is already
             // used, skip this row.
             if usage.is_byte_lookup_enabled != is_byte && usage.next_idx > 0 {
@@ -238,11 +221,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Common
 
-    pub(crate) fn require_zero(
-        &mut self,
-        name: &'static str,
-        constraint: Expression<F>,
-    ) {
+    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
     }
 
@@ -255,11 +234,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.add_constraint(name, lhs - rhs);
     }
 
-    pub(crate) fn require_boolean(
-        &mut self,
-        name: &'static str,
-        value: Expression<F>,
-    ) {
+    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
@@ -271,9 +246,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.add_constraint(
             name,
-            set.iter().fold(1.expr(), |acc, item| {
-                acc * (value.clone() - item.clone())
-            }),
+            set.iter()
+                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
     }
 
@@ -344,9 +318,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ),
         ] {
             match transition {
-                Transition::Same => {
-                    self.require_equal(name, next.expr(), curr.expr())
-                }
+                Transition::Same => self.require_equal(name, next.expr(), curr.expr()),
                 Transition::Delta(delta) => {
                     self.require_equal(name, next.expr(), curr.expr() + delta)
                 }
@@ -376,14 +348,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Opcode
 
-    pub(crate) fn opcode_lookup(
-        &mut self,
-        opcode: Expression<F>,
-        is_code: Expression<F>,
-    ) {
+    pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
         self.opcode_lookup_at(
-            self.curr.state.program_counter.expr()
-                + self.program_counter_offset.expr(),
+            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
             opcode,
             is_code,
         );
@@ -396,8 +363,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         opcode: Expression<F>,
         is_code: Expression<F>,
     ) {
-        let is_root_create =
-            self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
+        let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_constraint(
             "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
             is_root_create.clone(),
@@ -473,14 +439,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Rw
 
     /// Add a Lookup::Rw without increasing the rw_counter_offset, which is
-    /// useful for state reversion or dummuy lookup.
+    /// useful for state reversion or dummy lookup.
     fn rw_lookup_with_counter(
         &mut self,
         name: &'static str,
         counter: Expression<F>,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 7],
     ) {
         self.add_lookup(
             name,
@@ -500,7 +466,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         name: &'static str,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 7],
     ) {
         self.rw_lookup_with_counter(
             name,
@@ -516,7 +482,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         name: &'static str,
         tag: RwTableTag,
-        mut values: [Expression<F>; 5],
+        mut values: [Expression<F>; 7],
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) {
@@ -525,17 +491,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         // Revert if is_persistent is 0
         self.condition(1.expr() - is_persistent, |cb| {
             // Calculate state_write_counter so far
-            let state_write_counter = cb.curr.state.state_write_counter.expr()
-                + cb.state_write_counter_offset.expr();
+            let state_write_counter =
+                cb.curr.state.state_write_counter.expr() + cb.state_write_counter_offset.expr();
+
             // Swap value and value_prev respect to tag
-            match tag {
-                RwTableTag::TxAccessListAccount => values.swap(2, 3),
-                RwTableTag::TxAccessListStorageSlot => values.swap(3, 4),
-                RwTableTag::Account => values.swap(2, 3),
-                RwTableTag::AccountStorage => values.swap(3, 4),
-                RwTableTag::AccountDestructed => values.swap(2, 3),
-                _ => {}
-            }
+            if tag.is_reversible() {
+                values.swap(3, 4)
+            };
 
             cb.rw_lookup_with_counter(
                 name,
@@ -562,7 +524,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "AccountAccessList write",
             true.expr(),
             RwTableTag::TxAccessListAccount,
-            [tx_id, account_address, value, value_prev, 0.expr()],
+            [
+                tx_id,
+                account_address,
+                0.expr(),
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
         );
     }
 
@@ -581,8 +551,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 account_address,
                 field_tag.expr(),
+                0.expr(),
                 value.clone(),
                 value,
+                0.expr(),
                 0.expr(),
             ],
         );
@@ -602,8 +574,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 account_address,
                 field_tag.expr(),
+                0.expr(),
                 value,
                 value_prev,
+                0.expr(),
                 0.expr(),
             ],
         );
@@ -624,8 +598,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 account_address,
                 field_tag.expr(),
+                0.expr(),
                 value,
                 value_prev,
+                0.expr(),
                 0.expr(),
             ],
             is_persistent,
@@ -658,7 +634,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 field_tag.expr(),
+                0.expr(),
                 value,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -668,11 +646,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Stack
 
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
-        self.stack_lookup(
-            false.expr(),
-            self.stack_pointer_offset.expr(),
-            value,
-        );
+        self.stack_lookup(false.expr(), self.stack_pointer_offset.expr(), value);
         self.stack_pointer_offset += 1;
     }
 
@@ -694,7 +668,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
+                0.expr(),
                 value,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -716,7 +692,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 self.curr.state.call_id.expr(),
                 memory_address,
+                0.expr(),
                 byte,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -738,7 +716,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 self.curr.state.call_id.expr(),
                 memory_address,
+                0.expr(),
                 byte,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -748,7 +728,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
-        assert!(
+        debug_assert!(
             degree <= MAX_DEGREE,
             "Expression {} degree too high: {} > {}",
             name,
@@ -764,7 +744,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        assert!(
+        debug_assert!(
             self.condition.is_none(),
             "Nested condition is not supported"
         );
@@ -774,20 +754,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         ret
     }
 
-    pub(crate) fn add_constraints(
-        &mut self,
-        constraints: Vec<(&'static str, Expression<F>)>,
-    ) {
+    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
         for (name, constraint) in constraints {
             self.add_constraint(name, constraint);
         }
     }
 
-    pub(crate) fn add_constraint(
-        &mut self,
-        name: &'static str,
-        constraint: Expression<F>,
-    ) {
+    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         let constraint = match &self.condition {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
