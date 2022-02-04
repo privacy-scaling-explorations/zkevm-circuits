@@ -329,31 +329,33 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
 
             // short
-
-            let first_level_short_ext_rlc =
-                (s_rlp2.clone() - c16.clone()) * c16.clone(); // -16 because of hexToCompact
-            let first_level_short_branch_rlc =
-                first_level_short_ext_rlc.clone() + modified_node_cur.clone();
-            constraints.push((
-                "first level short extension",
-                (account_first.clone() + storage_first.clone())
-                * is_short.clone()
-                    * (first_level_short_ext_rlc.clone() - key_rlc_cur.clone())
-            )); // TODO: prepare test for account
-            constraints.push((
-                "first level short branch",
-                (account_first.clone() + storage_first.clone())
-                    * is_short.clone()
-                    * (first_level_short_branch_rlc.clone() - key_rlc_branch.clone())
-            ));
-            constraints.push((
-                "first level short branch mult",
-                (account_first.clone() + storage_first.clone())
-                    * is_short.clone()
-                    * (r_table[0].clone() - key_rlc_mult_branch.clone())
-            ));
  
-            // Not first level:
+            let short_sel1_rlc = rlc_prev.clone() +
+                (s_rlp2.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
+            constraints.push((
+                "short sel1 extension",
+                    not_branch_or_after.clone()
+                    * is_short.clone()
+                    * sel1.clone()
+                    * (key_rlc_cur.clone() - short_sel1_rlc.clone())
+            ));
+            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
+            // because we first have branch rows and then extension rows):
+            constraints.push((
+                "short sel1 branch",
+                    not_branch_or_after.clone()
+                    * is_short.clone()
+                    * sel1.clone()
+                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                        c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
+            ));
+            constraints.push((
+                "short sel1 branch mult",
+                    not_branch_or_after.clone()
+                    * is_short.clone()
+                    * sel1.clone()
+                    * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
+            ));
 
             /* 
             Note that there can be at max 31 key bytes because 32 same bytes would mean
@@ -472,37 +474,12 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     // mult_diff is checked in a lookup below
             ));
 
-            // short:
-
+            // short: 
             let short = not_first_level.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone()
-                    * is_short.clone();
-
-            let short_sel1_rlc = rlc_prev.clone() +
-                (s_rlp2.clone() - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
-            constraints.push((
-                "short sel1 extension",
-                    short.clone()
-                    * sel1.clone()
-                    * (key_rlc_cur.clone() - short_sel1_rlc.clone())
-            ));
-            // We check branch key RLC in extension C row too (otherwise +rotation would be needed
-            // because we first have branch rows and then extension rows):
-            constraints.push((
-                "short sel1 branch",
-                    short.clone()
-                    * sel1.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                        c16.clone() * modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * r_table[0].clone())
-            ));
-            constraints.push((
-                "short sel1 branch mult",
-                    short.clone()
-                    * sel1.clone()
-                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * r_table[0].clone())
-            ));
+                * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                * is_extension_node.clone()
+                * is_extension_c_row.clone()
+                * is_short.clone();
 
             let short_sel2_rlc = key_rlc_prev_level.clone() +
                 c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
