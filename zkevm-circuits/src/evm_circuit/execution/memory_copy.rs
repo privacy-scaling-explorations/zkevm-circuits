@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_MEMORY_ADDRESS,
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::TxContextFieldTag,
         util::{
@@ -12,7 +12,7 @@ use crate::{
             memory_gadget::BufferReaderGadget,
             Cell,
         },
-        witness::{Block, Call, ExecStep, GadgetExtraData, Transaction},
+        witness::{Block, Call, ExecStep, StepAuxiliaryData, Transaction},
     },
     util::Expr,
 };
@@ -41,7 +41,7 @@ pub(crate) struct CopyToMemoryGadget<F> {
     buffer_reader:
         BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
     // The comparison gadget between num bytes copied and bytes_left
-    finish_gadget: ComparisonGadget<F, 4>,
+    finish_gadget: ComparisonGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
@@ -97,9 +97,10 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             bytes_left.expr(),
         );
         let (lt, finished) = finish_gadget.expr();
+        // Constrain lt == 1 or finished == 1
         cb.add_constraint(
             "Constrain num_bytes <= bytes_left",
-            lt * finished.clone(),
+            (1.expr() - lt) * (1.expr() - finished.clone()),
         );
 
         // When finished == 0, constraint the CopyToMemory state in next step
@@ -124,12 +125,12 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                     dst_addr.expr() + copied_size.clone(),
                 );
                 cb.require_equal(
-                    "next_bytes_left + copied_size == bytes_left",
-                    next_bytes_left.expr() + copied_size.clone(),
-                    bytes_left.expr(),
+                    "next_bytes_left == bytes_left - copied_size",
+                    next_bytes_left.expr(),
+                    bytes_left.expr() - copied_size.clone(),
                 );
                 cb.require_equal(
-                    "next_src_addr_bound == src_addr_bound",
+                    "next_src_addr_end == src_addr_end",
                     next_src_addr_end.expr(),
                     src_addr_end.expr(),
                 );
@@ -174,14 +175,14 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         _: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let GadgetExtraData::CopyToMemory {
+        let StepAuxiliaryData::CopyToMemory {
             src_addr,
             dst_addr,
             bytes_left,
             src_addr_end,
             from_tx,
             selectors,
-        } = step.extra_data.as_ref().unwrap();
+        } = step.aux_data.as_ref().unwrap();
 
         self.src_addr
             .assign(region, offset, Some(F::from(*src_addr)))?;
@@ -252,7 +253,7 @@ pub mod test {
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
         witness::{
-            Block, Bytecode, Call, ExecStep, GadgetExtraData, Rw, Transaction,
+            Block, Bytecode, Call, ExecStep, StepAuxiliaryData, Rw, Transaction,
         },
     };
     use eth_types::{evm_types::OpcodeId, ToLittleEndian};
@@ -309,7 +310,7 @@ pub mod test {
             }
         }
         let rw_idx_end = rws.len();
-        let extra_data = GadgetExtraData::CopyToMemory {
+        let aux_data = StepAuxiliaryData::CopyToMemory {
             src_addr,
             dst_addr,
             bytes_left: bytes_left as u64,
@@ -325,7 +326,7 @@ pub mod test {
             stack_pointer,
             memory_size,
             gas_cost: 0,
-            extra_data: Some(extra_data),
+            aux_data: Some(aux_data),
             ..Default::default()
         };
         (step, rw_offset)

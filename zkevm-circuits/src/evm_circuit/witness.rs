@@ -262,7 +262,7 @@ pub struct Call<F> {
 }
 
 #[derive(Clone, Debug)]
-pub enum GadgetExtraData {
+pub enum StepAuxiliaryData {
     CopyToMemory {
         src_addr: u64,
         dst_addr: u64,
@@ -297,7 +297,8 @@ pub struct ExecStep {
     pub state_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
-    pub extra_data: Option<GadgetExtraData>,
+    /// Step auxiliary data
+    pub aux_data: Option<StepAuxiliaryData>,
 }
 
 impl ExecStep {
@@ -527,9 +528,6 @@ impl Rw {
                             randomness,
                         )
                     }
-                    CallContextFieldTag::CallerAddress
-                    | CallContextFieldTag::CalleeAddress
-                    | CallContextFieldTag::Result => value.to_scalar().unwrap(),
                     _ => value.to_scalar().unwrap(),
                 },
                 F::zero(),
