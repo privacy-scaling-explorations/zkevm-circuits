@@ -273,7 +273,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             bytes: [228, 130, 16 + 3, 9*16 + 5, 0, ...]
             nibbles: [5, 0, ...]
             */
-            let mut long_odd_sel1_rlc = rlc_prev.clone() +
+            // Note: sel1 and sel2 are turned around here (because of odd number of nibbles).
+            let mut long_odd_sel2_rlc = rlc_prev.clone() +
                 c16.clone() * (s_advices0.clone() - c16.clone()) * mult_prev.clone(); // -16 because of hexToCompact
             // s_advices0 - 16 = 3 in example above
             let mut mult = one.clone();
@@ -284,46 +285,46 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 // Note that first_nibble and second_nibble need to be between 0 and 15 - this
                 // is checked in a lookup below.
                 constraints.push((
-                    "long odd sel1 nibble correspond to byte",
+                    "long odd sel2 nibble correspond to byte",
                     is_key_odd.clone()
                         * not_branch_or_after.clone()
                         * is_long.clone()
-                        * sel1.clone()
+                        * sel2.clone()
                         * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
                 ));
 
-                long_odd_sel1_rlc = long_odd_sel1_rlc +
+                long_odd_sel2_rlc = long_odd_sel2_rlc +
                     first_nibble.clone() * mult_prev.clone() * mult.clone();
                 mult = mult * r_table[0].clone();
 
-                long_odd_sel1_rlc = long_odd_sel1_rlc +
+                long_odd_sel2_rlc = long_odd_sel2_rlc +
                     second_nibble.clone() * c16.clone() * mult_prev.clone() * mult.clone();
             }
             constraints.push((
-                "long odd sel1 extension",
+                "long odd sel2 extension",
                     is_key_odd.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
-                    * sel1.clone()
-                    * (key_rlc_cur.clone() - long_odd_sel1_rlc.clone())
+                    * sel2.clone()
+                    * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
             constraints.push((
-                "long odd sel1 branch",
+                "long odd sel2 branch",
                     is_key_odd.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
-                    * sel1.clone()
+                    * sel2.clone()
                     * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                         modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
             ));
             constraints.push((
-                "long odd sel1 branch mult",
+                "long odd sel2 branch mult",
                     is_key_odd.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
-                    * sel1.clone()
+                    * sel2.clone()
                     * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
                     // mult_diff is checked in a lookup below
             ));
@@ -440,10 +441,10 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             bytes: [228, 130, 16 + 3, 137, 0, ...]
             nibbles: [5, 0, ...]
             */
-            let mut long_odd_sel2_rlc = key_rlc_prev_level.clone() +
+            let mut long_odd_sel1_rlc = key_rlc_prev_level.clone() +
                 (s_advices0 - c16.clone()) * key_rlc_mult_prev_level.clone();
             // skip 1 because s_advices[0] has already been taken into account
-            long_odd_sel2_rlc = long_odd_sel2_rlc.clone() + compute_rlc(
+            long_odd_sel1_rlc = long_odd_sel1_rlc.clone() + compute_rlc(
                 meta,
                 s_advices.iter().skip(1).map(|v| *v).collect_vec(),
                 0,
@@ -452,24 +453,24 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 r_table.clone(),
             );
             constraints.push((
-                "long odd sel2 extension",
+                "long odd sel1 extension",
                     long_odd.clone()
-                    * sel2.clone()
-                    * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
+                    * sel1.clone()
+                    * (key_rlc_cur.clone() - long_odd_sel1_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
             constraints.push((
-                "long odd sel2 branch",
+                "long odd sel1 branch",
                     long_odd.clone()
-                    * sel2.clone()
+                    * sel1.clone()
                     * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                         c16.clone() * modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
             ));
             constraints.push((
-                "long odd sel2 branch mult",
+                "long odd sel1 branch mult",
                     long_odd.clone()
-                    * sel2.clone()
+                    * sel1.clone()
                     * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
             ));
