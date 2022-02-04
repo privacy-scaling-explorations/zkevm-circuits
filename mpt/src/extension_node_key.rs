@@ -200,17 +200,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
             ));
 
-            let account_first = q_not_first.clone()
-                    * not_branch_or_after.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone();
-
-            let storage_first = not_first_level.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
-                    * is_extension_node.clone()
-                    * is_extension_c_row.clone();
-
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::prev());
             let s_advices1 = meta.query_advice(s_advices[1], Rotation::prev());
@@ -220,6 +209,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
                     * is_extension_node.clone()
                     * is_extension_c_row.clone();
+
+            let check_extension = is_extension_node.clone() * is_extension_c_row.clone();
 
             // mult_prev = 1 if first level, mult_prev = key_rlc_mult_prev_level if not first level
             let mult_prev = after_first_level.clone() * key_rlc_mult_prev_level.clone() +
@@ -242,6 +233,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel1 extension",
                     is_key_even.clone()
+                    * check_extension.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
                     * sel1.clone()
@@ -252,6 +244,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel1 branch",
                     is_key_even.clone()
+                    * check_extension.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
                     * sel1.clone()
@@ -261,6 +254,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel1 branch mult",
                     is_key_even.clone()
+                    * check_extension.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
                     * sel1.clone()
@@ -287,6 +281,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 constraints.push((
                     "long odd sel2 nibble correspond to byte",
                     is_key_odd.clone()
+                    * check_extension.clone()
                         * not_branch_or_after.clone()
                         * is_long.clone()
                         * sel2.clone()
@@ -303,6 +298,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long odd sel2 extension",
                     is_key_odd.clone()
+                    * check_extension.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
                     * sel2.clone()
@@ -313,6 +309,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long odd sel2 branch",
                     is_key_odd.clone()
+                    * check_extension.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
                     * sel2.clone()
@@ -322,6 +319,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long odd sel2 branch mult",
                     is_key_odd.clone()
+                    * check_extension.clone()
                     * not_branch_or_after.clone()
                     * is_long.clone()
                     * sel2.clone()
@@ -336,6 +334,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 extension",
                     not_branch_or_after.clone()
+                    * check_extension.clone()
                     * is_short.clone()
                     * sel1.clone()
                     * (key_rlc_cur.clone() - short_sel1_rlc.clone())
@@ -345,6 +344,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 branch",
                     not_branch_or_after.clone()
+                    * check_extension.clone()
                     * is_short.clone()
                     * sel1.clone()
                     * (key_rlc_branch.clone() - key_rlc_cur.clone() -
@@ -353,6 +353,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 branch mult",
                     not_branch_or_after.clone()
+                    * check_extension.clone()
                     * is_short.clone()
                     * sel1.clone()
                     * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
@@ -385,7 +386,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 // is checked in a lookup below.
                 constraints.push((
                     "long even sel2 nibble correspond to byte",
-                        after_first_level.clone()
+                        after_first_level.clone() // no need for check_extension here
                         * is_key_even.clone()
                         * is_long.clone()
                         * sel2.clone()
@@ -454,7 +455,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             );
             constraints.push((
                 "long odd sel1 extension",
-                    long_odd.clone()
+                    long_odd.clone() // no need for check_extension here
                     * sel1.clone()
                     * (key_rlc_cur.clone() - long_odd_sel1_rlc.clone())
             ));
@@ -486,7 +487,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
             constraints.push((
                 "short sel2 extension",
-                    short.clone()
+                    short.clone() // no need for check_extension here
                     * sel2.clone()
                     * (key_rlc_cur.clone() - short_sel2_rlc.clone())
             ));
