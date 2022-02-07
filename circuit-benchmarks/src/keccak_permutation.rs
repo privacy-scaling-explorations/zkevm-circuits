@@ -6,8 +6,8 @@ use halo2::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use keccak256::{
-    circuit::KeccakFConfig, common::NEXT_INPUTS_LANES,
-    gates::tables::FromBase9TableConfig, keccak_arith::KeccakFArith,
+    circuit::KeccakFConfig, common::NEXT_INPUTS_LANES, gates::tables::FromBase9TableConfig,
+    keccak_arith::KeccakFArith,
 };
 
 #[derive(Default, Clone)]
@@ -145,8 +145,7 @@ mod tests {
         // Generate in_state as `[Fr;25]`
         let mut in_state_fp: [Fr; 25] = [Fr::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_state_fp[5 * x + y] =
-                biguint_to_f(&convert_b2_to_b13(in_state[x][y]));
+            in_state_fp[5 * x + y] = biguint_to_f(&convert_b2_to_b13(in_state[x][y]));
             in_state_biguint[(x, y)] = convert_b2_to_b13(in_state[x][y]);
         }
 
@@ -160,8 +159,7 @@ mod tests {
 
         // Generate out_state as `[Fr;25]`
         let out_state_mix: [Fr; 25] = state_bigint_to_field(out_state_mix);
-        let out_state_non_mix: [Fr; 25] =
-            state_bigint_to_field(out_state_non_mix);
+        let out_state_non_mix: [Fr; 25] = state_bigint_to_field(out_state_non_mix);
 
         // Generate next_input (tho one that is not None) in the form `[F;17]`
         // Generate next_input as `[Fr;NEXT_INPUTS_LANES]`
@@ -192,13 +190,12 @@ mod tests {
             .expect("Cannot parse DEGREE env var as u32");
 
         let rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
-            0x32, 0x54, 0x06, 0xbc, 0xe5,
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
         ]);
 
         // Bench setup generation
-        let setup_message =
-            format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = Setup::<Bn256>::new(degree, rng);
         end_timer!(start1);
@@ -207,12 +204,10 @@ mod tests {
         let pk = keygen_pk(&general_params, vk, &circuit).unwrap();
 
         // Prove
-        let mut transcript =
-            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message =
-            format!("EVM Proof generation with {} rows", degree);
+        let proof_message = format!("EVM Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof(
             &general_params,
@@ -227,10 +222,8 @@ mod tests {
 
         // Verify
         let verifier_params =
-            Setup::<Bn256>::verifier_params(&general_params, PERMUTATION * 2)
-                .unwrap();
-        let mut verifier_transcript =
-            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+            Setup::<Bn256>::verifier_params(&general_params, PERMUTATION * 2).unwrap();
+        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
         // Bench verification time
         let start3 = start_timer!(|| "EVM Proof verification");
@@ -250,13 +243,12 @@ mod tests {
         circuit.next_mixing = Some(next_input_fp);
 
         // Prove
-        let mut transcript =
-            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         create_proof(
             &general_params,
             &pk,
-            &[circuit.clone()],
+            &[circuit],
             &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
             &mut transcript,
         )
@@ -265,10 +257,8 @@ mod tests {
 
         // Verify
         let verifier_params =
-            Setup::<Bn256>::verifier_params(&general_params, PERMUTATION * 2)
-                .unwrap();
-        let mut verifier_transcript =
-            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+            Setup::<Bn256>::verifier_params(&general_params, PERMUTATION * 2).unwrap();
+        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
         // Bench verification time
         verify_proof(

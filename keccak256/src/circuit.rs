@@ -1,7 +1,7 @@
 use super::gates::{
     iota_b9::IotaB9Config, pi::pi_gate_permutation, rho::RhoConfig,
-    state_conversion::StateBaseConversion, tables::FromBase9TableConfig,
-    theta::ThetaConfig, xi::XiConfig,
+    state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
+    xi::XiConfig,
 };
 use crate::{
     arith_helpers::*,
@@ -77,24 +77,16 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let round_constants_b13 = meta.instance_column();
 
         // Iotab9
-        let iota_b9_config = IotaB9Config::configure(
-            meta,
-            state,
-            round_ctant_b9,
-            round_constants_b9,
-        );
+        let iota_b9_config =
+            IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
 
         // Allocate space for the activation flag of the base_conversion.
         let _base_conv_activator = meta.advice_column();
         meta.enable_equality(_base_conv_activator.into());
         // Base conversion config.
         let base_info = table.get_base_info(false);
-        let base_conversion_config = StateBaseConversion::configure(
-            meta,
-            state,
-            base_info,
-            _base_conv_activator,
-        );
+        let base_conversion_config =
+            StateBaseConversion::configure(meta, state, base_info, _base_conv_activator);
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
@@ -116,10 +108,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 .into_iter()
                 .map(|idx| {
                     let q_out = meta.query_selector(q_out);
-                    let out_mixing =
-                        meta.query_advice(state[idx], Rotation::cur());
-                    let out_expected_state =
-                        meta.query_advice(state[idx], Rotation::next());
+                    let out_mixing = meta.query_advice(state[idx], Rotation::cur());
+                    let out_expected_state = meta.query_advice(state[idx], Rotation::next());
                     q_out * (out_mixing - out_expected_state)
                 })
                 .collect_vec()
@@ -154,14 +144,12 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let mut state = in_state;
 
         // First 23 rounds
-        for round in 0..PERMUTATION {
+        for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {
             // State in base-13
             // theta
             state = {
                 // Apply theta outside circuit
-                let out_state = KeccakFArith::theta(&state_to_biguint(
-                    split_state_cells(state),
-                ));
+                let out_state = KeccakFArith::theta(&state_to_biguint(split_state_cells(state)));
                 let out_state = state_bigint_to_field(out_state);
                 // assignment
                 self.theta_config.assign_state(layouter, state, out_state)?
@@ -180,28 +168,24 @@ impl<F: FieldExt> KeccakFConfig<F> {
             // xi
             state = {
                 // Apply xi outside circuit
-                let out_state = KeccakFArith::xi(&state_to_biguint(
-                    split_state_cells(state),
-                ));
+                let out_state = KeccakFArith::xi(&state_to_biguint(split_state_cells(state)));
                 let out_state = state_bigint_to_field(out_state);
                 // assignment
                 self.xi_config.assign_state(layouter, state, out_state)?
             };
 
             // Last round before Mixing does not run IotaB9 nor BaseConversion
-            if round == PERMUTATION - 1 {
+            if round_idx == PERMUTATION - 1 {
                 break;
             }
 
             // iota_b9
             state = {
-                let out_state = KeccakFArith::iota_b9(
-                    &state_to_biguint(split_state_cells(state)),
-                    ROUND_CONSTANTS[round],
-                );
+                let out_state =
+                    KeccakFArith::iota_b9(&state_to_biguint(split_state_cells(state)), *round_val);
                 let out_state = state_bigint_to_field(out_state);
                 self.iota_b9_config
-                    .not_last_round(layouter, state, out_state, round)?
+                    .not_last_round(layouter, state, out_state, round_idx)?
             };
 
             // The resulting state is in Base-9 now. We now convert it to
@@ -223,11 +207,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
                     },
                 )?;
 
-                self.base_conversion_config.assign_region(
-                    layouter,
-                    state,
-                    activation_flag,
-                )?
+                self.base_conversion_config
+                    .assign_region(layouter, state, activation_flag)?
             }
         }
 
@@ -235,9 +216,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let mix_res = KeccakFArith::mixing(
             &state_to_biguint(split_state_cells(state)),
             next_mixing
-                .and_then(|state| {
-                    Some(state_to_state_bigint::<F, NEXT_INPUTS_LANES>(state))
-                })
+                .map(|state| state_to_state_bigint::<F, NEXT_INPUTS_LANES>(state))
                 .as_ref(),
             *ROUND_CONSTANTS.last().unwrap(),
         );
@@ -325,6 +304,8 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 
+    // Remove ignore once this can run in the CI without hanging.
+    #[ignore]
     #[test]
     fn test_keccak_round() {
         #[derive(Default)]
@@ -343,10 +324,7 @@ mod tests {
         }
 
         impl<F: FieldExt> MyConfig<F> {
-            pub fn load(
-                &self,
-                layouter: &mut impl Layouter<F>,
-            ) -> Result<(), Error> {
+            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.keccak_conf.rho_config.load(layouter)?;
                 self.table.load(layouter)?;
                 Ok(())
@@ -383,8 +361,7 @@ mod tests {
                     |mut region| {
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -442,8 +419,7 @@ mod tests {
         // Generate in_state as `[Fp;25]`
         let mut in_state_fp: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_state_fp[5 * x + y] =
-                biguint_to_f(&convert_b2_to_b13(in_state[x][y]));
+            in_state_fp[5 * x + y] = biguint_to_f(&convert_b2_to_b13(in_state[x][y]));
             in_state_biguint[(x, y)] = convert_b2_to_b13(in_state[x][y]);
         }
 
@@ -457,8 +433,7 @@ mod tests {
 
         // Generate out_state as `[Fp;25]`
         let out_state_mix: [Fp; 25] = state_bigint_to_field(out_state_mix);
-        let out_state_non_mix: [Fp; 25] =
-            state_bigint_to_field(out_state_non_mix);
+        let out_state_non_mix: [Fp; 25] = state_bigint_to_field(out_state_non_mix);
 
         // Generate next_input (tho one that is not None) in the form `[F;17]`
         // Generate next_input as `[Fp;NEXT_INPUTS_LANES]`
@@ -543,12 +518,8 @@ mod tests {
                 is_mixing: true,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9, constants_b13],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(17, &circuit, vec![constants_b9, constants_b13]).unwrap();
 
             assert!(prover.verify().is_err());
         }

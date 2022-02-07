@@ -319,7 +319,7 @@ impl<F: FieldExt> MixingConfig<F> {
         );
 
         if !flag_bool {
-            return Ok(non_mix_res);
+            Ok(non_mix_res)
         } else {
             mixing_res
         }
@@ -511,7 +511,7 @@ mod tests {
 
         // Add inputs in the correct format.
         let in_state = state_bigint_to_field(StateBigInt::from(input1));
-        let next_mixing = Some(state_bigint_to_field(StateBigInt::from(next_input)));
+        let next_mixing = Some(state_bigint_to_field(next_input));
 
         // Compute round constants in the correct base.
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS

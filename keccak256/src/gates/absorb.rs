@@ -307,7 +307,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state,
-                next_input: next_input,
+                next_input,
                 is_mixing: true,
                 _marker: PhantomData,
             };
@@ -321,7 +321,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                next_input: next_input,
+                next_input,
                 is_mixing: true,
                 _marker: PhantomData,
             };
@@ -337,7 +337,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state,
                 out_state: in_state,
-                next_input: next_input,
+                next_input,
                 is_mixing: false,
                 _marker: PhantomData,
             };
