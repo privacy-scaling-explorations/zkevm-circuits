@@ -1,0 +1,41 @@
+name: Prover Bench on halo2 PR
+on:
+  workflow_dispatch:
+    inputs:
+      event-type:
+        required: true
+        type: string
+      ghuser:
+        required: true
+        type: string
+      revision:
+        required: true
+        type: string
+      halo2pr:
+        required: true
+        type: string
+jobs:
+  Exec-ProverBench-on-halo2-PR:
+    runs-on: self-hosted
+    steps:
+      - run: echo "${{ github.event_name }} event has been received due to a ${{ github.event.inputs.event-type }}. User ${{ github.event.inputs.ghuser }} wants to run prover bench due to halo2 version ${{ github.event.inputs.revision }}, halo2 pr number is ${{ github.event.inputs.halo2pr }}"
+      - uses: actions/checkout@v2
+        with:
+          ref: 'halo2Benchmarking'
+      - run: .github/proverCiScripts/wakeUpProver.sh
+        shell: bash
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/rsSysstat.sh
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/prepareProver.sh "${{ github.event.inputs.halo2pr }}[halo2]" "${{ github.workspace }}"
+      - run: .github/proverCiScripts/deployToProver.sh "${{ github.event.inputs.halo2pr }}[halo2]" "${{ github.workspace }}"
+        shell: bash
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/injectHalo2Revision.sh "${{ github.event.inputs.halo2pr }}[halo2]" "${{ github.event.inputs.revision }}"
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/execBench.sh "${{ github.event.inputs.halo2pr }}[halo2]" 19
+        shell: bash
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/getSysstat.sh "${{ github.event.inputs.halo2pr }}[halo2]"
+      - run: .github/proverCiScripts/shutdownProver.sh
+        shell: bash
