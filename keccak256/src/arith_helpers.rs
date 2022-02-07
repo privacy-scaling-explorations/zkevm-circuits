@@ -192,9 +192,7 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
-pub fn state_to_biguint<F: FieldExt, const N: usize>(
-    state: [F; N],
-) -> StateBigInt {
+pub fn state_to_biguint<F: FieldExt, const N: usize>(state: [F; N]) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
@@ -245,9 +243,7 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) ->
     arr
 }
 
-pub fn split_state_cells<F: FieldExt, const N: usize>(
-    state: [(Cell, F); N],
-) -> [F; N] {
+pub fn split_state_cells<F: FieldExt, const N: usize>(state: [(Cell, F); N]) -> [F; N] {
     let mut res = [F::zero(); N];
     state
         .iter()
