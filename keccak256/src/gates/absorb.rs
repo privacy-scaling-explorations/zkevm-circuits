@@ -54,8 +54,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 // and multiply to it the active selector so that we avoid the
                 // `PoisonedConstraints` and each gate equation
                 // can be satisfied while enforcing the correct gate logic.
-                let flag = meta
-                    .query_advice(state[NEXT_INPUTS_LANES], Rotation::cur());
+                let flag = meta.query_advice(state[NEXT_INPUTS_LANES], Rotation::cur());
                 // Note also that we want to enable the gate when `is_mixing` is
                 // true. (flag = 1). See the flag computation above.
                 meta.query_selector(q_mixing) * flag
@@ -67,8 +66,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
                         + (Expression::Constant(F::from(A4))
                             * meta.query_advice(state[idx], Rotation::cur()));
 
-                    let next_lane =
-                        meta.query_advice(state[idx], Rotation::next());
+                    let next_lane = meta.query_advice(state[idx], Rotation::next());
 
                     q_enable.clone() * (val - next_lane)
                 })
@@ -90,18 +88,14 @@ impl<F: FieldExt> AbsorbConfig<F> {
         next_input: [F; NEXT_INPUTS_LANES],
     ) -> Result<(Cell, F), Error> {
         // Generate next_input in base-9.
-        let mut next_mixing =
-            state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
+        let mut next_mixing = state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
         for (x, y) in (0..5).cartesian_product(0..5) {
             if x >= 3 && y >= 1 {
                 break;
             }
-            next_mixing[(x, y)] = convert_b2_to_b9(
-                next_mixing[(x, y)].clone().try_into().unwrap(),
-            )
+            next_mixing[(x, y)] = convert_b2_to_b9(next_mixing[(x, y)].clone().try_into().unwrap())
         }
-        let next_input =
-            state_bigint_to_field::<F, NEXT_INPUTS_LANES>(next_mixing);
+        let next_input = state_bigint_to_field::<F, NEXT_INPUTS_LANES>(next_mixing);
 
         // Assign next_mixing at offset = 1
         for (idx, lane) in next_input.iter().enumerate() {
@@ -156,12 +150,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 self.q_mixing.enable(&mut region, offset)?;
 
                 // Assign `next_inputs` and flag.
-                let flag = self.assign_next_inp_and_flag(
-                    &mut region,
-                    offset,
-                    flag,
-                    next_input,
-                )?;
+                let flag = self.assign_next_inp_and_flag(&mut region, offset, flag, next_input)?;
 
                 offset += 1;
                 // Assign out_state at offset + 2
@@ -306,10 +295,8 @@ mod tests {
         }
 
         let in_state = state_bigint_to_field(in_state);
-        let out_state = state_bigint_to_field(KeccakFArith::absorb(
-            &StateBigInt::from(input1),
-            &input2,
-        ));
+        let out_state =
+            state_bigint_to_field(KeccakFArith::absorb(&StateBigInt::from(input1), &input2));
 
         let next_input = state_bigint_to_field(StateBigInt::from(input2));
 

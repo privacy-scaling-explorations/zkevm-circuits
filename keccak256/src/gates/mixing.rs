@@ -59,8 +59,8 @@ impl<F: FieldExt> MixingConfig<F> {
             //
             // Force that `flag + negated_flag = 1`.
             // This ensures that flag = !negated_flag.
-            let flag_consistency = (flag.clone() + negated_flag.clone())
-                - Expression::Constant(F::one());
+            let flag_consistency =
+                (flag.clone() + negated_flag.clone()) - Expression::Constant(F::one());
 
             // Define bool constraint for flags.
             // Based on: `(1-flag) * flag = 0` only if `flag` is boolean.
@@ -70,10 +70,7 @@ impl<F: FieldExt> MixingConfig<F> {
 
             // Add a constraint that sums up the results of the two branches
             // constraining it to be equal to `out_state`.
-            [q_flag
-                * (flag_consistency
-                    + bool_constraint(flag)
-                    + bool_constraint(negated_flag))]
+            [q_flag * (flag_consistency + bool_constraint(flag) + bool_constraint(negated_flag))]
         });
 
         // Allocate state columns and enable copy constraints for them.
@@ -88,25 +85,16 @@ impl<F: FieldExt> MixingConfig<F> {
             .unwrap();
 
         // We don't mix -> Flag = false
-        let iota_b9_config = IotaB9Config::configure(
-            meta,
-            state,
-            round_ctant_b9,
-            round_constants_b9,
-        );
+        let iota_b9_config =
+            IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
         // We mix -> Flag = true
         let absorb_config = AbsorbConfig::configure(meta, state);
 
         let base_info = table.get_base_info(false);
-        let base_conv_config =
-            StateBaseConversion::configure(meta, state, base_info, flag);
+        let base_conv_config = StateBaseConversion::configure(meta, state, base_info, flag);
 
-        let iota_b13_config = IotaB13Config::configure(
-            meta,
-            state,
-            round_ctant_b13,
-            round_constants_b13,
-        );
+        let iota_b13_config =
+            IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
 
         // Allocate out_mixing columns and enable copy constraints for them.
         // Offset = 0 (Non mixing)
@@ -130,10 +118,8 @@ impl<F: FieldExt> MixingConfig<F> {
             let flag = meta.query_advice(flag, Rotation::cur());
 
             // Multiply by flag and negated_flag the out mixing results.
-            let left_side = meta.query_advice(out_mixing[0], Rotation::cur())
-                * negated_flag;
-            let right_side =
-                meta.query_advice(out_mixing[0], Rotation::next()) * flag;
+            let left_side = meta.query_advice(out_mixing[0], Rotation::cur()) * negated_flag;
+            let right_side = meta.query_advice(out_mixing[0], Rotation::next()) * flag;
             let out_state = meta.query_advice(state[0], Rotation::cur());
 
             // We add the results of the mixing gate if/else branches multiplied
@@ -268,17 +254,15 @@ impl<F: FieldExt> MixingConfig<F> {
         absolute_row: usize,
     ) -> Result<[(Cell, F); 25], Error> {
         // Enforce flag constraints and witness them.
-        let (flag, negated_flag) =
-            self.enforce_flag_consistency(layouter, flag_bool)?;
+        let (flag, negated_flag) = self.enforce_flag_consistency(layouter, flag_bool)?;
 
         // If we don't mix:
         // IotaB9
         let non_mix_res = {
-            let out_state_iota_b9: [F; 25] =
-                state_bigint_to_field(KeccakFArith::iota_b9(
-                    &state_to_biguint(split_state_cells(in_state)),
-                    *ROUND_CONSTANTS.last().unwrap(),
-                ));
+            let out_state_iota_b9: [F; 25] = state_bigint_to_field(KeccakFArith::iota_b9(
+                &state_to_biguint(split_state_cells(in_state)),
+                *ROUND_CONSTANTS.last().unwrap(),
+            ));
 
             self.iota_b9_config.last_round(
                 layouter,
@@ -291,35 +275,29 @@ impl<F: FieldExt> MixingConfig<F> {
 
         // If we mix:
         // Absorb
-        let (out_state_absorb_cells, _) =
-            self.absorb_config.copy_state_flag_next_inputs(
-                layouter,
-                in_state,
-                // Compute out_absorb state.
-                state_bigint_to_field(KeccakFArith::absorb(
-                    &state_to_biguint(split_state_cells(in_state)),
-                    &state_to_state_bigint::<F, NEXT_INPUTS_LANES>(
-                        next_mixing.unwrap_or_default(),
-                    ),
-                )),
-                next_mixing.unwrap_or_default(),
-                flag,
-            )?;
-
-        // Base conversion assign
-        let base_conv_cells = self.base_conv_config.assign_region(
+        let (out_state_absorb_cells, _) = self.absorb_config.copy_state_flag_next_inputs(
             layouter,
-            out_state_absorb_cells,
+            in_state,
+            // Compute out_absorb state.
+            state_bigint_to_field(KeccakFArith::absorb(
+                &state_to_biguint(split_state_cells(in_state)),
+                &state_to_state_bigint::<F, NEXT_INPUTS_LANES>(next_mixing.unwrap_or_default()),
+            )),
+            next_mixing.unwrap_or_default(),
             flag,
         )?;
 
+        // Base conversion assign
+        let base_conv_cells =
+            self.base_conv_config
+                .assign_region(layouter, out_state_absorb_cells, flag)?;
+
         // IotaB13
         let mix_res = {
-            let out_iota_b13_state: [F; 25] =
-                state_bigint_to_field(KeccakFArith::iota_b13(
-                    &state_to_biguint(split_state_cells(base_conv_cells)),
-                    *ROUND_CONSTANTS.last().unwrap(),
-                ));
+            let out_iota_b13_state: [F; 25] = state_bigint_to_field(KeccakFArith::iota_b13(
+                &state_to_biguint(split_state_cells(base_conv_cells)),
+                *ROUND_CONSTANTS.last().unwrap(),
+            ));
 
             self.iota_b13_config.copy_state_flag_and_assing_rc(
                 layouter,
@@ -356,9 +334,7 @@ impl<F: FieldExt> MixingConfig<F> {
         state_outside: [F; 25],
         state: [(Cell, F); 25],
     ) -> Result<(), Error> {
-        for (idx, (out_circ_value, (in_cell, _))) in
-            state_outside.iter().zip(state).enumerate()
-        {
+        for (idx, (out_circ_value, (in_cell, _))) in state_outside.iter().zip(state).enumerate() {
             let new_cell = region.assign_advice(
                 || format!("Copy state {}", idx),
                 columns[idx],
@@ -407,10 +383,7 @@ mod tests {
         }
 
         impl<F: FieldExt> MyConfig<F> {
-            pub fn load(
-                &self,
-                layouter: &mut impl Layouter<F>,
-            ) -> Result<(), Error> {
+            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)?;
                 Ok(())
             }
@@ -465,8 +438,7 @@ mod tests {
                     |mut region| {
                         // Witness `in_state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -539,8 +511,7 @@ mod tests {
 
         // Add inputs in the correct format.
         let in_state = state_bigint_to_field(StateBigInt::from(input1));
-        let next_mixing =
-            Some(state_bigint_to_field(StateBigInt::from(next_input)));
+        let next_mixing = Some(state_bigint_to_field(StateBigInt::from(next_input)));
 
         // Compute round constants in the correct base.
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS
@@ -625,12 +596,8 @@ mod tests {
                 round_ctant: PERMUTATION - 1,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9, constants_b13],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(17, &circuit, vec![constants_b9, constants_b13]).unwrap();
 
             assert!(prover.verify().is_err());
         }

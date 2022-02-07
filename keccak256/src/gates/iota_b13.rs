@@ -187,10 +187,7 @@ impl<F: FieldExt> IotaB13Config<F> {
     /// Given a [`State`] returns the `init_state` and `out_state` ready to be
     /// added as circuit witnesses applying `IotaB13` to the input to get
     /// the output.
-    pub(crate) fn compute_circ_states(
-        state: StateBigInt,
-        round: usize,
-    ) -> ([F; 25], [F; 25]) {
+    pub(crate) fn compute_circ_states(state: StateBigInt, round: usize) -> ([F; 25], [F; 25]) {
         // Compute out state
         let round_ctant = ROUND_CONSTANTS[round];
         let s1_arith = KeccakFArith::iota_b13(&state, round_ctant);
@@ -251,12 +248,7 @@ mod tests {
                 // Allocate space for the round constants in base-13 which is an
                 // instance column
                 let round_ctants = meta.instance_column();
-                IotaB13Config::configure(
-                    meta,
-                    state,
-                    round_ctant_b9,
-                    round_ctants,
-                )
+                IotaB13Config::configure(meta, state, round_ctant_b9, round_ctants)
             }
 
             fn synthesize(
@@ -281,8 +273,7 @@ mod tests {
 
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -337,9 +328,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
-                    .unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![constants.clone()]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
@@ -353,9 +342,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
-                    .unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![constants.clone()]).unwrap();
 
             assert!(prover.verify().is_err());
         }
@@ -371,8 +358,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }
