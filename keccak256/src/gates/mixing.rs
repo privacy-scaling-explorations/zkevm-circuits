@@ -33,13 +33,13 @@ impl<F: FieldExt> MixingConfig<F> {
         // Allocate space for the flag column from which we will copy to all of
         // the sub-configs.
         let flag = meta.advice_column();
-        meta.enable_equality(flag.into());
+        meta.enable_equality(flag);
 
         // Allocate state columns and enable copy constraints for them.
         let state: [Column<Advice>; 25] = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
-                meta.enable_equality(column.into());
+                meta.enable_equality(column);
                 column
             })
             .collect::<Vec<_>>()
@@ -61,7 +61,7 @@ impl<F: FieldExt> MixingConfig<F> {
             IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
         // We don't mix -> Flag = false
         let absorb_config = AbsorbConfig::configure(meta, state);
-        meta.enable_equality(flag.into());
+        meta.enable_equality(flag);
         let base_info = table.get_base_info(false);
         let base_conv_config = StateBaseConversion::configure(meta, state, base_info, flag);
 
@@ -97,7 +97,7 @@ impl<F: FieldExt> MixingConfig<F> {
                 // Witness `is_mixing` flag.
                 let cell =
                     region.assign_advice(|| "witness is_mixing", self.flag, offset, || Ok(val))?;
-                Ok((cell, val))
+                Ok((cell.cell(), val))
             },
         )?;
 
@@ -256,7 +256,7 @@ mod tests {
                                     offset,
                                     || Ok(*val),
                                 )?;
-                                state.push((cell, *val))
+                                state.push((cell.cell(), *val))
                             }
                             state.try_into().unwrap()
                         };

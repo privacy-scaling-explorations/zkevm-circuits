@@ -46,7 +46,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         let q_mixing = meta.selector();
         state
             .iter()
-            .for_each(|column| meta.enable_equality((*column).into()));
+            .for_each(|column| meta.enable_equality(*column));
 
         meta.create_gate("absorb", |meta| {
             // We do a trick which consists on multiplying an internal selector
@@ -109,7 +109,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
                         || Ok(*value),
                     )?;
 
-                    region.constrain_equal(*cell, new_cell)?;
+                    region.constrain_equal(*cell, new_cell.cell())?;
                 }
 
                 offset += 1;
@@ -131,7 +131,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
                     offset,
                     || Ok(flag.1),
                 )?;
-                region.constrain_equal(flag.0, obtained_cell)?;
+                region.constrain_equal(flag.0, obtained_cell.cell())?;
 
                 offset += 1;
                 // Assign out_state at offset + 2
@@ -143,13 +143,13 @@ impl<F: FieldExt> AbsorbConfig<F> {
                         offset,
                         || Ok(*lane),
                     )?;
-                    state.push((cell, *lane));
+                    state.push((cell.cell(), *lane));
                 }
                 let out_state: [(Cell, F); 25] = state
                     .try_into()
                     .expect("Unexpected into_slice conversion err");
 
-                Ok((out_state, (obtained_cell, flag.1)))
+                Ok((out_state, (obtained_cell.cell(), flag.1)))
             },
         )
     }
@@ -222,7 +222,7 @@ mod tests {
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let column = meta.advice_column();
-                        meta.enable_equality(column.into());
+                        meta.enable_equality(column);
                         column
                     })
                     .collect::<Vec<_>>()
@@ -248,7 +248,7 @@ mod tests {
                             offset,
                             || Ok(val),
                         )?;
-                        Ok((cell, val))
+                        Ok((cell.cell(), val))
                     },
                 )?;
 
@@ -264,7 +264,7 @@ mod tests {
                                 0,
                                 || Ok(*val),
                             )?;
-                            state.push((cell, *val))
+                            state.push((cell.cell(), *val))
                         }
 
                         Ok(state.try_into().unwrap())

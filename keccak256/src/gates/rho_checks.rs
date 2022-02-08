@@ -144,7 +144,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         base13_to_9_table: &Base13toBase9TableConfig<F>,
         special_chunk_table: &SpecialChunkTableConfig<F>,
     ) -> Self {
-        meta.enable_equality(lane.into());
+        meta.enable_equality(lane);
         let rotation = {
             let x = lane_idx / 5;
             let y = lane_idx % 5;
@@ -164,9 +164,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         let constant = meta.fixed_column();
         meta.enable_constant(constant);
 
-        meta.enable_equality(input_acc.into());
-        meta.enable_equality(output_acc.into());
-        meta.enable_equality(overflow_detector.into());
+        meta.enable_equality(input_acc);
+        meta.enable_equality(output_acc);
+        meta.enable_equality(overflow_detector);
 
         // | coef | 13**x | acc       |
         // |------|-------|-----------|
@@ -281,7 +281,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                                 || Ok(biguint_to_f::<F>(&conv.input.pre_acc)),
                             )?;
                             if offset == 0 {
-                                region.constrain_equal(lane_base_13.0, cell)?;
+                                region.constrain_equal(lane_base_13.0, cell.cell())?;
                             }
                         }
                         region.assign_advice(
@@ -304,7 +304,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                                 || Ok(biguint_to_f::<F>(&conv.output.pre_acc)),
                             )?;
                             if offset == 0 {
-                                region.constrain_constant(cell, F::zero())?;
+                                region.constrain_constant(cell.cell(), F::zero())?;
                             }
                         }
                         let od = {
@@ -316,9 +316,9 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                                 || Ok(value),
                             )?;
                             if step == 1 {
-                                region.constrain_constant(cell, F::zero())?;
+                                region.constrain_constant(cell.cell(), F::zero())?;
                             }
-                            (cell, value)
+                            (cell.cell(), value)
                         };
                         match step {
                             2 => step2_od.push(od),
@@ -364,7 +364,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             offset + 1,
                             || Ok(value),
                         )?;
-                        (cell, value)
+                        (cell.cell(), value)
                     }
                 };
                 Ok((output_lane, step2_od, step3_od))
@@ -387,8 +387,8 @@ impl<F: FieldExt> SumConfig<F> {
         let x = meta.advice_column();
         let sum = meta.advice_column();
 
-        meta.enable_equality(x.into());
-        meta.enable_equality(sum.into());
+        meta.enable_equality(x);
+        meta.enable_equality(sum);
 
         meta.create_gate("sum", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -418,14 +418,14 @@ impl<F: FieldExt> SumConfig<F> {
                 for &(cell_from, value) in xs.iter() {
                     self.q_enable.enable(&mut region, offset)?;
                     let cell_to = region.assign_advice(|| "x", self.x, offset, || Ok(value))?;
-                    region.constrain_equal(cell_to, cell_from)?;
+                    region.constrain_equal(cell_to.cell(), cell_from)?;
                     region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
                     sum += value;
                     offset += 1;
                 }
                 let sum = {
                     let cell = region.assign_advice(|| "last sum", self.sum, offset, || Ok(sum))?;
-                    (cell, sum)
+                    (cell.cell(), sum)
                 };
 
                 Ok(sum)
@@ -445,7 +445,7 @@ pub struct OverflowCheckConfig<F> {
 impl<F: FieldExt> OverflowCheckConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>, cols_to_copy: Vec<Column<Advice>>) -> Self {
         for &col in cols_to_copy.iter() {
-            meta.enable_equality(col.into());
+            meta.enable_equality(col);
         }
         let step2_sum_config = SumConfig::configure(meta);
         let step3_sum_config = SumConfig::configure(meta);
@@ -453,8 +453,8 @@ impl<F: FieldExt> OverflowCheckConfig<F> {
         let q_enable = meta.complex_selector();
         let step2_acc = meta.advice_column();
         let step3_acc = meta.advice_column();
-        meta.enable_equality(step2_acc.into());
-        meta.enable_equality(step3_acc.into());
+        meta.enable_equality(step2_acc);
+        meta.enable_equality(step3_acc);
 
         meta.create_gate("overflow check", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -506,7 +506,7 @@ impl<F: FieldExt> OverflowCheckConfig<F> {
                         offset,
                         || Ok(step2_sum.1),
                     )?;
-                    region.constrain_equal(cell, step2_sum.0)?;
+                    region.constrain_equal(cell.cell(), step2_sum.0)?;
                 }
                 {
                     let cell = region.assign_advice(
@@ -515,7 +515,7 @@ impl<F: FieldExt> OverflowCheckConfig<F> {
                         offset,
                         || Ok(step3_sum.1),
                     )?;
-                    region.constrain_equal(cell, step3_sum.0)?;
+                    region.constrain_equal(cell.cell(), step3_sum.0)?;
                 }
                 Ok(())
             },

@@ -38,13 +38,13 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         let output_coef = meta.advice_column();
         let output_acc = meta.advice_column();
 
-        meta.enable_equality(flag.into());
-        meta.enable_equality(input_coef.into());
-        meta.enable_equality(input_acc.into());
-        meta.enable_equality(output_coef.into());
-        meta.enable_equality(output_acc.into());
-        meta.enable_equality(input_lane.into());
-        meta.enable_equality(parent_flag.into());
+        meta.enable_equality(flag);
+        meta.enable_equality(input_coef);
+        meta.enable_equality(input_acc);
+        meta.enable_equality(output_coef);
+        meta.enable_equality(output_acc);
+        meta.enable_equality(input_lane);
+        meta.enable_equality(parent_flag);
 
         meta.create_gate("input running sum", |meta| {
             let q_enable = meta.query_selector(q_running_sum);
@@ -115,7 +115,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                     }
                     let flag_cell =
                         region.assign_advice(|| "flag", self.flag, offset, || Ok(flag.1))?;
-                    region.constrain_equal(flag_cell, flag.0)?;
+                    region.constrain_equal(flag_cell.cell(), flag.0)?;
                     let input_coef_cell = region.assign_advice(
                         || "Input Coef",
                         self.input_coef,
@@ -145,10 +145,10 @@ impl<F: FieldExt> BaseConversionConfig<F> {
 
                     if offset == 0 {
                         // bind first acc to first coef
-                        region.constrain_equal(input_acc_cell, input_coef_cell)?;
-                        region.constrain_equal(output_acc_cell, output_coef_cell)?;
+                        region.constrain_equal(input_acc_cell.cell(), input_coef_cell.cell())?;
+                        region.constrain_equal(output_acc_cell.cell(), output_coef_cell.cell())?;
                     } else if offset == input_coefs.len() - 1 {
-                        region.constrain_equal(input_acc_cell, input.0)?;
+                        region.constrain_equal(input_acc_cell.cell(), input.0)?;
                         return Ok((output_acc_cell, output_acc));
                     }
                 }
@@ -156,7 +156,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             },
         )?;
 
-        Ok((out_cell, out_value))
+        Ok((out_cell.cell(), out_value))
     }
 }
 
@@ -228,9 +228,11 @@ mod tests {
                         Ok((lane, flag))
                     },
                 )?;
-                let output =
-                    self.conversion
-                        .assign_region(layouter, (lane, input), (flag, flag_value))?;
+                let output = self.conversion.assign_region(
+                    layouter,
+                    (lane.cell(), input),
+                    (flag.cell(), flag_value),
+                )?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| {
@@ -240,7 +242,7 @@ mod tests {
                             0,
                             || Ok(output.1),
                         )?;
-                        region.constrain_equal(cell, output.0)?;
+                        region.constrain_equal(cell.cell(), output.0)?;
                         Ok(())
                     },
                 )?;
@@ -347,9 +349,11 @@ mod tests {
                         Ok((lane, flag))
                     },
                 )?;
-                let output =
-                    self.conversion
-                        .assign_region(layouter, (lane, input), (flag, flag_value))?;
+                let output = self.conversion.assign_region(
+                    layouter,
+                    (lane.cell(), input),
+                    (flag.cell(), flag_value),
+                )?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| {
@@ -359,7 +363,7 @@ mod tests {
                             0,
                             || Ok(output.1),
                         )?;
-                        region.constrain_equal(cell, output.0)?;
+                        region.constrain_equal(cell.cell(), output.0)?;
                         Ok(())
                     },
                 )?;

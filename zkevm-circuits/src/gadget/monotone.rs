@@ -217,11 +217,11 @@ mod test {
             Err(vec![
                 Lookup {
                     lookup_index: 0,
-                    row: 2,
+                    location: 2,
                 },
                 Lookup {
                     lookup_index: 0,
-                    row: 4,
+                    location: 4,
                 },
             ]),
         );
@@ -230,7 +230,7 @@ mod test {
             vec![1, 2, 3, 4, 105],
             Err(vec![Lookup {
                 lookup_index: 0,
-                row: 4,
+                location: 4,
             }]),
         );
         // not monotone (error)
@@ -238,7 +238,7 @@ mod test {
             vec![1, 2, 3, 103, 4],
             Err(vec![Lookup {
                 lookup_index: 0,
-                row: 4,
+                location: 4,
             }]),
         );
     }
@@ -257,7 +257,7 @@ mod test {
             vec![1, 2, 3, 4, 105],
             Err(vec![Lookup {
                 lookup_index: 0,
-                row: 4,
+                location: 4,
             }]),
         );
         // not monotone (error)
@@ -265,7 +265,7 @@ mod test {
             vec![1, 2, 3, 103, 4],
             Err(vec![Lookup {
                 lookup_index: 0,
-                row: 4,
+                location: 4,
             }]),
         );
     }

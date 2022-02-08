@@ -153,7 +153,7 @@ impl<F: FieldExt> WordConfig<F> {
                 || byte_field_elem.ok_or(Error::Synthesis),
             )?;
 
-            bytes.push(Variable::new(cell, byte_field_elem, *byte));
+            bytes.push(Variable::new(cell.cell(), byte_field_elem, *byte));
         }
 
         Ok(Word(bytes.try_into().unwrap()))
@@ -266,7 +266,7 @@ mod tests {
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
                     lookup_index: 32,
-                    row: 0
+                    location: 0
                 }])
             );
 

@@ -163,7 +163,7 @@ mod tests {
                                         || Ok(value),
                                     )
                                     .unwrap();
-                                (cell, value)
+                                (cell.cell(), value)
                             })
                             .collect::<Vec<_>>()
                             .try_into()

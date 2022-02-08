@@ -39,8 +39,8 @@ impl<F: FieldExt> IotaB13Config<F> {
         // Declare the q_mixing.
         let q_mixing = meta.selector();
         // Enable copy constraints over PI and the Advices.
-        meta.enable_equality(round_ctant_b13.into());
-        meta.enable_equality(round_constants.into());
+        meta.enable_equality(round_ctant_b13);
+        meta.enable_equality(round_constants);
 
         meta.create_gate("iota_b13 gate", |meta| {
             // We do a trick which consists on multiplying an internal selector
@@ -118,7 +118,7 @@ impl<F: FieldExt> IotaB13Config<F> {
                 || Ok(*value),
             )?;
 
-            region.constrain_equal(*cell, new_cell)?;
+            region.constrain_equal(*cell, new_cell.cell())?;
         }
 
         Ok(())
@@ -137,7 +137,7 @@ impl<F: FieldExt> IotaB13Config<F> {
             offset,
             || Ok(flag.1),
         )?;
-        region.constrain_equal(flag.0, obtained_cell)?;
+        region.constrain_equal(flag.0, obtained_cell.cell())?;
 
         Ok(())
     }
@@ -158,7 +158,7 @@ impl<F: FieldExt> IotaB13Config<F> {
                     offset,
                     || Ok(*lane),
                 )?;
-                out_vec.push((out_cell, *lane));
+                out_vec.push((out_cell.cell(), *lane));
             }
             out_vec.try_into().unwrap()
         };
@@ -239,7 +239,7 @@ mod tests {
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let column = meta.advice_column();
-                        meta.enable_equality(column.into());
+                        meta.enable_equality(column);
                         column
                     })
                     .collect::<Vec<_>>()
@@ -270,7 +270,7 @@ mod tests {
                             offset + 1,
                             || Ok(val),
                         )?;
-                        let flag = (cell, val);
+                        let flag = (cell.cell(), val);
 
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
@@ -282,7 +282,7 @@ mod tests {
                                     offset,
                                     || Ok(*val),
                                 )?;
-                                state.push((cell, *val))
+                                state.push((cell.cell(), *val))
                             }
                             state.try_into().unwrap()
                         };
