@@ -102,13 +102,11 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip
 #[cfg(test)]
 mod test {
     use super::{MonotoneChip, MonotoneConfig};
+    use crate::test_util::lookup_fail;
     use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{
-            MockProver,
-            VerifyFailure::{self, Lookup},
-        },
+        dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
     use pairing::bn256::Fr as Fp;
@@ -215,31 +213,19 @@ mod test {
         try_test_circuit(
             vec![1, 2, 2, 4, 4],
             Err(vec![
-                Lookup {
-                    lookup_index: 0,
-                    location: 2,
-                },
-                Lookup {
-                    lookup_index: 0,
-                    location: 4,
-                },
+                lookup_fail(1, "witness".to_string(), 2, 0),
+                lookup_fail(1, "witness".to_string(), 4, 0),
             ]),
         );
         // out of range (error)
         try_test_circuit(
             vec![1, 2, 3, 4, 105],
-            Err(vec![Lookup {
-                lookup_index: 0,
-                location: 4,
-            }]),
+            Err(vec![lookup_fail(1, "witness".to_string(), 4, 0)]),
         );
         // not monotone (error)
         try_test_circuit(
             vec![1, 2, 3, 103, 4],
-            Err(vec![Lookup {
-                lookup_index: 0,
-                location: 4,
-            }]),
+            Err(vec![lookup_fail(1, "witness".to_string(), 4, 0)]),
         );
     }
 
@@ -255,18 +241,12 @@ mod test {
         // out of range (error)
         try_test_circuit(
             vec![1, 2, 3, 4, 105],
-            Err(vec![Lookup {
-                lookup_index: 0,
-                location: 4,
-            }]),
+            Err(vec![lookup_fail(1, "witness".to_string(), 4, 0)]),
         );
         // not monotone (error)
         try_test_circuit(
             vec![1, 2, 3, 103, 4],
-            Err(vec![Lookup {
-                lookup_index: 0,
-                location: 4,
-            }]),
+            Err(vec![lookup_fail(1, "witness".to_string(), 4, 0)]),
         );
     }
 }

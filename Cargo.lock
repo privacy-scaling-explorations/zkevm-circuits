@@ -3913,8 +3913,3 @@ dependencies = [
  "serde_json",
  "sha3 0.7.3",
 ]
-
-[[patch.unused]]
-name = "halo2_proofs"
-version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?rev=c5d91de3df1b08f7835ac1365ea47f48e1f1353a#c5d91de3df1b08f7835ac1365ea47f48e1f1353a"

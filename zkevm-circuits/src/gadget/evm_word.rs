@@ -163,11 +163,12 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::lookup_fail;
     use halo2_proofs::{
         arithmetic::Field,
         arithmetic::FieldExt,
         circuit::SimpleFloorPlanner,
-        dev::{MockProver, VerifyFailure},
+        dev::MockProver,
         plonk::{Circuit, Instance},
     };
     use pairing::bn256::Fr as Fp;
@@ -264,10 +265,7 @@ mod tests {
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
             assert_eq!(
                 prover.verify(),
-                Err(vec![VerifyFailure::Lookup {
-                    lookup_index: 32,
-                    location: 0
-                }])
+                Err(vec![lookup_fail(1, "assign word".to_string(), 0, 32)])
             );
 
             // Calculate word commitment and use it as public input.

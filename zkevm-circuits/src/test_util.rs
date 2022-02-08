@@ -1,7 +1,12 @@
 use eth_types::evm_types::Gas;
 use halo2_proofs::{
     arithmetic::BaseExt,
-    dev::{MockProver, VerifyFailure},
+    dev::{
+        metadata::Region,
+        FailureLocation::InRegion,
+        MockProver,
+        VerifyFailure::{self, ConstraintNotSatisfied, Lookup},
+    },
 };
 use pairing::bn256::Fr;
 
@@ -98,4 +103,33 @@ pub fn run_test_circuits_with_config(
     }
 
     Ok(())
+}
+
+pub fn constraint_not_satisfied(
+    gate_index: usize,
+    gate_name: &'static str,
+    index: usize,
+) -> VerifyFailure {
+    let region = Region::from((0, "test".to_string()));
+    let location = InRegion { region, offset: 0 };
+    ConstraintNotSatisfied {
+        constraint: ((gate_index, gate_name).into(), index, "").into(),
+        location,
+        cell_values: vec![],
+    }
+}
+
+pub fn lookup_fail(
+    index: usize,
+    name: String,
+    offset: usize,
+    lookup_index: usize,
+) -> VerifyFailure {
+    Lookup {
+        lookup_index,
+        location: InRegion {
+            region: Region::from((index, name)),
+            offset,
+        },
+    }
 }
