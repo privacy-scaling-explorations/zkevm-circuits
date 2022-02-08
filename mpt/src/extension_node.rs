@@ -11,7 +11,8 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, into_words_expr},
     param::{
-        HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
+        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+        IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
         IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
         IS_EXTENSION_ODD_KEY_LEN_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
         LAYOUT_OFFSET,
@@ -382,6 +383,18 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 Rotation(rot_into_branch_init - 1),
             );
 
+            // When placeholder extension, we don't check its hash in a parent.
+            let mut is_branch_placeholder =
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            if !is_s {
+                is_branch_placeholder =
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            }
+            let is_branch_placeholder = meta.query_advice(
+                is_branch_placeholder,
+                Rotation(rot_into_branch_init),
+            );
+
             let mut constraints = vec![];
 
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
@@ -390,6 +403,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     * q_enable.clone()
                     * (one.clone()
                         - is_account_leaf_storage_codehash_c.clone())
+                    * (one.clone() - is_branch_placeholder.clone())
                     * acc_c,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -404,6 +418,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                         * q_enable.clone()
                         * (one.clone()
                             - is_account_leaf_storage_codehash_c.clone())
+                        * (one.clone() - is_branch_placeholder.clone())
                         * keccak,
                     keccak_table_i,
                 ));

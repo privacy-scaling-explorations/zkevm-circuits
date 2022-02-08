@@ -53,7 +53,6 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 meta.query_advice(is_last_branch_child, Rotation::cur());
 
             // When placeholder branch, we don't check its hash in a parent.
-
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(-16));
             let acc = meta.query_advice(acc, Rotation::cur());

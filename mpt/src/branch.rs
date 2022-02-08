@@ -176,7 +176,6 @@ impl<F: FieldExt> BranchChip<F> {
             constraints
         });
 
-
         meta.create_gate("branch equalities", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let mut constraints = vec![];

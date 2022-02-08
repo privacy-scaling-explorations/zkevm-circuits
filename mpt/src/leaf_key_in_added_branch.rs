@@ -40,7 +40,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         acc_mult: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
-        first_nibble: Column<Advice>,
+        drifted_pos: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -57,7 +57,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
         // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row) is added
         // to RLC, finally lookup is used to check the hash that
-        // corresponds to this RLC is in the parent branch at first_nibble position.
+        // corresponds to this RLC is in the parent branch at drifted_pos position.
         meta.create_gate("Storage leaf in added branch RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -110,7 +110,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         });
 
         // We also need to check leaf_key and leaf_key_in_added_branch are different only
-        // in the first_nibble. This ensures the leaf
+        // in the drifted_pos. This ensures the leaf
         // that was turned into branch was moved down to the new branch correctly.
         meta.create_gate(
             "Storage leaf in added branch differs only in first nibble (sel2, is_short)",
@@ -195,7 +195,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
 
                 // Any rotation that lands into branch children can be used.
-                let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
+                let first_nibble = meta.query_advice(drifted_pos, Rotation(-17));
 
                 constraints.push((
                     "Leaf key differs first nibble s_advices[0] prev placeholder s",
@@ -351,7 +351,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
 
                 // Any rotation that lands into branch children can be used.
-                let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
+                let first_nibble = meta.query_advice(drifted_pos, Rotation(-17));
                 let second_nibble_s = s_advices1_prev_s - first_nibble.clone() * c16.clone();
                 let second_nibble_c = s_advices1_prev_c - first_nibble * c16.clone();
 
@@ -519,7 +519,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
 
                 // Any rotation that lands into branch children can be used.
-                let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
+                let first_nibble = meta.query_advice(drifted_pos, Rotation(-17));
 
                 constraints.push((
                     "Leaf key differs first nibble s_advices[1] prev placeholder s",
@@ -715,7 +715,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
 
                 // Any rotation that lands into branch children can be used.
-                let first_nibble = meta.query_advice(first_nibble, Rotation(-17));
+                let first_nibble = meta.query_advice(drifted_pos, Rotation(-17));
                 let second_nibble_s = s_advices2_prev_s - first_nibble.clone() * c16.clone();
                 let second_nibble_c = s_advices2_prev_c - first_nibble * c16.clone();
 
@@ -867,7 +867,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // corresponds to the one in leaf_key.
 
         // If the branch is placeholder, we need to check that the leaf without the first
-        // nibble has a hash which is in the branch at first_nibble position.
+        // nibble has a hash which is in the branch at drifted_pos position.
 
         // In case we have a placeholder branch at position S:
         // (1) branch (17 rows) which contains leaf that turns into branch at is_modified position (S positions) |
@@ -881,8 +881,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // (6) leaf value C ((5)||(6) hash is in one level above (2) at is_modified)
         // (7) leaf in added branch - the same as leaf key S in (3), but it has the first nibble removed
 
-        // We need to check that leaf_in_added_branch hash is in (2) at first_nibble position
-        // (first_nibble is the first nibble in leaf key S (3), because leaf drifts down to
+        // We need to check that leaf_in_added_branch hash is in (2) at drifted_pos position
+        // (drifted_pos is the first nibble in leaf key S (3), because leaf drifts down to
         // this position in new branch)
 
         // We need to construct RLP of the leaf. We have leaf key in is_leaf_in_added_branch
