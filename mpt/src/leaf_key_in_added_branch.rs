@@ -870,9 +870,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // nibble has a hash which is in the branch at first_nibble position.
 
         // In case we have a placeholder branch at position S:
-        // (1) branch which contains leaf that turns into branch at is_modified position (S positions) | branch that contains added branch hash at is_modified position (C positions)
-        // (2) placeholder branch (S positions) | added branch (C positions)
-        // S and C extension node rows
+        // (1) branch (17 rows) which contains leaf that turns into branch at is_modified position (S positions) |
+        //     branch (17 rows) that contains added branch hash at is_modified position (C positions)
+        // (2) placeholder branch (17 rows) (S positions) | added branch (17 rows) (C positions)
+        //     S extension node row
+        //     C extension node row
         // (3) leaf key S
         // (4) leaf value S ((3)||(4) hash is two levels above in (1) at is_modified)
         // (5) leaf key C

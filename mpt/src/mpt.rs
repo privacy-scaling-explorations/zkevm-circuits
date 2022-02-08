@@ -34,7 +34,7 @@ use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
 use crate::{
     param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, C_RLP_START,
-        C_START, FIRST_NIBBLE_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
+        C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
         S_RLP_START, S_START,
     },
@@ -89,9 +89,9 @@ pub struct MPTConfig<F> {
     node_index: Column<Advice>,
     is_modified: Column<Advice>, // whether this branch node is modified
     modified_node: Column<Advice>, // index of the modified node
-    is_at_first_nibble: Column<Advice>, // needed when leaf is turned into branch
-    first_nibble: Column<Advice>, // needed when leaf is turned into branch - first nibble of the key stored in a leaf (because the existing leaf will jump to this position in added branch)
-    is_leaf_in_added_branch: Column<Advice>, // it is at first_nibble position in added branch, note that this row could be omitted when there is no added branch but then it would open a vulnerability because the attacker could omit these row in cases when it's needed too (and constraints happen in this row)
+    is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
+    drifted_pos: Column<Advice>, // needed when leaf is turned into branch - first nibble of the key stored in a leaf (because the existing leaf will jump to this position in added branch)
+    is_leaf_in_added_branch: Column<Advice>, // it is at drifted_pos position in added branch, note that this row could be omitted when there is no added branch but then it would open a vulnerability because the attacker could omit these row in cases when it's needed too (and constraints happen in this row)
     is_extension_node_s: Column<Advice>, // contains extension node key (s_advices) and hash of the branch (c_advices)
     is_extension_node_c: Column<Advice>,
     s_rlp1: Column<Advice>,
@@ -167,8 +167,8 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_modified = meta.advice_column();
         let modified_node = meta.advice_column();
 
-        let is_at_first_nibble = meta.advice_column();
-        let first_nibble = meta.advice_column();
+        let is_at_drifted_pos = meta.advice_column();
+        let drifted_pos = meta.advice_column();
         let is_leaf_in_added_branch = meta.advice_column();
         let is_extension_node_s = meta.advice_column();
         let is_extension_node_c = meta.advice_column();
@@ -268,7 +268,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             is_modified,
-            is_at_first_nibble,
+            is_at_drifted_pos,
         );
 
         BranchChip::<F>::configure(
@@ -287,8 +287,8 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index,
             is_modified,
             modified_node,
-            is_at_first_nibble,
-            first_nibble,
+            is_at_drifted_pos,
+            drifted_pos,
             fixed_table.clone(),
         );
 
@@ -317,7 +317,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             node_index,
             is_modified,
-            is_at_first_nibble,
+            is_at_drifted_pos,
             sel1,
         );
 
@@ -329,7 +329,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_advices,
             node_index,
             is_modified,
-            is_at_first_nibble,
+            is_at_drifted_pos,
             sel2,
         );
 
@@ -665,7 +665,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             sel1,
             sel2,
-            first_nibble,
+            drifted_pos,
             r_table.clone(),
             fixed_table.clone(),
             keccak_table.clone(),
@@ -825,8 +825,8 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index,
             is_modified,
             modified_node,
-            is_at_first_nibble,
-            first_nibble,
+            is_at_drifted_pos,
+            drifted_pos,
             is_leaf_in_added_branch,
             is_extension_node_s,
             is_extension_node_c,
@@ -872,7 +872,7 @@ impl<F: FieldExt> MPTConfig<F> {
         is_account_leaf_nonce_balance_s: bool,
         is_account_leaf_storage_codehash_s: bool,
         is_account_leaf_storage_codehash_c: bool,
-        first_nibble: u8,
+        drifted_pos: u8,
         is_leaf_in_added_branch: bool,
         is_extension_node_s: bool,
         is_extension_node_c: bool,
@@ -957,17 +957,17 @@ impl<F: FieldExt> MPTConfig<F> {
         )?;
 
         region.assign_advice(
-            || "assign first_nibble".to_string(),
-            self.first_nibble,
+            || "assign drifted_pos".to_string(),
+            self.drifted_pos,
             offset,
-            || Ok(F::from(first_nibble as u64)),
+            || Ok(F::from(drifted_pos as u64)),
         )?;
 
         region.assign_advice(
-            || "assign is_at_first_nibble".to_string(),
-            self.is_at_first_nibble,
+            || "assign is_at_drifted_pos".to_string(),
+            self.is_at_drifted_pos,
             offset,
-            || Ok(F::from((first_nibble == node_index) as u64)),
+            || Ok(F::from((drifted_pos == node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -1166,7 +1166,7 @@ impl<F: FieldExt> MPTConfig<F> {
         row: &[u8],
         s_words: &[u64],
         c_words: &[u64],
-        first_nibble: u8,
+        drifted_pos: u8,
         s_rlp1: i32,
         c_rlp1: i32,
         offset: usize,
@@ -1187,7 +1187,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
             false,
             false,
-            first_nibble,
+            drifted_pos,
             false,
             false,
             false,
@@ -1319,7 +1319,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut is_branch_s_placeholder = false;
                     let mut is_branch_c_placeholder = false;
 
-                    let mut first_nibble: u8 = 0; // needed when leaf turned into branch and leaf moves into a branch where it's at first_nibble position
+                    let mut drifted_pos: u8 = 0; // needed when leaf turned into branch and leaf moves into a branch where it's at drifted_pos position
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
                     let mut rlp_len_rem_c: i32 = 0;
 
@@ -1370,7 +1370,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             // branch init
                             modified_node = row[BRANCH_0_KEY_POS];
                             node_index = 0;
-                            first_nibble = row[FIRST_NIBBLE_POS];
+                            drifted_pos = row[DRIFTED_POS];
 
                             // Get the child that is being changed and convert it to words to enable lookups:
                             let mut s_hash = witness
@@ -1388,7 +1388,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // We put hash of a node that moved down to the added branch.
                                 // This is needed to check the hash of leaf_in_added_branch.
                                 s_hash = witness
-                                    [ind + 1 + first_nibble as usize]
+                                    [ind + 1 + drifted_pos as usize]
                                     [S_START..S_START + HASH_WIDTH]
                                     .to_vec();
                                 s_words = self.convert_into_words(&s_hash);
@@ -1398,7 +1398,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                             if row[IS_BRANCH_C_PLACEHOLDER_POS] == 1 {
                                 c_hash = witness
-                                    [ind + 1 + first_nibble as usize]
+                                    [ind + 1 + drifted_pos as usize]
                                     [C_START..C_START + HASH_WIDTH]
                                     .to_vec();
                                 c_words = self.convert_into_words(&c_hash);
@@ -1406,13 +1406,13 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else {
                                 is_branch_c_placeholder = false
                             }
-                            // If no placeholder branch, we set first_nibble = modified_node. This
+                            // If no placeholder branch, we set drifted_pos = modified_node. This
                             // is needed just to make some other constraints (s_keccak/c_keccak
                             // corresponds to the proper node) easier to write.
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 0
                                 && row[IS_BRANCH_C_PLACEHOLDER_POS] == 0
                             {
-                                first_nibble = modified_node
+                                drifted_pos = modified_node
                             }
 
                             self.q_enable.enable(&mut region, offset)?;
@@ -1798,7 +1798,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
-                                    first_nibble,
+                                    drifted_pos,
                                     rlp_len_rem_s,
                                     rlp_len_rem_c,
                                     offset,
@@ -1817,7 +1817,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &row[0..row.len() - 1].to_vec(),
                                     &s_words,
                                     &c_words,
-                                    first_nibble,
+                                    drifted_pos,
                                     rlp_len_rem_s,
                                     rlp_len_rem_c,
                                     offset,
