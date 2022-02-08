@@ -25,6 +25,7 @@ maxMemUsed=$(cat mem.stats | awk '{ print $4 }' | sed 's/G//g' | sort -n | tail 
 
 logfile=$(ls $target_dir | grep proverlog | xargs -n 1 basename)
 tail -12 $target_dir/$logfile
+move $target_dir/$logfile ~
 
 echo "Maximum CPU Usage at $maxUsedCPU%"
 echo "Maximum Mem Usage at ${maxMemUsed}Gb"

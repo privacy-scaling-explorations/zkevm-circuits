@@ -7,14 +7,15 @@ edition = "2021"
 
 [dependencies]
 ff = "0.11"
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "kzg-rebase" }
-pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "kzg-assembly" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256", branch = "introduce-assembly-complete", features = ["asm"] }
 ark-std = { version = "0.3", features = ["print-trace"] }
 zkevm-circuits = { path = "../zkevm-circuits" }
 bus-mapping = { path = "../bus-mapping" }
 rand_xorshift = "0.3"
 rand = "0.8"
 pprof = { version = "0.6", features = [ "flamegraph", "protobuf" ] }
+rand_core = "0.6.3"
 
 [features]
 default = []

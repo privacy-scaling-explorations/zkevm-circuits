@@ -11,4 +11,3 @@ sudo rm -rf mem.stats
 sleep 10
 
 sudo systemctl start sysstat.service
-
