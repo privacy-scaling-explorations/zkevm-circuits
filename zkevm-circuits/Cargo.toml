@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 ff = "0.11"
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "kzg-assembly" }
-pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256", branch = "introduce-assembly-complete", features = ["asm"] }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "kzg-rebase" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"

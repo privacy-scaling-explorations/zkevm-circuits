@@ -1824,7 +1824,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?branch=kzg-assembly#ac4cbc5f706eed21e292ff1c1a6fac62e55c18ae"
+source = "git+https://github.com/appliedzkp/halo2.git?branch=kzg-rebase#c5d91de3df1b08f7835ac1365ea47f48e1f1353a"
 dependencies = [
  "blake2b_simd",
  "bumpalo",
@@ -2549,7 +2549,7 @@ dependencies = [
 [[package]]
 name = "pairing_bn256"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/pairing?branch=introduce-assembly-complete#726d2fbc823b8a852c0049b505a1928c7b8cd2a7"
+source = "git+https://github.com/appliedzkp/pairing#3f668ba2eab444ad9f4c6396db8292fada6feb42"
 dependencies = [
  "ff 0.11.0",
  "group 0.11.0",
