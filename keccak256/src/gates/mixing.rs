@@ -163,13 +163,14 @@ impl<F: FieldExt> MixingConfig<F> {
 
                 // Witness negated `is_mixing` flag
                 let cell = region.assign_advice(
-                    || "witness is_mixing",
+                    || "witness negated is_mixing",
                     self.flag,
                     1,
                     || Ok(F::from(!flag_bool as u64)),
                 )?;
 
-                Ok((flag, (cell, F::from(!flag_bool as u64))))
+                let negated_flag = (cell, F::from(flag_bool as u64));
+                Ok((flag, negated_flag))
             },
         )
     }

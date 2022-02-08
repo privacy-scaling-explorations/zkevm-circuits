@@ -54,6 +54,8 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 // and multiply to it the active selector so that we avoid the
                 // `PoisonedConstraints` and each gate equation
                 // can be satisfied while enforcing the correct gate logic.
+                //
+                // This is boolean-constrained outside of `AbsorbConfig` by `MixingConfig`.
                 let flag = meta.query_advice(state[NEXT_INPUTS_LANES], Rotation::cur());
                 // Note also that we want to enable the gate when `is_mixing` is
                 // true. (flag = 1). See the flag computation above.
@@ -80,7 +82,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         }
     }
 
-    pub fn assign_next_inp_and_flag(
+    fn assign_next_inp_and_flag(
         &self,
         region: &mut Region<F>,
         offset: usize,
@@ -90,6 +92,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         // Generate next_input in base-9.
         let mut next_mixing = state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
         for (x, y) in (0..5).cartesian_product(0..5) {
+            // Assign only first 17 values.
             if x >= 3 && y >= 1 {
                 break;
             }
@@ -97,7 +100,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         }
         let next_input = state_bigint_to_field::<F, NEXT_INPUTS_LANES>(next_mixing);
 
-        // Assign next_mixing at offset = 1
+        // Assign next_mixing.
         for (idx, lane) in next_input.iter().enumerate() {
             region.assign_advice(
                 || format!("assign next_input {}", idx),
@@ -107,7 +110,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
             )?;
         }
 
-        // Assign flag at last column(17th) of the offset = 1 row.
+        // Assign flag at last column(17th).
         let obtained_cell = region.assign_advice(
             || format!("assign next_input {}", NEXT_INPUTS_LANES),
             self.state[NEXT_INPUTS_LANES],
@@ -231,7 +234,7 @@ mod tests {
                     |mut region| {
                         let offset = 1;
                         let cell = region.assign_advice(
-                            || "assign is_mising",
+                            || "assign is_mixing",
                             config.state[NEXT_INPUTS_LANES + 1],
                             offset,
                             || Ok(val),

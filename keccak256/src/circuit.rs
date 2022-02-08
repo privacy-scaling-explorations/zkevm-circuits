@@ -33,7 +33,7 @@ pub struct KeccakFConfig<F: FieldExt> {
 }
 
 impl<F: FieldExt> KeccakFConfig<F> {
-    // We assume state is recieved in base-9.
+    // We assume state is received in base-9.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         table: FromBase9TableConfig<F>,
@@ -195,10 +195,10 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 // TODO: That could be a Fixed column.
                 // Witness 1 for the activation flag.
                 let activation_flag = layouter.assign_region(
-                    || "Witness activation_flag",
+                    || "Base conversion enable",
                     |mut region| {
                         let cell = region.assign_advice(
-                            || "witness is_mixing flag",
+                            || "Enable base conversion",
                             self._base_conv_activator,
                             0,
                             || Ok(F::one()),
@@ -304,8 +304,8 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 
-    // Remove ignore once this can run in the CI without hanging.
-    #[ignore]
+    // TODO: Remove ignore once this can run in the CI without hanging.
+    //#[ignore]
     #[test]
     fn test_keccak_round() {
         #[derive(Default)]
@@ -356,7 +356,7 @@ mod tests {
                 config.load(&mut layouter)?;
                 let offset: usize = 0;
 
-                let (in_state, _) = layouter.assign_region(
+                let in_state = layouter.assign_region(
                     || "Keccak round Wittnes & flag assignation",
                     |mut region| {
                         // Witness `state`
@@ -374,16 +374,7 @@ mod tests {
                             state.try_into().unwrap()
                         };
 
-                        // Witness `is_mixing` flag
-                        let val = F::from(self.is_mixing as u64);
-                        let cell = region.assign_advice(
-                            || "witness is_mixing",
-                            config.keccak_conf._is_mixing_flag,
-                            offset,
-                            || Ok(val),
-                        )?;
-
-                        Ok((in_state, (cell, val)))
+                        Ok(in_state)
                     },
                 )?;
 

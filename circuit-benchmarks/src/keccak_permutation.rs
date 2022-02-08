@@ -58,7 +58,7 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
         let offset: usize = 0;
 
         let (in_state, _) = layouter.assign_region(
-            || "Keccak round Wittnes & flag assignation",
+            || "Keccak round witnes & flag assignment",
             |mut region| {
                 // Witness `state`
                 let in_state: [(Cell, F); 25] = {
@@ -74,17 +74,6 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
                     }
                     state.try_into().unwrap()
                 };
-
-                // Witness `is_mixing` flag
-                let val = F::from(self.is_mixing as u64);
-                let cell = region.assign_advice(
-                    || "witness is_mixing",
-                    config.keccak_conf._is_mixing_flag,
-                    offset,
-                    || Ok(val),
-                )?;
-
-                Ok((in_state, (cell, val)))
             },
         )?;
 
@@ -235,38 +224,5 @@ mod tests {
         )
         .unwrap();
         end_timer!(start3);
-
-        // For consistency, proof and verify for the other Mixing branch with
-        // the same circuit.
-        circuit.is_mixing = true;
-        circuit.out_state = out_state_mix;
-        circuit.next_mixing = Some(next_input_fp);
-
-        // Prove
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-
-        create_proof(
-            &general_params,
-            &pk,
-            &[circuit],
-            &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
-            &mut transcript,
-        )
-        .unwrap();
-        let proof = transcript.finalize();
-
-        // Verify
-        let verifier_params =
-            Setup::<Bn256>::verifier_params(&general_params, PERMUTATION * 2).unwrap();
-        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-
-        // Bench verification time
-        verify_proof(
-            &verifier_params,
-            pk.get_vk(),
-            &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
-            &mut verifier_transcript,
-        )
-        .unwrap();
     }
 }

@@ -243,6 +243,8 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) ->
     arr
 }
 
+/// Returns only the value of a an assigned state cell.
+/// TODO: Use `AssignedCell` primitive from `halo2`.
 pub fn split_state_cells<F: FieldExt, const N: usize>(state: [(Cell, F); N]) -> [F; N] {
     let mut res = [F::zero(); N];
     state
