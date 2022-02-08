@@ -1,5 +1,5 @@
 use crate::arith_helpers::*;
-use halo2::{
+use halo2_proofs::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
@@ -104,7 +104,7 @@ mod tests {
     use crate::common::*;
     use crate::gates::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
-    use halo2::{
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},

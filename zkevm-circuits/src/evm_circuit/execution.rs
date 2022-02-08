@@ -8,7 +8,7 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},

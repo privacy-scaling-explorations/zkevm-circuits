@@ -111,7 +111,7 @@ use crate::gates::{
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
-use halo2::{
+use halo2_proofs::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,

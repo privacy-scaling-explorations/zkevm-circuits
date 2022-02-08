@@ -1,6 +1,6 @@
 //! Evm circuit benchmarks
 
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
@@ -52,8 +52,8 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
 mod evm_circ_benches {
     use super::*;
     use ark_std::{end_timer, start_timer};
-    use halo2::plonk::{create_proof, keygen_pk, keygen_vk};
-    use halo2::{
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk};
+    use halo2_proofs::{
         plonk::verify_proof,
         poly::commitment::Setup,
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},

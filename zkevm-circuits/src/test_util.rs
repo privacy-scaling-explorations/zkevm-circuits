@@ -1,5 +1,5 @@
 use eth_types::evm_types::Gas;
-use halo2::{
+use halo2_proofs::{
     arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
 };

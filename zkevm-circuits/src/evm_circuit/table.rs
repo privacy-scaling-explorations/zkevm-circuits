@@ -1,5 +1,5 @@
 use crate::{evm_circuit::step::ExecutionState, impl_expr};
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,

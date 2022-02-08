@@ -1,7 +1,7 @@
 use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
 use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, TableColumn},

@@ -14,8 +14,8 @@ use crate::{
 use array_init::array_init;
 use eth_types::evm_types::GasCost;
 use eth_types::{ToLittleEndian, U256};
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2_proofs::plonk::Error;
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryInto;
 
 /// Decodes the usable part of an address stored in a Word
@@ -24,7 +24,7 @@ pub(crate) mod address_low {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{from_bytes, Word},
     };
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
         from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
@@ -44,7 +44,7 @@ pub(crate) mod address_high {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{sum, Word},
     };
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
         sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])

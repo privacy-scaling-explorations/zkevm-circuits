@@ -13,7 +13,7 @@ use crate::{
     gates::rho_checks::RhoAdvices,
 };
 use crate::{gates::mixing::MixingConfig, keccak_arith::*};
-use halo2::{
+use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 };

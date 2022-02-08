@@ -11,7 +11,7 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // MulGadget verifies MUL: a * b mod 2^256 is equal to c,
 #[derive(Clone, Debug)]

@@ -3,7 +3,7 @@ use crate::gates::{
     tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 
-use halo2::{
+use halo2_proofs::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
@@ -106,9 +106,9 @@ mod tests {
     use crate::gates::gate_helpers::*;
     use crate::gates::tables::{Base13toBase9TableConfig, SpecialChunkTableConfig};
     use crate::keccak_arith::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
@@ -211,7 +211,7 @@ mod tests {
                 BitMapBackend::new("rho-test-circuit.png", (16384, 65536)).into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
-            halo2::dev::CircuitLayout::default()
+            halo2_proofs::dev::CircuitLayout::default()
                 .render(k, &circuit, &root)
                 .unwrap();
         }

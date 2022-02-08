@@ -1,4 +1,4 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{Cell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
@@ -102,9 +102,9 @@ mod tests {
     use crate::common::*;
     use crate::gates::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;

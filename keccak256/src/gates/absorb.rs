@@ -2,9 +2,9 @@ use crate::arith_helpers::*;
 use crate::common::*;
 use crate::gates::gate_helpers::biguint_to_f;
 use crate::keccak_arith::*;
-use halo2::circuit::Cell;
-use halo2::circuit::Layouter;
-use halo2::{
+use halo2_proofs::circuit::Cell;
+use halo2_proofs::circuit::Layouter;
+use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -193,9 +193,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
 mod tests {
     use super::*;
     use crate::common::State;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;

@@ -1,3 +1,5 @@
 /target
 *.png
 .DS_Store
+*svg
+*.pb

@@ -1,4 +1,4 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
@@ -60,7 +60,7 @@ mod tests {
     use super::*;
     use crate::arith_helpers::convert_b2_to_b13;
     use crate::gates::{gate_helpers::biguint_to_f, tables::FromBinaryTableConfig};
-    use halo2::{
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},

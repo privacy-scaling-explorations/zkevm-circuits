@@ -12,7 +12,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::U256;
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
     plonk::{Error, Expression},

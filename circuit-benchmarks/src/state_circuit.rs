@@ -4,8 +4,8 @@
 mod tests {
     use crate::bench_params::{DEGREE, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX};
     use ark_std::{end_timer, start_timer};
-    use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-    use halo2::{plonk::*, poly::commitment::Setup};
+    use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
+    use halo2_proofs::{plonk::*, poly::commitment::Setup};
     use pairing::bn256::Bn256;
     use pairing::bn256::Fr;
     use rand::SeedableRng;

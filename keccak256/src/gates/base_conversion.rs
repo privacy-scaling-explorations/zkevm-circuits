@@ -1,4 +1,4 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{Cell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
@@ -168,7 +168,7 @@ mod tests {
         gate_helpers::biguint_to_f,
         tables::{FromBase9TableConfig, FromBinaryTableConfig},
     };
-    use halo2::{
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
@@ -289,7 +289,7 @@ mod tests {
             let root = BitMapBackend::new("base-conversion.png", (1024, 32768)).into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Base conversion", ("sans-serif", 60)).unwrap();
-            halo2::dev::CircuitLayout::default()
+            halo2_proofs::dev::CircuitLayout::default()
                 .mark_equality_cells(true)
                 .render(k, &circuit, &root)
                 .unwrap();

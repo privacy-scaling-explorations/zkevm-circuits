@@ -1,7 +1,7 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
-use halo2::dev::MockProver;
+use halo2_proofs::dev::MockProver;
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
@@ -17,7 +17,7 @@ lazy_static! {
 /// usable EVM Circuit yet.  The code in this module is copied from
 /// `zkevm_circuits::evm_circuit::test` at `zkevm-circuits/src/evm_circuit.rs`.
 mod test_evm_circuit {
-    use halo2::{
+    use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
@@ -266,7 +266,7 @@ mod test_evm_circuit {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
     use test_evm_circuit::*;
 
@@ -300,7 +300,7 @@ async fn test_evm_circuit_block_deploy_greeter() {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
     let cli = get_client();

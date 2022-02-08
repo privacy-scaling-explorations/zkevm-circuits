@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use halo2::{
+use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},

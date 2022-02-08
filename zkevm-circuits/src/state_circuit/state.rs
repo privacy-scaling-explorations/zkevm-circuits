@@ -8,7 +8,7 @@ use crate::{
 };
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
 use eth_types::{ToLittleEndian, ToScalar};
-use halo2::{
+use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -1252,8 +1252,8 @@ mod tests {
     use bus_mapping::operation::{MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW};
     use eth_types::evm_types::{MemoryAddress, StackAddress};
     use eth_types::{address, bytecode, Word};
-    use halo2::arithmetic::BaseExt;
-    use halo2::dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup};
+    use halo2_proofs::arithmetic::BaseExt;
+    use halo2_proofs::dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup};
     use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit {
@@ -1307,7 +1307,7 @@ mod tests {
         gate_index: usize,
         gate_name: &'static str,
         index: usize,
-    ) -> halo2::dev::VerifyFailure {
+    ) -> halo2_proofs::dev::VerifyFailure {
         ConstraintNotSatisfied {
             constraint: ((gate_index, gate_name).into(), index, "").into(),
             row,
@@ -1315,7 +1315,7 @@ mod tests {
         }
     }
 
-    fn lookup_fail(row: usize, lookup_index: usize) -> halo2::dev::VerifyFailure {
+    fn lookup_fail(row: usize, lookup_index: usize) -> halo2_proofs::dev::VerifyFailure {
         Lookup { lookup_index, row }
     }
 

@@ -9,7 +9,7 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.

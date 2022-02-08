@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2018"
 
 [features]
-dev-graph = ["halo2/dev-graph", "plotters"]
+dev-graph = [ "plotters" ]
 
 [dependencies]
-halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79d287032f1b5f94beb661b3fb42" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "kzg-rebase" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"

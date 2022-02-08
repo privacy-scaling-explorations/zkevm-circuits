@@ -1,4 +1,4 @@
-use halo2::circuit::Cell;
+use halo2_proofs::circuit::Cell;
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;

@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 ff = "0.11"
-halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79d287032f1b5f94beb661b3fb42" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "kzg-rebase" }
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 bigint = "4"
 num = "0.4"
