@@ -70,7 +70,11 @@ impl<F: FieldExt> MixingConfig<F> {
 
             // Add a constraint that sums up the results of the two branches
             // constraining it to be equal to `out_state`.
-            [q_flag * (flag_consistency + bool_constraint(flag) + bool_constraint(negated_flag))]
+            [
+                q_flag.clone() * flag_consistency,
+                q_flag.clone() * bool_constraint(flag),
+                q_flag * bool_constraint(negated_flag),
+            ]
         });
 
         // Allocate state columns and enable copy constraints for them.
@@ -435,7 +439,7 @@ mod tests {
                 let offset: usize = 0;
 
                 let in_state = layouter.assign_region(
-                    || "Mixing Wittnes assignation",
+                    || "Mixing Wittnes assignment",
                     |mut region| {
                         // Witness `in_state`
                         let in_state: [(Cell, F); 25] = {

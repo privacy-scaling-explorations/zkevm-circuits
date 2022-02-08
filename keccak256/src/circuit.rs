@@ -305,7 +305,7 @@ mod tests {
     use std::convert::TryInto;
 
     // TODO: Remove ignore once this can run in the CI without hanging.
-    //#[ignore]
+    #[ignore]
     #[test]
     fn test_keccak_round() {
         #[derive(Default)]

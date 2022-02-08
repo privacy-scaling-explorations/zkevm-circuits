@@ -57,7 +57,7 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
         config.load(&mut layouter)?;
         let offset: usize = 0;
 
-        let (in_state, _) = layouter.assign_region(
+        let in_state = layouter.assign_region(
             || "Keccak round witnes & flag assignment",
             |mut region| {
                 // Witness `state`
@@ -74,6 +74,7 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
                     }
                     state.try_into().unwrap()
                 };
+                Ok(in_state)
             },
         )?;
 
@@ -102,7 +103,7 @@ mod tests {
     use keccak256::common::PERMUTATION;
     use keccak256::{
         arith_helpers::*,
-        common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS},
+        common::{State, ROUND_CONSTANTS},
         gates::gate_helpers::*,
     };
     use pairing::bn256::Bn256;
@@ -147,13 +148,7 @@ mod tests {
         KeccakFArith::permute_and_absorb(&mut out_state_non_mix, None);
 
         // Generate out_state as `[Fr;25]`
-        let out_state_mix: [Fr; 25] = state_bigint_to_field(out_state_mix);
         let out_state_non_mix: [Fr; 25] = state_bigint_to_field(out_state_non_mix);
-
-        // Generate next_input (tho one that is not None) in the form `[F;17]`
-        // Generate next_input as `[Fr;NEXT_INPUTS_LANES]`
-        let next_input_fp: [Fr; NEXT_INPUTS_LANES] =
-            state_bigint_to_field(StateBigInt::from(next_input));
 
         let constants_b13: Vec<Fr> = ROUND_CONSTANTS
             .iter()
@@ -166,7 +161,7 @@ mod tests {
             .collect();
 
         // Build the circuit
-        let mut circuit = KeccakRoundTestCircuit::<Fr> {
+        let circuit = KeccakRoundTestCircuit::<Fr> {
             in_state: in_state_fp,
             out_state: out_state_non_mix,
             next_mixing: None,
@@ -201,7 +196,7 @@ mod tests {
         create_proof(
             &general_params,
             &pk,
-            &[circuit.clone()],
+            &[circuit],
             &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
             &mut transcript,
         )
