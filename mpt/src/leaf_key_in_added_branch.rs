@@ -40,6 +40,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         acc_mult: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
+        key_rlc: Column<Advice>,
+        key_rlc_mult: Column<Advice>,
         drifted_pos: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
@@ -54,6 +56,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         let c32 = Expression::Constant(F::from(32_u64));
         let c48 = Expression::Constant(F::from(48_u64));
         let c248 = Expression::Constant(F::from(248_u64));
+        let rot_branch_init = -23;
 
         // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row) is added
         // to RLC, finally lookup is used to check the hash that
@@ -142,7 +145,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 // s_advices[0]_leaf_key = 32 + 16 + first_nibble.
                 // From s_advices[0] on, key bytes are the same in both rows.
 
-                let rot_branch_init = -23;
                 let rot_leaf_key_s = -4;
                 let rot_leaf_key_c = -2;
 
@@ -861,6 +863,43 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             constraints
         });
+
+        // TODO: constraints above could be replaced using key RLC check (checking whether
+        // leaf key RLC before extension/branch is added is the same as key RLC of the leaf
+        // that drifted into added extension/branch) which would cover
+        // also added extension nodes (where we have more than one nibble of difference).
+        // It would go like this:
+        // We already have leaf key RLC before extension/branch is added. If S is placeholder,
+        // we have this RLC in (3) leaf key S row, in key_rlc column.
+        // What about key RLC of the drifted leaf? Partial value is already computed in extension
+        // node row (key_rlc column) because extension node "takes" the partial key RLC value at
+        // leaf (before being drifted) and adds extension key bytes to it. It remains to
+        // add drifted_pos and bytes of the drifted leaf. The computations for this are
+        // similar to the ones in extension_node_key, the difference is we have here drifted_pos
+        // instead of modified_node and we have a different key in a leaf.
+
+        /*
+        meta.create_gate("work in progress", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            // Could be used any rotation into previous branch, because key RLC is the same in all
+            // branch children:
+            let rot_into_prev_branch = rot_branch_init - 3;
+
+            let key_rlc_mult_prev_level = meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch));
+            let key_rlc_prev_level = meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
+            // Get back into S or C extension row
+            let key_rlc_mult_cur = meta.query_advice(key_rlc_mult, Rotation(-6));
+            let ext_key_rlc = meta.query_advice(key_rlc, Rotation(-6));
+
+            let acc = meta.query_advice(acc, Rotation::cur());
+            constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
+
+            constraints
+        });
+        */
+
 
         // Checking accumulated RLC for key is not necessary here for leaf_key_in_added_branch
         // because we check this for leaf_key and here we only check the key in leaf_key_in_added_branch

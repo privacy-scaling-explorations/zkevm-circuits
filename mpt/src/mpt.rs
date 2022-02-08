@@ -650,10 +650,10 @@ impl<F: FieldExt> MPTConfig<F> {
             |meta| {
                 let not_first_level =
                     meta.query_fixed(not_first_level, Rotation::cur());
-                let is_leaf_c =
+                let is_leaf =
                     meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
 
-                not_first_level * is_leaf_c
+                not_first_level * is_leaf
             },
             s_rlp1,
             s_rlp2,
@@ -665,6 +665,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             sel1,
             sel2,
+            key_rlc,
+            key_rlc_mult,
             drifted_pos,
             r_table.clone(),
             fixed_table.clone(),
