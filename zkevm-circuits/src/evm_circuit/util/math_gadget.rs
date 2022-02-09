@@ -2,8 +2,8 @@ use crate::{
     evm_circuit::{
         table::{FixedTableTag, Lookup},
         util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes,
-            pow_of_two, pow_of_two_expr, select, split_u256, sum, Cell,
+            self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, pow_of_two_expr,
+            select, split_u256, sum, Cell,
         },
     },
     util::Expr,
@@ -21,19 +21,13 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: FieldExt> IsZeroGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        value: Expression<F>,
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         let inverse = cb.query_cell();
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
-        cb.add_constraint(
-            "value ⋅ (1 - value ⋅ value_inv)",
-            value * is_zero.clone(),
-        );
+        cb.add_constraint("value ⋅ (1 - value ⋅ value_inv)", value * is_zero.clone());
         // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
         // inverse)`
         cb.add_constraint(
@@ -107,10 +101,7 @@ pub(crate) struct AddWordsGadget<F, const N: usize> {
 }
 
 impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        addends: [util::Word<F>; N],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addends: [util::Word<F>; N]) -> Self {
         let sum = cb.query_word();
         let carry_lo = cb.query_cell();
         let carry_hi = cb.query_cell();
@@ -165,8 +156,7 @@ impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
         }
         self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
 
-        let (addends_lo, addends_hi): (Vec<_>, Vec<_>) =
-            addends.iter().map(split_u256).unzip();
+        let (addends_lo, addends_hi): (Vec<_>, Vec<_>) = addends.iter().map(split_u256).unzip();
         let (sum_lo, sum_hi) = split_u256(&sum);
 
         let sum_of_addends_lo = addends_lo
@@ -239,13 +229,11 @@ impl<F: FieldExt> MulWordsGadget<F> {
             let now_idx = (virtual_idx * 8) as usize;
             a_limbs.push(from_bytes::expr(&a.cells[now_idx..now_idx + 8]));
             b_limbs.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
-            c_limbs
-                .push(from_bytes::expr(&product.cells[now_idx..now_idx + 8]));
+            c_limbs.push(from_bytes::expr(&product.cells[now_idx..now_idx + 8]));
         }
 
         let t0 = a_limbs[0].clone() * b_limbs[0].clone();
-        let t1 = a_limbs[0].clone() * b_limbs[1].clone()
-            + a_limbs[1].clone() * b_limbs[0].clone();
+        let t1 = a_limbs[0].clone() * b_limbs[1].clone() + a_limbs[1].clone() * b_limbs[0].clone();
         let t2 = a_limbs[0].clone() * b_limbs[2].clone()
             + a_limbs[1].clone() * b_limbs[1].clone()
             + a_limbs[2].clone() * b_limbs[0].clone();
@@ -265,8 +253,7 @@ impl<F: FieldExt> MulWordsGadget<F> {
             "mul(multipliers_lo) == product_lo + radix_lo ⋅ 2^128",
             cur_v0.clone() * radix_constant_128.clone(),
             t0.expr() + t1.expr() * radix_constant_64.clone()
-                - (c_limbs[0].clone()
-                    + c_limbs[1].clone() * radix_constant_64.clone()),
+                - (c_limbs[0].clone() + c_limbs[1].clone() * radix_constant_64.clone()),
         );
         cb.require_equal(
             "mul(multipliers_high) == product_high + radix_high ⋅ 2^128",
@@ -327,8 +314,7 @@ impl<F: FieldExt> MulWordsGadget<F> {
         for total_idx in 0..4 {
             let mut rhs_sum = BigUint::from(0u128);
             for a_id in 0..=total_idx {
-                let (a_idx, b_idx) =
-                    (a_id as usize, (total_idx - a_id) as usize);
+                let (a_idx, b_idx) = (a_id as usize, (total_idx - a_id) as usize);
                 let tmp_a = if a_limbs.len() > a_idx {
                     BigUint::from(a_limbs[a_idx])
                 } else {
@@ -406,10 +392,8 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
             carry_hi: cb.query_bytes(),
         };
 
-        let multiplicand_lo =
-            from_bytes::expr(&gadget.multiplicand.cells[..16]);
-        let multiplicand_hi =
-            from_bytes::expr(&gadget.multiplicand.cells[16..]);
+        let multiplicand_lo = from_bytes::expr(&gadget.multiplicand.cells[..16]);
+        let multiplicand_hi = from_bytes::expr(&gadget.multiplicand.cells[16..]);
 
         let product_lo = from_bytes::expr(&gadget.product.cells[..16]);
         let product_hi = from_bytes::expr(&gadget.product.cells[16..]);
@@ -444,11 +428,8 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
         multiplier: u64,
         product: Word,
     ) -> Result<(), Error> {
-        self.multiplicand.assign(
-            region,
-            offset,
-            Some(multiplicand.to_le_bytes()),
-        )?;
+        self.multiplicand
+            .assign(region, offset, Some(multiplicand.to_le_bytes()))?;
         self.product
             .assign(region, offset, Some(product.to_le_bytes()))?;
         self.multiplier
@@ -457,22 +438,20 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
         let (multiplicand_lo, multiplicand_hi) = split_u256(&multiplicand);
         let (product_lo, product_hi) = split_u256(&product);
 
-        let mut assign_quotient =
-            |cells: &[Cell<F>], value: Word| -> Result<(), Error> {
-                for (cell, byte) in cells.iter().zip(
-                    u64::try_from(value)
-                        .map_err(|_| Error::Synthesis)?
-                        .to_le_bytes()
-                        .iter(),
-                ) {
-                    cell.assign(region, offset, Some(F::from(*byte as u64)))?;
-                }
-                Ok(())
-            };
+        let mut assign_quotient = |cells: &[Cell<F>], value: Word| -> Result<(), Error> {
+            for (cell, byte) in cells.iter().zip(
+                u64::try_from(value)
+                    .map_err(|_| Error::Synthesis)?
+                    .to_le_bytes()
+                    .iter(),
+            ) {
+                cell.assign(region, offset, Some(F::from(*byte as u64)))?;
+            }
+            Ok(())
+        };
 
         let carry_lo = (multiplicand_lo * multiplier - product_lo) >> 128;
-        let carry_hi =
-            (multiplicand_hi * multiplier - product_hi + carry_lo) >> 128;
+        let carry_hi = (multiplicand_hi * multiplier - product_hi + carry_lo) >> 128;
         assign_quotient(&self.carry_lo, carry_lo)?;
         assign_quotient(&self.carry_hi, carry_hi)?;
 
@@ -496,10 +475,7 @@ pub struct RangeCheckGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: FieldExt, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        value: Expression<F>,
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         let parts = cb.query_bytes();
 
         // Require that the reconstructed value from the parts equals the
@@ -577,11 +553,8 @@ impl<F: FieldExt, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
         let lt = lhs < rhs;
-        self.lt.assign(
-            region,
-            offset,
-            Some(if lt { F::one() } else { F::zero() }),
-        )?;
+        self.lt
+            .assign(region, offset, Some(if lt { F::one() } else { F::zero() }))?;
 
         // Set the bytes of diff
         let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
@@ -666,15 +639,9 @@ impl<F: FieldExt> PairSelectGadget<F> {
         let is_b = 1.expr() - is_a.expr();
 
         // Force `is_a` to be `0` when `value != a`
-        cb.add_constraint(
-            "is_a ⋅ (value - a)",
-            is_a.expr() * (value.clone() - a),
-        );
+        cb.add_constraint("is_a ⋅ (value - a)", is_a.expr() * (value.clone() - a));
         // Force `1 - is_a` to be `0` when `value != b`
-        cb.add_constraint(
-            "(1 - is_a) ⋅ (value - b)",
-            is_b.clone() * (value - b),
-        );
+        cb.add_constraint("(1 - is_a) ⋅ (value - b)", is_b.clone() * (value - b));
 
         Self { is_a, is_b }
     }
@@ -726,8 +693,7 @@ impl<F: FieldExt, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
 
         // Require that quotient < 2**N_BYTES
         // so we can't have any overflow when doing `quotient * denominator`.
-        let quotient_range_check =
-            RangeCheckGadget::construct(cb, quotient.expr());
+        let quotient_range_check = RangeCheckGadget::construct(cb, quotient.expr());
 
         // Check if the division was done correctly
         cb.require_equal(
@@ -767,11 +733,8 @@ impl<F: FieldExt, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         self.remainder
             .assign(region, offset, Some(F::from_u128(remainder)))?;
 
-        self.quotient_range_check.assign(
-            region,
-            offset,
-            F::from_u128(quotient),
-        )?;
+        self.quotient_range_check
+            .assign(region, offset, F::from_u128(quotient))?;
 
         Ok((quotient, remainder))
     }
@@ -902,8 +865,7 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         // shift_mod8:c
         // we split shift[0] to the equation:
         // shift[0] == a * 64 + b * 8 + c
-        let shift_mod64 =
-            8.expr() * shift_mod64_div8.expr() + shift_mod8.expr();
+        let shift_mod64 = 8.expr() * shift_mod64_div8.expr() + shift_mod8.expr();
         cb.require_equal(
             "shift[0] == shift_div64 * 64 + shift_mod64_div8 * 8 + shift_mod8",
             shift.cells[0].expr(),
@@ -919,33 +881,25 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         for virtual_idx in 0..4 {
             let now_idx = (virtual_idx * 8) as usize;
             a_digits.push(from_bytes::expr(&a.cells[now_idx..now_idx + 8]));
-            a_slice_back_digits
-                .push(from_bytes::expr(&a_slice_back[now_idx..now_idx + 8]));
-            a_slice_front_digits
-                .push(from_bytes::expr(&a_slice_front[now_idx..now_idx + 8]));
+            a_slice_back_digits.push(from_bytes::expr(&a_slice_back[now_idx..now_idx + 8]));
+            a_slice_front_digits.push(from_bytes::expr(&a_slice_front[now_idx..now_idx + 8]));
             b_digits.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
         }
 
         // check combination of a_slice_back_digits and a_slice_front_digits
         // == b_digits
-        let mut shr_constraints =
-            (0..4).map(|_| 0.expr()).collect::<Vec<Expression<F>>>();
+        let mut shr_constraints = (0..4).map(|_| 0.expr()).collect::<Vec<Expression<F>>>();
         for transplacement in (0_usize)..(4_usize) {
             // generate the polynomial depends on the shift_div64
             let select_transplacement_polynomial =
-                generate_lagrange_base_polynomial(
-                    shift_div64.clone(),
-                    transplacement as u64,
-                    4u64,
-                );
+                generate_lagrange_base_polynomial(shift_div64.clone(), transplacement as u64, 4u64);
             for idx in 0..(4 - transplacement) {
                 let tmpidx = idx + transplacement;
                 let merge_a = if idx + transplacement == (3_usize) {
                     a_slice_front_digits[tmpidx].clone()
                 } else {
                     a_slice_front_digits[tmpidx].clone()
-                        + a_slice_back_digits[tmpidx + 1].clone()
-                            * shift_mod64_decpow.expr()
+                        + a_slice_back_digits[tmpidx + 1].clone() * shift_mod64_decpow.expr()
                 };
                 shr_constraints[idx] = shr_constraints[idx].clone()
                     + select_transplacement_polynomial.clone()
@@ -957,16 +911,15 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             }
             for idx in (4 - transplacement)..4 {
                 shr_constraints[idx] = shr_constraints[idx].clone()
-                    + select_transplacement_polynomial.clone()
-                        * b_digits[idx].clone();
+                    + select_transplacement_polynomial.clone() * b_digits[idx].clone();
             }
         }
-        (0..4).for_each(|idx|
+        (0..4).for_each(|idx| {
             cb.require_zero(
                 "merge a_slice_back_digits and a_slice_front_digits == b_digits",
                 shr_constraints[idx].clone(),
             )
-        );
+        });
 
         // for i in 0..4
         // a_slice_back_digits[i] + a_slice_front_digits * shift_mod64_pow
@@ -974,7 +927,8 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         for idx in 0..4 {
             cb.require_equal(
                 "a[idx] == a_slice_back[idx] + a_slice_front[idx] * shift_mod64_pow",
-                a_slice_back_digits[idx].clone() + a_slice_front_digits[idx].clone() * shift_mod64_pow.expr(),
+                a_slice_back_digits[idx].clone()
+                    + a_slice_front_digits[idx].clone() * shift_mod64_pow.expr(),
                 a_digits[idx].clone(),
             );
         }
@@ -982,24 +936,21 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         // check serveral higher cells == 0 for slice_back and slice_front
         let mut equal_to_zero = 0.expr();
         for digit_transplacement in 0..8 {
-            let select_transplacement_polynomial =
-                generate_lagrange_base_polynomial(
-                    shift_mod64_div8.clone(),
-                    digit_transplacement as u64,
-                    8u64,
-                );
+            let select_transplacement_polynomial = generate_lagrange_base_polynomial(
+                shift_mod64_div8.clone(),
+                digit_transplacement as u64,
+                8u64,
+            );
             for virtual_idx in 0..4 {
                 for idx in (digit_transplacement + 1)..8 {
                     let nowidx = (virtual_idx * 8 + idx) as usize;
                     equal_to_zero = equal_to_zero
-                        + (select_transplacement_polynomial.clone()
-                            * a_slice_back[nowidx].expr());
+                        + (select_transplacement_polynomial.clone() * a_slice_back[nowidx].expr());
                 }
                 for idx in (8 - digit_transplacement)..8 {
                     let nowidx = (virtual_idx * 8 + idx) as usize;
                     equal_to_zero = equal_to_zero
-                        + (select_transplacement_polynomial.clone()
-                            * a_slice_front[nowidx].expr());
+                        + (select_transplacement_polynomial.clone() * a_slice_front[nowidx].expr());
                 }
             }
         }
@@ -1009,21 +960,17 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         for virtual_idx in 0..4 {
             let mut slice_bits_polynomial = vec![0.expr(), 0.expr()];
             for digit_transplacement in 0..8 {
-                let select_transplacement_polynomial =
-                    generate_lagrange_base_polynomial(
-                        shift_mod64_div8.clone(),
-                        digit_transplacement as u64,
-                        8u64,
-                    );
+                let select_transplacement_polynomial = generate_lagrange_base_polynomial(
+                    shift_mod64_div8.clone(),
+                    digit_transplacement as u64,
+                    8u64,
+                );
                 let nowidx = (virtual_idx * 8 + digit_transplacement) as usize;
                 slice_bits_polynomial[0] = slice_bits_polynomial[0].clone()
-                    + select_transplacement_polynomial.clone()
-                        * a_slice_back[nowidx].expr();
-                let nowidx =
-                    (virtual_idx * 8 + 7 - digit_transplacement) as usize;
+                    + select_transplacement_polynomial.clone() * a_slice_back[nowidx].expr();
+                let nowidx = (virtual_idx * 8 + 7 - digit_transplacement) as usize;
                 slice_bits_polynomial[1] = slice_bits_polynomial[1].clone()
-                    + select_transplacement_polynomial.clone()
-                        * a_slice_front[nowidx].expr();
+                    + select_transplacement_polynomial.clone() * a_slice_front[nowidx].expr();
             }
             cb.add_lookup(
                 "slice_bits range lookup",
@@ -1177,42 +1124,24 @@ impl<F: FieldExt> ShrWordsGadget<F> {
                 assignee.assign(region, offset, Some(F::from(*bt as u64)))?;
                 Ok(())
             })?;
-        self.shift_div64.assign(
-            region,
-            offset,
-            Some(F::from_u128(shift_div64)),
-        )?;
-        self.shift_mod64_div8.assign(
-            region,
-            offset,
-            Some(F::from_u128(shift_mod64_div8)),
-        )?;
-        self.shift_mod64_decpow.assign(
-            region,
-            offset,
-            Some(F::from_u128(shift_mod64_decpow)),
-        )?;
-        self.shift_mod64_pow.assign(
-            region,
-            offset,
-            Some(F::from_u128(shift_mod64_pow)),
-        )?;
-        self.shift_mod8.assign(
-            region,
-            offset,
-            Some(F::from_u128(shift_mod8)),
-        )?;
+        self.shift_div64
+            .assign(region, offset, Some(F::from_u128(shift_div64)))?;
+        self.shift_mod64_div8
+            .assign(region, offset, Some(F::from_u128(shift_mod64_div8)))?;
+        self.shift_mod64_decpow
+            .assign(region, offset, Some(F::from_u128(shift_mod64_decpow)))?;
+        self.shift_mod64_pow
+            .assign(region, offset, Some(F::from_u128(shift_mod64_pow)))?;
+        self.shift_mod8
+            .assign(region, offset, Some(F::from_u128(shift_mod8)))?;
 
         let mut sum: u128 = 0;
         wshift.to_le_bytes().iter().for_each(|v| sum += *v as u128);
         sum -= shift as u128;
         let shift_overflow = sum != 0;
         self.is_zero.assign(region, offset, F::from_u128(sum))?;
-        self.shift_overflow.assign(
-            region,
-            offset,
-            Some(F::from_u128(shift_overflow as u128)),
-        )?;
+        self.shift_overflow
+            .assign(region, offset, Some(F::from_u128(shift_overflow as u128)))?;
         Ok(())
     }
 }

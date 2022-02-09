@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ShrWordsGadget,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -43,12 +41,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -66,8 +59,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
+        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [shift, a, b] = indices.map(|idx| block.rws[idx].stack_value());
         self.shr_words.assign(region, offset, a, shift, b)
     }

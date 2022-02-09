@@ -1,13 +1,10 @@
-use crate::arith_helpers::{
-    convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9,
-};
+use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
-use crate::gates::rho_helpers::{get_block_count, BASE_NUM_OF_CHUNKS};
+use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
-    poly::Rotation,
+    plonk::{ConstraintSystem, Error, TableColumn},
 };
 use std::convert::TryInto;
 use std::marker::PhantomData;
@@ -22,17 +19,14 @@ const NUM_OF_B9_CHUNKS: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
-    base13: TableColumn,
-    base9: TableColumn,
-    block_count: TableColumn,
+    pub base13: TableColumn,
+    pub base9: TableColumn,
+    pub overflow_detector: TableColumn,
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> Base13toBase9TableConfig<F> {
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "13 -> 9",
             |mut table| {
@@ -62,15 +56,13 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
                         },
                     )?;
                     table.assign_cell(
-                        || "block_count",
-                        self.block_count,
+                        || "overflow_detector",
+                        self.overflow_detector,
                         i,
                         || {
                             Ok(F::from(
-                                get_block_count(
-                                    b13_chunks.clone().try_into().unwrap(),
-                                )
-                                .into(),
+                                get_overflow_detector(b13_chunks.clone().try_into().unwrap())
+                                    .into(),
                             ))
                         },
                     )?;
@@ -80,34 +72,13 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        base13_coef: Column<Advice>,
-        base9_coef: Column<Advice>,
-        block_count: Column<Advice>,
-        fixed: [TableColumn; 3],
-    ) -> Self {
-        let config = Self {
-            base13: fixed[0],
-            base9: fixed[1],
-            block_count: fixed[2],
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            base13: meta.lookup_table_column(),
+            base9: meta.lookup_table_column(),
+            overflow_detector: meta.lookup_table_column(),
             _marker: PhantomData,
-        };
-
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let base13_coef = meta.query_advice(base13_coef, Rotation::cur());
-            let base9_coef = meta.query_advice(base9_coef, Rotation::cur());
-            let bc = meta.query_advice(block_count, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * base13_coef, config.base13),
-                (q_enable.clone() * base9_coef, config.base9),
-                (q_enable * bc, config.block_count),
-            ]
-        });
-        config
+        }
     }
 }
 
@@ -116,16 +87,13 @@ impl<F: FieldExt> Base13toBase9TableConfig<F> {
 /// - The last output coef: `convert_b13_coef(high_value + low_value)`
 #[derive(Debug, Clone)]
 pub struct SpecialChunkTableConfig<F> {
-    last_chunk: TableColumn,
-    output_coef: TableColumn,
+    pub last_chunk: TableColumn,
+    pub output_coef: TableColumn,
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> SpecialChunkTableConfig<F> {
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "Special Chunks",
             |mut table| {
@@ -137,14 +105,8 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
                         let (low, high) = (i, j);
                         let last_chunk = F::from(low.into())
                             + F::from(high.into())
-                                * F::from(B13.into()).pow(&[
-                                    LANE_SIZE as u64,
-                                    0,
-                                    0,
-                                    0,
-                                ]);
-                        let output_coef =
-                            F::from(convert_b13_coef(low + high).into());
+                                * F::from(B13.into()).pow(&[LANE_SIZE as u64, 0, 0, 0]);
+                        let output_coef = F::from(convert_b13_coef(low + high).into());
                         table.assign_cell(
                             || "last chunk",
                             self.last_chunk,
@@ -165,32 +127,12 @@ impl<F: FieldExt> SpecialChunkTableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
-        last_chunk_advice: Column<Advice>,
-        output_coef_advice: Column<Advice>,
-        cols: [TableColumn; 2],
-    ) -> Self {
-        let config = Self {
-            last_chunk: cols[0],
-            output_coef: cols[1],
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            last_chunk: meta.lookup_table_column(),
+            output_coef: meta.lookup_table_column(),
             _marker: PhantomData,
-        };
-        // Lookup for special chunk conversion
-        meta.lookup(|meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let last_chunk_advice =
-                meta.query_advice(last_chunk_advice, Rotation::cur());
-            let output_coef_advice =
-                meta.query_advice(output_coef_advice, Rotation::cur());
-
-            vec![
-                (q_enable.clone() * last_chunk_advice, config.last_chunk),
-                (q_enable * output_coef_advice, config.output_coef),
-            ]
-        });
-        config
+        }
     }
 }
 
@@ -225,23 +167,23 @@ impl<F: FieldExt> BaseInfo<F> {
             .len()
     }
 
-    pub fn compute_coefs(
-        &self,
-        input: F,
-    ) -> Result<(Vec<F>, Vec<F>, F), Error> {
+    pub fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>, F), Error> {
         // big-endian
         let input_chunks: Vec<u8> = {
             let raw = f_to_biguint(input);
             let mut v = raw.to_radix_le(self.input_base.into());
-            assert!(v.len() <= self.max_chunks);
+            debug_assert!(v.len() <= self.max_chunks);
             // fill 0 to max chunks
             v.resize(self.max_chunks, 0);
             // v is big-endian now
             v.reverse();
             v
         };
+        // Use rchunks + rev so that the remainder chunks stay at the big-endian
+        // side
         let input_coefs: Vec<F> = input_chunks
-            .chunks(self.num_chunks)
+            .rchunks(self.num_chunks)
+            .rev()
             .map(|chunks| f_from_radix_be(chunks, self.input_base))
             .collect();
         let convert_chunk = match self.input_base {
@@ -257,7 +199,8 @@ impl<F: FieldExt> BaseInfo<F> {
         };
 
         let output_coefs: Vec<F> = input_chunks
-            .chunks(self.num_chunks)
+            .rchunks(self.num_chunks)
+            .rev()
             .map(|chunks| {
                 let converted_chunks: Vec<u8> =
                     chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
@@ -277,10 +220,7 @@ pub struct FromBinaryTableConfig<F> {
 }
 
 impl<F: FieldExt> FromBinaryTableConfig<F> {
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "2 -> (9 and 13)",
             |mut table| {
@@ -346,10 +286,7 @@ pub struct FromBase9TableConfig<F> {
 }
 
 impl<F: FieldExt> FromBase9TableConfig<F> {
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "9 -> (2 and 13)",
             |mut table| {
@@ -365,10 +302,8 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
                         i,
                         || Ok(f_from_radix_be::<F>(&b9_chunks, B9)),
                     )?;
-                    let converted_chunks: Vec<u8> = b9_chunks
-                        .iter()
-                        .map(|&x| convert_b9_coef(x))
-                        .collect_vec();
+                    let converted_chunks: Vec<u8> =
+                        b9_chunks.iter().map(|&x| convert_b9_coef(x)).collect_vec();
                     table.assign_cell(
                         || "base 13",
                         self.base13,
