@@ -8,12 +8,12 @@ use std::io::Write;
 /// Can be invoked with: gen_params <degree> <path to file>
 fn main() {
     let mut args = env::args();
+    let params_path: String = args.next_back().expect("path to file");
     let degree: u32 = args
-        .nth(1)
+        .next_back()
         .expect("degree")
         .parse::<u32>()
         .expect("valid number");
-    let params_path: String = args.nth(0).expect("path to file");
     let mut file = File::create(&params_path).expect("Failed to create file");
 
     println!("Generating params with degree: {}", degree);
