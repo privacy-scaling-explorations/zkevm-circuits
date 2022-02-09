@@ -1,6 +1,7 @@
 use crate::gates::{
     rho_checks::{LaneRotateConversionConfig, OverflowCheckConfig},
-    tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
+    rho_helpers::{STEP2_RANGE, STEP3_RANGE},
+    tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };
 
 use halo2::{
@@ -17,6 +18,8 @@ pub struct RhoConfig<F> {
     overflow_check_config: OverflowCheckConfig<F>,
     base13_to_9_table: Base13toBase9TableConfig<F>,
     special_chunk_table: SpecialChunkTableConfig<F>,
+    step2_range_table: RangeCheckConfig<F, STEP2_RANGE>,
+    step3_range_table: RangeCheckConfig<F, STEP3_RANGE>,
 }
 
 impl<F: FieldExt> RhoConfig<F> {
@@ -25,6 +28,8 @@ impl<F: FieldExt> RhoConfig<F> {
         state: [Column<Advice>; 25],
         base13_to_9_table: Base13toBase9TableConfig<F>,
         special_chunk_table: SpecialChunkTableConfig<F>,
+        step2_range_table: RangeCheckConfig<F, STEP2_RANGE>,
+        step3_range_table: RangeCheckConfig<F, STEP3_RANGE>,
     ) -> Self {
         let lane_configs: [LaneRotateConversionConfig<F>; 25] = state
             .iter()
@@ -45,13 +50,20 @@ impl<F: FieldExt> RhoConfig<F> {
             .iter()
             .map(|config| config.overflow_detector)
             .collect();
-        let overflow_check_config = OverflowCheckConfig::configure(meta, overflow_detector_cols);
+        let overflow_check_config = OverflowCheckConfig::configure(
+            meta,
+            overflow_detector_cols,
+            &step2_range_table,
+            &step3_range_table,
+        );
         Self {
             state,
             lane_configs,
             overflow_check_config,
             base13_to_9_table,
             special_chunk_table,
+            step2_range_table,
+            step3_range_table,
         }
     }
     pub fn assign_rotation_checks(
@@ -94,6 +106,8 @@ impl<F: FieldExt> RhoConfig<F> {
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.base13_to_9_table.load(layouter)?;
         self.special_chunk_table.load(layouter)?;
+        self.step2_range_table.load(layouter)?;
+        self.step3_range_table.load(layouter)?;
         Ok(())
     }
 }
@@ -104,7 +118,9 @@ mod tests {
     use crate::arith_helpers::*;
     use crate::common::*;
     use crate::gates::gate_helpers::*;
-    use crate::gates::tables::{Base13toBase9TableConfig, SpecialChunkTableConfig};
+    use crate::gates::tables::{
+        Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig,
+    };
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
@@ -137,7 +153,16 @@ mod tests {
 
                 let base13_to_9 = Base13toBase9TableConfig::configure(meta);
                 let special_chunk_table = SpecialChunkTableConfig::configure(meta);
-                RhoConfig::configure(meta, state, base13_to_9, special_chunk_table)
+                let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
+                let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
+                RhoConfig::configure(
+                    meta,
+                    state,
+                    base13_to_9,
+                    special_chunk_table,
+                    step2_range_table,
+                    step3_range_table,
+                )
             }
 
             fn synthesize(
