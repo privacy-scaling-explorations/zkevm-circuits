@@ -82,11 +82,6 @@ async fn main() {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof(&params, &pk, &[circuit], &[], &mut transcript).expect("evm proof");
         evm_proof = transcript.finalize();
-
-        // verify
-        // let params = Setup::<Bn256>::verifier_params(&params, 0).unwrap();
-        // let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&evm_proof[..]);
-        // verify_proof(&params, pk.get_vk(), &[], &mut transcript).unwrap();
     }
 
     {
@@ -127,11 +122,6 @@ async fn main() {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof(&params, &pk, &[circuit], &[], &mut transcript).expect("state proof");
         state_proof = transcript.finalize();
-
-        // verify
-        // let params = Setup::<Bn256>::verifier_params(&params, 0).unwrap();
-        // let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&state_proof[..]);
-        // verify_proof(&params, pk.get_vk(), &[], &mut transcript).unwrap();
     }
 
     serde_json::to_writer(
