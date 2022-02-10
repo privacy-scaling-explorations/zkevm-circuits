@@ -374,7 +374,7 @@ pub enum Rw {
         value: bool,
         value_prev: bool,
     },
-    TxAccessListStorageSlot {
+    TxAccessListAccountStorage {
         rw_counter: usize,
         is_write: bool,
     },
