@@ -1316,6 +1316,9 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut key_rlc = F::zero(); // used first for account address, then for storage key
                     let mut key_rlc_mult = F::one();
                     let mut extension_node_rlc = F::zero();
+                    let mut key_rlc_prev = F::zero(); // for leaf after placeholder extension/branch, we need to go one level back to get previous key_rlc
+                    let mut key_rlc_mult_prev = F::one();
+
                     let mut mult_diff = F::one();
                     let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
                     let mut is_branch_s_placeholder = false;
@@ -1586,6 +1589,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // If it's not extension node, rlc and rlc_mult in extension row
                                 // will be the same as for branch rlc.
                                 extension_node_rlc = key_rlc;
+
+                                key_rlc_prev = key_rlc;
+                                key_rlc_mult_prev = key_rlc_mult;
 
                                 if is_extension_node
                                 // Extension node
@@ -2129,24 +2135,33 @@ impl<F: FieldExt> MPTConfig<F> {
                                 let mut key_rlc_new = key_rlc;
                                 let mut key_rlc_mult_new = key_rlc_mult;
 
+                                if (is_branch_s_placeholder
+                                    && row[row.len() - 1] == 2)
+                                    || (is_branch_c_placeholder
+                                        && row[row.len() - 1] == 3)
+                                {
+                                    key_rlc_new = key_rlc_prev;
+                                    key_rlc_mult_new = key_rlc_mult_prev;
+                                }
+
+                                compute_key_rlc(
+                                    &mut key_rlc_new,
+                                    &mut key_rlc_mult_new,
+                                    start,
+                                );
+
+                                region.assign_advice(
+                                    || "assign key_rlc".to_string(),
+                                    self.key_rlc,
+                                    offset,
+                                    || Ok(key_rlc_new),
+                                )?;
+
                                 if (!is_branch_s_placeholder
                                     && row[row.len() - 1] == 2)
                                     || (!is_branch_c_placeholder
                                         && row[row.len() - 1] == 3)
                                 {
-                                    // No need for key_rlc in leaves under placeholder branch.
-                                    compute_key_rlc(
-                                        &mut key_rlc_new,
-                                        &mut key_rlc_mult_new,
-                                        start,
-                                    );
-                                    region.assign_advice(
-                                        || "assign key_rlc".to_string(),
-                                        self.key_rlc,
-                                        offset,
-                                        || Ok(key_rlc_new),
-                                    )?;
-
                                     // TODO: remove once integrated with state circuit
                                     assert_eq!(
                                         F::from(storage_key_rlc as u64),
@@ -2361,8 +2376,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if witness[offset - 18][IS_EXTENSION_NODE_POS]
                                     == 1
                                 {
-                                    // We use intermediate value from previous row.
-                                    // Final RLC value.
+                                    // We use intermediate value from previous row (because
+                                    // up to acc_s it's about key and this is the same
+                                    // for both S and C).
                                     acc_c = acc_s;
                                     acc_mult_c = acc_mult_s;
                                     compute_acc_and_mult(
