@@ -450,11 +450,9 @@ pub(crate) mod test {
             0
         } else {
             let total_cost = |mem_word_size| {
-                mem_word_size * GasCost::MEMORY.as_u64()
-                    + mem_word_size * mem_word_size / 512
+                mem_word_size * GasCost::MEMORY.as_u64() + mem_word_size * mem_word_size / 512
             };
-            total_cost(next_memory_word_size)
-                - total_cost(curr_memory_word_size)
+            total_cost(next_memory_word_size) - total_cost(curr_memory_word_size)
         }
     }
 
@@ -465,9 +463,6 @@ pub(crate) mod test {
     ) -> u64 {
         let num_words = (num_copy_bytes + 31) / 32;
         num_words * GasCost::COPY.as_u64()
-            + calc_memory_expension_gas_cost(
-                curr_memory_word_size,
-                next_memory_word_size,
-            )
+            + calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size)
     }
 }

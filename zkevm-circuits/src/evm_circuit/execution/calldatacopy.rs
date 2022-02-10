@@ -11,10 +11,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             from_bytes,
-            memory_gadget::{
-                MemoryAddressGadget, MemoryCopierGasGadget,
-                MemoryExpansionGadget,
-            },
+            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -54,8 +51,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         cb.stack_pop(data_offset.expr());
         cb.stack_pop(length.expr());
 
-        let memory_address =
-            MemoryAddressGadget::construct(cb, memory_offset, length);
+        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
@@ -114,8 +110,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 cb.require_equal(
                     "next_src_addr = data_offset + call_data_offset",
                     next_src_addr.expr(),
-                    from_bytes::expr(&data_offset.cells)
-                        + call_data_offset.expr(),
+                    from_bytes::expr(&data_offset.cells) + call_data_offset.expr(),
                 );
                 cb.require_equal(
                     "next_dst_addr = memory_offset",
@@ -137,11 +132,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     next_from_tx.expr(),
                     cb.curr.state.is_root.expr(),
                 );
-                cb.require_equal(
-                    "next_tx_id = tx_id",
-                    next_tx_id.expr(),
-                    tx_id.expr(),
-                );
+                cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
             },
         );
 
@@ -187,13 +178,9 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
                 .map(|idx| block.rws[idx].stack_value());
-        let memory_address = self.memory_address.assign(
-            region,
-            offset,
-            memory_offset,
-            length,
-            block.randomness,
-        )?;
+        let memory_address =
+            self.memory_address
+                .assign(region, offset, memory_offset, length, block.randomness)?;
         self.data_offset.assign(
             region,
             offset,
@@ -212,16 +199,10 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         } else {
             (call.call_data_length, call.call_data_offset)
         };
-        self.call_data_length.assign(
-            region,
-            offset,
-            Some(F::from(call_data_length as u64)),
-        )?;
-        self.call_data_offset.assign(
-            region,
-            offset,
-            Some(F::from(call_data_offset as u64)),
-        )?;
+        self.call_data_length
+            .assign(region, offset, Some(F::from(call_data_length as u64)))?;
+        self.call_data_offset
+            .assign(region, offset, Some(F::from(call_data_offset as u64)))?;
 
         // Memory expansion
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
@@ -248,10 +229,7 @@ mod test {
         execution::memory_copy::test::make_memory_copy_steps,
         step::ExecutionState,
         table::CallContextFieldTag,
-        test::{
-            calc_memory_copier_gas_cost, rand_bytes,
-            run_test_circuit_incomplete_fixed_table,
-        },
+        test::{calc_memory_copier_gas_cost, rand_bytes, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
@@ -262,12 +240,7 @@ mod test {
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
-    fn test_ok_root(
-        call_data_length: usize,
-        memory_offset: Word,
-        data_offset: Word,
-        length: Word,
-    ) {
+    fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
         let randomness = Fp::rand();
         let bytecode = Bytecode::new(
             [
@@ -322,11 +295,7 @@ mod test {
             (memory_offset.as_u64() + length.as_u64() + 31) / 32
         };
         let gas_cost = GasCost::FASTEST.as_u64()
-            + calc_memory_copier_gas_cost(
-                0,
-                next_memory_word_size,
-                length.as_u64(),
-            );
+            + calc_memory_copier_gas_cost(0, next_memory_word_size, length.as_u64());
 
         let mut steps = vec![ExecStep {
             rw_indices: vec![0, 1, 2, 3],
@@ -379,11 +348,10 @@ mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
                     ..Default::default()
                 }],
                 steps,
@@ -532,11 +500,10 @@ mod test {
                     is_create: false,
                     call_data_length: call_data_length.as_usize(),
                     call_data_offset: call_data_offset.as_usize(),
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
                     ..Default::default()
                 }],
                 steps,

@@ -105,9 +105,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let mut constraints = self.constraints;
         let mut presets = Vec::new();
 
-        for (row, usage) in
-            self.curr.rows.iter().zip(self.curr_row_usages.iter())
-        {
+        for (row, usage) in self.curr.rows.iter().zip(self.curr_row_usages.iter()) {
             if usage.is_byte_lookup_enabled {
                 constraints.push(("Enable byte lookup", row.qs_byte_lookup.expr() - 1.expr()));
             }
@@ -502,8 +500,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             tag,
             values,
         );
-        self.rw_counter_offset = self.rw_counter_offset.clone()
-            + self.condition.clone().unwrap_or_else(|| 1.expr())
+        self.rw_counter_offset =
+            self.rw_counter_offset.clone() + self.condition.clone().unwrap_or_else(|| 1.expr());
     }
 
     fn state_write_with_reversion(

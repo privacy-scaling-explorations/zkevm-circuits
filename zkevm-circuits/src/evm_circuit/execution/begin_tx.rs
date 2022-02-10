@@ -68,12 +68,8 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
-        let [tx_gas_price, tx_value] =
-            [TxContextFieldTag::GasPrice, TxContextFieldTag::Value].map(
-                |field_tag| {
-                    cb.tx_context_as_word(tx_id.expr(), field_tag, None)
-                },
-            );
+        let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
+            .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
 
         // Add first step constraint to have both rw_counter and tx_id to be 1
         cb.add_constraint_first_step(

@@ -5,8 +5,7 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{
-                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
-                RangeCheckGadget,
+                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget, RangeCheckGadget,
             },
             sum, Cell, MemoryAddress, Word,
         },
@@ -34,8 +33,7 @@ pub(crate) mod address_low {
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
         let mut bytes = [0; 8];
-        bytes[..N_BYTES_MEMORY_ADDRESS]
-            .copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
+        bytes[..N_BYTES_MEMORY_ADDRESS].copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
         u64::from_le_bytes(bytes)
     }
 }
@@ -361,10 +359,8 @@ impl<F: FieldExt> MemoryCopierGasGadget<F> {
     ) -> Self {
         let word_size = MemoryWordSizeGadget::construct(cb, num_bytes);
 
-        let gas_cost = word_size.expr() * Self::GAS_COPY.expr()
-            + memory_expansion_gas_cost;
-        let gas_cost_range_check =
-            RangeCheckGadget::construct(cb, gas_cost.clone());
+        let gas_cost = word_size.expr() * Self::GAS_COPY.expr() + memory_expansion_gas_cost;
+        let gas_cost_range_check = RangeCheckGadget::construct(cb, gas_cost.clone());
 
         Self {
             word_size,
@@ -386,8 +382,7 @@ impl<F: FieldExt> MemoryCopierGasGadget<F> {
         memory_expansion_gas_cost: u64,
     ) -> Result<u64, Error> {
         let word_size = self.word_size.assign(region, offset, num_bytes)?;
-        let gas_cost =
-            word_size * Self::GAS_COPY.as_u64() + memory_expansion_gas_cost;
+        let gas_cost = word_size * Self::GAS_COPY.as_u64() + memory_expansion_gas_cost;
         self.gas_cost_range_check
             .assign(region, offset, F::from(gas_cost))?;
         // Return the memory copier gas cost
@@ -399,11 +394,8 @@ impl<F: FieldExt> MemoryCopierGasGadget<F> {
 /// and the end address. This gadget also pads 0 to the end of buffer if the
 /// access to the buffer is out of bound (addr >= addr_end).
 #[derive(Clone, Debug)]
-pub(crate) struct BufferReaderGadget<
-    F,
-    const MAX_BYTES: usize,
-    const N_BYTES_MEMORY_ADDRESS: usize,
-> {
+pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_MEMORY_ADDRESS: usize>
+{
     // The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
     // The selectors that indicate if bytes contain real data
@@ -427,11 +419,9 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         let bytes = array_init(|_| cb.query_byte());
         let selectors = array_init(|_| cb.query_bool());
         let bound_dist = array_init(|_| cb.query_cell());
-        let bound_dist_is_zero = array_init(|idx| {
-            IsZeroGadget::construct(cb, bound_dist[idx].expr())
-        });
-        let lt_gadget =
-            LtGadget::construct(cb, addr_start.expr(), addr_end.expr());
+        let bound_dist_is_zero =
+            array_init(|idx| IsZeroGadget::construct(cb, bound_dist[idx].expr()));
+        let lt_gadget = LtGadget::construct(cb, addr_start.expr(), addr_end.expr());
 
         // Define bound_dist[i] = max(addr_end - addr_start - i, 0)
         // The purpose of bound_dist is to check if the access to the buffer
@@ -446,8 +436,7 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         //   bound_dist[0] == 0 if addr_start >= addr_end
         cb.add_constraint(
             "bound_dist[0] + addr_start == addr_end if addr_start < addr_end",
-            lt_gadget.expr()
-                * (bound_dist[0].expr() + addr_start.expr() - addr_end.expr()),
+            lt_gadget.expr() * (bound_dist[0].expr() + addr_start.expr() - addr_end.expr()),
         );
         cb.add_constraint(
             "bound_dist[0] == 0 if addr_start >= addr_end",
@@ -461,8 +450,7 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
             let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
             cb.add_constraint(
                 "diff == 1 if bound_dist[i - 1] != 0",
-                (1.expr() - bound_dist_is_zero[idx - 1].expr())
-                    * (1.expr() - diff.expr()),
+                (1.expr() - bound_dist_is_zero[idx - 1].expr()) * (1.expr() - diff.expr()),
             );
             cb.add_constraint(
                 "diff == 0 if bound_dist[i - 1] == 0",
@@ -512,25 +500,13 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         bytes: &[u8],
         selectors: &[u8],
     ) -> Result<(), Error> {
-        self.lt_gadget.assign(
-            region,
-            offset,
-            F::from(addr_start),
-            F::from(addr_end),
-        )?;
+        self.lt_gadget
+            .assign(region, offset, F::from(addr_start), F::from(addr_end))?;
 
         assert_eq!(selectors.len(), MAX_BYTES);
         for (idx, selector) in selectors.iter().enumerate() {
-            self.selectors[idx].assign(
-                region,
-                offset,
-                Some(F::from(*selector as u64)),
-            )?;
-            self.bytes[idx].assign(
-                region,
-                offset,
-                Some(F::from(bytes[idx] as u64)),
-            )?;
+            self.selectors[idx].assign(region, offset, Some(F::from(*selector as u64)))?;
+            self.bytes[idx].assign(region, offset, Some(F::from(bytes[idx] as u64)))?;
             // assign bound_dist and bound_dist_is_zero
             let oob = addr_start + idx as u64 >= addr_end;
             let bound_dist = if oob {

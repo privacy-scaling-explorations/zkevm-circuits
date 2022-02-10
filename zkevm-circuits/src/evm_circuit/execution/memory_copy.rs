@@ -5,9 +5,7 @@ use crate::{
         step::ExecutionState,
         table::TxContextFieldTag,
         util::{
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ComparisonGadget,
             memory_gadget::BufferReaderGadget,
             Cell,
@@ -38,8 +36,7 @@ pub(crate) struct CopyToMemoryGadget<F> {
     // Transaction ID, optional, only used when src_is_tx == 1
     tx_id: Cell<F>,
     // Buffer reader gadget
-    buffer_reader:
-        BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
+    buffer_reader: BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
     // The comparison gadget between num bytes copied and bytes_left
     finish_gadget: ComparisonGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
@@ -56,8 +53,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         let src_addr_end = cb.query_cell();
         let from_tx = cb.query_bool();
         let tx_id = cb.query_cell();
-        let buffer_reader =
-            BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
+        let buffer_reader = BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
         let from_memory = 1.expr() - from_tx.expr();
 
         // Copy bytes from src and dst
@@ -65,11 +61,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             let read_flag = buffer_reader.read_flag(i);
             // Read bytes[i] from memory
             cb.condition(from_memory.clone() * read_flag.clone(), |cb| {
-                cb.memory_lookup(
-                    0.expr(),
-                    src_addr.expr() + i.expr(),
-                    buffer_reader.byte(i),
-                )
+                cb.memory_lookup(0.expr(), src_addr.expr() + i.expr(), buffer_reader.byte(i))
             });
             // Read bytes[i] from Tx
             cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
@@ -82,20 +74,12 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             });
             // Write bytes[i] to memory when selectors[i] != 0
             cb.condition(buffer_reader.has_data(i), |cb| {
-                cb.memory_lookup(
-                    1.expr(),
-                    dst_addr.expr() + i.expr(),
-                    buffer_reader.byte(i),
-                )
+                cb.memory_lookup(1.expr(), dst_addr.expr() + i.expr(), buffer_reader.byte(i))
             });
         }
 
         let copied_size = buffer_reader.num_bytes();
-        let finish_gadget = ComparisonGadget::construct(
-            cb,
-            copied_size.clone(),
-            bytes_left.expr(),
-        );
+        let finish_gadget = ComparisonGadget::construct(cb, copied_size.clone(), bytes_left.expr());
         let (lt, finished) = finish_gadget.expr();
         // Constrain lt == 1 or finished == 1
         cb.add_constraint(
@@ -139,11 +123,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                     next_from_tx.expr(),
                     from_tx.expr(),
                 );
-                cb.require_equal(
-                    "next_tx_id == tx_id",
-                    next_tx_id.expr(),
-                    tx_id.expr(),
-                );
+                cb.require_equal("next_tx_id == tx_id", next_tx_id.expr(), tx_id.expr());
             },
         );
 
@@ -190,11 +170,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             .assign(region, offset, Some(F::from(*dst_addr)))?;
         self.bytes_left
             .assign(region, offset, Some(F::from(*bytes_left)))?;
-        self.src_addr_end.assign(
-            region,
-            offset,
-            Some(F::from(*src_addr_end)),
-        )?;
+        self.src_addr_end
+            .assign(region, offset, Some(F::from(*src_addr_end)))?;
         self.from_tx
             .assign(region, offset, Some(F::from(*from_tx as u64)))?;
         self.tx_id
@@ -223,17 +200,10 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             }
         }
 
-        self.buffer_reader.assign(
-            region,
-            offset,
-            *src_addr,
-            *src_addr_end,
-            &bytes,
-            selectors,
-        )?;
+        self.buffer_reader
+            .assign(region, offset, *src_addr, *src_addr_end, &bytes, selectors)?;
 
-        let num_bytes_copied =
-            selectors.iter().fold(0, |acc, s| acc + (*s as u64));
+        let num_bytes_copied = selectors.iter().fold(0, |acc, s| acc + (*s as u64));
         self.finish_gadget.assign(
             region,
             offset,
@@ -252,9 +222,7 @@ pub mod test {
         step::ExecutionState,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
-        witness::{
-            Block, Bytecode, Call, ExecStep, StepAuxiliaryData, Rw, Transaction,
-        },
+        witness::{Block, Bytecode, Call, ExecStep, Rw, StepAuxiliaryData, Transaction},
     };
     use eth_types::{evm_types::OpcodeId, ToLittleEndian};
     use halo2::arithmetic::BaseExt;
@@ -375,12 +343,7 @@ pub mod test {
         }
     }
 
-    fn test_ok_from_memory(
-        src_addr: u64,
-        dst_addr: u64,
-        src_addr_end: u64,
-        length: usize,
-    ) {
+    fn test_ok_from_memory(src_addr: u64, dst_addr: u64, src_addr_end: u64, length: usize) {
         let randomness = Fp::rand();
         let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
         let call_id = 1;
@@ -424,11 +387,10 @@ pub mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
                     ..Default::default()
                 }],
                 steps,
@@ -441,15 +403,9 @@ pub mod test {
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
-    fn test_ok_from_tx(
-        calldata_length: usize,
-        src_addr: u64,
-        dst_addr: u64,
-        length: usize,
-    ) {
+    fn test_ok_from_tx(calldata_length: usize, src_addr: u64, dst_addr: u64, length: usize) {
         let randomness = Fp::rand();
-        let bytecode =
-            Bytecode::new(vec![OpcodeId::STOP.as_u8(), OpcodeId::STOP.as_u8()]);
+        let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8(), OpcodeId::STOP.as_u8()]);
         let call_id = 1;
         let mut rws = Vec::new();
         let mut rw_counter = 1;
@@ -493,11 +449,10 @@ pub mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
                     ..Default::default()
                 }],
                 steps,
