@@ -49,7 +49,7 @@ async fn main() {
         .expect("Cannot parse PARAMS_PATH env var");
 
     // load polynomial commitment parameters
-    let params_fs = File::open(&params_path).expect("couldn't load sha256_params");
+    let params_fs = File::open(&params_path).expect("couldn't open params");
     let params: Params<G1Affine> =
         Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
 
@@ -65,6 +65,7 @@ async fn main() {
         // generate evm_circuit proof
         //
         // TODO: why blocks.txs()[0]?
+        // https://github.com/scroll-tech/zkevm-circuits/issues/68
         let code_hash = builder.block.txs()[0].calls()[0].code_hash;
         let bytecode = builder
             .code_db
@@ -75,6 +76,9 @@ async fn main() {
         let circuit = TestCircuit::<Fr>::new(block, FixedTableTag::iterator().collect());
 
         // TODO: can this be pre-generated to a file?
+        // related
+        // https://github.com/zcash/halo2/issues/443
+        // https://github.com/zcash/halo2/issues/449
         let vk = keygen_vk(&params, &circuit).unwrap();
         let pk = keygen_pk(&params, vk, &circuit).unwrap();
 
@@ -114,7 +118,7 @@ async fn main() {
             storage_ops,
         };
 
-        // TODO: can this be pre-generated to a file?
+        // TODO: same quest like in the first scope
         let vk = keygen_vk(&params, &circuit).unwrap();
         let pk = keygen_pk(&params, vk, &circuit).unwrap();
 
