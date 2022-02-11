@@ -667,6 +667,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             key_rlc,
             key_rlc_mult,
+            mult_diff,
             drifted_pos,
             r_table.clone(),
             fixed_table.clone(),
