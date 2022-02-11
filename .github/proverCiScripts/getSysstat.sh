@@ -24,5 +24,4 @@ tail -12 $target_dir/$logfile
 echo "Maximum CPU Usage at $maxUsedCPU%"
 echo "Maximum Mem Usage at ${maxMemUsed}Gb"
 
-#mv $target_dir/$logfile /home/ubuntu/CI_Prover_Benches/ProverLogs/
 mv $target_dir/$logfile /home/ubuntu/CI_Prover_Benches/ProverLogs/"$logfile"_PR"$prnumber"
