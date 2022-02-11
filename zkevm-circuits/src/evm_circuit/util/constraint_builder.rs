@@ -13,7 +13,7 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-const MAX_DEGREE: usize = 2usize.pow(3) + 3;
+const MAX_DEGREE: usize = 2usize.pow(4) + 1;
 // Degree added for expressions used in lookups.
 const LOOKUP_DEGREE: usize = 3;
 
@@ -754,12 +754,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
+        // We need to subtract 2 from MAX_DEGREE because all expressions will be multiplied by
+        // state selector and q_step/q_step_first selector.
         debug_assert!(
-            degree <= MAX_DEGREE,
+            degree <= MAX_DEGREE - 2,
             "Expression {} degree too high: {} > {}",
             name,
             degree,
-            MAX_DEGREE,
+            MAX_DEGREE - 2,
         );
     }
 
