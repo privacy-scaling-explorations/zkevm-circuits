@@ -49,11 +49,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
         // TODO: after key_len there are 0s
 
-        let one = Expression::Constant(F::from(1_u64));
         let c16 = Expression::Constant(F::from(16_u64));
         let c32 = Expression::Constant(F::from(32_u64));
         let c48 = Expression::Constant(F::from(48_u64));
-        let c248 = Expression::Constant(F::from(248_u64));
         let rot_branch_init = -23;
 
         // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row) is added
@@ -173,9 +171,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             constraints
         });
 
-        // TODO: constraints above could be replaced using key RLC check (checking whether
-        // leaf key RLC before extension/branch is added is the same as key RLC of the leaf
-        // that drifted into added extension/branch) which would cover
+        // Checking whether leaf key RLC before extension/branch is added is the same as
+        // key RLC of the leaf that drifted into added extension/branch) which would cover
         // also added extension nodes (where we have more than one nibble of difference).
         // It would go like this:
         // We already have leaf key RLC before extension/branch is added. If S is placeholder,
