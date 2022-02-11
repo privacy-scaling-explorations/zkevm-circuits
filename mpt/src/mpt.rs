@@ -604,8 +604,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp2,
             c_rlp1,
             s_advices,
-            s_keccak[0],
-            s_keccak[1],
+            s_keccak,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -614,6 +613,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             modified_node,
+            is_account_leaf_storage_codehash_c,
             r_table.clone(),
             true,
         );
@@ -631,8 +631,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp2,
             c_rlp1,
             s_advices,
-            s_keccak[0],
-            s_keccak[1],
+            s_keccak,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -641,6 +640,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             modified_node,
+            is_account_leaf_storage_codehash_c,
             r_table.clone(),
             false,
         );
@@ -2061,9 +2061,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 |key_rlc: &mut F,
                                  key_rlc_mult: &mut F,
                                  start: usize| {
-                                    // That means we had key_rlc_sel=true when setting rlc last time,
-                                    // that means we have nibble+48 in s_advices[0].
-                                    if !key_rlc_sel {
+                                    let even_num_of_nibbles =
+                                        row[start + 1] == 32;
+                                    // If odd number of nibbles, we have nibble+48 in s_advices[0].
+                                    if !even_num_of_nibbles {
                                         *key_rlc += F::from(
                                             (row[start + 1] - 48) as u64,
                                         ) * *key_rlc_mult;
@@ -2155,6 +2156,22 @@ impl<F: FieldExt> MPTConfig<F> {
                                     self.key_rlc,
                                     offset,
                                     || Ok(key_rlc_new),
+                                )?;
+
+                                // Assign previous key RLC -
+                                // needed in case of placeholder branch/extension.
+                                // Constraint for this is in leaf_key.
+                                region.assign_advice(
+                                    || "assign key_rlc".to_string(),
+                                    self.s_keccak[2],
+                                    offset,
+                                    || Ok(key_rlc_prev),
+                                )?;
+                                region.assign_advice(
+                                    || "assign key_rlc_mult".to_string(),
+                                    self.s_keccak[3],
+                                    offset,
+                                    || Ok(key_rlc_mult_prev),
                                 )?;
 
                                 if (!is_branch_s_placeholder

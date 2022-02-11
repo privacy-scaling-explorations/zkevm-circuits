@@ -1006,6 +1006,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             ));
             */
 
+            /*
             constraints.push((
                 "check 1",
                 q_enable.clone()
@@ -1026,6 +1027,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * is_branch_s_placeholder
                     * sel1.clone()
                     * (goo - leaf_key_s_rlc),
+            ));
+            */
+            constraints.push((
+                "check",
+                q_enable
+                    * is_branch_s_placeholder
+                    * sel1.clone()
+                    * (one.clone() - one.clone()),
             ));
 
             constraints
