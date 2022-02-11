@@ -44,6 +44,12 @@ impl<F: FieldExt> LeafKeyChip<F> {
         is_s: bool,
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
+        let one = Expression::Constant(F::one());
+
+        let mut rot_into_init = -19;
+        if !is_s {
+            rot_into_init = -21;
+        }
 
         // TODO: if key is of length 1, then there is one less byte in RLP meta data
         // (this is easier seen in extension nodes, it will probably be difficult
@@ -132,7 +138,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
             let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
 
-            let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
 
@@ -235,32 +240,33 @@ impl<F: FieldExt> LeafKeyChip<F> {
             constraints
         });
 
-        // TODO: change description as we do this check to simplify leaf_key_in_added_branch constraints
-        // For leaf under placeholder branch we don't need to check key RLC -
+        // For leaf under placeholder branch we wouldn't need to check key RLC -
         // this leaf is something we didn't ask for. For example, when setting a leaf L
         // causes that leaf L1 (this is the leaf under branch placeholder)
         // is replaced by branch, then we get placeholder branch at S positions
         // and leaf L1 under it. However, key RLC needs to be compared for leaf L,
         // because this is where the key was changed (but it causes to change also L1).
         // In delete, the situation is just turned around.
+        // However, we check key RLC for this leaf too because this simplifies
+        // the constraints for checking that leaf L1 is the same as the leaf that
+        // is in the branch parallel to the placeholder branch -
+        // same with the exception of extension node key. This can be checked by
+        // comparing key RLC of the leaf before being replaced by branch and key RLC
+        // of this same leaf after it drifted into a branch.
+        // Constraints for this are in leaf_key_in_added_branch.
 
-        // However, note that hash of leaf L1 needs to be checked to be in the branch
+        // Note that hash of leaf L1 needs to be checked to be in the branch
         // above the placeholder branch - this is checked in leaf_value (where RLC
         // from the first gate above is used).
-
-        // Also, it needs to be checked that leaf L1 is the same as the leaf that
-        // is in the branch parallel to the placeholder branch
-        // (at position is_at_first_nibble) - same with the exception of one nibble.
-        // This is checked in leaf_key_in_added_branch.
 
         meta.create_gate("Previous level RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut rot_into_init = -19;
-            if !is_s {
-                rot_into_init = -21;
-            }
+            let is_first_storage_level = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_init - 1),
+            );
 
             // Could be used any rotation into previous branch, because key RLC is the same in all
             // branch children:
@@ -268,10 +274,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // TODO: check why a different rotation causes (for example rot_into_init - 3)
             // causes ConstraintPoisened
 
-            let key_rlc_mult_prev_level =
-                meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch));
-            let key_rlc_prev_level =
-                meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
+            // key_rlc_mult_prev_level = 1 if is_first_storage_level
+            let key_rlc_mult_prev_level = (one.clone()
+                - is_first_storage_level.clone())
+                * meta
+                    .query_advice(key_rlc_mult, Rotation(rot_into_prev_branch))
+                + is_first_storage_level.clone();
+            // key_rlc_prev_level = 0 if is_first_storage_level
+            let key_rlc_prev_level = (one.clone() - is_first_storage_level)
+                * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
             let rlc = meta.query_advice(s_keccak[2], Rotation::cur());
             let mult = meta.query_advice(s_keccak[3], Rotation::cur());
@@ -290,27 +301,21 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
         // For a leaf after placeholder, we need to use key_rlc from previous level
         // (the branch above placeholder).
-        /*
         meta.create_gate("Storage leaf after placeholder key RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
             let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
-            let is_short = meta.query_advice(s_keccak[2], Rotation::cur());
+            let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
 
-            // key rlc is in the first branch node (not branch init)
-            let mut rot = -18;
-            if !is_s {
-                rot = -20;
-            }
-            let rot_level_above = rot - 19;
+            // Note: key rlc is in the first branch node (not branch init).
+            let rot_level_above = rot_into_init + 1 - 19;
 
             let is_first_storage_level = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
-                Rotation(rot - 1 - 1),
+                Rotation(rot_into_init - 1),
             );
 
-            let one = Expression::Constant(F::one());
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
 
@@ -320,21 +325,22 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let key_mult_start =
                 meta.query_advice(s_keccak[3], Rotation::cur());
 
+            // Note: the approach (like for sel1 and sel2) with retrieving
+            // key RLC and key RLC mult from the level above placeholder fails
+            // due to ConstraintPoisened error.
             // sel1 and sel2 are in init branch
-            // let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
-            // let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
             let sel1 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(sel1, Rotation(rot_level_above - 1))
                 + is_first_storage_level.clone()
-                    * meta.query_advice(sel1, Rotation(rot - 1));
+                    * meta.query_advice(sel1, Rotation(rot_into_init));
 
             let sel2 = (one.clone() - is_first_storage_level.clone())
                 * meta.query_advice(sel2, Rotation(rot_level_above - 1))
                 + is_first_storage_level.clone()
-                    * meta.query_advice(sel2, Rotation(rot - 1));
+                    * meta.query_advice(sel2, Rotation(rot_into_init));
 
-            let is_branch_placeholder =
-                meta.query_advice(is_branch_placeholder, Rotation(rot - 1));
+            let is_branch_placeholder = meta
+                .query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
             // For short RLP (key starts at s_advices[0]):
 
@@ -348,8 +354,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[0].
-            /*
+            // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
                 "Leaf key acc s_advice0",
                 q_enable.clone()
@@ -358,7 +363,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_branch_placeholder.clone()
                     * is_short.clone(),
             ));
-            */
 
             let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
             key_rlc_acc_short =
@@ -382,7 +386,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_short.clone(),
             ));
 
-            /*
             // For long RLP (key starts at s_advices[1]):
 
             // If sel1 = 1, we have nibble+48 in s_advices[1].
@@ -395,7 +398,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_mult_start.clone() * r_table[0].clone() * sel1.clone();
             key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
-            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[1].
+            // If sel2 = 1, we have 32 in s_advices[1].
             constraints.push((
                 "Leaf key acc s_advice1",
                 q_enable.clone()
@@ -427,11 +430,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * is_branch_placeholder.clone()
                     * is_long.clone(),
             ));
-            */
 
             constraints
         });
-        */
 
         config
     }
