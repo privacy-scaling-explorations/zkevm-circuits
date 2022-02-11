@@ -539,11 +539,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 * is_long.clone()
         };
 
-        let get_long_odd = |meta: &mut VirtualCells<F>| {
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
+        let get_long_odd = |meta: &mut VirtualCells<F>| { 
             let is_key_odd = meta.query_advice(
                 s_advices[IS_EXTENSION_ODD_KEY_LEN_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
@@ -555,6 +551,10 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let is_account_leaf_storage_codehash_prev = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_branch_init - 1),
+            );
+            let is_extension_node = meta.query_advice(
+                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
             );
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
@@ -570,18 +570,28 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         meta.lookup_any(|meta| {
             let mut constraints = vec![];
 
-            let sel1 = meta.query_advice(sel1, Rotation(rot_into_branch_init));
-            let sel2 = meta.query_advice(sel2, Rotation(rot_into_branch_init));
-            let long_even = get_long_even(meta);
-            let long_odd = get_long_odd(meta);
-
-            let long_even_sel1 = long_even.clone() * sel1.clone();
-            let long_even_sel2 = long_even * sel2.clone();
-            let long_odd_sel1 = long_odd.clone() * sel1;
-            let long_odd_sel2 = long_odd * sel2;
+            let is_extension_node = meta.query_advice(
+                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_extension_c_row =
+                meta.query_advice(is_last_branch_child, Rotation(-2));
+                
+            let is_long = meta.query_advice(
+                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_short = meta.query_advice(
+                s_advices[IS_EXTENSION_KEY_SHORT_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
-            let key_len = s_rlp2 - c128.clone() - one.clone(); // -1 because long short has 0 in s_advices[0]
+            // key_len = s_rlp2 - 128 - 1 if long
+            // key_len = 1 if short
+            let key_len = (s_rlp2 - c128.clone() - one.clone()) * is_long +
+                is_short;
+
             let mult_diff = meta
                 .query_advice(mult_diff, Rotation(rot_into_branch_init + 1));
 
@@ -589,19 +599,14 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Expression::Constant(F::from(FixedTableTag::RMult as u64)),
                 meta.query_fixed(fixed_table[0], Rotation::cur()),
             ));
+
             constraints.push((
-                (long_even_sel1.clone()
-                    + long_even_sel2.clone()
-                    + long_odd_sel1.clone()
-                    + long_odd_sel2.clone())
+                is_extension_c_row.clone() * is_extension_node.clone()
                     * key_len,
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
-                (long_even_sel1
-                    + long_even_sel2
-                    + long_odd_sel1
-                    + long_odd_sel2)
+                is_extension_c_row.clone() * is_extension_node.clone()
                     * mult_diff,
                 meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));

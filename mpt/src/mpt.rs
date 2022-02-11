@@ -1689,6 +1689,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 F::from(modified_node as u64)
                                                     * key_rlc_mult;
                                             key_rlc_mult *= self.acc_r;
+                                            mult_diff = self.acc_r;
                                         }
                                     } else {
                                         if is_even && is_long {
@@ -1780,6 +1781,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 F::from(modified_node as u64)
                                                     * F::from(16)
                                                     * key_rlc_mult;
+                                            mult_diff = self.acc_r;
                                         }
                                     }
                                 } else {
