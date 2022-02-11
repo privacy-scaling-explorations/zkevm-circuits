@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
-            select, Word,
+            select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -30,6 +30,7 @@ pub(crate) struct SignedComparatorGadget<F> {
     sign_check_b: LtGadget<F, 1>,
     lt_lo: LtGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
+    a_lt_b: Cell<F>,
 
     is_sgt: IsEqualGadget<F>,
 }
@@ -94,7 +95,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         //
         // for e.g.: consider 8-bit signed integers -1 (0xff) and -2 (0xfe):
         //     -2 < -1 and 0xfe < 0xff
-        let a_lt_b = select::expr(a_lt_b_hi, 1.expr(), a_eq_b_hi * a_lt_b_lo);
+        //
+        // Use copy to avoid degree too high for stack_push below.
+        let a_lt_b = cb.copy(select::expr(a_lt_b_hi, 1.expr(), a_eq_b_hi * a_lt_b_lo));
 
         // Add a trivial selector: if only a or only b is negative we have the
         // result.
@@ -107,7 +110,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         //   a_neg_b_pos => result = 1
         //   b_neg_a_pos => result = 0
         //   1 - a_neg_b_pos - b_neg_a_pos => result = a_lt_b
-        let result = a_neg_b_pos.clone() + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b;
+        let result = a_neg_b_pos.clone() + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b.expr();
 
         // Pop a and b from the stack, push the result on the stack.
         cb.stack_pop(select::expr(is_sgt.expr(), b.expr(), a.expr()));
@@ -134,6 +137,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
             sign_check_b,
             lt_lo,
             comparison_hi,
+            a_lt_b,
             is_sgt,
         }
     }
@@ -143,8 +147,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _transaction: &Transaction<F>,
-        _call: &Call<F>,
+        _transaction: &Transaction,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -163,14 +167,24 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         } else {
             [step.rw_indices[0], step.rw_indices[1]]
         };
-        let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
+        let [a, b] = indices.map(|idx| block.rws[idx].stack_value());
+        let a_le_bytes = a.to_le_bytes();
+        let b_le_bytes = b.to_le_bytes();
 
         // Assign to the sign check gadgets. Since both a and b are in the
         // little-endian form, the most significant byte is the last byte.
-        self.sign_check_a
-            .assign(region, offset, F::from(a[31] as u64), F::from(128u64))?;
-        self.sign_check_b
-            .assign(region, offset, F::from(b[31] as u64), F::from(128u64))?;
+        self.sign_check_a.assign(
+            region,
+            offset,
+            F::from(a_le_bytes[31] as u64),
+            F::from(128u64),
+        )?;
+        self.sign_check_b.assign(
+            region,
+            offset,
+            F::from(b_le_bytes[31] as u64),
+            F::from(128u64),
+        )?;
 
         // Assign to the comparison gadgets. The first 16 bytes are assigned to
         // the `lo` less-than gadget while the last 16 bytes are assigned to
@@ -178,18 +192,25 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         self.lt_lo.assign(
             region,
             offset,
-            from_bytes::value(&a[0..16]),
-            from_bytes::value(&b[0..16]),
+            from_bytes::value(&a_le_bytes[0..16]),
+            from_bytes::value(&b_le_bytes[0..16]),
         )?;
         self.comparison_hi.assign(
             region,
             offset,
-            from_bytes::value(&a[16..32]),
-            from_bytes::value(&b[16..32]),
+            from_bytes::value(&a_le_bytes[16..32]),
+            from_bytes::value(&b_le_bytes[16..32]),
         )?;
 
-        self.a.assign(region, offset, Some(a))?;
-        self.b.assign(region, offset, Some(b))?;
+        // Assign to intermediate witness a_lt_b.
+        self.a_lt_b.assign(
+            region,
+            offset,
+            Some(if a < b { F::one() } else { F::zero() }),
+        )?;
+
+        self.a.assign(region, offset, Some(a_le_bytes))?;
+        self.b.assign(region, offset, Some(b_le_bytes))?;
 
         Ok(())
     }
@@ -197,19 +218,20 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use eth_types::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::Word;
 
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
 
-    fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
-        let bytecode = bytecode! {
-            PUSH32(b)
-            PUSH32(a)
-            #[start]
-            .write_op(opcode)
-            STOP
-        };
+    fn test_ok(pairs: Vec<(OpcodeId, Word, Word)>) {
+        let mut bytecode = bytecode! { #[start] };
+        for (opcode, a, b) in pairs {
+            bytecode.push(32, b);
+            bytecode.push(32, a);
+            bytecode.write_op(opcode);
+        }
+        bytecode.write_op(OpcodeId::STOP);
         assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
@@ -221,10 +243,12 @@ mod test {
             bytes[31] = 254u8;
             Word::from_big_endian(&bytes)
         };
-        test_ok(OpcodeId::SLT, minus_2, minus_1);
-        test_ok(OpcodeId::SGT, minus_2, minus_1);
-        test_ok(OpcodeId::SLT, minus_1, minus_2);
-        test_ok(OpcodeId::SGT, minus_1, minus_2);
+        test_ok(vec![
+            (OpcodeId::SLT, minus_2, minus_1),
+            (OpcodeId::SGT, minus_2, minus_1),
+            (OpcodeId::SLT, minus_1, minus_2),
+            (OpcodeId::SGT, minus_1, minus_2),
+        ]);
     }
 
     #[test]
@@ -235,46 +259,53 @@ mod test {
             Word::from_big_endian(&bytes)
         };
         let plus_2 = plus_1 + 1;
-        test_ok(OpcodeId::SLT, plus_1, plus_2);
-        test_ok(OpcodeId::SGT, plus_1, plus_2);
-        test_ok(OpcodeId::SLT, plus_2, plus_1);
-        test_ok(OpcodeId::SGT, plus_2, plus_1);
+        test_ok(vec![
+            (OpcodeId::SLT, plus_1, plus_2),
+            (OpcodeId::SGT, plus_1, plus_2),
+            (OpcodeId::SLT, plus_2, plus_1),
+            (OpcodeId::SGT, plus_2, plus_1),
+        ]);
     }
 
     #[test]
     fn signed_comparator_gadget_a_b_eq_hi_pos() {
         let a = Word::from_big_endian(&[[1u8; 16], [2u8; 16]].concat());
         let b = Word::from_big_endian(&[[1u8; 16], [3u8; 16]].concat());
-        test_ok(OpcodeId::SLT, a, b);
-        test_ok(OpcodeId::SGT, a, b);
-        test_ok(OpcodeId::SLT, b, a);
-        test_ok(OpcodeId::SGT, b, a);
+        test_ok(vec![
+            (OpcodeId::SLT, a, b),
+            (OpcodeId::SGT, a, b),
+            (OpcodeId::SLT, b, a),
+            (OpcodeId::SGT, b, a),
+        ]);
     }
 
     #[test]
     fn signed_comparator_gadget_a_b_eq_hi_neg() {
         let a = Word::from_big_endian(&[[129u8; 16], [2u8; 16]].concat());
         let b = Word::from_big_endian(&[[129u8; 16], [3u8; 16]].concat());
-        test_ok(OpcodeId::SLT, a, b);
-        test_ok(OpcodeId::SGT, a, b);
-        test_ok(OpcodeId::SLT, b, a);
-        test_ok(OpcodeId::SGT, b, a);
+        test_ok(vec![
+            (OpcodeId::SLT, a, b),
+            (OpcodeId::SGT, a, b),
+            (OpcodeId::SLT, b, a),
+            (OpcodeId::SGT, b, a),
+        ]);
     }
 
     #[test]
     fn signed_comparator_gadget_a_eq_b() {
         let a = rand_word();
-        test_ok(OpcodeId::SLT, a, a);
-        test_ok(OpcodeId::SGT, a, a);
+        test_ok(vec![(OpcodeId::SLT, a, a), (OpcodeId::SGT, a, a)]);
     }
 
     #[test]
     fn signed_comparator_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
-        test_ok(OpcodeId::SLT, a, b);
-        test_ok(OpcodeId::SGT, a, b);
-        test_ok(OpcodeId::SLT, b, a);
-        test_ok(OpcodeId::SGT, b, a);
+        test_ok(vec![
+            (OpcodeId::SLT, a, b),
+            (OpcodeId::SGT, a, b),
+            (OpcodeId::SLT, b, a),
+            (OpcodeId::SGT, b, a),
+        ]);
     }
 }

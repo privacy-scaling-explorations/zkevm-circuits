@@ -1,10 +1,10 @@
 //! Mock types and functions to generate mock data useful for tests
 
-use crate::circuit_input_builder::CircuitInputBuilder;
-use crate::state_db::{self, CodeDB, StateDB};
-use eth_types::geth_types::{BlockConstants, GethData};
-use eth_types::{ChainConstants, Word};
-use std::collections::HashMap;
+use crate::{
+    circuit_input_builder::{Block, CircuitInputBuilder},
+    state_db::{self, CodeDB, StateDB},
+};
+use eth_types::{geth_types::GethData, Word};
 
 /// BlockData is a type that contains all the information from a block required
 /// to build the circuit inputs.
@@ -14,14 +14,15 @@ pub struct BlockData {
     pub sdb: StateDB,
     /// CodeDB
     pub code_db: CodeDB,
+    /// chain id
+    pub chain_id: Word,
+    /// history hashes contains most recent 256 block hashes in history, where
+    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: eth_types::Block<()>,
     /// Transaction from geth
     pub eth_tx: eth_types::Transaction,
-    /// Constants
-    pub c_constant: ChainConstants,
-    /// Constants
-    pub b_constant: BlockConstants,
     /// Execution Trace from geth
     pub geth_trace: eth_types::GethExecTrace,
 }
@@ -33,9 +34,7 @@ impl BlockData {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
-            &self.eth_block,
-            self.c_constant.clone(),
-            self.b_constant.clone(),
+            Block::new(self.chain_id, self.history_hashes.clone(), &self.eth_block).unwrap(),
         )
     }
 
@@ -43,14 +42,18 @@ impl BlockData {
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
+
+        sdb.set_account(&geth_data.eth_block.author, state_db::Account::zero());
+        sdb.set_account(&geth_data.eth_tx.from, state_db::Account::zero());
+
         for account in geth_data.accounts {
             let code_hash = code_db.insert(account.code.to_vec());
             sdb.set_account(
                 &account.address,
                 state_db::Account {
-                    nonce: Word::zero(),
+                    nonce: account.nonce,
                     balance: account.balance,
-                    storage: HashMap::new(),
+                    storage: account.storage,
                     code_hash,
                 },
             );
@@ -58,10 +61,10 @@ impl BlockData {
         Self {
             sdb,
             code_db,
+            chain_id: geth_data.chain_id,
+            history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             eth_tx: geth_data.eth_tx,
-            c_constant: geth_data.c_constant,
-            b_constant: geth_data.b_constant,
             geth_trace: geth_data.geth_trace,
         }
     }

@@ -13,6 +13,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use core::fmt::Debug;
 use eth_types::{Address, Word};
+use std::mem::swap;
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -26,15 +27,12 @@ pub enum RW {
 impl RW {
     /// Returns true if the RW corresponds internally to a [`READ`](RW::READ).
     pub const fn is_read(&self) -> bool {
-        match self {
-            RW::READ => true,
-            RW::WRITE => false,
-        }
+        matches!(self, RW::READ)
     }
 
     /// Returns true if the RW corresponds internally to a [`WRITE`](RW::WRITE).
     pub const fn is_write(&self) -> bool {
-        !self.is_read()
+        matches!(self, RW::WRITE)
     }
 }
 
@@ -106,13 +104,18 @@ pub enum Target {
     Account,
     /// Means the target of the operation is the AccountDestructed.
     AccountDestructed,
+    /// Means the target of the operation is the CallContext.
+    CallContext,
 }
 
 /// Trait used for Operation Kinds.
-pub trait Op: Eq + Ord {
+
+pub trait Op: Clone + Eq + Ord {
     /// Turn the Generic Op into an OpEnum so that we can match it into a
     /// particular Operation Kind.
     fn into_enum(self) -> OpEnum;
+    /// Return a copy of the operation reversed.
+    fn reverse(&self) -> Self;
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
@@ -120,8 +123,6 @@ pub trait Op: Eq + Ord {
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct MemoryOp {
-    /// RW
-    pub rw: RW,
     /// Call ID
     pub call_id: usize,
     /// Memory Address
@@ -134,8 +135,8 @@ impl fmt::Debug for MemoryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("MemoryOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, value: 0x{:02x}",
-            self.rw, self.address, self.value
+            "call_id: {:?}, addr: {:?}, value: 0x{:02x}",
+            self.call_id, self.address, self.value
         ))?;
         f.write_str(" }")
     }
@@ -143,24 +144,22 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(rw: RW, call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
+    pub fn new(call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
         MemoryOp {
-            rw,
             call_id,
             address,
             value,
         }
     }
 
-    /// Returns the internal [`RW`] which says whether the operation corresponds
-    /// to a Read or a Write into memory.
-    pub const fn rw(&self) -> RW {
-        self.rw
-    }
-
     /// Returns the [`Target`] (operation type) of this operation.
     pub const fn target(&self) -> Target {
         Target::Memory
+    }
+
+    /// Returns the call id associated to this Operation.
+    pub const fn call_id(&self) -> usize {
+        self.call_id
     }
 
     /// Returns the [`MemoryAddress`] associated to this Operation.
@@ -177,6 +176,10 @@ impl MemoryOp {
 impl Op for MemoryOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::Memory(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!()
     }
 }
 
@@ -197,8 +200,6 @@ impl Ord for MemoryOp {
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StackOp {
-    /// RW
-    pub rw: RW,
     /// Call ID
     pub call_id: usize,
     /// Stack Address
@@ -211,8 +212,8 @@ impl fmt::Debug for StackOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("StackOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, val: 0x{:x}",
-            self.rw, self.address, self.value
+            "call_id: {:?}, addr: {:?}, val: 0x{:x}",
+            self.call_id, self.address, self.value
         ))?;
         f.write_str(" }")
     }
@@ -220,24 +221,22 @@ impl fmt::Debug for StackOp {
 
 impl StackOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub const fn new(rw: RW, call_id: usize, address: StackAddress, value: Word) -> StackOp {
+    pub const fn new(call_id: usize, address: StackAddress, value: Word) -> StackOp {
         StackOp {
-            rw,
             call_id,
             address,
             value,
         }
     }
 
-    /// Returns the internal [`RW`] which says whether the operation corresponds
-    /// to a Read or a Write into memory.
-    pub const fn rw(&self) -> RW {
-        self.rw
-    }
-
     /// Returns the [`Target`] (operation type) of this operation.
     pub const fn target(&self) -> Target {
         Target::Stack
+    }
+
+    /// Returns the call id associated to this Operation.
+    pub const fn call_id(&self) -> usize {
+        self.call_id
     }
 
     /// Returns the [`StackAddress`] associated to this Operation.
@@ -254,6 +253,10 @@ impl StackOp {
 impl Op for StackOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::Stack(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!()
     }
 }
 
@@ -275,8 +278,6 @@ impl Ord for StackOp {
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StorageOp {
-    /// RW
-    pub rw: RW,
     /// Account Address
     pub address: Address,
     /// Storage Key
@@ -291,8 +292,8 @@ impl fmt::Debug for StorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("StorageOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, key: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
-            self.rw, self.address, self.key, self.value_prev, self.value,
+            "addr: {:?}, key: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
+            self.address, self.key, self.value_prev, self.value,
         ))?;
         f.write_str(" }")
     }
@@ -300,26 +301,13 @@ impl fmt::Debug for StorageOp {
 
 impl StorageOp {
     /// Create a new instance of a `StorageOp` from it's components.
-    pub const fn new(
-        rw: RW,
-        address: Address,
-        key: Word,
-        value: Word,
-        value_prev: Word,
-    ) -> StorageOp {
+    pub const fn new(address: Address, key: Word, value: Word, value_prev: Word) -> StorageOp {
         StorageOp {
-            rw,
             address,
             key,
             value,
             value_prev,
         }
-    }
-
-    /// Returns the internal [`RW`] which says whether the operation corresponds
-    /// to a Read or a Write into storage.
-    pub const fn rw(&self) -> RW {
-        self.rw
     }
 
     /// Returns the [`Target`] (operation type) of this operation.
@@ -351,6 +339,12 @@ impl StorageOp {
 impl Op for StorageOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::Storage(self)
+    }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
     }
 }
 
@@ -408,6 +402,12 @@ impl Op for TxAccessListAccountOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::TxAccessListAccount(self)
     }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
+    }
 }
 
 /// Represents a change in the Storage AccessList implied by an `SSTORE` or
@@ -453,6 +453,12 @@ impl Op for TxAccessListAccountStorageOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::TxAccessListAccountStorage(self)
     }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
+    }
 }
 
 /// Represents a change in the Transaction Refund AccessList implied by an
@@ -460,8 +466,6 @@ impl Op for TxAccessListAccountStorageOp {
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxRefundOp {
-    /// RW
-    pub rw: RW,
     /// Transaction ID: Transaction index in the block starting at 1.
     pub tx_id: usize,
     /// Refund Value after the operation
@@ -474,8 +478,8 @@ impl fmt::Debug for TxRefundOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxRefundOp { ")?;
         f.write_fmt(format_args!(
-            "{:?} tx_id: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
-            self.rw, self.tx_id, self.value_prev, self.value
+            "tx_id: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
+            self.tx_id, self.value_prev, self.value
         ))?;
         f.write_str(" }")
     }
@@ -497,6 +501,12 @@ impl Op for TxRefundOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::TxRefund(self)
     }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
+    }
 }
 
 /// Represents a field parameter of the Account that can be accessed via EVM
@@ -516,8 +526,6 @@ pub enum AccountField {
 /// `CREATE*`, `STOP`, `RETURN` or `REVERT` step.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AccountOp {
-    /// RW
-    pub rw: RW,
     /// Account Address
     pub address: Address,
     /// Field
@@ -532,8 +540,8 @@ impl fmt::Debug for AccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountOp { ")?;
         f.write_fmt(format_args!(
-            "{:?}, addr: {:?}, field: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
-            self.rw, self.address, self.field, self.value_prev, self.value
+            "addr: {:?}, field: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
+            self.address, self.field, self.value_prev, self.value
         ))?;
         f.write_str(" }")
     }
@@ -554,6 +562,12 @@ impl Ord for AccountOp {
 impl Op for AccountOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::Account(self)
+    }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
     }
 }
 
@@ -598,10 +612,107 @@ impl Op for AccountDestructedOp {
     fn into_enum(self) -> OpEnum {
         OpEnum::AccountDestructed(self)
     }
+
+    fn reverse(&self) -> Self {
+        let mut rev = self.clone();
+        swap(&mut rev.value, &mut rev.value_prev);
+        rev
+    }
 }
 
-// TODO: https://github.com/appliedzkp/zkevm-circuits/issues/225
-// pub struct CallContextOp{}
+/// Represents a field parameter of the CallContext that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CallContextField {
+    /// RwCounterEndOfReversion
+    RwCounterEndOfReversion,
+    /// CallerId
+    CallerId,
+    /// TxId
+    TxId,
+    /// Depth
+    Depth,
+    /// CallerAddress
+    CallerAddress,
+    /// CalleeAddress
+    CalleeAddress,
+    /// CallDataOffset
+    CallDataOffset,
+    /// CallDataLength
+    CallDataLength,
+    /// ReturnDataOffset
+    ReturnDataOffset,
+    /// ReturnDataLength
+    ReturnDataLength,
+    /// Value
+    Value,
+    /// IsSuccess
+    IsSuccess,
+    /// IsPersistent
+    IsPersistent,
+    /// IsStatic
+    IsStatic,
+    /// IsRoot
+    IsRoot,
+    /// IsCreate
+    IsCreate,
+    /// CodeSource
+    CodeSource,
+    /// ProgramCounter
+    ProgramCounter,
+    /// StackPointer
+    StackPointer,
+    /// GasLeft
+    GasLeft,
+    /// MemorySize
+    MemorySize,
+    /// StateWriteCounter
+    StateWriteCounter,
+}
+
+/// Represents an CallContext read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct CallContextOp {
+    /// call_id of CallContext
+    pub call_id: usize,
+    /// field of CallContext
+    pub field: CallContextField,
+    /// value of CallContext
+    pub value: Word,
+}
+
+impl fmt::Debug for CallContextOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("CallContextOp { ")?;
+        f.write_fmt(format_args!(
+            "call_id: {:?}, field: {:?}, value: {:?}",
+            self.call_id, self.field, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for CallContextOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CallContextOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.call_id, &self.field).cmp(&(&other.call_id, &other.field))
+    }
+}
+
+impl Op for CallContextOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::CallContext(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!()
+    }
+}
 
 /// Generic enum that wraps over all the operation types possible.
 /// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
@@ -623,16 +734,18 @@ pub enum OpEnum {
     Account(AccountOp),
     /// AccountDestructed
     AccountDestructed(AccountDestructedOp),
-    /* TODO: https://github.com/appliedzkp/zkevm-circuits/issues/225
-     * CallContext(CallContextOp), */
+    /// CallContext
+    CallContext(CallContextOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.
 #[derive(Debug, Clone)]
 pub struct Operation<T: Op> {
     rwc: RWCounter,
-    /// True when this Operation is a revert of its mirror
-    revert: bool,
+    rw: RW,
+    /// True when this Operation should be reverted or not when
+    /// handle_reversion.
+    reversible: bool,
     op: T,
 }
 
@@ -661,10 +774,21 @@ impl<T: Op> Ord for Operation<T> {
 
 impl<T: Op> Operation<T> {
     /// Create a new Operation from an `op` with a `rwc`
-    pub fn new(rwc: RWCounter, op: T) -> Self {
+    pub fn new(rwc: RWCounter, rw: RW, op: T) -> Self {
         Self {
             rwc,
-            revert: false,
+            rw,
+            reversible: false,
+            op,
+        }
+    }
+
+    /// Create a new reversible Operation from an `op` with a `rwc`
+    pub fn new_reversible(rwc: RWCounter, rw: RW, op: T) -> Self {
+        Self {
+            rwc,
+            rw,
+            reversible: true,
             op,
         }
     }
@@ -674,9 +798,24 @@ impl<T: Op> Operation<T> {
         self.rwc
     }
 
+    /// Return this `Operation` `rw`
+    pub fn rw(&self) -> RW {
+        self.rw
+    }
+
+    /// Return this `Operation` `reversible`
+    pub fn reversible(&self) -> bool {
+        self.reversible
+    }
+
     /// Return this `Operation` `op`
     pub fn op(&self) -> &T {
         &self.op
+    }
+
+    /// Return this `Operation` `op` as mutable reference
+    pub fn op_mut(&mut self) -> &mut T {
+        &mut self.op
     }
 
     // /// Matches over an `Operation` returning the [`Target`] of the iternal
@@ -740,13 +879,13 @@ mod operation_tests {
 
     #[test]
     fn unchecked_op_transmutations_are_safe() {
-        let stack_op = StackOp::new(RW::WRITE, 1, StackAddress::from(1024), Word::from(0x40));
+        let stack_op = StackOp::new(1, StackAddress::from(1024), Word::from(0x40));
 
-        let stack_op_as_operation = Operation::new(RWCounter(1), stack_op.clone());
+        let stack_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, stack_op.clone());
 
-        let memory_op = MemoryOp::new(RW::WRITE, 1, MemoryAddress(0x40), 0x40);
+        let memory_op = MemoryOp::new(1, MemoryAddress(0x40), 0x40);
 
-        let memory_op_as_operation = Operation::new(RWCounter(1), memory_op.clone());
+        let memory_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, memory_op.clone());
 
         assert_eq!(stack_op, stack_op_as_operation.op);
         assert_eq!(memory_op, memory_op_as_operation.op)

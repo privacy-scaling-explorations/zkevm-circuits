@@ -1,4 +1,3 @@
-use crate::evm_circuit::param::N_BYTES_U64;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -7,19 +6,19 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, RandomLinearCombination,
+            Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
-use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TimestampGadget<F> {
     same_context: SameContextGadget<F>,
-    timestamp: RandomLinearCombination<F, N_BYTES_U64>,
+    timestamp: Cell<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
@@ -28,14 +27,14 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::TIMESTAMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let timestamp = cb.query_rlc();
+        let timestamp = cb.query_cell();
         cb.stack_push(timestamp.expr());
 
         // Lookup block table with timestamp
         cb.block_lookup(
-            BlockContextFieldTag::Time.expr(),
+            BlockContextFieldTag::Timestamp.expr(),
             None,
-            from_bytes::expr(&timestamp.cells),
+            timestamp.expr(),
         );
 
         // State transition
@@ -59,18 +58,19 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let timestamp = block.rws[step.rw_indices[0]].stack_value();
-
         self.timestamp.assign(
             region,
             offset,
-            Some(u64::try_from(timestamp).unwrap().to_le_bytes()),
+            Some(RandomLinearCombination::random_linear_combine(
+                block.context.timestamp.to_le_bytes(),
+                block.randomness,
+            )),
         )?;
 
         Ok(())

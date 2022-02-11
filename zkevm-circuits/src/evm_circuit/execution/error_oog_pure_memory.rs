@@ -93,8 +93,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();

@@ -32,7 +32,7 @@ pub(crate) mod address_low {
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
         let mut bytes = [0; 8];
-        bytes.copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
+        bytes[..N_BYTES_MEMORY_ADDRESS].copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
         u64::from_le_bytes(bytes)
     }
 }

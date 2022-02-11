@@ -28,13 +28,15 @@ impl Opcode for Sload {
 
         // Storage read
         let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
-        state.push_op(StorageOp::new(
+        state.push_op(
             RW::READ,
-            state.call().address,
-            stack_value_read,
-            storage_value_read,
-            storage_value_read,
-        ));
+            StorageOp::new(
+                state.call().address,
+                stack_value_read,
+                storage_value_read,
+                storage_value_read,
+            ),
+        );
 
         // First stack write
         state.push_stack_op(RW::WRITE, stack_position, storage_value_read);
@@ -75,8 +77,10 @@ mod sload_tests {
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
+        let mut tx = test_builder
+            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+            .unwrap();
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
         // Generate step corresponding to SLOAD
         let mut step = ExecStep::new(
@@ -89,13 +93,15 @@ mod sload_tests {
         // Add StackOp associated to the stack pop.
         state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x0u32));
         // Add StorageOp associated to the storage read.
-        state_ref.push_op(StorageOp::new(
+        state_ref.push_op(
             RW::READ,
-            Address::from([0u8; 20]),
-            Word::from(0x0u32),
-            Word::from(0x6fu32),
-            Word::from(0x6fu32),
-        ));
+            StorageOp::new(
+                Address::from([0u8; 20]),
+                Word::from(0x0u32),
+                Word::from(0x6fu32),
+                Word::from(0x6fu32),
+            ),
+        );
         // Add StackOp associated to the stack push.
         state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), Word::from(0x6fu32));
         tx.steps_mut().push(step);

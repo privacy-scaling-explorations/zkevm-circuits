@@ -90,7 +90,7 @@ impl Stack {
     pub fn stack_pointer(&self) -> StackAddress {
         // Stack has 1024 slots.
         // First allocation slot for us in the stack is 1023.
-        StackAddress::from(1023 - self.0.len())
+        StackAddress::from(1024 - self.0.len())
     }
 
     /// Returns the last filled `StackAddress`.
@@ -145,7 +145,7 @@ mod stack_tests {
     fn stack_pointer() -> Result<(), Error> {
         let stack = setup_stack(["0x15", "0x16", "0x17"]);
 
-        assert_eq!(stack.stack_pointer(), StackAddress(1020));
+        assert_eq!(stack.stack_pointer(), StackAddress(1021));
         assert_eq!(stack.last_filled(), StackAddress(1021));
         assert_eq!(stack.nth_last_filled(1), StackAddress(1022));
         Ok(())
