@@ -890,17 +890,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // branch children:
             let rot_into_prev_branch = rot_branch_init - 3;
 
-            let key_rlc_mult_prev_level =
-                meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch));
-            let key_rlc_prev_level =
-                meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
-
             // Get back into S or C extension row to retrieve key_rlc. Note that this works
             // for both - extension nodes and branches. That's because branch key RLC is stored
             // in extension node row when there is NO extension node (the constraint is in
             // extension_node_key).
-            let key_rlc_mult_cur =
-                meta.query_advice(key_rlc_mult, Rotation(-6));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation(-6));
 
             // Now we have key_rlc after extension node key has been added (in ext_key_rlc),
@@ -912,7 +905,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let sel2 = meta.query_advice(sel2, Rotation(rot_branch_init));
 
             // Note: previous key_rlc in s_keccak[2] and s_keccak[3] could be queried instead.
-            let branch_rlc = meta.query_advice(key_rlc, Rotation(-30));
             let branch_rlc_mult =
                 meta.query_advice(key_rlc_mult, Rotation(-30));
 
@@ -921,29 +913,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
             let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
-
-            // Any rotation that lands into branch children can be used.
-            let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
-
-            let mut key_rlc_short = key_rlc_cur.clone()
-                + drifted_pos.clone()
-                    * c16.clone()
-                    * branch_rlc_mult.clone()
-                    * r_table[0].clone();
-
-            // If sel1 = 1, we have one nibble+48 in s_advices[0].
-            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
-            key_rlc_short = key_rlc_short.clone()
-                + (s_advice0.clone() - c48.clone())
-                    * branch_rlc_mult.clone()
-                    * sel1.clone()
-                    * r_table[0].clone();
-
-            for ind in 1..HASH_WIDTH {
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                key_rlc_short = key_rlc_short
-                    + s * branch_rlc_mult.clone() * r_table[ind].clone();
-            }
 
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.
@@ -958,6 +927,39 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-4));
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-2));
+
+            // Any rotation that lands into branch children can be used.
+            let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
+
+            let mut key_rlc_short = key_rlc_cur.clone()
+                + drifted_pos.clone()
+                    * c16.clone()
+                    * branch_rlc_mult.clone()
+                    * r_table[0].clone();
+
+            // If sel1 = 1, we have one nibble+48 in s_advices[0].
+            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+
+            // If sel2 = 1, we have 32 in s_advices[0].
+            constraints.push((
+                "Leaf key acc s_advice0",
+                q_enable.clone()
+                    * (s_advice0.clone() - c32.clone())
+                    * sel2.clone()
+                    * is_short.clone(),
+            ));
+
+            key_rlc_short = key_rlc_short.clone()
+                + (s_advice0.clone() - c48.clone())
+                    * branch_rlc_mult.clone()
+                    * sel1.clone()
+                    * r_table[0].clone();
+
+            for ind in 1..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_short = key_rlc_short
+                    + s * branch_rlc_mult.clone() * r_table[ind].clone();
+            }
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
@@ -974,6 +976,61 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * is_branch_c_placeholder.clone()
                     * is_short.clone()
                     * (leaf_key_c_rlc.clone() - key_rlc_short.clone()),
+            ));
+
+            // Long:
+
+            let mut key_rlc_long = key_rlc_cur.clone()
+                + drifted_pos.clone()
+                    * c16.clone()
+                    * branch_rlc_mult.clone()
+                    * r_table[0].clone();
+
+            // If sel1 = 1, we have one nibble+48 in s_advices[1].
+            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+
+            // If sel2 = 1, we have 32 in s_advices[1].
+            constraints.push((
+                "Leaf key acc s_advice1",
+                q_enable.clone()
+                    * (s_advice1.clone() - c32.clone())
+                    * sel2.clone()
+                    * is_long.clone(),
+            ));
+
+            key_rlc_long = key_rlc_long.clone()
+                + (s_advice1.clone() - c48.clone())
+                    * branch_rlc_mult.clone()
+                    * mult_diff.clone()
+                    * sel1.clone()
+                    * r_table[0].clone();
+
+            let mut key_mult = branch_rlc_mult.clone() * mult_diff.clone();
+
+            for ind in 2..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_mult = branch_rlc_mult.clone() * r_table[ind].clone();
+                key_rlc_long = key_rlc_long + s * key_mult.clone();
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_mult;
+
+            // No need to distinguish between sel1 and sel2 here as it was already
+            // when computing key_rlc.
+            constraints.push((
+                "Drifted leaf key placeholder S long",
+                q_enable.clone()
+                    * is_branch_s_placeholder.clone()
+                    * is_long.clone()
+                    * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
+            ));
+            constraints.push((
+                "Drifted leaf key placeholder C long",
+                q_enable.clone()
+                    * is_branch_c_placeholder.clone()
+                    * is_long.clone()
+                    * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
             ));
 
             constraints
