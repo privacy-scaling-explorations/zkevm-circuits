@@ -898,6 +898,13 @@ impl From<&operation::OperationContainer> for RwMap {
                         CallContextField::IsSuccess => CallContextFieldTag::IsSuccess,
                         CallContextField::IsPersistent => CallContextFieldTag::IsPersistent,
                         CallContextField::IsStatic => CallContextFieldTag::IsStatic,
+                        CallContextField::LastCalleeId => CallContextFieldTag::LastCalleeId,
+                        CallContextField::LastCalleeReturnDataOffset => {
+                            CallContextFieldTag::LastCalleeReturnDataOffset
+                        }
+                        CallContextField::LastCalleeReturnDataLength => {
+                            CallContextFieldTag::LastCalleeReturnDataLength
+                        }
                         CallContextField::IsRoot => CallContextFieldTag::IsRoot,
                         CallContextField::IsCreate => CallContextFieldTag::IsCreate,
                         CallContextField::CodeSource => CallContextFieldTag::CodeSource,
