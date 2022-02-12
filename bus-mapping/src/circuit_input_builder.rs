@@ -91,10 +91,6 @@ pub enum ExecError {
     InvalidJump,
     /// For RETURNDATACOPY
     ReturnDataOutOfBounds,
-    // NOTE: We don't use the GasUintOverflow in favour of always reporting an
-    // OutOfGas error.
-    // /// Internal calculation of gas overflow
-    // GasUintOverflow,
     /// For RETURN in a CREATE, CREATE2
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2

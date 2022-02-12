@@ -15,6 +15,7 @@ use eth_types::{
 };
 use log::warn;
 
+mod call;
 mod calldatacopy;
 mod calldatasize;
 mod caller;
@@ -30,6 +31,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+use call::Call;
 use calldatacopy::Calldatacopy;
 use calldatasize::Calldatasize;
 use caller::Caller;
@@ -207,7 +209,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::LOG3 => {},
         // OpcodeId::LOG4 => {},
         // OpcodeId::CREATE => {},
-        // OpcodeId::CALL => {},
+        OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},
         // TODO: Handle RETURN by its own gen_associated_ops.
         OpcodeId::RETURN => Stop::gen_associated_ops,
