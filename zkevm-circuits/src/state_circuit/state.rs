@@ -1388,7 +1388,6 @@ mod tests {
             PUSH1(0x80)
             PUSH1(0x40)
             MSTORE
-            #[start]
             PUSH1(0x40)
             MLOAD
             STOP
@@ -1397,7 +1396,9 @@ mod tests {
             mock::new_single_tx_trace_code(&bytecode).unwrap(),
         );
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
 
         let stack_ops = builder.block.container.sorted_stack();
         let memory_ops = builder.block.container.sorted_memory();

@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{
     circuit::Region,
@@ -13,7 +14,7 @@ use crate::{
         table::{CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             memory_gadget::BufferReaderGadget,
             Cell, MemoryAddress, RandomLinearCombination,
         },
@@ -151,13 +152,14 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         ));
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset()),
-            program_counter: Transition::Delta(1.expr()),
-            stack_pointer: Transition::Delta(0.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(0.expr()),
+            gas_left: Delta(-OpcodeId::CALLDATALOAD.constant_gas_cost().expr()),
             ..Default::default()
         };
 
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,

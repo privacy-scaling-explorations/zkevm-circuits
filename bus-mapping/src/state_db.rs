@@ -75,6 +75,7 @@ pub struct StateDB {
     state: HashMap<Address, Account>,
     access_list_account: HashSet<Address>,
     access_list_account_storage: HashSet<(Address, U256)>,
+    refund: u64,
 }
 
 impl Default for StateDB {
@@ -90,6 +91,7 @@ impl StateDB {
             state: HashMap::new(),
             access_list_account: HashSet::new(),
             access_list_account_storage: HashSet::new(),
+            refund: 0,
         }
     }
 
@@ -148,6 +150,14 @@ impl StateDB {
         (found, acc.storage.get_mut(key).expect("key not inserted"))
     }
 
+    /// Increase nonce of account with `addr` and return the previous value.
+    pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
+        let (_, account) = self.get_account_mut(addr);
+        let nonce = account.nonce.as_u64();
+        account.nonce = account.nonce + 1;
+        nonce
+    }
+
     /// Add `addr` into account access list. Returns `true` if it's not in the
     /// access list before.
     pub fn add_account_to_access_list(&mut self, addr: Address) -> bool {
@@ -168,6 +178,11 @@ impl StateDB {
     /// Remove `(addr, key)` from account storage access list.
     pub fn remove_account_storage_from_access_list(&mut self, pair: &(Address, Word)) {
         assert!(self.access_list_account_storage.remove(pair));
+    }
+
+    /// Get refund.
+    pub fn get_refund(&self) -> u64 {
+        self.refund
     }
 }
 

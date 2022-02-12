@@ -60,6 +60,9 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// Quotient for max refund of gas used
+pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
+
 /// Defines the gas consumption.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct GasCost(pub u64);

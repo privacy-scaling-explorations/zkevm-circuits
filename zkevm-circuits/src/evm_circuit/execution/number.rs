@@ -13,6 +13,7 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryFrom;
@@ -47,9 +48,10 @@ impl<F: Field> ExecutionGadget<F> for NumberGadget<F> {
             rw_counter: Delta(1.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::NUMBER.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
