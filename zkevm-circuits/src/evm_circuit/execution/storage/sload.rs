@@ -200,7 +200,6 @@ mod test {
 
         let randomness = rand_fp();
         let bytecode = Bytecode::from(&bytecode! {
-            // TODO: SSTORE first
             PUSH32(key)
             #[start]
             SLOAD
