@@ -1,17 +1,15 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::STACK_CAPACITY,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
+        table::CallContextFieldTag,
         util::{
-            common_gadget::{SameContextGadget, TransferWithGasFeeGadget},
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
-            select, Cell, RandomLinearCombination, Word,
+            select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -93,16 +91,16 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             SameContextGadget::construct(cb, opcode, step_state_transition, Some(gas_cost.expr()));
 
         Self {
-            same_context: same_context,
-            call_id: call_id,
-            tx_id: tx_id,
-            rw_counter_end_of_reversion: rw_counter_end_of_reversion,
-            is_persistent: is_persistent,
-            callee_address: callee_address,
-            key: key,
-            value: value,
-            committed_value: committed_value,
-            is_warm: is_warm,
+            same_context,
+            call_id,
+            tx_id,
+            rw_counter_end_of_reversion,
+            is_persistent,
+            callee_address,
+            key,
+            value,
+            committed_value,
+            is_warm,
         }
     }
 
@@ -157,7 +155,7 @@ pub(crate) struct SloadGasGadget<F> {
 }
 
 impl<F: FieldExt> SloadGasGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
             GasCost::WARM_STORAGE_READ_COST.expr(),
@@ -165,8 +163,8 @@ impl<F: FieldExt> SloadGasGadget<F> {
         );
 
         Self {
-            is_warm: is_warm,
-            gas_cost: gas_cost,
+            is_warm,
+            gas_cost,
         }
     }
 
@@ -184,9 +182,9 @@ mod test {
         table::CallContextFieldTag,
         test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
-        witness::{self, Block, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
-    use crate::test_util::run_test_circuits;
+    
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
@@ -309,8 +307,8 @@ mod test {
                         rw_counter: 14,
                         is_write: false,
                         address: tx.to.unwrap(),
-                        key: key,
-                        value: value,
+                        key,
+                        value,
                         value_prev: value,
                         tx_id: 1,
                         committed_value: Word::zero(),
@@ -320,7 +318,7 @@ mod test {
                         is_write: true,
                         tx_id: 1,
                         address: tx.to.unwrap(),
-                        key: key,
+                        key,
                         value: true,
                         value_prev: is_warm,
                     },
@@ -329,7 +327,7 @@ mod test {
                         is_write: true,
                         call_id: 1,
                         stack_pointer: STACK_CAPACITY,
-                        value: value,
+                        value,
                     },
                 ],
                 if result {
@@ -340,7 +338,7 @@ mod test {
                         is_write: true,
                         tx_id: 1usize,
                         address: tx.to.unwrap_or_else(Address::zero),
-                        key: key,
+                        key,
                         value: is_warm,
                         value_prev: true,
                     }]
@@ -357,7 +355,6 @@ mod test {
     fn mock_tx() -> eth_types::Transaction {
         let from = address!("0x00000000000000000000000000000000000000fe");
         let to = address!("0x00000000000000000000000000000000000000ff");
-        let minimal_gas = Word::from(21000);
         eth_types::Transaction {
             from,
             to: Some(to),
