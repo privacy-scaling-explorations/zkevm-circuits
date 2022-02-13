@@ -162,10 +162,7 @@ impl<F: FieldExt> SloadGasGadget<F> {
             GasCost::COLD_SLOAD_COST.expr(),
         );
 
-        Self {
-            is_warm,
-            gas_cost,
-        }
+        Self { is_warm, gas_cost }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
@@ -184,7 +181,7 @@ mod test {
         util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
-    
+
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
