@@ -377,6 +377,11 @@ pub enum Rw {
     TxAccessListAccountStorage {
         rw_counter: usize,
         is_write: bool,
+        tx_id: usize,
+        address: Address,
+        key: Word,
+        value: bool,
+        value_prev: bool,
     },
     TxRefund {
         rw_counter: usize,
@@ -393,6 +398,12 @@ pub enum Rw {
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
+        address: Address,
+        key: Word,
+        value: Word,
+        value_prev: Word,
+        tx_id: usize,
+        committed_value: Word,
     },
     AccountDestructed {
         rw_counter: usize,
@@ -422,11 +433,34 @@ pub enum Rw {
 }
 
 impl Rw {
+    pub fn accesslist_value_pair(&self) -> (bool, bool) {
+        match self {
+            Self::TxAccessListAccount {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            Self::TxAccessListAccountStorage {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn account_value_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
                 value, value_prev, ..
             } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn aux_pair(&self) -> (usize, Word) {
+        match self {
+            Self::AccountStorage {
+                tx_id,
+                committed_value,
+                ..
+            } => (*tx_id, *committed_value),
             _ => unreachable!(),
         }
     }
@@ -454,6 +488,26 @@ impl Rw {
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
                 F::zero(),
+                F::from(*value as u64),
+                F::from(*value_prev as u64),
+                F::zero(),
+                F::zero(),
+            ],
+            Self::TxAccessListAccountStorage {
+                rw_counter,
+                is_write,
+                tx_id,
+                address,
+                key,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxAccessListAccountStorage as u64),
+                F::from(*tx_id as u64),
+                address.to_scalar().unwrap(),
+                RandomLinearCombination::random_linear_combine(key.to_le_bytes(), randomness),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
                 F::zero(),
@@ -487,6 +541,33 @@ impl Rw {
                     F::zero(),
                 ]
             }
+            Self::AccountStorage {
+                rw_counter,
+                is_write,
+                address,
+                key,
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::AccountStorage as u64),
+                address.to_scalar().unwrap(),
+                RandomLinearCombination::random_linear_combine(key.to_le_bytes(), randomness),
+                F::zero(),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                RandomLinearCombination::random_linear_combine(
+                    value_prev.to_le_bytes(),
+                    randomness,
+                ),
+                F::from(*tx_id as u64),
+                RandomLinearCombination::random_linear_combine(
+                    committed_value.to_le_bytes(),
+                    randomness,
+                ),
+            ],
             Self::CallContext {
                 rw_counter,
                 is_write,
@@ -596,6 +677,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::COINBASE => ExecutionState::COINBASE,
             OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
             OpcodeId::GAS => ExecutionState::GAS,
+            OpcodeId::SLOAD => ExecutionState::SLOAD,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }

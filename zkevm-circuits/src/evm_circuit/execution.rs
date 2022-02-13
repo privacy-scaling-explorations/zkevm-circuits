@@ -37,6 +37,7 @@ mod push;
 mod signed_comparator;
 mod signextend;
 mod stop;
+mod storage;
 mod swap;
 mod timestamp;
 
@@ -61,6 +62,7 @@ use push::PushGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
+use storage::SloadGadget;
 use swap::SwapGadget;
 use timestamp::TimestampGadget;
 
@@ -111,6 +113,7 @@ pub(crate) struct ExecutionConfig<F> {
     msize_gadget: MsizeGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
+    sload_gadget: SloadGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
@@ -239,6 +242,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
+            sload_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -489,6 +493,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::TIMESTAMP => {
                 assign_exec_step!(self.timestamp_gadget)
             }
+            ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
