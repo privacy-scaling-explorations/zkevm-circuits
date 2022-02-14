@@ -28,8 +28,7 @@ pub struct KeccakFConfig<F: FieldExt> {
     mixing_config: MixingConfig<F>,
     pub state: [Column<Advice>; 25],
     q_out: Selector,
-    pub _is_mixing_flag: Column<Advice>,
-    _base_conv_activator: Column<Advice>,
+    base_conv_activator: Column<Advice>,
 }
 
 impl<F: FieldExt> KeccakFConfig<F> {
@@ -47,11 +46,6 @@ impl<F: FieldExt> KeccakFConfig<F> {
             .collect_vec()
             .try_into()
             .unwrap();
-
-        // Allocate space for the Advice column that activates the base
-        // conversion during the `PERMUTATION - 1` rounds.
-        let _is_mixing_flag = meta.advice_column();
-        meta.enable_equality(_is_mixing_flag.into());
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
@@ -81,12 +75,12 @@ impl<F: FieldExt> KeccakFConfig<F> {
             IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
 
         // Allocate space for the activation flag of the base_conversion.
-        let _base_conv_activator = meta.advice_column();
-        meta.enable_equality(_base_conv_activator.into());
+        let base_conv_activator = meta.advice_column();
+        meta.enable_equality(base_conv_activator.into());
         // Base conversion config.
         let base_info = table.get_base_info(false);
         let base_conversion_config =
-            StateBaseConversion::configure(meta, state, base_info, _base_conv_activator);
+            StateBaseConversion::configure(meta, state, base_info, base_conv_activator);
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
@@ -124,8 +118,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
             mixing_config,
             state,
             q_out,
-            _is_mixing_flag,
-            _base_conv_activator,
+            base_conv_activator,
         }
     }
 
@@ -192,14 +185,12 @@ impl<F: FieldExt> KeccakFConfig<F> {
             // base_13 which is what Theta requires again at the
             // start of the loop.
             state = {
-                // TODO: That could be a Fixed column.
-                // Witness 1 for the activation flag.
                 let activation_flag = layouter.assign_region(
                     || "Base conversion enable",
                     |mut region| {
                         let cell = region.assign_advice(
                             || "Enable base conversion",
-                            self._base_conv_activator,
+                            self.base_conv_activator,
                             0,
                             || Ok(F::one()),
                         )?;

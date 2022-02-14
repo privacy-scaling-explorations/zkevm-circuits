@@ -43,9 +43,6 @@ impl<F: FieldExt> MixingConfig<F> {
         let flag = meta.advice_column();
         meta.enable_equality(flag.into());
 
-        // Generate a selector that will always be active to avoid the
-        // PoisonedConstraint err due to no selectors being used in a
-        // constraint.
         let q_flag = meta.selector();
 
         meta.create_gate("Ensure flag consistency", |meta| {

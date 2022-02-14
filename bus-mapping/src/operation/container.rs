@@ -25,7 +25,7 @@ pub struct OperationContainer {
     pub(crate) stack: Vec<Operation<StackOp>>,
     pub(crate) storage: Vec<Operation<StorageOp>>,
     pub(crate) tx_access_list_account: Vec<Operation<TxAccessListAccountOp>>,
-    pub(crate) tx_access_list_storage_slot: Vec<Operation<TxAccessListAccountStorageOp>>,
+    pub(crate) tx_access_list_account_storage: Vec<Operation<TxAccessListAccountStorageOp>>,
     pub(crate) tx_refund: Vec<Operation<TxRefundOp>>,
     pub(crate) account: Vec<Operation<AccountOp>>,
     pub(crate) account_destructed: Vec<Operation<AccountDestructedOp>>,
@@ -48,7 +48,7 @@ impl OperationContainer {
             stack: Vec::new(),
             storage: Vec::new(),
             tx_access_list_account: Vec::new(),
-            tx_access_list_storage_slot: Vec::new(),
+            tx_access_list_account_storage: Vec::new(),
             tx_refund: Vec::new(),
             account: Vec::new(),
             account_destructed: Vec::new(),
@@ -82,11 +82,11 @@ impl OperationContainer {
                 ))
             }
             OpEnum::TxAccessListAccountStorage(op) => {
-                self.tx_access_list_storage_slot
+                self.tx_access_list_account_storage
                     .push(Operation::new(rwc, op));
                 OperationRef::from((
                     Target::TxAccessListAccountStorage,
-                    self.tx_access_list_storage_slot.len(),
+                    self.tx_access_list_account_storage.len(),
                 ))
             }
             OpEnum::TxRefund(op) => {
