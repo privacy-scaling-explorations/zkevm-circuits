@@ -28,7 +28,7 @@ impl<F: FieldExt, const K: u64> RangeCheckConfig<F, K> {
         layouter.assign_table(
             || "range",
             |mut table| {
-                for i in 0..K {
+                for i in 0..=K {
                     table.assign_cell(|| "range", self.range, i as usize, || Ok(F::from(i)))?;
                 }
                 Ok(())
