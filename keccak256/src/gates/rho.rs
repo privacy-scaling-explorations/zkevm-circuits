@@ -23,14 +23,12 @@ pub struct RhoConfig<F> {
 }
 
 impl<F: FieldExt> RhoConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
-        base13_to_9_table: Base13toBase9TableConfig<F>,
-        special_chunk_table: SpecialChunkTableConfig<F>,
-        step2_range_table: RangeCheckConfig<F, STEP2_RANGE>,
-        step3_range_table: RangeCheckConfig<F, STEP3_RANGE>,
-    ) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>, state: [Column<Advice>; 25]) -> Self {
+        let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
+        let special_chunk_table = SpecialChunkTableConfig::configure(meta);
+        let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
+        let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
+
         let lane_configs: [LaneRotateConversionConfig<F>; 25] = state
             .iter()
             .enumerate()
@@ -118,9 +116,6 @@ mod tests {
     use crate::arith_helpers::*;
     use crate::common::*;
     use crate::gates::gate_helpers::*;
-    use crate::gates::tables::{
-        Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig,
-    };
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
@@ -151,18 +146,7 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                let base13_to_9 = Base13toBase9TableConfig::configure(meta);
-                let special_chunk_table = SpecialChunkTableConfig::configure(meta);
-                let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
-                let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
-                RhoConfig::configure(
-                    meta,
-                    state,
-                    base13_to_9,
-                    special_chunk_table,
-                    step2_range_table,
-                    step3_range_table,
-                )
+                RhoConfig::configure(meta, state)
             }
 
             fn synthesize(

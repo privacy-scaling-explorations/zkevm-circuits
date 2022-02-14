@@ -2,17 +2,8 @@ use crate::{
     arith_helpers::*,
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     gates::{
-        iota_b9::IotaB9Config,
-        mixing::MixingConfig,
-        pi::pi_gate_permutation,
-        rho::RhoConfig,
-        rho_helpers::{STEP2_RANGE, STEP3_RANGE},
-        state_conversion::StateBaseConversion,
-        tables::{
-            Base13toBase9TableConfig, FromBase9TableConfig, RangeCheckConfig,
-            SpecialChunkTableConfig,
-        },
-        theta::ThetaConfig,
+        iota_b9::IotaB9Config, mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
+        state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
         xi::XiConfig,
     },
     keccak_arith::*,
@@ -58,20 +49,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = {
-            let base13_to_9 = Base13toBase9TableConfig::configure(meta);
-            let special_chunk_table = SpecialChunkTableConfig::configure(meta);
-            let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
-            let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
-            RhoConfig::configure(
-                meta,
-                state,
-                base13_to_9,
-                special_chunk_table,
-                step2_range_table,
-                step3_range_table,
-            )
-        };
+        let rho_config = RhoConfig::configure(meta, state);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
