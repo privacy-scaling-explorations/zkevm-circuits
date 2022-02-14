@@ -228,12 +228,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
+            let mut key_mult = branch_rlc_mult.clone() * mult_diff.clone();
+            let drifted_pos_mult =
+                key_mult.clone() * c16.clone() * sel1.clone()
+                    + key_mult.clone() * sel2.clone();
 
-            let key_rlc_start = key_rlc_cur.clone()
-                + drifted_pos.clone()
-                    * c16.clone()
-                    * branch_rlc_mult.clone()
-                    * mult_diff.clone();
+            // Note: the difference in key_mult for sel1 and sel2 is already taken into
+            // account in mult_diff.
+
+            let key_rlc_start =
+                key_rlc_cur.clone() + drifted_pos.clone() * drifted_pos_mult;
 
             // If sel1 = 1, we have one nibble+48 in s_advices[0].
             let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
@@ -249,16 +253,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let mut key_rlc_short = key_rlc_start.clone()
                 + (s_advice0.clone() - c48.clone())
-                    * branch_rlc_mult.clone()
                     * sel1.clone()
-                    * mult_diff.clone();
+                    * key_mult.clone();
 
             for ind in 1..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
                 key_rlc_short = key_rlc_short
-                    + s * branch_rlc_mult.clone()
-                        * mult_diff.clone()
-                        * r_table[ind - 1].clone();
+                    + s * key_mult.clone() * r_table[ind - 1].clone();
             }
 
             // No need to distinguish between sel1 and sel2 here as it was already
@@ -295,11 +296,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             let mut key_rlc_long = key_rlc_start.clone()
                 + (s_advice1.clone() - c48.clone())
-                    * branch_rlc_mult.clone()
                     * sel1.clone()
-                    * mult_diff.clone();
+                    * key_mult.clone();
 
-            let mut key_mult = branch_rlc_mult.clone() * mult_diff.clone();
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
                 key_mult = key_mult * r_table[0].clone();

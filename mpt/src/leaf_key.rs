@@ -350,9 +350,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 + (s_advice0.clone() - c48.clone())
                     * key_mult_start.clone()
                     * sel1.clone();
-            let mut key_mult =
-                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
-            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+            let key_mult =
+                key_mult_start.clone() * r_table[0].clone() * sel1.clone()
+                    + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
             // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
@@ -394,9 +394,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 + (s_advice1.clone() - c48)
                     * key_mult_start.clone()
                     * sel1.clone();
-            let mut key_mult =
-                key_mult_start.clone() * r_table[0].clone() * sel1.clone();
-            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
 
             // If sel2 = 1, we have 32 in s_advices[1].
             constraints.push((
