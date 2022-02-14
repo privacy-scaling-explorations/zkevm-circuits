@@ -18,6 +18,33 @@ const NUM_OF_BINARY_CHUNKS: usize = 16;
 const NUM_OF_B9_CHUNKS: usize = 5;
 
 #[derive(Debug, Clone)]
+pub struct RangeCheckConfig<F, const K: u64> {
+    pub range: TableColumn,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt, const K: u64> RangeCheckConfig<F, K> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || "range",
+            |mut table| {
+                for i in 0..=K {
+                    table.assign_cell(|| "range", self.range, i as usize, || Ok(F::from(i)))?;
+                }
+                Ok(())
+            },
+        )
+    }
+
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            range: meta.lookup_table_column(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
     pub base13: TableColumn,
     pub base9: TableColumn,

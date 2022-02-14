@@ -1,14 +1,13 @@
-use super::gates::{
-    iota_b9::IotaB9Config, pi::pi_gate_permutation, rho::RhoConfig,
-    state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
-    xi::XiConfig,
-};
 use crate::{
     arith_helpers::*,
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
-    gates::tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
+    gates::{
+        iota_b9::IotaB9Config, mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
+        state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
+        xi::XiConfig,
+    },
+    keccak_arith::*,
 };
-use crate::{gates::mixing::MixingConfig, keccak_arith::*};
 use halo2::{
     circuit::{Cell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
@@ -24,6 +23,7 @@ pub struct KeccakFConfig<F: FieldExt> {
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
     iota_b9_config: IotaB9Config<F>,
+    from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: StateBaseConversion<F>,
     mixing_config: MixingConfig<F>,
     pub state: [Column<Advice>; 25],
@@ -33,10 +33,7 @@ pub struct KeccakFConfig<F: FieldExt> {
 
 impl<F: FieldExt> KeccakFConfig<F> {
     // We assume state is received in base-9.
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        table: FromBase9TableConfig<F>,
-    ) -> KeccakFConfig<F> {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let state = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
@@ -50,11 +47,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = {
-            let base13_to_9 = Base13toBase9TableConfig::configure(meta);
-            let special_chunk_table = SpecialChunkTableConfig::configure(meta);
-            RhoConfig::configure(meta, state, base13_to_9, special_chunk_table)
-        };
+        let rho_config = RhoConfig::configure(meta, state);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
@@ -78,7 +71,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
         let base_conv_activator = meta.advice_column();
         meta.enable_equality(base_conv_activator.into());
         // Base conversion config.
-        let base_info = table.get_base_info(false);
+        let from_b9_table = FromBase9TableConfig::configure(meta);
+        let base_info = from_b9_table.get_base_info(false);
         let base_conversion_config =
             StateBaseConversion::configure(meta, state, base_info, base_conv_activator);
 
@@ -86,7 +80,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // the out state matches the expected result.
         let mixing_config = MixingConfig::configure(
             meta,
-            table,
+            &from_b9_table,
             round_ctant_b9,
             round_ctant_b13,
             round_constants_b9,
@@ -114,6 +108,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
             rho_config,
             xi_config,
             iota_b9_config,
+            from_b9_table,
             base_conversion_config,
             mixing_config,
             state,
@@ -123,7 +118,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.rho_config.load(layouter)
+        self.rho_config.load(layouter)?;
+        self.from_b9_table.load(layouter)
     }
 
     pub fn assign_all(
@@ -308,22 +304,8 @@ mod tests {
             is_mixing: bool,
         }
 
-        #[derive(Clone)]
-        struct MyConfig<F: FieldExt> {
-            keccak_conf: KeccakFConfig<F>,
-            table: FromBase9TableConfig<F>,
-        }
-
-        impl<F: FieldExt> MyConfig<F> {
-            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-                self.keccak_conf.rho_config.load(layouter)?;
-                self.table.load(layouter)?;
-                Ok(())
-            }
-        }
-
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
-            type Config = MyConfig<F>;
+            type Config = KeccakFConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -331,11 +313,7 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let table = FromBase9TableConfig::configure(meta);
-                MyConfig {
-                    keccak_conf: KeccakFConfig::configure(meta, table.clone()),
-                    table,
-                }
+                Self::Config::configure(meta)
             }
 
             fn synthesize(
@@ -356,7 +334,7 @@ mod tests {
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.keccak_conf.state[idx],
+                                    config.state[idx],
                                     offset,
                                     || Ok(*val),
                                 )?;
@@ -369,7 +347,7 @@ mod tests {
                     },
                 )?;
 
-                config.keccak_conf.assign_all(
+                config.assign_all(
                     &mut layouter,
                     in_state,
                     self.out_state,
