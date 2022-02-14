@@ -286,7 +286,7 @@ pub struct FromBase9TableConfig<F> {
 }
 
 impl<F: FieldExt> FromBase9TableConfig<F> {
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "9 -> (2 and 13)",
             |mut table| {
@@ -322,7 +322,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             base2: meta.lookup_table_column(),
             base9: meta.lookup_table_column(),
