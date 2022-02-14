@@ -754,8 +754,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
-        // We need to subtract 2 from MAX_DEGREE because all expressions will be multiplied by
-        // state selector and q_step/q_step_first selector.
+        // We need to subtract 2 from MAX_DEGREE because all expressions will be
+        // multiplied by state selector and q_step/q_step_first selector.
         debug_assert!(
             degree <= MAX_DEGREE - 2,
             "Expression {} degree too high: {} > {}",

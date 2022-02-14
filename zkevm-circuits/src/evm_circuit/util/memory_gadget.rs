@@ -4,10 +4,8 @@ use crate::{
         util::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
-            math_gadget::{
-                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget, RangeCheckGadget,
-            },
-            sum, Cell, MemoryAddress, Word,
+            math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
+            select, sum, Cell, MemoryAddress, Word,
         },
     },
     util::Expr,
@@ -400,12 +398,12 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
     bytes: [Cell<F>; MAX_BYTES],
     // The selectors that indicate if bytes contain real data
     selectors: [Cell<F>; MAX_BYTES],
-    // The LT gadget to check if src_addr < src_addr_bound
-    lt_gadget: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
     // bound_dist[i] = max(addr_end - addr_start - i, 0)
     bound_dist: [Cell<F>; MAX_BYTES],
     // Check if bound_dist is zero
     bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
+    // The min gadget to take the minimum of addr_start and addr_end
+    min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
 
 impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
@@ -421,7 +419,6 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         let bound_dist = array_init(|_| cb.query_cell());
         let bound_dist_is_zero =
             array_init(|idx| IsZeroGadget::construct(cb, bound_dist[idx].expr()));
-        let lt_gadget = LtGadget::construct(cb, addr_start.expr(), addr_end.expr());
 
         // Define bound_dist[i] = max(addr_end - addr_start - i, 0)
         // The purpose of bound_dist is to check if the access to the buffer
@@ -432,15 +429,13 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         // to the diff between two consecutive bound_dists.
 
         // The constraints on bound_dist[0].
-        //   bound_dist[0] + addr_start == addr_end if addr_start < addr_end
+        //   bound_dist[0] == addr_end - addr_start if addr_start < addr_end
         //   bound_dist[0] == 0 if addr_start >= addr_end
-        cb.add_constraint(
-            "bound_dist[0] + addr_start == addr_end if addr_start < addr_end",
-            lt_gadget.expr() * (bound_dist[0].expr() + addr_start.expr() - addr_end.expr()),
-        );
-        cb.add_constraint(
-            "bound_dist[0] == 0 if addr_start >= addr_end",
-            (1.expr() - lt_gadget.expr()) * bound_dist[0].expr(),
+        let min_gadget = MinMaxGadget::construct(cb, addr_start.expr(), addr_end.expr());
+        cb.require_equal(
+            "bound_dist[0] == addr_end - min(addr_start, add_end)",
+            bound_dist[0].expr(),
+            addr_end.expr() - min_gadget.min(),
         );
         // Constraints on bound_dist[1..MAX_BYTES]
         //   diff = bound_dist[idx - 1] - bound_dist[idx]
@@ -448,13 +443,10 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         //   diff == 0 if bound_dist[idx - 1] == 0
         for idx in 1..MAX_BYTES {
             let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
-            cb.add_constraint(
-                "diff == 1 if bound_dist[i - 1] != 0",
-                (1.expr() - bound_dist_is_zero[idx - 1].expr()) * (1.expr() - diff.expr()),
-            );
-            cb.add_constraint(
-                "diff == 0 if bound_dist[i - 1] == 0",
-                bound_dist_is_zero[idx - 1].expr() * diff.expr(),
+            cb.require_equal(
+                "diff == 0 if bound_dist[i - 1] == 0; otherwise 1",
+                diff,
+                select::expr(bound_dist_is_zero[idx - 1].expr(), 0.expr(), 1.expr()),
             )
         }
 
@@ -487,7 +479,7 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
             selectors,
             bound_dist,
             bound_dist_is_zero,
-            lt_gadget,
+            min_gadget,
         }
     }
 
@@ -500,7 +492,7 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         bytes: &[u8],
         selectors: &[u8],
     ) -> Result<(), Error> {
-        self.lt_gadget
+        self.min_gadget
             .assign(region, offset, F::from(addr_start), F::from(addr_end))?;
 
         assert_eq!(selectors.len(), MAX_BYTES);
