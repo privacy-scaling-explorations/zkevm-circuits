@@ -32,7 +32,7 @@ pub struct MixingConfig<F> {
 impl<F: FieldExt> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        table: FromBase9TableConfig<F>,
+        table: &FromBase9TableConfig<F>,
         round_ctant_b9: Column<Advice>,
         round_ctant_b13: Column<Advice>,
         round_constants_b9: Column<Instance>,
@@ -416,7 +416,7 @@ mod tests {
                 MyConfig {
                     mixing_conf: MixingConfig::configure(
                         meta,
-                        table.clone(),
+                        &table,
                         round_ctant_b9,
                         round_ctant_b13,
                         round_constants_b9,
