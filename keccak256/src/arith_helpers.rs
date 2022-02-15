@@ -1,4 +1,5 @@
 use crate::common::State;
+use halo2::circuit::Cell;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
@@ -15,14 +16,15 @@ pub const B9: u8 = 9;
 /// where x1, x2, x3, x4 are binary.
 /// We have the property that `0 <= f_arith(...) < 9` and
 /// the map from `f_arith(...)` to `f_logic(...)` is injective.
-pub const A1: u8 = 2;
-pub const A2: u8 = 1;
-pub const A3: u8 = 3;
-pub const A4: u8 = 2;
+pub const A1: u64 = 2;
+pub const A2: u64 = 1;
+pub const A3: u64 = 3;
+pub const A4: u64 = 2;
 
 pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
 
+#[derive(Debug)]
 pub struct StateBigInt {
     pub(crate) xy: Vec<BigUint>,
 }
@@ -129,6 +131,7 @@ pub fn convert_b9_coef(x: u8) -> u8 {
 }
 
 // We assume the input comes from Theta step and has 65 chunks
+// expecting outputs from theta gate
 pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     // 65 chunks
     let mut chunks = x.to_radix_le(B13.into());
@@ -189,7 +192,7 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
-pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
+pub fn state_to_biguint<F: FieldExt, const N: usize>(state: [F; N]) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
@@ -238,6 +241,17 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) ->
         .collect();
     arr[0..N].copy_from_slice(&vector[0..N]);
     arr
+}
+
+/// Returns only the value of a an assigned state cell.
+/// TODO: Use `AssignedCell` primitive from `halo2`.
+pub fn split_state_cells<F: FieldExt, const N: usize>(state: [(Cell, F); N]) -> [F; N] {
+    let mut res = [F::zero(); N];
+    state
+        .iter()
+        .enumerate()
+        .for_each(|(idx, assigned_cell)| res[idx] = assigned_cell.1);
+    res
 }
 
 pub fn f_from_radix_be<F: FieldExt>(buf: &[u8], base: u8) -> F {
