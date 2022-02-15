@@ -3989,6 +3989,7 @@ dependencies = [
  "eth-types",
  "ff 0.11.0",
  "halo2",
+ "keccak256",
  "mock",
  "num",
  "pairing_bn256",
