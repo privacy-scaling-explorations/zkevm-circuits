@@ -1,12 +1,10 @@
 use halo2::{
     circuit::Chip,
-    plonk::{
-        Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
-use std::{marker::PhantomData, u64};
+use pairing::arithmetic::FieldExt;
+use std::marker::PhantomData;
 
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
 

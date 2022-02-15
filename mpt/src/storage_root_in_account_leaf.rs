@@ -26,6 +26,8 @@ impl<F: FieldExt> StorageRootChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         not_first_level: Column<Fixed>,
+        is_leaf_s: Column<Advice>,
+        is_leaf_c: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -182,6 +184,71 @@ impl<F: FieldExt> StorageRootChip<F> {
 
             constraints
         });
+
+        /*
+        TODO
+        // If there is no branch, just a leaf.
+        meta.lookup_any(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            let mut rot = -1;
+            let mut is_leaf = meta.query_advice(is_leaf_s, Rotation::cur());
+            if !is_s {
+                rot = -2;
+                is_leaf = meta.query_advice(is_leaf_c, Rotation::cur());
+            }
+
+            let is_account_leaf_storage_codehash_prev = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot),
+            );
+
+            // Note: acc_c in both cases.
+            let acc = meta.query_advice(acc_c, Rotation::cur());
+
+            let mut sc_hash = vec![];
+            // Note: storage root is always in s_advices!
+            for column in s_advices.iter() {
+                if is_s {
+                    sc_hash.push(meta.query_advice(
+                        *column,
+                        Rotation(rot_into_branch_init - 2),
+                    ));
+                } else {
+                    sc_hash.push(meta.query_advice(
+                        *column,
+                        Rotation(rot_into_branch_init - 1),
+                    ));
+                }
+            }
+            let storage_root_words = into_words_expr(sc_hash);
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_extension_node.clone()
+                    * is_after_last_branch_child.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * acc,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            for (ind, word) in storage_root_words.iter().enumerate() {
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_extension_node.clone()
+                        * is_after_last_branch_child.clone()
+                        * is_account_leaf_storage_codehash_prev.clone()
+                        * word.clone(),
+                    keccak_table_i,
+                ));
+            }
+
+            constraints
+        });
+        */
 
         config
     }

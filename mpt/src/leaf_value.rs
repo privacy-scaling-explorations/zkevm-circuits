@@ -31,6 +31,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         sel: Column<Advice>,
+        is_account_leaf_storage_codehash_c: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         is_s: bool,
         acc_r: F,
@@ -44,10 +45,9 @@ impl<F: FieldExt> LeafValueChip<F> {
         // value in branch node_index: 13 and branch node_index: 15).
         // The same holds for sel1 and sel2.
         let rot = -6;
-
-        let mut rot_placeholder_branch = -20;
+        let mut rot_into_init = -20;
         if !is_s {
-            rot_placeholder_branch = -22;
+            rot_into_init = -22;
         }
 
         meta.lookup_any(|meta| {
@@ -73,9 +73,17 @@ impl<F: FieldExt> LeafValueChip<F> {
             let sel = meta.query_advice(sel, Rotation(rot));
             let one = Expression::Constant(F::one());
 
-            let is_branch_placeholder = meta.query_advice(
-                is_branch_placeholder,
-                Rotation(rot_placeholder_branch),
+            let is_branch_placeholder = meta
+                .query_advice(is_branch_placeholder, Rotation(rot_into_init));
+
+            let mut rot_leaf = -1;
+            if !is_s {
+                rot_leaf = -2;
+            }
+            // For leaf without branch, the constraints are in storage_root_in_account_leaf.
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_leaf),
             );
 
             // If sel = 1, there is no leaf at this position (value is being added or deleted)
@@ -85,6 +93,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                 q_enable.clone()
                     * rlc
                     * (one.clone() - sel.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -96,6 +105,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                     q_enable.clone()
                         * sc_keccak
                         * (one.clone() - sel.clone())
+                        * (one.clone() - is_leaf_without_branch.clone())
                         * (one.clone() - is_branch_placeholder.clone()),
                     keccak_table_i,
                 ));
@@ -129,9 +139,13 @@ impl<F: FieldExt> LeafValueChip<F> {
             let sel = meta.query_advice(sel, Rotation(rot));
             let one = Expression::Constant(F::one());
 
-            let is_branch_placeholder = meta.query_advice(
-                is_branch_placeholder,
-                Rotation(rot_placeholder_branch),
+            let is_branch_placeholder = meta
+                .query_advice(is_branch_placeholder, Rotation(rot_into_init));
+
+            // For leaf without branch, the constraints are in storage_root_in_account_leaf.
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_init - 1),
             );
 
             // Note: sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
@@ -143,13 +157,14 @@ impl<F: FieldExt> LeafValueChip<F> {
                 q_enable.clone()
                     * rlc
                     * (one.clone() - sel.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_branch_placeholder.clone(),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             for (ind, column) in sc_keccak.iter().enumerate() {
                 let sc_keccak = meta.query_advice(
                     *column,
-                    Rotation(rot_placeholder_branch - 3), // -3 to get from init branch into the previous branch (last row), note that -2 is needed because of extension nodes
+                    Rotation(rot_into_init - 3), // -3 to get from init branch into the previous branch (last row), note that -2 is needed because of extension nodes
                 );
                 let keccak_table_i =
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
@@ -157,6 +172,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                     q_enable.clone()
                         * sc_keccak
                         * (one.clone() - sel.clone())
+                        * (one.clone() - is_leaf_without_branch.clone())
                         * is_branch_placeholder.clone(),
                     keccak_table_i,
                 ));

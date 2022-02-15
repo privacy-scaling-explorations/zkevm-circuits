@@ -251,6 +251,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * is_short.clone(),
             ));
 
+            /*
+            // todo: remove
+            let one = Expression::Constant(F::one());
+            constraints.push((
+                "debugging",
+                q_enable.clone() * (sel2.clone() - one.clone()),
+            ));
+            */
+
             let mut key_rlc_short = key_rlc_start.clone()
                 + (s_advice0.clone() - c48.clone())
                     * sel1.clone()
@@ -262,8 +271,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     + s * key_mult.clone() * r_table[ind - 1].clone();
             }
 
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            /*
+            TODO: needed?
+            key_rlc_short = key_rlc_short
+                + c_rlp1.clone() * key_mult.clone() * r_table[31].clone();
+            */
+
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
+            /*
             constraints.push((
                 "Drifted leaf key placeholder S",
                 q_enable.clone()
@@ -271,6 +288,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * is_short.clone()
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
+            */
             constraints.push((
                 "Drifted leaf key placeholder C",
                 q_enable.clone()
@@ -306,7 +324,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             }
 
             key_mult = key_mult * r_table[0].clone();
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             key_rlc_long = key_rlc_long + c_rlp1.clone() * key_mult;
 
             // No need to distinguish between sel1 and sel2 here as it was already

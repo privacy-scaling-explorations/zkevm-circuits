@@ -319,11 +319,17 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
 
+            let is_branch_placeholder = meta
+                .query_advice(is_branch_placeholder, Rotation(rot_into_init));
+
             // previous key RLC:
-            let key_rlc_acc_start =
-                meta.query_advice(s_keccak[2], Rotation::cur());
-            let key_mult_start =
-                meta.query_advice(s_keccak[3], Rotation::cur());
+            let key_rlc_acc_start = meta
+                .query_advice(s_keccak[2], Rotation::cur())
+                * (one.clone() - is_first_storage_level.clone());
+            let key_mult_start = meta
+                .query_advice(s_keccak[3], Rotation::cur())
+                * (one.clone() - is_first_storage_level.clone())
+                + is_first_storage_level.clone();
 
             // Note: the approach (like for sel1 and sel2) with retrieving
             // key RLC and key RLC mult from the level above placeholder fails
@@ -338,9 +344,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 * meta.query_advice(sel2, Rotation(rot_level_above - 1))
                 + is_first_storage_level.clone()
                     * meta.query_advice(sel2, Rotation(rot_into_init));
-
-            let is_branch_placeholder = meta
-                .query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
             // For short RLP (key starts at s_advices[0]):
 
@@ -373,6 +376,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 key_rlc_acc_short = key_rlc_acc_short
                     + s * key_mult.clone() * r_table[ind - 2].clone();
             }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_acc_short = key_rlc_acc_short
+                + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
 
             let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
 
@@ -414,9 +421,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     + s * key_mult.clone() * r_table[ind - 3].clone();
             }
 
-            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long
-                + c_rlp1_cur.clone() * key_mult * r_table[29].clone();
+                + c_rlp1.clone() * key_mult * r_table[29].clone();
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc_acc_long.

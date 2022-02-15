@@ -446,6 +446,8 @@ impl<F: FieldExt> MPTConfig<F> {
         StorageRootChip::<F>::configure(
             meta,
             not_first_level,
+            is_leaf_s,
+            is_leaf_c,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices,
@@ -460,6 +462,8 @@ impl<F: FieldExt> MPTConfig<F> {
         StorageRootChip::<F>::configure(
             meta,
             not_first_level,
+            is_leaf_s,
+            is_leaf_c,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices, // s_advices (and not c_advices) is correct
@@ -692,6 +696,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             sel1,
+            is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             true,
             acc_r,
@@ -715,6 +720,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             sel2,
+            is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             false,
             acc_r,
