@@ -109,15 +109,14 @@ use crate::common::ROTATION_CONSTANTS;
 use crate::gates::{
     gate_helpers::*,
     rho_helpers::*,
-    tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
+    tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };
 use halo2::{
     circuit::{Cell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
-use std::iter;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
@@ -443,7 +442,12 @@ pub struct OverflowCheckConfig<F> {
     step3_acc: Column<Advice>,
 }
 impl<F: FieldExt> OverflowCheckConfig<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>, cols_to_copy: Vec<Column<Advice>>) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        cols_to_copy: Vec<Column<Advice>>,
+        step2_range_table: &RangeCheckConfig<F, STEP2_RANGE>,
+        step3_range_table: &RangeCheckConfig<F, STEP3_RANGE>,
+    ) -> Self {
         for &col in cols_to_copy.iter() {
             meta.enable_equality(col.into());
         }
@@ -456,26 +460,16 @@ impl<F: FieldExt> OverflowCheckConfig<F> {
         meta.enable_equality(step2_acc.into());
         meta.enable_equality(step3_acc.into());
 
-        meta.create_gate("overflow check", |meta| {
+        meta.lookup(|meta| {
             let q_enable = meta.query_selector(q_enable);
             let step2_acc = meta.query_advice(step2_acc, Rotation::cur());
+            vec![(q_enable * step2_acc, step2_range_table.range)]
+        });
+
+        meta.lookup(|meta| {
+            let q_enable = meta.query_selector(q_enable);
             let step3_acc = meta.query_advice(step3_acc, Rotation::cur());
-            let one = Expression::Constant(F::one());
-            iter::empty()
-                .chain(Some((
-                    "step2_acc <= 12",
-                    (0..=STEP2_RANGE)
-                        .map(|x| step2_acc.clone() - Expression::Constant(F::from(x)))
-                        .fold(one.clone(), |acc, x| acc * x),
-                )))
-                .chain(Some((
-                    "step3_acc <= 13 * 13",
-                    (0..=STEP3_RANGE)
-                        .map(|x| step3_acc.clone() - Expression::Constant(F::from(x)))
-                        .fold(one, |acc, x| acc * x),
-                )))
-                .map(|(name, poly)| (name, q_enable.clone() * poly))
-                .collect::<Vec<_>>()
+            vec![(q_enable * step3_acc, step3_range_table.range)]
         });
 
         Self {

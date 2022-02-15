@@ -10,6 +10,7 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+pub mod bytecode_circuit;
 pub mod evm_circuit;
 pub mod gadget;
 pub mod state_circuit;
