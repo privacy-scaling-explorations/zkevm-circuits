@@ -558,42 +558,45 @@ impl Rw {
     }
 }
 
+impl From<&ExecError> for ExecutionState {
+    fn from(error: &ExecError) -> Self {
+        match error {
+            ExecError::ExecutionReverted => ExecutionState::REVERT,
+            ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
+            ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
+            ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
+            ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
+            ExecError::Depth => ExecutionState::ErrorDepth,
+            ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
+            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
+            ExecError::InvalidCode => ExecutionState::ErrorInvalidCreationCode,
+            ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
+            ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
+            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
+            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::OutOfGas(oog_error) => match oog_error {
+                OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
+                OogError::PureMemory => ExecutionState::ErrorOutOfGasPureMemory,
+                OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
+                OogError::CallDataCopy => ExecutionState::ErrorOutOfGasCALLDATACOPY,
+                OogError::CodeCopy => ExecutionState::ErrorOutOfGasCODECOPY,
+                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
+                OogError::ReturnDataCopy => ExecutionState::ErrorOutOfGasRETURNDATACOPY,
+                OogError::Log => ExecutionState::ErrorOutOfGasLOG,
+                OogError::Call => ExecutionState::ErrorOutOfGasCALL,
+                OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
+                OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
+                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
+            },
+        }
+    }
+}
+
 impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
         if let Some(error) = step.error.as_ref() {
-            let state = match error {
-                ExecError::ExecutionReverted => ExecutionState::REVERT,
-                ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
-                ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
-                ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
-                ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
-                ExecError::Depth => ExecutionState::ErrorDepth,
-                ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
-                ExecError::ContractAddressCollision => {
-                    ExecutionState::ErrorContractAddressCollision
-                }
-                ExecError::InvalidCode => ExecutionState::ErrorInvalidCreationCode,
-                ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
-                ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-                ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-                ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
-                ExecError::OutOfGas(oog_error) => match oog_error {
-                    OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
-                    OogError::PureMemory => ExecutionState::ErrorOutOfGasPureMemory,
-                    OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
-                    OogError::CallDataCopy => ExecutionState::ErrorOutOfGasCALLDATACOPY,
-                    OogError::CodeCopy => ExecutionState::ErrorOutOfGasCODECOPY,
-                    OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
-                    OogError::ReturnDataCopy => ExecutionState::ErrorOutOfGasRETURNDATACOPY,
-                    OogError::Log => ExecutionState::ErrorOutOfGasLOG,
-                    OogError::Call => ExecutionState::ErrorOutOfGasCALL,
-                    OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
-                    OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
-                    OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
-                    OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
-                },
-            };
-            return state;
+            return error.into();
         }
         if step.op.is_dup() {
             return ExecutionState::DUP;
