@@ -68,10 +68,10 @@ Example bus mapping:
 |    3   |    1    |       49       |  32   |             |            |  0   |
 */
 
-const START_TAG: u64 = 1;
-const MEMORY_TAG: u64 = 2;
-const STACK_TAG: u64 = 3;
-const STORAGE_TAG: u64 = 4;
+const START_TAG: usize = 1;
+const MEMORY_TAG: usize = 2;
+const STACK_TAG: usize = 3;
+const STORAGE_TAG: usize = 4;
 
 /// A mapping derived from witnessed memory operations.
 /// TODO: The complete version of this mapping will involve storage, stack,
@@ -700,10 +700,6 @@ impl<
         let mut offset = offset;
         let offset_limit = offset + MEMORY_ROWS_MAX;
 
-        // a "start" row needs to be inserted before other rows
-        //self.init_row_between_operation_types(region, offset)?;
-        //offset += 1;
-
         for (index, oper) in ops.iter().enumerate() {
             if !matches!(oper, Rw::Memory { .. }) {
                 panic!("expect memory operation");
@@ -720,10 +716,11 @@ impl<
             if SANITY_CHECK && address > F::from(MEMORY_ADDRESS_MAX as u64) {
                 panic!(
                     "memory address out of range {:?} > {}",
-                    address, MEMORY_ADDRESS_MAX as u64
+                    address, MEMORY_ADDRESS_MAX
                 );
             }
 
+            // memory ops have init row
             if index == 0 || address != address_prev {
                 let target = if index == 0 { START_TAG } else { MEMORY_TAG };
                 self.init(region, offset, address, target)?;
@@ -802,7 +799,7 @@ impl<
                 row.rw_counter,
                 row.value,
                 row.is_write,
-                F::from(target),
+                F::from(target as u64),
                 F::zero(),
                 F::zero(),
             )?;
@@ -858,7 +855,7 @@ impl<
                 row.rw_counter,
                 row.value,
                 row.is_write,
-                F::from(target),
+                F::from(target as u64),
                 row.key3,
                 row.value_prev,
             )?;
@@ -965,32 +962,7 @@ impl<
             },
         )
     }
-    /*
-        fn init_row_between_operation_types(
-            &self,
-            region: &mut Region<'_, F>,
-            offset: usize,
-        ) -> Result<(), Error> {
-            region.assign_fixed(
-                || "target",
-                self.q_target,
-                offset,
-                || Ok(F::from(START_TAG as u64)),
-            )?;
-            // both memory and storage op require flag be "write" for start row
-            region.assign_advice(|| "init flag", self.flag, offset, || Ok(F::one()))?;
 
-            // memory op require rwc be 0 for start row
-            region.assign_advice(
-                || "init global counter",
-                self.global_counter,
-                offset,
-                || Ok(F::zero()),
-            )?;
-
-            Ok(())
-        }
-    */
     /// Initialise first row for a new memory operation, which can be seen as a
     /// "write 0" operation
     fn init(
@@ -998,7 +970,7 @@ impl<
         region: &mut Region<'_, F>,
         offset: usize,
         address: F,
-        target: u64,
+        target: usize,
     ) -> Result<(), Error> {
         region.assign_fixed(
             || "target",
@@ -1007,17 +979,6 @@ impl<
             || Ok(F::from(target as u64)),
         )?;
         region.assign_advice(|| "init address", self.address, offset, || Ok(address))?;
-        /*
-        region.assign_advice(
-            || "init global counter",
-            self.global_counter,
-            offset,
-            || Ok(F::zero()),
-        )?;
-        */
-        /*
-                region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
-        */
         region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
 
         Ok(())
@@ -1287,7 +1248,7 @@ mod tests {
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             let verify_result = prover.verify();
-            println!("verify result: {:#?}", verify_result);
+            //println!("verify result: {:#?}", verify_result);
             assert_eq!(verify_result, $result);
         }};
     }
@@ -1962,7 +1923,6 @@ mod tests {
         let memory_ops = builder.block.container.sorted_memory();
         let storage_ops = builder.block.container.sorted_storage();
 
-        println!("mem {:#?}", memory_ops);
         test_state_circuit!(
             14,
             2000,
@@ -1971,7 +1931,6 @@ mod tests {
             100,
             1023,
             1000,
-            //vec![],
             memory_ops,
             stack_ops,
             storage_ops,
