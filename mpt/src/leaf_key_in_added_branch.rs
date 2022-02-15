@@ -273,11 +273,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            /*
-            TODO: needed?
-            key_rlc_short = key_rlc_short
-                + c_rlp1.clone() * key_mult.clone() * r_table[31].clone();
-            */
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.

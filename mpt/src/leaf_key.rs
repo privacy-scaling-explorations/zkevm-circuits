@@ -27,6 +27,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
+        c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         // s_keccak[0] and s_keccak[1] to see whether it's long or short RLP &
         // s_keccak[2] and s_keccak[3] for previous level key RLC
@@ -103,12 +104,16 @@ impl<F: FieldExt> LeafKeyChip<F> {
             }
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            // c_rlp2 can appear if long and if no branch above leaf
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             rlc = rlc
                 + c_rlp1
                     * r_table[R_TABLE_LEN - 1].clone()
                     * r_table[1].clone();
-
-            // key is at most of length 32, so it doesn't go further than c_rlp1
+            rlc = rlc
+                + c_rlp2
+                    * r_table[R_TABLE_LEN - 1].clone()
+                    * r_table[2].clone();
 
             let acc = meta.query_advice(acc, Rotation::cur());
             constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
@@ -180,6 +185,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     + s * key_mult.clone() * r_table[ind - 2].clone();
             }
 
+            // c_rlp1 can appear if no branch above the leaf
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_acc_short = key_rlc_acc_short
+                + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
+
             let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
 
             // No need to distinguish between sel1 and sel2 here as it was already
@@ -223,9 +233,12 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     + s * key_mult.clone() * r_table[ind - 3].clone();
             }
 
-            let c_rlp1_cur = meta.query_advice(c_rlp1, Rotation::cur());
             key_rlc_acc_long = key_rlc_acc_long
-                + c_rlp1_cur.clone() * key_mult * r_table[29].clone();
+                + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
+            // c_rlp2 can appear if no branch above the leaf
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long
+                + c_rlp2 * key_mult.clone() * r_table[30].clone();
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc_acc_long.
@@ -422,7 +435,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
             }
 
             key_rlc_acc_long = key_rlc_acc_long
-                + c_rlp1.clone() * key_mult * r_table[29].clone();
+                + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
+
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long
+                + c_rlp2.clone() * key_mult * r_table[30].clone();
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc_acc_long.
