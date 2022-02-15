@@ -68,6 +68,8 @@ Example bus mapping:
 |    3   |    1    |       49       |  32   |             |            |  0   |
 */
 
+// If the tag values are changed, "_norm" exps below should be updated
+// accordingly
 const START_TAG: usize = 1;
 const MEMORY_TAG: usize = 2;
 const STACK_TAG: usize = 3;
@@ -746,8 +748,13 @@ impl<
 
             offset += 1;
         }
-
-        self.pad_rows(region, offset, offset_limit, MEMORY_TAG as usize)?;
+        self.pad_rows(
+            region,
+            ops.is_empty(),
+            offset,
+            offset_limit,
+            MEMORY_TAG as usize,
+        )?;
 
         Ok(bus_mappings)
     }
@@ -810,7 +817,13 @@ impl<
             offset += 1;
         }
 
-        self.pad_rows(region, offset, offset_limit, STACK_TAG as usize)?;
+        self.pad_rows(
+            region,
+            ops.is_empty(),
+            offset,
+            offset_limit,
+            STACK_TAG as usize,
+        )?;
 
         Ok(bus_mappings)
     }
@@ -872,7 +885,13 @@ impl<
             offset += 1;
         }
 
-        self.pad_rows(region, offset, offset_limit, STORAGE_TAG as usize)?;
+        self.pad_rows(
+            region,
+            ops.is_empty(),
+            offset,
+            offset_limit,
+            STORAGE_TAG as usize,
+        )?;
 
         Ok(bus_mappings)
     }
@@ -880,6 +899,7 @@ impl<
     fn pad_rows(
         &self,
         region: &mut Region<F>,
+        need_pad_start_row: bool,
         start_offset: usize,
         end_offset: usize,
         target: usize,
@@ -889,6 +909,11 @@ impl<
         // the first unused row and some checks would be triggered.
 
         for i in start_offset..end_offset {
+            let target = if need_pad_start_row && i == start_offset {
+                START_TAG
+            } else {
+                target
+            };
             region.assign_fixed(|| "target", self.q_target, i, || Ok(F::from(target as u64)))?;
             region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
             region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
