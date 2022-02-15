@@ -742,6 +742,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp1,
             s_rlp2,
             c_rlp1,
+            c_rlp2,
             s_advices,
             acc_s,
             acc_mult_s,
