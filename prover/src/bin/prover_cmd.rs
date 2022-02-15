@@ -36,15 +36,15 @@ async fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let block_num: u64 = var("BLOCK_NUM")
-        .unwrap()
+        .expect("BLOCK_NUM env var")
         .parse()
         .expect("Cannot parse BLOCK_NUM env var");
     let rpc_url: String = var("RPC_URL")
-        .unwrap()
+        .expect("RPC_URL env var")
         .parse()
         .expect("Cannot parse RPC_URL env var");
     let params_path: String = var("PARAMS_PATH")
-        .unwrap()
+        .expect("PARAMS_PATH env var")
         .parse()
         .expect("Cannot parse PARAMS_PATH env var");
 
@@ -54,9 +54,14 @@ async fn main() {
         Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
 
     // request & build the inputs for the circuits
-    let geth_client = GethClient::new(Http::from_str(&rpc_url).unwrap());
-    let builder = BuilderClient::new(geth_client).await.unwrap();
-    let builder = builder.gen_inputs(block_num).await.unwrap();
+    let geth_client = GethClient::new(Http::from_str(&rpc_url).expect("GethClient from RPC_URL"));
+    let builder = BuilderClient::new(geth_client)
+        .await
+        .expect("BuilderClient from GethClient");
+    let builder = builder
+        .gen_inputs(block_num)
+        .await
+        .expect("gen_inputs for BLOCK_NUM");
 
     // TODO: only {evm,state}_proof are implemented right now
     let evm_proof;
@@ -79,8 +84,8 @@ async fn main() {
         // related
         // https://github.com/zcash/halo2/issues/443
         // https://github.com/zcash/halo2/issues/449
-        let vk = keygen_vk(&params, &circuit).unwrap();
-        let pk = keygen_pk(&params, vk, &circuit).unwrap();
+        let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, evm_circuit");
+        let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk for params, vk, evm_circuit");
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
@@ -119,8 +124,8 @@ async fn main() {
         };
 
         // TODO: same quest like in the first scope
-        let vk = keygen_vk(&params, &circuit).unwrap();
-        let pk = keygen_pk(&params, vk, &circuit).unwrap();
+        let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");
+        let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk for params, vk, state_circuit");
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
