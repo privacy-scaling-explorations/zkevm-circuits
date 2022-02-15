@@ -559,9 +559,9 @@ impl Rw {
 
 impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
-        // TODO: error reporting. (errors are defined in
-        // circuit_input_builder.rs)
-        debug_assert!(step.error.is_none());
+        if let Some(error) = step.error.as_ref() {
+            panic!("{:?} has an error: {:?}", step, error);
+        }
         if step.op.is_dup() {
             return ExecutionState::DUP;
         }
