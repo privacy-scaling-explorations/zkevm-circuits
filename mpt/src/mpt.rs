@@ -673,6 +673,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             drifted_pos,
+            is_account_leaf_storage_codehash_c,
             r_table.clone(),
             fixed_table.clone(),
             keccak_table.clone(),

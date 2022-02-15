@@ -41,6 +41,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
+        is_account_leaf_storage_codehash_c: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -226,9 +227,18 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-4));
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-2));
 
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_branch_init - 1),
+            );
+            let one = Expression::Constant(F::one());
+
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
-            let mut key_mult = branch_rlc_mult.clone() * mult_diff.clone();
+            let mut key_mult = branch_rlc_mult.clone()
+                * mult_diff.clone()
+                * (one.clone() - is_leaf_without_branch.clone())
+                + is_leaf_without_branch.clone();
             let drifted_pos_mult =
                 key_mult.clone() * c16.clone() * sel1.clone()
                     + key_mult.clone() * sel2.clone();
@@ -251,15 +261,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * is_short.clone(),
             ));
 
-            /*
-            // todo: remove
-            let one = Expression::Constant(F::one());
-            constraints.push((
-                "debugging",
-                q_enable.clone() * (sel2.clone() - one.clone()),
-            ));
-            */
-
             let mut key_rlc_short = key_rlc_start.clone()
                 + (s_advice0.clone() - c48.clone())
                     * sel1.clone()
@@ -280,7 +281,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
-            /*
             constraints.push((
                 "Drifted leaf key placeholder S",
                 q_enable.clone()
@@ -288,7 +288,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     * is_short.clone()
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
-            */
             constraints.push((
                 "Drifted leaf key placeholder C",
                 q_enable.clone()
