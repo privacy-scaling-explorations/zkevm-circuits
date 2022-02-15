@@ -10,7 +10,6 @@ use crate::evm_circuit::{
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
-use ff::Field;
 use halo2::arithmetic::FieldExt;
 use itertools::Itertools;
 use pairing::bn256::Fr as Fp;

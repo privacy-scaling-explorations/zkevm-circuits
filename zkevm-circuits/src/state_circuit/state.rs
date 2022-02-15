@@ -1,8 +1,5 @@
 use crate::{
-    evm_circuit::{
-        util::RandomLinearCombination,
-        witness::{memory_op_to_rw, stack_op_to_rw, storage_op_to_rw},
-    },
+    evm_circuit::witness::{memory_op_to_rw, stack_op_to_rw, storage_op_to_rw},
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
@@ -10,7 +7,6 @@ use crate::{
     },
 };
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
-use eth_types::{ToLittleEndian, ToScalar};
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -709,16 +705,7 @@ impl<
         //offset += 1;
 
         for (index, oper) in ops.iter().enumerate() {
-            if !matches!(
-                oper,
-                Rw::Memory {
-                    rw_counter,
-                    is_write,
-                    call_id,
-                    memory_address,
-                    byte,
-                }
-            ) {
+            if !matches!(oper, Rw::Memory { .. }) {
                 panic!("expect memory operation");
             }
             let row = oper.table_assignment(randomness);
@@ -784,16 +771,7 @@ impl<
         let mut offset = offset;
         let offset_limit = offset + STACK_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
-            if !matches!(
-                oper,
-                Rw::Stack {
-                    rw_counter,
-                    is_write,
-                    call_id,
-                    stack_pointer,
-                    value
-                }
-            ) {
+            if !matches!(oper, Rw::Stack { .. }) {
                 panic!("expect stack operation");
             }
             let row = oper.table_assignment(randomness);
@@ -857,17 +835,7 @@ impl<
         let mut offset = offset;
         let offset_limit = offset + STORAGE_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
-            if !matches!(
-                oper,
-                Rw::AccountStorage {
-                    rw_counter,
-                    is_write,
-                    account_address,
-                    storage_key,
-                    value,
-                    value_prev
-                }
-            ) {
+            if !matches!(oper, Rw::AccountStorage { .. }) {
                 panic!("expect stack operation");
             }
 
