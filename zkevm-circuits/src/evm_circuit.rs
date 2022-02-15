@@ -1,7 +1,12 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::{Layouter, Region},
+    plonk::*,
+    poly::Rotation,
+};
 
 mod execution;
 pub mod param;
@@ -14,6 +19,77 @@ pub mod witness;
 use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
+
+use self::witness::RwRow;
+
+#[derive(Clone, Copy)]
+pub struct RwTable {
+    pub rw_counter: Column<Advice>,
+    pub is_write: Column<Advice>,
+    pub tag: Column<Advice>,
+    pub key2: Column<Advice>,
+    pub key3: Column<Advice>,
+    pub key4: Column<Advice>,
+    pub value: Column<Advice>,
+    pub value_prev: Column<Advice>,
+    pub aux1: Column<Advice>,
+    pub aux2: Column<Advice>,
+}
+
+impl<F: FieldExt> LookupTable<F, 10> for RwTable {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; 10] {
+        [
+            meta.query_advice(self.rw_counter, Rotation::cur()),
+            meta.query_advice(self.is_write, Rotation::cur()),
+            meta.query_advice(self.tag, Rotation::cur()),
+            meta.query_advice(self.key2, Rotation::cur()),
+            meta.query_advice(self.key3, Rotation::cur()),
+            meta.query_advice(self.key4, Rotation::cur()),
+            meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.value_prev, Rotation::cur()),
+            meta.query_advice(self.aux1, Rotation::cur()),
+            meta.query_advice(self.aux2, Rotation::cur()),
+        ]
+    }
+}
+impl RwTable {
+    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            rw_counter: meta.advice_column(),
+            is_write: meta.advice_column(),
+            tag: meta.advice_column(),
+            key2: meta.advice_column(),
+            key3: meta.advice_column(),
+            key4: meta.advice_column(),
+            value: meta.advice_column(),
+            value_prev: meta.advice_column(),
+            aux1: meta.advice_column(),
+            aux2: meta.advice_column(),
+        }
+    }
+    pub fn assign<F: FieldExt>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        row: &RwRow<F>,
+    ) -> Result<(), Error> {
+        for (column, value) in [
+            (self.rw_counter, row.rw_counter),
+            (self.is_write, row.is_write),
+            (self.tag, row.tag),
+            (self.key2, row.key2),
+            (self.key3, row.key3),
+            (self.key4, row.key4),
+            (self.value, row.value),
+            (self.value_prev, row.value_prev),
+            (self.aux1, row.aux1),
+            (self.aux2, row.aux2),
+        ] {
+            region.assign_advice(|| "rw table all-zero row", column, offset, || Ok(value))?;
+        }
+        Ok(())
+    }
+}
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
@@ -112,9 +188,9 @@ pub(crate) mod test {
     use eth_types::Word;
     use halo2::{
         arithmetic::{BaseExt, FieldExt},
-        circuit::{Layouter, Region, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, VirtualCells},
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
     };
     use pairing::bn256::Fr as Fp;
@@ -123,7 +199,7 @@ pub(crate) mod test {
         random, thread_rng, Rng,
     };
 
-    use super::{table::LookupTable, witness::RwRow};
+    use super::RwTable;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -147,75 +223,6 @@ pub(crate) mod test {
 
     pub(crate) fn rand_fp() -> Fp {
         Fp::rand()
-    }
-
-    #[derive(Clone, Copy)]
-    pub struct RwTable {
-        pub rw_counter: Column<Advice>,
-        pub is_write: Column<Advice>,
-        pub tag: Column<Advice>,
-        pub key2: Column<Advice>,
-        pub key3: Column<Advice>,
-        pub key4: Column<Advice>,
-        pub value: Column<Advice>,
-        pub value_prev: Column<Advice>,
-        pub aux1: Column<Advice>,
-        pub aux2: Column<Advice>,
-    }
-
-    impl<F: FieldExt> LookupTable<F, 10> for RwTable {
-        fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; 10] {
-            [
-                meta.query_advice(self.rw_counter, Rotation::cur()),
-                meta.query_advice(self.is_write, Rotation::cur()),
-                meta.query_advice(self.tag, Rotation::cur()),
-                meta.query_advice(self.key2, Rotation::cur()),
-                meta.query_advice(self.key3, Rotation::cur()),
-                meta.query_advice(self.key4, Rotation::cur()),
-                meta.query_advice(self.value, Rotation::cur()),
-                meta.query_advice(self.value_prev, Rotation::cur()),
-                meta.query_advice(self.aux1, Rotation::cur()),
-                meta.query_advice(self.aux2, Rotation::cur()),
-            ]
-        }
-    }
-    impl RwTable {
-        pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-            Self {
-                rw_counter: meta.advice_column(),
-                is_write: meta.advice_column(),
-                tag: meta.advice_column(),
-                key2: meta.advice_column(),
-                key3: meta.advice_column(),
-                key4: meta.advice_column(),
-                value: meta.advice_column(),
-                value_prev: meta.advice_column(),
-                aux1: meta.advice_column(),
-                aux2: meta.advice_column(),
-            }
-        }
-        pub fn assign<F: FieldExt>(
-            &self,
-            region: &mut Region<'_, F>,
-            offset: usize,
-            row: &RwRow<F>,
-        ) -> Result<(), Error> {
-            for (column, value) in [
-                (self.rw_counter, row.rw_counter),
-                (self.is_write, row.is_write),
-                (self.tag, row.tag),
-                (self.key2, row.key2),
-                (self.key3, row.key3),
-                (self.key4, row.key4),
-                (self.value, row.value),
-                (self.value_prev, row.value_prev),
-                (self.aux1, row.aux1),
-                (self.aux2, row.aux2),
-            ] {
-                region.assign_advice(|| "rw table all-zero row", column, offset, || Ok(value))?;
-            }
-            Ok(())
-        }
     }
 
     #[derive(Clone)]
