@@ -3987,6 +3987,7 @@ dependencies = [
  "eth-types",
  "ff 0.11.0",
  "halo2",
+ "itertools",
  "mock",
  "num",
  "pairing_bn256",

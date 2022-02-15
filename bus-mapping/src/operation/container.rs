@@ -1,8 +1,11 @@
+use std::collections::{BTreeMap, HashMap};
+
 use super::{
     AccountDestructedOp, AccountOp, MemoryOp, Op, OpEnum, Operation, StackOp, StorageOp, Target,
     TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
 };
 use crate::exec_trace::OperationRef;
+use crate::operation::{RWCounter, RW};
 use itertools::Itertools;
 
 /// The `OperationContainer` is meant to store all of the [`Operation`]s that an
@@ -21,6 +24,7 @@ use itertools::Itertools;
 /// order to construct the State proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationContainer {
+    pub(crate) operation_index: BTreeMap<RWCounter, OperationRef>,
     pub(crate) memory: Vec<Operation<MemoryOp>>,
     pub(crate) stack: Vec<Operation<StackOp>>,
     pub(crate) storage: Vec<Operation<StorageOp>>,
@@ -39,11 +43,11 @@ impl Default for OperationContainer {
     }
 }
 
-// TODO: impl Index for OperationContainer
 impl OperationContainer {
     /// Generates a new instance of an `OperationContainer`.
     pub fn new() -> Self {
         Self {
+            operation_index: BTreeMap::new(),
             memory: Vec::new(),
             stack: Vec::new(),
             storage: Vec::new(),
@@ -61,7 +65,7 @@ impl OperationContainer {
     /// vector.
     pub fn insert<T: Op>(&mut self, op: Operation<T>) -> OperationRef {
         let rwc = op.rwc();
-        match op.op.into_enum() {
+        let operation_ref = match op.op.into_enum() {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, op));
                 OperationRef::from((Target::Memory, self.memory.len()))
@@ -101,7 +105,15 @@ impl OperationContainer {
                 self.account_destructed.push(Operation::new(rwc, op));
                 OperationRef::from((Target::AccountDestructed, self.account_destructed.len()))
             }
+        };
+        if self
+            .operation_index
+            .insert(rwc, operation_ref.clone())
+            .is_some()
+        {
+            panic!("duplicate rwc");
         }
+        operation_ref
     }
 
     /// Returns a sorted vector of all of the [`MemoryOp`]s contained inside of

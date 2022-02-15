@@ -7,9 +7,12 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
+use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
+use ff::Field;
 use halo2::arithmetic::FieldExt;
+use itertools::Itertools;
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
@@ -393,6 +396,10 @@ pub enum Rw {
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
+        account_address: Address,
+        storage_key: Word,
+        value: Word,
+        value_prev: Word,
     },
     AccountDestructed {
         rw_counter: usize,
@@ -420,6 +427,36 @@ pub enum Rw {
         byte: u8,
     },
 }
+#[derive(Default)]
+pub struct RwRow<F: FieldExt> {
+    pub rw_counter: F,
+    pub is_write: F,
+    pub tag: F,
+    pub key2: F,
+    pub key3: F,
+    pub key4: F,
+    pub value: F,
+    pub value_prev: F,
+    pub aux1: F,
+    pub aux2: F,
+}
+
+impl<F: FieldExt> From<[F; 10]> for RwRow<F> {
+    fn from(row: [F; 10]) -> Self {
+        Self {
+            rw_counter: row[0],
+            is_write: row[1],
+            tag: row[2],
+            key2: row[3],
+            key3: row[4],
+            key4: row[5],
+            value: row[6],
+            value_prev: row[7],
+            aux1: row[8],
+            aux2: row[9],
+        }
+    }
+}
 
 impl Rw {
     pub fn account_value_pair(&self) -> (Word, Word) {
@@ -438,7 +475,7 @@ impl Rw {
         }
     }
 
-    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
+    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> RwRow<F> {
         match self {
             Self::TxAccessListAccount {
                 rw_counter,
@@ -458,7 +495,8 @@ impl Rw {
                 F::from(*value_prev as u64),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Account {
                 rw_counter,
                 is_write,
@@ -486,6 +524,7 @@ impl Rw {
                     F::zero(),
                     F::zero(),
                 ]
+                .into()
             }
             Self::CallContext {
                 rw_counter,
@@ -515,7 +554,8 @@ impl Rw {
                 F::zero(),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Stack {
                 rw_counter,
                 is_write,
@@ -533,7 +573,8 @@ impl Rw {
                 F::zero(),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Memory {
                 rw_counter,
                 is_write,
@@ -551,7 +592,34 @@ impl Rw {
                 F::zero(),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
+            Self::AccountStorage {
+                rw_counter,
+                is_write,
+                account_address,
+                storage_key,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::AccountStorage as u64),
+                account_address.to_scalar().unwrap(),
+                RandomLinearCombination::random_linear_combine(
+                    storage_key.to_le_bytes(),
+                    randomness,
+                ),
+                F::zero(),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                RandomLinearCombination::random_linear_combine(
+                    value_prev.to_le_bytes(),
+                    randomness,
+                ),
+                F::zero(), // TODO: txid
+                F::zero(), // TODO: committed_value
+            ]
+            .into(),
             _ => unimplemented!(),
         }
     }
@@ -609,9 +677,15 @@ impl From<&eth_types::Bytecode> for Bytecode {
 
 fn step_convert(
     step: &bus_mapping::circuit_input_builder::ExecStep,
-    ops_len: (usize, usize, usize),
+    ops_idx: &(Vec<usize>, Vec<usize>, Vec<usize>),
 ) -> ExecStep {
-    let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
+    let (stack_ops_idx, memory_ops_idx, storage_ops_idx) = ops_idx;
+
+    let (stack_ops_len, memory_ops_len, _storage_ops_len) = (
+        stack_ops_idx.len(),
+        memory_ops_idx.len(),
+        storage_ops_idx.len(),
+    );
     // TODO: call_index is not set in the ExecStep
     let result = ExecStep {
         rw_indices: step
@@ -620,10 +694,10 @@ fn step_convert(
             .map(|x| {
                 let index = x.as_usize() - 1;
                 match x.target() {
-                    bus_mapping::operation::Target::Stack => index,
-                    bus_mapping::operation::Target::Memory => index + stack_ops_len,
+                    bus_mapping::operation::Target::Stack => stack_ops_idx[index],
+                    bus_mapping::operation::Target::Memory => memory_ops_idx[index] + stack_ops_len,
                     bus_mapping::operation::Target::Storage => {
-                        index + stack_ops_len + memory_ops_len
+                        storage_ops_idx[index] + stack_ops_len + memory_ops_len
                     }
                     _ => unimplemented!(),
                 }
@@ -646,7 +720,7 @@ fn tx_convert(
     randomness: Fp,
     bytecode: &Bytecode,
     tx: &bus_mapping::circuit_input_builder::Transaction,
-    ops_len: (usize, usize, usize),
+    ops_idx: &(Vec<usize>, Vec<usize>, Vec<usize>),
 ) -> Transaction<Fp> {
     Transaction::<Fp> {
         calls: vec![Call {
@@ -662,7 +736,7 @@ fn tx_convert(
         steps: tx
             .steps()
             .iter()
-            .map(|step| step_convert(step, ops_len))
+            .map(|step| step_convert(step, ops_idx))
             .collect(),
         ..Default::default()
     }
@@ -677,12 +751,28 @@ pub fn block_convert(
 
     // here stack_ops/memory_ops/etc are merged into a single array
     // in EVM circuit, we need rwc-sorted ops
-    let mut stack_ops = b.container.sorted_stack();
-    stack_ops.sort_by_key(|s| usize::from(s.rwc()));
-    let mut memory_ops = b.container.sorted_memory();
-    memory_ops.sort_by_key(|s| usize::from(s.rwc()));
-    let mut storage_ops = b.container.sorted_storage();
-    storage_ops.sort_by_key(|s| usize::from(s.rwc()));
+    let stack_ops = b.container.sorted_stack();
+    let memory_ops = b.container.sorted_memory();
+    let storage_ops = b.container.sorted_storage();
+    let stack_ops_idx: Vec<usize> = stack_ops
+        .iter()
+        .enumerate()
+        .sorted_by_key(|(_, op)| op.rwc())
+        .map(|(idx, _)| idx)
+        .collect();
+    let memory_ops_idx: Vec<usize> = memory_ops
+        .iter()
+        .enumerate()
+        .sorted_by_key(|(_, op)| op.rwc())
+        .map(|(idx, _)| idx)
+        .collect();
+    let storage_ops_idx: Vec<usize> = storage_ops
+        .iter()
+        .enumerate()
+        .sorted_by_key(|(_, op)| op.rwc())
+        .map(|(idx, _)| idx)
+        .collect();
+    let ops_idx = (stack_ops_idx, memory_ops_idx, storage_ops_idx);
 
     // converting to block context
     let context = BlockContext {
@@ -697,34 +787,55 @@ pub fn block_convert(
         txs: b
             .txs()
             .iter()
-            .map(|tx| {
-                tx_convert(
-                    randomness,
-                    &bytecode,
-                    tx,
-                    (stack_ops.len(), memory_ops.len(), storage_ops.len()),
-                )
-            })
+            .map(|tx| tx_convert(randomness, &bytecode, tx, &ops_idx))
             .collect(),
         bytecodes: vec![bytecode],
         ..Default::default()
     };
 
-    block.rws.extend(stack_ops.iter().map(|s| Rw::Stack {
-        rw_counter: s.rwc().into(),
-        is_write: s.op().rw().is_write(),
-        call_id: 1,
-        stack_pointer: usize::from(*s.op().address()),
-        value: *s.op().value(),
-    }));
-    block.rws.extend(memory_ops.iter().map(|s| Rw::Memory {
-        rw_counter: s.rwc().into(),
-        is_write: s.op().rw().is_write(),
-        call_id: 1,
-        memory_address: u64::from_le_bytes(s.op().address().to_le_bytes()[..8].try_into().unwrap()),
-        byte: s.op().value(),
-    }));
-    // TODO add storage ops
+    // TODO: fix call_id
+    let call_id = 1;
+    block
+        .rws
+        .extend(stack_ops.iter().map(|op| stack_op_to_rw(op, call_id)));
+    block
+        .rws
+        .extend(memory_ops.iter().map(|op| memory_op_to_rw(op, call_id)));
+    block
+        .rws
+        .extend(storage_ops.iter().map(|op| storage_op_to_rw(op, call_id)));
 
     block
+}
+
+pub fn stack_op_to_rw(op: &Operation<StackOp>, call_id: usize) -> Rw {
+    Rw::Stack {
+        rw_counter: op.rwc().into(),
+        is_write: op.op().rw().is_write(),
+        call_id,
+        stack_pointer: usize::from(*op.op().address()),
+        value: *op.op().value(),
+    }
+}
+
+pub fn memory_op_to_rw(op: &Operation<MemoryOp>, call_id: usize) -> Rw {
+    Rw::Memory {
+        rw_counter: op.rwc().into(),
+        is_write: op.op().rw().is_write(),
+        call_id,
+        memory_address: u64::from_le_bytes(
+            op.op().address().to_le_bytes()[..8].try_into().unwrap(),
+        ),
+        byte: op.op().value(),
+    }
+}
+pub fn storage_op_to_rw(op: &Operation<StorageOp>, _call_id: usize) -> Rw {
+    Rw::AccountStorage {
+        rw_counter: op.rwc().into(),
+        is_write: op.op().rw().is_write(),
+        account_address: op.op().address,
+        storage_key: op.op().key,
+        value: op.op().value,
+        value_prev: op.op().value_prev,
+    }
 }

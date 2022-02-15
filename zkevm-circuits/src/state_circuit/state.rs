@@ -1,5 +1,8 @@
 use crate::{
-    evm_circuit::util::RandomLinearCombination,
+    evm_circuit::{
+        util::RandomLinearCombination,
+        witness::{memory_op_to_rw, stack_op_to_rw, storage_op_to_rw},
+    },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
@@ -14,6 +17,7 @@ use halo2::{
     poly::Rotation,
 };
 
+use crate::evm_circuit::witness::Rw;
 use pairing::arithmetic::FieldExt;
 
 /*
@@ -68,14 +72,19 @@ Example bus mapping:
 |    3   |    1    |       49       |  32   |             |            |  0   |
 */
 
+const START_TAG: u64 = 1;
+const MEMORY_TAG: u64 = 2;
+const STACK_TAG: u64 = 3;
+const STORAGE_TAG: u64 = 4;
+
 /// A mapping derived from witnessed memory operations.
 /// TODO: The complete version of this mapping will involve storage, stack,
 /// and opcode details as well.
 #[derive(Clone, Debug)]
 pub(crate) struct BusMapping<F: FieldExt> {
-    global_counter: Variable<usize, F>,
-    target: Variable<usize, F>,
-    flag: Variable<bool, F>,
+    global_counter: Variable<F, F>,
+    target: Variable<F, F>,
+    flag: Variable<F, F>,
     address: Variable<F, F>,
     value: Variable<F, F>,
     storage_key: Variable<F, F>,
@@ -685,74 +694,76 @@ impl<
     fn assign_memory_ops(
         &self,
         region: &mut Region<F>,
-        _randomness: F,
-        ops: Vec<Operation<MemoryOp>>,
+        randomness: F,
+        ops: Vec<Rw>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
+        offset: usize,
     ) -> Result<Vec<BusMapping<F>>, Error> {
-        let mut init_rows_num = 0;
-        for (index, oper) in ops.iter().enumerate() {
-            let op = oper.op();
-            if index > 0 {
-                if op.address() != ops[index - 1].op().address() {
-                    init_rows_num += 1;
-                }
-            } else {
-                init_rows_num += 1;
-            }
-        }
-
-        if ops.len() + init_rows_num > MEMORY_ROWS_MAX {
-            panic!("too many memory operations");
-        }
-
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
-        let mut address_prev = F::zero();
-        let mut offset = 0;
+        let mut offset = offset;
+        let offset_limit = offset + MEMORY_ROWS_MAX;
+
+        // a "start" row needs to be inserted before other rows
+        //self.init_row_between_operation_types(region, offset)?;
+        //offset += 1;
+
         for (index, oper) in ops.iter().enumerate() {
-            let op = oper.op();
-            let address = F::from_bytes(&op.address().to_le_bytes()).unwrap();
+            if !matches!(
+                oper,
+                Rw::Memory {
+                    rw_counter,
+                    is_write,
+                    call_id,
+                    memory_address,
+                    byte,
+                }
+            ) {
+                panic!("expect memory operation");
+            }
+            let row = oper.table_assignment(randomness);
+
+            let address = row.key3;
+            let address_prev = if index > 0 {
+                ops[index - 1].table_assignment(randomness).key3
+            } else {
+                F::zero()
+            };
+
             if SANITY_CHECK && address > F::from(MEMORY_ADDRESS_MAX as u64) {
                 panic!(
                     "memory address out of range {:?} > {}",
-                    address, MEMORY_ADDRESS_MAX
+                    address, MEMORY_ADDRESS_MAX as u64
                 );
             }
-            let rwc = usize::from(oper.rwc());
-            // value of memory op is of type u8, so random_linear_combine is not
-            // needed here.
-            let val = F::from(op.value() as u64);
-            let mut target = 1;
-            if index > 0 {
-                target = 2;
-            }
 
-            // memory ops have init row
             if index == 0 || address != address_prev {
+                let target = if index == 0 { START_TAG } else { MEMORY_TAG };
                 self.init(region, offset, address, target)?;
                 address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
-                target = 2;
                 offset += 1;
             }
 
+            if offset >= offset_limit {
+                panic!("too many memory operations {} > {}", offset, offset_limit);
+            }
             let bus_mapping = self.assign_op(
                 region,
                 offset,
                 address,
-                rwc,
-                val,
-                op.rw().is_write(),
-                target,
+                row.rw_counter,
+                row.value,
+                row.is_write,
+                F::from(MEMORY_TAG as u64),
                 F::zero(),
                 F::zero(),
             )?;
             bus_mappings.push(bus_mapping);
 
-            address_prev = address;
             offset += 1;
         }
 
-        self.pad_rows(region, offset, 0, MEMORY_ROWS_MAX, 2)?;
+        self.pad_rows(region, offset, offset_limit, MEMORY_TAG as usize)?;
 
         Ok(bus_mappings)
     }
@@ -761,40 +772,59 @@ impl<
         &self,
         region: &mut Region<F>,
         randomness: F,
-        ops: Vec<Operation<StackOp>>,
+        ops: Vec<Rw>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
+        offset: usize,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         if ops.len() > STACK_ROWS_MAX {
             panic!("too many stack operations");
         }
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
-        let mut address_prev = F::zero();
-        let mut offset = MEMORY_ROWS_MAX;
+        let mut offset = offset;
+        let offset_limit = offset + STACK_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
-            let op = oper.op();
-            if SANITY_CHECK && usize::from(*op.address()) > STACK_ADDRESS_MAX {
-                panic!("stack address out of range");
+            if !matches!(
+                oper,
+                Rw::Stack {
+                    rw_counter,
+                    is_write,
+                    call_id,
+                    stack_pointer,
+                    value
+                }
+            ) {
+                panic!("expect stack operation");
             }
-            let address = F::from(usize::from(*op.address()) as u64);
-            let rwc = usize::from(oper.rwc());
-            let val = RandomLinearCombination::random_linear_combine(
-                op.value().to_le_bytes(),
-                randomness,
-            );
-            let mut target = 1;
-            if index > 0 {
-                target = 3;
+            let row = oper.table_assignment(randomness);
+            let address = row.key3;
+            let address_prev = if index > 0 {
+                ops[index - 1].table_assignment(randomness).key3
+            } else {
+                F::zero()
+            };
+
+            if SANITY_CHECK && address > F::from(STACK_ADDRESS_MAX as u64) {
+                panic!(
+                    "stack address out of range {:?} > {}",
+                    address, STACK_ADDRESS_MAX as u64
+                );
             }
+
+            let target = if index > 0 {
+                STACK_TAG // 3
+            } else {
+                START_TAG // 1
+            };
 
             let bus_mapping = self.assign_op(
                 region,
                 offset,
                 address,
-                rwc,
-                val,
-                op.rw().is_write(),
-                target,
+                row.rw_counter,
+                row.value,
+                row.is_write,
+                F::from(target),
                 F::zero(),
                 F::zero(),
             )?;
@@ -802,11 +832,10 @@ impl<
 
             address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
 
-            address_prev = address;
             offset += 1;
         }
 
-        self.pad_rows(region, offset, MEMORY_ROWS_MAX, STACK_ROWS_MAX, 3)?;
+        self.pad_rows(region, offset, offset_limit, STACK_TAG as usize)?;
 
         Ok(bus_mappings)
     }
@@ -815,52 +844,55 @@ impl<
         &self,
         region: &mut Region<F>,
         randomness: F,
-        ops: Vec<Operation<StorageOp>>,
+        ops: Vec<Rw>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
         storage_key_diff_is_zero_chip: &IsZeroChip<F>,
+        offset: usize,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         if ops.len() > STORAGE_ROWS_MAX {
             panic!("too many storage operations");
         }
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
-        let mut address_prev = F::zero();
-        let mut storage_key_prev = F::zero();
-        let mut offset = MEMORY_ROWS_MAX + STACK_ROWS_MAX;
+        let mut offset = offset;
+        let offset_limit = offset + STORAGE_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
-            let op = oper.op();
-            let rwc = usize::from(oper.rwc());
-
-            // address in 160bits, so it can be put into F.
-            // random_linear_combine is not needed here.
-            let address = op.address().to_scalar().unwrap();
-
-            let val = RandomLinearCombination::random_linear_combine(
-                op.value().to_le_bytes(),
-                randomness,
-            );
-            let val_prev = RandomLinearCombination::random_linear_combine(
-                op.value_prev().to_le_bytes(),
-                randomness,
-            );
-            let storage_key =
-                RandomLinearCombination::random_linear_combine(op.key().to_le_bytes(), randomness);
-
-            let mut target = 1;
-            if index > 0 {
-                target = 4;
+            if !matches!(
+                oper,
+                Rw::AccountStorage {
+                    rw_counter,
+                    is_write,
+                    account_address,
+                    storage_key,
+                    value,
+                    value_prev
+                }
+            ) {
+                panic!("expect stack operation");
             }
+
+            let row = oper.table_assignment(randomness);
+
+            let target = if index > 0 { STORAGE_TAG } else { START_TAG };
+            let address = row.key2;
+            let storage_key = row.key3;
+            let (address_prev, storage_key_prev) = if index > 0 {
+                let prev_row = ops[index - 1].table_assignment(randomness);
+                (prev_row.key2, prev_row.key3)
+            } else {
+                (F::zero(), F::zero())
+            };
 
             let bus_mapping = self.assign_op(
                 region,
                 offset,
-                address,
-                rwc,
-                val,
-                op.rw().is_write(),
-                target,
-                storage_key,
-                val_prev,
+                row.key2,
+                row.rw_counter,
+                row.value,
+                row.is_write,
+                F::from(target),
+                row.key3,
+                row.value_prev,
             )?;
             bus_mappings.push(bus_mapping);
 
@@ -872,18 +904,10 @@ impl<
                 Some(storage_key - storage_key_prev),
             )?;
 
-            address_prev = address;
-            storage_key_prev = storage_key;
             offset += 1;
         }
 
-        self.pad_rows(
-            region,
-            offset,
-            MEMORY_ROWS_MAX + STACK_ROWS_MAX,
-            STORAGE_ROWS_MAX,
-            4,
-        )?;
+        self.pad_rows(region, offset, offset_limit, STORAGE_TAG as usize)?;
 
         Ok(bus_mappings)
     }
@@ -891,26 +915,16 @@ impl<
     fn pad_rows(
         &self,
         region: &mut Region<F>,
-        offset: usize,
         start_offset: usize,
-        max_rows: usize,
+        end_offset: usize,
         target: usize,
     ) -> Result<(), Error> {
         // We pad all remaining rows to avoid the check at the first unused row.
         // Without padding, (address_cur - address_prev) would not be zero at
         // the first unused row and some checks would be triggered.
 
-        for i in offset..start_offset + max_rows {
-            if i == start_offset {
-                region.assign_fixed(|| "target", self.q_target, i, || Ok(F::one()))?;
-            } else {
-                region.assign_fixed(
-                    || "target",
-                    self.q_target,
-                    i,
-                    || Ok(F::from(target as u64)),
-                )?;
-            }
+        for i in start_offset..end_offset {
+            region.assign_fixed(|| "target", self.q_target, i, || Ok(F::from(target as u64)))?;
             region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
             region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
         }
@@ -923,9 +937,9 @@ impl<
         &self,
         mut layouter: impl Layouter<F>,
         randomness: F,
-        memory_ops: Vec<Operation<MemoryOp>>,
-        stack_ops: Vec<Operation<StackOp>>,
-        storage_ops: Vec<Operation<StorageOp>>,
+        memory_ops: Vec<Rw>,
+        stack_ops: Vec<Rw>,
+        storage_ops: Vec<Rw>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
@@ -947,21 +961,27 @@ impl<
         layouter.assign_region(
             || "State operations",
             |mut region| {
+                let mut offset = 0;
+
                 let memory_mappings = self.assign_memory_ops(
                     &mut region,
                     randomness,
                     memory_ops.clone(),
                     &address_diff_is_zero_chip,
+                    offset,
                 );
                 bus_mappings.extend(memory_mappings.unwrap());
+                offset += MEMORY_ROWS_MAX;
 
                 let stack_mappings = self.assign_stack_ops(
                     &mut region,
                     randomness,
                     stack_ops.clone(),
                     &address_diff_is_zero_chip,
+                    offset,
                 );
                 bus_mappings.extend(stack_mappings.unwrap());
+                offset += STACK_ROWS_MAX;
 
                 let storage_mappings = self.assign_storage_ops(
                     &mut region,
@@ -969,6 +989,7 @@ impl<
                     storage_ops.clone(),
                     &address_diff_is_zero_chip,
                     &storage_key_diff_is_zero_chip,
+                    offset,
                 );
                 bus_mappings.extend(storage_mappings.unwrap());
 
@@ -976,34 +997,60 @@ impl<
             },
         )
     }
+    /*
+        fn init_row_between_operation_types(
+            &self,
+            region: &mut Region<'_, F>,
+            offset: usize,
+        ) -> Result<(), Error> {
+            region.assign_fixed(
+                || "target",
+                self.q_target,
+                offset,
+                || Ok(F::from(START_TAG as u64)),
+            )?;
+            // both memory and storage op require flag be "write" for start row
+            region.assign_advice(|| "init flag", self.flag, offset, || Ok(F::one()))?;
 
-    /// Initialise first row for a new operation.
+            // memory op require rwc be 0 for start row
+            region.assign_advice(
+                || "init global counter",
+                self.global_counter,
+                offset,
+                || Ok(F::zero()),
+            )?;
+
+            Ok(())
+        }
+    */
+    /// Initialise first row for a new memory operation, which can be seen as a
+    /// "write 0" operation
     fn init(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         address: F,
-        target: usize,
+        target: u64,
     ) -> Result<(), Error> {
-        region.assign_advice(|| "init address", self.address, offset, || Ok(address))?;
-
-        region.assign_advice(
-            || "init global counter",
-            self.global_counter,
-            offset,
-            || Ok(F::zero()),
-        )?;
-
-        region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
-
-        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
-
         region.assign_fixed(
             || "target",
             self.q_target,
             offset,
             || Ok(F::from(target as u64)),
         )?;
+        region.assign_advice(|| "init address", self.address, offset, || Ok(address))?;
+        /*
+        region.assign_advice(
+            || "init global counter",
+            self.global_counter,
+            offset,
+            || Ok(F::zero()),
+        )?;
+        */
+        /*
+                region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
+        */
+        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
 
         Ok(())
     }
@@ -1014,10 +1061,10 @@ impl<
         region: &mut Region<'_, F>,
         offset: usize,
         address: F,
-        global_counter: usize,
+        global_counter: F,
         value: F,
-        flag: bool,
-        target: usize,
+        flag: F,
+        target: F,
         storage_key: F,
         value_prev: F,
     ) -> Result<BusMapping<F>, Error> {
@@ -1030,22 +1077,20 @@ impl<
             }
         };
 
-        if SANITY_CHECK && global_counter > GLOBAL_COUNTER_MAX {
+        if SANITY_CHECK && global_counter > F::from(GLOBAL_COUNTER_MAX as u64) {
             panic!("global_counter out of range");
         }
         let global_counter = {
-            let field_elem = F::from(global_counter as u64);
-
             let cell = region.assign_advice(
                 || "global counter",
                 self.global_counter,
                 offset,
-                || Ok(field_elem),
+                || Ok(global_counter),
             )?;
 
-            Variable::<usize, F> {
+            Variable::<F, F> {
                 cell,
-                field_elem: Some(field_elem),
+                field_elem: Some(global_counter),
                 value: Some(global_counter),
             }
         };
@@ -1091,29 +1136,21 @@ impl<
         };
 
         let flag = {
-            let field_elem = F::from(flag as u64);
-            let cell = region.assign_advice(|| "flag", self.flag, offset, || Ok(field_elem))?;
+            let cell = region.assign_advice(|| "flag", self.flag, offset, || Ok(flag))?;
 
-            Variable::<bool, F> {
+            Variable::<F, F> {
                 cell,
-                field_elem: Some(field_elem),
+                field_elem: Some(flag),
                 value: Some(flag),
             }
         };
 
         let target = {
-            let value = Some(target);
-            let field_elem = Some(F::from(target as u64));
-            let cell = region.assign_fixed(
-                || "target",
-                self.q_target,
-                offset,
-                || Ok(F::from(target as u64)),
-            )?;
-            Variable::<usize, F> {
+            let cell = region.assign_fixed(|| "target", self.q_target, offset, || Ok(target))?;
+            Variable::<F, F> {
                 cell,
-                field_elem,
-                value,
+                field_elem: Some(target),
+                value: Some(target),
             }
         };
 
@@ -1144,11 +1181,11 @@ pub struct StateCircuit<
     /// randomness used in linear combination
     pub randomness: F,
     /// Memory Operations
-    pub memory_ops: Vec<Operation<MemoryOp>>,
+    pub memory_ops: Vec<Rw>,
     /// Stack Operations
-    pub stack_ops: Vec<Operation<StackOp>>,
+    pub stack_ops: Vec<Rw>,
     /// Storage Operations
-    pub storage_ops: Vec<Operation<StorageOp>>,
+    pub storage_ops: Vec<Rw>,
 }
 
 impl<
@@ -1179,11 +1216,22 @@ impl<
         stack_ops: Vec<Operation<StackOp>>,
         storage_ops: Vec<Operation<StorageOp>>,
     ) -> Self {
+        // FIXME
+        let call_id = 1;
         Self {
             randomness,
-            memory_ops,
-            stack_ops,
-            storage_ops,
+            memory_ops: memory_ops
+                .iter()
+                .map(|op| memory_op_to_rw(op, call_id))
+                .collect::<Vec<_>>(),
+            stack_ops: stack_ops
+                .iter()
+                .map(|op| stack_op_to_rw(op, call_id))
+                .collect::<Vec<_>>(),
+            storage_ops: storage_ops
+                .iter()
+                .map(|op| storage_op_to_rw(op, call_id))
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -1267,15 +1315,12 @@ mod tests {
                 $stack_rows_max,
                 $stack_address_max,
                 $storage_rows_max,
-            > {
-                randomness: Fr::rand(),
-                memory_ops: $memory_ops,
-                stack_ops: $stack_ops,
-                storage_ops: $storage_ops,
-            };
+            >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
-            assert_eq!(prover.verify(), $result);
+            let verify_result = prover.verify();
+            println!("verify result: {:#?}", verify_result);
+            assert_eq!(verify_result, $result);
         }};
     }
 
@@ -1290,12 +1335,7 @@ mod tests {
                 $stack_rows_max,
                 $stack_address_max,
                 $storage_rows_max,
-            > {
-                randomness: Fr::rand(),
-                memory_ops: $memory_ops,
-                stack_ops: $stack_ops,
-                storage_ops: $storage_ops,
-            };
+            >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             assert!(prover.verify().is_err());
@@ -1945,24 +1985,28 @@ mod tests {
             STOP
         };
         let block = bus_mapping::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&bytecode).unwrap(),
+            mock::new_single_tx_trace_code(&bytecode).unwrap(),
         );
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let stack_ops = builder.block.container.sorted_stack();
+        let memory_ops = builder.block.container.sorted_memory();
+        let storage_ops = builder.block.container.sorted_storage();
 
+        println!("mem {:#?}", memory_ops);
         test_state_circuit!(
             14,
             2000,
             100,
-            2,
+            0x80,
             100,
             1023,
             1000,
-            vec![],
+            //vec![],
+            memory_ops,
             stack_ops,
-            vec![],
+            storage_ops,
             Ok(())
         );
     }

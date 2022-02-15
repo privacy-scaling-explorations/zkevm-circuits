@@ -86,12 +86,12 @@ pub fn run_test_circuits_with_config(
     // circuit must be same
     if config.enable_state_circuit_test {
         let block_for_state_circuit = builder.block;
-        let state_circuit = StateCircuit::<Fr, true, 2000, 100, 100, 100, 1023, 100> {
-            randomness: config.randomness,
-            memory_ops: block_for_state_circuit.container.sorted_memory(),
-            stack_ops: block_for_state_circuit.container.sorted_stack(),
-            storage_ops: block_for_state_circuit.container.sorted_storage(),
-        };
+        let state_circuit = StateCircuit::<Fr, true, 2000, 100, 100, 100, 1023, 100>::new(
+            config.randomness,
+            block_for_state_circuit.container.sorted_memory(),
+            block_for_state_circuit.container.sorted_stack(),
+            block_for_state_circuit.container.sorted_storage(),
+        );
 
         let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
         prover.verify()?;
