@@ -9,8 +9,9 @@ use std::marker::PhantomData;
 use crate::{
     helpers::into_words_expr,
     param::{
-        HASH_WIDTH, IS_EXTENSION_NODE_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
+        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+        IS_EXTENSION_NODE_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+        LAYOUT_OFFSET,
     },
 };
 
@@ -39,21 +40,26 @@ impl<F: FieldExt> StorageRootChip<F> {
         is_s: bool,
     ) -> StorageRootConfig {
         let config = StorageRootConfig {};
+        let one = Expression::Constant(F::one());
 
         // Storage first level branch hash - root in last account leaf (ordinary branch, not extension node).
         meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
-            // -17 because we are in the last branch child (-16 takes us to branch init)
+            let mut rot_into_branch_init = -16;
+            if !is_s {
+                rot_into_branch_init = -17;
+            }
+
             let is_account_leaf_storage_codehash_prev = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
-                Rotation(-17),
+                Rotation(rot_into_branch_init - 1),
             );
 
             let is_extension_node = meta.query_advice(
                 s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(-16),
+                Rotation(rot_into_branch_init),
             );
 
             // We need to do the lookup only if we are in the last branch child.
@@ -85,7 +91,6 @@ impl<F: FieldExt> StorageRootChip<F> {
                 }
             }
             let storage_root_words = into_words_expr(sc_hash);
-            let one = Expression::Constant(F::one());
 
             let mut constraints = vec![];
             constraints.push((
@@ -122,6 +127,17 @@ impl<F: FieldExt> StorageRootChip<F> {
             if !is_s {
                 rot_into_branch_init = -18;
                 rot_into_last_branch_child = -2;
+            }
+
+            let mut is_branch_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_branch_init),
+                );
             }
 
             let is_account_leaf_storage_codehash_prev = meta.query_advice(
@@ -166,6 +182,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     * is_extension_node.clone()
                     * is_after_last_branch_child.clone()
                     * is_account_leaf_storage_codehash_prev.clone()
+                    * (one.clone() - is_branch_placeholder.clone())
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -177,6 +194,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                         * is_extension_node.clone()
                         * is_after_last_branch_child.clone()
                         * is_account_leaf_storage_codehash_prev.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
                         * word.clone(),
                     keccak_table_i,
                 ));
