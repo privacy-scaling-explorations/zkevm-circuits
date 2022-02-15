@@ -49,12 +49,109 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) state_write_counter: Transition<Expression<F>>,
 }
 
+#[derive(Default)]
+pub struct BaseConstraintBuilder<F> {
+    pub constraints: Vec<(&'static str, Expression<F>)>,
+    pub max_degree: usize,
+    condition: Option<Expression<F>>,
+}
+
+impl<F: FieldExt> BaseConstraintBuilder<F> {
+    fn new(max_degree: usize) -> Self {
+        BaseConstraintBuilder {
+            constraints: Vec::new(),
+            max_degree,
+            condition: None,
+        }
+    }
+
+    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
+        self.add_constraint(name, constraint);
+    }
+
+    pub(crate) fn require_equal(
+        &mut self,
+        name: &'static str,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) {
+        self.add_constraint(name, lhs - rhs);
+    }
+
+    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
+        self.add_constraint(name, value.clone() * (1.expr() - value));
+    }
+
+    pub(crate) fn require_in_set(
+        &mut self,
+        name: &'static str,
+        value: Expression<F>,
+        set: Vec<Expression<F>>,
+    ) {
+        self.add_constraint(
+            name,
+            set.iter()
+                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
+        );
+    }
+
+    pub(crate) fn condition<R>(
+        &mut self,
+        condition: Expression<F>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        debug_assert!(
+            self.condition.is_none(),
+            "Nested condition is not supported"
+        );
+        self.condition = Some(condition);
+        let ret = constraint(self);
+        self.condition = None;
+        ret
+    }
+
+    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
+    }
+
+    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
+    }
+
+    pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
+        if self.max_degree > 0 {
+            debug_assert!(
+                degree <= self.max_degree,
+                "Expression {} degree too high: {} > {}",
+                name,
+                degree,
+                self.max_degree,
+            );
+        }
+    }
+
+    pub(crate) fn gate(&self, selector: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
+        self.constraints
+            .clone()
+            .into_iter()
+            .map(|(name, constraint)| (name, selector.clone() * constraint))
+            .collect()
+    }
+}
+
 pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
     power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
-    constraints: Vec<(&'static str, Expression<F>)>,
+    cb: BaseConstraintBuilder<F>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<(&'static str, Lookup<F>)>,
     row_usages: Vec<StepRowUsage>,
@@ -62,7 +159,6 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     program_counter_offset: usize,
     stack_pointer_offset: i32,
     state_write_counter_offset: usize,
-    condition: Option<Expression<F>>,
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
@@ -77,7 +173,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             next,
             power_of_randomness,
             execution_state,
-            constraints: Vec::new(),
+            cb: BaseConstraintBuilder::new(MAX_DEGREE),
             constraints_first_step: Vec::new(),
             lookups: Vec::new(),
             row_usages: vec![StepRowUsage::default(); curr.rows.len()],
@@ -85,7 +181,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             program_counter_offset: 0,
             stack_pointer_offset: 0,
             state_write_counter_offset: 0,
-            condition: None,
         }
     }
 
@@ -98,7 +193,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         Vec<(&'static str, Lookup<F>)>,
         Vec<Preset<F>>,
     ) {
-        let mut constraints = self.constraints;
+        let mut constraints = self.cb.constraints;
         let mut presets = Vec::new();
 
         for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter()) {
@@ -222,7 +317,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Common
 
     pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.add_constraint(name, constraint);
+        self.cb.require_zero(name, constraint);
     }
 
     pub(crate) fn require_equal(
@@ -231,11 +326,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) {
-        self.add_constraint(name, lhs - rhs);
+        self.cb.require_equal(name, lhs, rhs);
     }
 
     pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
-        self.add_constraint(name, value.clone() * (1.expr() - value));
+        self.cb.require_boolean(name, value);
     }
 
     pub(crate) fn require_in_set(
@@ -244,11 +339,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value: Expression<F>,
         set: Vec<Expression<F>>,
     ) {
-        self.add_constraint(
-            name,
-            set.iter()
-                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
-        );
+        self.cb.require_in_set(name, value, set);
     }
 
     pub(crate) fn require_step_state_transition(
@@ -728,13 +819,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
-        debug_assert!(
-            degree <= MAX_DEGREE,
-            "Expression {} degree too high: {} > {}",
-            name,
-            degree,
-            MAX_DEGREE,
-        );
+        self.cb.validate_degree(degree, name);
     }
 
     // General
@@ -745,28 +830,21 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
         debug_assert!(
-            self.condition.is_none(),
+            self.cb.condition.is_none(),
             "Nested condition is not supported"
         );
-        self.condition = Some(condition);
+        self.cb.condition = Some(condition);
         let ret = constraint(self);
-        self.condition = None;
+        self.cb.condition = None;
         ret
     }
 
     pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
+        self.cb.add_constraints(constraints);
     }
 
     pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-        self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
+        self.cb.add_constraint(name, constraint);
     }
 
     pub(crate) fn add_constraint_first_step(
@@ -774,7 +852,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         name: &'static str,
         constraint: Expression<F>,
     ) {
-        let constraint = match &self.condition {
+        let constraint = match &self.cb.condition {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
         };
@@ -783,7 +861,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &'static str, lookup: Lookup<F>) {
-        let lookup = match &self.condition {
+        let lookup = match &self.cb.condition {
             Some(condition) => lookup.conditional(condition.clone()),
             None => lookup,
         };
