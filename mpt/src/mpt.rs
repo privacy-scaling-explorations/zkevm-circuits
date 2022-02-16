@@ -120,10 +120,12 @@ pub struct MPTConfig<F> {
     _marker: PhantomData<F>,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
     RMult,
     Range16,
     Range256,
+    RangeKeyLen256,
 }
 
 impl<F: FieldExt> MPTConfig<F> {
@@ -751,6 +753,7 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             r_table.clone(),
+            fixed_table.clone(),
         );
 
         AccountLeafNonceBalanceChip::<F>::configure(
@@ -2582,6 +2585,24 @@ impl<F: FieldExt> MPTConfig<F> {
                     offset += 1;
                 }
 
+                for ind in 0..(33 * 255) {
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[0],
+                        offset,
+                        || Ok(F::from(FixedTableTag::RangeKeyLen256 as u64)),
+                    )?;
+
+                    region.assign_fixed(
+                        || "fixed table",
+                        self.fixed_table[1],
+                        offset,
+                        || Ok(F::from(ind as u64)),
+                    )?;
+
+                    offset += 1;
+                }
+
                 for ind in 0..16 {
                     region.assign_fixed(
                         || "fixed table",
@@ -2711,7 +2732,7 @@ mod tests {
                 };
 
                 let prover =
-                    MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
+                    MockProver::<Fp>::run(14, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
             });
     }

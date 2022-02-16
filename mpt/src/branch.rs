@@ -1,14 +1,14 @@
 use halo2::{
     circuit::Chip,
     plonk::{
-        Advice, Column, ConstraintSystem, Expression, Fixed, Selector,
+        Advice, Column, ConstraintSystem, Expression, Fixed, Selector, VirtualCells,
     },
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{mpt::FixedTableTag, param::{HASH_WIDTH, RLP_NUM, BRANCH_0_S_START, BRANCH_0_C_START}};
+use crate::{mpt::FixedTableTag, param::{HASH_WIDTH, RLP_NUM, BRANCH_0_S_START, BRANCH_0_C_START}, helpers::range_lookups};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchConfig {}
@@ -41,58 +41,20 @@ impl<F: FieldExt> BranchChip<F> {
     ) -> BranchConfig {
         let config = BranchConfig {};
         let one = Expression::Constant(F::one());
- 
+
+        let sel = |meta: &mut VirtualCells<F>| {
+                let q_not_first =
+                    meta.query_fixed(q_not_first, Rotation::cur());
+                let is_branch_init =
+                    meta.query_advice(is_branch_init, Rotation::cur());
+
+                q_not_first * (one.clone() - is_branch_init)
+            };
+
         // Range check for s_advices and c_advices being bytes.
-        for ind in 0..HASH_WIDTH {
-            meta.lookup_any(|meta| {
-                // We check every row except branch init.
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
-                let mut constraints = vec![];
-                let is_branch_init =
-                    meta.query_advice(is_branch_init, Rotation::cur());
-
-                let one = Expression::Constant(F::one());
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                constraints.push((
-                    Expression::Constant(F::from(
-                        FixedTableTag::Range256 as u64,
-                    )),
-                    meta.query_fixed(fixed_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    q_not_first.clone() * s * (one - is_branch_init),
-                    meta.query_fixed(fixed_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            });
-
-            meta.lookup_any(|meta| {
-                // We check every row except branch init.
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
-                let mut constraints = vec![];
-                let is_branch_init =
-                    meta.query_advice(is_branch_init, Rotation::cur());
-
-                let one = Expression::Constant(F::one());
-                let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                constraints.push((
-                    Expression::Constant(F::from(
-                        FixedTableTag::Range256 as u64,
-                    )),
-                    meta.query_fixed(fixed_table[0], Rotation::cur()),
-                ));
-                constraints.push((
-                    q_not_first.clone() * c * (one - is_branch_init),
-                    meta.query_fixed(fixed_table[1], Rotation::cur()),
-                ));
-
-                constraints
-            });
-        }
-
+        range_lookups(meta, sel, s_advices.to_vec(), FixedTableTag::Range256, fixed_table);
+        range_lookups(meta, sel, c_advices.to_vec(), FixedTableTag::Range256, fixed_table);
+ 
         // Empty nodes have 0 at s_rlp2, have 128 at s_advices[0] and 0 everywhere else:
         // [0, 0, 128, 0, ..., 0]
         // While non-empty nodes have 160 at s_rlp2 and then any byte at *_advices:

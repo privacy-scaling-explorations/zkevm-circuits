@@ -118,7 +118,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let mut constraints = vec![];
 
             let two = Expression::Constant(F::from(2_u64));
-
             let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
 
             let c128 = Expression::Constant(F::from(128));

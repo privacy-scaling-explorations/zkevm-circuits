@@ -1,10 +1,12 @@
 use halo2::{
-    plonk::{Advice, Column, Expression, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells,
+    },
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 
-use crate::param::R_TABLE_LEN;
+use crate::{mpt::FixedTableTag, param::R_TABLE_LEN};
 
 // Turn 32 hash cells into 4 cells containing keccak words.
 pub fn into_words_expr<F: FieldExt>(
@@ -54,4 +56,72 @@ pub fn compute_rlc<F: FieldExt>(
     }
 
     rlc
+}
+
+pub fn range_lookups<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    columns: Vec<Column<Advice>>,
+    tag: FixedTableTag,
+    fixed_table: [Column<Fixed>; 3],
+) {
+    for col in columns {
+        meta.lookup_any(|meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let s = meta.query_advice(col, Rotation::cur());
+            constraints.push((
+                Expression::Constant(F::from(tag.clone() as u64)),
+                meta.query_fixed(fixed_table[0], Rotation::cur()),
+            ));
+            constraints.push((
+                q_enable.clone() * s,
+                meta.query_fixed(fixed_table[1], Rotation::cur()),
+            ));
+
+            constraints
+        });
+    }
+}
+
+// Let's say we have a key of length 3, then: [248,112,131,59,158,123,0,0,0,...
+// 131 - 128 = 3 presents key length. We need to prove all bytes after key ends are 0
+// (after 59, 158, 123).
+// We prove the following (33 is max key length):
+// (key_len - 1) * 59 < 33 * 255
+// (key_len - 2) * 158 < 33 * 255
+// (key_len - 3) * 123 < 33 * 255
+// From now on, key_len < 0:
+// (key_len - 4) * byte < 33 * 255 (Note that this will be true only if byte = 0)
+// (key_len - 5) * byte < 33 * 255 (Note that this will be true only if byte = 0)
+// (key_len - 6) * byte < 33 * 255 (Note that this will be true only if byte = 0)
+// ...
+pub fn key_len_lookup<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    ind: usize,
+    key_len_col: Column<Advice>,
+    column: Column<Advice>,
+    fixed_table: [Column<Fixed>; 3],
+) {
+    meta.lookup_any(|meta| {
+        let mut constraints = vec![];
+        let q_enable = q_enable(meta);
+
+        let s = meta.query_advice(column, Rotation::cur());
+        let c128 = Expression::Constant(F::from(128));
+        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - c128;
+        let key_len_rem = key_len - Expression::Constant(F::from(ind as u64));
+        constraints.push((
+            Expression::Constant(F::from(FixedTableTag::RangeKeyLen256 as u64)),
+            meta.query_fixed(fixed_table[0], Rotation::cur()),
+        ));
+        constraints.push((
+            q_enable.clone() * s * key_len_rem,
+            meta.query_fixed(fixed_table[1], Rotation::cur()),
+        ));
+
+        constraints
+    });
 }
