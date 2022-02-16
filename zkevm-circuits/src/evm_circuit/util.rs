@@ -169,6 +169,39 @@ pub(crate) mod and {
     }
 }
 
+/// Returns `1` when `expr[0] || expr[1] || ... == 1`, and returns `0`
+/// otherwise. Inputs need to be boolean
+pub(crate) mod or {
+    use super::{and, not};
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
+        inputs: I,
+    ) -> Expression<F> {
+        not::expr(and::expr(inputs.into_iter().map(not::expr)))
+    }
+
+    pub(crate) fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+        not::value(and::value(inputs.into_iter().map(not::value).collect()))
+    }
+}
+
+/// Returns `1` when `b == 0`, and returns `0` otherwise.
+/// `b` needs to be boolean
+pub(crate) mod not {
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(b: E) -> Expression<F> {
+        1.expr() - b.expr()
+    }
+
+    pub(crate) fn value<F: FieldExt>(b: F) -> F {
+        F::one() - b
+    }
+}
+
 /// Returns `when_true` when `selector == 1`, and returns `when_false` when
 /// `selector == 0`. `selector` needs to be boolean.
 pub(crate) mod select {
