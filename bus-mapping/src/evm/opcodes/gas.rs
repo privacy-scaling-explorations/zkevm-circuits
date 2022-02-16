@@ -27,7 +27,7 @@ mod gas_tests {
         mock::BlockData,
         operation::StackAddress,
     };
-    use eth_types::{bytecode, bytecode::Bytecode, Word};
+    use eth_types::{bytecode, bytecode::Bytecode, evm_types::GasCost, Word};
     use mock::new_single_tx_trace_code_at_start;
 
     use super::*;
@@ -69,7 +69,7 @@ mod gas_tests {
     fn gas_opcode_impl() -> Result<(), Error> {
         const GAS_LIMIT: u64 = 1_000_000;
 
-        const GAS_COST: u64 = 21000
+        const GAS_COST: u64 = GasCost::TX.as_u64()
             + OpcodeId::PUSH1.constant_gas_cost().as_u64()
             + OpcodeId::PUSH1.constant_gas_cost().as_u64()
             + OpcodeId::GAS.constant_gas_cost().as_u64();

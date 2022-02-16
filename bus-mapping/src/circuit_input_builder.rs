@@ -944,7 +944,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Handle a reversion caused by call_idx
+    /// Handle a reversion group
     fn handle_reversion(&mut self) {
         let reversion_group = self
             .tx_ctx

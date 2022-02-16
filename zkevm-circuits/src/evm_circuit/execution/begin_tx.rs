@@ -546,7 +546,7 @@ mod test {
     ) -> eth_types::Transaction {
         let from = address!("0x00000000000000000000000000000000000000fe");
         let to = address!("0x00000000000000000000000000000000000000ff");
-        let minimal_gas = Word::from(21000);
+        let minimal_gas = Word::from(GasCost::TX.as_u64());
         let one_ether = Word::from(10).pow(18.into());
         let two_gwei = Word::from(2_000_000_000);
         eth_types::Transaction {

@@ -213,7 +213,10 @@ mod test {
         };
 
         let test_config = BytecodeTestConfig {
-            gas_limit: gas_cost + 21006,
+            gas_limit: GasCost::TX.as_u64()
+                + OpcodeId::PUSH32.as_u64()
+                + OpcodeId::PUSH32.as_u64()
+                + gas_cost,
             // we have to disable state circit now, since the memory size used
             // here is too large
             enable_state_circuit_test: false,
