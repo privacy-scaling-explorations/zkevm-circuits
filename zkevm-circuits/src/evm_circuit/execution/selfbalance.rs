@@ -19,7 +19,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 pub(crate) struct SelfbalanceGadget<F> {
     same_context: SameContextGadget<F>,
     callee_address: Cell<F>,
-    self_balance: Word<F>,
+    self_balance: Cell<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
@@ -35,7 +35,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
             callee_address.expr(),
         );
 
-        let self_balance = cb.query_rlc();
+        let self_balance = cb.query_cell();
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Balance,
@@ -75,8 +75,14 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
             .assign(region, offset, call.callee_address.to_scalar())?;
 
         let self_balance = block.rws[step.rw_indices[2]].stack_value();
-        self.self_balance
-            .assign(region, offset, Some(self_balance.to_le_bytes()))?;
+        self.self_balance.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                self_balance.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         Ok(())
     }
