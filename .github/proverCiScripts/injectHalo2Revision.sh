@@ -8,8 +8,9 @@ target_dir="$base_dir"PR"$1"
 
 _revision=$2
 
-echo $_revision
-
 oldrev=$(egrep halo2.*rev $target_dir/Cargo.toml | awk -F\" '{ print $4 }')
 
-sed -i "s/$oldrev/$_revision/g" $target_dir/Cargo.toml
+for i in `find $target_dir -type f -name 'Cargo.toml'`
+do
+  sed -i "s/$oldrev/$_revision/g" $i
+done
