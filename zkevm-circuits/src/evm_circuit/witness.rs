@@ -561,7 +561,7 @@ impl Rw {
 impl From<&ExecError> for ExecutionState {
     fn from(error: &ExecError) -> Self {
         match error {
-            ExecError::ExecutionReverted => ExecutionState::REVERT,
+            ExecError::ExecutionReverted => ExecutionState::ErrorReverted,
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
             ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
