@@ -335,12 +335,18 @@ pub struct CallContext {
     swc: usize,
 }
 
-/// ReversionGroup.
+/// A reversion group is the collection of calls and the operations which are
+/// [`Operation::reversible`] that happened in them, that will be reverted at
+/// once when the call that initiated this reversion group eventually ends with
+/// failure (and thus reverts).
 #[derive(Debug, Default)]
 pub struct ReversionGroup {
-    // List of `index` and `swc_offset` of calls belong to this group.
+    /// List of `index` and `swc_offset` of calls belong to this group.
+    /// `swc_offset` is the number of reversible operations that have
+    /// happened before the call within the same reversion group.
     calls: Vec<(usize, usize)>,
-    // List of `step_index` and `OperationRef` that have been done in this group.
+    /// List of `step_index` and `OperationRef` that have been done in this
+    /// group.
     op_refs: Vec<(usize, OperationRef)>,
 }
 
@@ -353,7 +359,11 @@ pub struct TransactionContext {
     calls: Vec<CallContext>,
     /// Call `is_success` indexed by `call_index`.
     call_is_success: Vec<bool>,
-    /// Reversion groups by failure calls
+    /// Reversion groups by failure calls. We keep the reversion groups in a
+    /// stack because it's possible to encounter a revert within a revert,
+    /// and in such case, we must only process the reverted operation once:
+    /// in the inner most revert (which we track with the last element in
+    /// the reversion groups stack), and skip it in the outer revert.
     reversion_groups: Vec<ReversionGroup>,
 }
 
@@ -615,6 +625,9 @@ impl<'a> CircuitInputStateRef<'a> {
     /// reference to the stored operation ([`OperationRef`]) inside the
     /// bus-mapping instance of the current [`ExecStep`]. Then increase the
     /// block_ctx [`RWCounter`] by one.
+    /// This method should be used in `Opcode::gen_associated_ops` instead of
+    /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
+    /// example, a write `StorageOp`).
     pub fn push_op_reversible<T: Op>(&mut self, rw: RW, op: T) {
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
