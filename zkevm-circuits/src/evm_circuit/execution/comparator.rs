@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
-            select, Word,
+            select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -22,6 +22,7 @@ pub(crate) struct ComparatorGadget<F> {
     same_context: SameContextGadget<F>,
     a: Word<F>,
     b: Word<F>,
+    result: Cell<F>,
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
     is_eq: IsEqualGadget<F>,
@@ -71,7 +72,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         // The result is:
         // - `lt` when LT or GT
         // - `eq` when EQ
-        let result = select::expr(is_eq.expr(), eq, lt);
+        // Use copy to avoid degree too high for stack_push below.
+        let result = cb.copy(select::expr(is_eq.expr(), eq, lt));
 
         // Pop a and b from the stack, push the result on the stack.
         // When swap is enabled we swap stack places between a and b.
@@ -79,7 +81,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         // it only uses the LSB of a word.
         cb.stack_pop(select::expr(is_gt.expr(), b.expr(), a.expr()));
         cb.stack_pop(select::expr(is_gt.expr(), a.expr(), b.expr()));
-        cb.stack_push(result);
+        cb.stack_push(result.expr());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -94,6 +96,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
             same_context,
             a,
             b,
+            result,
             comparison_lo,
             comparison_hi,
             is_eq,
@@ -106,8 +109,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -136,6 +139,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
             [step.rw_indices[0], step.rw_indices[1]]
         };
         let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
+        let result = block.rws[step.rw_indices[2]].stack_value();
 
         // `a[0..16] <= b[0..16]`
         self.comparison_lo.assign(
@@ -155,6 +159,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
 
         self.a.assign(region, offset, Some(a))?;
         self.b.assign(region, offset, Some(b))?;
+        self.result
+            .assign(region, offset, Some(F::from(result.low_u64())))?;
 
         Ok(())
     }

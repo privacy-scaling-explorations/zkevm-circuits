@@ -76,8 +76,8 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        transaction: &Transaction<F>,
-        call: &Call<F>,
+        transaction: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error>;
 }
@@ -278,9 +278,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
-        let insert_result = presets_map.insert(G::EXECUTION_STATE, presets);
         debug_assert!(
-            insert_result.is_none(),
+            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
         );
 
@@ -438,11 +437,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        transaction: &Transaction<F>,
-        call: &Call<F>,
+        transaction: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.step.assign_exec_step(region, offset, call, step)?;
+        self.step
+            .assign_exec_step(region, offset, block, transaction, call, step)?;
 
         for (cell, value) in self
             .presets_map

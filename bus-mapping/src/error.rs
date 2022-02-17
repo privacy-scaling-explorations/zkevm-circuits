@@ -10,8 +10,6 @@ use std::error::Error as StdError;
 pub enum Error {
     /// Serde de/serialization error.
     SerdeError(serde_json::error::Error),
-    /// Error while generating a trace.
-    TracingError,
     /// JSON-RPC related error.
     JSONRpcError(ProviderError),
     /// OpcodeId is not a call type.
@@ -21,9 +19,9 @@ pub enum Error {
     /// Storage key not found in the StateDB
     StorageKeyNotFound(Address, Word),
     /// Unable to figure out error at a [`GethExecStep`]
-    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
+    UnexpectedExecStepError(&'static str, GethExecStep),
     /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
-    InvalidGethExecStep(&'static str, Box<GethExecStep>),
+    InvalidGethExecStep(&'static str, GethExecStep),
     /// Eth type related error.
     EthTypeError(eth_types::Error),
 }
