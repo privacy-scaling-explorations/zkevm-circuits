@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::witness::RwMap,
+    evm_circuit::{witness::RwMap},
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
@@ -13,26 +13,31 @@ use halo2::{
     poly::Rotation,
 };
 
+
 use crate::evm_circuit::witness::Rw;
 use pairing::arithmetic::FieldExt;
 
 /*
 Example state table:
 
-| q_target | address | global_counter | value | flag | storage_key | value_prev |
----------------------------------------------------------------------------------
-|    1     |    0    |       0        |  0    |   1  |             |            |   // init row (write value 0)
-|    2     |    0    |       12       |  12   |   1  |             |            |
-|    2     |    0    |       24       |  12   |   0  |             |            |
-|    2     |    1    |       0        |  0    |   1  |             |            |   // init row (write value 0)
-|    2     |    1    |       2        |  12   |   0  |             |            |
-|    1     |    0    |       3        |  4    |   1  |             |            |
-|    3     |    0    |       17       |  32   |   1  |             |            |
-|    3     |    0    |       89       |  32   |   0  |             |            |
-|    3     |    1    |       48       |  32   |   1  |             |            |
-|    3     |    1    |       49       |  32   |   0  |             |            |
-|    1     |    1    |       55       |  32   |   1  |      5      |     0      |   // first storage op at the new address has to be write
-|    4     |    1    |       56       |  33   |   1  |      8      |     32     |
+| q_target | address | global_counter | value | flag | padding | storage_key | value_prev |
+-------------------------------------------------------------------------------------------
+|    1     |    0    |       0        |  0    |   1  |    0    |             |            |   // init row (write value 0)
+|    2     |    0    |       12       |  12   |   1  |    0    |             |            |
+|    2     |    0    |       24       |  12   |   0  |    0    |             |            |
+|    2     |    1    |       0        |  0    |   1  |    0    |             |            |   // init row (write value 0)
+|    2     |    1    |       2        |  12   |   0  |    0    |             |            |
+|    2     |         |                |       |      |    1    |             |            |   // padding
+|    2     |         |                |       |      |    1    |             |            |   // padding
+|    1     |    0    |       3        |  4    |   1  |    0    |             |            |
+|    3     |    0    |       17       |  32   |   1  |    0    |             |            |
+|    3     |    0    |       89       |  32   |   0  |    0    |             |            |
+|    3     |    1    |       48       |  32   |   1  |    0    |             |            |
+|    3     |    1    |       49       |  32   |   0  |    0    |             |            |
+|    3     |         |                |       |      |    1    |             |            |   // padding
+|    1     |    1    |       55       |  32   |   1  |    0    |      5      |     0      |   // first storage op at the new address has to be write
+|    4     |    1    |       56       |  33   |   1  |    0    |      8      |     32     |
+|    4     |         |                |       |      |    1    |             |            |   // padding
 */
 
 // q_target:
@@ -45,6 +50,8 @@ Example state table:
 // memory, stack, and storage ops respectively two columns are not displayed:
 // address_diff and storage_key_diff (needed to check whether the address or
 // storage_key changed) storage_key and value_prev are needed for storage ops
+// only padding specifies whether the row is just a padding to fill all the rows
+// that are intended for a particular target
 
 /*
 Example bus mapping:
@@ -105,6 +112,7 @@ pub struct Config<
     global_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
+    padding: Column<Advice>,
     storage_key: Column<Advice>,
     storage_key_diff_inv: Column<Advice>,
     value_prev: Column<Advice>,
@@ -114,6 +122,7 @@ pub struct Config<
     memory_value_table: Column<Fixed>,
     address_diff_is_zero: IsZeroConfig<F>,
     address_monotone: MonotoneConfig,
+    padding_monotone: MonotoneConfig,
     storage_key_diff_is_zero: IsZeroConfig<F>,
 }
 
@@ -146,6 +155,7 @@ impl<
         let global_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
+        let padding = meta.advice_column();
         let storage_key = meta.advice_column();
         let storage_key_diff_inv = meta.advice_column();
         let value_prev = meta.advice_column();
@@ -266,9 +276,12 @@ impl<
         let address_diff_is_zero = IsZeroChip::configure(
             meta,
             |meta| {
+                let padding = meta.query_advice(padding, Rotation::cur());
+                let is_not_padding = one.clone() - padding;
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
+                let q_not_first = q_target.clone() * (q_target - one.clone());
 
-                q_target.clone() * (q_target - one.clone())
+                q_not_first * is_not_padding
             },
             |meta| {
                 let address_cur = meta.query_advice(address, Rotation::cur());
@@ -283,12 +296,24 @@ impl<
         let address_monotone = MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::configure(
             meta,
             |meta| {
+                let padding = meta.query_advice(padding, Rotation::cur());
+                let is_not_padding = one.clone() - padding;
                 // Since q_memory_not_first and q_stack_non_first are
                 // mutually exclusive, q_not_first is binary.
+                let q_not_first = q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
 
-                q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta)
+                q_not_first * is_not_padding
             },
             address,
+        );
+
+        // Padding monotonicity could be checked using gates (as padding only
+        // takes values 0 and 1), but it's much slower than using a
+        // lookup.
+        let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
+            meta,
+            |meta| q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta),
+            padding,
         );
 
         // A gate for the first row (does not need Rotation::prev).
@@ -302,7 +327,7 @@ impl<
             vec![q_memory_first * q_read * value]
         });
 
-        meta.create_gate("Memory operation", |meta| {
+        meta.create_gate("Memory operation + padding", |meta| {
             // if is_read:
             //      if address_cur == address_prev:
             //          value == prev_value
@@ -327,7 +352,9 @@ impl<
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag;
 
-            let _q_target = meta.query_fixed(q_target, Rotation::cur());
+            let q_target = meta.query_fixed(q_target, Rotation::cur());
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let bool_check_padding = padding.clone() * (one.clone() - padding);
 
             vec![
                 q_memory_not_first.clone() * bool_check_flag, // flag is either 0 or 1
@@ -338,6 +365,7 @@ impl<
                     * address_diff_is_zero.is_zero_expression.clone()
                     * q_read
                     * (value_cur - value_prev),
+                q_target * bool_check_padding, // padding is 0 or 1
             ]
         });
 
@@ -377,11 +405,14 @@ impl<
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let is_not_padding = one.clone() - padding;
             let q_not_first =
                 q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
 
             vec![(
                 q_not_first
+                    * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
                     * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
                 global_counter_table,
@@ -430,9 +461,13 @@ impl<
         let storage_key_diff_is_zero = IsZeroChip::configure(
             meta,
             |meta| {
-                let q_target = meta.query_fixed(q_target, Rotation::cur());
+                let padding = meta.query_advice(padding, Rotation::cur());
+                let is_not_padding = one.clone() - padding;
 
-                q_target.clone() * (q_target - one.clone())
+                let q_target = meta.query_fixed(q_target, Rotation::cur());
+                let q_not_first = q_target.clone() * (q_target - one.clone());
+
+                q_not_first * is_not_padding
             },
             |meta| {
                 let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
@@ -492,6 +527,8 @@ impl<
             let value_previous = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag.clone();
 
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let is_not_padding = one.clone() - padding;
 
             vec![
                 q_storage_not_first.clone() * address_diff * q_read.clone(), // when address changes, the flag is 1 (write)
@@ -504,12 +541,14 @@ impl<
                 // but we don't need to check this as the first operation at new address and
                 // new storage key always has to be write - that means q_read is 1 only when
                 // the address and storage key doesn't change.
-               flag
+                is_not_padding.clone()
+                    * flag
                     * q_storage_not_first.clone()
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
                     * (value_prev_cur.clone() - value_previous),
-                q_read
+                is_not_padding
+                    * q_read
                     * q_storage_not_first
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
@@ -529,10 +568,13 @@ impl<
                 meta.query_advice(global_counter, Rotation::prev());
             let global_counter =
                 meta.query_advice(global_counter, Rotation::cur());
+            let padding = meta.query_advice(padding, Rotation::cur());
+            let is_not_padding = one.clone() - padding;
             let q_storage_not_first = q_storage_not_first_norm(meta);
 
             vec![(
                 q_storage_not_first
+                    * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
                     * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
@@ -549,6 +591,7 @@ impl<
             global_counter,
             value,
             flag,
+            padding,
             storage_key,
             storage_key_diff_inv,
             value_prev,
@@ -558,6 +601,7 @@ impl<
             memory_value_table,
             address_diff_is_zero,
             address_monotone,
+            padding_monotone,
             storage_key_diff_is_zero,
         }
     }
@@ -684,6 +728,13 @@ impl<
             address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
             offset += 1;
         }
+        self.pad_rows(
+            region,
+            ops.is_empty(),
+            offset,
+            offset_limit,
+            MEMORY_TAG as usize,
+        )?;
 
         Ok(bus_mappings)
     }
@@ -702,7 +753,7 @@ impl<
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let mut offset = offset;
-        let _offset_limit = offset + STACK_ROWS_MAX;
+        let offset_limit = offset + STACK_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             if !matches!(oper, Rw::Stack { .. }) {
                 panic!("expect stack operation");
@@ -746,6 +797,14 @@ impl<
             offset += 1;
         }
 
+        self.pad_rows(
+            region,
+            ops.is_empty(),
+            offset,
+            offset_limit,
+            STACK_TAG as usize,
+        )?;
+
         Ok(bus_mappings)
     }
 
@@ -764,7 +823,7 @@ impl<
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let mut offset = offset;
-        let _offset_limit = offset + STORAGE_ROWS_MAX;
+        let offset_limit = offset + STORAGE_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             if !matches!(oper, Rw::AccountStorage { .. }) {
                 panic!("expect stack operation");
@@ -806,7 +865,41 @@ impl<
             offset += 1;
         }
 
+        self.pad_rows(
+            region,
+            ops.is_empty(),
+            offset,
+            offset_limit,
+            STORAGE_TAG as usize,
+        )?;
+
         Ok(bus_mappings)
+    }
+
+    fn pad_rows(
+        &self,
+        region: &mut Region<F>,
+        need_pad_start_row: bool,
+        start_offset: usize,
+        end_offset: usize,
+        target: usize,
+    ) -> Result<(), Error> {
+        // We pad all remaining rows to avoid the check at the first unused row.
+        // Without padding, (address_cur - address_prev) would not be zero at
+        // the first unused row and some checks would be triggered.
+
+        for i in start_offset..end_offset {
+            let target = if need_pad_start_row && i == start_offset {
+                START_TAG
+            } else {
+                target
+            };
+            region.assign_fixed(|| "target", self.q_target, i, || Ok(F::from(target as u64)))?;
+            region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
+            region.assign_advice(|| "memory", self.flag, i, || Ok(F::one()))?;
+        }
+
+        Ok(())
     }
 
     /// Assign cells.
@@ -828,6 +921,10 @@ impl<
             );
         memory_address_monotone_chip.load(&mut layouter)?;
 
+        let padding_monotone_chip =
+            MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
+        padding_monotone_chip.load(&mut layouter)?;
+
         let storage_key_diff_is_zero_chip =
             IsZeroChip::construct(self.storage_key_diff_is_zero.clone());
 
@@ -844,7 +941,7 @@ impl<
                     offset,
                 );
                 bus_mappings.extend(memory_mappings.unwrap());
-                offset += memory_ops.len();
+                offset += MEMORY_ROWS_MAX;
 
                 let stack_mappings = self.assign_stack_ops(
                     &mut region,
@@ -854,7 +951,7 @@ impl<
                     offset,
                 );
                 bus_mappings.extend(stack_mappings.unwrap());
-                offset += stack_ops.len();
+                offset += STACK_ROWS_MAX;
 
                 let storage_mappings = self.assign_storage_ops(
                     &mut region,
