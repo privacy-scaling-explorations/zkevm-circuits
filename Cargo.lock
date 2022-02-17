@@ -1098,7 +1098,6 @@ dependencies = [
  "ethers-providers",
  "hex",
  "lazy_static",
- "log",
  "pairing_bn256",
  "regex",
  "serde",

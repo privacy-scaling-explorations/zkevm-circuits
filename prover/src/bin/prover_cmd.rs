@@ -68,16 +68,7 @@ async fn main() {
     let state_proof;
     {
         // generate evm_circuit proof
-        //
-        // TODO: why blocks.txs()[0]?
-        // https://github.com/scroll-tech/zkevm-circuits/issues/68
-        let code_hash = builder.block.txs()[0].calls()[0].code_hash;
-        let bytecode = builder
-            .code_db
-            .0
-            .get(&code_hash)
-            .expect("code_hash not found");
-        let block = block_convert(Fr::rand(), bytecode, &builder.block);
+        let block = block_convert(&builder.block, &builder.code_db);
         let circuit = TestCircuit::<Fr>::new(block, FixedTableTag::iterator().collect());
 
         // TODO: can this be pre-generated to a file?
