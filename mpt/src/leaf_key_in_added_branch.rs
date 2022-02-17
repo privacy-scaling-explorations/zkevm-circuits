@@ -8,7 +8,7 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::mpt::FixedTableTag;
+use crate::helpers::{compute_rlc, key_len_lookup, mult_diff_lookup};
 
 use crate::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -30,6 +30,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
+        c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
         c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
@@ -50,6 +51,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
         // TODO: after key_len there are 0s
 
+        let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
         let c32 = Expression::Constant(F::from(32_u64));
         let c48 = Expression::Constant(F::from(48_u64));
@@ -75,36 +77,29 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // TODO: check that from some point on (depends on the rlp meta data)
             // the values are zero (as in key_compr) - but take into account it can be long or short RLP
 
-            let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            rlc = rlc + s_rlp2 * r_table[0].clone();
-            let mut rind = 1;
+            let mut rlc = s_rlp1 + s_rlp2 * r_table[0].clone();
 
-            let mut r_wrapped = false;
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                if !r_wrapped {
-                    rlc = rlc + s * r_table[rind].clone();
-                } else {
-                    rlc = rlc
-                        + s * r_table[rind].clone()
-                            * r_table[R_TABLE_LEN - 1].clone();
-                }
-                if rind == R_TABLE_LEN - 1 {
-                    rind = 0;
-                    r_wrapped = true;
-                } else {
-                    rind += 1;
-                }
-            }
+            rlc = rlc
+                + compute_rlc(
+                    meta,
+                    s_advices.to_vec(),
+                    1,
+                    one.clone(),
+                    0,
+                    r_table.clone(),
+                );
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             rlc = rlc
                 + c_rlp1
                     * r_table[R_TABLE_LEN - 1].clone()
                     * r_table[1].clone();
-
-            // key is at most of length 32, so it doesn't go further than c_rlp1
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            rlc = rlc
+                + c_rlp2
+                    * r_table[R_TABLE_LEN - 1].clone()
+                    * r_table[2].clone();
 
             let acc = meta.query_advice(acc, Rotation::cur());
             constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
@@ -112,64 +107,57 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             constraints
         });
 
-        // Check acc_mult when RLP metadata is two bytes (short)
-        meta.lookup_any(|meta| {
+        let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            let two = Expression::Constant(F::from(2_u64));
             let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
 
-            let c128 = Expression::Constant(F::from(128));
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let key_len = s_rlp2 - c128;
-            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
-
-            constraints.push((
-                Expression::Constant(F::from(FixedTableTag::RMult as u64)),
-                meta.query_fixed(fixed_table[0], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable.clone() * (key_len + two) * is_short.clone(), // when short, there are 2 RLP meta data
-                meta.query_fixed(fixed_table[1], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable.clone() * acc_mult * is_short,
-                meta.query_fixed(fixed_table[2], Rotation::cur()),
-            ));
-
-            constraints
-        });
-
-        // Check acc_mult when RLP metadata is three bytes (long)
-        meta.lookup_any(|meta| {
+            q_enable * is_short
+        };
+        let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            let three = Expression::Constant(F::from(3_u64));
-
             let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
 
-            let c128 = Expression::Constant(F::from(128));
-            let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
-            let key_len = s_advices0 - c128;
-            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
+            q_enable * is_long
+        };
 
-            constraints.push((
-                Expression::Constant(F::from(FixedTableTag::RMult as u64)),
-                meta.query_fixed(fixed_table[0], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable.clone() * (key_len + three) * is_long.clone(), // when long, there are 3 RLP meta data
-                meta.query_fixed(fixed_table[1], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable.clone() * acc_mult * is_long,
-                meta.query_fixed(fixed_table[2], Rotation::cur()),
-            ));
+        /*
+        TODO: uncomment when overall degree is reduced
+        // There are 0s after key length.
+        for ind in 0..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_short,
+                ind + 1,
+                s_rlp2,
+                s_advices[ind],
+                fixed_table,
+            )
+        }
 
-            constraints
-        });
+        for ind in 1..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_long,
+                ind,
+                s_advices[0],
+                s_advices[ind],
+                fixed_table,
+            )
+        }
+        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
+        */
+
+        // acc_mult corresponds to key length (short):
+        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, fixed_table);
+        // acc_mult corresponds to key length (long):
+        mult_diff_lookup(
+            meta,
+            sel_long,
+            3,
+            s_advices[0],
+            acc_mult,
+            fixed_table,
+        );
 
         // Checking whether leaf key RLC before extension/branch is added is the same as
         // key RLC of the leaf that drifted into added extension/branch) which would cover
@@ -230,7 +218,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_branch_init - 1),
             );
-            let one = Expression::Constant(F::one());
 
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
@@ -271,7 +258,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                     + s * key_mult.clone() * r_table[ind - 1].clone();
             }
 
-            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            // Note: drifted leaf key can't reach c_rlp1 because it has at most 31 nibbles.
+            // In case of 31 nibbles, key occupies 32 bytes (in case of 32 nibbles and no
+            // branch above the leaf, the key occupies 33 bytes).
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
@@ -317,6 +306,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             }
 
             key_mult = key_mult * r_table[0].clone();
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             key_rlc_long = key_rlc_long + c_rlp1.clone() * key_mult;
 
             // No need to distinguish between sel1 and sel2 here as it was already
@@ -381,25 +371,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
             rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
 
-            let mut rind = 1;
-            let mut r_wrapped = false;
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation(rot_val));
-                if !r_wrapped {
-                    rlc = rlc + s * acc_mult.clone() * r_table[rind].clone();
-                } else {
-                    rlc = rlc
-                        + s * acc_mult.clone()
-                            * r_table[rind].clone()
-                            * r_table[R_TABLE_LEN - 1].clone();
-                }
-                if rind == R_TABLE_LEN - 1 {
-                    rind = 0;
-                    r_wrapped = true;
-                } else {
-                    rind += 1;
-                }
-            }
+            rlc = rlc
+                + compute_rlc(
+                    meta,
+                    s_advices.to_vec(),
+                    1,
+                    acc_mult.clone(),
+                    rot_val,
+                    r_table.clone(),
+                );
+            // Note: value doesn't reach c_rlp1.
 
             // Any rotation that lands into branch children can be used.
             let rot = -17;
@@ -445,25 +426,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
             rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
 
-            let mut rind = 1;
-            let mut r_wrapped = false;
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation(rot_val));
-                if !r_wrapped {
-                    rlc = rlc + s * acc_mult.clone() * r_table[rind].clone();
-                } else {
-                    rlc = rlc
-                        + s * acc_mult.clone()
-                            * r_table[rind].clone()
-                            * r_table[R_TABLE_LEN - 1].clone();
-                }
-                if rind == R_TABLE_LEN - 1 {
-                    rind = 0;
-                    r_wrapped = true;
-                } else {
-                    rind += 1;
-                }
-            }
+            rlc = rlc
+                + compute_rlc(
+                    meta,
+                    s_advices.to_vec(),
+                    1,
+                    acc_mult.clone(),
+                    rot_val,
+                    r_table.clone(),
+                );
+            // Note: value doesn't reach c_rlp1.
 
             // Any rotation that lands into branch children can be used.
             let rot = -17;

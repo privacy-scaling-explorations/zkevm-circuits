@@ -194,7 +194,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         /*
         TODO: uncomment when overall degree is reduced
         // There are zeros in c_advices after balance length:
-        for ind in (1..HASH_WIDTH) {
+        for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 q_enable,

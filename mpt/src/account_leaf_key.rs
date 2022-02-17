@@ -105,7 +105,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         // for the length of the remaining stream.
         /*
         TODO: uncomment when overall degree is reduced
-        for ind in (1..HASH_WIDTH) {
+        for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 q_enable,
