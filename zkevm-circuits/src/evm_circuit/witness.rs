@@ -74,10 +74,7 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::Timestamp as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.timestamp.to_le_bytes(),
-                        randomness,
-                    ),
+                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),

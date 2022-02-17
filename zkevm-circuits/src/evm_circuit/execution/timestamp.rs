@@ -1,24 +1,25 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_U64,
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            Cell, RandomLinearCombination,
+            from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TimestampGadget<F> {
     same_context: SameContextGadget<F>,
-    timestamp: Cell<F>,
+    timestamp: RandomLinearCombination<F, N_BYTES_U64>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
@@ -27,14 +28,14 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::TIMESTAMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let timestamp = cb.query_cell();
+        let timestamp = cb.query_rlc();
         cb.stack_push(timestamp.expr());
 
         // Lookup block table with timestamp
         cb.block_lookup(
             BlockContextFieldTag::Timestamp.expr(),
             None,
-            timestamp.expr(),
+            from_bytes::expr(&timestamp.cells),
         );
 
         // State transition
@@ -64,13 +65,12 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        let timestamp = block.rws[step.rw_indices[0]].stack_value();
+
         self.timestamp.assign(
             region,
             offset,
-            Some(RandomLinearCombination::random_linear_combine(
-                block.context.timestamp.to_le_bytes(),
-                block.randomness,
-            )),
+            Some(u64::try_from(timestamp).unwrap().to_le_bytes()),
         )?;
 
         Ok(())
