@@ -34,8 +34,8 @@ impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         _: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();

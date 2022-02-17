@@ -2,9 +2,11 @@ package gethutil
 
 import (
 	"fmt"
+	"math/big"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/holiman/uint256"
 )
@@ -62,6 +64,10 @@ func toBytes(value interface{}) []byte {
 		bytes = value.Bytes()
 	case *uint256.Int:
 		bytes = value.Bytes()
+	case *big.Int:
+		bytes = value.Bytes()
+	default:
+		panic(fmt.Errorf("Unsupported type %T", value))
 	}
 
 	if len(bytes) == 0 {
@@ -69,4 +75,11 @@ func toBytes(value interface{}) []byte {
 	}
 
 	return bytes
+}
+
+func toBigInt(value *hexutil.Big) *big.Int {
+	if value != nil {
+		return value.ToInt()
+	}
+	return big.NewInt(0)
 }

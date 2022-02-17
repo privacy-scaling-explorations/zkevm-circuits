@@ -12,9 +12,6 @@ pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
 
-type Address = u64;
-type MemorySize = u64;
-
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
     // expression for constraint
@@ -74,7 +71,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 }
 
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
-    const NUM_BYTES: usize = N;
+    const N_BYTES: usize = N;
 
     pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
         bytes.iter().rev().fold(F::zero(), |acc, byte| {

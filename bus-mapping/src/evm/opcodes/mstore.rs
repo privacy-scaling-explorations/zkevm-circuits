@@ -80,8 +80,10 @@ mod mstore_tests {
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
+        let mut tx = test_builder
+            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+            .unwrap();
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
         // Generate step corresponding to MSTORE
         let mut step = ExecStep::new(
@@ -138,8 +140,10 @@ mod mstore_tests {
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
+        let mut tx = test_builder
+            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+            .unwrap();
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
         // Generate step corresponding to MSTORE
         let mut step = ExecStep::new(

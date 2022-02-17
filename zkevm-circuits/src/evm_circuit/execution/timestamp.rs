@@ -1,7 +1,7 @@
-use crate::evm_circuit::param::N_BYTES_U64;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_U64,
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
@@ -33,7 +33,7 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
 
         // Lookup block table with timestamp
         cb.block_lookup(
-            BlockContextFieldTag::Time.expr(),
+            BlockContextFieldTag::Timestamp.expr(),
             None,
             from_bytes::expr(&timestamp.cells),
         );
@@ -59,8 +59,8 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
