@@ -776,7 +776,10 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_mult_c,
+            s_keccak[2],
+            s_keccak[3],
             r_table.clone(),
+            fixed_table.clone(),
         );
 
         // NOTE: storage leaf chip (LeafHashChip) checks the keccak, while
@@ -1783,9 +1786,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                             )
                                                 * key_rlc_mult;
 
-                                            // mult_diff is not needed in this case (is_short
-                                            // always has only one nibble and we can use
-                                            // this information)
                                             key_rlc = extension_node_rlc;
 
                                             key_rlc_mult *= self.acc_r;
@@ -2267,6 +2267,15 @@ impl<F: FieldExt> MPTConfig<F> {
                                     S_START,
                                     row[S_START] as usize - 128 + 1, // +1 for byte with length info
                                 );
+
+                                let key_len = row[S_START] as usize - 128;
+                                let mut mult_diff_s = F::one();
+                                for _ in 0..key_len + 4 + 1 {
+                                    // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
+                                    // + 1 because of byte with length info
+                                    mult_diff_s *= self.acc_r;
+                                }
+
                                 // It's easier to constrain (in account_leaf_nonce_balance.rs)
                                 // the multiplier if we store acc_mult both after nonce and after balance.
                                 let acc_mult_tmp = acc_mult_s;
@@ -2279,6 +2288,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                     row[C_START] as usize - 128 + 1, // +1 for byte with length info
                                 );
 
+                                let key_len = row[C_START] as usize - 128;
+                                let mut mult_diff_c = F::one();
+                                for _ in 0..key_len + 1 {
+                                    // + 1 because of byte with length info
+                                    mult_diff_c *= self.acc_r;
+                                }
+
                                 self.assign_acc(
                                     &mut region,
                                     acc_s,
@@ -2286,6 +2302,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     F::zero(),
                                     acc_mult_tmp,
                                     offset,
+                                )?;
+
+                                region.assign_advice(
+                                    || "assign mult diff".to_string(),
+                                    self.s_keccak[2],
+                                    offset,
+                                    || Ok(mult_diff_s),
+                                )?;
+                                region.assign_advice(
+                                    || "assign mult diff".to_string(),
+                                    self.s_keccak[3],
+                                    offset,
+                                    || Ok(mult_diff_c),
                                 )?;
 
                                 acc_nonce_balance = acc_s;
@@ -2585,6 +2614,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     offset += 1;
                 }
 
+                /*
                 for ind in 0..(33 * 255) {
                     region.assign_fixed(
                         || "fixed table",
@@ -2602,6 +2632,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                     offset += 1;
                 }
+                */
 
                 for ind in 0..16 {
                     region.assign_fixed(
@@ -2732,7 +2763,7 @@ mod tests {
                 };
 
                 let prover =
-                    MockProver::<Fp>::run(14, &circuit, vec![]).unwrap();
+                    MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
             });
     }

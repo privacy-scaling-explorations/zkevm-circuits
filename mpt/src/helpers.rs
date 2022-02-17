@@ -85,6 +85,8 @@ pub fn range_lookups<F: FieldExt>(
     }
 }
 
+// The columns after the key stops have to be 0 to prevent attacks on RLC using bytes
+// that should be 0.
 // Let's say we have a key of length 3, then: [248,112,131,59,158,123,0,0,0,...
 // 131 - 128 = 3 presents key length. We need to prove all bytes after key ends are 0
 // (after 59, 158, 123).
@@ -120,6 +122,40 @@ pub fn key_len_lookup<F: FieldExt>(
         constraints.push((
             q_enable.clone() * s * key_len_rem,
             meta.query_fixed(fixed_table[1], Rotation::cur()),
+        ));
+
+        constraints
+    });
+}
+
+pub fn mult_diff_lookup<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    addition: usize,
+    key_len_col: Column<Advice>,
+    mult_diff_col: Column<Advice>,
+    fixed_table: [Column<Fixed>; 3],
+) {
+    meta.lookup_any(|meta| {
+        let q_enable = q_enable(meta);
+        let mut constraints = vec![];
+
+        let c128 = Expression::Constant(F::from(128));
+        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - c128;
+        let mult_diff_nonce = meta.query_advice(mult_diff_col, Rotation::cur());
+        let add_expr = Expression::Constant(F::from(addition as u64));
+
+        constraints.push((
+            Expression::Constant(F::from(FixedTableTag::RMult as u64)),
+            meta.query_fixed(fixed_table[0], Rotation::cur()),
+        ));
+        constraints.push((
+            q_enable.clone() * (key_len + add_expr),
+            meta.query_fixed(fixed_table[1], Rotation::cur()),
+        ));
+        constraints.push((
+            q_enable.clone() * mult_diff_nonce,
+            meta.query_fixed(fixed_table[2], Rotation::cur()),
         ));
 
         constraints

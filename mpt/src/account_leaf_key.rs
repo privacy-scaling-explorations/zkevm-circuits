@@ -9,7 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, key_len_lookup, range_lookups},
+    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{HASH_WIDTH, R_TABLE_LEN},
 };
@@ -95,54 +95,17 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             constraints.push(("leaf key acc", q_enable.clone() * (expr - acc)));
 
-            // Let's say we have a key of length 3, then: [248,112,131,59,158,123,0,0,0,...
-            // 131 - 128 presents the key length.
-            // key length is at s_advices[0], key is from s_advices[1] to s_advices[1+key_len]
-            // In this row, we only have key, so the columns after the key stops have
-            // to be 0 to prevent attacks on RLC (computed above) using bytes in s_advices
-            // that should be 0.
-
-            // Note: key length is always in s_advices[0] here as opposed to storage
-            // key leaf where it can appear in s_rlp2 too. This is because account
-            // leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
-            // which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
-            // for the length of the remaining stream.
-
-            let c32 = Expression::Constant(F::from(32));
-            let c128 = Expression::Constant(F::from(128));
-            let key_len =
-                meta.query_advice(s_advices[0], Rotation::cur()) - c128;
-
-            /*
-            // We need to ensure after key_len there are only 0s.
-            // This is alternative 1, see lookups below for alternative 2.
-            let mut k_counter = c32 - key_len.clone();
-            let mut is_not_key = k_counter.clone();
-
-            constraints.push((
-                "account leaf key zeros c_rlp1",
-                q_enable.clone() * c_rlp1 * is_not_key.clone(),
-            ));
-            // TODO: c_rlp2 is possible too when leaf without branch
-
-            // is_not_key becomes 0 in the positions where we have key
-            for ind in (1..HASH_WIDTH).rev() {
-                k_counter = k_counter - one.clone();
-                is_not_key = is_not_key * k_counter.clone();
-                let s = meta.query_advice(s_advices[ind], Rotation::cur());
-                constraints.push((
-                    "leaf key zeros",
-                    q_enable.clone() * s * is_not_key.clone(),
-                ));
-            }
-            */
-
             constraints
         });
 
-        // We need to ensure after key_len there are only 0s.
-        // Alternative 2.
-        for ind in (1..HASH_WIDTH).rev() {
+        // Note: key length is always in s_advices[0] here as opposed to storage
+        // key leaf where it can appear in s_rlp2 too. This is because account
+        // leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
+        // which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
+        // for the length of the remaining stream.
+        /*
+        TODO: uncomment when overall degree is reduced
+        for ind in (1..HASH_WIDTH) {
             key_len_lookup(
                 meta,
                 q_enable,
@@ -152,33 +115,19 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 fixed_table,
             )
         }
+        key_len_lookup(meta, q_enable, 32, s_advices[0], c_rlp1, fixed_table);
+        key_len_lookup(meta, q_enable, 33, s_advices[0], c_rlp2, fixed_table);
+        */
 
         // acc_mult corresponds to key length:
-        meta.lookup_any(|meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            let c128 = Expression::Constant(F::from(128));
-            let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
-            let key_len = s_advices0 - c128;
-            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
-            let three = Expression::Constant(F::from(3_u64));
-
-            constraints.push((
-                Expression::Constant(F::from(FixedTableTag::RMult as u64)),
-                meta.query_fixed(fixed_table[0], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable.clone() * (key_len + three),
-                meta.query_fixed(fixed_table[1], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable.clone() * acc_mult,
-                meta.query_fixed(fixed_table[2], Rotation::cur()),
-            ));
-
-            constraints
-        });
+        mult_diff_lookup(
+            meta,
+            q_enable,
+            3,
+            s_advices[0],
+            acc_mult,
+            fixed_table,
+        );
 
         // No need to check key_rlc_mult as it's not used after this row.
         meta.create_gate("Account leaf address RLC", |meta| {
