@@ -10,7 +10,8 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, mult_diff_lookup},
+    helpers::{compute_rlc, mult_diff_lookup, range_lookups},
+    mpt::FixedTableTag,
     param::HASH_WIDTH,
 };
 
@@ -64,8 +65,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             // TODO: nonce and balance compared to the input
 
-            let one = Expression::Constant(F::one());
-            let c128 = Expression::Constant(F::from(128));
             let c248 = Expression::Constant(F::from(248));
             let acc_prev = meta.query_advice(acc, Rotation::prev());
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
@@ -76,7 +75,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 meta.query_advice(s_keccak3, Rotation::cur());
 
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
-            let nonce_len = s_advices0.clone() - c128.clone();
 
             let mut expr = acc_prev
                 + meta.query_advice(s_rlp1, Rotation::cur())
@@ -117,7 +115,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 );
 
             let c_advices0 = meta.query_advice(c_advices[0], Rotation::cur());
-            let balance_len = c_advices0.clone() - c128;
             expr = expr + c_advices0 * acc_mult_after_nonce.clone();
             rind = 0;
             for ind in 1..HASH_WIDTH {
@@ -134,7 +131,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             ));
 
             let acc_mult_final = meta.query_advice(acc_mult_s, Rotation::cur());
-            let c32 = Expression::Constant(F::from(32));
 
             constraints.push((
                 "leaf nonce acc mult",
@@ -169,7 +165,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         /*
         TODO: uncomment when overall degree is reduced
         // There are zeros in s_advices after nonce length:
-        for ind in (1..HASH_WIDTH) {
+        for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
                 q_enable,
@@ -205,6 +201,29 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             )
         }
         */
+
+        range_lookups(
+            meta,
+            q_enable,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable,
+            c_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        // c_rlp1 is always 248 (checked above)
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp1, s_rlp2, c_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }

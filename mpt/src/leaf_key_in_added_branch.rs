@@ -8,7 +8,10 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::helpers::{compute_rlc, key_len_lookup, mult_diff_lookup};
+use crate::{
+    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
+    mpt::FixedTableTag,
+};
 
 use crate::param::{
     HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -26,7 +29,7 @@ pub(crate) struct LeafKeyInAddedBranchChip<F> {
 impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -48,8 +51,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     ) -> LeafKeyInAddedBranchConfig {
         let config = LeafKeyInAddedBranchConfig {};
-
-        // TODO: after key_len there are 0s
 
         let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
@@ -464,6 +465,21 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             constraints
         });
+
+        range_lookups(
+            meta,
+            q_enable,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp1, s_rlp2, c_rlp1, c_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }

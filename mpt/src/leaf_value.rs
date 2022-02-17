@@ -5,10 +5,14 @@ use halo2::{
     },
     poly::Rotation,
 };
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
+use crate::{
+    helpers::range_lookups,
+    mpt::FixedTableTag,
+    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct LeafValueConfig {}
@@ -22,7 +26,7 @@ pub(crate) struct LeafValueChip<F> {
 impl<F: FieldExt> LeafValueChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -35,6 +39,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         is_branch_placeholder: Column<Advice>,
         is_s: bool,
         acc_r: F,
+        fixed_table: [Column<Fixed>; 3],
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
 
@@ -180,6 +185,21 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             constraints
         });
+
+        range_lookups(
+            meta,
+            q_enable,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp1, s_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }

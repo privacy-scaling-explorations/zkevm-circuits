@@ -264,6 +264,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
+        // Note: acc_mult is checked in extension_node_key.
+
         // Check whether branch hash is in extension node row.
         meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
@@ -302,9 +304,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
-        // TODO: check that key bytes are 0 after key len
-
-        // Check whether RLC are properly computed.
+        // Check whether RLC is properly computed.
         meta.create_gate("Extension node RLC", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);

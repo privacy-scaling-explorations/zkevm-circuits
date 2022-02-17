@@ -194,6 +194,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             FixedTableTag::Range256,
             fixed_table,
         );
+        // s_rlp1 is always 248 (checked above)
         range_lookups(
             meta,
             q_enable,

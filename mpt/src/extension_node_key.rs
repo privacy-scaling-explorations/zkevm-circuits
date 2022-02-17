@@ -10,7 +10,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::compute_rlc,
+    helpers::{compute_rlc, range_lookups},
     mpt::FixedTableTag,
     param::{
         HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
@@ -36,8 +36,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         is_branch_child: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
+        s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
+        c_rlp1: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
+        c_advices: [Column<Advice>; HASH_WIDTH],
         modified_node: Column<Advice>, // index of the modified node
         // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
         // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
@@ -56,7 +59,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         let c16inv = Expression::Constant(F::from(16).invert().unwrap());
         let rot_into_branch_init = -18;
 
-        // TODO: s_advices 0 after key len
+        // TODO: RLP
 
         meta.create_gate("extension node key", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -675,6 +678,119 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 constraints
             });
         }
+
+        /*
+        TODO: uncomment when overall degree is reduced
+        let sel_short = |meta: &mut VirtualCells<F>| {
+            let is_extension_node = meta.query_advice(
+                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_extension_s_row =
+                meta.query_advice(is_last_branch_child, Rotation(-1));
+            let is_short = meta.query_advice(
+                s_advices[IS_EXTENSION_KEY_SHORT_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+
+            is_extension_node * is_extension_s_row * is_short
+        };
+        let sel_long = |meta: &mut VirtualCells<F>| {
+            let is_extension_node = meta.query_advice(
+                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_extension_s_row =
+                meta.query_advice(is_last_branch_child, Rotation(-1));
+            let is_long = meta.query_advice(
+                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+
+            is_extension_node * is_extension_s_row * is_long
+        };
+        // There are 0s after key length.
+        for ind in 0..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_short,
+                ind + 1,
+                s_rlp2,
+                s_advices[ind],
+                fixed_table,
+            )
+        }
+
+        for ind in 1..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_long,
+                ind,
+                s_advices[0],
+                s_advices[ind],
+                fixed_table,
+            )
+        }
+        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
+        */
+
+        let sel_s = |meta: &mut VirtualCells<F>| {
+            let is_extension_node = meta.query_advice(
+                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_extension_s_row =
+                meta.query_advice(is_last_branch_child, Rotation(-1));
+
+            is_extension_node * is_extension_s_row
+        };
+        let sel_c = |meta: &mut VirtualCells<F>| {
+            let is_extension_node = meta.query_advice(
+                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_extension_c_row =
+                meta.query_advice(is_last_branch_child, Rotation(-2));
+
+            is_extension_node * is_extension_c_row
+        };
+        range_lookups(
+            meta,
+            sel_s,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            sel_s,
+            c_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            sel_s,
+            [s_rlp1, s_rlp2, c_rlp1].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        // There is no need to check s_advices in C row as these bytes are checked
+        // to be nibbles.
+        range_lookups(
+            meta,
+            sel_c,
+            c_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            sel_c,
+            [s_rlp1, s_rlp2, c_rlp1].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }

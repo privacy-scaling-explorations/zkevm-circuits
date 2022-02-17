@@ -34,7 +34,7 @@ impl<F: FieldExt> BranchAccInitChip<F> {
     ) -> BranchAccInitConfig {
         let config = BranchAccInitConfig {};
 
-        // TODO: constraints for branch init
+        // TODO: constraints for branch init (also byte range lookups)
 
         // Short RLP, meta data contains two bytes: 248, 81
         // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...

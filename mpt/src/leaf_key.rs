@@ -9,7 +9,8 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, mult_diff_lookup},
+    helpers::{compute_rlc, mult_diff_lookup, range_lookups},
+    mpt::FixedTableTag,
     param::{HASH_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN},
 };
 
@@ -28,7 +29,7 @@ pub(crate) struct LeafKeyChip<F> {
 impl<F: FieldExt> LeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -499,6 +500,21 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             constraints
         });
+
+        range_lookups(
+            meta,
+            q_enable,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp1, s_rlp2, c_rlp1, c_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }

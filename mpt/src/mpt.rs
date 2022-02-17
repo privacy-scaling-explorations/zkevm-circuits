@@ -433,8 +433,11 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_child,
             is_last_branch_child,
             is_account_leaf_storage_codehash_c,
+            s_rlp1,
             s_rlp2,
+            c_rlp1,
             s_advices,
+            c_advices,
             modified_node,
             sel1,
             sel2,
@@ -708,6 +711,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             true,
             acc_r,
+            fixed_table.clone(),
         );
 
         LeafValueChip::<F>::configure(
@@ -732,6 +736,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             false,
             acc_r,
+            fixed_table.clone(),
         );
 
         AccountLeafKeyChip::<F>::configure(
@@ -805,6 +810,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
             acc_s,
             acc_mult_s,
+            fixed_table.clone(),
             true,
         );
 
@@ -826,6 +832,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
             acc_s,
             acc_mult_s,
+            fixed_table.clone(),
             false,
         );
 

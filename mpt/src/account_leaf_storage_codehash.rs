@@ -1,12 +1,14 @@
 use halo2::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells,
+    },
     poly::Rotation,
 };
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::HASH_WIDTH;
+use crate::{helpers::range_lookups, mpt::FixedTableTag, param::HASH_WIDTH};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafStorageCodehashConfig {}
@@ -20,7 +22,7 @@ pub(crate) struct AccountLeafStorageCodehashChip<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_rlp2: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -28,6 +30,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         acc_r: F,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
+        fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
@@ -88,6 +91,29 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
             constraints
         });
+
+        range_lookups(
+            meta,
+            q_enable.clone(),
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable.clone(),
+            c_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        // s_rlp1 and c_rlp1 not used
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp2, c_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }
