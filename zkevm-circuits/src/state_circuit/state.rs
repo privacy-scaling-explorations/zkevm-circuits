@@ -358,10 +358,7 @@ impl<
             vec![
                 q_memory_not_first.clone() * bool_check_flag, // flag is either 0 or 1
                 // if address changes, read value should be 0
-                q_memory_not_first.clone()
-                    * address_diff
-                    * q_read.clone()
-                    * value_cur.clone(),
+                q_memory_not_first.clone() * address_diff * q_read.clone() * value_cur.clone(),
                 // or else, read value should be the same as the previous value
                 q_memory_not_first
                     * address_diff_is_zero.is_zero_expression.clone()
