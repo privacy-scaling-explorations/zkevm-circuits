@@ -33,7 +33,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
 
         let config = MonotoneConfig { range_table, value };
 
-        let idx = meta.lookup_any(|meta| {
+        meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
             let range_table = meta.query_fixed(config.range_table, Rotation::cur());
             let value_diff = {
@@ -53,7 +53,6 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
             vec![(q_enable * (value_diff - min_diff), range_table)]
         });
 
-        println!("mon idx {}", idx);
         config
     }
 

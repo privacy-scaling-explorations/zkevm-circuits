@@ -783,27 +783,3 @@ impl<F: FieldExt, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         })
     }
 }
-
-// This function generates Lagrange polynomial given an exp, index, and domain
-// size. The polynomial will be equal to 1 when `exp == value`, otherwise 0.
-// The value of the cell needs to be in the range [0, domain_size)
-pub fn generate_lagrange_base_polynomial<F: FieldExt, Exp: Expr<F>>(
-    exp: Exp,
-    val: u64,
-    domain_size: u64,
-) -> Expression<F> {
-    let mut numerator = 1.expr();
-    let mut denominator = F::from(1);
-    for x in 0..domain_size {
-        if x != val {
-            numerator = numerator * (exp.expr() - x.expr());
-            let inverse = if x < val {
-                F::from_u128((val - x) as u128)
-            } else {
-                -F::from_u128((x - val) as u128)
-            };
-            denominator = denominator * inverse;
-        }
-    }
-    numerator * denominator.invert().unwrap()
-}
