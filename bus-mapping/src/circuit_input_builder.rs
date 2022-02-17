@@ -223,8 +223,7 @@ impl Block {
                 .into(),
             timestamp: eth_block.timestamp,
             difficulty: eth_block.difficulty,
-            base_fee: eth_block
-                .base_fee_per_gas.unwrap_or_default(),
+            base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             container: OperationContainer::new(),
             txs: Vec::new(),
             code: HashMap::new(),
