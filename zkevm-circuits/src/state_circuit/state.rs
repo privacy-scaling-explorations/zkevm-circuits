@@ -1,10 +1,10 @@
 use crate::{
-    evm_circuit::witness::RwMap,
+    evm_circuit::{witness::{RwMap, RwRow}, util::math_gadget::generate_lagrange_base_polynomial},
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
         Variable,
-    },
+    }, util::Expr,
 };
 use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
 use halo2::{
@@ -19,24 +19,23 @@ use pairing::arithmetic::FieldExt;
 /*
 Example state table:
 
-| q_target | address | global_counter | value | flag | storage_key | value_prev |
+| q_target | address | rw_counter | value | flag | storage_key | value_prev |
 ---------------------------------------------------------------------------------
-|    1     |    0    |       0        |  0    |   1  |             |            |   // init row (write value 0)
+|    2     |    0    |       0        |  0    |   1  |             |            |   // init row (write value 0)
 |    2     |    0    |       12       |  12   |   1  |             |            |
 |    2     |    0    |       24       |  12   |   0  |             |            |
 |    2     |    1    |       0        |  0    |   1  |             |            |   // init row (write value 0)
 |    2     |    1    |       2        |  12   |   0  |             |            |
-|    1     |    0    |       3        |  4    |   1  |             |            |
+|    3     |    0    |       3        |  4    |   1  |             |            |
 |    3     |    0    |       17       |  32   |   1  |             |            |
 |    3     |    0    |       89       |  32   |   0  |             |            |
 |    3     |    1    |       48       |  32   |   1  |             |            |
 |    3     |    1    |       49       |  32   |   0  |             |            |
-|    1     |    1    |       55       |  32   |   1  |      5      |     0      |   // first storage op at the new address has to be write
+|    4     |    1    |       55       |  32   |   1  |      5      |     0      |   // first storage op at the new address has to be write
 |    4     |    1    |       56       |  33   |   1  |      8      |     32     |
 */
 
 // q_target:
-// 1 - first row of either target (Note: only the first row, not all init rows)
 // 2 - memory
 // 3 - stack
 // 4 - storage
@@ -46,21 +45,6 @@ Example state table:
 // address_diff and storage_key_diff (needed to check whether the address or
 // storage_key changed) storage_key and value_prev are needed for storage ops
 
-/*
-Example bus mapping:
-// TODO: this is going to change
-
-| target | address | global_counter | value | storage_key | value_prev | flag |
--------------------------------------------------------------------------------
-|    2   |    0    |       12       |  12   |             |            |  1   |
-|    2   |    0    |       24       |  12   |             |            |  0   |
-|    2   |    1    |       2        |  12   |             |            |  0   |
-|    1   |    0    |       3        |  4    |             |            |  1   |
-|    3   |    0    |       17       |  32   |             |            |  1   |
-|    3   |    0    |       89       |  32   |             |            |  0   |
-|    3   |    1    |       48       |  32   |             |            |  1   |
-|    3   |    1    |       49       |  32   |             |            |  0   |
-*/
 
 // If the tag values are changed, "_norm" exps below should be updated
 // accordingly
@@ -68,13 +52,14 @@ const START_TAG: usize = 1;
 const MEMORY_TAG: usize = 2;
 const STACK_TAG: usize = 3;
 const STORAGE_TAG: usize = 4;
+const MAX_VALID_TAG: usize = 4;
 
 /// A mapping derived from witnessed memory operations.
 /// TODO: The complete version of this mapping will involve storage, stack,
 /// and opcode details as well.
 #[derive(Clone, Debug)]
 pub(crate) struct BusMapping<F: FieldExt> {
-    global_counter: Variable<F, F>,
+    rw_counter: Variable<F, F>,
     target: Variable<F, F>,
     flag: Variable<F, F>,
     address: Variable<F, F>,
@@ -86,12 +71,12 @@ pub(crate) struct BusMapping<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
-    // When SANITY_CHECK is true, max_address/global_counter/stack_address are
+    // When SANITY_CHECK is true, max_address/rw_counter/stack_address are
     // required to be in the range of
-    // MEMORY_ADDRESS_MAX/GLOBAL_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
+    // MEMORY_ADDRESS_MAX/RW_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
     // synthesis
     const SANITY_CHECK: bool,
-    const GLOBAL_COUNTER_MAX: usize,
+    const RW_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
     const STACK_ROWS_MAX: usize,
@@ -102,13 +87,13 @@ pub struct Config<
     address: Column<Advice>, /* used for memory address, stack pointer, and
                               * account address (for storage) */
     address_diff_inv: Column<Advice>,
-    global_counter: Column<Advice>,
+    rw_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
     storage_key: Column<Advice>,
     storage_key_diff_inv: Column<Advice>,
     value_prev: Column<Advice>,
-    global_counter_table: Column<Fixed>,
+    rw_counter_table: Column<Fixed>,
     memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
@@ -120,7 +105,7 @@ pub struct Config<
 impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
-        const GLOBAL_COUNTER_MAX: usize,
+        const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
@@ -130,7 +115,7 @@ impl<
     Config<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -143,13 +128,13 @@ impl<
         let q_target = meta.fixed_column();
         let address = meta.advice_column();
         let address_diff_inv = meta.advice_column();
-        let global_counter = meta.advice_column();
+        let rw_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
         let storage_key = meta.advice_column();
         let storage_key_diff_inv = meta.advice_column();
         let value_prev = meta.advice_column();
-        let global_counter_table = meta.fixed_column();
+        let rw_counter_table = meta.fixed_column();
         let memory_address_table_zero = meta.fixed_column();
         let stack_address_table_zero = meta.fixed_column();
         let memory_value_table = meta.fixed_column();
@@ -159,23 +144,18 @@ impl<
         let three = Expression::Constant(F::from(3));
         let four = Expression::Constant(F::from(4));
 
-        let q_memory_first = |meta: &mut VirtualCells<F>| {
-            // For first memory row it holds q_target_cur = 1 and q_target_next
-            // = 2.
+        let q_memory = |meta: &mut VirtualCells<F>| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
-            let q_target_next = meta.query_fixed(q_target, Rotation::next());
-            // q_target_cur must be 1
-            // q_target_next must be 2
-
-            q_target_cur.clone()
-                * (two.clone() - q_target_cur.clone())
-                * (three.clone() - q_target_cur.clone())
-                * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
-                * (three.clone() - q_target_next.clone())
-                * (four.clone() - q_target_next)
+            generate_lagrange_base_polynomial(q_target_cur, MEMORY_TAG as u64, MAX_VALID_TAG as u64 + 1)
         };
 
+        let q_memory_first = |meta: &mut VirtualCells<F>| {
+            let q_target_prev = meta.query_fixed(q_target, Rotation::prev());
+            // q_target_cur must be MEMORY_TAG
+            // q_target_prev must not be MEMORY_TAG
+            q_memory(meta) * (MEMORY_TAG.expr()  - q_target_prev )
+        };
+/* 
         let q_memory_first_norm = |meta: &mut VirtualCells<F>| {
             let e = q_memory_first(meta);
             // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
@@ -185,7 +165,8 @@ impl<
 
             e * i
         };
-
+*/
+/* 
         let q_memory_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
 
@@ -204,10 +185,30 @@ impl<
 
             e * i
         };
+*/
 
+let q_stack = |meta: &mut VirtualCells<F>| {
+    let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+    generate_lagrange_base_polynomial(q_target_cur, STACK_TAG as u64, MAX_VALID_TAG as u64 + 1)
+};
+
+let q_stack_first = |meta: &mut VirtualCells<F>| {
+    let q_target_prev = meta.query_fixed(q_target, Rotation::prev());
+    // q_target_cur must be STACK_TAG
+    // q_target_prev must not be STACK_TAG
+    q_stack(meta) * (STACK_TAG.expr() - q_target_prev)
+};
+/* 
         let q_stack_first = |meta: &mut VirtualCells<F>| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
-            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            let q_target_prev = meta.query_fixed(q_target, Rotation::prev());
+            // q_target_cur must be 2
+            // q_target_prev must not be 2
+            generate_lagrange_base_polynomial(q_target_cur, MEMORY_TAG as u64, MAX_VALID_TAG as u64 + 1) * 
+            (q_target_prev - MEMORY_TAG.expr())
+           
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_prev = meta.query_fixed(q_target, Rotation::prev());
             q_target_cur.clone()
                 * (two.clone() - q_target_cur.clone())
                 * (three.clone() - q_target_cur.clone())
@@ -244,7 +245,21 @@ impl<
 
             e * i
         };
+*/
 
+
+let q_storage = |meta: &mut VirtualCells<F>| {
+    let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+    generate_lagrange_base_polynomial(q_target_cur, STORAGE_TAG as u64, MAX_VALID_TAG as u64 + 1)
+};
+
+let q_storage_first = |meta: &mut VirtualCells<F>| {
+    let q_target_prev = meta.query_fixed(q_target, Rotation::prev());
+    // q_target_cur must be STORAGE_TAG
+    // q_target_prev must not be STORAGE_TAG
+    q_storage(meta) * (STORAGE_TAG.expr() - q_target_prev)
+};
+    /* 
         let q_storage_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             q_target.clone()
@@ -262,7 +277,7 @@ impl<
 
             e * i
         };
-
+*/
         let address_diff_is_zero = IsZeroChip::configure(
             meta,
             |meta| {
@@ -284,7 +299,7 @@ impl<
             meta,
             |meta| {
                 // Since q_memory_not_first and q_stack_non_first are
-                // mutually exclusive, q_not_first is binary.
+                // non-negative, q_not_first is binary.
 
                 q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta)
             },
@@ -322,7 +337,7 @@ impl<
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            // If flag == 0 (read), and global_counter != 0, value_prev ==
+            // If flag == 0 (read), and rw_counter != 0, value_prev ==
             // value_cur
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag;
@@ -353,7 +368,7 @@ impl<
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            // If flag == 0 (read), and rw_counter != 0, value_prev == value_cur
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag;
             // when addresses changes, we don't require the operation is write as this is
@@ -367,26 +382,25 @@ impl<
             ]
         });
 
-        // global_counter monotonicity is checked for memory and stack when
+        // rw_counter monotonicity is checked for memory and stack when
         // address_cur == address_prev. (Recall that operations are
-        // ordered first by address, and then by global_counter.)
-        meta.lookup_any(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
-            let global_counter_prev =
-                meta.query_advice(global_counter, Rotation::prev());
-            let global_counter =
-                meta.query_advice(global_counter, Rotation::cur());
-            let q_not_first =
-                q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
+        // ordered first by address, and then by rw_counter.)
+        let idx = meta.lookup_any(|meta| {
+            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
+            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
+            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
+            let q_not_first = q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
 
             vec![(
                 q_not_first
                     * address_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
+                    * (rw_counter - rw_counter_prev - one.clone()), /* 
+                                                                     * - 1 because it needs to
+                                                                     *   be strictly monotone */
+                rw_counter_table,
             )]
         });
+        println!("haha {}", idx);
 
         // Memory address is in the allowed range.
         meta.lookup_any(|meta| {
@@ -395,7 +409,7 @@ impl<
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
-            vec![(q_memory * address_cur, memory_address_table_zero)]
+            vec![(q_memory_first_norm(meta) * address_cur, memory_address_table_zero)]
         });
 
         // Stack address is in the allowed range.
@@ -408,12 +422,12 @@ impl<
             vec![(q_stack * address_cur, stack_address_table_zero)]
         });
 
-        // global_counter is in the allowed range:
+        // rw_counter is in the allowed range:
         meta.lookup_any(|meta| {
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
-            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
+            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
+            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
 
-            vec![(global_counter, global_counter_table)]
+            vec![(rw_counter, rw_counter_table)]
         });
 
         // Memory value (for non-first rows) is in the allowed range.
@@ -488,7 +502,7 @@ impl<
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            // If flag == 0 (read), and rw_counter != 0, value_prev == value_cur
             let value_previous = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag.clone();
 
@@ -517,26 +531,25 @@ impl<
             ]
         });
 
-        // global_counter monotonicity is checked for storage when address_cur
+        // rw_counter monotonicity is checked for storage when address_cur
         // == address_prev and storage_key_cur = storage_key_prev.
         // (Recall that storage operations are ordered first by account address,
-        // then by storage_key, and finally by global_counter.)
+        // then by storage_key, and finally by rw_counter.)
 
         meta.lookup_any(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
-            let global_counter_prev =
-                meta.query_advice(global_counter, Rotation::prev());
-            let global_counter =
-                meta.query_advice(global_counter, Rotation::cur());
+            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
+            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
+            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
             let q_storage_not_first = q_storage_not_first_norm(meta);
 
             vec![(
                 q_storage_not_first
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
+                    * (rw_counter - rw_counter_prev - one.clone()), /* 
+                                                                     * - 1 because it needs to
+                                                                     *   be strictly monotone */
+                rw_counter_table,
             )]
         });
 
@@ -546,13 +559,13 @@ impl<
             q_target,
             address,
             address_diff_inv,
-            global_counter,
+            rw_counter,
             value,
             flag,
             storage_key,
             storage_key_diff_inv,
             value_prev,
-            global_counter_table,
+            rw_counter_table,
             memory_address_table_zero,
             stack_address_table_zero,
             memory_value_table,
@@ -568,10 +581,10 @@ impl<
             .assign_region(
                 || "global counter table",
                 |mut region| {
-                    for idx in 0..=GLOBAL_COUNTER_MAX {
+                    for idx in 0..=RW_COUNTER_MAX {
                         region.assign_fixed(
                             || "global counter table",
-                            self.global_counter_table,
+                            self.rw_counter_table,
                             idx,
                             || Ok(F::from(idx as u64)),
                         )?;
@@ -664,21 +677,11 @@ impl<
                 );
             }
 
-            let target = if index == 0 { START_TAG } else { MEMORY_TAG };
             if offset >= offset_limit {
                 panic!("too many memory operations {} > {}", offset, offset_limit);
             }
-            let bus_mapping = self.assign_op(
-                region,
-                offset,
-                address,
-                row.rw_counter,
-                row.value,
-                row.is_write,
-                F::from(target as u64),
-                F::zero(),
-                F::zero(),
-            )?;
+            let bus_mapping =
+                self.assign_op(region, offset, index == 0, F::from(MEMORY_TAG as u64), &row)?;
             bus_mappings.push(bus_mapping);
 
             address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
@@ -722,23 +725,8 @@ impl<
                 );
             }
 
-            let target = if index > 0 {
-                STACK_TAG // 3
-            } else {
-                START_TAG // 1
-            };
-
-            let bus_mapping = self.assign_op(
-                region,
-                offset,
-                address,
-                row.rw_counter,
-                row.value,
-                row.is_write,
-                F::from(target as u64),
-                F::zero(),
-                F::zero(),
-            )?;
+            let bus_mapping =
+                self.assign_op(region, offset, index == 0, F::from(STACK_TAG as u64), &row)?;
             bus_mappings.push(bus_mapping);
 
             address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
@@ -772,12 +760,11 @@ impl<
 
             let row = oper.table_assignment(randomness);
 
-            let target = if index > 0 { STORAGE_TAG } else { START_TAG };
             let address = row.key2;
-            let storage_key = row.key3;
+            let storage_key = row.key4;
             let (address_prev, storage_key_prev) = if index > 0 {
                 let prev_row = ops[index - 1].table_assignment(randomness);
-                (prev_row.key2, prev_row.key3)
+                (prev_row.key2, prev_row.key4)
             } else {
                 (F::zero(), F::zero())
             };
@@ -785,13 +772,9 @@ impl<
             let bus_mapping = self.assign_op(
                 region,
                 offset,
-                row.key2,
-                row.rw_counter,
-                row.value,
-                row.is_write,
-                F::from(target as u64),
-                row.key3,
-                row.value_prev,
+                index == 0,
+                F::from(STORAGE_TAG as u64),
+                &row,
             )?;
             bus_mappings.push(bus_mapping);
 
@@ -806,6 +789,7 @@ impl<
             offset += 1;
         }
 
+        //println!
         Ok(bus_mappings)
     }
 
@@ -866,6 +850,7 @@ impl<
                 );
                 bus_mappings.extend(storage_mappings.unwrap());
 
+                println!("bus mapping {:#?}", bus_mappings);
                 Ok(bus_mappings.clone())
             },
         )
@@ -876,14 +861,39 @@ impl<
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        is_first: bool,
+        target: F,
+        row: &RwRow<F>,
+        /*
         address: F,
-        global_counter: F,
+        rw_counter: F,
         value: F,
         flag: F,
-        target: F,
         storage_key: F,
         value_prev: F,
+        */
     ) -> Result<BusMapping<F>, Error> {
+        // FIXME add another column later to be consistent with
+        // [spec](https://github.com/appliedzkp/zkevm-specs/blob/b145f36feaab9db33f41c4cd14251dc961b7609d/specs/tables.md#rw_table)
+        let address = if target == F::from(STORAGE_TAG as u64) {
+            row.key2
+        } else {
+            row.key3
+        };
+        // make sure targets in state circuit are consistent with evm circuit
+        debug_assert!(target == row.tag, "{:?}, {:?}", target, row.tag);
+        let target = if is_first {
+            F::from(START_TAG as u64)
+        } else {
+            target
+        };
+
+        let rw_counter = row.rw_counter;
+        let value = row.value;
+        let value_prev = row.value_prev;
+        let flag = row.is_write;
+        let storage_key = row.key4;
+
         let address = {
             let cell = region.assign_advice(|| "address", self.address, offset, || Ok(address))?;
             Variable::<F, F> {
@@ -893,21 +903,21 @@ impl<
             }
         };
 
-        if SANITY_CHECK && global_counter > F::from(GLOBAL_COUNTER_MAX as u64) {
-            panic!("global_counter out of range");
+        if SANITY_CHECK && rw_counter > F::from(RW_COUNTER_MAX as u64) {
+            panic!("rw_counter out of range");
         }
-        let global_counter = {
+        let rw_counter = {
             let cell = region.assign_advice(
-                || "global counter",
-                self.global_counter,
+                || "rw counter",
+                self.rw_counter,
                 offset,
-                || Ok(global_counter),
+                || Ok(rw_counter),
             )?;
 
             Variable::<F, F> {
                 cell,
-                field_elem: Some(global_counter),
-                value: Some(global_counter),
+                field_elem: Some(rw_counter),
+                value: Some(rw_counter),
             }
         };
 
@@ -971,7 +981,7 @@ impl<
         };
 
         Ok(BusMapping {
-            global_counter,
+            rw_counter,
             target,
             flag,
             address,
@@ -987,7 +997,7 @@ impl<
 pub struct StateCircuit<
     F: FieldExt,
     const SANITY_CHECK: bool,
-    const GLOBAL_COUNTER_MAX: usize,
+    const RW_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
     const STACK_ROWS_MAX: usize,
@@ -1007,7 +1017,7 @@ pub struct StateCircuit<
 impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
-        const GLOBAL_COUNTER_MAX: usize,
+        const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
@@ -1017,7 +1027,7 @@ impl<
     StateCircuit<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -1027,6 +1037,7 @@ impl<
 {
     /// Use rw_map to build a StateCircuit instance
     pub fn new_from_rw_map(randomness: F, rw_map: &RwMap) -> Self {
+        println!("map {:?}", rw_map);
         Self {
             randomness,
             memory_ops: rw_map.sorted_memory_rw(),
@@ -1055,7 +1066,7 @@ impl<
 impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
-        const GLOBAL_COUNTER_MAX: usize,
+        const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
@@ -1065,7 +1076,7 @@ impl<
     for StateCircuit<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -1076,7 +1087,7 @@ impl<
     type Config = Config<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -1120,12 +1131,12 @@ mod tests {
     use halo2::dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup};
     use pairing::bn256::Fr;
 
-    macro_rules! test_state_circuit {
-        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
+    macro_rules! test_state_circuit_ok {
+        ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
             let circuit = StateCircuit::<
                 Fr,
                 true,
-                $global_counter_max,
+                $rw_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
                 $stack_rows_max,
@@ -1135,17 +1146,16 @@ mod tests {
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             let verify_result = prover.verify();
-            //println!("verify result: {:#?}", verify_result);
-            assert_eq!(verify_result, $result);
+            assert!(verify_result.is_ok(), "verify err: {:#?}", verify_result);
         }};
     }
 
     macro_rules! test_state_circuit_error {
-        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
+        ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
             let circuit = StateCircuit::<
                 Fr,
                 false,
-                $global_counter_max,
+                $rw_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
                 $stack_rows_max,
@@ -1241,7 +1251,7 @@ mod tests {
             ),
         );
 
-        test_state_circuit!(
+        test_state_circuit_ok!(
             14,
             2000,
             100,
@@ -1251,8 +1261,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1, memory_op_2, memory_op_3],
             vec![stack_op_0, stack_op_1],
-            vec![storage_op_0, storage_op_1, storage_op_2],
-            Ok(())
+            vec![storage_op_0, storage_op_1, storage_op_2]
         );
     }
 
@@ -1292,7 +1301,7 @@ mod tests {
         );
 
         const STACK_ROWS_MAX: usize = 2;
-        test_state_circuit!(
+        test_state_circuit_ok!(
             14,
             2000,
             100,
@@ -1302,8 +1311,7 @@ mod tests {
             1000,
             vec![memory_op_0, memory_op_1, memory_op_2, memory_op_3],
             vec![stack_op_0, stack_op_1],
-            vec![],
-            Ok(())
+            vec![]
         );
     }
 
@@ -1430,12 +1438,12 @@ mod tests {
             MemoryOp::new(1, MemoryAddress::from(MEMORY_ADDRESS_MAX), 32),
         );
         let memory_op_1 = Operation::new(
-            RWCounter::from(GLOBAL_COUNTER_MAX),
+            RWCounter::from(RW_COUNTER_MAX),
             RW::READ,
             MemoryOp::new(1, MemoryAddress::from(MEMORY_ADDRESS_MAX), 32),
         );
         let memory_op_2 = Operation::new(
-            RWCounter::from(GLOBAL_COUNTER_MAX + 1),
+            RWCounter::from(RW_COUNTER_MAX + 1),
             RW::WRITE,
             MemoryOp::new(1, MemoryAddress::from(MEMORY_ADDRESS_MAX), 32),
         );
@@ -1468,7 +1476,7 @@ mod tests {
             StackOp::new(1, StackAddress::from(STACK_ADDRESS_MAX + 1), Word::from(12)),
         );
         let stack_op_3 = Operation::new(
-            RWCounter::from(GLOBAL_COUNTER_MAX + 1),
+            RWCounter::from(RW_COUNTER_MAX + 1),
             RW::WRITE,
             StackOp::new(1, StackAddress::from(STACK_ADDRESS_MAX + 1), Word::from(12)),
         );
@@ -1479,13 +1487,13 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 7;
         const STACK_ROWS_MAX: usize = 7;
         const STORAGE_ROWS_MAX: usize = 7;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
+        const RW_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
             16,
-            GLOBAL_COUNTER_MAX,
+            RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
             STACK_ROWS_MAX,
@@ -1535,13 +1543,13 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STACK_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
+        const RW_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
             16,
-            GLOBAL_COUNTER_MAX,
+            RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
             STACK_ROWS_MAX,
@@ -1554,7 +1562,7 @@ mod tests {
     }
 
     #[test]
-    fn non_monotone_global_counter() {
+    fn non_monotone_rw_counter() {
         let memory_op_0 = Operation::new(
             RWCounter::from(1352),
             RW::WRITE,
@@ -1815,7 +1823,7 @@ mod tests {
         let memory_ops = builder.block.container.sorted_memory();
         let storage_ops = builder.block.container.sorted_storage();
 
-        test_state_circuit!(
+        test_state_circuit_ok!(
             14,
             2000,
             100,
@@ -1825,8 +1833,7 @@ mod tests {
             1000,
             memory_ops,
             stack_ops,
-            storage_ops,
-            Ok(())
+            storage_ops
         );
     }
 }

@@ -732,11 +732,11 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::AccountStorage as u64),
                 account_address.to_scalar().unwrap(),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(
                     storage_key.to_le_bytes(),
                     randomness,
                 ),
-                F::zero(),
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
                 RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
