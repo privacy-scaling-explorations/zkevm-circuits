@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::{witness::RwMap},
+    evm_circuit::witness::RwMap,
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
@@ -12,7 +12,6 @@ use halo2::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-
 
 use crate::evm_circuit::witness::Rw;
 use pairing::arithmetic::FieldExt;
