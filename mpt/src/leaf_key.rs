@@ -1,12 +1,17 @@
 use halo2::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells,
+    },
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{HASH_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN};
+use crate::{
+    helpers::{compute_rlc, mult_diff_lookup},
+    param::{HASH_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct LeafKeyConfig {}
@@ -42,6 +47,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         modified_node: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         r_table: Vec<Expression<F>>,
+        fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> LeafKeyConfig {
         let config = LeafKeyConfig {};
@@ -75,33 +81,19 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // TODO: is_long, is_short are booleans
             // TODO: is_long + is_short = 1
 
-            // TODO: check that from some point on (depends on the rlp meta data)
-            // the values are zero (as in key_compr) - but take into account it can be long or short RLP
-
-            // TODO: check acc_mult as in leaf_key_in_added_branch
-
             let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             rlc = rlc + s_rlp2 * r_table[0].clone();
 
-            let mut rind = 1;
-            let mut r_wrapped = false;
-            for col in s_advices.iter() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                if !r_wrapped {
-                    rlc = rlc + s * r_table[rind].clone();
-                } else {
-                    rlc = rlc
-                        + s * r_table[rind].clone()
-                            * r_table[R_TABLE_LEN - 1].clone();
-                }
-                if rind == R_TABLE_LEN - 1 {
-                    rind = 0;
-                    r_wrapped = true;
-                } else {
-                    rind += 1;
-                }
-            }
+            rlc = rlc
+                + compute_rlc(
+                    meta,
+                    s_advices.to_vec(),
+                    1,
+                    one.clone(),
+                    0,
+                    r_table.clone(),
+                );
 
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
             // c_rlp2 can appear if long and if no branch above leaf
@@ -120,6 +112,60 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             constraints
         });
+
+        let sel_short = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+            let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
+
+            q_enable * is_short
+        };
+        let sel_long = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+            let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
+
+            q_enable * is_long
+        };
+
+        /*
+        TODO: uncomment when overall degree is reduced
+        // There are 0s after key length.
+        for ind in 0..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_short,
+                ind + 1,
+                s_rlp2,
+                s_advices[ind],
+                fixed_table,
+            )
+        }
+        key_len_lookup(meta, sel_short, 32, s_advices[0], c_rlp1, fixed_table);
+
+        for ind in 1..HASH_WIDTH {
+            key_len_lookup(
+                meta,
+                sel_long,
+                ind,
+                s_advices[0],
+                s_advices[ind],
+                fixed_table,
+            )
+        }
+        key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
+        key_len_lookup(meta, sel_long, 33, s_advices[0], c_rlp2, fixed_table);
+        */
+
+        // acc_mult corresponds to key length (short):
+        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, fixed_table);
+        // acc_mult corresponds to key length (long):
+        mult_diff_lookup(
+            meta,
+            sel_long,
+            3,
+            s_advices[0],
+            acc_mult,
+            fixed_table,
+        );
 
         // Checking the key - accumulated RLC is taken (computed using the path through branches)
         // and key bytes are added to the RLC. The external circuit can check

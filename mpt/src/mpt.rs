@@ -622,6 +622,7 @@ impl<F: FieldExt> MPTConfig<F> {
             modified_node,
             is_account_leaf_storage_codehash_c,
             r_table.clone(),
+            fixed_table.clone(),
             true,
         );
 
@@ -650,6 +651,7 @@ impl<F: FieldExt> MPTConfig<F> {
             modified_node,
             is_account_leaf_storage_codehash_c,
             r_table.clone(),
+            fixed_table.clone(),
             false,
         );
 

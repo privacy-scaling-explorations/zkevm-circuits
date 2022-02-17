@@ -26,7 +26,6 @@ pub fn into_words_expr<F: FieldExt>(
     words
 }
 
-// TODO: use this function in all chips
 pub fn compute_rlc<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     advices: Vec<Column<Advice>>,
