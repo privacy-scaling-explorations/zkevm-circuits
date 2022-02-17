@@ -27,8 +27,9 @@ mod test_evm_circuit {
         param::STEP_HEIGHT,
         table::FixedTableTag,
         witness::{Block, Bytecode, Rw, Transaction},
-        EvmCircuit, RwTable,
+        EvmCircuit,
     };
+    use zkevm_circuits::rw_table::RwTable;
 
     #[derive(Clone)]
     struct TestCircuitConfig<F> {

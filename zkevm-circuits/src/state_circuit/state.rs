@@ -319,27 +319,19 @@ impl<
         meta.create_gate("First memory row operation", |meta| {
             let value = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
+            let q_read = one.clone() - flag;
             let q_memory_first = q_memory_first(meta);
 
-            //
-            //      - values[0] == [0]
-            //      - flags[0] == 1
-            //      - global_counters[0] == 0
-
-            vec![
-                q_memory_first.clone() * value,
-                q_memory_first.clone() * (one.clone() - flag),
-                q_memory_first * global_counter,
-            ]
+            // read value must be 0
+            vec![q_memory_first * q_read * value]
         });
 
         meta.create_gate("Memory operation + padding", |meta| {
-            // If address_cur != address_prev, this is an `init`. We must
-            // constrain:
-            //      - values[0] == [0]
-            //      - flags[0] == 1
-            //      - global_counters[0] == 0
+            // if is_read:
+            //      if address_cur == address_prev:
+            //          value == prev_value
+            //      else:
+            //          value == 0
             let q_memory_not_first = q_memory_not_first(meta);
             let address_diff = {
                 let address_prev = meta.query_advice(address, Rotation::prev());
@@ -349,8 +341,6 @@ impl<
 
             let value_cur = meta.query_advice(value, Rotation::cur());
             let flag = meta.query_advice(flag, Rotation::cur());
-            let global_counter =
-                meta.query_advice(global_counter, Rotation::cur());
 
             // flag == 0 or 1
             // (flag) * (1 - flag)
@@ -366,19 +356,17 @@ impl<
             let bool_check_padding = padding.clone() * (one.clone() - padding);
 
             vec![
-                q_memory_not_first.clone()
-                    * address_diff.clone()
-                    * value_cur.clone(), // when address changes, the write value is 0
-                q_memory_not_first.clone()
-                    * address_diff.clone()
-                    * q_read.clone(), // when address changes, the flag is 1 (write)
-                q_memory_not_first.clone() * address_diff * global_counter, // when address changes, global_counter is 0
                 q_memory_not_first.clone() * bool_check_flag, // flag is either 0 or 1
-                q_memory_not_first * q_read * (value_cur - value_prev), // when reading, the value is the same as at the previous op
-                // Note that this last constraint needs to hold only when address doesn't change,
-                // but we don't need to check this as the first operation at the address always
-                // has to be write - that means q_read is 1 only when
-                // the address and storage key don't change.
+                // if address changes, read value should be 0
+                q_memory_not_first.clone()
+                    * address_diff
+                    * q_read.clone()
+                    * value_cur.clone(),
+                // or else, read value should be the same as the previous value
+                q_memory_not_first
+                    * address_diff_is_zero.is_zero_expression.clone()
+                    * q_read
+                    * (value_cur - value_prev),
                 q_target * bool_check_padding, // padding is 0 or 1
             ]
         });
@@ -722,14 +710,7 @@ impl<
                 );
             }
 
-            // memory ops have init row
-            if index == 0 || address != address_prev {
-                let target = if index == 0 { START_TAG } else { MEMORY_TAG };
-                self.init(region, offset, address, target)?;
-                address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
-                offset += 1;
-            }
-
+            let target = if index == 0 { START_TAG } else { MEMORY_TAG };
             if offset >= offset_limit {
                 panic!("too many memory operations {} > {}", offset, offset_limit);
             }
@@ -740,12 +721,13 @@ impl<
                 row.rw_counter,
                 row.value,
                 row.is_write,
-                F::from(MEMORY_TAG as u64),
+                F::from(target as u64),
                 F::zero(),
                 F::zero(),
             )?;
             bus_mappings.push(bus_mapping);
 
+            address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
             offset += 1;
         }
         self.pad_rows(
@@ -986,27 +968,6 @@ impl<
                 Ok(bus_mappings.clone())
             },
         )
-    }
-
-    /// Initialise first row for a new memory operation, which can be seen as a
-    /// "write 0" operation
-    fn init(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        address: F,
-        target: usize,
-    ) -> Result<(), Error> {
-        region.assign_fixed(
-            || "target",
-            self.q_target,
-            offset,
-            || Ok(F::from(target as u64)),
-        )?;
-        region.assign_advice(|| "init address", self.address, offset, || Ok(address))?;
-        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
-
-        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]

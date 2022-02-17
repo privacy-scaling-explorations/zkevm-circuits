@@ -29,6 +29,15 @@ pub struct Block<F> {
     /// The block context
     pub context: BlockContext<F>,
 }
+//pub type RwIndex = (bus_mapping::operation::Target, usize);
+/*
+pub type RwIndex =usize ;
+impl<F: FieldExt> Block<F> {
+    pub fn get_rw_by_index(&self, idx: RwIndex) -> Rw {
+        self.rws.get_rw_by_index(idx)
+    }
+}
+*/
 
 #[derive(Debug, Default)]
 pub struct BlockContext<F> {
@@ -366,6 +375,54 @@ impl Bytecode {
     }
 }
 
+/// Container of rws in a block
+#[derive(Debug, Default)]
+pub struct BlockRw {
+    pub stack: Vec<Rw>,
+    pub memory: Vec<Rw>,
+    pub storage: Vec<Rw>,
+    pub tx_access_list_account: Vec<Rw>,
+    pub tx_access_list_account_storage: Vec<Rw>,
+    pub tx_refund: Vec<Rw>,
+    pub account: Vec<Rw>,
+    pub account_destructed: Vec<Rw>,
+    pub call_context: Vec<Rw>,
+}
+
+impl BlockRw {
+    pub fn get_all_rws(self) -> Vec<Rw> {
+        let mut rws = Vec::new();
+        rws.extend(self.stack);
+        rws.extend(self.memory);
+        rws.extend(self.storage);
+        rws.extend(self.tx_access_list_account);
+        rws.extend(self.tx_access_list_account_storage);
+        rws.extend(self.tx_refund);
+        rws.extend(self.account);
+        rws.extend(self.account_destructed);
+        rws.extend(self.call_context);
+        rws
+    }
+    /*
+    pub fn get_rw_by_index(&self, index: RwIndex) -> Rw {
+        // FIXME
+
+        let (rw_type, idx) = index;
+        match rw_type {
+            bus_mapping::operation::Target::Memory => self.memory[idx],
+            bus_mapping::operation::Target::Stack => self.stack[idx],
+            bus_mapping::operation::Target::Storage => self.storage[idx],
+            bus_mapping::operation::Target::TxAccessListAccount => self.tx_access_list_account[idx],
+            bus_mapping::operation::Target::TxAccessListAccountStorage => self.tx_access_list_account_storage[idx],
+            bus_mapping::operation::Target::TxRefund => self.tx_refund[idx],
+            bus_mapping::operation::Target::Account => self.account[idx],
+            bus_mapping::operation::Target::AccountDestructed => self.account_destructed[idx],
+        }
+
+    }
+    */
+}
+
 #[derive(Clone, Debug)]
 pub enum Rw {
     TxAccessListAccount {
@@ -692,6 +749,8 @@ fn step_convert(
             .iter()
             .map(|x| {
                 let index = x.as_usize() - 1;
+                //(x.target(), index)
+
                 match x.target() {
                     bus_mapping::operation::Target::Stack => stack_ops_idx[index],
                     bus_mapping::operation::Target::Memory => memory_ops_idx[index] + stack_ops_len,
@@ -794,16 +853,22 @@ pub fn block_convert(
 
     // TODO: fix call_id
     let call_id = 1;
-    block
-        .rws
-        .extend(stack_ops.iter().map(|op| stack_op_to_rw(op, call_id)));
-    block
-        .rws
-        .extend(memory_ops.iter().map(|op| memory_op_to_rw(op, call_id)));
-    block
-        .rws
-        .extend(storage_ops.iter().map(|op| storage_op_to_rw(op, call_id)));
-
+    block.rws = BlockRw {
+        stack: stack_ops
+            .iter()
+            .map(|op| stack_op_to_rw(op, call_id))
+            .collect_vec(),
+        memory: memory_ops
+            .iter()
+            .map(|op| memory_op_to_rw(op, call_id))
+            .collect_vec(),
+        storage: storage_ops
+            .iter()
+            .map(|op| storage_op_to_rw(op, call_id))
+            .collect_vec(),
+        ..Default::default()
+    }
+    .get_all_rws();
     block
 }
 

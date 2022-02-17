@@ -127,17 +127,18 @@ pub enum BlockContextFieldTag {
     BlockHash,
 }
 
+// RwTableTag should be consistent with tag used in state circuit
 #[derive(Clone, Copy, Debug)]
 pub enum RwTableTag {
-    TxAccessListAccount = 1,
+    Stack = 2,
+    Memory,
+    AccountStorage,
+    TxAccessListAccount,
     TxAccessListAccountStorage,
     TxRefund,
     Account,
-    AccountStorage,
     AccountDestructed,
     CallContext,
-    Stack,
-    Memory,
 }
 
 impl RwTableTag {
