@@ -396,41 +396,46 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
     }
 }
 
-    pub call_context: Vec<Rw>,
-}
-
-impl BlockRw {
-    pub fn get_all_rws(self) -> Vec<Rw> {
-        let mut rws = Vec::new();
-        rws.extend(self.stack);
-        rws.extend(self.memory);
-        rws.extend(self.storage);
-        rws.extend(self.tx_access_list_account);
-        rws.extend(self.tx_access_list_account_storage);
-        rws.extend(self.tx_refund);
-        rws.extend(self.account);
-        rws.extend(self.account_destructed);
-        rws.extend(self.call_context);
-        rws
+impl RwMap {
+    /// These "sorted_xx" methods are used in state circuit
+    pub fn sorted_memory_rw(&self) -> Vec<Rw> {
+        let mut sorted = self.0[&RwTableTag::Memory].clone();
+        sorted.sort_by_key(|x| match x {
+            Rw::Memory {
+                call_id,
+                memory_address,
+                ..
+            } => (*call_id, *memory_address),
+            _ => panic!("invalid memory rw"),
+        });
+        sorted
     }
-    /*
-    pub fn get_rw_by_index(&self, index: RwIndex) -> Rw {
-        // FIXME
 
-        let (rw_type, idx) = index;
-        match rw_type {
-            bus_mapping::operation::Target::Memory => self.memory[idx],
-            bus_mapping::operation::Target::Stack => self.stack[idx],
-            bus_mapping::operation::Target::Storage => self.storage[idx],
-            bus_mapping::operation::Target::TxAccessListAccount => self.tx_access_list_account[idx],
-            bus_mapping::operation::Target::TxAccessListAccountStorage => self.tx_access_list_account_storage[idx],
-            bus_mapping::operation::Target::TxRefund => self.tx_refund[idx],
-            bus_mapping::operation::Target::Account => self.account[idx],
-            bus_mapping::operation::Target::AccountDestructed => self.account_destructed[idx],
-        }
-
+    pub fn sorted_stack_rw(&self) -> Vec<Rw> {
+        let mut sorted = self.0[&RwTableTag::Stack].clone();
+        sorted.sort_by_key(|x| match x {
+            Rw::Stack {
+                call_id,
+                stack_pointer,
+                ..
+            } => (*call_id, *stack_pointer),
+            _ => panic!("invalid stack rw"),
+        });
+        sorted
     }
-    */
+
+    pub fn sorted_storage_rw(&self) -> Vec<Rw> {
+        let mut sorted = self.0[&RwTableTag::AccountStorage].clone();
+        sorted.sort_by_key(|x| match x {
+            Rw::AccountStorage {
+                account_address,
+                storage_key,
+                ..
+            } => (*account_address, *storage_key),
+            _ => panic!("invalid storage rw"),
+        });
+        sorted
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -593,6 +598,7 @@ impl Rw {
                 F::zero(),
                 F::zero(),
             ]
+            .into(),
             Self::TxAccessListAccountStorage {
                 rw_counter,
                 is_write,
@@ -615,7 +621,8 @@ impl Rw {
                 F::from(*value_prev as u64),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Account {
                 rw_counter,
                 is_write,
@@ -985,12 +992,6 @@ impl From<&eth_types::bytecode::Bytecode> for Bytecode {
 fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
     ExecStep {
         call_index: step.call_index,
-
-    let (stack_ops_len, memory_ops_len, _storage_ops_len) = (
-        stack_ops_idx.len(),
-        memory_ops_idx.len(),
-        storage_ops_idx.len(),
-    );
         rw_indices: step
             .bus_mapping_instance
             .iter()
@@ -1070,7 +1071,6 @@ fn tx_convert(tx: &circuit_input_builder::Transaction) -> Transaction {
         steps: tx.steps().iter().map(step_convert).collect(),
     }
 }
-
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
@@ -1081,62 +1081,13 @@ pub fn block_convert(
         rws: RwMap::from(&block.container),
         txs: block.txs().iter().map(tx_convert).collect(),
         bytecodes: block
-        .sorted_by_key(|(_, op)| op.rwc())
-        .map(|(idx, _)| idx)
-        .collect();
-    let memory_ops_idx: Vec<usize> = memory_ops
-        .iter()
-        .enumerate()
-        .sorted_by_key(|(_, op)| op.rwc())
-        .map(|(idx, _)| idx)
-        .collect();
-    let storage_ops_idx: Vec<usize> = storage_ops
-        .iter()
-        .enumerate()
-        .sorted_by_key(|(_, op)| op.rwc())
-        .map(|(idx, _)| idx)
-        .collect();
-    let ops_idx = (stack_ops_idx, memory_ops_idx, storage_ops_idx);
             .txs()
             .iter()
             .flat_map(|tx| {
                 tx.calls()
                     .iter()
                     .map(|call| Bytecode::new(code_db.0.get(&call.code_hash).unwrap().to_vec()))
+            })
             .collect(),
-    }
-    }
-    .get_all_rws();
-}
-
-pub fn stack_op_to_rw(op: &Operation<StackOp>, call_id: usize) -> Rw {
-    Rw::Stack {
-        rw_counter: op.rwc().into(),
-        is_write: op.op().rw().is_write(),
-        call_id,
-        stack_pointer: usize::from(*op.op().address()),
-        value: *op.op().value(),
-    }
-}
-
-pub fn memory_op_to_rw(op: &Operation<MemoryOp>, call_id: usize) -> Rw {
-    Rw::Memory {
-        rw_counter: op.rwc().into(),
-        is_write: op.op().rw().is_write(),
-        call_id,
-        memory_address: u64::from_le_bytes(
-            op.op().address().to_le_bytes()[..8].try_into().unwrap(),
-        ),
-        byte: op.op().value(),
-    }
-}
-pub fn storage_op_to_rw(op: &Operation<StorageOp>, _call_id: usize) -> Rw {
-    Rw::AccountStorage {
-        rw_counter: op.rwc().into(),
-        is_write: op.op().rw().is_write(),
-        account_address: op.op().address,
-        storage_key: op.op().key,
-        value: op.op().value,
-        value_prev: op.op().value_prev,
     }
 }

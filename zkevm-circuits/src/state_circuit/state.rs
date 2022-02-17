@@ -1,17 +1,18 @@
 use crate::{
-    evm_circuit::witness::{memory_op_to_rw, stack_op_to_rw, storage_op_to_rw},
+    evm_circuit::{witness::RwMap},
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
         Variable,
     },
 };
-use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
+use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+
 
 use crate::evm_circuit::witness::Rw;
 use pairing::arithmetic::FieldExt;
@@ -1121,30 +1122,30 @@ impl<
         STORAGE_ROWS_MAX,
     >
 {
+    /// Use rw_map to build a StateCircuit instance
+    pub fn new_from_rw_map(randomness: F, rw_map: &RwMap) -> Self {
+        Self {
+            randomness,
+            memory_ops: rw_map.sorted_memory_rw(),
+            stack_ops: rw_map.sorted_stack_rw(),
+            storage_ops: rw_map.sorted_storage_rw(),
+        }
+    }
     /// Use memory_ops, stack_ops, storage_ops to build a StateCircuit instance.
+    /// This method should be replaced with `new_from_rw_map` later.
     pub fn new(
         randomness: F,
         memory_ops: Vec<Operation<MemoryOp>>,
         stack_ops: Vec<Operation<StackOp>>,
         storage_ops: Vec<Operation<StorageOp>>,
     ) -> Self {
-        // FIXME
-        let call_id = 1;
-        Self {
-            randomness,
-            memory_ops: memory_ops
-                .iter()
-                .map(|op| memory_op_to_rw(op, call_id))
-                .collect::<Vec<_>>(),
-            stack_ops: stack_ops
-                .iter()
-                .map(|op| stack_op_to_rw(op, call_id))
-                .collect::<Vec<_>>(),
-            storage_ops: storage_ops
-                .iter()
-                .map(|op| storage_op_to_rw(op, call_id))
-                .collect::<Vec<_>>(),
-        }
+        let rw_map = RwMap::from(&OperationContainer {
+            memory: memory_ops,
+            stack: stack_ops,
+            storage: storage_ops,
+            ..Default::default()
+        });
+        Self::new_from_rw_map(randomness, &rw_map)
     }
 }
 

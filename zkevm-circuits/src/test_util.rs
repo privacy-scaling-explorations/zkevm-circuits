@@ -76,7 +76,7 @@ pub fn run_test_circuits_with_config(
     if config.enable_state_circuit_test {
         let block_for_state_circuit = builder.block;
         let state_circuit = StateCircuit::<Fr, true, 2000, 100, 100, 100, 1023, 100>::new(
-            config.randomness,
+            randomness,
             block_for_state_circuit.container.sorted_memory(),
             block_for_state_circuit.container.sorted_stack(),
             block_for_state_circuit.container.sorted_storage(),
