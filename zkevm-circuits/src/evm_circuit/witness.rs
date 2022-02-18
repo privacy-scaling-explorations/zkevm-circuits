@@ -862,6 +862,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::JUMPI => ExecutionState::JUMPI,
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
+            OpcodeId::CALLER => ExecutionState::CALLER,
+            OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
             OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
             OpcodeId::GAS => ExecutionState::GAS,
