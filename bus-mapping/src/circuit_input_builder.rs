@@ -204,6 +204,13 @@ impl Block {
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<TX>,
     ) -> Result<Self, Error> {
+        if eth_block.base_fee_per_gas.is_none() {
+            // FIXME: resolve this once we have proper EIP-1559 support
+            log::warn!(
+                "This does not look like a EIP-1559 block - base_fee_per_gas defaults to zero"
+            );
+        }
+
         Ok(Self {
             chain_id,
             history_hashes,
@@ -216,9 +223,7 @@ impl Block {
                 .into(),
             timestamp: eth_block.timestamp,
             difficulty: eth_block.difficulty,
-            base_fee: eth_block
-                .base_fee_per_gas
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+            base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             container: OperationContainer::new(),
             txs: Vec::new(),
             code: HashMap::new(),
