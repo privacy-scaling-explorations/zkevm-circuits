@@ -54,7 +54,7 @@ pub enum OogError {
 #[derive(Debug, PartialEq)]
 pub enum ExecError {
     /// Always returned for REVERT
-    ExecutionReverted,
+    Reverted,
     /// Invalid Opcode
     InvalidOpcode,
     /// For opcodes who push more than pop
@@ -74,7 +74,7 @@ pub enum ExecError {
     ContractAddressCollision,
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
     /// (EOF)
-    InvalidCode,
+    InvalidCreationCode,
     /// For JUMP, JUMPI
     InvalidJump,
     /// For RETURNDATACOPY
@@ -1028,7 +1028,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if !matches!(step.op, OpcodeId::RETURN) {
                 // Without calling RETURN
                 return Ok(Some(match step.op {
-                    OpcodeId::REVERT => ExecError::ExecutionReverted,
+                    OpcodeId::REVERT => ExecError::Reverted,
                     OpcodeId::JUMP | OpcodeId::JUMPI => ExecError::InvalidJump,
                     OpcodeId::RETURNDATACOPY => ExecError::ReturnDataOutOfBounds,
                     // Break write protection (CALL with value will be handled
@@ -1067,7 +1067,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         && !step.memory.0.is_empty()
                         && step.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
                     {
-                        return Ok(Some(ExecError::InvalidCode));
+                        return Ok(Some(ExecError::InvalidCreationCode));
                     } else if Word::from(200u64) * length > Word::from(step.gas.0) {
                         return Ok(Some(ExecError::CodeStoreOutOfGas));
                     } else {
@@ -2227,7 +2227,7 @@ mod tracer_tests {
         builder.state_ref().push_call(mock_internal_create());
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
-            Some(ExecError::InvalidCode)
+            Some(ExecError::InvalidCreationCode)
         );
     }
 
@@ -2486,7 +2486,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
-            Some(ExecError::ExecutionReverted)
+            Some(ExecError::Reverted)
         );
 
         // With CALL
@@ -2513,7 +2513,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
-            Some(ExecError::ExecutionReverted)
+            Some(ExecError::Reverted)
         );
     }
 

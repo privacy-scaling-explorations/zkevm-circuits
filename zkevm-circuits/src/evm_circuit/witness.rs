@@ -828,7 +828,7 @@ impl From<&operation::OperationContainer> for RwMap {
 impl From<&ExecError> for ExecutionState {
     fn from(error: &ExecError) -> Self {
         match error {
-            ExecError::ExecutionReverted => ExecutionState::ErrorReverted,
+            ExecError::Reverted => ExecutionState::ErrorReverted,
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
             ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
@@ -836,7 +836,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::Depth => ExecutionState::ErrorDepth,
             ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
             ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
-            ExecError::InvalidCode => ExecutionState::ErrorInvalidCreationCode,
+            ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
             ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
