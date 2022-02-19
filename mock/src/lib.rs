@@ -1,12 +1,13 @@
 //! Mock types and functions to generate GethData used for tests
 
-use eth_types::bytecode::Bytecode;
-use eth_types::evm_types::Gas;
-use eth_types::geth_types::{Account, BlockConstants, GethData, Transaction};
 use eth_types::{
-    address, Address, Block, Bytes, ChainConstants, Error, GethExecStep, GethExecTrace, Hash, Word,
-    U64,
+    address,
+    bytecode::Bytecode,
+    evm_types::Gas,
+    geth_types::{Account, BlockConstants, GethData, Transaction},
+    Address, Block, Bytes, Error, Hash, Word, U64,
 };
+use external_tracer::{trace, TraceConfig};
 use lazy_static::lazy_static;
 
 /// Mock chain ID
@@ -30,20 +31,25 @@ pub fn new_single_tx_trace_accounts_gas(
     let eth_block = new_block();
     let mut eth_tx = new_tx(&eth_block);
     eth_tx.gas = Word::from(gas.0);
-    let c_constant = new_chain_constants();
-    let b_constant = BlockConstants::from_eth_block(&eth_block, &Word::from(c_constant.chain_id));
-    let tracer_tx = Transaction::from_eth_tx(&eth_tx);
-    let geth_trace = GethExecTrace {
-        gas: Gas(eth_tx.gas.as_u64()),
-        failed: false,
-        struct_logs: external_tracer::trace(&b_constant, &tracer_tx, &accounts)?.to_vec(),
+
+    let trace_config = TraceConfig {
+        chain_id: MOCK_CHAIN_ID.into(),
+        // TODO: Add mocking history_hashes when nedded.
+        history_hashes: Vec::new(),
+        block_constants: BlockConstants::try_from(&eth_block)?,
+        accounts: accounts
+            .iter()
+            .map(|account| (account.address, account.clone()))
+            .collect(),
+        transaction: Transaction::from_eth_tx(&eth_tx),
     };
+    let geth_trace = trace(&trace_config)?;
 
     Ok(GethData {
+        chain_id: trace_config.chain_id,
+        history_hashes: trace_config.history_hashes,
         eth_block,
         eth_tx,
-        c_constant,
-        b_constant,
         geth_trace,
         accounts,
     })
@@ -92,29 +98,6 @@ pub fn new_single_tx_trace_code_at_start(code: &Bytecode) -> Result<GethData, Er
     geth_data.geth_trace.struct_logs =
         geth_data.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
     Ok(geth_data)
-}
-
-/// Create a new block with a single tx that leads to the geth_steps passed
-/// by argument.
-pub fn new_single_tx_geth_steps(geth_steps: Vec<GethExecStep>) -> GethData {
-    let eth_block = new_block();
-    let eth_tx = new_tx(&eth_block);
-    let c_constant = new_chain_constants();
-    let b_constant = BlockConstants::from_eth_block(&eth_block, &Word::from(c_constant.chain_id));
-    let geth_trace = eth_types::GethExecTrace {
-        gas: Gas(eth_tx.gas.as_u64()),
-        failed: false,
-        struct_logs: geth_steps,
-    };
-
-    GethData {
-        eth_block,
-        eth_tx,
-        c_constant,
-        b_constant,
-        geth_trace,
-        accounts: vec![],
-    }
 }
 
 /// Generate a new mock block with preloaded data, useful for tests.
@@ -170,19 +153,13 @@ pub fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
     }
 }
 
-/// Generate a new mock chain constants, useful for tests.
-fn new_chain_constants() -> eth_types::ChainConstants {
-    ChainConstants {
-        chain_id: MOCK_CHAIN_ID,
-    }
-}
-
 /// Generate a new mock tracer Account with preloaded data, useful for tests.
 fn new_tracer_account(code: &Bytecode) -> Account {
     Account {
-        address: new_tracer_tx().target,
+        address: new_tracer_tx().to.unwrap(),
         balance: Word::from(555u64),
         code: Bytes::from(code.to_vec()),
+        ..Default::default()
     }
 }
 
@@ -190,8 +167,9 @@ fn new_tracer_account(code: &Bytecode) -> Account {
 /// tests.
 pub fn new_tracer_tx() -> Transaction {
     Transaction {
-        origin: *MOCK_COINBASE,
+        from: *MOCK_COINBASE,
+        to: Some(Address::zero()),
         gas_limit: Word::from(1_000_000u64),
-        target: Address::zero(),
+        ..Default::default()
     }
 }

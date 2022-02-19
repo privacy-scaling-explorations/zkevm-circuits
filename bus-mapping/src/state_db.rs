@@ -1,10 +1,10 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use eth_types::{Address, Hash, Word, H256};
+use eth_types::{Address, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
@@ -59,12 +59,22 @@ impl Account {
             code_hash: *CODE_HASH_ZERO,
         }
     }
+
+    /// Return if account is empty or not.
+    pub fn is_empty(&self) -> bool {
+        self.nonce.is_zero()
+            && self.balance.is_zero()
+            && self.storage.is_empty()
+            && self.code_hash.eq(&CODE_HASH_ZERO)
+    }
 }
 
 /// In-memory key-value database that represents the Ethereum State Trie.
 #[derive(Debug, Clone)]
 pub struct StateDB {
     state: HashMap<Address, Account>,
+    access_list_account: HashSet<Address>,
+    access_list_account_storage: HashSet<(Address, U256)>,
 }
 
 impl Default for StateDB {
@@ -78,6 +88,8 @@ impl StateDB {
     pub fn new() -> Self {
         Self {
             state: HashMap::new(),
+            access_list_account: HashSet::new(),
+            access_list_account_storage: HashSet::new(),
         }
     }
 
@@ -134,6 +146,28 @@ impl StateDB {
             false
         };
         (found, acc.storage.get_mut(key).expect("key not inserted"))
+    }
+
+    /// Add `addr` into account access list. Returns `true` if it's not in the
+    /// access list before.
+    pub fn add_account_to_access_list(&mut self, addr: Address) -> bool {
+        self.access_list_account.insert(addr)
+    }
+
+    /// Remove `addr` from account access list.
+    pub fn remove_account_from_access_list(&mut self, addr: &Address) {
+        assert!(self.access_list_account.remove(addr));
+    }
+
+    /// Add `(addr, key)` into account storage access list. Returns `true` if
+    /// it's not in the access list before.
+    pub fn add_account_storage_to_access_list(&mut self, (addr, key): (Address, Word)) -> bool {
+        self.access_list_account_storage.insert((addr, key))
+    }
+
+    /// Remove `(addr, key)` from account storage access list.
+    pub fn remove_account_storage_from_access_list(&mut self, pair: &(Address, Word)) {
+        assert!(self.access_list_account_storage.remove(pair));
     }
 }
 

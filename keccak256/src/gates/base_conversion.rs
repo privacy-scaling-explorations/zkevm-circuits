@@ -148,7 +148,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                         region.constrain_equal(input_acc_cell, input_coef_cell)?;
                         region.constrain_equal(output_acc_cell, output_coef_cell)?;
                     } else if offset == input_coefs.len() - 1 {
-                        region.constrain_equal(input_acc_cell, input.0)?;
+                        //region.constrain_equal(input_acc_cell, input.0)?;
                         return Ok((output_acc_cell, output_acc));
                     }
                 }

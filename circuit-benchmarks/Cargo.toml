@@ -11,9 +11,11 @@ halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 ark-std = { version = "0.3", features = ["print-trace"] }
 zkevm-circuits = { path = "../zkevm-circuits" }
+keccak256 = { path = "../keccak256" }
 bus-mapping = { path = "../bus-mapping" }
 rand_xorshift = "0.3"
 rand = "0.8"
+itertools = "0.10"
 
 [features]
 default = []

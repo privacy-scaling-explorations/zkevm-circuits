@@ -18,13 +18,10 @@ minIdleCPU=$(cat cpu.stats | awk '{ print $8 }' | sed  's/%//g' | sort -n | head
 maxUsedCPU=$(bc <<< "scale=2; 100-$minIdleCPU")
 maxMemUsed=$(cat mem.stats | awk '{ print $4 }' | sed 's/G//g' | sort -n | tail -1)
 
-#echo $maxUsedCPU
-#echo $maxMemUsed
-#echo "Maximum CPU Usage at $maxUsedCPU%"
-#echo "Maximum Mem Usage at ${maxMemUsed}Gb"
-
 logfile=$(ls $target_dir | grep proverlog | xargs -n 1 basename)
 tail -12 $target_dir/$logfile
 
 echo "Maximum CPU Usage at $maxUsedCPU%"
 echo "Maximum Mem Usage at ${maxMemUsed}Gb"
+
+mv $target_dir/$logfile /home/ubuntu/CI_Prover_Benches/ProverLogs/"$logfile"_PR"$prnumber"

@@ -1,4 +1,11 @@
 //! Definition of each opcode of the EVM.
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::Error;
+use core::fmt::Debug;
+use eth_types::GethExecStep;
+
+mod caller;
+mod callvalue;
 mod coinbase;
 mod dup;
 mod gas;
@@ -16,14 +23,12 @@ mod stackonlyop;
 mod stop;
 mod swap;
 mod timestamp;
-use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::evm::OpcodeId;
-use crate::Error;
-use core::fmt::Debug;
-use eth_types::GethExecStep;
 use log::warn;
 
 use self::push::Push;
+use caller::Caller;
+use callvalue::Callvalue;
 use dup::Dup;
 use gas::Gas;
 use jump::Jump;
@@ -96,8 +101,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
         // OpcodeId::ORIGIN => {},
-        // OpcodeId::CALLER => {},
-        // OpcodeId::CALLVALUE => {},
+        OpcodeId::CALLER => Caller::gen_associated_ops,
+        OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         // OpcodeId::CALLDATALOAD => {},
         // OpcodeId::CALLDATASIZE => {},
         // OpcodeId::CALLDATACOPY => {},

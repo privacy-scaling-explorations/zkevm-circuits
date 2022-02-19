@@ -12,9 +12,6 @@ pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
 
-type Address = u64;
-type MemorySize = u64;
-
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
     // expression for constraint
@@ -74,7 +71,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 }
 
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
-    const NUM_BYTES: usize = N;
+    const N_BYTES: usize = N;
 
     pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
         bytes.iter().rev().fold(F::zero(), |acc, byte| {
@@ -166,6 +163,39 @@ pub(crate) mod and {
 
     pub(crate) fn value<F: FieldExt>(inputs: Vec<F>) -> F {
         inputs.iter().fold(F::one(), |acc, input| acc * input)
+    }
+}
+
+/// Returns `1` when `expr[0] || expr[1] || ... == 1`, and returns `0`
+/// otherwise. Inputs need to be boolean
+pub(crate) mod or {
+    use super::{and, not};
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
+        inputs: I,
+    ) -> Expression<F> {
+        not::expr(and::expr(inputs.into_iter().map(not::expr)))
+    }
+
+    pub(crate) fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+        not::value(and::value(inputs.into_iter().map(not::value).collect()))
+    }
+}
+
+/// Returns `1` when `b == 0`, and returns `0` otherwise.
+/// `b` needs to be boolean
+pub(crate) mod not {
+    use crate::util::Expr;
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(b: E) -> Expression<F> {
+        1.expr() - b.expr()
+    }
+
+    pub(crate) fn value<F: FieldExt>(b: F) -> F {
+        F::one() - b
     }
 }
 
