@@ -1,7 +1,7 @@
 use crate::arith_helpers::*;
 use crate::common::*;
-use crate::gates::gate_helpers::biguint_to_f;
 use crate::keccak_arith::*;
+use crate::permutation::gate_helpers::biguint_to_f;
 use eth_types::Field;
 use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::circuit::Layouter;
@@ -273,7 +273,6 @@ impl<F: Field> IotaB9Config<F> {
 mod tests {
     use super::*;
     use crate::common::{PERMUTATION, ROUND_CONSTANTS};
-    use crate::gates::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};

@@ -1,12 +1,12 @@
 use crate::{
     arith_helpers::*,
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
-    gates::{
+    keccak_arith::*,
+    permutation::{
         iota_b9::IotaB9Config, mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
         state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
         xi::XiConfig,
     },
-    keccak_arith::*,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -285,7 +285,7 @@ impl<F: Field> KeccakFConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
-    use crate::gates::gate_helpers::*;
+    use crate::permutation::gate_helpers::*;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};

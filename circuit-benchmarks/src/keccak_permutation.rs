@@ -82,7 +82,7 @@ mod tests {
     use keccak256::{
         arith_helpers::*,
         common::{State, ROUND_CONSTANTS},
-        gates::gate_helpers::*,
+        permutation::gate_helpers::*,
     };
     use pairing::bn256::{Bn256, Fr, G1Affine};
     use rand::SeedableRng;

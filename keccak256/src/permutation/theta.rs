@@ -101,8 +101,8 @@ impl<F: Field> ThetaConfig<F> {
 mod tests {
     use super::*;
     use crate::common::*;
-    use crate::gates::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
+    use crate::permutation::gate_helpers::*;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
