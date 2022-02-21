@@ -140,7 +140,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[6]].accesslist_value_pair();
+        let (_, is_warm) = block.rws[step.rw_indices[6]].tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 

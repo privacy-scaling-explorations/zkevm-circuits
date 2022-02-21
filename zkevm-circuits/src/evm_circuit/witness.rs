@@ -463,7 +463,7 @@ pub enum Rw {
 }
 
 impl Rw {
-    pub fn accesslist_value_pair(&self) -> (bool, bool) {
+    pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
                 value, value_prev, ..
