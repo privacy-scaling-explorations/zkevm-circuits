@@ -72,11 +72,13 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         });
         cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             cb.call_context_lookup(
+                false.expr(),
                 None,
                 CallContextFieldTag::CallDataLength,
                 call_data_length.expr(),
             );
             cb.call_context_lookup(
+                false.expr(),
                 None,
                 CallContextFieldTag::CallDataOffset,
                 call_data_offset.expr(),
@@ -169,8 +171,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction<F>,
-        call: &Call<F>,
+        tx: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -195,7 +197,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
-            (tx.call_data_length, 0)
+            (tx.call_data_length as u64, 0_u64)
         } else {
             (call.call_data_length, call.call_data_offset)
         };
@@ -228,14 +230,13 @@ mod test {
     use crate::evm_circuit::{
         execution::memory_copy::test::make_memory_copy_steps,
         step::ExecutionState,
-        table::CallContextFieldTag,
+        table::{CallContextFieldTag, RwTableTag},
         test::{calc_memory_copier_gas_cost, rand_bytes, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
     use eth_types::{
         evm_types::{GasCost, OpcodeId},
-        ToBigEndian, ToLittleEndian, Word,
+        ToBigEndian, Word,
     };
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
@@ -255,39 +256,50 @@ mod test {
             .concat(),
         );
         let call_id = 1;
-        let call_data = rand_bytes(call_data_length);
+        let call_data: Vec<u8> = rand_bytes(call_data_length);
 
-        let mut rws = vec![
-            Rw::Stack {
-                rw_counter: 1,
-                is_write: false,
-                call_id,
-                stack_pointer: 1021,
-                value: memory_offset,
-            },
-            Rw::Stack {
-                rw_counter: 2,
-                is_write: false,
-                call_id,
-                stack_pointer: 1022,
-                value: data_offset,
-            },
-            Rw::Stack {
-                rw_counter: 3,
-                is_write: false,
-                call_id,
-                stack_pointer: 1023,
-                value: length,
-            },
-            Rw::CallContext {
-                rw_counter: 4,
-                is_write: false,
-                call_id,
-                field_tag: CallContextFieldTag::TxId,
-                value: Word::one(),
-            },
-        ];
-        let mut rw_counter = rws.len() + 1;
+        let mut rws = RwMap(
+            [
+                (
+                    RwTableTag::Stack,
+                    vec![
+                        Rw::Stack {
+                            rw_counter: 1,
+                            is_write: false,
+                            call_id,
+                            stack_pointer: 1021,
+                            value: memory_offset,
+                        },
+                        Rw::Stack {
+                            rw_counter: 2,
+                            is_write: false,
+                            call_id,
+                            stack_pointer: 1022,
+                            value: data_offset,
+                        },
+                        Rw::Stack {
+                            rw_counter: 3,
+                            is_write: false,
+                            call_id,
+                            stack_pointer: 1023,
+                            value: length,
+                        },
+                    ],
+                ),
+                (
+                    RwTableTag::CallContext,
+                    vec![Rw::CallContext {
+                        rw_counter: 4,
+                        is_write: false,
+                        call_id,
+                        field_tag: CallContextFieldTag::TxId,
+                        value: Word::one(),
+                    }],
+                ),
+            ]
+            .into(),
+        );
+        let mut rw_counter = 5;
 
         let next_memory_word_size = if length.is_zero() {
             0
@@ -298,7 +310,12 @@ mod test {
             + calc_memory_copier_gas_cost(0, next_memory_word_size, length.as_u64());
 
         let mut steps = vec![ExecStep {
-            rw_indices: vec![0, 1, 2, 3],
+            rw_indices: vec![
+                (RwTableTag::Stack, 0),
+                (RwTableTag::Stack, 1),
+                (RwTableTag::Stack, 2),
+                (RwTableTag::CallContext, 0),
+            ],
             execution_state: ExecutionState::CALLDATACOPY,
             rw_counter: 1,
             program_counter: 99,
@@ -348,10 +365,7 @@ mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    opcode_source: RandomLinearCombination::random_linear_combine(
-                        bytecode.hash.to_le_bytes(),
-                        randomness,
-                    ),
+                    code_source: CodeSource::Account(bytecode.hash),
                     ..Default::default()
                 }],
                 steps,
@@ -387,51 +401,64 @@ mod test {
         let call_id = 1;
         let call_data = rand_bytes(call_data_length.as_usize());
 
-        let mut rws = vec![
-            Rw::Stack {
-                rw_counter: 1,
-                is_write: false,
-                call_id,
-                stack_pointer: 1021,
-                value: memory_offset,
-            },
-            Rw::Stack {
-                rw_counter: 2,
-                is_write: false,
-                call_id,
-                stack_pointer: 1022,
-                value: data_offset,
-            },
-            Rw::Stack {
-                rw_counter: 3,
-                is_write: false,
-                call_id,
-                stack_pointer: 1023,
-                value: length,
-            },
-            Rw::CallContext {
-                rw_counter: 4,
-                is_write: false,
-                call_id,
-                field_tag: CallContextFieldTag::TxId,
-                value: Word::one(),
-            },
-            Rw::CallContext {
-                rw_counter: 5,
-                is_write: false,
-                call_id,
-                field_tag: CallContextFieldTag::CallDataLength,
-                value: call_data_length,
-            },
-            Rw::CallContext {
-                rw_counter: 6,
-                is_write: false,
-                call_id,
-                field_tag: CallContextFieldTag::CallDataOffset,
-                value: call_data_offset,
-            },
-        ];
-        let mut rw_counter = rws.len() + 1;
+        let mut rws = RwMap(
+            [
+                (
+                    RwTableTag::Stack,
+                    vec![
+                        Rw::Stack {
+                            rw_counter: 1,
+                            is_write: false,
+                            call_id,
+                            stack_pointer: 1021,
+                            value: memory_offset,
+                        },
+                        Rw::Stack {
+                            rw_counter: 2,
+                            is_write: false,
+                            call_id,
+                            stack_pointer: 1022,
+                            value: data_offset,
+                        },
+                        Rw::Stack {
+                            rw_counter: 3,
+                            is_write: false,
+                            call_id,
+                            stack_pointer: 1023,
+                            value: length,
+                        },
+                    ],
+                ),
+                (
+                    RwTableTag::CallContext,
+                    vec![
+                        Rw::CallContext {
+                            rw_counter: 4,
+                            is_write: false,
+                            call_id,
+                            field_tag: CallContextFieldTag::TxId,
+                            value: Word::one(),
+                        },
+                        Rw::CallContext {
+                            rw_counter: 5,
+                            is_write: false,
+                            call_id,
+                            field_tag: CallContextFieldTag::CallDataLength,
+                            value: call_data_length,
+                        },
+                        Rw::CallContext {
+                            rw_counter: 6,
+                            is_write: false,
+                            call_id,
+                            field_tag: CallContextFieldTag::CallDataOffset,
+                            value: call_data_offset,
+                        },
+                    ],
+                ),
+            ]
+            .into(),
+        );
+        let mut rw_counter = 7;
 
         let curr_memory_word_size =
             (call_data_length.as_u64() + call_data_length.as_u64() + 31) / 32;
@@ -450,7 +477,14 @@ mod test {
                 length.as_u64(),
             );
         let mut steps = vec![ExecStep {
-            rw_indices: (0..5).collect(),
+            rw_indices: vec![
+                (RwTableTag::Stack, 0),
+                (RwTableTag::Stack, 1),
+                (RwTableTag::Stack, 2),
+                (RwTableTag::CallContext, 0),
+                (RwTableTag::CallContext, 1),
+                (RwTableTag::CallContext, 2),
+            ],
             execution_state: ExecutionState::CALLDATACOPY,
             rw_counter: 1,
             program_counter: 99,
@@ -498,12 +532,9 @@ mod test {
                     id: call_id,
                     is_root: false,
                     is_create: false,
-                    call_data_length: call_data_length.as_usize(),
-                    call_data_offset: call_data_offset.as_usize(),
-                    opcode_source: RandomLinearCombination::random_linear_combine(
-                        bytecode.hash.to_le_bytes(),
-                        randomness,
-                    ),
+                    call_data_length: call_data_length.as_u64(),
+                    call_data_offset: call_data_offset.as_u64(),
+                    code_source: CodeSource::Account(bytecode.hash),
                     ..Default::default()
                 }],
                 steps,

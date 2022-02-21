@@ -613,7 +613,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             values,
         );
         self.rw_counter_offset =
-            self.rw_counter_offset.clone() + self.condition.clone().unwrap_or_else(|| 1.expr());
+            self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
     }
 
     fn state_write_with_reversion(

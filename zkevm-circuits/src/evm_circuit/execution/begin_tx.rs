@@ -293,7 +293,7 @@ mod test {
             GasCost::TX.as_u64()
         } + call_data_gas_cost;
 
-        let from_balance_prev = Word::from(10).pow(20.into());
+        let from_balance_prev = Word::from(10_i32).pow(20_i32.into());
         let to_balance_prev = Word::zero();
         let from_balance = from_balance_prev - tx.value - gas_fee;
         let to_balance = to_balance_prev + tx.value;

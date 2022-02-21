@@ -151,8 +151,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction<F>,
-        _: &Call<F>,
+        tx: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let StepAuxiliaryData::CopyToMemory {
@@ -220,11 +220,14 @@ pub mod test {
     use crate::evm_circuit::{
         execution::memory_copy::MAX_COPY_BYTES,
         step::ExecutionState,
+        table::RwTableTag,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, StepAuxiliaryData, Transaction},
+        witness::{
+            Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, StepAuxiliaryData, Transaction,
+        },
     };
-    use eth_types::{evm_types::OpcodeId, ToLittleEndian};
+    //use crate::evm_circuit::witness::RwMap;
+    use eth_types::evm_types::OpcodeId;
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
     use std::collections::HashMap;
@@ -241,12 +244,16 @@ pub mod test {
         stack_pointer: usize,
         memory_size: u64,
         rw_counter: usize,
-        rws: &mut Vec<Rw>,
+        rws: &mut RwMap,
         bytes_map: &HashMap<u64, u8>,
     ) -> (ExecStep, usize) {
         let mut selectors = vec![0u8; MAX_COPY_BYTES];
         let mut rw_offset: usize = 0;
-        let rw_idx_start = rws.len();
+        let memory_rws: &mut Vec<_> = rws
+            .0
+            .entry(RwTableTag::Memory)
+            .or_insert_with(Vec::new);
+        let rw_idx_start = memory_rws.len();
         for (idx, selector) in selectors.iter_mut().enumerate() {
             if idx < bytes_left {
                 *selector = 1;
@@ -254,7 +261,7 @@ pub mod test {
                 let byte = if addr < src_addr_end {
                     assert!(bytes_map.contains_key(&addr));
                     if !from_tx {
-                        rws.push(Rw::Memory {
+                        memory_rws.push(Rw::Memory {
                             rw_counter: rw_counter + rw_offset,
                             is_write: false,
                             call_id,
@@ -267,7 +274,7 @@ pub mod test {
                 } else {
                     0
                 };
-                rws.push(Rw::Memory {
+                memory_rws.push(Rw::Memory {
                     rw_counter: rw_counter + rw_offset,
                     is_write: true,
                     call_id,
@@ -277,7 +284,7 @@ pub mod test {
                 rw_offset += 1;
             }
         }
-        let rw_idx_end = rws.len();
+        let rw_idx_end = rws.0[&RwTableTag::Memory].len();
         let aux_data = StepAuxiliaryData::CopyToMemory {
             src_addr,
             dst_addr,
@@ -288,7 +295,9 @@ pub mod test {
         };
         let step = ExecStep {
             execution_state: ExecutionState::CopyToMemory,
-            rw_indices: (rw_idx_start..rw_idx_end).collect(),
+            rw_indices: (rw_idx_start..rw_idx_end)
+                .map(|idx| (RwTableTag::Memory, idx))
+                .collect(),
             rw_counter,
             program_counter,
             stack_pointer,
@@ -313,7 +322,7 @@ pub mod test {
         stack_pointer: usize,
         memory_size: u64,
         rw_counter: &mut usize,
-        rws: &mut Vec<Rw>,
+        rws: &mut RwMap,
         steps: &mut Vec<ExecStep>,
     ) {
         let buffer_addr_end = buffer_addr + buffer.len() as u64;
@@ -347,7 +356,7 @@ pub mod test {
         let randomness = Fp::rand();
         let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
         let call_id = 1;
-        let mut rws = Vec::new();
+        let mut rws = RwMap(Default::default());
         let mut rw_counter = 1;
         let mut steps = Vec::new();
         let buffer = rand_bytes((src_addr_end - src_addr) as usize);
@@ -387,10 +396,7 @@ pub mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    opcode_source: RandomLinearCombination::random_linear_combine(
-                        bytecode.hash.to_le_bytes(),
-                        randomness,
-                    ),
+                    code_source: CodeSource::Account(bytecode.hash),
                     ..Default::default()
                 }],
                 steps,
@@ -407,9 +413,9 @@ pub mod test {
         let randomness = Fp::rand();
         let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8(), OpcodeId::STOP.as_u8()]);
         let call_id = 1;
-        let mut rws = Vec::new();
+        let mut rws = RwMap(Default::default());
         let mut rw_counter = 1;
-        let calldata = rand_bytes(calldata_length);
+        let calldata: Vec<u8> = rand_bytes(calldata_length);
         let mut steps = Vec::new();
         let memory_size = (dst_addr + length as u64 + 31) / 32 * 32;
 
@@ -449,10 +455,7 @@ pub mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    opcode_source: RandomLinearCombination::random_linear_combine(
-                        bytecode.hash.to_le_bytes(),
-                        randomness,
-                    ),
+                    code_source: CodeSource::Account(bytecode.hash),
                     ..Default::default()
                 }],
                 steps,

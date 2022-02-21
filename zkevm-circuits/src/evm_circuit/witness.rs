@@ -608,7 +608,7 @@ impl Rw {
                             randomness,
                         )
                     }
-                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
+                    CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
                     _ => F::from(value.low_u64()),
                 },
                 F::zero(),
@@ -963,6 +963,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         opcode: Some(step.op),
         memory_size: step.memory_size as u64,
         state_write_counter: step.swc,
+        aux_data: Default::default(),
     }
 }
 
