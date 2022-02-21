@@ -13,7 +13,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
 // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],

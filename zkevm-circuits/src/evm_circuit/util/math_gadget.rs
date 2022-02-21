@@ -6,8 +6,8 @@ use crate::{
     util::Expr,
 };
 use eth_types::{ToLittleEndian, ToScalar, Word};
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2_proofs::plonk::Error;
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryFrom;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.

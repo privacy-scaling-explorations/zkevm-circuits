@@ -1,7 +1,7 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
 
 mod execution;
 pub mod param;
@@ -111,7 +111,7 @@ pub mod test {
         util::Expr,
     };
     use eth_types::{evm_types::GasCost, Word};
-    use halo2::{
+    use halo2_proofs::{
         arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},

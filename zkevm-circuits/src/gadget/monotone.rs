@@ -1,4 +1,4 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -102,7 +102,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip
 #[cfg(test)]
 mod test {
     use super::{MonotoneChip, MonotoneConfig};
-    use halo2::{
+    use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{

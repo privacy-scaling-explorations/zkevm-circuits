@@ -8,7 +8,7 @@
 
 use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
-use halo2::{
+use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
@@ -18,7 +18,7 @@ use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
 #[cfg(test)]
-use halo2::circuit::Layouter;
+use halo2_proofs::circuit::Layouter;
 
 // r = hash([0, 1, ..., 255])
 // TODO: Move into crate-level `constants` file.
@@ -88,7 +88,7 @@ impl<F: FieldExt> WordConfig<F> {
         // TODO: Understand why the `for` loop cannot be moved into
         // the meta.lookup_any() call.
         for byte in bytes.iter().rev() {
-            meta.lookup_any(|meta| {
+            meta.lookup_any("Word byte for range", |meta| {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
@@ -163,7 +163,7 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::{
+    use halo2_proofs::{
         arithmetic::Field,
         arithmetic::FieldExt,
         circuit::SimpleFloorPlanner,

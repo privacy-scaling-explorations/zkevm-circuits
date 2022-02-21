@@ -15,7 +15,7 @@ use crate::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT
 /// and SGT.

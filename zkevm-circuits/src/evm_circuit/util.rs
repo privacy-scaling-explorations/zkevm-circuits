@@ -1,6 +1,6 @@
 use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
 use eth_types::U256;
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{self, Region},
     plonk::{Advice, Column, Error, Expression, VirtualCells},
@@ -130,7 +130,7 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
         inputs: I,
@@ -151,7 +151,7 @@ pub(crate) mod sum {
 /// otherwise. Inputs need to be boolean
 pub(crate) mod and {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
         inputs: I,
@@ -171,7 +171,7 @@ pub(crate) mod and {
 pub(crate) mod or {
     use super::{and, not};
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
         inputs: I,
@@ -188,7 +188,7 @@ pub(crate) mod or {
 /// `b` needs to be boolean
 pub(crate) mod not {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(b: E) -> Expression<F> {
         1.expr() - b.expr()
@@ -203,7 +203,7 @@ pub(crate) mod not {
 /// `selector == 0`. `selector` needs to be boolean.
 pub(crate) mod select {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(
         selector: Expression<F>,
@@ -233,7 +233,7 @@ pub(crate) mod select {
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(

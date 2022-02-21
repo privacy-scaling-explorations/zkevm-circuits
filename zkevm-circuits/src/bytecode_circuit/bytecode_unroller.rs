@@ -9,7 +9,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use halo2::{
+use halo2_proofs::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector, VirtualCells},
     poly::Rotation,
@@ -578,7 +578,7 @@ fn linear_combine<F: FieldExt>(bytes: Vec<u8>, r: F) -> F {
 mod tests {
     use super::*;
     use eth_types::{Bytecode, Word};
-    use halo2::{
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},

@@ -14,7 +14,7 @@ use crate::{
 };
 
 use bus_mapping::evm::OpcodeId;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct GasGadget<F> {

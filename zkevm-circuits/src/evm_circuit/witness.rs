@@ -11,7 +11,7 @@ use bus_mapping::circuit_input_builder::{self, ExecError, OogError};
 use bus_mapping::operation::{self, AccountField, CallContextField};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
-use halo2::arithmetic::{BaseExt, FieldExt};
+use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto};
