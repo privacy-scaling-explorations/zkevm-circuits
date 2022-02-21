@@ -177,6 +177,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
             let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
 
+            let mut rot_into_account = -1;
+            if !is_s {
+                rot_into_account = -3;
+            }
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+
             // key rlc is in the first branch node (not branch init)
             let mut rot = -18;
             if !is_s {
@@ -185,6 +194,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
             let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
+
             // sel1 and sel2 are in init branch
             let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
             let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
@@ -218,6 +228,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * (s_advice0.clone() - c32.clone())
                     * sel2.clone()
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_short.clone(),
             ));
 
@@ -245,6 +256,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 q_enable.clone()
                     * (key_rlc_acc_short - key_rlc.clone())
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_short.clone(),
             ));
 
@@ -267,6 +279,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * (s_advice1.clone() - c32.clone())
                     * sel2.clone()
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_long.clone(),
             ));
 
@@ -293,6 +306,119 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 q_enable.clone()
                     * (key_rlc_acc_long - key_rlc.clone())
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * is_long.clone(),
+            ));
+
+            constraints
+        });
+
+        meta.create_gate("Storage leaf key RLC (without branch)", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
+            let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
+
+            let mut rot_into_account = -1;
+            if !is_s {
+                rot_into_account = -3;
+            }
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+
+            let key_rlc_acc_start = Expression::Constant(F::zero());
+            let key_mult_start = one.clone();
+
+            let c32 = Expression::Constant(F::from(32));
+            let c48 = Expression::Constant(F::from(48));
+
+            // This is the case like sel2 = 1 (there 32 in s_rlp2 or s_advices[0] for
+            // short and long RLP respectively).
+
+            // For short RLP (key starts at s_advices[0]):
+
+            // If sel1 = 1, we have one nibble+48 in s_advices[0].
+            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
+            let mut key_rlc_acc_short = key_rlc_acc_start.clone();
+            let key_mult = key_mult_start.clone();
+
+            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[0].
+            constraints.push((
+                "Leaf key acc s_advice0",
+                q_enable.clone()
+                    * (s_advice0.clone() - c32.clone())
+                    * is_leaf_without_branch.clone()
+                    * is_short.clone(),
+            ));
+
+            let s_advices1 = meta.query_advice(s_advices[1], Rotation::cur());
+            key_rlc_acc_short =
+                key_rlc_acc_short + s_advices1.clone() * key_mult.clone();
+
+            for ind in 2..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc_short = key_rlc_acc_short
+                    + s * key_mult.clone() * r_table[ind - 2].clone();
+            }
+
+            // c_rlp1 can appear if no branch above the leaf
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            key_rlc_acc_short = key_rlc_acc_short
+                + c_rlp1.clone() * key_mult.clone() * r_table[30].clone();
+
+            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+
+            // No need to distinguish between sel1 and sel2 here as it was already
+            // when computing key_rlc_acc_short.
+            constraints.push((
+                "Key RLC short",
+                q_enable.clone()
+                    * (key_rlc_acc_short - key_rlc.clone())
+                    * is_leaf_without_branch.clone()
+                    * is_short.clone(),
+            ));
+
+            // For long RLP (key starts at s_advices[1]):
+
+            // If sel1 = 1, we have nibble+48 in s_advices[1].
+            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let mut key_rlc_acc_long = key_rlc_acc_start.clone();
+
+            // If sel2 = 1 and !is_branch_placeholder, we have 32 in s_advices[1].
+            constraints.push((
+                "Leaf key acc s_advice1",
+                q_enable.clone()
+                    * (s_advice1.clone() - c32.clone())
+                    * is_leaf_without_branch.clone()
+                    * is_long.clone(),
+            ));
+
+            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long + s_advices2 * key_mult.clone();
+
+            for ind in 3..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc_long = key_rlc_acc_long
+                    + s * key_mult.clone() * r_table[ind - 3].clone();
+            }
+
+            key_rlc_acc_long = key_rlc_acc_long
+                + c_rlp1.clone() * key_mult.clone() * r_table[29].clone();
+            // c_rlp2 can appear if no branch above the leaf
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            key_rlc_acc_long = key_rlc_acc_long
+                + c_rlp2 * key_mult.clone() * r_table[30].clone();
+
+            // No need to distinguish between sel1 and sel2 here as it was already
+            // when computing key_rlc_acc_long.
+            constraints.push((
+                "Key RLC long",
+                q_enable.clone()
+                    * (key_rlc_acc_long - key_rlc.clone())
+                    * is_leaf_without_branch.clone()
                     * is_long.clone(),
             ));
 
@@ -327,6 +453,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 Rotation(rot_into_init - 1),
             );
 
+            let mut rot_into_account = -1;
+            if !is_s {
+                rot_into_account = -3;
+            }
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+
             // Could be used any rotation into previous branch, because key RLC is the same in all
             // branch children:
             let rot_into_prev_branch = rot_into_init - 5;
@@ -348,11 +483,15 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             constraints.push((
                 "Previous key RLC",
-                q_enable.clone() * (rlc - key_rlc_prev_level),
+                q_enable.clone()
+                    * (rlc - key_rlc_prev_level)
+                    * (one.clone() - is_leaf_without_branch.clone()),
             ));
             constraints.push((
                 "Previous key RLC mult",
-                q_enable * (mult - key_rlc_mult_prev_level),
+                q_enable
+                    * (mult - key_rlc_mult_prev_level)
+                    * (one.clone() - is_leaf_without_branch),
             ));
 
             constraints

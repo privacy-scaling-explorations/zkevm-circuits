@@ -2160,12 +2160,14 @@ dependencies = [
 name = "mpt"
 version = "0.1.0"
 dependencies = [
+ "ark-std",
  "halo2",
  "itertools",
  "keccak256",
  "num-bigint",
  "num-traits",
  "pairing_bn256",
+ "rand_xorshift",
  "serde",
  "serde_json",
 ]
