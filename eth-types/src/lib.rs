@@ -23,6 +23,7 @@ pub mod geth_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
+use pairing::group::ff::PrimeField;
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
@@ -89,11 +90,14 @@ impl<'de> Deserialize<'de> for DebugU256 {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for DebugU256 {
+impl<F: FieldExt> ToScalar<F> for DebugU256
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
-        F::from_bytes(&bytes).into()
+        F::from_repr(bytes).into()
     }
 }
 
@@ -133,11 +137,14 @@ impl ToLittleEndian for U256 {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for U256 {
+impl<F: FieldExt> ToScalar<F> for U256
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
-        F::from_bytes(&bytes).into()
+        F::from_repr(bytes).into()
     }
 }
 
@@ -164,12 +171,15 @@ impl ToWord for Address {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for Address {
+impl<F: FieldExt> ToScalar<F> for Address
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         bytes.reverse();
-        F::from_bytes(&bytes).into()
+        F::from_repr(bytes).into()
     }
 }
 
