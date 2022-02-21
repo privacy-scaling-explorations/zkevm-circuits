@@ -109,8 +109,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction<F>,
-        call: &Call<F>,
+        tx: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

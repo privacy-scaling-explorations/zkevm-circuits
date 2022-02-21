@@ -6,7 +6,7 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Eq)]
 /// The target and index of an `Operation` in the context of an
 /// `ExecutionTrace`.
-pub struct OperationRef(Target, usize);
+pub struct OperationRef(pub Target, pub usize);
 
 impl fmt::Debug for OperationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -21,6 +21,7 @@ impl fmt::Debug for OperationRef {
                 Target::TxRefund => "TxRefund",
                 Target::Account => "Account",
                 Target::AccountDestructed => "AccountDestructed",
+                Target::CallContext => "CallContext",
             },
             self.1
         ))
@@ -40,6 +41,7 @@ impl From<(Target, usize)> for OperationRef {
             Target::TxRefund => Self(Target::TxRefund, op_ref_data.1),
             Target::Account => Self(Target::Account, op_ref_data.1),
             Target::AccountDestructed => Self(Target::AccountDestructed, op_ref_data.1),
+            Target::CallContext => Self(Target::CallContext, op_ref_data.1),
         }
     }
 }

@@ -26,8 +26,10 @@ mod timestamp_tests {
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx);
+        let mut tx = test_builder
+            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+            .unwrap();
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
         // Generate step corresponding to TIMESTAMP
         let mut step = ExecStep::new(
@@ -42,7 +44,7 @@ mod timestamp_tests {
         state_ref.push_stack_op(
             RW::WRITE,
             StackAddress::from(1024 - 1),
-            block.b_constant.timestamp,
+            block.eth_block.timestamp,
         );
 
         tx.steps_mut().push(step);

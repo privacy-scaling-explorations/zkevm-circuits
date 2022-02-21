@@ -9,7 +9,9 @@ pub enum Error {
     /// Serde de/serialization error.
     SerdeError(serde_json::error::Error),
     /// Error while generating a trace.
-    TracingError,
+    TracingError(String),
+    /// Block is missing information about number or base_fee
+    IncompleteBlock,
     /// Error while parsing an `Instruction/Opcode`.
     OpcodeParsing,
     /// Error while parsing a `MemoryAddress`.

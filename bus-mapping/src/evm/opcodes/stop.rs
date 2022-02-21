@@ -14,10 +14,11 @@ pub(crate) struct Stop;
 
 impl Opcode for Stop {
     fn gen_associated_ops(
-        _state: &mut CircuitInputStateRef,
+        state: &mut CircuitInputStateRef,
         _steps: &[GethExecStep],
     ) -> Result<(), Error> {
-        // Stop does not generate any operations
+        state.handle_return()?;
+
         Ok(())
     }
 }
