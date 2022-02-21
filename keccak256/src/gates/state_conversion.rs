@@ -1,11 +1,11 @@
-use halo2::{
-    circuit::{Cell, Layouter},
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 
 use crate::gates::base_conversion::BaseConversionConfig;
 use crate::gates::tables::BaseInfo;
-use pairing::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
@@ -15,7 +15,10 @@ pub(crate) struct StateBaseConversion<F> {
     state: [Column<Advice>; 25],
 }
 
-impl<F: FieldExt> StateBaseConversion<F> {
+impl<F: FieldExt> StateBaseConversion<F>
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     /// Side effect: parent flag is enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -23,7 +26,7 @@ impl<F: FieldExt> StateBaseConversion<F> {
         bi: BaseInfo<F>,
         flag: Column<Advice>,
     ) -> Self {
-        meta.enable_equality(flag.into());
+        meta.enable_equality(flag);
         let bccs: [BaseConversionConfig<F>; 25] = state
             .iter()
             .map(|&lane| BaseConversionConfig::configure(meta, bi.clone(), lane, flag))
@@ -37,20 +40,20 @@ impl<F: FieldExt> StateBaseConversion<F> {
     pub(crate) fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        state: [(Cell, F); 25],
-        flag: (Cell, F),
-    ) -> Result<[(Cell, F); 25], Error> {
-        let state: Result<Vec<(Cell, F)>, Error> = state
+        state: &[AssignedCell<F, F>; 25],
+        flag: AssignedCell<F, F>,
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
+        let state: Result<Vec<AssignedCell<F, F>>, Error> = state
             .iter()
             .zip(self.bccs.iter())
-            .map(|(&lane, config)| {
-                let output = config.assign_region(layouter, lane, flag)?;
+            .map(|(lane, config)| {
+                let output = config.assign_region(layouter, lane.clone(), flag.clone())?;
                 Ok(output)
             })
             .into_iter()
             .collect();
         let state = state?;
-        let state: [(Cell, F); 25] = state.try_into().unwrap();
+        let state: [AssignedCell<F, F>; 25] = state.try_into().unwrap();
         Ok(state)
     }
 }
@@ -60,7 +63,7 @@ mod tests {
     use super::*;
     use crate::arith_helpers::convert_b2_to_b13;
     use crate::gates::{gate_helpers::biguint_to_f, tables::FromBinaryTableConfig};
-    use halo2::{
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
@@ -79,7 +82,10 @@ mod tests {
             table: FromBinaryTableConfig<F>,
             conversion: StateBaseConversion<F>,
         }
-        impl<F: FieldExt> MyConfig<F> {
+        impl<F: FieldExt> MyConfig<F>
+        where
+            F: PrimeField<Repr = [u8; 32]>,
+        {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let state: [Column<Advice>; 25] = (0..25)
@@ -111,19 +117,18 @@ mod tests {
                 let (state, flag) = layouter.assign_region(
                     || "Input state",
                     |mut region| {
-                        let state: [(Cell, F); 25] = input
+                        let state: [AssignedCell<F, F>; 25] = input
                             .iter()
                             .enumerate()
                             .map(|(idx, &value)| {
-                                let cell = region
+                                region
                                     .assign_advice(
                                         || format!("State {}", idx),
                                         self.state[idx],
                                         0,
                                         || Ok(value),
                                     )
-                                    .unwrap();
-                                (cell, value)
+                                    .unwrap()
                             })
                             .collect::<Vec<_>>()
                             .try_into()
@@ -133,13 +138,11 @@ mod tests {
                         Ok((state, flag))
                     },
                 )?;
-                let output_state =
-                    self.conversion
-                        .assign_region(layouter, state, (flag, flag_value))?;
+                let output_state = self.conversion.assign_region(layouter, &state, flag)?;
                 let output_state: [F; 25] = output_state
                     .iter()
-                    .map(|&(_, value)| value)
-                    .collect::<Vec<_>>()
+                    .map(|cell| *cell.value().unwrap())
+                    .collect::<Vec<F>>()
                     .try_into()
                     .unwrap();
                 Ok(output_state)
@@ -151,7 +154,10 @@ mod tests {
             in_state: [F; 25],
             out_state: [F; 25],
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
+        where
+            F: PrimeField<Repr = [u8; 32]>,
+        {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

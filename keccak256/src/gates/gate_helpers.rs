@@ -1,11 +1,14 @@
 use num_bigint::BigUint;
-use pairing::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 
 /// Convert a bigUint value to FieldExt
 ///
 /// We assume the input value is smaller than the field size
-pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F {
+pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     let mut x_bytes = x.to_bytes_le();
     debug_assert!(
         x_bytes.len() <= 32,
@@ -14,11 +17,14 @@ pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F {
     );
     x_bytes.resize(32, 0);
     let x_bytes: [u8; 32] = x_bytes.try_into().unwrap();
-    F::from_bytes(&x_bytes).unwrap()
+    F::from_repr_vartime(x_bytes).unwrap()
 }
 
-pub fn f_to_biguint<F: FieldExt>(x: F) -> BigUint {
-    BigUint::from_bytes_le(&x.to_bytes())
+pub fn f_to_biguint<F: FieldExt>(x: F) -> BigUint
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
+    BigUint::from_bytes_le(&x.to_repr())
 }
 
 pub fn biguint_mod(x: &BigUint, modulus: u8) -> u8 {

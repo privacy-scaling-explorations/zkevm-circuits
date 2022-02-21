@@ -8,13 +8,13 @@ use crate::{
     },
     keccak_arith::*,
 };
-use halo2::{
-    circuit::{Cell, Layouter, Region},
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
+use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -31,13 +31,16 @@ pub struct KeccakFConfig<F: FieldExt> {
     base_conv_activator: Column<Advice>,
 }
 
-impl<F: FieldExt> KeccakFConfig<F> {
+impl<F: FieldExt> KeccakFConfig<F>
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let state = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
-                meta.enable_equality(column.into());
+                meta.enable_equality(column);
                 column
             })
             .collect_vec()
@@ -54,13 +57,13 @@ impl<F: FieldExt> KeccakFConfig<F> {
         // Allocate space for the round constants in base-9 which is an
         // instance column
         let round_ctant_b9 = meta.advice_column();
-        meta.enable_equality(round_ctant_b9.into());
+        meta.enable_equality(round_ctant_b9);
         let round_constants_b9 = meta.instance_column();
 
         // Allocate space for the round constants in base-13 which is an
         // instance column
         let round_ctant_b13 = meta.advice_column();
-        meta.enable_equality(round_ctant_b13.into());
+        meta.enable_equality(round_ctant_b13);
         let round_constants_b13 = meta.instance_column();
 
         // Iotab9
@@ -69,7 +72,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
         // Allocate space for the activation flag of the base_conversion.
         let base_conv_activator = meta.advice_column();
-        meta.enable_equality(base_conv_activator.into());
+        meta.enable_equality(base_conv_activator);
         // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
@@ -125,12 +128,12 @@ impl<F: FieldExt> KeccakFConfig<F> {
     pub fn assign_all(
         &self,
         layouter: &mut impl Layouter<F>,
-        in_state: [(Cell, F); 25],
+        in_state: [AssignedCell<F, F>; 25],
         out_state: [F; 25],
         flag: bool,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
-    ) -> Result<[(Cell, F); 25], Error> {
-        let mut state = in_state;
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
+        let mut state = in_state.clone();
 
         // First 23 rounds
         for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {
@@ -138,29 +141,32 @@ impl<F: FieldExt> KeccakFConfig<F> {
             // theta
             state = {
                 // Apply theta outside circuit
-                let out_state = KeccakFArith::theta(&state_to_biguint(split_state_cells(state)));
+                let out_state =
+                    KeccakFArith::theta(&state_to_biguint(split_state_cells(state.clone())));
                 let out_state = state_bigint_to_field(out_state);
                 // assignment
-                self.theta_config.assign_state(layouter, state, out_state)?
+                self.theta_config
+                    .assign_state(layouter, &state, out_state)?
             };
 
             // rho
             state = {
                 // assignment
-                self.rho_config.assign_rotation_checks(layouter, state)?
+                self.rho_config.assign_rotation_checks(layouter, &state)?
             };
             // Outputs in base-9 which is what Pi requires
 
             // Apply Pi permutation
-            state = pi_gate_permutation(state);
+            state = pi_gate_permutation(state.clone());
 
             // xi
             state = {
                 // Apply xi outside circuit
-                let out_state = KeccakFArith::xi(&state_to_biguint(split_state_cells(state)));
+                let out_state =
+                    KeccakFArith::xi(&state_to_biguint(split_state_cells(state.clone())));
                 let out_state = state_bigint_to_field(out_state);
                 // assignment
-                self.xi_config.assign_state(layouter, state, out_state)?
+                self.xi_config.assign_state(layouter, &state, out_state)?
             };
 
             // Last round before Mixing does not run IotaB9 nor BaseConversion
@@ -170,11 +176,13 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
             // iota_b9
             state = {
-                let out_state =
-                    KeccakFArith::iota_b9(&state_to_biguint(split_state_cells(state)), *round_val);
+                let out_state = KeccakFArith::iota_b9(
+                    &state_to_biguint(split_state_cells(state.clone())),
+                    *round_val,
+                );
                 let out_state = state_bigint_to_field(out_state);
                 self.iota_b9_config
-                    .not_last_round(layouter, state, out_state, round_idx)?
+                    .not_last_round(layouter, &state, out_state, round_idx)?
             };
 
             // The resulting state is in Base-9 now. We now convert it to
@@ -184,24 +192,23 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 let activation_flag = layouter.assign_region(
                     || "Base conversion enable",
                     |mut region| {
-                        let cell = region.assign_advice(
+                        region.assign_advice(
                             || "Enable base conversion",
                             self.base_conv_activator,
                             0,
                             || Ok(F::one()),
-                        )?;
-                        Ok((cell, F::one()))
+                        )
                     },
                 )?;
 
                 self.base_conversion_config
-                    .assign_region(layouter, state, activation_flag)?
+                    .assign_region(layouter, &state, activation_flag)?
             }
         }
 
         // Mixing step
         let mix_res = KeccakFArith::mixing(
-            &state_to_biguint(split_state_cells(state)),
+            &state_to_biguint(split_state_cells(state.clone())),
             next_mixing
                 .map(|state| state_to_state_bigint::<F, NEXT_INPUTS_LANES>(state))
                 .as_ref(),
@@ -210,7 +217,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
 
         let mix_res = self.mixing_config.assign_state(
             layouter,
-            state,
+            &state,
             state_bigint_to_field(mix_res),
             flag,
             next_mixing,
@@ -218,15 +225,15 @@ impl<F: FieldExt> KeccakFConfig<F> {
             PERMUTATION - 1,
         )?;
 
-        self.constrain_out_state(layouter, mix_res, out_state)
+        self.constrain_out_state(layouter, &mix_res, out_state)
     }
 
     pub fn constrain_out_state(
         &self,
         layouter: &mut impl Layouter<F>,
-        out_mixing: [(Cell, F); 25],
+        out_mixing: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
-    ) -> Result<[(Cell, F); 25], Error> {
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
         layouter.assign_region(
             || "Constraint out_state and out_mixing",
             |mut region| {
@@ -237,8 +244,8 @@ impl<F: FieldExt> KeccakFConfig<F> {
                 self.copy_state(&mut region, 0, self.state, out_mixing)?;
 
                 // Witness out_state at offset = 1 in `state` column.
-                let out_state: [(Cell, F); 25] = {
-                    let mut out_vec: Vec<(Cell, F)> = vec![];
+                let out_state: [AssignedCell<F, F>; 25] = {
+                    let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
                     for (idx, lane) in out_state.iter().enumerate() {
                         let out_cell = region.assign_advice(
                             || format!("assign out_state [{}]", idx),
@@ -246,7 +253,7 @@ impl<F: FieldExt> KeccakFConfig<F> {
                             1,
                             || Ok(*lane),
                         )?;
-                        out_vec.push((out_cell, *lane));
+                        out_vec.push(out_cell);
                     }
                     out_vec.try_into().unwrap()
                 };
@@ -256,23 +263,21 @@ impl<F: FieldExt> KeccakFConfig<F> {
         )
     }
 
-    /// Copies the `[(Cell,F);25]` to the passed [Column<Advice>; 25].
+    /// Copies the `state` cells to the passed [Column<Advice>; 25].
     fn copy_state(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         columns: [Column<Advice>; 25],
-        state: [(Cell, F); 25],
+        state: &[AssignedCell<F, F>; 25],
     ) -> Result<(), Error> {
-        for (idx, (cell, value)) in state.iter().enumerate() {
-            let new_cell = region.assign_advice(
+        for (idx, cell) in state.iter().enumerate() {
+            cell.copy_advice(
                 || format!("Copy state {}", idx),
+                region,
                 columns[idx],
                 offset,
-                || Ok(*value),
             )?;
-
-            region.constrain_equal(*cell, new_cell)?;
         }
 
         Ok(())
@@ -284,9 +289,9 @@ mod tests {
     use super::*;
     use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
     use crate::gates::gate_helpers::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
@@ -304,7 +309,10 @@ mod tests {
             is_mixing: bool,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
+        where
+            F: PrimeField<Repr = [u8; 32]>,
+        {
             type Config = KeccakFConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -329,8 +337,8 @@ mod tests {
                     || "Keccak round Wittnes & flag assignation",
                     |mut region| {
                         // Witness `state`
-                        let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                        let in_state: [AssignedCell<F, F>; 25] = {
+                            let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -338,7 +346,7 @@ mod tests {
                                     offset,
                                     || Ok(*val),
                                 )?;
-                                state.push((cell, *val))
+                                state.push(cell)
                             }
                             state.try_into().unwrap()
                         };

@@ -1,11 +1,12 @@
 use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
 use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, TableColumn},
 };
+use pairing::group::ff::PrimeField;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -176,7 +177,10 @@ pub(crate) struct BaseInfo<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BaseInfo<F> {
+impl<F: FieldExt> BaseInfo<F>
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     pub fn input_pob(&self) -> F {
         F::from(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
