@@ -179,7 +179,7 @@ mod test {
         table::CallContextFieldTag,
         test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, Transaction},
     };
 
     use bus_mapping::evm::OpcodeId;
@@ -220,13 +220,10 @@ mod test {
                     id: 1,
                     is_root: true,
                     is_create: false,
-                    opcode_source: RandomLinearCombination::random_linear_combine(
-                        bytecode.hash.to_le_bytes(),
-                        randomness,
-                    ),
-                    result: Word::from(result as usize),
+                    code_source: CodeSource::Account(bytecode.hash),
                     rw_counter_end_of_reversion,
                     is_persistent: result,
+                    is_success: result,
                     callee_address: tx.to.unwrap(),
                     ..Default::default()
                 }],
