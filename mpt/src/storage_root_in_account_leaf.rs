@@ -203,17 +203,16 @@ impl<F: FieldExt> StorageRootChip<F> {
             constraints
         });
 
-        /*
-        TODO
         // If there is no branch, just a leaf.
         meta.lookup_any(|meta| {
             let not_first_level =
                 meta.query_fixed(not_first_level, Rotation::cur());
 
-            let mut rot = -1;
+            // Check in leaf value row.
+            let mut rot = -2;
             let mut is_leaf = meta.query_advice(is_leaf_s, Rotation::cur());
             if !is_s {
-                rot = -2;
+                rot = -4;
                 is_leaf = meta.query_advice(is_leaf_c, Rotation::cur());
             }
 
@@ -222,22 +221,15 @@ impl<F: FieldExt> StorageRootChip<F> {
                 Rotation(rot),
             );
 
-            // Note: acc_c in both cases.
-            let acc = meta.query_advice(acc_c, Rotation::cur());
+            let acc = meta.query_advice(acc_s, Rotation::cur());
 
             let mut sc_hash = vec![];
             // Note: storage root is always in s_advices!
             for column in s_advices.iter() {
                 if is_s {
-                    sc_hash.push(meta.query_advice(
-                        *column,
-                        Rotation(rot_into_branch_init - 2),
-                    ));
+                    sc_hash.push(meta.query_advice(*column, Rotation(rot - 1)));
                 } else {
-                    sc_hash.push(meta.query_advice(
-                        *column,
-                        Rotation(rot_into_branch_init - 1),
-                    ));
+                    sc_hash.push(meta.query_advice(*column, Rotation(rot)));
                 }
             }
             let storage_root_words = into_words_expr(sc_hash);
@@ -245,8 +237,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
-                    * is_extension_node.clone()
-                    * is_after_last_branch_child.clone()
+                    * is_leaf.clone()
                     * is_account_leaf_storage_codehash_prev.clone()
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -256,8 +247,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
                     not_first_level.clone()
-                        * is_extension_node.clone()
-                        * is_after_last_branch_child.clone()
+                        * is_leaf.clone()
                         * is_account_leaf_storage_codehash_prev.clone()
                         * word.clone(),
                     keccak_table_i,
@@ -266,7 +256,6 @@ impl<F: FieldExt> StorageRootChip<F> {
 
             constraints
         });
-        */
 
         config
     }

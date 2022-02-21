@@ -2213,6 +2213,27 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                             }
 
+                            if row[row.len() - 1] == 13
+                                || row[row.len() - 1] == 14
+                            {
+                                compute_acc_and_mult(
+                                    row,
+                                    &mut acc_s,
+                                    &mut acc_mult_s,
+                                    0,
+                                    HASH_WIDTH + 2,
+                                );
+
+                                self.assign_acc(
+                                    &mut region,
+                                    acc_s,
+                                    acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
+                                )?;
+                            }
+
                             if row[row.len() - 1] == 6 {
                                 // account leaf key is the same for S and C
                                 acc_s = F::zero();

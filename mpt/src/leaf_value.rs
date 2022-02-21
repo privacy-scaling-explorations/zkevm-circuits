@@ -43,6 +43,8 @@ impl<F: FieldExt> LeafValueChip<F> {
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
 
+        // TODO: check values are 0 after RLP stream ends (to prevent attacks on RLC)
+
         // TODO: use r_table
 
         // NOTE: Rotation -6 can be used here (in S and C leaf), because
@@ -55,8 +57,11 @@ impl<F: FieldExt> LeafValueChip<F> {
             rot_into_init = -22;
         }
 
-        meta.lookup_any(|meta| {
+        // RLC is needed in lookup below and in storage_root_in_account_leaf for
+        // leaf without branch.
+        meta.create_gate("Leaf value RLC", |meta| {
             let q_enable = q_enable(meta);
+            let mut constraints = vec![];
 
             let mut rlc = meta.query_advice(acc, Rotation::prev());
             let mut mult = meta.query_advice(acc_mult, Rotation::prev());
@@ -75,20 +80,32 @@ impl<F: FieldExt> LeafValueChip<F> {
                 mult = mult * acc_r;
             }
 
+            let acc = meta.query_advice(acc, Rotation::cur());
+
+            constraints.push(q_enable.clone() * (acc - rlc));
+
+            constraints
+        });
+
+        meta.lookup_any(|meta| {
+            let q_enable = q_enable(meta);
+
+            let rlc = meta.query_advice(acc, Rotation::cur());
+
             let sel = meta.query_advice(sel, Rotation(rot));
             let one = Expression::Constant(F::one());
 
             let is_branch_placeholder = meta
                 .query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
-            let mut rot_leaf = -1;
+            let mut rot_into_account = -2;
             if !is_s {
-                rot_leaf = -2;
+                rot_into_account = -4;
             }
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
-                Rotation(rot_leaf),
+                Rotation(rot_into_account),
             );
 
             // If sel = 1, there is no leaf at this position (value is being added or deleted)
