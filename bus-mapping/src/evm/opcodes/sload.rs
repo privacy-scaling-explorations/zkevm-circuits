@@ -102,6 +102,8 @@ mod sload_tests {
                 Word::from(0x0u32),
                 Word::from(0x6fu32),
                 Word::from(0x6fu32),
+                1usize,
+                Word::from(0x6fu32),
             ),
         );
         // Add StackOp associated to the stack push.
