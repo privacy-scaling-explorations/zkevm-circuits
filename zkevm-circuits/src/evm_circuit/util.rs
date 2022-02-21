@@ -2,7 +2,7 @@ use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
 use eth_types::U256;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{self, Region},
+    circuit::{AssignedCell, Region},
     plonk::{Advice, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -35,7 +35,7 @@ impl<F: FieldExt> Cell<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: Option<F>,
-    ) -> Result<circuit::Cell, Error> {
+    ) -> Result<AssignedCell<F, F>, Error> {
         region.assign_advice(
             || {
                 format!(
@@ -107,7 +107,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         region: &mut Region<'_, F>,
         offset: usize,
         bytes: Option<[u8; N]>,
-    ) -> Result<Vec<circuit::Cell>, Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         bytes.map_or(Err(Error::Synthesis), |bytes| {
             self.cells
                 .iter()

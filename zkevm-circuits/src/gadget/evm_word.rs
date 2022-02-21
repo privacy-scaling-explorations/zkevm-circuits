@@ -153,7 +153,7 @@ impl<F: FieldExt> WordConfig<F> {
                 || byte_field_elem.ok_or(Error::Synthesis),
             )?;
 
-            bytes.push(Variable::new(cell, byte_field_elem, *byte));
+            bytes.push(Variable::new(cell, *byte));
         }
 
         Ok(Word(bytes.try_into().unwrap()))
@@ -251,7 +251,7 @@ mod tests {
             let word = Fp::random(rng);
             let circuit = MyCircuit::<Fp> {
                 word: word
-                    .to_bytes()
+                    .to_repr()
                     .iter()
                     .map(|b| Some(*b))
                     .collect::<Vec<_>>()
@@ -271,7 +271,7 @@ mod tests {
             );
 
             // Calculate word commitment and use it as public input.
-            let encoded: Fp = encode(word.to_bytes().iter().rev().cloned(), r());
+            let encoded: Fp = encode(word.to_repr().iter().rev().cloned(), r());
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]).unwrap();
             assert_eq!(prover.verify(), Ok(()))
         }
