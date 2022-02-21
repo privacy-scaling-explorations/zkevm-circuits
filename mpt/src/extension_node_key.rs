@@ -707,7 +707,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             is_extension_node * is_extension_s_row * is_long
         };
+
         // There are 0s after key length.
+        /*
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -730,6 +732,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             )
         }
         key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
+        */
 
         let sel_s = |meta: &mut VirtualCells<F>| {
             let is_extension_node = meta.query_advice(

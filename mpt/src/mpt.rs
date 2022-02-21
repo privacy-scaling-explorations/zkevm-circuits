@@ -2777,12 +2777,11 @@ mod tests {
                     storage_key_rlc,
                 };
 
-                /*
                 let prover =
                     MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
-                */
 
+                /*
                 let degree: u32 = 12;
 
                 let rng = XorShiftRng::from_seed([
@@ -2836,6 +2835,7 @@ mod tests {
                 )
                 .unwrap();
                 end_timer!(start3);
+                */
             });
     }
 }

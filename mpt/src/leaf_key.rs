@@ -127,6 +127,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             q_enable * is_long
         };
 
+        /*
         // There are 0s after key length.
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
@@ -152,6 +153,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         }
         key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
         key_len_lookup(meta, sel_long, 33, s_advices[0], c_rlp2, fixed_table);
+        */
 
         // acc_mult corresponds to key length (short):
         mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, fixed_table);

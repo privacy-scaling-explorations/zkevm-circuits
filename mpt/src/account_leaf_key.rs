@@ -103,6 +103,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         // leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
         // which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
         // for the length of the remaining stream.
+        /*
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
                 meta,
@@ -115,6 +116,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         }
         key_len_lookup(meta, q_enable, 32, s_advices[0], c_rlp1, fixed_table);
         key_len_lookup(meta, q_enable, 33, s_advices[0], c_rlp2, fixed_table);
+        */
 
         // acc_mult corresponds to key length:
         mult_diff_lookup(
