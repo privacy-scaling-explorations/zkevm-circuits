@@ -31,3 +31,7 @@ mock = { path = "../mock" }
 [[bench]]
 name = "binary_value"
 harness = false
+
+[features]
+default = []
+test = []

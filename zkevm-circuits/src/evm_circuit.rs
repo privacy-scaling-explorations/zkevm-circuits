@@ -98,8 +98,8 @@ impl<F: FieldExt> EvmCircuit<F> {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test {
+#[cfg(feature = "test")]
+pub mod test {
     use crate::{
         evm_circuit::{
             param::STEP_HEIGHT,
@@ -149,7 +149,7 @@ pub(crate) mod test {
     }
 
     #[derive(Clone)]
-    pub(crate) struct TestCircuitConfig<F> {
+    pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
         rw_table: RwTable,
         bytecode_table: [Column<Advice>; 4],
@@ -300,7 +300,7 @@ pub(crate) mod test {
     }
 
     #[derive(Default)]
-    pub(crate) struct TestCircuit<F> {
+    pub struct TestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
@@ -376,7 +376,7 @@ pub(crate) mod test {
         }
     }
 
-    pub(crate) fn run_test_circuit<F: FieldExt>(
+    pub fn run_test_circuit<F: FieldExt>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -410,7 +410,7 @@ pub(crate) mod test {
         prover.verify()
     }
 
-    pub(crate) fn run_test_circuit_incomplete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_incomplete_fixed_table<F: FieldExt>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(
@@ -426,7 +426,7 @@ pub(crate) mod test {
         )
     }
 
-    pub(crate) fn run_test_circuit_complete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_complete_fixed_table<F: FieldExt>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
