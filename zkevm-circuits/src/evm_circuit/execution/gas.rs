@@ -62,8 +62,8 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         _block: &Block<F>,
-        _transaction: &Transaction<F>,
-        _call: &Call<F>,
+        _transaction: &Transaction,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -124,7 +124,7 @@ mod test {
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .expect("could not handle block tx");
-        let mut block = block_convert(config.randomness, bytecode.code(), &builder.block);
+        let mut block = block_convert(&builder.block, &builder.code_db);
 
         // The above block has 2 steps (GAS and STOP). We forcefully assign a
         // wrong `gas_left` value for the second step, to assert that

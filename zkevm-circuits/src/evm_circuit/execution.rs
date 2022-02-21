@@ -21,6 +21,8 @@ mod begin_tx;
 mod bitwise;
 mod byte;
 mod calldatacopy;
+mod caller;
+mod callvalue;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -47,6 +49,8 @@ use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
+use caller::CallerGadget;
+use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -80,8 +84,8 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        transaction: &Transaction<F>,
-        call: &Call<F>,
+        transaction: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error>;
 }
@@ -97,7 +101,8 @@ pub(crate) struct ExecutionConfig<F> {
     bitwise_gadget: BitwiseGadget<F>,
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
-    calldatacopy_gadget: CallDataCopyGadget<F>,
+    caller_gadget: CallerGadget<F>,
+    call_value_gadget: CallValueGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
@@ -227,7 +232,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
             bitwise_gadget: configure_gadget!(),
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
-            calldatacopy_gadget: configure_gadget!(),
+            calldatacopy_gadget: CallDataCopyGadget<F>,
+            caller_gadget: configure_gadget!(),
+            call_value_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             error_oog_pure_memory_gadget: configure_gadget!(),
@@ -286,9 +293,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
-        let insert_result = presets_map.insert(G::EXECUTION_STATE, presets);
         debug_assert!(
-            insert_result.is_none(),
+            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
         );
 
@@ -446,11 +452,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        transaction: &Transaction<F>,
-        call: &Call<F>,
+        transaction: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.step.assign_exec_step(region, offset, call, step)?;
+        self.step
+            .assign_exec_step(region, offset, block, transaction, call, step)?;
 
         for (cell, value) in self
             .presets_map
@@ -493,6 +500,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
+            ExecutionState::CALLVALUE => {
+                assign_exec_step!(self.call_value_gadget)
+            }
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::TIMESTAMP => {
                 assign_exec_step!(self.timestamp_gadget)

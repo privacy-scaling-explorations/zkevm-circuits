@@ -14,6 +14,7 @@ To run the same tests as the CI, please use: `make test-all`.
 There are currently two benchmarks to run in the workspace in regards to the circuits.
 Both use the `DEGREE` env var to specify the degree of the `K` parameter that you want 
 to use for your circuit in the bench process.
+-   Keccak Permutation Round bench -> `DEGREE=16 make keccak_round_bench`
 -   EVM Circuit prover benches. -> `DEGREE=18 make evm_bench`.
 -   State Circuit prover benches. -> `DEGREE=18, MEMORY_ADDRESS_MAX=3000, STACK_ADDRESS_MAX=1500 make state_bench`
 For state circuit, `MEMORY_ADDRESS_MAX` and `STACK_ADDRESS_MAX` do not need to be specified. 

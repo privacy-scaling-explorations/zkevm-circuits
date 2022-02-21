@@ -50,7 +50,7 @@ impl<F: FieldExt> IotaB9Config<F> {
         meta.create_gate("iota_b9 in steady state", |meta| {
             let q_enable = meta.query_selector(q_not_last);
             let state_00 = meta.query_advice(state[0], Rotation::cur())
-                + (Expression::Constant(F::from(2))
+                + (Expression::Constant(F::from(A4))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
             let next_lane = meta.query_advice(state[0], Rotation::next());
             vec![q_enable * (state_00 - next_lane)]
@@ -68,8 +68,9 @@ impl<F: FieldExt> IotaB9Config<F> {
             };
 
             let state_00 = meta.query_advice(state[0], Rotation::cur())
-                + (Expression::Constant(F::from(2))
+                + (Expression::Constant(F::from(A4))
                     * meta.query_advice(round_ctant_b9, Rotation::cur()));
+
             let next_lane = meta.query_advice(state[0], Rotation::next());
             vec![q_enable * (state_00 - next_lane)]
         });
@@ -254,7 +255,7 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// Given a [`StateBigInt`] returns the `init_state` and `out_state` ready
     /// to be added as circuit witnesses applying `IotaB9` to the input to
     /// get the output.
-    pub(crate) fn compute_circ_states(state: StateBigInt) -> ([F; 25], [F; 25]) {
+    pub(crate) fn compute_circ_states(state: StateBigInt, round: usize) -> ([F; 25], [F; 25]) {
         let mut in_biguint = StateBigInt::default();
         let mut in_state: [F; 25] = [F::zero(); 25];
 
@@ -265,7 +266,7 @@ impl<F: FieldExt> IotaB9Config<F> {
         }
 
         // Compute out state
-        let round_ctant = ROUND_CONSTANTS[PERMUTATION - 1];
+        let round_ctant = ROUND_CONSTANTS[round];
         let s1_arith = KeccakFArith::iota_b9(&in_biguint, round_ctant);
         (in_state, state_bigint_to_field::<F, 25>(s1_arith))
     }
@@ -385,7 +386,8 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let (in_state, out_state) = IotaB9Config::compute_circ_states(input1.into());
+        let (in_state, out_state) =
+            IotaB9Config::compute_circ_states(input1.into(), PERMUTATION - 1);
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -533,7 +535,7 @@ mod tests {
             in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
 
-        // Test for the 25 rounds
+        // Test for the 24 rounds
         for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {
             // Compute out state
             let s1_arith = KeccakFArith::iota_b9(&in_biguint, *round_val);

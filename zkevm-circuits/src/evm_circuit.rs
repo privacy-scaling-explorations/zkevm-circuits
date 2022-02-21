@@ -98,13 +98,13 @@ impl<F: FieldExt> EvmCircuit<F> {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test {
+#[cfg(feature = "test")]
+pub mod test {
     use crate::{
         evm_circuit::{
             param::STEP_HEIGHT,
             table::FixedTableTag,
-            witness::{Block, BlockContext, Bytecode, Rw, Transaction},
+            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
             EvmCircuit,
         },
         util::Expr,
@@ -148,7 +148,7 @@ pub(crate) mod test {
     }
 
     #[derive(Clone)]
-    pub(crate) struct TestCircuitConfig<F> {
+    pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
         rw_table: [Column<Advice>; 10],
         bytecode_table: [Column<Advice>; 4],
@@ -160,7 +160,7 @@ pub(crate) mod test {
         fn load_txs(
             &self,
             layouter: &mut impl Layouter<F>,
-            txs: &[Transaction<F>],
+            txs: &[Transaction],
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
@@ -198,7 +198,7 @@ pub(crate) mod test {
         fn load_rws(
             &self,
             layouter: &mut impl Layouter<F>,
-            rws: &[Rw],
+            rws: &RwMap,
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
@@ -215,7 +215,7 @@ pub(crate) mod test {
                     }
                     offset += 1;
 
-                    for rw in rws.iter() {
+                    for rw in rws.0.values().flat_map(|rws| rws.iter()) {
                         for (column, value) in
                             self.rw_table.iter().zip(rw.table_assignment(randomness))
                         {
@@ -271,10 +271,10 @@ pub(crate) mod test {
             )
         }
 
-        fn load_blocks(
+        fn load_block(
             &self,
             layouter: &mut impl Layouter<F>,
-            block: &BlockContext<F>,
+            block: &BlockContext,
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
@@ -310,7 +310,7 @@ pub(crate) mod test {
     }
 
     #[derive(Default)]
-    pub(crate) struct TestCircuit<F> {
+    pub struct TestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
@@ -379,14 +379,14 @@ pub(crate) mod test {
             config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
             config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
             config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
-            config.load_blocks(&mut layouter, &self.block.context, self.block.randomness)?;
+            config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
         }
     }
 
-    pub(crate) fn run_test_circuit<F: FieldExt>(
+    pub fn run_test_circuit<F: FieldExt>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -420,7 +420,7 @@ pub(crate) mod test {
         prover.verify()
     }
 
-    pub(crate) fn run_test_circuit_incomplete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_incomplete_fixed_table<F: FieldExt>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(
@@ -436,7 +436,7 @@ pub(crate) mod test {
         )
     }
 
-    pub(crate) fn run_test_circuit_complete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_complete_fixed_table<F: FieldExt>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
