@@ -262,84 +262,63 @@ mod test {
             rws: RwMap(
                 [
                     (
-                        RwTableTag::TxAccessListAccount,
+                        RwTableTag::Stack,
                         vec![
-                            // Rw::TxAccessListAccount {
-                            //     rw_counter: 5,
-                            //     is_write: true,
-                            //     tx_id: 1,
-                            //     account_address: tx.from,
-                            //     value: true,
-                            //     value_prev: false,
-                            // },
-                            // Rw::TxAccessListAccount {
-                            //     rw_counter: 6,
-                            //     is_write: true,
-                            //     tx_id: 1,
-                            //     account_address: tx.to.unwrap(),
-                            //     value: true,
-                            //     value_prev: false,
-                            // },
+                            Rw::Stack {
+                                rw_counter: 13,
+                                is_write: false,
+                                call_id: 1,
+                                stack_pointer: STACK_CAPACITY,
+                                value: key,
+                            },
+                            Rw::Stack {
+                                rw_counter: 16,
+                                is_write: true,
+                                call_id: 1,
+                                stack_pointer: STACK_CAPACITY,
+                                value,
+                            },
                         ],
                     ),
                     (
-                        RwTableTag::Account,
+                        RwTableTag::AccountStorage,
+                        vec![
+                            Rw::AccountStorage {
+                                rw_counter: 14,
+                                is_write: false,
+                                account_address: tx.to.unwrap(),
+                                storage_key: key,
+                                value,
+                                value_prev: value,
+                                tx_id: 1,
+                                committed_value: Word::zero(),
+                            },
+                        ],
+                    ),
+                    (
+                        RwTableTag::TxAccessListAccountStorage,
                         [
-                            vec![
-                                // Rw::Account {
-                                //     rw_counter: 4,
-                                //     is_write: true,
-                                //     account_address: tx.from,
-                                //     field_tag: AccountFieldTag::Nonce,
-                                //     value: tx.nonce + Word::one(),
-                                //     value_prev: tx.nonce,
-                                // },
-                                // Rw::Account {
-                                //     rw_counter: 7,
-                                //     is_write: true,
-                                //     account_address: tx.from,
-                                //     field_tag: AccountFieldTag::Balance,
-                                //     value: from_balance,
-                                //     value_prev: from_balance_prev,
-                                // },
-                                // Rw::Account {
-                                //     rw_counter: 8,
-                                //     is_write: true,
-                                //     account_address: tx.to.unwrap_or_else(Address::zero),
-                                //     field_tag: AccountFieldTag::Balance,
-                                //     value: to_balance,
-                                //     value_prev: to_balance_prev,
-                                // },
-                                // Rw::Account {
-                                //     rw_counter: 9,
-                                //     is_write: false,
-                                //     account_address: tx.to.unwrap_or_else(Address::zero),
-                                //     field_tag: AccountFieldTag::CodeHash,
-                                //     value: bytecode.hash,
-                                //     value_prev: bytecode.hash,
-                                // },
-                            ],
+                            vec![Rw::TxAccessListAccountStorage {
+                                rw_counter: 15,
+                                is_write: true,
+                                tx_id: 1,
+                                account_address: tx.to.unwrap(),
+                                storage_key: key,
+                                value: true,
+                                value_prev: is_warm,
+                            }],
                             if result {
                                 vec![]
                             } else {
-                                vec![
-                                    // Rw::Account {
-                                    //     rw_counter: rw_counter_end_of_reversion - 1,
-                                    //     is_write: true,
-                                    //     account_address: tx.to.unwrap_or_else(Address::zero),
-                                    //     field_tag: AccountFieldTag::Balance,
-                                    //     value: to_balance_prev,
-                                    //     value_prev: to_balance,
-                                    // },
-                                    // Rw::Account {
-                                    //     rw_counter: rw_counter_end_of_reversion,
-                                    //     is_write: true,
-                                    //     account_address: tx.from,
-                                    //     field_tag: AccountFieldTag::Balance,
-                                    //     value: from_balance_prev,
-                                    //     value_prev: from_balance,
-                                    // },
-                                ]
+                                vec![Rw::TxAccessListAccountStorage {
+                                    rw_counter: rw_counter_end_of_reversion,
+                                    is_write: true,
+                                    tx_id: 1usize,
+                                    account_address: tx.to.unwrap(),
+                                    storage_key: key,
+                                    value: is_warm,
+                                    value_prev: true,
+                                }]
                             },
                         ]
                         .concat(),
@@ -348,111 +327,38 @@ mod test {
                         RwTableTag::CallContext,
                         vec![
                             Rw::CallContext {
-                                rw_counter: 1,
+                                rw_counter: 9,
                                 is_write: false,
                                 call_id: 1,
                                 field_tag: CallContextFieldTag::TxId,
                                 value: Word::one(),
                             },
                             Rw::CallContext {
-                                rw_counter: 2,
+                                rw_counter: 10,
                                 is_write: false,
                                 call_id: 1,
                                 field_tag: CallContextFieldTag::RwCounterEndOfReversion,
                                 value: Word::from(rw_counter_end_of_reversion),
                             },
                             Rw::CallContext {
-                                rw_counter: 3,
+                                rw_counter: 11,
                                 is_write: false,
                                 call_id: 1,
                                 field_tag: CallContextFieldTag::IsPersistent,
                                 value: Word::from(result as u64),
+                            },
+                            Rw::CallContext {
+                                rw_counter: 12,
+                                is_write: false,
+                                call_id: 1,
+                                field_tag: CallContextFieldTag::CalleeAddress,
+                                value: tx.to.unwrap().to_word(),
                             },
                         ],
                     ),
                 ]
                 .into(),
             ),
-
-            // rws: [
-            //     vec![
-            //         Rw::CallContext {
-            //             rw_counter: 9,
-            //             is_write: false,
-            //             call_id: 1,
-            //             field_tag: CallContextFieldTag::TxId,
-            //             value: Word::one(),
-            //         },
-            //         Rw::CallContext {
-            //             rw_counter: 10,
-            //             is_write: false,
-            //             call_id: 1,
-            //             field_tag: CallContextFieldTag::RwCounterEndOfReversion,
-            //             value: Word::from(rw_counter_end_of_reversion),
-            //         },
-            //         Rw::CallContext {
-            //             rw_counter: 11,
-            //             is_write: false,
-            //             call_id: 1,
-            //             field_tag: CallContextFieldTag::IsPersistent,
-            //             value: Word::from(result as u64),
-            //         },
-            //         Rw::CallContext {
-            //             rw_counter: 12,
-            //             is_write: false,
-            //             call_id: 1,
-            //             field_tag: CallContextFieldTag::CalleeAddress,
-            //             value: tx.to.unwrap().to_word(),
-            //         },
-            //         Rw::Stack {
-            //             rw_counter: 13,
-            //             is_write: false,
-            //             call_id: 1,
-            //             stack_pointer: STACK_CAPACITY,
-            //             value: key,
-            //         },
-            //         Rw::AccountStorage {
-            //             rw_counter: 14,
-            //             is_write: false,
-            //             account_address: tx.to.unwrap(),
-            //             storage_key: key,
-            //             value,
-            //             value_prev: value,
-            //             tx_id: 1,
-            //             committed_value: Word::zero(),
-            //         },
-            //         Rw::TxAccessListAccountStorage {
-            //             rw_counter: 15,
-            //             is_write: true,
-            //             tx_id: 1,
-            //             account_address: tx.to.unwrap(),
-            //             storage_key: key,
-            //             value: true,
-            //             value_prev: is_warm,
-            //         },
-            //         Rw::Stack {
-            //             rw_counter: 16,
-            //             is_write: true,
-            //             call_id: 1,
-            //             stack_pointer: STACK_CAPACITY,
-            //             value,
-            //         },
-            //     ],
-            //     if result {
-            //         vec![]
-            //     } else {
-            //         vec![Rw::TxAccessListAccountStorage {
-            //             rw_counter: 19,
-            //             is_write: true,
-            //             tx_id: 1usize,
-            //             account_address: tx.to.unwrap(),
-            //             storage_key: key,
-            //             value: is_warm,
-            //             value_prev: true,
-            //         }]
-            //     },
-            // ]
-            // .concat(),
             bytecodes: vec![bytecode],
             ..Default::default()
         };
