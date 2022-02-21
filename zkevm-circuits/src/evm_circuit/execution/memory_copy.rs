@@ -249,10 +249,7 @@ pub mod test {
     ) -> (ExecStep, usize) {
         let mut selectors = vec![0u8; MAX_COPY_BYTES];
         let mut rw_offset: usize = 0;
-        let memory_rws: &mut Vec<_> = rws
-            .0
-            .entry(RwTableTag::Memory)
-            .or_insert_with(Vec::new);
+        let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
         let rw_idx_start = memory_rws.len();
         for (idx, selector) in selectors.iter_mut().enumerate() {
             if idx < bytes_left {
