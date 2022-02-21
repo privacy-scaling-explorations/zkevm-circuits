@@ -40,9 +40,9 @@ use stop::Stop;
 use swap::Swap;
 
 /// Generic opcode trait which defines the logic of the
-/// [`Operation`](crate::operation::Operation) that should be generated for an
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep) depending of the
-/// [`OpcodeId`] it contains.
+/// [`Operation`](crate::operation::Operation) that should be generated for one
+/// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending
+/// of the [`OpcodeId`] it contains.
 pub trait Opcode: Debug {
     /// Generate the associated [`MemoryOp`](crate::operation::MemoryOp)s,
     /// [`StackOp`](crate::operation::StackOp)s, and
@@ -50,8 +50,20 @@ pub trait Opcode: Debug {
     /// is implemented for.
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
+        exec_step: &mut ExecStep,
         next_steps: &[GethExecStep],
     ) -> Result<(), Error>;
+
+    ///
+    fn gen_associated_ops_multi(
+        state: &mut CircuitInputStateRef,
+        next_steps: &[GethExecStep],
+    ) -> Result<(), Error> {
+        let mut step = state.new_step(&next_steps[0]);
+        Self::gen_associated_ops(state, &mut step, next_steps)?;
+        state.push_step_to_tx(step);
+        Ok(())
+    }
 }
 
 fn dummy_gen_associated_ops(

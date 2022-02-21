@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -15,6 +15,7 @@ pub(crate) struct Stop;
 impl Opcode for Stop {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
+        _exec_step: &mut ExecStep,
         _steps: &[GethExecStep],
     ) -> Result<(), Error> {
         state.handle_return()?;

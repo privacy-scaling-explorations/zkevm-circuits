@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
@@ -16,6 +16,7 @@ pub(crate) struct Mload;
 impl Opcode for Mload {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
+        exec_step: &mut ExecStep,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
@@ -26,7 +27,7 @@ impl Opcode for Mload {
         let stack_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
+        state.push_stack_op(exec_step, RW::READ, stack_position, stack_value_read)?;
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
@@ -40,13 +41,13 @@ impl Opcode for Mload {
         //
         // First stack write
         //
-        state.push_stack_op(RW::WRITE, stack_position, mem_read_value)?;
+        state.push_stack_op(exec_step, RW::WRITE, stack_position, mem_read_value)?;
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
         for byte in mem_read_value.to_be_bytes() {
-            state.push_memory_op(RW::READ, mem_read_addr, byte)?;
+            state.push_memory_op(exec_step, RW::READ, mem_read_addr, byte)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
