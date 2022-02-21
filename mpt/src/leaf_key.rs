@@ -9,7 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, mult_diff_lookup, range_lookups},
+    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{HASH_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN},
 };
@@ -127,8 +127,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             q_enable * is_long
         };
 
-        /*
-        TODO: uncomment when overall degree is reduced
         // There are 0s after key length.
         for ind in 0..HASH_WIDTH {
             key_len_lookup(
@@ -154,7 +152,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
         }
         key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
         key_len_lookup(meta, sel_long, 33, s_advices[0], c_rlp2, fixed_table);
-        */
 
         // acc_mult corresponds to key length (short):
         mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, fixed_table);

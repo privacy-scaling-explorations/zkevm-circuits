@@ -10,7 +10,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, mult_diff_lookup, range_lookups},
+    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::HASH_WIDTH,
 };
@@ -162,8 +162,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             fixed_table,
         );
 
-        /*
-        TODO: uncomment when overall degree is reduced
         // There are zeros in s_advices after nonce length:
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
@@ -175,7 +173,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 fixed_table,
             )
         }
-        */
 
         // mult_diff_balance corresponds to balance length:
         mult_diff_lookup(
@@ -187,8 +184,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             fixed_table,
         );
 
-        /*
-        TODO: uncomment when overall degree is reduced
         // There are zeros in c_advices after balance length:
         for ind in 1..HASH_WIDTH {
             key_len_lookup(
@@ -200,7 +195,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 fixed_table,
             )
         }
-        */
 
         range_lookups(
             meta,

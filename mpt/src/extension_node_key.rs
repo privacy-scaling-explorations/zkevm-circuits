@@ -10,7 +10,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, range_lookups},
+    helpers::{compute_rlc, range_lookups, key_len_lookup},
     mpt::FixedTableTag,
     param::{
         HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
@@ -679,8 +679,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             });
         }
 
-        /*
-        TODO: uncomment when overall degree is reduced
         let sel_short = |meta: &mut VirtualCells<F>| {
             let is_extension_node = meta.query_advice(
                 s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
@@ -732,7 +730,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             )
         }
         key_len_lookup(meta, sel_long, 32, s_advices[0], c_rlp1, fixed_table);
-        */
 
         let sel_s = |meta: &mut VirtualCells<F>| {
             let is_extension_node = meta.query_advice(
