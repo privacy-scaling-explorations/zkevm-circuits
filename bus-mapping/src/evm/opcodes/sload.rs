@@ -35,7 +35,7 @@ impl Opcode for Sload {
                 stack_value_read,
                 storage_value_read,
                 storage_value_read,
-                1usize, // TODO: tx_id. read from call_context
+                1usize,             // TODO: tx_id. read from call_context
                 storage_value_read, // TODO: committed_value
             ),
         );
