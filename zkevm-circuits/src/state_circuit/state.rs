@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::witness::RwMap,
+    evm_circuit::{util::math_gadget::generate_lagrange_base_polynomial, witness::RwMap},
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
@@ -19,7 +19,7 @@ use pairing::arithmetic::FieldExt;
 /*
 Example state table:
 
-| q_target | address | global_counter | value | flag | padding | storage_key | value_prev |
+| q_target | address | rw_counter | value | flag | padding | storage_key | value_prev |
 -------------------------------------------------------------------------------------------
 |    1     |    0    |       0        |  0    |   1  |    0    |             |            |   // init row (write value 0)
 |    2     |    0    |       12       |  12   |   1  |    0    |             |            |
@@ -56,7 +56,7 @@ Example state table:
 Example bus mapping:
 // TODO: this is going to change
 
-| target | address | global_counter | value | storage_key | value_prev | flag |
+| target | address | rw_counter | value | storage_key | value_prev | flag |
 -------------------------------------------------------------------------------
 |    2   |    0    |       12       |  12   |             |            |  1   |
 |    2   |    0    |       24       |  12   |             |            |  0   |
@@ -68,8 +68,7 @@ Example bus mapping:
 |    3   |    1    |       49       |  32   |             |            |  0   |
 */
 
-// If the tag values are changed, "_norm" exps below should be updated
-// accordingly
+const EMPTY_TAG: usize = 0;
 const START_TAG: usize = 1;
 const MEMORY_TAG: usize = 2;
 const STACK_TAG: usize = 3;
@@ -80,7 +79,7 @@ const STORAGE_TAG: usize = 4;
 /// and opcode details as well.
 #[derive(Clone, Debug)]
 pub(crate) struct BusMapping<F: FieldExt> {
-    global_counter: Variable<F, F>,
+    rw_counter: Variable<F, F>,
     target: Variable<F, F>,
     flag: Variable<F, F>,
     address: Variable<F, F>,
@@ -92,12 +91,12 @@ pub(crate) struct BusMapping<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
-    // When SANITY_CHECK is true, max_address/global_counter/stack_address are
+    // When SANITY_CHECK is true, max_address/rw_counter/stack_address are
     // required to be in the range of
-    // MEMORY_ADDRESS_MAX/GLOBAL_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
+    // MEMORY_ADDRESS_MAX/RW_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
     // synthesis
     const SANITY_CHECK: bool,
-    const GLOBAL_COUNTER_MAX: usize,
+    const RW_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
     const STACK_ROWS_MAX: usize,
@@ -108,14 +107,14 @@ pub struct Config<
     address: Column<Advice>, /* used for memory address, stack pointer, and
                               * account address (for storage) */
     address_diff_inv: Column<Advice>,
-    global_counter: Column<Advice>,
+    rw_counter: Column<Advice>,
     value: Column<Advice>,
     flag: Column<Advice>,
     padding: Column<Advice>,
     storage_key: Column<Advice>,
     storage_key_diff_inv: Column<Advice>,
     value_prev: Column<Advice>,
-    global_counter_table: Column<Fixed>,
+    rw_counter_table: Column<Fixed>,
     memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
@@ -128,7 +127,7 @@ pub struct Config<
 impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
-        const GLOBAL_COUNTER_MAX: usize,
+        const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
@@ -138,7 +137,7 @@ impl<
     Config<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -151,125 +150,67 @@ impl<
         let q_target = meta.fixed_column();
         let address = meta.advice_column();
         let address_diff_inv = meta.advice_column();
-        let global_counter = meta.advice_column();
+        let rw_counter = meta.advice_column();
         let value = meta.advice_column();
         let flag = meta.advice_column();
         let padding = meta.advice_column();
         let storage_key = meta.advice_column();
         let storage_key_diff_inv = meta.advice_column();
         let value_prev = meta.advice_column();
-        let global_counter_table = meta.fixed_column();
+        let rw_counter_table = meta.fixed_column();
         let memory_address_table_zero = meta.fixed_column();
         let stack_address_table_zero = meta.fixed_column();
         let memory_value_table = meta.fixed_column();
 
-        let one = Expression::Constant(F::one());
-        let two = Expression::Constant(F::from(2));
-        let three = Expression::Constant(F::from(3));
-        let four = Expression::Constant(F::from(4));
+        let one = Expression::Constant(F::from(1));
 
         let q_memory_first = |meta: &mut VirtualCells<F>| {
-            // For first memory row it holds q_target_cur = 1 and q_target_next
-            // = 2.
+            // For first memory row it holds q_target_cur = START_TAG and q_target_next
+            // = MEMORY_TAG.
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
-            // q_target_cur must be 1
-            // q_target_next must be 2
-
-            q_target_cur.clone()
-                * (two.clone() - q_target_cur.clone())
-                * (three.clone() - q_target_cur.clone())
-                * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
-                * (three.clone() - q_target_next.clone())
-                * (four.clone() - q_target_next)
-        };
-
-        let q_memory_first_norm = |meta: &mut VirtualCells<F>| {
-            let e = q_memory_first(meta);
-            // q_memory_first is 12 when q_target_cur is 1 and q_target_next is
-            // 2, we use 1/12 to normalize the value
-            let inv = F::from(12_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            e * i
+            generate_lagrange_base_polynomial(q_target_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
+                * generate_lagrange_base_polynomial(
+                    q_target_next,
+                    MEMORY_TAG,
+                    EMPTY_TAG..=STORAGE_TAG,
+                )
         };
 
         let q_memory_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
-
-            q_target.clone()
-                * (q_target.clone() - one.clone())
-                * (three.clone() - q_target.clone())
-                * (four.clone() - q_target)
-        };
-
-        let q_memory_not_first_norm = |meta: &mut VirtualCells<F>| {
-            let e = q_memory_not_first(meta);
-            // q_memory_not_first is 4 when target is 2, we use 1/4 to normalize
-            // the value
-            let inv = F::from(4_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            e * i
+            generate_lagrange_base_polynomial(q_target, MEMORY_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
 
         let q_stack_first = |meta: &mut VirtualCells<F>| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
-            q_target_cur.clone()
-                * (two.clone() - q_target_cur.clone())
-                * (three.clone() - q_target_cur.clone())
-                * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
-                * (q_target_next.clone() - two.clone())
-                * (four.clone() - q_target_next)
-        };
 
-        let q_stack_first_norm = |meta: &mut VirtualCells<F>| {
-            let e = q_stack_first(meta);
-            // q_stack_first is 12, we use 1/12 to normalize the value
-            let inv = F::from(12_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            e * i
+            generate_lagrange_base_polynomial(q_target_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
+                * generate_lagrange_base_polynomial(
+                    q_target_next,
+                    STACK_TAG,
+                    EMPTY_TAG..=STORAGE_TAG,
+                )
         };
 
         let q_stack_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
-
-            q_target.clone()
-                * (q_target.clone() - one.clone())
-                * (q_target.clone() - two.clone())
-                * (four.clone() - q_target)
+            generate_lagrange_base_polynomial(q_target, STACK_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
-
-        let q_stack_not_first_norm = |meta: &mut VirtualCells<F>| {
-            let e = q_stack_not_first(meta);
-            // q_stack_not_first is 6 when target is 3, we use 1/6 to normalize
-            // the value
-            let inv = F::from(6_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            e * i
+        let q_storage_first = |meta: &mut VirtualCells<F>| {
+            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+            let q_target_next = meta.query_fixed(q_target, Rotation::next());
+            generate_lagrange_base_polynomial(q_target_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
+                * generate_lagrange_base_polynomial(
+                    q_target_next,
+                    STORAGE_TAG,
+                    EMPTY_TAG..=STORAGE_TAG,
+                )
         };
-
         let q_storage_not_first = |meta: &mut VirtualCells<F>| {
             let q_target = meta.query_fixed(q_target, Rotation::cur());
-            q_target.clone()
-                * (q_target.clone() - one.clone())
-                * (q_target.clone() - two.clone())
-                * (q_target - three.clone())
-        };
-
-        let q_storage_not_first_norm = |meta: &mut VirtualCells<F>| {
-            let e = q_storage_not_first(meta);
-            // q_storage_not_first is 24 when target is 4, we use 1/24 to
-            // normalize the value
-            let inv = F::from(24_u64).invert().unwrap();
-            let i = Expression::Constant(inv);
-
-            e * i
+            generate_lagrange_base_polynomial(q_target, STORAGE_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
 
         let address_diff_is_zero = IsZeroChip::configure(
@@ -299,7 +240,7 @@ impl<
                 let is_not_padding = one.clone() - padding;
                 // Since q_memory_not_first and q_stack_non_first are
                 // mutually exclusive, q_not_first is binary.
-                let q_not_first = q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
+                let q_not_first = q_memory_not_first(meta) + q_stack_not_first(meta);
 
                 q_not_first * is_not_padding
             },
@@ -311,7 +252,7 @@ impl<
         // lookup.
         let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
             meta,
-            |meta| q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta),
+            |meta| q_memory_not_first(meta) + q_stack_not_first(meta),
             padding,
         );
 
@@ -346,7 +287,7 @@ impl<
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            // If flag == 0 (read), and global_counter != 0, value_prev ==
+            // If flag == 0 (read), and rw_counter != 0, value_prev ==
             // value_cur
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag;
@@ -380,7 +321,7 @@ impl<
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            // If flag == 0 (read), and rw_counter != 0, value_prev == value_cur
             let value_prev = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag;
             // when addresses changes, we don't require the operation is write as this is
@@ -394,33 +335,31 @@ impl<
             ]
         });
 
-        // global_counter monotonicity is checked for memory and stack when
+        // rw_counter monotonicity is checked for memory and stack when
         // address_cur == address_prev. (Recall that operations are
-        // ordered first by address, and then by global_counter.)
+        // ordered first by address, and then by rw_counter.)
         meta.lookup_any(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
-            let global_counter_prev =
-                meta.query_advice(global_counter, Rotation::prev());
-            let global_counter =
-                meta.query_advice(global_counter, Rotation::cur());
+            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
+            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
+            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
             let padding = meta.query_advice(padding, Rotation::cur());
             let is_not_padding = one.clone() - padding;
-            let q_not_first =
-                q_memory_not_first_norm(meta) + q_stack_not_first_norm(meta);
+            let q_not_first = q_memory_not_first(meta) + q_stack_not_first(meta);
 
             vec![(
                 q_not_first
                     * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
+                    * (rw_counter - rw_counter_prev - one.clone()), /*
+                                                                     * - 1 because it needs to
+                                                                     *   be strictly monotone */
+                rw_counter_table,
             )]
         });
 
         // Memory address is in the allowed range.
         meta.lookup_any(|meta| {
-            let q_memory = q_memory_first_norm(meta) + q_memory_not_first_norm(meta);
+            let q_memory = q_memory_first(meta) + q_memory_not_first(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
@@ -430,7 +369,7 @@ impl<
 
         // Stack address is in the allowed range.
         meta.lookup_any(|meta| {
-            let q_stack = q_stack_first_norm(meta) + q_stack_not_first_norm(meta);
+            let q_stack = q_stack_first(meta) + q_stack_not_first(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
@@ -438,19 +377,19 @@ impl<
             vec![(q_stack * address_cur, stack_address_table_zero)]
         });
 
-        // global_counter is in the allowed range:
+        // rw_counter is in the allowed range:
         meta.lookup_any(|meta| {
-            let global_counter = meta.query_advice(global_counter, Rotation::cur());
-            let global_counter_table = meta.query_fixed(global_counter_table, Rotation::cur());
+            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
+            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
 
-            vec![(global_counter, global_counter_table)]
+            vec![(rw_counter, rw_counter_table)]
         });
 
         // Memory value (for non-first rows) is in the allowed range.
         // Memory first row value doesn't need to be checked - it is checked
         // above where memory init row value has to be 0.
         meta.lookup_any(|meta| {
-            let q_memory_not_first = q_memory_not_first_norm(meta);
+            let q_memory_not_first = q_memory_not_first(meta);
             let value = meta.query_advice(value, Rotation::cur());
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
 
@@ -477,15 +416,7 @@ impl<
         );
 
         meta.create_gate("First storage row operation", |meta| {
-            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
-            let q_target_next = meta.query_fixed(q_target, Rotation::next());
-            let q_storage_first = q_target_cur.clone()
-                * (two.clone() - q_target_cur.clone())
-                * (three.clone() - q_target_cur.clone())
-                * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
-                * (q_target_next.clone() - two.clone())
-                * (q_target_next - three.clone());
+            let q_storage_first = q_storage_first(meta);
 
             let flag = meta.query_advice(flag, Rotation::cur());
             let q_read = one.clone() - flag;
@@ -522,7 +453,7 @@ impl<
             // (flag) * (1 - flag)
             let bool_check_flag = flag.clone() * (one.clone() - flag.clone());
 
-            // If flag == 0 (read), and global_counter != 0, value_prev == value_cur
+            // If flag == 0 (read), and rw_counter != 0, value_prev == value_cur
             let value_previous = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - flag.clone();
 
@@ -555,29 +486,28 @@ impl<
             ]
         });
 
-        // global_counter monotonicity is checked for storage when address_cur
+        // rw_counter monotonicity is checked for storage when address_cur
         // == address_prev and storage_key_cur = storage_key_prev.
         // (Recall that storage operations are ordered first by account address,
-        // then by storage_key, and finally by global_counter.)
+        // then by storage_key, and finally by rw_counter.)
 
         meta.lookup_any(|meta| {
-            let global_counter_table =
-                meta.query_fixed(global_counter_table, Rotation::cur());
-            let global_counter_prev =
-                meta.query_advice(global_counter, Rotation::prev());
-            let global_counter =
-                meta.query_advice(global_counter, Rotation::cur());
+            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
+            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
+            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
             let padding = meta.query_advice(padding, Rotation::cur());
             let is_not_padding = one.clone() - padding;
-            let q_storage_not_first = q_storage_not_first_norm(meta);
+            let q_storage_not_first = q_storage_not_first(meta);
 
             vec![(
                 q_storage_not_first
                     * is_not_padding
                     * address_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (global_counter - global_counter_prev - one.clone()), // - 1 because it needs to be strictly monotone
-                global_counter_table,
+                    * (rw_counter - rw_counter_prev - one.clone()), /*
+                                                                     * - 1 because it needs to
+                                                                     *   be strictly monotone */
+                rw_counter_table,
             )]
         });
 
@@ -587,14 +517,14 @@ impl<
             q_target,
             address,
             address_diff_inv,
-            global_counter,
+            rw_counter,
             value,
             flag,
             padding,
             storage_key,
             storage_key_diff_inv,
             value_prev,
-            global_counter_table,
+            rw_counter_table,
             memory_address_table_zero,
             stack_address_table_zero,
             memory_value_table,
@@ -611,10 +541,10 @@ impl<
             .assign_region(
                 || "global counter table",
                 |mut region| {
-                    for idx in 0..=GLOBAL_COUNTER_MAX {
+                    for idx in 0..=RW_COUNTER_MAX {
                         region.assign_fixed(
                             || "global counter table",
-                            self.global_counter_table,
+                            self.rw_counter_table,
                             idx,
                             || Ok(F::from(idx as u64)),
                         )?;
@@ -973,7 +903,7 @@ impl<
         region: &mut Region<'_, F>,
         offset: usize,
         address: F,
-        global_counter: F,
+        rw_counter: F,
         value: F,
         flag: F,
         target: F,
@@ -989,21 +919,21 @@ impl<
             }
         };
 
-        if SANITY_CHECK && global_counter > F::from(GLOBAL_COUNTER_MAX as u64) {
-            panic!("global_counter out of range");
+        if SANITY_CHECK && rw_counter > F::from(RW_COUNTER_MAX as u64) {
+            panic!("rw_counter out of range");
         }
-        let global_counter = {
+        let rw_counter = {
             let cell = region.assign_advice(
                 || "global counter",
-                self.global_counter,
+                self.rw_counter,
                 offset,
-                || Ok(global_counter),
+                || Ok(rw_counter),
             )?;
 
             Variable::<F, F> {
                 cell,
-                field_elem: Some(global_counter),
-                value: Some(global_counter),
+                field_elem: Some(rw_counter),
+                value: Some(rw_counter),
             }
         };
 
@@ -1067,7 +997,7 @@ impl<
         };
 
         Ok(BusMapping {
-            global_counter,
+            rw_counter,
             target,
             flag,
             address,
@@ -1083,7 +1013,7 @@ impl<
 pub struct StateCircuit<
     F: FieldExt,
     const SANITY_CHECK: bool,
-    const GLOBAL_COUNTER_MAX: usize,
+    const RW_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
     const STACK_ROWS_MAX: usize,
@@ -1103,7 +1033,7 @@ pub struct StateCircuit<
 impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
-        const GLOBAL_COUNTER_MAX: usize,
+        const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
@@ -1113,7 +1043,7 @@ impl<
     StateCircuit<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -1151,7 +1081,7 @@ impl<
 impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
-        const GLOBAL_COUNTER_MAX: usize,
+        const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ROWS_MAX: usize,
@@ -1161,7 +1091,7 @@ impl<
     for StateCircuit<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -1172,7 +1102,7 @@ impl<
     type Config = Config<
         F,
         SANITY_CHECK,
-        GLOBAL_COUNTER_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
         STACK_ROWS_MAX,
@@ -1216,12 +1146,12 @@ mod tests {
     use halo2::dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup};
     use pairing::bn256::Fr;
 
-    macro_rules! test_state_circuit {
-        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
+    macro_rules! test_state_circuit_ok {
+        ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
             let circuit = StateCircuit::<
                 Fr,
                 true,
-                $global_counter_max,
+                $rw_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
                 $stack_rows_max,
@@ -1231,17 +1161,16 @@ mod tests {
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             let verify_result = prover.verify();
-            //println!("verify result: {:#?}", verify_result);
-            assert_eq!(verify_result, $result);
+            assert!(verify_result.is_ok(), "verify err: {:#?}", verify_result);
         }};
     }
 
     macro_rules! test_state_circuit_error {
-        ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
+        ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
             let circuit = StateCircuit::<
                 Fr,
                 false,
-                $global_counter_max,
+                $rw_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
                 $stack_rows_max,
@@ -1337,7 +1266,7 @@ mod tests {
             ),
         );
 
-        test_state_circuit!(
+        test_state_circuit_ok!(
             14,
             2000,
             100,
@@ -1388,7 +1317,7 @@ mod tests {
         );
 
         const STACK_ROWS_MAX: usize = 2;
-        test_state_circuit!(
+        test_state_circuit_ok!(
             14,
             2000,
             100,
@@ -1526,12 +1455,12 @@ mod tests {
             MemoryOp::new(1, MemoryAddress::from(MEMORY_ADDRESS_MAX), 32),
         );
         let memory_op_1 = Operation::new(
-            RWCounter::from(GLOBAL_COUNTER_MAX),
+            RWCounter::from(RW_COUNTER_MAX),
             RW::READ,
             MemoryOp::new(1, MemoryAddress::from(MEMORY_ADDRESS_MAX), 32),
         );
         let memory_op_2 = Operation::new(
-            RWCounter::from(GLOBAL_COUNTER_MAX + 1),
+            RWCounter::from(RW_COUNTER_MAX + 1),
             RW::WRITE,
             MemoryOp::new(1, MemoryAddress::from(MEMORY_ADDRESS_MAX), 32),
         );
@@ -1564,7 +1493,7 @@ mod tests {
             StackOp::new(1, StackAddress::from(STACK_ADDRESS_MAX + 1), Word::from(12)),
         );
         let stack_op_3 = Operation::new(
-            RWCounter::from(GLOBAL_COUNTER_MAX + 1),
+            RWCounter::from(RW_COUNTER_MAX + 1),
             RW::WRITE,
             StackOp::new(1, StackAddress::from(STACK_ADDRESS_MAX + 1), Word::from(12)),
         );
@@ -1575,13 +1504,13 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 7;
         const STACK_ROWS_MAX: usize = 7;
         const STORAGE_ROWS_MAX: usize = 7;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
+        const RW_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
             16,
-            GLOBAL_COUNTER_MAX,
+            RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
             STACK_ROWS_MAX,
@@ -1631,13 +1560,13 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STACK_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
-        const GLOBAL_COUNTER_MAX: usize = 60000;
+        const RW_COUNTER_MAX: usize = 60000;
         const MEMORY_ADDRESS_MAX: usize = 100;
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
             16,
-            GLOBAL_COUNTER_MAX,
+            RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
             STACK_ROWS_MAX,
@@ -1650,7 +1579,7 @@ mod tests {
     }
 
     #[test]
-    fn non_monotone_global_counter() {
+    fn non_monotone_rw_counter() {
         let memory_op_0 = Operation::new(
             RWCounter::from(1352),
             RW::WRITE,
@@ -1911,7 +1840,7 @@ mod tests {
         let memory_ops = builder.block.container.sorted_memory();
         let storage_ops = builder.block.container.sorted_storage();
 
-        test_state_circuit!(
+        test_state_circuit_ok!(
             14,
             2000,
             100,

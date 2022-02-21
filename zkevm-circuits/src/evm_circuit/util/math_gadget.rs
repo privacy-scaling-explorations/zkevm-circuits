@@ -783,3 +783,29 @@ impl<F: FieldExt, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         })
     }
 }
+
+// This function generates a Lagrange polynomial in the range [start, end) which
+// will be evaluated to 1 when `exp == value`, otherwise 0
+pub(crate) fn generate_lagrange_base_polynomial<
+    F: FieldExt,
+    Exp: Expr<F>,
+    R: Iterator<Item = usize>,
+>(
+    exp: Exp,
+    val: usize,
+    range: R,
+) -> Expression<F> {
+    let mut numerator = 1u64.expr();
+    let mut denominator = F::from(1);
+    for x in range {
+        if x != val {
+            numerator = numerator * (exp.expr() - x.expr());
+            denominator *= if x < val {
+                F::from_u128((val - x) as u128)
+            } else {
+                -F::from_u128((x - val) as u128)
+            };
+        }
+    }
+    numerator * denominator.invert().unwrap()
+}

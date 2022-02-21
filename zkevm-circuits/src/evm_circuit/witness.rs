@@ -16,7 +16,7 @@ use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
@@ -29,17 +29,8 @@ pub struct Block<F> {
     /// The block context
     pub context: BlockContext,
 }
-//pub type RwIndex = (bus_mapping::operation::Target, usize);
-/*
-pub type RwIndex =usize ;
-impl<F: FieldExt> Block<F> {
-    pub fn get_rw_by_index(&self, idx: RwIndex) -> Rw {
-        self.rws.get_rw_by_index(idx)
-    }
-}
-*/
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
@@ -120,7 +111,7 @@ impl BlockContext {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Transaction {
     /// The transaction identifier in the block
     pub id: usize,
@@ -232,7 +223,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CodeSource {
     Account(Word),
 }
@@ -243,7 +234,7 @@ impl Default for CodeSource {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Call {
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
@@ -319,7 +310,7 @@ impl ExecStep {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bytecode {
     pub hash: Word,
     pub bytes: Vec<u8>,
@@ -384,7 +375,7 @@ impl Bytecode {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RwMap(pub HashMap<RwTableTag, Vec<Rw>>);
 
 impl std::ops::Index<(RwTableTag, usize)> for RwMap {
