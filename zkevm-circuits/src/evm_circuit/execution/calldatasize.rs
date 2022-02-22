@@ -8,7 +8,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            Cell, Word,
+            Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,7 +20,7 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    call_data_size: Cell<F>,
+    call_data_size: Word<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
@@ -32,7 +32,13 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the calldatasize field.
-        let call_data_size = cb.call_context(None, CallContextFieldTag::CallDataLength);
+        let call_data_size = cb.query_rlc();
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::CallDataLength,
+            call_data_size.expr(),
+        );
 
         // The calldatasize should be pushed to the top of the stack.
         cb.stack_push(call_data_size.expr());
@@ -65,14 +71,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
         let call_data_size = block.rws[step.rw_indices[1]].stack_value();
 
-        self.call_data_size.assign(
-            region,
-            offset,
-            Some(Word::random_linear_combine(
-                call_data_size.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.call_data_size
+            .assign(region, offset, Some(call_data_size.to_le_bytes()))?;
 
         Ok(())
     }

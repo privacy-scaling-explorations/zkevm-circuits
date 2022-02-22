@@ -65,7 +65,7 @@ mod calldatasize_tests {
             .unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to COINBASE
+        // Generate step corresponding to CALLDATASIZE
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
