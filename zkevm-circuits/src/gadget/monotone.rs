@@ -106,7 +106,7 @@ mod test {
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{
-            MockProver,
+            FailureLocation, MockProver,
             VerifyFailure::{self, Lookup},
         },
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
@@ -216,12 +216,20 @@ mod test {
             vec![1, 2, 2, 4, 4],
             Err(vec![
                 Lookup {
+                    name: "Range check",
                     lookup_index: 0,
-                    row: 2,
+                    location: FailureLocation::InRegion {
+                        region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
+                        offset: 2,
+                    },
                 },
                 Lookup {
+                    name: "Range check",
                     lookup_index: 0,
-                    row: 4,
+                    location: FailureLocation::InRegion {
+                        region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
+                        offset: 4,
+                    },
                 },
             ]),
         );
@@ -229,16 +237,24 @@ mod test {
         try_test_circuit(
             vec![1, 2, 3, 4, 105],
             Err(vec![Lookup {
+                name: "Range check",
                 lookup_index: 0,
-                row: 4,
+                location: FailureLocation::InRegion {
+                    region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
+                    offset: 4,
+                },
             }]),
         );
         // not monotone (error)
         try_test_circuit(
             vec![1, 2, 3, 103, 4],
             Err(vec![Lookup {
+                name: "Range check",
                 lookup_index: 0,
-                row: 4,
+                location: FailureLocation::InRegion {
+                    region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
+                    offset: 4,
+                },
             }]),
         );
     }
@@ -256,16 +272,24 @@ mod test {
         try_test_circuit(
             vec![1, 2, 3, 4, 105],
             Err(vec![Lookup {
+                name: "Range check",
                 lookup_index: 0,
-                row: 4,
+                location: FailureLocation::InRegion {
+                    region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
+                    offset: 4,
+                },
             }]),
         );
         // not monotone (error)
         try_test_circuit(
             vec![1, 2, 3, 103, 4],
             Err(vec![Lookup {
+                name: "Range check",
                 lookup_index: 0,
-                row: 4,
+                location: FailureLocation::InRegion {
+                    region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
+                    offset: 4,
+                },
             }]),
         );
     }

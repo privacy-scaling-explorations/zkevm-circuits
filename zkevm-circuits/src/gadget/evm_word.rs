@@ -168,7 +168,7 @@ mod tests {
         arithmetic::Field,
         arithmetic::FieldExt,
         circuit::SimpleFloorPlanner,
-        dev::{MockProver, VerifyFailure},
+        dev::{FailureLocation, MockProver, VerifyFailure},
         plonk::{Circuit, Instance},
     };
     use pairing::bn256::Fr as Fp;
@@ -266,8 +266,15 @@ mod tests {
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
+                    name: "Encoded word / Pub inputs",
                     lookup_index: 32,
-                    row: 0
+                    location: FailureLocation::InRegion {
+                        region: halo2_proofs::dev::metadata::Region::from((
+                            1,
+                            "assign word".to_string()
+                        )),
+                        offset: 0
+                    }
                 }])
             );
 
