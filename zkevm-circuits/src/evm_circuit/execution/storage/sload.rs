@@ -67,6 +67,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             committed_value.expr(),
         );
 
+        cb.stack_push(value.expr());
+
         let is_warm = cb.query_bool();
         cb.account_storage_access_list_write_with_reversion(
             tx_id.expr(),
@@ -77,8 +79,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             is_persistent.expr(),
             rw_counter_end_of_reversion.expr(),
         );
-
-        cb.stack_push(value.expr());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
@@ -131,7 +131,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             .assign(region, offset, call.callee_address.to_scalar())?;
 
         let [key, value] =
-            [step.rw_indices[4], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[4], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
@@ -140,7 +140,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[6]].tx_access_list_value_pair();
+        let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
