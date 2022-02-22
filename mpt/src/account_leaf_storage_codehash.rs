@@ -26,7 +26,7 @@ pub(crate) struct AccountLeafStorageCodehashChip<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
+        q_not_first: Column<Fixed>,
         not_first_level: Column<Fixed>,
         is_account_leaf_storage_codehash_s: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -47,7 +47,20 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         // We don't need to check acc_mult because it's not used after this row.
 
         meta.create_gate("account leaf storage codehash", |meta| {
-            let q_enable = q_enable(meta);
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let mut q_enable = q_not_first.clone()
+                * meta.query_advice(
+                    is_account_leaf_storage_codehash_s,
+                    Rotation::cur(),
+                );
+            if !is_s {
+                q_enable = q_not_first
+                    * meta.query_advice(
+                        is_account_leaf_storage_codehash_c,
+                        Rotation::cur(),
+                    );
+            }
+
             let mut constraints = vec![];
 
             // TODO: RLP properties
@@ -101,6 +114,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints
         });
 
+        // TODO: check hash of a leaf to be account root when leaf without branch
+
         // Check hash of a leaf.
         meta.lookup_any(|meta| {
             let not_first_level =
@@ -117,12 +132,22 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 );
             }
 
+            // TODO: test for account proof with only leaf (without branch)
+            let mut leaf_without_branch =
+                meta.query_fixed(q_not_first, Rotation(-2));
+            if !is_s {
+                leaf_without_branch =
+                    meta.query_fixed(q_not_first, Rotation(-3));
+            }
+
             // Note: accumulated in s (not in c) for c:
             let acc_s = meta.query_advice(acc, Rotation::cur());
 
             let mut constraints = vec![];
+            let one = Expression::Constant(F::one());
             constraints.push((
                 not_first_level.clone()
+                    * (one.clone() - leaf_without_branch.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * acc_s,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -134,6 +159,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                     meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
                 constraints.push((
                     not_first_level.clone()
+                        * (one.clone() - leaf_without_branch.clone())
                         * is_account_leaf_storage_codehash.clone()
                         * s_keccak,
                     keccak_table_i,
@@ -143,16 +169,34 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints
         });
 
+        let sel = |meta: &mut VirtualCells<F>| {
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let mut q_enable = q_not_first.clone()
+                * meta.query_advice(
+                    is_account_leaf_storage_codehash_s,
+                    Rotation::cur(),
+                );
+            if !is_s {
+                q_enable = q_not_first
+                    * meta.query_advice(
+                        is_account_leaf_storage_codehash_c,
+                        Rotation::cur(),
+                    );
+            }
+
+            q_enable
+        };
+
         range_lookups(
             meta,
-            q_enable.clone(),
+            sel.clone(),
             s_advices.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
-            q_enable.clone(),
+            sel.clone(),
             c_advices.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
@@ -160,7 +204,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         // s_rlp1 and c_rlp1 not used
         range_lookups(
             meta,
-            q_enable,
+            sel,
             [s_rlp2, c_rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,

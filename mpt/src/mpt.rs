@@ -724,15 +724,7 @@ impl<F: FieldExt> MPTConfig<F> {
         // account leaf chip doesn't do this internally, the lookup is in mpt.rs
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
-            |meta| {
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
-                let is_account_leaf_storage_codehash_s = meta.query_advice(
-                    is_account_leaf_storage_codehash_s,
-                    Rotation::cur(),
-                );
-                q_not_first * is_account_leaf_storage_codehash_s
-            },
+            q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
             is_account_leaf_storage_codehash_c,
@@ -751,15 +743,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
-            |meta| {
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
-                let is_account_leaf_storage_codehash_c = meta.query_advice(
-                    is_account_leaf_storage_codehash_c,
-                    Rotation::cur(),
-                );
-                q_not_first * is_account_leaf_storage_codehash_c
-            },
+            q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
             is_account_leaf_storage_codehash_c,

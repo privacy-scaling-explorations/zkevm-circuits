@@ -42,6 +42,8 @@ impl<F: FieldExt> SelectorsChip<F> {
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
 
+        // TODO: q_not_first and not_first_level constraints
+
         meta.create_gate("selectors", |meta| {
             let q_enable = q_enable(meta);
 
