@@ -737,7 +737,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         let sel_s = |meta: &mut VirtualCells<F>| {
             let is_extension_node = meta.query_advice(
                 s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
+                Rotation(rot_into_branch_init+1),
             );
             let is_extension_s_row =
                 meta.query_advice(is_last_branch_child, Rotation(-1));
