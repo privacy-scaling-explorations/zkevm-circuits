@@ -299,18 +299,16 @@ mod test {
                     ),
                     (
                         RwTableTag::AccountStorage,
-                        vec![
-                            Rw::AccountStorage {
-                                rw_counter: 14,
-                                is_write: false,
-                                account_address: tx.to.unwrap(),
-                                storage_key: key,
-                                value,
-                                value_prev: value,
-                                tx_id: 1,
-                                committed_value: Word::zero(),
-                            },
-                        ],
+                        vec![Rw::AccountStorage {
+                            rw_counter: 14,
+                            is_write: false,
+                            account_address: tx.to.unwrap(),
+                            storage_key: key,
+                            value,
+                            value_prev: value,
+                            tx_id: 1,
+                            committed_value: Word::zero(),
+                        }],
                     ),
                     (
                         RwTableTag::TxAccessListAccountStorage,
