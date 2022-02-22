@@ -289,7 +289,7 @@ mod test {
                                 value: key,
                             },
                             Rw::Stack {
-                                rw_counter: 16,
+                                rw_counter: 15,
                                 is_write: true,
                                 call_id: 1,
                                 stack_pointer: STACK_CAPACITY,
@@ -316,7 +316,7 @@ mod test {
                         RwTableTag::TxAccessListAccountStorage,
                         [
                             vec![Rw::TxAccessListAccountStorage {
-                                rw_counter: 15,
+                                rw_counter: 16,
                                 is_write: true,
                                 tx_id: 1,
                                 account_address: tx.to.unwrap(),
