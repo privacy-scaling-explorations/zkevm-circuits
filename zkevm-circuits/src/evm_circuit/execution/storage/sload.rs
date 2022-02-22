@@ -178,12 +178,11 @@ mod test {
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
         test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
 
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, evm_types::GasCost, ToLittleEndian, ToWord, Word};
+    use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
