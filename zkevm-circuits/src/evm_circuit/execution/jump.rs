@@ -17,6 +17,7 @@ use crate::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -26,7 +27,7 @@ pub(crate) struct JumpGadget<F> {
     destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for JumpGadget<F> {
     const NAME: &'static str = "JUMP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;

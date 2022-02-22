@@ -14,6 +14,7 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -25,7 +26,7 @@ pub(crate) struct ByteGadget<F> {
     is_byte_selected: [IsEqualGadget<F>; 32],
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for ByteGadget<F> {
     const NAME: &'static str = "BYTE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BYTE;

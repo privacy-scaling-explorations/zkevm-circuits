@@ -12,6 +12,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -20,7 +21,7 @@ pub(crate) struct PopGadget<F> {
     value: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for PopGadget<F> {
     const NAME: &'static str = "POP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::POP;

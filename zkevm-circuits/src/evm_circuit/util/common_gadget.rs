@@ -12,6 +12,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::U256;
+use ff::PrimeField;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -27,7 +28,7 @@ pub(crate) struct SameContextGadget<F> {
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: FieldExt> SameContextGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> SameContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         opcode: Cell<F>,
@@ -106,7 +107,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
     add_receiver_balance: AddWordsGadget<F, 2>,
 }
 
-impl<F: FieldExt> TransferWithGasFeeGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> TransferWithGasFeeGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         sender_address: Expression<F>,

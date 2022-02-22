@@ -11,6 +11,7 @@ use crate::{
     },
     util::Expr,
 };
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // MulGadget verifies MUL: a * b mod 2^256 is equal to c,
@@ -20,7 +21,7 @@ pub(crate) struct MulGadget<F> {
     mul_words: MulWordsGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for MulGadget<F> {
     const NAME: &'static str = "MUL";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MUL;

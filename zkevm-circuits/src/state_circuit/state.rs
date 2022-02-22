@@ -1117,9 +1117,7 @@ mod tests {
     use eth_types::evm_types::{MemoryAddress, StackAddress};
     use eth_types::{address, bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::dev::{
-        MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup,
-    };
+    use halo2_proofs::dev::MockProver;
     use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit_ok {

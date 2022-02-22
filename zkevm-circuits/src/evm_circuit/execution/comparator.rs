@@ -15,6 +15,7 @@ use crate::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -29,7 +30,7 @@ pub(crate) struct ComparatorGadget<F> {
     is_gt: IsEqualGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for ComparatorGadget<F> {
     const NAME: &'static str = "CMP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CMP;

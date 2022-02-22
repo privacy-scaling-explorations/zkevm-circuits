@@ -163,6 +163,7 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ff::PrimeField;
     use halo2_proofs::{
         arithmetic::Field,
         arithmetic::FieldExt,
@@ -178,12 +179,12 @@ mod tests {
     #[test]
     fn evm_word() {
         #[derive(Default)]
-        struct MyCircuit<F: FieldExt> {
+        struct MyCircuit<F: FieldExt + PrimeField<Repr = [u8; 32]>> {
             word: [Option<u8>; 32],
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> Circuit<F> for MyCircuit<F> {
             // Introduce an additional instance column here to test lookups
             // with public inputs. This is analogous to the bus mapping
             // commitment which will be provided as public inputs.
@@ -212,7 +213,7 @@ mod tests {
 
                 // Make sure each encoded word has been committed to in the
                 // public inputs.
-                meta.lookup_any(|meta| {
+                meta.lookup_any("Encoded word / Pub inputs", |meta| {
                     let q_encode = meta.query_selector(q_encode);
                     let pub_inputs = meta.query_instance(pub_inputs, Rotation::cur());
 

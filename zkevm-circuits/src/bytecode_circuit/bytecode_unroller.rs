@@ -245,7 +245,7 @@ impl<F: FieldExt> Config<F> {
 
         // Lookup how many bytes the current opcode pushes
         // (also indirectly range checks `byte` to be in [0, 255])
-        meta.lookup_any(|meta| {
+        meta.lookup_any("Range bytes", |meta| {
             // Conditions: Always
             let q_enable = meta.query_selector(q_enable);
             let lookup_columns = vec![byte, byte_push_size];
@@ -260,7 +260,7 @@ impl<F: FieldExt> Config<F> {
         });
 
         // keccak lookup
-        meta.lookup_any(|meta| {
+        meta.lookup_any("keccak", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_final == 1`)
             // - Not padding

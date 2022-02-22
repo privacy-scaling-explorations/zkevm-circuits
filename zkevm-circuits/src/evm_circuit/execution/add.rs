@@ -13,6 +13,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
@@ -26,7 +27,7 @@ pub(crate) struct AddGadget<F> {
     is_sub: PairSelectGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for AddGadget<F> {
     const NAME: &'static str = "ADD";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADD;

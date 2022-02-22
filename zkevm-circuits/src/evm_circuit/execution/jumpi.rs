@@ -19,6 +19,7 @@ use crate::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -30,7 +31,7 @@ pub(crate) struct JumpiGadget<F> {
     is_condition_zero: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for JumpiGadget<F> {
     const NAME: &'static str = "JUMPI";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;

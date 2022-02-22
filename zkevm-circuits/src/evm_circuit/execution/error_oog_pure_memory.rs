@@ -15,6 +15,7 @@ use crate::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -36,7 +37,7 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
     is_mstore8: IsEqualGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
     const NAME: &'static str = "ErrorOutOfGasPureMemory";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasPureMemory;

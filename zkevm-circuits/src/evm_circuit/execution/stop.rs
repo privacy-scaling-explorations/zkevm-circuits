@@ -7,6 +7,7 @@ use crate::{
     },
     util::Expr,
 };
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -14,7 +15,7 @@ pub(crate) struct StopGadget<F> {
     opcode: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for StopGadget<F> {
     const NAME: &'static str = "STOP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;

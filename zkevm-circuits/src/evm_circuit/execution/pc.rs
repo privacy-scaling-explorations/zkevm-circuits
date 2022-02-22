@@ -12,6 +12,7 @@ use crate::{
     },
     util::Expr,
 };
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -20,7 +21,7 @@ pub(crate) struct PcGadget<F> {
     value: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for PcGadget<F> {
     const NAME: &'static str = "PC";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PC;

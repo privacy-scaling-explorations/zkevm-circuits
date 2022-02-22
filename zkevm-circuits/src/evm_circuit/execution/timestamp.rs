@@ -13,6 +13,7 @@ use crate::{
     },
     util::Expr,
 };
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryFrom;
 
@@ -22,7 +23,7 @@ pub(crate) struct TimestampGadget<F> {
     timestamp: RandomLinearCombination<F, N_BYTES_U64>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for TimestampGadget<F> {
     const NAME: &'static str = "TIMESTAMP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::TIMESTAMP;

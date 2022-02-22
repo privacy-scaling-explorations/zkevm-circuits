@@ -11,6 +11,7 @@ use bus_mapping::circuit_input_builder::{self, ExecError, OogError};
 use bus_mapping::operation::{self, AccountField, CallContextField};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
+use ff::PrimeField;
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
@@ -49,7 +50,10 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
-    pub fn table_assignments<F: FieldExt>(&self, randomness: F) -> Vec<[F; 3]> {
+    pub fn table_assignments<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+        &self,
+        randomness: F,
+    ) -> Vec<[F; 3]> {
         [
             vec![
                 [
@@ -142,7 +146,10 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn table_assignments<F: FieldExt>(&self, randomness: F) -> Vec<[F; 4]> {
+    pub fn table_assignments<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+        &self,
+        randomness: F,
+    ) -> Vec<[F; 4]> {
         [
             vec![
                 [
@@ -588,7 +595,10 @@ impl Rw {
         }
     }
 
-    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> RwRow<F> {
+    pub fn table_assignment<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+        &self,
+        randomness: F,
+    ) -> RwRow<F> {
         match self {
             Self::TxAccessListAccount {
                 rw_counter,

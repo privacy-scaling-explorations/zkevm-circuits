@@ -14,6 +14,7 @@ use crate::{
 };
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -24,7 +25,7 @@ pub(crate) struct BitwiseGadget<F> {
     c: Word<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for BitwiseGadget<F> {
     const NAME: &'static str = "BITWISE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BITWISE;

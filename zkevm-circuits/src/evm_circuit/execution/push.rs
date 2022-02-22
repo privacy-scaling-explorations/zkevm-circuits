@@ -14,6 +14,7 @@ use crate::{
 use array_init::array_init;
 use eth_types::evm_types::OpcodeId;
 use eth_types::ToLittleEndian;
+use ff::PrimeField;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -23,7 +24,7 @@ pub(crate) struct PushGadget<F> {
     selectors: [Cell<F>; 31],
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for PushGadget<F> {
     const NAME: &'static str = "PUSH";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PUSH;
