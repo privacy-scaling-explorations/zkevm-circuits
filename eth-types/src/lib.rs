@@ -39,7 +39,10 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Trait used to define types that can be converted to a 256 bit scalar value.
-pub trait ToScalar<F: FieldExt> {
+pub trait ToScalar<F>
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
     /// Convert the type to a scalar value.
     fn to_scalar(&self) -> Option<F>;
 }
@@ -90,10 +93,7 @@ impl<'de> Deserialize<'de> for DebugU256 {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for DebugU256
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ToScalar<F> for DebugU256 {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
@@ -137,10 +137,7 @@ impl ToLittleEndian for U256 {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for U256
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ToScalar<F> for U256 {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
@@ -171,10 +168,7 @@ impl ToWord for Address {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for Address
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ToScalar<F> for Address {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
