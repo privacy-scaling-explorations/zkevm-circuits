@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},

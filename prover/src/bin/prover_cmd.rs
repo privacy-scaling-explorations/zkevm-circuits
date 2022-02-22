@@ -3,7 +3,6 @@ use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use ethers_providers::Http;
 use halo2_proofs::{
-    arithmetic::BaseExt,
     plonk::*,
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},

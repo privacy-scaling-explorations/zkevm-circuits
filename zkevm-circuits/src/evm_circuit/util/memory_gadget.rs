@@ -343,7 +343,7 @@ pub(crate) struct MemoryCopierGasGadget<F> {
     gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: FieldExt> MemoryCopierGasGadget<F> {
+impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> MemoryCopierGasGadget<F> {
     pub const GAS_COPY: GasCost = GasCost::COPY;
     pub const WORD_SIZE: u64 = 32u64;
 
@@ -410,8 +410,11 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
     min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
 
-impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
-    BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+impl<
+        F: FieldExt + PrimeField<Repr = [u8; 32]>,
+        const MAX_BYTES: usize,
+        const ADDR_SIZE_IN_BYTES: usize,
+    > BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,

@@ -7,7 +7,6 @@ use crate::{
     },
 };
 use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
-use eth_types::{ToLittleEndian, ToScalar};
 use ff::PrimeField;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
@@ -928,7 +927,7 @@ impl<
                 || Ok(rw_counter),
             )?;
 
-            Variable::<usize, F>::new(cell, Some(rw_counter))
+            Variable::<F, F>::new(cell, Some(rw_counter))
         };
 
         let value = {
@@ -962,12 +961,12 @@ impl<
         let flag = {
             let cell = region.assign_advice(|| "flag", self.flag, offset, || Ok(flag))?;
 
-            Variable::<F, F>::new(cell, Some(flag));
+            Variable::<F, F>::new(cell, Some(flag))
         };
 
         let target = {
             let cell = region.assign_fixed(|| "target", self.q_target, offset, || Ok(target))?;
-            Variable::<F, F>::new(cell, Some(target));
+            Variable::<F, F>::new(cell, Some(target))
         };
 
         Ok(BusMapping {
