@@ -67,9 +67,9 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
             ]
-            .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag));
+            .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
         let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
-            .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag));
+            .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
 
         // Add first step constraint to have both rw_counter and tx_id to be 1
         cb.add_constraint_first_step(
@@ -293,7 +293,7 @@ mod test {
             GasCost::TX.as_u64()
         } + call_data_gas_cost;
 
-        let from_balance_prev = Word::from(10).pow(20.into());
+        let from_balance_prev = Word::from(10_i32).pow(20_i32.into());
         let to_balance_prev = Word::zero();
         let from_balance = from_balance_prev - tx.value - gas_fee;
         let to_balance = to_balance_prev + tx.value;

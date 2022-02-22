@@ -13,10 +13,10 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-// It aims to cap `extended_k` to 3, which allows constraint degree to 2^3+1,
+// It aims to cap `extended_k` to 4, which allows constraint degree to 2^4+1,
 // but each ExecutionGadget has implicit selector degree 2, so here it only
-// allows 2^3+1-2 = 7.
-const MAX_DEGREE: usize = 7;
+// allows 2^4+1-2 = 15.
+const MAX_DEGREE: usize = 15;
 // Implicit degree added to input expressions of lookups. It assumes blind
 // factors have been disabled, and table expressions with degree 1.
 const LOOKUP_DEGREE: usize = 2;
@@ -169,11 +169,13 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     cb: BaseConstraintBuilder<F>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<(&'static str, Lookup<F>)>,
-    row_usages: Vec<StepRowUsage>,
-    rw_counter_offset: usize,
+    curr_row_usages: Vec<StepRowUsage>,
+    next_row_usages: Vec<StepRowUsage>,
+    rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
     state_write_counter_offset: usize,
+    in_next_step: bool,
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
@@ -191,11 +193,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             cb: BaseConstraintBuilder::new(MAX_DEGREE),
             constraints_first_step: Vec::new(),
             lookups: Vec::new(),
-            row_usages: vec![StepRowUsage::default(); curr.rows.len()],
-            rw_counter_offset: 0,
+            curr_row_usages: vec![StepRowUsage::default(); curr.rows.len()],
+            next_row_usages: vec![StepRowUsage::default(); next.rows.len()],
+            rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0,
             state_write_counter_offset: 0,
+            in_next_step: false,
         }
     }
 
@@ -211,7 +215,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let mut constraints = self.cb.constraints;
         let mut presets = Vec::new();
 
-        for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter()) {
+        for (row, usage) in self.curr.rows.iter().zip(self.curr_row_usages.iter()) {
             if usage.is_byte_lookup_enabled {
                 constraints.push(("Enable byte lookup", row.qs_byte_lookup.expr() - 1.expr()));
             }
@@ -258,8 +262,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.execution_state
     }
 
-    pub(crate) fn rw_counter_offset(&self) -> usize {
-        self.rw_counter_offset
+    pub(crate) fn rw_counter_offset(&self) -> Expression<F> {
+        self.rw_counter_offset.clone()
     }
 
     pub(crate) fn program_counter_offset(&self) -> usize {
@@ -308,9 +312,19 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
         let mut cells = Vec::with_capacity(N);
+        let rows = if self.in_next_step {
+            &self.next.rows
+        } else {
+            &self.curr.rows
+        };
+        let row_usages = if self.in_next_step {
+            &mut self.next_row_usages
+        } else {
+            &mut self.curr_row_usages
+        };
 
         // Iterate rows to find cell that matches the is_byte requirement.
-        for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter_mut()) {
+        for (row, usage) in rows.iter().zip(row_usages.iter_mut()) {
             // If this row doesn't match the is_byte requirement and is already
             // used, skip this row.
             if usage.is_byte_lookup_enabled != is_byte && usage.next_idx > 0 {
@@ -361,6 +375,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         set: Vec<Expression<F>>,
     ) {
         self.cb.require_in_set(name, value, set);
+    }
+
+    pub(crate) fn require_next_state(&mut self, exec_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector(exec_state);
+        self.add_constraint(
+            "Constrain next execution state",
+            1.expr() - next_state.expr(),
+        );
     }
 
     pub(crate) fn require_step_state_transition(
@@ -498,9 +520,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.tx_context_lookup(id, field_tag.expr(), cell.expr());
+        self.tx_context_lookup(id, field_tag, index, cell.expr());
         cell
     }
 
@@ -508,24 +531,26 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
     ) -> Word<F> {
         let word = self.query_word();
-        self.tx_context_lookup(id, field_tag.expr(), word.expr());
+        self.tx_context_lookup(id, field_tag, index, word.expr());
         word
     }
 
-    fn tx_context_lookup(
+    pub(crate) fn tx_context_lookup(
         &mut self,
         id: Expression<F>,
-        field_tag: Expression<F>,
+        field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
         value: Expression<F>,
     ) {
         self.add_lookup(
             "Tx lookup",
             Lookup::Tx {
                 id,
-                field_tag,
-                index: 0.expr(),
+                field_tag: field_tag.expr(),
+                index: index.unwrap_or_else(|| 0.expr()),
                 value,
             },
         );
@@ -582,12 +607,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup_with_counter(
             name,
-            self.curr.state.rw_counter.expr() + self.rw_counter_offset.expr(),
+            self.curr.state.rw_counter.expr() + self.rw_counter_offset.clone(),
             is_write,
             tag,
             values,
         );
-        self.rw_counter_offset += 1;
+        self.rw_counter_offset =
+            self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
     }
 
     fn state_write_with_reversion(
@@ -843,7 +869,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
-        self.cb.validate_degree(degree, name);
+        // We need to subtract 2 from MAX_DEGREE because all expressions will be
+        // multiplied by state selector and q_step/q_step_first selector.
+        debug_assert!(
+            degree <= MAX_DEGREE - 2,
+            "Expression {} degree too high: {} > {}",
+            name,
+            degree,
+            MAX_DEGREE - 2,
+        );
     }
 
     // General
@@ -860,6 +894,32 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.cb.condition = Some(condition);
         let ret = constraint(self);
         self.cb.condition = None;
+        ret
+    }
+
+    /// This function needs to be used with extra precaution. You need to make
+    /// sure the layout is the same as the gadget for `next_step_state`.
+    /// `query_cell` will return cells in the next step in the `constraint`
+    /// function.
+    pub(crate) fn constrain_next_step<R>(
+        &mut self,
+        next_step_state: ExecutionState,
+        condition: Option<Expression<F>>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        assert!(!self.in_next_step, "Already in the next step");
+        self.in_next_step = true;
+        let ret = match condition {
+            None => {
+                self.require_next_state(next_step_state);
+                constraint(self)
+            }
+            Some(cond) => self.condition(cond, |cb| {
+                cb.require_next_state(next_step_state);
+                constraint(cb)
+            }),
+        };
+        self.in_next_step = false;
         ret
     }
 

@@ -274,6 +274,18 @@ pub struct Call {
     pub is_static: bool,
 }
 
+#[derive(Clone, Debug)]
+pub enum StepAuxiliaryData {
+    CopyToMemory {
+        src_addr: u64,
+        dst_addr: u64,
+        bytes_left: u64,
+        src_addr_end: u64,
+        from_tx: bool,
+        selectors: Vec<u8>,
+    },
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
     /// The index in the Transaction calls
@@ -298,6 +310,8 @@ pub struct ExecStep {
     pub state_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+    /// Step auxiliary data
+    pub aux_data: Option<StepAuxiliaryData>,
 }
 
 impl ExecStep {
@@ -495,6 +509,13 @@ impl Rw {
         }
     }
 
+    pub fn memory_value(&self) -> u8 {
+        match self {
+            Self::Memory { byte, .. } => *byte,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
         match self {
             Self::TxAccessListAccount {
@@ -587,9 +608,7 @@ impl Rw {
                             randomness,
                         )
                     }
-                    CallContextFieldTag::CallerAddress
-                    | CallContextFieldTag::CalleeAddress
-                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
+                    CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
                     _ => F::from(value.low_u64()),
                 },
                 F::zero(),
@@ -944,6 +963,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         opcode: Some(step.op),
         memory_size: step.memory_size as u64,
         state_write_counter: step.swc,
+        aux_data: Default::default(),
     }
 }
 
