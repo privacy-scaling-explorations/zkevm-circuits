@@ -229,7 +229,24 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
+                        rw_indices: [
+                            vec![
+                                (RwTableTag::CallContext, 0),
+                                (RwTableTag::CallContext, 1),
+                                (RwTableTag::CallContext, 2),
+                                (RwTableTag::CallContext, 3),
+                                (RwTableTag::Stack, 0),
+                                (RwTableTag::AccountStorage, 0),
+                                (RwTableTag::Stack, 1),
+                                (RwTableTag::TxAccessListAccountStorage, 0),
+                            ],
+                            if result {
+                                vec![]
+                            } else {
+                                vec![(RwTableTag::TxAccessListAccountStorage, 1)]
+                            },
+                        ]
+                        .concat(),
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
                         program_counter: 33,
