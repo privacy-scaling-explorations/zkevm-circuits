@@ -581,6 +581,11 @@ impl Rw {
         }
     }
 
+<<<<<<< HEAD
+    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> RwRow<F> {
+||||||| b1e368ec
+    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
+=======
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
@@ -588,7 +593,8 @@ impl Rw {
         }
     }
 
-    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> RwRow<F> {
+    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
+>>>>>>> origin/main
         match self {
             Self::TxAccessListAccount {
                 rw_counter,
