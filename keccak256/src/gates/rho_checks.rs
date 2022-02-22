@@ -246,6 +246,7 @@ where
             _marker: PhantomData,
         }
     }
+
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -258,9 +259,12 @@ where
         ),
         Error,
     > {
-        let (conversions, special) =
-            RhoLane::new(f_to_biguint(*lane_base_13.value().unwrap()), self.rotation)
-                .get_full_witness();
+        // TODO: Handle this better once AssignedCell has the API to do so.
+        let (conversions, special) = RhoLane::new(
+            f_to_biguint(*lane_base_13.value().unwrap_or(&F::zero())),
+            self.rotation,
+        )
+        .get_full_witness();
         layouter.assign_region(
             || "lane rotate conversion",
             |mut region| {
@@ -433,7 +437,8 @@ impl<F: FieldExt> SumConfig<F> {
                     self.q_enable.enable(&mut region, offset)?;
                     xs_item.copy_advice(|| "x", &mut region, self.x, offset)?;
                     region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
-                    sum += xs_item.value().unwrap();
+                    // TODO: Handle this better once AssignedCell has the API to do so
+                    sum += xs_item.value().unwrap_or(&F::zero());
                     offset += 1;
                 }
                 let sum = region.assign_advice(|| "last sum", self.sum, offset, || Ok(sum))?;

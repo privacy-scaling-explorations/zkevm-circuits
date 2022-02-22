@@ -476,7 +476,7 @@ dependencies = [
  "ark-std",
  "bus-mapping",
  "ff 0.11.0",
- "halo2",
+ "halo2_proofs",
  "itertools",
  "keccak256",
  "pairing_bn256",
@@ -1746,14 +1746,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
-name = "halo2"
-version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?rev=514152c8b83de27a5ce17ef70cc44c4092240bd1#514152c8b83de27a5ce17ef70cc44c4092240bd1"
-dependencies = [
- "halo2_proofs",
-]
-
-[[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
 source = "git+https://github.com/appliedzkp/halo2.git?rev=514152c8b83de27a5ce17ef70cc44c4092240bd1#514152c8b83de27a5ce17ef70cc44c4092240bd1"
@@ -2003,7 +1995,8 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers",
- "halo2",
+ "ff 0.11.0",
+ "halo2_proofs",
  "lazy_static",
  "log",
  "pairing_bn256",
@@ -4046,3 +4039,8 @@ dependencies = [
  "serde_json",
  "sha3 0.7.3",
 ]
+
+[[patch.unused]]
+name = "halo2"
+version = "0.1.0-beta.1"
+source = "git+https://github.com/appliedzkp/halo2.git?rev=514152c8b83de27a5ce17ef70cc44c4092240bd1#514152c8b83de27a5ce17ef70cc44c4092240bd1"

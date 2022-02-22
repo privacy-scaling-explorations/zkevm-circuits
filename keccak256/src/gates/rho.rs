@@ -190,12 +190,7 @@ mod tests {
                         Ok(state)
                     },
                 )?;
-                let next_state = config.assign_rotation_checks(&mut layouter, &state)?;
-
-                next_state
-                    .iter()
-                    .zip(self.out_state.iter())
-                    .for_each(|(next, out)| assert_eq!(next.value().unwrap(), out));
+                config.assign_rotation_checks(&mut layouter, &state)?;
 
                 Ok(())
             }

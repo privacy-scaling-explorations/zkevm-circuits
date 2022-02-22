@@ -100,11 +100,10 @@ where
         input: AssignedCell<F, F>,
         flag: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        // TODO: Add propper err handling to remove `expect`s that are not meant to be
-        // used.
+        // TODO: Add propper err handling once AssignedCell has a better API for it.
         let (input_coefs, output_coefs, _) = self
             .base_info
-            .compute_coefs(*input.value().expect("Unexpected err"))?;
+            .compute_coefs(*input.value().unwrap_or(&F::zero()))?;
 
         layouter.assign_region(
             || "Base conversion",
@@ -240,9 +239,10 @@ mod tests {
                     || "Input lane",
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
+                // TODO: Handle this better once AssignedCell has the API to do so
                 Ok(*output
                     .value()
-                    .expect("Add proper err handling for this cases"))
+                    .unwrap_or(&F::from_u128(0x22c268c05977fd626636ccu128)))
             }
         }
 

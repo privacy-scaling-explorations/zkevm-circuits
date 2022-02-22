@@ -133,7 +133,7 @@ where
         flag: bool,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        let mut state = in_state.clone();
+        let mut state = in_state;
 
         // First 23 rounds
         for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {

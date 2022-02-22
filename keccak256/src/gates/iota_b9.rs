@@ -151,7 +151,7 @@ where
                          flag: &AssignedCell<F, F>|
          -> Result<(), Error> {
             flag.copy_advice(
-                || format!("assign is_mixing flag"),
+                || "assign is_mixing flag",
                 region,
                 self.round_ctant_b9,
                 offset,

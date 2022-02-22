@@ -205,9 +205,9 @@ where
                 negated_flag.copy_advice(|| "witness is_mixing", &mut region, self.flag, 1)?;
 
                 // Copy-constrain both out states.
-                self.copy_state(&mut region, 0, self.out_mixing, &out_non_mixing_circ)?;
+                self.copy_state(&mut region, 0, self.out_mixing, out_non_mixing_circ)?;
 
-                self.copy_state(&mut region, 1, self.out_mixing, &out_mixing_circ)?;
+                self.copy_state(&mut region, 1, self.out_mixing, out_mixing_circ)?;
 
                 let out_state: [AssignedCell<F, F>; 25] = {
                     let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
