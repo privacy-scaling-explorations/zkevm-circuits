@@ -72,7 +72,7 @@ impl RwTable {
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
         ] {
-            region.assign_advice(|| "rw table all-zero row", column, offset, || Ok(value))?;
+            region.assign_advice(|| "assign rw row on rw table", column, offset, || Ok(value))?;
         }
         Ok(())
     }

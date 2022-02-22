@@ -800,11 +800,7 @@ pub(crate) fn generate_lagrange_base_polynomial<
     for x in range {
         if x != val {
             numerator = numerator * (exp.expr() - x.expr());
-            denominator *= if x < val {
-                F::from_u128((val - x) as u128)
-            } else {
-                -F::from_u128((x - val) as u128)
-            };
+            denominator *= F::from(val as u64) - F::from(x as u64);
         }
     }
     numerator * denominator.invert().unwrap()
