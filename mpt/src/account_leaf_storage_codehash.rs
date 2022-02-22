@@ -8,7 +8,11 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{helpers::range_lookups, mpt::FixedTableTag, param::HASH_WIDTH};
+use crate::{
+    helpers::range_lookups,
+    mpt::FixedTableTag,
+    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafStorageCodehashConfig {}
@@ -23,6 +27,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
+        not_first_level: Column<Fixed>,
+        is_account_leaf_storage_codehash_s: Column<Advice>,
+        is_account_leaf_storage_codehash_c: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -31,6 +38,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
+        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+        keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
@@ -88,6 +97,48 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 "account leaf storage codehash acc",
                 q_enable * (expr - acc),
             ));
+
+            constraints
+        });
+
+        // Check hash of a leaf.
+        meta.lookup_any(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            let mut is_account_leaf_storage_codehash = meta.query_advice(
+                is_account_leaf_storage_codehash_s,
+                Rotation::cur(),
+            );
+            if !is_s {
+                is_account_leaf_storage_codehash = meta.query_advice(
+                    is_account_leaf_storage_codehash_c,
+                    Rotation::cur(),
+                );
+            }
+
+            // Note: accumulated in s (not in c) for c:
+            let acc_s = meta.query_advice(acc, Rotation::cur());
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_account_leaf_storage_codehash.clone()
+                    * acc_s,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            for (ind, column) in sc_keccak.iter().enumerate() {
+                // Any rotation that lands into branch can be used instead of -17.
+                let s_keccak = meta.query_advice(*column, Rotation(-17));
+                let keccak_table_i =
+                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_account_leaf_storage_codehash.clone()
+                        * s_keccak,
+                    keccak_table_i,
+                ));
+            }
 
             constraints
         });
