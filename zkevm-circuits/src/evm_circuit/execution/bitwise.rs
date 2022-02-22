@@ -102,7 +102,7 @@ mod test {
     use crate::{
         evm_circuit::test::rand_word,
         test_util::{
-            get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig, FixedTableConfig,
+            get_fixed_table, test_circuits_using_bytecode, BytecodeTestConfig, FixedTableConfig,
         },
     };
     use eth_types::{bytecode, Word};
@@ -127,7 +127,7 @@ mod test {
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Complete),
             ..Default::default()
         };
-        assert_eq!(run_test_circuits_with_config(bytecode, test_config), Ok(()));
+        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
     }
 
     #[test]

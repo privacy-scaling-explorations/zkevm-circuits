@@ -129,15 +129,15 @@ pub enum BlockContextFieldTag {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RwTableTag {
-    TxAccessListAccount = 1,
+    Stack = 2,
+    Memory,
+    AccountStorage,
+    TxAccessListAccount,
     TxAccessListAccountStorage,
     TxRefund,
     Account,
-    AccountStorage,
     AccountDestructed,
     CallContext,
-    Stack,
-    Memory,
 }
 
 impl RwTableTag {

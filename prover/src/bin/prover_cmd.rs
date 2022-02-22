@@ -3,7 +3,6 @@ use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use ethers_providers::Http;
 use halo2::{
-    arithmetic::BaseExt,
     plonk::*,
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
@@ -66,10 +65,10 @@ async fn main() {
     // TODO: only {evm,state}_proof are implemented right now
     let evm_proof;
     let state_proof;
+    let block = block_convert(&builder.block, &builder.code_db);
     {
         // generate evm_circuit proof
-        let block = block_convert(&builder.block, &builder.code_db);
-        let circuit = TestCircuit::<Fr>::new(block, FixedTableTag::iterator().collect());
+        let circuit = TestCircuit::<Fr>::new(block.clone(), FixedTableTag::iterator().collect());
 
         // TODO: can this be pre-generated to a file?
         // related
@@ -95,9 +94,6 @@ async fn main() {
         const STORAGE_ROWS_MAX: usize = 16384;
         const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
-        let stack_ops = builder.block.container.sorted_stack();
-        let memory_ops = builder.block.container.sorted_memory();
-        let storage_ops = builder.block.container.sorted_storage();
         let circuit = StateCircuit::<
             Fr,
             true,
@@ -107,12 +103,7 @@ async fn main() {
             STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
             STORAGE_ROWS_MAX,
-        > {
-            randomness: Fr::rand(),
-            memory_ops,
-            stack_ops,
-            storage_ops,
-        };
+        >::new_from_rw_map(block.randomness, &block.rws);
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");

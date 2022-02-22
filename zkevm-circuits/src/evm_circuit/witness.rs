@@ -16,7 +16,7 @@ use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
@@ -30,7 +30,7 @@ pub struct Block<F> {
     pub context: BlockContext,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
@@ -111,7 +111,7 @@ impl BlockContext {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Transaction {
     /// The transaction identifier in the block
     pub id: usize,
@@ -223,7 +223,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CodeSource {
     Account(Word),
 }
@@ -234,7 +234,7 @@ impl Default for CodeSource {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Call {
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
@@ -324,7 +324,7 @@ impl ExecStep {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bytecode {
     pub hash: Word,
     pub bytes: Vec<u8>,
@@ -389,7 +389,7 @@ impl Bytecode {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RwMap(pub HashMap<RwTableTag, Vec<Rw>>);
 
 impl std::ops::Index<(RwTableTag, usize)> for RwMap {
@@ -397,6 +397,48 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
 
     fn index(&self, (tag, idx): (RwTableTag, usize)) -> &Self::Output {
         &self.0.get(&tag).unwrap()[idx]
+    }
+}
+
+impl RwMap {
+    /// These "sorted_xx" methods are used in state circuit
+    pub fn sorted_memory_rw(&self) -> Vec<Rw> {
+        let mut sorted = self.0[&RwTableTag::Memory].clone();
+        sorted.sort_by_key(|x| match x {
+            Rw::Memory {
+                call_id,
+                memory_address,
+                ..
+            } => (*call_id, *memory_address),
+            _ => panic!("invalid memory rw"),
+        });
+        sorted
+    }
+
+    pub fn sorted_stack_rw(&self) -> Vec<Rw> {
+        let mut sorted = self.0[&RwTableTag::Stack].clone();
+        sorted.sort_by_key(|x| match x {
+            Rw::Stack {
+                call_id,
+                stack_pointer,
+                ..
+            } => (*call_id, *stack_pointer),
+            _ => panic!("invalid stack rw"),
+        });
+        sorted
+    }
+
+    pub fn sorted_storage_rw(&self) -> Vec<Rw> {
+        let mut sorted = self.0[&RwTableTag::AccountStorage].clone();
+        sorted.sort_by_key(|x| match x {
+            Rw::AccountStorage {
+                account_address,
+                storage_key,
+                ..
+            } => (*account_address, *storage_key),
+            _ => panic!("invalid storage rw"),
+        });
+        sorted
     }
 }
 
@@ -472,6 +514,36 @@ pub enum Rw {
         byte: u8,
     },
 }
+#[derive(Default)]
+pub struct RwRow<F: FieldExt> {
+    pub rw_counter: F,
+    pub is_write: F,
+    pub tag: F,
+    pub key2: F,
+    pub key3: F,
+    pub key4: F,
+    pub value: F,
+    pub value_prev: F,
+    pub aux1: F,
+    pub aux2: F,
+}
+
+impl<F: FieldExt> From<[F; 10]> for RwRow<F> {
+    fn from(row: [F; 10]) -> Self {
+        Self {
+            rw_counter: row[0],
+            is_write: row[1],
+            tag: row[2],
+            key2: row[3],
+            key3: row[4],
+            key4: row[5],
+            value: row[6],
+            value_prev: row[7],
+            aux1: row[8],
+            aux2: row[9],
+        }
+    }
+}
 
 impl Rw {
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
@@ -516,7 +588,7 @@ impl Rw {
         }
     }
 
-    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
+    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> RwRow<F> {
         match self {
             Self::TxAccessListAccount {
                 rw_counter,
@@ -536,7 +608,8 @@ impl Rw {
                 F::from(*value_prev as u64),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::TxAccessListAccountStorage {
                 rw_counter,
                 is_write,
@@ -559,7 +632,8 @@ impl Rw {
                 F::from(*value_prev as u64),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Account {
                 rw_counter,
                 is_write,
@@ -587,6 +661,7 @@ impl Rw {
                     F::zero(),
                     F::zero(),
                 ]
+                .into()
             }
             Self::CallContext {
                 rw_counter,
@@ -614,7 +689,8 @@ impl Rw {
                 F::zero(),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Stack {
                 rw_counter,
                 is_write,
@@ -632,7 +708,8 @@ impl Rw {
                 F::zero(),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
             Self::Memory {
                 rw_counter,
                 is_write,
@@ -650,7 +727,34 @@ impl Rw {
                 F::zero(),
                 F::zero(),
                 F::zero(),
-            ],
+            ]
+            .into(),
+            Self::AccountStorage {
+                rw_counter,
+                is_write,
+                account_address,
+                storage_key,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::AccountStorage as u64),
+                account_address.to_scalar().unwrap(),
+                RandomLinearCombination::random_linear_combine(
+                    storage_key.to_le_bytes(),
+                    randomness,
+                ),
+                F::zero(),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                RandomLinearCombination::random_linear_combine(
+                    value_prev.to_le_bytes(),
+                    randomness,
+                ),
+                F::zero(), // TODO: txid
+                F::zero(), // TODO: committed_value
+            ]
+            .into(),
             _ => unimplemented!(),
         }
     }
@@ -1014,7 +1118,6 @@ fn tx_convert(tx: &circuit_input_builder::Transaction) -> Transaction {
         steps: tx.steps().iter().map(step_convert).collect(),
     }
 }
-
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
