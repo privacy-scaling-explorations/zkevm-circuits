@@ -239,9 +239,9 @@ mod test {
     #[test]
     fn signextend_gadget_rand() {
         let signextend = |index: Word, value: Word| -> Word {
-            if index < 32.into() {
+            if index < Word::from(32u8) {
                 let index = index.to_le_bytes()[0] as usize;
-                let mask = (Word::one() << (index * 8 + 7)) - 1;
+                let mask = (Word::one() << (index * 8 + 7)) - Word::one();
                 if value.to_le_bytes()[index] >> 7 == 1 {
                     value | (!mask)
                 } else {
@@ -255,7 +255,11 @@ mod test {
         let index = rand_word();
         let value = rand_word();
         test_ok(index, value, signextend(index, value));
-        test_ok(index % 32, value, signextend(index % 32, value));
+        test_ok(
+            index % Word::from(32u8),
+            value,
+            signextend(index % Word::from(32u8), value),
+        );
     }
 
     #[test]

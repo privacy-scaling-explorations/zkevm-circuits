@@ -161,14 +161,14 @@ mod test {
 
     #[test]
     fn jumpi_gadget_rand() {
-        test_ok(rand_range(68..1 << 11), 0.into());
+        test_ok(rand_range(68..1 << 11), Word::zero());
         test_ok(rand_range(68..1 << 11), rand_word());
     }
 
     #[test]
     #[ignore]
     fn jumpi_gadget_rand_huge_bytecode() {
-        test_ok(rand_range(1 << 11..0x5fff), 0.into());
+        test_ok(rand_range(1 << 11..0x5fff), Word::zero());
         test_ok(rand_range(1 << 11..0x5fff), rand_word());
     }
 }

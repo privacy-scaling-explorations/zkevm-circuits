@@ -78,7 +78,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         let binary_table = meta.fixed_column();
 
         if LOOKUP {
-            meta.lookup_any(|meta| {
+            meta.lookup_any("binary lookup", |meta| {
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let flag = meta.query_advice(flag, Rotation::cur());
                 let binary_table = meta.query_fixed(binary_table, Rotation::cur());

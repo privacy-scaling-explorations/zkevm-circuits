@@ -152,7 +152,7 @@ mod test {
         let index = rand_word();
         let value = rand_word();
         test_ok(index, value);
-        test_ok(index % 32, value);
+        test_ok(index % Word::from(32u8), value);
     }
 
     #[test]

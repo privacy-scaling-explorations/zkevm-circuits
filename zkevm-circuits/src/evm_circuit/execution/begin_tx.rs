@@ -578,7 +578,7 @@ mod test {
 
     #[test]
     fn begin_tx_gadget_rand() {
-        let one_hundred_ether = Word::from(10).pow(20.into());
+        let one_hundred_ether = Word::from(10u8).pow(Word::from(20u8));
 
         // Transfer random ether, successfully
         test_ok(
