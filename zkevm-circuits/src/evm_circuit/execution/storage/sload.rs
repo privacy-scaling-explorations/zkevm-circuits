@@ -180,6 +180,7 @@ mod test {
         test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
+    use crate::test_util::run_test_circuits;
 
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
@@ -406,5 +407,20 @@ mod test {
         test_ok(mock_tx(), key, value, true, false);
         test_ok(mock_tx(), key, value, false, true);
         test_ok(mock_tx(), key, value, false, false);
+    }
+
+    fn test_with_busmapping(key: Word) {
+        let bytecode = bytecode! {
+            PUSH32(key)
+            #[start]
+            SLOAD
+            STOP
+        };
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
+    }
+
+    #[test]
+    fn sload_gadget_simple_with_busmapping() {
+        test_with_busmapping(0x030201.into());
     }
 }
