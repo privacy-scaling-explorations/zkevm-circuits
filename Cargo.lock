@@ -4030,6 +4030,7 @@ dependencies = [
  "eth-types",
  "ff 0.11.0",
  "halo2_proofs",
+ "hex",
  "itertools",
  "keccak256",
  "mock",
