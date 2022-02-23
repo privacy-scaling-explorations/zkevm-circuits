@@ -33,3 +33,6 @@ pub(crate) const N_BYTES_PROGRAM_COUNTER: usize = N_BYTES_U64;
 
 // Number of bytes that will be used for a tx's gas field.
 pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
+
+// Number of bytes that will be used for call data's size.
+pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;

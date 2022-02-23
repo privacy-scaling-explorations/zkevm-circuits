@@ -21,6 +21,7 @@ mod begin_tx;
 mod bitwise;
 mod byte;
 mod calldatacopy;
+mod calldatasize;
 mod caller;
 mod callvalue;
 mod coinbase;
@@ -49,6 +50,7 @@ use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
+use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
@@ -102,6 +104,7 @@ pub(crate) struct ExecutionConfig<F> {
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
+    calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
@@ -234,6 +237,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             calldatacopy_gadget: configure_gadget!(),
+            calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
@@ -517,6 +521,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
             }
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
+            }
+            ExecutionState::CALLDATASIZE => {
+                assign_exec_step!(self.calldatasize_gadget)
             }
             _ => unimplemented!(),
         }
