@@ -196,7 +196,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 mod test {
     use crate::{
         evm_circuit::test::rand_word,
-        test_util::{run_test_circuits_with_config, BytecodeTestConfig},
+        test_util::{test_circuits_using_bytecode, BytecodeTestConfig},
     };
     use eth_types::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
@@ -222,7 +222,7 @@ mod test {
             enable_state_circuit_test: false,
             ..Default::default()
         };
-        assert_eq!(run_test_circuits_with_config(bytecode, test_config), Ok(()));
+        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
     }
 
     #[test]

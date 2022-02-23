@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 use log::trace;
 use zkevm_circuits::evm_circuit::witness::block_convert;
 use zkevm_circuits::state_circuit::StateCircuit;
-
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
@@ -30,11 +29,12 @@ mod test_evm_circuit {
         witness::{Block, Bytecode, RwMap, Transaction},
         EvmCircuit,
     };
+    use zkevm_circuits::rw_table::RwTable;
 
     #[derive(Clone)]
     struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: [Column<Advice>; 10],
+        rw_table: RwTable,
         bytecode_table: [Column<Advice>; 4],
         evm_circuit: EvmCircuit<F>,
     }
@@ -50,7 +50,7 @@ mod test_evm_circuit {
                 || "tx table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.rw_table {
+                    for column in self.tx_table {
                         region.assign_advice(
                             || "tx table all-zero row",
                             column,
@@ -88,27 +88,16 @@ mod test_evm_circuit {
                 || "rw table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.rw_table {
-                        region.assign_advice(
-                            || "rw table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
+                    self.rw_table
+                        .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
                     for rw in rws.0.values().flat_map(|rws| rws.iter()) {
-                        for (column, value) in
-                            self.rw_table.iter().zip(rw.table_assignment(randomness))
-                        {
-                            region.assign_advice(
-                                || format!("rw table row {}", offset),
-                                *column,
-                                offset,
-                                || Ok(value),
-                            )?;
-                        }
+                        self.rw_table.assign(
+                            &mut region,
+                            offset,
+                            &rw.table_assignment(randomness),
+                        )?;
                         offset += 1;
                     }
                     Ok(())
@@ -180,7 +169,7 @@ mod test_evm_circuit {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = [(); 10].map(|_| meta.advice_column());
+            let rw_table = RwTable::construct(meta);
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
@@ -327,12 +316,7 @@ async fn test_state_circuit_block(block_num: u64) {
         STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
         STORAGE_ROWS_MAX,
-    > {
-        randomness: Fr::rand(),
-        memory_ops,
-        stack_ops,
-        storage_ops,
-    };
+    >::new(Fr::rand(), memory_ops, stack_ops, storage_ops);
 
     use pairing::bn256::Fr as Fp;
     let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
