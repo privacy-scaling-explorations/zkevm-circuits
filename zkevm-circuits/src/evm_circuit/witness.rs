@@ -676,36 +676,6 @@ impl Rw {
                 ]
                 .into()
             }
-            Self::AccountStorage {
-                rw_counter,
-                is_write,
-                account_address,
-                storage_key,
-                value,
-                value_prev,
-                tx_id,
-                committed_value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::AccountStorage as u64),
-                account_address.to_scalar().unwrap(),
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                ),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
-                RandomLinearCombination::random_linear_combine(
-                    value_prev.to_le_bytes(),
-                    randomness,
-                ),
-                F::from(*tx_id as u64),
-                RandomLinearCombination::random_linear_combine(
-                    committed_value.to_le_bytes(),
-                    randomness,
-                ),
-            ],
             Self::CallContext {
                 rw_counter,
                 is_write,
@@ -779,6 +749,8 @@ impl Rw {
                 storage_key,
                 value,
                 value_prev,
+                tx_id,
+                committed_value,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -794,8 +766,11 @@ impl Rw {
                     value_prev.to_le_bytes(),
                     randomness,
                 ),
-                F::zero(), // TODO: txid
-                F::zero(), // TODO: committed_value
+                F::from(*tx_id as u64),
+                RandomLinearCombination::random_linear_combine(
+                    committed_value.to_le_bytes(),
+                    randomness,
+                ),
             ]
             .into(),
             _ => unimplemented!(),
