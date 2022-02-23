@@ -2,8 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::operation::{AccountField, AccountOp, CallContextField, CallContextOp, RW};
 use crate::Error;
-use eth_types::{GethExecStep, ToScalar, ToWord};
-use pairing::bn256::Fr as Fp;
+use eth_types::{GethExecStep, ToWord};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Selfbalance;
