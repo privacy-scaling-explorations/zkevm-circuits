@@ -109,7 +109,7 @@ pub mod test {
         },
         util::Expr,
     };
-    use eth_types::Word;
+    use eth_types::{evm_types::GasCost, Word};
     use halo2::{
         arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},
@@ -132,7 +132,7 @@ pub mod test {
     }
 
     pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        vec![random(); n]
+        (0..n).map(|_| random()).collect()
     }
 
     pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
@@ -440,5 +440,29 @@ pub mod test {
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
+    }
+
+    pub(crate) fn calc_memory_expension_gas_cost(
+        curr_memory_word_size: u64,
+        next_memory_word_size: u64,
+    ) -> u64 {
+        if next_memory_word_size <= curr_memory_word_size {
+            0
+        } else {
+            let total_cost = |mem_word_size| {
+                mem_word_size * GasCost::MEMORY.as_u64() + mem_word_size * mem_word_size / 512
+            };
+            total_cost(next_memory_word_size) - total_cost(curr_memory_word_size)
+        }
+    }
+
+    pub(crate) fn calc_memory_copier_gas_cost(
+        curr_memory_word_size: u64,
+        next_memory_word_size: u64,
+        num_copy_bytes: u64,
+    ) -> u64 {
+        let num_words = (num_copy_bytes + 31) / 32;
+        num_words * GasCost::COPY.as_u64()
+            + calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size)
     }
 }

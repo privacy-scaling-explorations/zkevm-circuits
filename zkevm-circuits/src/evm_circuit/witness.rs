@@ -7,11 +7,10 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::{
-    circuit_input_builder,
-    operation::{self, AccountField, CallContextField},
-};
-use eth_types::{evm_types::OpcodeId, Address, ToLittleEndian, ToScalar, ToWord, Word};
+use bus_mapping::circuit_input_builder::{self, ExecError, OogError};
+use bus_mapping::operation::{self, AccountField, CallContextField};
+use eth_types::evm_types::OpcodeId;
+use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
@@ -275,6 +274,18 @@ pub struct Call {
     pub is_static: bool,
 }
 
+#[derive(Clone, Debug)]
+pub enum StepAuxiliaryData {
+    CopyToMemory {
+        src_addr: u64,
+        dst_addr: u64,
+        bytes_left: u64,
+        src_addr_end: u64,
+        from_tx: bool,
+        selectors: Vec<u8>,
+    },
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
     /// The index in the Transaction calls
@@ -299,6 +310,8 @@ pub struct ExecStep {
     pub state_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+    /// Step auxiliary data
+    pub aux_data: Option<StepAuxiliaryData>,
 }
 
 impl ExecStep {
@@ -509,6 +522,13 @@ impl Rw {
         }
     }
 
+    pub fn memory_value(&self) -> u8 {
+        match self {
+            Self::Memory { byte, .. } => *byte,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
         match self {
             Self::TxAccessListAccount {
@@ -631,9 +651,7 @@ impl Rw {
                             randomness,
                         )
                     }
-                    CallContextFieldTag::CallerAddress
-                    | CallContextFieldTag::CalleeAddress
-                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
+                    CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
                     _ => F::from(value.low_u64()),
                 },
                 F::zero(),
@@ -871,11 +889,46 @@ impl From<&operation::OperationContainer> for RwMap {
     }
 }
 
-impl From<&circuit_input_builder::ExecStep> for ExecutionState {
-    fn from(step: &circuit_input_builder::ExecStep) -> Self {
-        // TODO: error reporting. (errors are defined in
-        // circuit_input_builder.rs)
-        debug_assert!(step.error.is_none());
+impl From<&ExecError> for ExecutionState {
+    fn from(error: &ExecError) -> Self {
+        match error {
+            ExecError::Reverted => ExecutionState::ErrorReverted,
+            ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
+            ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
+            ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
+            ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
+            ExecError::Depth => ExecutionState::ErrorDepth,
+            ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
+            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
+            ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
+            ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
+            ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
+            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
+            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::OutOfGas(oog_error) => match oog_error {
+                OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
+                OogError::PureMemory => ExecutionState::ErrorOutOfGasPureMemory,
+                OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
+                OogError::CallDataCopy => ExecutionState::ErrorOutOfGasCALLDATACOPY,
+                OogError::CodeCopy => ExecutionState::ErrorOutOfGasCODECOPY,
+                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
+                OogError::ReturnDataCopy => ExecutionState::ErrorOutOfGasRETURNDATACOPY,
+                OogError::Log => ExecutionState::ErrorOutOfGasLOG,
+                OogError::Call => ExecutionState::ErrorOutOfGasCALL,
+                OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
+                OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
+                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
+            },
+        }
+    }
+}
+
+impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
+    fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
+        if let Some(error) = step.error.as_ref() {
+            return error.into();
+        }
         if step.op.is_dup() {
             return ExecutionState::DUP;
         }
@@ -956,6 +1009,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         opcode: Some(step.op),
         memory_size: step.memory_size as u64,
         state_write_counter: step.swc,
+        aux_data: Default::default(),
     }
 }
 
