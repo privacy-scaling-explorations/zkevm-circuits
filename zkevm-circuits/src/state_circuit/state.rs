@@ -198,7 +198,7 @@ impl<
             let q_target = meta.query_fixed(q_target, Rotation::cur());
             generate_lagrange_base_polynomial(q_target, STACK_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
-        let q_storage_first = |meta: &mut VirtualCells<F>| {
+        let _q_storage_first = |meta: &mut VirtualCells<F>| {
             let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
             let q_target_next = meta.query_fixed(q_target, Rotation::next());
             generate_lagrange_base_polynomial(q_target_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
@@ -415,17 +415,18 @@ impl<
             storage_key_diff_inv,
         );
 
-        meta.create_gate("First storage row operation", |meta| {
-            let q_storage_first = q_storage_first(meta);
+        // TODO: consider enabling this after implement `sstore` bus_mapping 
+        // meta.create_gate("First storage row operation", |meta| {
+        //     let q_storage_first = q_storage_first(meta);
 
-            let flag = meta.query_advice(flag, Rotation::cur());
-            let q_read = one.clone() - flag;
+        //     let flag = meta.query_advice(flag, Rotation::cur());
+        //     let q_read = one.clone() - flag;
 
-            vec![
-                q_storage_first * q_read, /* first storage op has to be
-                                           * write (flag = 1) */
-            ]
-        });
+        //     vec![
+        //         q_storage_first * q_read, /* first storage op has to be
+        //                                    * write (flag = 1) */
+        //     ]
+        // });
 
         meta.create_gate("Storage operation", |meta| {
             let q_storage_not_first = q_storage_not_first(meta);
