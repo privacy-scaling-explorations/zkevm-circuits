@@ -28,12 +28,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let callee_address = cb.query_cell();
-        cb.call_context_lookup(
-            None,
-            CallContextFieldTag::CalleeAddress,
-            callee_address.expr(),
-        );
+        let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         let self_balance = cb.query_cell();
         cb.account_read(
@@ -65,8 +60,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        call: &Call<F>,
+        _: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -92,13 +87,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
 mod test {
     use crate::evm_circuit::{
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag},
+        table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
         test::run_test_circuit_incomplete_fixed_table,
-        util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction, CodeSource},
     };
+    use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, ToLittleEndian, ToWord, Word};
+    use eth_types::{address, bytecode, ToWord, Word};
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
@@ -130,7 +125,11 @@ mod test {
                 steps: vec![
                     ExecStep {
                         execution_state: ExecutionState::SELFBALANCE,
-                        rw_indices: vec![0, 1, 2],
+                        rw_indices: vec![
+                            (RwTableTag::CallContext, 0),
+                            (RwTableTag::Account, 0),
+                            (RwTableTag::Stack, 0),
+                        ],
                         rw_counter: 1,
                         program_counter: 0,
                         stack_pointer: 1024,
@@ -153,38 +152,47 @@ mod test {
                     is_root: true,
                     is_create: false,
                     callee_address,
-                    opcode_source: RandomLinearCombination::random_linear_combine(
-                        bytecode.hash.to_le_bytes(),
-                        randomness,
-                    ),
+                    code_source: CodeSource::Account(bytecode.hash),
                     ..Default::default()
                 }],
                 ..Default::default()
             }],
-            rws: vec![
-                Rw::CallContext {
-                    call_id,
-                    rw_counter: 1,
-                    is_write: false,
-                    field_tag: CallContextFieldTag::CalleeAddress,
-                    value: callee_address.to_word(),
-                },
-                Rw::Account {
-                    rw_counter: 2,
-                    is_write: false,
-                    account_address: callee_address,
-                    field_tag: AccountFieldTag::Balance,
-                    value: Word::from(self_balance),
-                    value_prev: Word::from(self_balance),
-                },
-                Rw::Stack {
-                    call_id,
-                    rw_counter: 3,
-                    is_write: true,
-                    stack_pointer: 1023,
-                    value: Word::from(self_balance),
-                },
-            ],
+            rws: RwMap(
+                [
+                    (
+                        RwTableTag::CallContext,
+                        vec![Rw::CallContext {
+                            call_id,
+                            rw_counter: 1,
+                            is_write: false,
+                            field_tag: CallContextFieldTag::CalleeAddress,
+                            value: callee_address.to_word(),
+                        }],
+                    ),
+                    (
+                        RwTableTag::Account,
+                        vec![Rw::Account {
+                            rw_counter: 2,
+                            is_write: false,
+                            account_address: callee_address,
+                            field_tag: AccountFieldTag::Balance,
+                            value: Word::from(self_balance),
+                            value_prev: Word::from(self_balance),
+                        }],
+                    ),
+                    (
+                        RwTableTag::Stack,
+                        vec![Rw::Stack {
+                            call_id,
+                            rw_counter: 3,
+                            is_write: true,
+                            stack_pointer: 1023,
+                            value: Word::from(self_balance),
+                        }],
+                    ),
+                ]
+                .into(),
+            ),
             bytecodes: vec![bytecode],
             ..Default::default()
         };
