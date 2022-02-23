@@ -415,7 +415,7 @@ impl<
             storage_key_diff_inv,
         );
 
-        // TODO: consider enabling this after implement `sstore` bus_mapping 
+        // TODO: consider enabling this after implement `sstore` bus_mapping
         // meta.create_gate("First storage row operation", |meta| {
         //     let q_storage_first = q_storage_first(meta);
 

@@ -95,6 +95,10 @@ impl Opcode for Sload {
 mod sload_tests {
     use super::*;
     use crate::circuit_input_builder::{ExecStep, TransactionContext};
+    use crate::{
+        operation::{CallContextField, CallContextOp, StorageOp, TxAccessListAccountStorageOp, RW},
+        Error,
+    };
     use eth_types::evm_types::StackAddress;
     use eth_types::{bytecode, Address, Word};
     use pretty_assertions::assert_eq;
@@ -136,6 +140,40 @@ mod sload_tests {
             0,
         );
         let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+
+        state_ref.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state_ref.call().call_id,
+                field: CallContextField::TxId,
+                value: Word::from(state_ref.tx_ctx.id()),
+            },
+        );
+        state_ref.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state_ref.call().call_id,
+                field: CallContextField::RwCounterEndOfReversion,
+                value: Word::from(state_ref.call().rw_counter_end_of_reversion), // TODO:
+            },
+        );
+        state_ref.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state_ref.call().call_id,
+                field: CallContextField::IsPersistent,
+                value: Word::from(state_ref.call().is_persistent as u8),
+            },
+        );
+        state_ref.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state_ref.call().call_id,
+                field: CallContextField::CalleeAddress,
+                value: state_ref.call().address.to_word(),
+            },
+        );
+
         // Add StackOp associated to the stack pop.
         state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x0u32));
         // Add StorageOp associated to the storage read.
@@ -152,6 +190,17 @@ mod sload_tests {
         );
         // Add StackOp associated to the stack push.
         state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), Word::from(0x6fu32));
+        state_ref.push_op_reversible(
+            RW::WRITE,
+            TxAccessListAccountStorageOp {
+                tx_id: state_ref.tx_ctx.id(),
+                address: Address::from([0u8; 20]),
+                key: Word::from(0x0u32),
+                value: true,
+                value_prev: false, // TODO:
+            },
+        );
+
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
 
