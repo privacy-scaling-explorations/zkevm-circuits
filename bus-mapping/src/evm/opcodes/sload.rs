@@ -27,14 +27,14 @@ impl Opcode for Sload {
                 value: Word::from(state.tx_ctx.id()),
             },
         );
-        // state.push_op(
-        //     RW::READ,
-        //     CallContextOp{
-        //         call_id: state.call().call_id,
-        //         field: CallContextField::RwCounterEndOfReversion,
-        //         value: ,
-        //     },
-        // );
+        state.push_op(
+            RW::READ,
+            CallContextOp{
+                call_id: state.call().call_id,
+                field: CallContextField::RwCounterEndOfReversion,
+                value: Word::from(state.call().rw_counter_end_of_reversion), // TODO:
+            },
+        );
         state.push_op(
             RW::READ,
             CallContextOp {
