@@ -107,6 +107,7 @@ pub mod test {
             witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
             EvmCircuit,
         },
+        rw_table::RwTable,
         util::Expr,
     };
     use eth_types::{evm_types::GasCost, Word};
@@ -150,7 +151,7 @@ pub mod test {
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: [Column<Advice>; 10],
+        rw_table: RwTable,
         bytecode_table: [Column<Advice>; 4],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
@@ -205,27 +206,16 @@ pub mod test {
                 || "rw table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.rw_table {
-                        region.assign_advice(
-                            || "rw table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
+                    self.rw_table
+                        .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
                     for rw in rws.0.values().flat_map(|rws| rws.iter()) {
-                        for (column, value) in
-                            self.rw_table.iter().zip(rw.table_assignment(randomness))
-                        {
-                            region.assign_advice(
-                                || format!("rw table row {}", offset),
-                                *column,
-                                offset,
-                                || Ok(value),
-                            )?;
-                        }
+                        self.rw_table.assign(
+                            &mut region,
+                            offset,
+                            &rw.table_assignment(randomness),
+                        )?;
                         offset += 1;
                     }
                     Ok(())
@@ -334,7 +324,7 @@ pub mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = [(); 10].map(|_| meta.advice_column());
+            let rw_table = RwTable::construct(meta);
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
