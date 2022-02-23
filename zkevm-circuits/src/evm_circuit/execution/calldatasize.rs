@@ -1,14 +1,17 @@
+use std::convert::TryInto;
+
 use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 use crate::{
     evm_circuit::{
+        param::N_BYTES_CALLDATASIZE,
         step::ExecutionState,
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            Word,
+            from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,7 +23,7 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    call_data_size: Word<F>,
+    call_data_size: RandomLinearCombination<F, N_BYTES_CALLDATASIZE>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
@@ -37,7 +40,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
             false.expr(),
             None,
             CallContextFieldTag::CallDataLength,
-            call_data_size.expr(),
+            from_bytes::expr(&call_data_size.cells),
         );
 
         // The calldatasize should be pushed to the top of the stack.
@@ -71,8 +74,15 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
         let call_data_size = block.rws[step.rw_indices[1]].stack_value();
 
-        self.call_data_size
-            .assign(region, offset, Some(call_data_size.to_le_bytes()))?;
+        self.call_data_size.assign(
+            region,
+            offset,
+            Some(
+                call_data_size.to_le_bytes()[..N_BYTES_CALLDATASIZE]
+                    .try_into()
+                    .unwrap(),
+            ),
+        )?;
 
         Ok(())
     }
@@ -180,5 +190,9 @@ mod test {
         test_ok(32, true);
         test_ok(64, true);
         test_ok(96, true);
+        test_ok(128, true);
+        test_ok(256, true);
+        test_ok(512, true);
+        test_ok(1024, true);
     }
 }
