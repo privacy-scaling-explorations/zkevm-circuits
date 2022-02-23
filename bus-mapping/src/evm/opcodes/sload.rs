@@ -1,10 +1,10 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::{
-    operation::{StorageOp, RW},
+    operation::{CallContextField, CallContextOp, StorageOp, RW},
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD)
@@ -18,6 +18,39 @@ impl Opcode for Sload {
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
+
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call().call_id,
+                field: CallContextField::TxId,
+                value: Word::from(state.tx_ctx.id()),
+            },
+        );
+        // state.push_op(
+        //     RW::READ,
+        //     CallContextOp{
+        //         call_id: state.call().call_id,
+        //         field: CallContextField::RwCounterEndOfReversion,
+        //         value: ,
+        //     },
+        // );
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call().call_id,
+                field: CallContextField::IsPersistent,
+                value: Word::from(state.call().is_persistent as u8),
+            },
+        );
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call().call_id,
+                field: CallContextField::CalleeAddress,
+                value: state.call().address.to_word(),
+            },
+        );
 
         // First stack read
         let stack_value_read = step.stack.last()?;
