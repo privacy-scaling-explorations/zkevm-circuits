@@ -89,7 +89,7 @@ mod test {
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
         test::run_test_circuit_incomplete_fixed_table,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, RwMap, Transaction, CodeSource},
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
     use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
@@ -198,5 +198,15 @@ mod test {
         };
 
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+    }
+
+    #[test]
+    fn test_selfbalance() {
+        let bytecode = bytecode! {
+            #[start]
+            SELFBALANCE
+            STOP
+        };
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 }
