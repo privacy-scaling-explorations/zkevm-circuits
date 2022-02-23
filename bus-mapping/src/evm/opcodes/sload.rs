@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::{
-    operation::{CallContextField, CallContextOp, StorageOp, RW},
+    operation::{CallContextField, CallContextOp, StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};
@@ -29,7 +29,7 @@ impl Opcode for Sload {
         );
         state.push_op(
             RW::READ,
-            CallContextOp{
+            CallContextOp {
                 call_id: state.call().call_id,
                 field: CallContextField::RwCounterEndOfReversion,
                 value: Word::from(state.call().rw_counter_end_of_reversion), // TODO:
@@ -75,6 +75,17 @@ impl Opcode for Sload {
 
         // First stack write
         state.push_stack_op(RW::WRITE, stack_position, storage_value_read);
+
+        state.push_op_reversible(
+            RW::WRITE,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: state.call().address,
+                key: stack_value_read,
+                value: true,
+                value_prev: false, // TODO:
+            },
+        );
 
         Ok(())
     }
