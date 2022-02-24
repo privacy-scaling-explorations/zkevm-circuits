@@ -64,7 +64,7 @@ impl OperationContainer {
         }
     }
 
-    /// Inserts an [`Operation`] into the  container returning a lightwheight
+    /// Inserts an [`Operation`] into the  container returning a lightweight
     /// reference to it in the form of an [`OperationRef`] which points to the
     /// location of the inserted operation inside the corresponding container
     /// vector.
