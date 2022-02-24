@@ -8,6 +8,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            from_bytes,
             memory_gadget::BufferReaderGadget,
             Cell, RandomLinearCombination,
         },
@@ -45,7 +46,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let calldata_end = cb.query_cell();
 
         // Pop the offset value from stack.
-        cb.stack_pop(calldata_start.expr());
+        cb.stack_pop(from_bytes::expr(&[calldata_start.clone()]));
 
         // Add a lookup constrain for TxId in the RW table.
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
