@@ -8,3 +8,4 @@ authors = ["The appliedzkp team"]
 eth-types = { path = "../eth-types" }
 external-tracer = { path = "../external-tracer" }
 lazy_static = "1.4"
+ethbloom = "0.11.1"
