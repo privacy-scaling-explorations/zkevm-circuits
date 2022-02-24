@@ -107,13 +107,13 @@ mod selfbalance_tests {
             AccountOp {
                 address: callee_address,
                 field: AccountField::Balance,
-                value: self_balance.into(),
-                value_prev: self_balance.into(),
+                value: self_balance,
+                value_prev: self_balance,
             },
         );
 
         // Add the Stack write
-        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1024 - 1), self_balance.into());
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1024 - 1), self_balance);
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
