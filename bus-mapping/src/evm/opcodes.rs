@@ -4,6 +4,7 @@ use crate::Error;
 use core::fmt::Debug;
 use eth_types::GethExecStep;
 
+mod calldatasize;
 mod caller;
 mod callvalue;
 mod coinbase;
@@ -28,6 +29,7 @@ use crate::evm::OpcodeId;
 use log::warn;
 
 use self::push::Push;
+use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
 use dup::Dup;
@@ -106,7 +108,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         // OpcodeId::CALLDATALOAD => {},
-        // OpcodeId::CALLDATASIZE => {},
+        OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
         // OpcodeId::CALLDATACOPY => {},
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},

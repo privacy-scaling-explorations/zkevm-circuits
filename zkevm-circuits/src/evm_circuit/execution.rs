@@ -20,6 +20,8 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod calldatacopy;
+mod calldatasize;
 mod caller;
 mod callvalue;
 mod coinbase;
@@ -31,6 +33,7 @@ mod jump;
 mod jumpdest;
 mod jumpi;
 mod memory;
+mod memory_copy;
 mod msize;
 mod mul;
 mod pc;
@@ -47,6 +50,8 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use calldatacopy::CallDataCopyGadget;
+use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
@@ -58,6 +63,7 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
+use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
 use pc::PcGadget;
@@ -99,6 +105,8 @@ pub(crate) struct ExecutionConfig<F> {
     bitwise_gadget: BitwiseGadget<F>,
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
+    calldatacopy_gadget: CallDataCopyGadget<F>,
+    calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
@@ -109,6 +117,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpi_gadget: JumpiGadget<F>,
     gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
+    copy_to_memory_gadget: CopyToMemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
@@ -230,6 +239,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
             bitwise_gadget: configure_gadget!(),
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
+            calldatacopy_gadget: configure_gadget!(),
+            calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
@@ -240,6 +251,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jumpi_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
+            copy_to_memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
@@ -506,8 +518,17 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 assign_exec_step!(self.timestamp_gadget)
             }
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::CALLDATACOPY => {
+                assign_exec_step!(self.calldatacopy_gadget)
+            }
+            ExecutionState::CopyToMemory => {
+                assign_exec_step!(self.copy_to_memory_gadget)
+            }
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
+            }
+            ExecutionState::CALLDATASIZE => {
+                assign_exec_step!(self.calldatasize_gadget)
             }
             _ => unimplemented!(),
         }

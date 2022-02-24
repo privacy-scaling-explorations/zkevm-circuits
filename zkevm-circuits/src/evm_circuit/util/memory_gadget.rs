@@ -4,9 +4,8 @@ use crate::{
         util::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
-            math_gadget::IsZeroGadget,
-            math_gadget::{ConstantDivisionGadget, MinMaxGadget},
-            sum, Cell, MemoryAddress, Word,
+            math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
+            select, sum, Cell, MemoryAddress, Word,
         },
     },
     util::Expr,
@@ -136,9 +135,12 @@ impl<F: FieldExt> MemoryAddressGadget<F> {
         })
     }
 
+    pub(crate) fn has_length(&self) -> Expression<F> {
+        1.expr() - self.memory_length_is_zero.expr()
+    }
+
     pub(crate) fn offset(&self) -> Expression<F> {
-        (1.expr() - self.memory_length_is_zero.expr())
-            * from_bytes::expr(&self.memory_offset_bytes.cells)
+        self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
     }
 
     pub(crate) fn length(&self) -> Expression<F> {
@@ -323,5 +325,207 @@ impl<F: FieldExt, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
         // Return the new memory size and the memory expansion gas cost
         Ok((next_memory_word_size, memory_cost))
+    }
+}
+
+/// Returns (new memory size, memory gas cost) for a memory access.
+/// If the memory needs to be expanded this will result in an extra gas cost.
+/// This gas cost is the difference between the next and current memory costs:
+/// `memory_cost = Gmem * memory_size + floor(memory_size * memory_size / 512)`
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryCopierGasGadget<F> {
+    word_size: MemoryWordSizeGadget<F>,
+    gas_cost: Expression<F>,
+    gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
+}
+
+impl<F: FieldExt> MemoryCopierGasGadget<F> {
+    pub const GAS_COPY: GasCost = GasCost::COPY;
+    pub const WORD_SIZE: u64 = 32u64;
+
+    /// Input requirements:
+    /// - `curr_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
+    /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
+    /// Output ranges:
+    /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
+    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
+    ///   256**MAX_QUAD_COST_IN_BYTES`
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        num_bytes: Expression<F>,
+        memory_expansion_gas_cost: Expression<F>,
+    ) -> Self {
+        let word_size = MemoryWordSizeGadget::construct(cb, num_bytes);
+
+        let gas_cost = word_size.expr() * Self::GAS_COPY.expr() + memory_expansion_gas_cost;
+        let gas_cost_range_check = RangeCheckGadget::construct(cb, gas_cost.clone());
+
+        Self {
+            word_size,
+            gas_cost,
+            gas_cost_range_check,
+        }
+    }
+
+    pub(crate) fn gas_cost(&self) -> Expression<F> {
+        // Return the gas cost
+        self.gas_cost.clone()
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        num_bytes: u64,
+        memory_expansion_gas_cost: u64,
+    ) -> Result<u64, Error> {
+        let word_size = self.word_size.assign(region, offset, num_bytes)?;
+        let gas_cost = word_size * Self::GAS_COPY.as_u64() + memory_expansion_gas_cost;
+        self.gas_cost_range_check
+            .assign(region, offset, F::from(gas_cost))?;
+        // Return the memory copier gas cost
+        Ok(gas_cost)
+    }
+}
+
+/// Buffer reader gadget reads out bytes from a buffer given the start address
+/// and the end address. This gadget also pads 0 to the end of buffer if the
+/// access to the buffer is out of bound (addr >= addr_end).
+#[derive(Clone, Debug)]
+pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_MEMORY_ADDRESS: usize>
+{
+    // The bytes read from buffer
+    bytes: [Cell<F>; MAX_BYTES],
+    // The selectors that indicate if bytes contain real data
+    selectors: [Cell<F>; MAX_BYTES],
+    // bound_dist[i] = max(addr_end - addr_start - i, 0)
+    bound_dist: [Cell<F>; MAX_BYTES],
+    // Check if bound_dist is zero
+    bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
+    // The min gadget to take the minimum of addr_start and addr_end
+    min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
+}
+
+impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
+    BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+{
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        addr_start: &Cell<F>,
+        addr_end: &Cell<F>,
+    ) -> Self {
+        let bytes = array_init(|_| cb.query_byte());
+        let selectors = array_init(|_| cb.query_bool());
+        let bound_dist = array_init(|_| cb.query_cell());
+        let bound_dist_is_zero =
+            array_init(|idx| IsZeroGadget::construct(cb, bound_dist[idx].expr()));
+
+        // Define bound_dist[i] = max(addr_end - addr_start - i, 0)
+        // The purpose of bound_dist is to check if the access to the buffer
+        // is out of bound. When bound_dist[i] == 0, it indicates OOB access
+        // and so bytes[i] has to be 0.
+        // Because the bound_dist is decreasing by at most 1 each time, we can
+        // use this property to reduce the use of LtGadget by adding constraints
+        // to the diff between two consecutive bound_dists.
+
+        // The constraints on bound_dist[0].
+        //   bound_dist[0] == addr_end - addr_start if addr_start < addr_end
+        //   bound_dist[0] == 0 if addr_start >= addr_end
+        let min_gadget = MinMaxGadget::construct(cb, addr_start.expr(), addr_end.expr());
+        cb.require_equal(
+            "bound_dist[0] == addr_end - min(addr_start, add_end)",
+            bound_dist[0].expr(),
+            addr_end.expr() - min_gadget.min(),
+        );
+        // Constraints on bound_dist[1..MAX_BYTES]
+        //   diff = bound_dist[idx - 1] - bound_dist[idx]
+        //   diff == 1 if bound_dist[idx - 1] != 0
+        //   diff == 0 if bound_dist[idx - 1] == 0
+        for idx in 1..MAX_BYTES {
+            let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
+            cb.require_equal(
+                "diff == 0 if bound_dist[i - 1] == 0; otherwise 1",
+                diff,
+                select::expr(bound_dist_is_zero[idx - 1].expr(), 0.expr(), 1.expr()),
+            )
+        }
+
+        // Constraints on bytes and selectors
+        for i in 0..MAX_BYTES {
+            let selector_prev = if i == 0 {
+                // First selector will always be 1
+                1.expr()
+            } else {
+                selectors[i - 1].expr()
+            };
+            // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
+            // 0, 0, 0]
+            cb.require_boolean(
+                "Constrain selectors can only transit from 1 to 0",
+                selector_prev - selectors[i].expr(),
+            );
+            cb.add_constraint(
+                "bytes[i] == 0 when selectors[i] == 0",
+                (1.expr() - selectors[i].expr()) * bytes[i].expr(),
+            );
+            cb.add_constraint(
+                "bytes[i] == 0 when bound_dist[i] == 0",
+                bound_dist_is_zero[i].expr() * bytes[i].expr(),
+            )
+        }
+
+        BufferReaderGadget {
+            bytes,
+            selectors,
+            bound_dist,
+            bound_dist_is_zero,
+            min_gadget,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        addr_start: u64,
+        addr_end: u64,
+        bytes: &[u8],
+        selectors: &[u8],
+    ) -> Result<(), Error> {
+        self.min_gadget
+            .assign(region, offset, F::from(addr_start), F::from(addr_end))?;
+
+        assert_eq!(selectors.len(), MAX_BYTES);
+        for (idx, selector) in selectors.iter().enumerate() {
+            self.selectors[idx].assign(region, offset, Some(F::from(*selector as u64)))?;
+            self.bytes[idx].assign(region, offset, Some(F::from(bytes[idx] as u64)))?;
+            // assign bound_dist and bound_dist_is_zero
+            let oob = addr_start + idx as u64 >= addr_end;
+            let bound_dist = if oob {
+                F::zero()
+            } else {
+                F::from(addr_end - addr_start - idx as u64)
+            };
+            self.bound_dist[idx].assign(region, offset, Some(bound_dist))?;
+            self.bound_dist_is_zero[idx].assign(region, offset, bound_dist)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn byte(&self, idx: usize) -> Expression<F> {
+        self.bytes[idx].expr()
+    }
+
+    pub(crate) fn has_data(&self, idx: usize) -> Expression<F> {
+        self.selectors[idx].expr()
+    }
+
+    /// Indicate whether the bytes\[idx\] is read from the buffer
+    pub(crate) fn read_flag(&self, idx: usize) -> Expression<F> {
+        self.has_data(idx) * (1.expr() - self.bound_dist_is_zero[idx].expr())
+    }
+
+    pub(crate) fn num_bytes(&self) -> Expression<F> {
+        sum::expr(&self.selectors)
     }
 }
