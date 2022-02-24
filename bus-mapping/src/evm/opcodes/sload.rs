@@ -32,7 +32,7 @@ impl Opcode for Sload {
             CallContextOp {
                 call_id: state.call().call_id,
                 field: CallContextField::RwCounterEndOfReversion,
-                value: Word::from(state.call().rw_counter_end_of_reversion), // TODO:
+                value: Word::from(state.call().rw_counter_end_of_reversion),
             },
         );
         state.push_op(
@@ -154,7 +154,7 @@ mod sload_tests {
             CallContextOp {
                 call_id: state_ref.call().call_id,
                 field: CallContextField::RwCounterEndOfReversion,
-                value: Word::from(state_ref.call().rw_counter_end_of_reversion), // TODO:
+                value: Word::from(state_ref.call().rw_counter_end_of_reversion),
             },
         );
         state_ref.push_op(
