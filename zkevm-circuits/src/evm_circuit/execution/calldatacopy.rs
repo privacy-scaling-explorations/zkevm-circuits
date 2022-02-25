@@ -235,15 +235,16 @@ mod test {
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
     use eth_types::{
+        bytecode,
         evm_types::{GasCost, OpcodeId},
-        ToBigEndian, Word,
+        Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
     fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
         let randomness = Fp::rand();
-        let mut bytecode = bytecode! {
+        let bytecode = bytecode! {
             PUSH32(length)
             PUSH32(data_offset)
             PUSH32(memory_offset)
@@ -382,7 +383,7 @@ mod test {
         length: Word,
     ) {
         let randomness = Fp::rand();
-        let mut bytecode = bytecode! {
+        let bytecode = bytecode! {
             PUSH32(length)
             PUSH32(data_offset)
             PUSH32(memory_offset)
