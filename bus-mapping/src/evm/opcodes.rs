@@ -15,6 +15,7 @@ use eth_types::{
 };
 use log::warn;
 
+mod calldatacopy;
 mod calldatasize;
 mod caller;
 mod callvalue;
@@ -27,6 +28,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+use calldatacopy::Calldatacopy;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
@@ -112,7 +114,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
         OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        // OpcodeId::CALLDATACOPY => {},
+        OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops_multi,
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
         // OpcodeId::GASPRICE => {},

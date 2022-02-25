@@ -243,21 +243,17 @@ mod test {
 
     fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
         let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                length.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                data_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                memory_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::CALLDATACOPY.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
+        let mut bytecode = bytecode! {
+            PUSH32(length)
+            PUSH32(data_offset)
+            PUSH32(memory_offset)
+            #[start]
+            CALLDATACOPY
+            STOP
+        };
+        let bytecode = Bytecode::new(bytecode.to_vec());
         let call_id = 1;
         let call_data: Vec<u8> = rand_bytes(call_data_length);
-
         let mut rws = RwMap(
             [
                 (
@@ -386,18 +382,15 @@ mod test {
         length: Word,
     ) {
         let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                length.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                data_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                memory_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::CALLDATACOPY.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
+        let mut bytecode = bytecode! {
+            PUSH32(length)
+            PUSH32(data_offset)
+            PUSH32(memory_offset)
+            #[start]
+            CALLDATACOPY
+            STOP
+        };
+        let bytecode = Bytecode::new(bytecode.to_vec());
         let call_id = 1;
         let call_data = rand_bytes(call_data_length.as_usize());
 
