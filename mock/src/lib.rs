@@ -9,14 +9,34 @@ use eth_types::{
 };
 use external_tracer::{trace, TraceConfig};
 use lazy_static::lazy_static;
+mod account;
+mod block;
+mod test_ctx;
+mod trace;
+mod transaction;
 
-/// Mock chain ID
-const MOCK_CHAIN_ID: u64 = 1338;
+pub use account::MockAccount;
+pub use block::MockBlock;
+pub use test_ctx::TestContext;
+pub use trace::MockTrace;
+pub use transaction::MockTransaction;
 
 lazy_static! {
     /// Mock coinbase value
     static ref MOCK_COINBASE: Address =
         address!("0x00000000000000000000000000000000c014ba5e");
+    /// Mock gasprice value
+    static ref MOCK_GASPRICE: Word = Word::from(1u8);
+    /// Mock chain ID value
+    static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
+    /// Mock accounts loaded with ETH to use for test cases.
+    static ref MOCK_ACCOUNTS: Vec<Address> = vec![
+        address!("0x0000000000000000000000000000000000000111"),
+        address!("0x0000000000000000000000000000000000000222"),
+        address!("0x0000000000000000000000000000000000000333"),
+        address!("0x0000000000000000000000000000000000000444"),
+        address!("0x0000000000000000000000000000000000000555"),
+    ];
 }
 
 /// Create a new block with txs.
@@ -76,37 +96,38 @@ pub fn new_single_tx_trace_accounts_gas(
 /// The trace will be generated automatically with the external_tracer
 /// from the accounts code.
 pub fn new_single_tx_trace_accounts(accounts: Vec<Account>) -> Result<GethData, Error> {
-    new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64), None)
+    //new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64))
+    unimplemented!()
 }
 
 /// Create a new block with a single tx that executes the code passed by
 /// argument.  The trace will be generated automatically with the
 /// external_tracer from the code.
 pub fn new_single_tx_trace_code(code: &Bytecode) -> Result<GethData, Error> {
-    let tracer_account = new_tracer_account(code);
-    new_single_tx_trace_accounts(vec![tracer_account])
+    // let tracer_account = new_tracer_account(code);
+    // new_single_tx_trace_accounts(vec![tracer_account])
+    unimplemented!()
 }
 
 /// Create a new block with a single tx with the given gas limit that
 /// executes the code passed by argument.  The trace will be generated
 /// automatically with the external_tracer from the code.
-pub fn new_single_tx_trace_code_gas(
-    code: &Bytecode,
-    gas: Gas,
-    input: Option<Vec<u8>>,
-) -> Result<GethData, Error> {
-    let tracer_account = new_tracer_account(code);
-    new_single_tx_trace_accounts_gas(vec![tracer_account], gas, input)
+pub fn new_single_tx_trace_code_gas(code: &Bytecode, gas: Gas) -> Result<GethData, Error> {
+    // let tracer_account = new_tracer_account(code);
+    // new_single_tx_trace_accounts_gas(vec![tracer_account], gas)
+    unimplemented!()
 }
 
 /// Create a new block with a single tx that executes the code_a passed by
 /// argument, with code_b deployed at address 0x123.  The trace will be
 /// generated automatically with the external_tracer from the code.
 pub fn new_single_tx_trace_code_2(code_a: &Bytecode, code_b: &Bytecode) -> Result<GethData, Error> {
-    let tracer_account_a = new_tracer_account(code_a);
-    let mut tracer_account_b = new_tracer_account(code_b);
-    tracer_account_b.address = address!("0x0000000000000000000000000000000000000123");
-    new_single_tx_trace_accounts(vec![tracer_account_a, tracer_account_b])
+    // let tracer_account_a = new_tracer_account(code_a);
+    // let mut tracer_account_b = new_tracer_account(code_b);
+    // tracer_account_b.address =
+    // address!("0x0000000000000000000000000000000000000123");
+    // new_single_tx_trace_accounts(vec![tracer_account_a, tracer_account_b])
+    unimplemented!()
 }
 
 /// Generate a new mock block with preloaded data, useful for tests.

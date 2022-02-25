@@ -214,7 +214,6 @@ pub mod error;
 pub mod evm;
 pub mod exec_trace;
 pub(crate) mod geth_errors;
-pub mod mock;
 pub mod operation;
 pub mod rpc;
 pub mod state_db;

@@ -1392,7 +1392,7 @@ mod tests {
             MLOAD
             STOP
         };
-        let block = bus_mapping::mock::BlockData::new_from_geth_data(
+        let block = bus_mapping::mock::TestContext::new_from_geth_data(
             mock::new_single_tx_trace_code(&bytecode).unwrap(),
         );
         let mut builder = block.new_circuit_input_builder();

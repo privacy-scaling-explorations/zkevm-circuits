@@ -1,15 +1,13 @@
-//! Mock types and functions to generate mock data useful for tests
+//! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{
-    circuit_input_builder::{Block, CircuitInputBuilder},
-    state_db::{self, CodeDB, StateDB},
-};
+use crate::{MockAccount, MockBlock, MockTrace, MockTransaction};
+use bus_mapping::state_db::{CodeDB, StateDB};
 use eth_types::{geth_types::GethData, Word};
 
-/// BlockData is a type that contains all the information from a block required
-/// to build the circuit inputs.
+/// TestContext is a type that contains all the information from a block
+/// required to build the circuit inputs.
 #[derive(Debug)]
-pub struct BlockData {
+pub struct TestContext {
     /// StateDB
     pub sdb: StateDB,
     /// CodeDB
@@ -25,9 +23,34 @@ pub struct BlockData {
     pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
-impl BlockData {
+impl TestContext {
+    fn new<FAcc, FTx, Fb, const NACC: usize>(
+        func_tx: FTx,
+        func_block: Fb,
+        acc_fns: Vec<FAcc>,
+    ) -> Self
+    where
+        FTx: FnOnce(&mut MockTransaction, Vec<MockAccount>) -> &mut MockTransaction,
+        Fb: FnOnce(&mut MockBlock, MockTransaction) -> &mut MockBlock,
+        FAcc: FnOnce(&mut MockAccount) -> &mut MockAccount,
+    {
+        let accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC]
+            .iter_mut()
+            .zip(acc_fns)
+            .map(|(acc, acc_fn)| acc_fn(acc).build())
+            .collect();
+
+        let mut tx = MockTransaction::default();
+        func_tx(&mut tx, accounts).build();
+
+        let mut block = MockBlock::default();
+        func_block(&mut block, tx).build();
+
+        unimplemented!()
+    }
+
     /// Generate a new CircuitInputBuilder initialized with the context of the
-    /// BlockData.
+    /// TestContext.
     pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder {
         CircuitInputBuilder::new(
             self.sdb.clone(),
