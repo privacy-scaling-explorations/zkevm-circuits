@@ -1,7 +1,9 @@
 //! Mock Block definition and builder related methods.
 
-use eth_types::{Address, Block, Bytes, Error, Hash, Transaction, Word, U64};
+use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, U64};
 use ethbloom::Bloom;
+
+use crate::MockTransaction;
 
 #[derive(Clone, Debug)]
 pub struct MockBlock {
@@ -23,7 +25,7 @@ pub struct MockBlock {
     total_difficulty: Word,
     seal_fields: Vec<Bytes>,
     uncles: Vec<Hash>,
-    transactions: Vec<Transaction>,
+    transactions: Vec<MockTransaction>,
     size: Word,
     mix_hash: Hash,
     nonce: U64,
@@ -78,7 +80,11 @@ impl From<MockBlock> for Block<Transaction> {
             total_difficulty: Some(mock.total_difficulty),
             seal_fields: mock.seal_fields,
             uncles: mock.uncles,
-            transactions: mock.transactions,
+            transactions: mock
+                .transactions
+                .iter()
+                .map(|mock_tx| (mock_tx.to_owned()).into())
+                .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),
@@ -197,12 +203,14 @@ impl MockBlock {
         self
     }
 
-    // /// Set transactions field for the MockBlock.
-    // pub fn transactions(&mut self, transactions: Vec<MockTransaction>) -> &mut
-    // Self {     self.transactions = transactions;
-    //     //self
-    //     unimplemented!()
-    // }
+    /// Set transactions field for the MockBlock.
+    pub fn transactions<I: Iterator<Item = MockTransaction>>(
+        &mut self,
+        transactions: I,
+    ) -> &mut Self {
+        self.transactions.extend(transactions);
+        self
+    }
 
     /// Set size field for the MockBlock.
     pub fn size(&mut self, size: Word) -> &mut Self {

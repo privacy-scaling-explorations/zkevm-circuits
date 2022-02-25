@@ -3,6 +3,7 @@
 use eth_types::{geth_types::Account, Address, Bytes, Word};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone)]
 /// Mock structure which represents an Account and can be used for tests.
 pub struct MockAccount {
     /// Address
@@ -75,5 +76,11 @@ impl MockAccount {
                 .expect("Error including storage pair");
         });
         self
+    }
+
+    /// Finalizes the current MockAccount under construction returning a new
+    /// instance to it.
+    pub fn build(&mut self) -> Self {
+        self.to_owned()
     }
 }

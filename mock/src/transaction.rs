@@ -1,7 +1,7 @@
 //! Mock Transaction definition and builder related methods.
 
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
-use eth_types::{AccessList, Address, Block, Bytes, Error, Hash, Transaction, Word, U64};
+use eth_types::{AccessList, Address, Bytes, Hash, Transaction, Word, U64};
 
 #[derive(Debug, Clone)]
 pub struct MockTransaction {
@@ -182,5 +182,11 @@ impl MockTransaction {
     pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
         self.chain_id = chain_id;
         self
+    }
+
+    /// Consumes the mutable ref to the MockBlock returning the structure by
+    /// value.
+    pub fn build(&mut self) -> Self {
+        self.to_owned()
     }
 }
