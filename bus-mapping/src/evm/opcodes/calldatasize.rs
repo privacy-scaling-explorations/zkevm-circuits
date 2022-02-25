@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::{CallContextField, CallContextOp, RW},
     Error,
 };
@@ -14,11 +14,13 @@ pub(crate) struct Calldatasize;
 impl Opcode for Calldatasize {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
+        exec_step: &mut ExecStep,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
         let value = steps[1].stack.last()?;
         state.push_op(
+            exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -26,7 +28,12 @@ impl Opcode for Calldatasize {
                 value,
             },
         );
-        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value)?;
+        state.push_stack_op(
+            exec_step,
+            RW::WRITE,
+            step.stack.last_filled().map(|a| a - 1),
+            value,
+        )?;
         Ok(())
     }
 }
