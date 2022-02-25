@@ -1,4 +1,10 @@
-use halo2::{arithmetic::FieldExt, plonk::Error};
+use std::convert::TryInto;
+
+use eth_types::ToLittleEndian;
+use halo2::{
+    arithmetic::FieldExt,
+    plonk::{Error, Expression},
+};
 
 use crate::{
     evm_circuit::{
@@ -8,9 +14,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            from_bytes,
             memory_gadget::BufferReaderGadget,
-            Cell, RandomLinearCombination,
+            Cell, MemoryAddress, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -26,9 +31,11 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// Transaction id from the tx context.
     tx_id: Cell<F>,
     /// The bytes offset in calldata, from which we load a 32-bytes word.
-    calldata_start: Cell<F>,
-    /// The bytes offset in calldata, where we end the 32-bytes word.
-    calldata_end: Cell<F>,
+    calldata_start: MemoryAddress<F>,
+    /// Start reading into buffer from this source address.
+    src_addr: Cell<F>,
+    /// End of the source address.
+    src_addr_end: Cell<F>,
     /// Gadget to read from tx calldata, which we validate against the word
     /// pushed to stack.
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
@@ -42,34 +49,31 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let calldata_start = cb.query_cell();
-        let calldata_end = cb.query_cell();
+        let calldata_start = cb.query_rlc();
 
         // Pop the offset value from stack.
-        cb.stack_pop(from_bytes::expr(&[calldata_start.clone()]));
+        cb.stack_pop(calldata_start.expr());
 
         // Add a lookup constrain for TxId in the RW table.
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
-        let buffer_reader = BufferReaderGadget::construct(cb, &calldata_start, &calldata_end);
+        let src_addr = cb.query_cell();
+        let src_addr_end = cb.query_cell();
+        let buffer_reader = BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
 
-        // Initialise all data bytes to 0.
-        let mut calldata_word = [0u8; N_BYTES_WORD].map(|i| i.expr());
-        for (i, data) in calldata_word.iter_mut().enumerate() {
-            // If the buffer is readable, add a lookup constraint for that next
-            // single byte, while updating the data.
-            let read_flag = buffer_reader.read_flag(i);
-            cb.condition(read_flag, |cb| {
-                let read_byte = buffer_reader.byte(i);
-                *data = read_byte.clone();
-                cb.tx_context_lookup(
-                    tx_id.expr(),
-                    TxContextFieldTag::CallData,
-                    Some(calldata_start.expr() + i.expr()),
-                    read_byte,
-                )
-            });
-        }
+        let mut calldata_word = (0..N_BYTES_WORD)
+            .map(|idx| {
+                cb.condition(buffer_reader.read_flag(idx), |cb| {
+                    cb.tx_context_lookup(
+                        tx_id.expr(),
+                        TxContextFieldTag::CallData,
+                        Some(calldata_start.expr() + idx.expr()),
+                        buffer_reader.byte(idx),
+                    );
+                });
+                buffer_reader.byte(idx)
+            })
+            .collect::<Vec<Expression<F>>>();
 
         // Since the stack items are in little endian form, we reverse the bytes
         // here.
@@ -77,6 +81,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
+        let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
         cb.stack_push(RandomLinearCombination::random_linear_combine_expr(
             calldata_word,
             cb.power_of_randomness(),
@@ -94,7 +99,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
         Self {
             same_context,
             calldata_start,
-            calldata_end,
+            src_addr,
+            src_addr_end,
             tx_id,
             buffer_reader,
         }
@@ -111,41 +117,45 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        // set the value for bytes offset in calldata. This is where we start
+        // reading bytes from.
+        let calldata_offset = block.rws[step.rw_indices[0]].stack_value();
+
+        // assign the calldata start and end cells.
+        self.calldata_start.assign(
+            region,
+            offset,
+            Some(
+                calldata_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
+                    .try_into()
+                    .unwrap(),
+            ),
+        )?;
+
         // assign the tx id.
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
-        // set the value for bytes offset in calldata. This is where we start
-        // reading bytes from.
-        let calldata_offset = block.rws[step.rw_indices[0]].stack_value().as_usize();
-
-        // assign the calldata start and end cells.
-        self.calldata_start
-            .assign(region, offset, Some(F::from(calldata_offset as u64)))?;
-        self.calldata_end.assign(
-            region,
-            offset,
-            Some(F::from((calldata_offset + N_BYTES_WORD) as u64)),
-        )?;
-
-        // bytes after the end of calldata are set to 0.
+        // assign to the buffer reader gadget.
+        let src_addr = calldata_offset.as_usize();
+        let src_addr_end = tx.call_data.len().min(src_addr + N_BYTES_WORD);
+        self.src_addr
+            .assign(region, offset, Some(F::from(src_addr as u64)))?;
+        self.src_addr_end
+            .assign(region, offset, Some(F::from(src_addr_end as u64)))?;
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
-        let mut selectors = vec![0u8; N_BYTES_WORD];
         for (i, byte) in calldata_bytes.iter_mut().enumerate() {
-            if calldata_offset + i < tx.call_data_length {
-                *byte = tx.call_data[calldata_offset + i];
-                selectors[i] = 1u8;
+            if src_addr + i < tx.call_data_length {
+                *byte = tx.call_data[src_addr + i];
             }
         }
-
-        // assign to the buffer reader gadget.
         self.buffer_reader.assign(
             region,
             offset,
-            calldata_offset as u64,
-            (calldata_offset + N_BYTES_WORD) as u64,
+            src_addr as u64,
+            src_addr_end as u64,
             &calldata_bytes,
-            &selectors,
+            &[1u8; N_BYTES_WORD],
         )?;
 
         Ok(())
@@ -289,9 +299,9 @@ mod test {
 
         let test_data: Vec<(Vec<u8>, usize, Word)> = vec![
             (
-                bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+                bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEE"),
                 0,
-                word_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+                word_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEE"),
             ),
             (
                 bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
