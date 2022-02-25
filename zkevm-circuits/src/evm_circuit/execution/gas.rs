@@ -12,9 +12,8 @@ use crate::{
     },
     util::Expr,
 };
-
-use bus_mapping::evm::OpcodeId;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct GasGadget<F> {
@@ -22,7 +21,7 @@ pub(crate) struct GasGadget<F> {
     gas_left: RandomLinearCombination<F, N_BYTES_GAS>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
+impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
     const NAME: &'static str = "GAS";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::GAS;

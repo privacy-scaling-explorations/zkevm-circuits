@@ -1,9 +1,9 @@
 use crate::common::State;
-use halo2::circuit::Cell;
+use eth_types::Field;
+use halo2_proofs::circuit::AssignedCell;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
-use pairing::arithmetic::FieldExt;
 use std::ops::{Index, IndexMut};
 
 pub const B2: u8 = 2;
@@ -192,23 +192,23 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
-pub fn state_to_biguint<F: FieldExt, const N: usize>(state: [F; N]) -> StateBigInt {
+pub fn state_to_biguint<F: Field, const N: usize>(state: [F; N]) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
-            .map(|elem| elem.to_bytes())
+            .map(|elem| elem.to_repr())
             .map(|bytes| BigUint::from_bytes_le(&bytes))
             .collect(),
     }
 }
 
-pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> State {
+pub fn state_to_state_bigint<F: Field, const N: usize>(state: [F; N]) -> State {
     let mut matrix = [[0u64; 5]; 5];
 
     let mut elems: Vec<u64> = state
         .iter()
-        .map(|elem| elem.to_bytes())
-        // This is horrible. But FieldExt does not give much better alternatives
+        .map(|elem| elem.to_repr())
+        // This is horrible. But Field does not give much better alternatives
         // and refactoring `State` will be done once the
         // keccak_all_togheter is done.
         .map(|bytes| {
@@ -226,7 +226,7 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> Stat
     matrix
 }
 
-pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) -> [F; N] {
+pub fn state_bigint_to_field<F: Field, const N: usize>(state: StateBigInt) -> [F; N] {
     let mut arr = [F::zero(); N];
     let vector: Vec<F> = state
         .xy
@@ -237,24 +237,23 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) ->
             array[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
             array
         })
-        .map(|bytes| F::from_bytes(&bytes).unwrap())
+        .map(|bytes| F::from_repr(bytes).unwrap())
         .collect();
     arr[0..N].copy_from_slice(&vector[0..N]);
     arr
 }
 
 /// Returns only the value of a an assigned state cell.
-/// TODO: Use `AssignedCell` primitive from `halo2`.
-pub fn split_state_cells<F: FieldExt, const N: usize>(state: [(Cell, F); N]) -> [F; N] {
+pub fn split_state_cells<F: Field, const N: usize>(state: [AssignedCell<F, F>; N]) -> [F; N] {
     let mut res = [F::zero(); N];
     state
         .iter()
         .enumerate()
-        .for_each(|(idx, assigned_cell)| res[idx] = assigned_cell.1);
+        .for_each(|(idx, assigned_cell)| res[idx] = *assigned_cell.value().unwrap());
     res
 }
 
-pub fn f_from_radix_be<F: FieldExt>(buf: &[u8], base: u8) -> F {
+pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
     let base = F::from(base.into());
     buf.iter()
         .fold(F::zero(), |acc, &x| acc * base + F::from(x.into()))

@@ -1,7 +1,7 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
-use halo2::dev::MockProver;
+use halo2_proofs::dev::MockProver;
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
@@ -16,8 +16,8 @@ lazy_static! {
 /// usable EVM Circuit yet.  The code in this module is copied from
 /// `zkevm_circuits::evm_circuit::test` at `zkevm-circuits/src/evm_circuit.rs`.
 mod test_evm_circuit {
-    use halo2::{
-        arithmetic::FieldExt,
+    use eth_types::Field;
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::*,
@@ -39,7 +39,7 @@ mod test_evm_circuit {
         evm_circuit: EvmCircuit<F>,
     }
 
-    impl<F: FieldExt> TestCircuitConfig<F> {
+    impl<F: Field> TestCircuitConfig<F> {
         fn load_txs(
             &self,
             layouter: &mut impl Layouter<F>,
@@ -159,7 +159,7 @@ mod test_evm_circuit {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+    impl<F: Field> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -219,13 +219,13 @@ mod test_evm_circuit {
         }
     }
 
-    pub fn run_test_circuit_complete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_complete_fixed_table<F: Field>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
     }
 
-    fn run_test_circuit<F: FieldExt>(
+    fn run_test_circuit<F: Field>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -283,7 +283,7 @@ async fn test_evm_circuit_block_deploy_greeter() {
 }
 
 async fn test_state_circuit_block(block_num: u64) {
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
     let cli = get_client();

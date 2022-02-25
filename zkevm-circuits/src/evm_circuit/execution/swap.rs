@@ -11,9 +11,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SwapGadget<F> {
@@ -21,7 +20,7 @@ pub(crate) struct SwapGadget<F> {
     values: [Cell<F>; 2],
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
+impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
     const NAME: &'static str = "SWAP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SWAP;

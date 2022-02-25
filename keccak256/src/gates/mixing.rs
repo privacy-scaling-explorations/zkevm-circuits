@@ -6,14 +6,14 @@ use super::{
 };
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
-use halo2::circuit::Region;
-use halo2::plonk::{Expression, Instance, Selector};
-use halo2::poly::Rotation;
-use halo2::{
-    circuit::{Cell, Layouter},
+use eth_types::Field;
+use halo2_proofs::circuit::{AssignedCell, Region};
+use halo2_proofs::plonk::{Expression, Instance, Selector};
+use halo2_proofs::poly::Rotation;
+use halo2_proofs::{
+    circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -29,7 +29,7 @@ pub struct MixingConfig<F> {
     out_mixing: [Column<Advice>; 25],
 }
 
-impl<F: FieldExt> MixingConfig<F> {
+impl<F: Field> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         table: &FromBase9TableConfig<F>,
@@ -41,7 +41,7 @@ impl<F: FieldExt> MixingConfig<F> {
         // Allocate space for the flag column from which we will copy to all of
         // the sub-configs.
         let flag = meta.advice_column();
-        meta.enable_equality(flag.into());
+        meta.enable_equality(flag);
 
         let q_flag = meta.selector();
 
@@ -78,7 +78,7 @@ impl<F: FieldExt> MixingConfig<F> {
         let state: [Column<Advice>; 25] = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
-                meta.enable_equality(column.into());
+                meta.enable_equality(column);
                 column
             })
             .collect::<Vec<_>>()
@@ -103,7 +103,7 @@ impl<F: FieldExt> MixingConfig<F> {
         let out_mixing: [Column<Advice>; 25] = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
-                meta.enable_equality(column.into());
+                meta.enable_equality(column);
                 column
             })
             .collect::<Vec<_>>()
@@ -148,29 +148,27 @@ impl<F: FieldExt> MixingConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         flag_bool: bool,
-    ) -> Result<((Cell, F), (Cell, F)), Error> {
+    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
         layouter.assign_region(
             || "Flag and Negated flag assignation",
             |mut region| {
                 self.q_flag.enable(&mut region, 0)?;
                 // Witness `is_mixing` flag
-                let cell = region.assign_advice(
+                let flag = region.assign_advice(
                     || "witness is_mixing",
                     self.flag,
                     0,
                     || Ok(F::from(flag_bool as u64)),
                 )?;
-                let flag = (cell, F::from(flag_bool as u64));
 
                 // Witness negated `is_mixing` flag
-                let cell = region.assign_advice(
+                let negated_flag = region.assign_advice(
                     || "witness negated is_mixing",
                     self.flag,
                     1,
                     || Ok(F::from(!flag_bool as u64)),
                 )?;
 
-                let negated_flag = (cell, F::from(flag_bool as u64));
                 Ok((flag, negated_flag))
             },
         )
@@ -181,12 +179,11 @@ impl<F: FieldExt> MixingConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         flag_bool: bool,
-        flag: (Cell, F),
-        negated_flag: (Cell, F),
-        out_mixing_circ: [(Cell, F); 25],
-        out_non_mixing_circ: [(Cell, F); 25],
+        negated_flag: AssignedCell<F, F>,
+        out_mixing_circ: &[AssignedCell<F, F>; 25],
+        out_non_mixing_circ: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
-    ) -> Result<[(Cell, F); 25], Error> {
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
         layouter.assign_region(
             || "Out Mixing states assignation",
             |mut region| {
@@ -200,35 +197,16 @@ impl<F: FieldExt> MixingConfig<F> {
                     0,
                     || Ok(F::from(flag_bool as u64)),
                 )?;
-                region.constrain_equal(_flag_cell, flag.0)?;
 
-                let _neg_flag_cell = region.assign_advice(
-                    || "witness is_mixing",
-                    self.flag,
-                    1,
-                    || Ok(F::from(!flag_bool as u64)),
-                )?;
-                region.constrain_equal(_neg_flag_cell, negated_flag.0)?;
+                negated_flag.copy_advice(|| "witness is_mixing", &mut region, self.flag, 1)?;
 
-                // TODO: Can just constraint directly without out_state passed
-                self.copy_state(
-                    &mut region,
-                    0,
-                    self.out_mixing,
-                    split_state_cells(out_non_mixing_circ),
-                    out_non_mixing_circ,
-                )?;
+                // Copy-constrain both out states.
+                self.copy_state(&mut region, 0, self.out_mixing, out_non_mixing_circ)?;
 
-                self.copy_state(
-                    &mut region,
-                    1,
-                    self.out_mixing,
-                    split_state_cells(out_mixing_circ),
-                    out_mixing_circ,
-                )?;
+                self.copy_state(&mut region, 1, self.out_mixing, out_mixing_circ)?;
 
-                let out_state: [(Cell, F); 25] = {
-                    let mut out_vec: Vec<(Cell, F)> = vec![];
+                let out_state: [AssignedCell<F, F>; 25] = {
+                    let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
                     for (idx, lane) in out_state.iter().enumerate() {
                         let out_cell = region.assign_advice(
                             || format!("assign out_state [{}]", idx),
@@ -236,7 +214,7 @@ impl<F: FieldExt> MixingConfig<F> {
                             0,
                             || Ok(*lane),
                         )?;
-                        out_vec.push((out_cell, *lane));
+                        out_vec.push(out_cell);
                     }
                     out_vec.try_into().unwrap()
                 };
@@ -249,12 +227,12 @@ impl<F: FieldExt> MixingConfig<F> {
     pub fn assign_state(
         &self,
         layouter: &mut impl Layouter<F>,
-        in_state: [(Cell, F); 25],
+        in_state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
         flag_bool: bool,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
         absolute_row: usize,
-    ) -> Result<[(Cell, F); 25], Error> {
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
         // Enforce flag constraints and witness them.
         let (flag, negated_flag) = self.enforce_flag_consistency(layouter, flag_bool)?;
 
@@ -262,7 +240,7 @@ impl<F: FieldExt> MixingConfig<F> {
         // IotaB9
         let non_mix_res = {
             let out_state_iota_b9: [F; 25] = state_bigint_to_field(KeccakFArith::iota_b9(
-                &state_to_biguint(split_state_cells(in_state)),
+                &state_to_biguint(split_state_cells(in_state.clone())),
                 *ROUND_CONSTANTS.last().unwrap(),
             ));
 
@@ -271,7 +249,7 @@ impl<F: FieldExt> MixingConfig<F> {
                 in_state,
                 out_state_iota_b9,
                 absolute_row,
-                flag,
+                &flag,
             )
         }?;
 
@@ -282,41 +260,40 @@ impl<F: FieldExt> MixingConfig<F> {
             in_state,
             // Compute out_absorb state.
             state_bigint_to_field(KeccakFArith::absorb(
-                &state_to_biguint(split_state_cells(in_state)),
+                &state_to_biguint(split_state_cells(in_state.clone())),
                 &state_to_state_bigint::<F, NEXT_INPUTS_LANES>(next_mixing.unwrap_or_default()),
             )),
             next_mixing.unwrap_or_default(),
-            flag,
+            flag.clone(),
         )?;
 
         // Base conversion assign
         let base_conv_cells =
             self.base_conv_config
-                .assign_region(layouter, out_state_absorb_cells, flag)?;
+                .assign_region(layouter, &out_state_absorb_cells, flag.clone())?;
 
         // IotaB13
         let mix_res = {
             let out_iota_b13_state: [F; 25] = state_bigint_to_field(KeccakFArith::iota_b13(
-                &state_to_biguint(split_state_cells(base_conv_cells)),
+                &state_to_biguint(split_state_cells(base_conv_cells.clone())),
                 *ROUND_CONSTANTS.last().unwrap(),
             ));
 
             self.iota_b13_config.copy_state_flag_and_assing_rc(
                 layouter,
-                base_conv_cells,
+                &base_conv_cells,
                 out_iota_b13_state,
                 absolute_row,
-                flag,
+                &flag,
             )
         }?;
 
         let mixing_res = self.assign_out_mixing_states(
             layouter,
             flag_bool,
-            flag,
             negated_flag,
-            mix_res,
-            non_mix_res,
+            &mix_res,
+            &non_mix_res,
             out_state,
         );
 
@@ -333,18 +310,15 @@ impl<F: FieldExt> MixingConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         columns: [Column<Advice>; 25],
-        state_outside: [F; 25],
-        state: [(Cell, F); 25],
+        state: &[AssignedCell<F, F>; 25],
     ) -> Result<(), Error> {
-        for (idx, (out_circ_value, (in_cell, _))) in state_outside.iter().zip(state).enumerate() {
-            let new_cell = region.assign_advice(
+        for (idx, state_cell) in state.iter().enumerate() {
+            state_cell.copy_advice(
                 || format!("Copy state {}", idx),
+                region,
                 columns[idx],
                 offset,
-                || Ok(*out_circ_value),
             )?;
-
-            region.constrain_equal(in_cell, new_cell)?;
         }
 
         Ok(())
@@ -356,9 +330,9 @@ mod tests {
     use super::*;
     use crate::common::{State, PERMUTATION, ROUND_CONSTANTS};
     use crate::gates::gate_helpers::biguint_to_f;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
@@ -384,14 +358,14 @@ mod tests {
             table: FromBase9TableConfig<F>,
         }
 
-        impl<F: FieldExt> MyConfig<F> {
+        impl<F: Field> MyConfig<F> {
             pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)?;
                 Ok(())
             }
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -404,13 +378,13 @@ mod tests {
                 // Allocate space for the round constants in base-9 which is an
                 // instance column
                 let round_ctant_b9 = meta.advice_column();
-                meta.enable_equality(round_ctant_b9.into());
+                meta.enable_equality(round_ctant_b9);
                 let round_constants_b9 = meta.instance_column();
 
                 // Allocate space for the round constants in base-13 which is an
                 // instance column
                 let round_ctant_b13 = meta.advice_column();
-                meta.enable_equality(round_ctant_b13.into());
+                meta.enable_equality(round_ctant_b13);
                 let round_constants_b13 = meta.instance_column();
 
                 MyConfig {
@@ -439,8 +413,8 @@ mod tests {
                     || "Mixing Wittnes assignment",
                     |mut region| {
                         // Witness `in_state`
-                        let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                        let in_state: [AssignedCell<F, F>; 25] = {
+                            let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -448,7 +422,7 @@ mod tests {
                                     offset,
                                     || Ok(*val),
                                 )?;
-                                state.push((cell, *val))
+                                state.push(cell)
                             }
                             state.try_into().unwrap()
                         };
@@ -457,9 +431,9 @@ mod tests {
                     },
                 )?;
 
-                let _ = config.mixing_conf.assign_state(
+                config.mixing_conf.assign_state(
                     &mut layouter,
-                    in_state,
+                    &in_state,
                     self.out_state,
                     self.is_mixing,
                     self.next_mixing,

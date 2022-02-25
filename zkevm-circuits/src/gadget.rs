@@ -1,22 +1,17 @@
 //! Reusable gadgets for the zk_evm circuits.
-use halo2::circuit::Cell;
+use halo2_proofs::circuit::AssignedCell;
 use pairing::arithmetic::FieldExt;
 
 /// An assigned cell in the circuit.
 #[derive(Clone, Debug)]
 pub(crate) struct Variable<T, F: FieldExt> {
-    pub(crate) cell: Cell,
-    pub(crate) field_elem: Option<F>,
+    pub(crate) assig_cell: AssignedCell<F, F>,
     pub(crate) value: Option<T>,
 }
 
 impl<T, F: FieldExt> Variable<T, F> {
-    pub(crate) fn new(cell: Cell, field_elem: Option<F>, value: Option<T>) -> Self {
-        Self {
-            cell,
-            field_elem,
-            value,
-        }
+    pub(crate) fn new(assig_cell: AssignedCell<F, F>, value: Option<T>) -> Self {
+        Self { assig_cell, value }
     }
 }
 

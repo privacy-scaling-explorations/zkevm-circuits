@@ -1,7 +1,6 @@
+use eth_types::{Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
-
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 use crate::{
     evm_circuit::{
@@ -26,7 +25,7 @@ pub(crate) struct CallDataSizeGadget<F> {
     call_data_size: RandomLinearCombination<F, N_BYTES_CALLDATASIZE>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
     const NAME: &'static str = "CALLDATASIZE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATASIZE;
@@ -94,7 +93,7 @@ mod test {
 
     use bus_mapping::evm::OpcodeId;
     use eth_types::{bytecode, Word};
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
     use crate::evm_circuit::{

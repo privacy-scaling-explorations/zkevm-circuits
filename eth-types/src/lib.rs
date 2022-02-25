@@ -23,6 +23,7 @@ pub mod geth_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
+use pairing::group::ff::PrimeField;
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
@@ -32,13 +33,22 @@ pub use ethers_core::types::{
     Address, Block, Bytes, H160, H256, U256, U64,
 };
 use pairing::arithmetic::FieldExt;
+use pairing::bn256::Fr;
 use serde::{de, Deserialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
+/// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
+/// trait and it's repr.
+pub trait Field: FieldExt + PrimeField<Repr = [u8; 32]> {}
+
+// Impl custom `Field` trait for BN256 Fr to be used and consistend with the
+// rest of the workspace.
+impl Field for Fr {}
+
 /// Trait used to define types that can be converted to a 256 bit scalar value.
-pub trait ToScalar<F: FieldExt> {
+pub trait ToScalar<F> {
     /// Convert the type to a scalar value.
     fn to_scalar(&self) -> Option<F>;
 }
@@ -89,11 +99,11 @@ impl<'de> Deserialize<'de> for DebugU256 {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for DebugU256 {
+impl<F: Field> ToScalar<F> for DebugU256 {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
-        F::from_bytes(&bytes).into()
+        F::from_repr(bytes).into()
     }
 }
 
@@ -133,11 +143,11 @@ impl ToLittleEndian for U256 {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for U256 {
+impl<F: Field> ToScalar<F> for U256 {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
-        F::from_bytes(&bytes).into()
+        F::from_repr(bytes).into()
     }
 }
 
@@ -164,12 +174,12 @@ impl ToWord for Address {
     }
 }
 
-impl<F: FieldExt> ToScalar<F> for Address {
+impl<F: Field> ToScalar<F> for Address {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         bytes.reverse();
-        F::from_bytes(&bytes).into()
+        F::from_repr(bytes).into()
     }
 }
 

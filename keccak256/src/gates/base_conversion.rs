@@ -1,11 +1,11 @@
-use halo2::{
-    circuit::{Cell, Layouter},
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
 use crate::gates::tables::BaseInfo;
-use pairing::arithmetic::FieldExt;
+use eth_types::Field;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BaseConversionConfig<F> {
@@ -22,7 +22,7 @@ pub(crate) struct BaseConversionConfig<F> {
     output_acc: Column<Advice>,
 }
 
-impl<F: FieldExt> BaseConversionConfig<F> {
+impl<F: Field> BaseConversionConfig<F> {
     /// Side effect: lane and parent_flag is equality enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -38,13 +38,13 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         let output_coef = meta.advice_column();
         let output_acc = meta.advice_column();
 
-        meta.enable_equality(flag.into());
-        meta.enable_equality(input_coef.into());
-        meta.enable_equality(input_acc.into());
-        meta.enable_equality(output_coef.into());
-        meta.enable_equality(output_acc.into());
-        meta.enable_equality(input_lane.into());
-        meta.enable_equality(parent_flag.into());
+        meta.enable_equality(flag);
+        meta.enable_equality(input_coef);
+        meta.enable_equality(input_acc);
+        meta.enable_equality(output_coef);
+        meta.enable_equality(output_acc);
+        meta.enable_equality(input_lane);
+        meta.enable_equality(parent_flag);
 
         meta.create_gate("input running sum", |meta| {
             let q_enable = meta.query_selector(q_running_sum);
@@ -64,7 +64,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
             let power_of_base = base_info.output_pob();
             vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
         });
-        meta.lookup(|meta| {
+        meta.lookup("Lookup i/o_coeff at Base conversion table", |meta| {
             let q_enable = meta.query_selector(q_lookup);
             let flag = meta.query_advice(flag, Rotation::cur());
             let input_slices = meta.query_advice(input_coef, Rotation::cur());
@@ -94,12 +94,15 @@ impl<F: FieldExt> BaseConversionConfig<F> {
     pub(crate) fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        input: (Cell, F),
-        flag: (Cell, F),
-    ) -> Result<(Cell, F), Error> {
-        let (input_coefs, output_coefs, _) = self.base_info.compute_coefs(input.1)?;
+        input: AssignedCell<F, F>,
+        flag: AssignedCell<F, F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        // TODO: Add propper err handling once AssignedCell has a better API for it.
+        let (input_coefs, output_coefs, _) = self
+            .base_info
+            .compute_coefs(*input.value().unwrap_or(&F::zero()))?;
 
-        let (out_cell, out_value) = layouter.assign_region(
+        layouter.assign_region(
             || "Base conversion",
             |mut region| {
                 let mut input_acc = F::zero();
@@ -113,9 +116,8 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                     if offset != 0 {
                         self.q_running_sum.enable(&mut region, offset)?;
                     }
-                    let flag_cell =
-                        region.assign_advice(|| "flag", self.flag, offset, || Ok(flag.1))?;
-                    region.constrain_equal(flag_cell, flag.0)?;
+                    flag.copy_advice(|| "Base conv flag", &mut region, self.flag, offset)?;
+
                     let input_coef_cell = region.assign_advice(
                         || "Input Coef",
                         self.input_coef,
@@ -145,18 +147,16 @@ impl<F: FieldExt> BaseConversionConfig<F> {
 
                     if offset == 0 {
                         // bind first acc to first coef
-                        region.constrain_equal(input_acc_cell, input_coef_cell)?;
-                        region.constrain_equal(output_acc_cell, output_coef_cell)?;
+                        region.constrain_equal(input_acc_cell.cell(), input_coef_cell.cell())?;
+                        region.constrain_equal(output_acc_cell.cell(), output_coef_cell.cell())?;
                     } else if offset == input_coefs.len() - 1 {
                         //region.constrain_equal(input_acc_cell, input.0)?;
-                        return Ok((output_acc_cell, output_acc));
+                        return Ok(output_acc_cell);
                     }
                 }
                 unreachable!();
             },
-        )?;
-
-        Ok((out_cell, out_value))
+        )
     }
 }
 
@@ -168,13 +168,12 @@ mod tests {
         gate_helpers::biguint_to_f,
         tables::{FromBase9TableConfig, FromBinaryTableConfig},
     };
-    use halo2::{
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use num_bigint::BigUint;
-    use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
@@ -188,7 +187,7 @@ mod tests {
             table: FromBinaryTableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
-        impl<F: FieldExt> MyConfig<F> {
+        impl<F: Field> MyConfig<F> {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
@@ -228,23 +227,15 @@ mod tests {
                         Ok((lane, flag))
                     },
                 )?;
-                let output =
-                    self.conversion
-                        .assign_region(layouter, (lane, input), (flag, flag_value))?;
+                let output = self.conversion.assign_region(layouter, lane, flag)?;
                 layouter.assign_region(
                     || "Input lane",
-                    |mut region| {
-                        let cell = region.assign_advice(
-                            || "Output lane",
-                            self.lane,
-                            0,
-                            || Ok(output.1),
-                        )?;
-                        region.constrain_equal(cell, output.0)?;
-                        Ok(())
-                    },
+                    |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
-                Ok(output.1)
+                // TODO: Handle this better once AssignedCell has the API to do so
+                Ok(*output
+                    .value()
+                    .unwrap_or(&F::from_u128(0x22c268c05977fd626636ccu128)))
             }
         }
 
@@ -253,7 +244,7 @@ mod tests {
             input_b2_lane: F,
             output_b13_lane: F,
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -289,7 +280,7 @@ mod tests {
             let root = BitMapBackend::new("base-conversion.png", (1024, 32768)).into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Base conversion", ("sans-serif", 60)).unwrap();
-            halo2::dev::CircuitLayout::default()
+            halo2_proofs::dev::CircuitLayout::default()
                 .mark_equality_cells(true)
                 .render(k, &circuit, &root)
                 .unwrap();
@@ -307,7 +298,7 @@ mod tests {
             table: FromBase9TableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
-        impl<F: FieldExt> MyConfig<F> {
+        impl<F: Field> MyConfig<F> {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBase9TableConfig::configure(meta);
                 let lane = meta.advice_column();
@@ -347,23 +338,14 @@ mod tests {
                         Ok((lane, flag))
                     },
                 )?;
-                let output =
-                    self.conversion
-                        .assign_region(layouter, (lane, input), (flag, flag_value))?;
+
+                let output = self.conversion.assign_region(layouter, lane, flag)?;
                 layouter.assign_region(
                     || "Input lane",
-                    |mut region| {
-                        let cell = region.assign_advice(
-                            || "Output lane",
-                            self.lane,
-                            0,
-                            || Ok(output.1),
-                        )?;
-                        region.constrain_equal(cell, output.0)?;
-                        Ok(())
-                    },
+                    |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
-                Ok(output.1)
+
+                Ok(*output.value().expect("Add propper err handling"))
             }
         }
 
@@ -372,7 +354,7 @@ mod tests {
             input_lane: F,
             output_lane: F,
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

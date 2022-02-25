@@ -12,8 +12,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{ToLittleEndian, ToScalar};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{Field, ToLittleEndian, ToScalar};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelfbalanceGadget<F> {
@@ -22,7 +22,7 @@ pub(crate) struct SelfbalanceGadget<F> {
     self_balance: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for SelfbalanceGadget<F> {
+impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
     const NAME: &'static str = "SELFBALANCE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;

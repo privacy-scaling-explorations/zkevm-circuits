@@ -1,7 +1,7 @@
 //! Evm circuit benchmarks
 
-use halo2::{
-    arithmetic::FieldExt,
+use eth_types::Field;
+use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
@@ -12,7 +12,7 @@ pub struct TestCircuit<F> {
     block: Block<F>,
 }
 
-impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+impl<F: Field> Circuit<F> for TestCircuit<F> {
     type Config = EvmCircuit<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -51,15 +51,14 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
 #[cfg(test)]
 mod evm_circ_benches {
     use super::*;
+    use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
-    use halo2::plonk::{create_proof, keygen_pk, keygen_vk};
-    use halo2::{
-        plonk::verify_proof,
-        poly::commitment::Setup,
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
+    use halo2_proofs::{
+        poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
-    use pairing::bn256::Bn256;
-    use pairing::bn256::Fr;
+    use pairing::bn256::{Bn256, Fr, G1Affine};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
@@ -81,11 +80,11 @@ mod evm_circ_benches {
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let params = Setup::<Bn256>::new(degree, rng);
+        let general_params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
         end_timer!(start1);
 
-        let vk = keygen_vk(&params, &circuit).unwrap();
-        let pk = keygen_pk(&params, vk, &circuit).unwrap();
+        let vk = keygen_vk(&general_params, &circuit).unwrap();
+        let pk = keygen_pk(&general_params, vk, &circuit).unwrap();
 
         // Prove
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
@@ -93,17 +92,33 @@ mod evm_circ_benches {
         // Bench proof generation time
         let proof_message = format!("EVM Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
-        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript).unwrap();
+        create_proof(
+            &general_params,
+            &pk,
+            &[circuit],
+            &[&[]],
+            rng,
+            &mut transcript,
+        )
+        .unwrap();
         let proof = transcript.finalize();
         end_timer!(start2);
 
         // Verify
-        let params = Setup::<Bn256>::verifier_params(&params, 0).unwrap();
-        let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
+        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleVerifier::new(&verifier_params);
 
         // Bench verification time
         let start3 = start_timer!(|| "EVM Proof verification");
-        verify_proof(&params, pk.get_vk(), &[&[]], &mut transcript).unwrap();
+        verify_proof(
+            &verifier_params,
+            pk.get_vk(),
+            strategy,
+            &[],
+            &mut verifier_transcript,
+        )
+        .unwrap();
         end_timer!(start3);
     }
 }

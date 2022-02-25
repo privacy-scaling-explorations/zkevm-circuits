@@ -7,7 +7,8 @@ use crate::{
     },
 };
 use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
-use halo2::{
+use eth_types::Field;
+use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -125,7 +126,7 @@ pub struct Config<
 }
 
 impl<
-        F: FieldExt,
+        F: Field,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
@@ -338,7 +339,7 @@ impl<
         // rw_counter monotonicity is checked for memory and stack when
         // address_cur == address_prev. (Recall that operations are
         // ordered first by address, and then by rw_counter.)
-        meta.lookup_any(|meta| {
+        meta.lookup_any("rw counter monotonicity", |meta| {
             let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
             let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
@@ -358,7 +359,7 @@ impl<
         });
 
         // Memory address is in the allowed range.
-        meta.lookup_any(|meta| {
+        meta.lookup_any("Memory address in allowed range", |meta| {
             let q_memory = q_memory_first(meta) + q_memory_not_first(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
@@ -368,7 +369,7 @@ impl<
         });
 
         // Stack address is in the allowed range.
-        meta.lookup_any(|meta| {
+        meta.lookup_any("Stack address in allowed range", |meta| {
             let q_stack = q_stack_first(meta) + q_stack_not_first(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
@@ -378,7 +379,7 @@ impl<
         });
 
         // rw_counter is in the allowed range:
-        meta.lookup_any(|meta| {
+        meta.lookup_any("Global Counter in allowed range", |meta| {
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
             let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
 
@@ -388,7 +389,7 @@ impl<
         // Memory value (for non-first rows) is in the allowed range.
         // Memory first row value doesn't need to be checked - it is checked
         // above where memory init row value has to be 0.
-        meta.lookup_any(|meta| {
+        meta.lookup_any("Memory value in allowed range", |meta| {
             let q_memory_not_first = q_memory_not_first(meta);
             let value = meta.query_advice(value, Rotation::cur());
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
@@ -491,7 +492,7 @@ impl<
         // (Recall that storage operations are ordered first by account address,
         // then by storage_key, and finally by rw_counter.)
 
-        meta.lookup_any(|meta| {
+        meta.lookup_any("Global Counter in allowed range", |meta| {
             let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
             let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
@@ -912,11 +913,7 @@ impl<
     ) -> Result<BusMapping<F>, Error> {
         let address = {
             let cell = region.assign_advice(|| "address", self.address, offset, || Ok(address))?;
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(address),
-                value: Some(address),
-            }
+            Variable::<F, F>::new(cell, Some(address))
         };
 
         if SANITY_CHECK && rw_counter > F::from(RW_COUNTER_MAX as u64) {
@@ -930,21 +927,13 @@ impl<
                 || Ok(rw_counter),
             )?;
 
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(rw_counter),
-                value: Some(rw_counter),
-            }
+            Variable::<F, F>::new(cell, Some(rw_counter))
         };
 
         let value = {
             let cell = region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
 
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(value),
-                value: Some(value),
-            }
+            Variable::<F, F>::new(cell, Some(value))
         };
 
         let storage_key = {
@@ -955,11 +944,7 @@ impl<
                 || Ok(storage_key),
             )?;
 
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(storage_key),
-                value: Some(storage_key),
-            }
+            Variable::<F, F>::new(cell, Some(storage_key))
         };
 
         let value_prev = {
@@ -970,30 +955,18 @@ impl<
                 || Ok(value_prev),
             )?;
 
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(value_prev),
-                value: Some(value_prev),
-            }
+            Variable::<F, F>::new(cell, Some(value_prev))
         };
 
         let flag = {
             let cell = region.assign_advice(|| "flag", self.flag, offset, || Ok(flag))?;
 
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(flag),
-                value: Some(flag),
-            }
+            Variable::<F, F>::new(cell, Some(flag))
         };
 
         let target = {
             let cell = region.assign_fixed(|| "target", self.q_target, offset, || Ok(target))?;
-            Variable::<F, F> {
-                cell,
-                field_elem: Some(target),
-                value: Some(target),
-            }
+            Variable::<F, F>::new(cell, Some(target))
         };
 
         Ok(BusMapping {
@@ -1079,7 +1052,7 @@ impl<
 }
 
 impl<
-        F: FieldExt,
+        F: Field,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
@@ -1142,8 +1115,8 @@ mod tests {
     use bus_mapping::operation::{MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW};
     use eth_types::evm_types::{MemoryAddress, StackAddress};
     use eth_types::{address, bytecode, Word};
-    use halo2::arithmetic::BaseExt;
-    use halo2::dev::{MockProver, VerifyFailure::ConstraintNotSatisfied, VerifyFailure::Lookup};
+    use halo2_proofs::arithmetic::BaseExt;
+    use halo2_proofs::dev::MockProver;
     use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit_ok {
@@ -1181,23 +1154,6 @@ mod tests {
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             assert!(prover.verify().is_err());
         }};
-    }
-
-    fn constraint_not_satisfied(
-        row: usize,
-        gate_index: usize,
-        gate_name: &'static str,
-        index: usize,
-    ) -> halo2::dev::VerifyFailure {
-        ConstraintNotSatisfied {
-            constraint: ((gate_index, gate_name).into(), index, "").into(),
-            row,
-            cell_values: vec![],
-        }
-    }
-
-    fn lookup_fail(row: usize, lookup_index: usize) -> halo2::dev::VerifyFailure {
-        Lookup { lookup_index, row }
     }
 
     #[test]

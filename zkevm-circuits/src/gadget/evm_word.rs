@@ -8,21 +8,21 @@
 
 use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
-use halo2::{
+use eth_types::Field;
+use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
 #[cfg(test)]
-use halo2::circuit::Layouter;
+use halo2_proofs::circuit::Layouter;
 
 // r = hash([0, 1, ..., 255])
 // TODO: Move into crate-level `constants` file.
-pub(crate) fn r<F: FieldExt>() -> F {
+pub(crate) fn r<F: Field>() -> F {
     let mut hasher = Keccak256::new();
     for byte in 0..=u8::MAX {
         hasher.process(&[byte]);
@@ -33,7 +33,7 @@ pub(crate) fn r<F: FieldExt>() -> F {
 }
 
 // Returns encoding of big-endian representation of a 256-bit word.
-pub(crate) fn encode<F: FieldExt>(vals: impl Iterator<Item = u8>, r: F) -> F {
+pub(crate) fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
     vals.fold(F::zero(), |acc, val| {
         let byte = F::from(val as u64);
         acc * r + byte
@@ -41,9 +41,9 @@ pub(crate) fn encode<F: FieldExt>(vals: impl Iterator<Item = u8>, r: F) -> F {
 }
 
 /// A 256-bit word represented in the circuit as 32 bytes.
-pub(crate) struct Word<F: FieldExt>([Variable<u8, F>; 32]);
+pub(crate) struct Word<F: Field>([Variable<u8, F>; 32]);
 
-impl<F: FieldExt> Word<F> {
+impl<F: Field> Word<F> {
     fn encoded_val(&self, r: F) -> Option<F> {
         if self.0[0].value.is_some() {
             let val = self.0.iter().rev().map(|var| var.value.unwrap());
@@ -56,7 +56,7 @@ impl<F: FieldExt> Word<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct WordConfig<F: FieldExt> {
+pub(crate) struct WordConfig<F: Field> {
     // Randomness used to compress the word encoding.
     r: F,
     // Selector to toggle the word encoding gate.
@@ -71,7 +71,7 @@ pub(crate) struct WordConfig<F: FieldExt> {
     pub encode_word_expr: Expression<F>,
 }
 
-impl<F: FieldExt> WordConfig<F> {
+impl<F: Field> WordConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         r: F,
@@ -88,7 +88,7 @@ impl<F: FieldExt> WordConfig<F> {
         // TODO: Understand why the `for` loop cannot be moved into
         // the meta.lookup_any() call.
         for byte in bytes.iter().rev() {
-            meta.lookup_any(|meta| {
+            meta.lookup_any("Word byte for range", |meta| {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
@@ -153,7 +153,7 @@ impl<F: FieldExt> WordConfig<F> {
                 || byte_field_elem.ok_or(Error::Synthesis),
             )?;
 
-            bytes.push(Variable::new(cell, byte_field_elem, *byte));
+            bytes.push(Variable::new(cell, *byte));
         }
 
         Ok(Word(bytes.try_into().unwrap()))
@@ -163,11 +163,11 @@ impl<F: FieldExt> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2::{
-        arithmetic::Field,
-        arithmetic::FieldExt,
+    use ff::PrimeField;
+    use halo2_proofs::arithmetic::Field as HaloField;
+    use halo2_proofs::{
         circuit::SimpleFloorPlanner,
-        dev::{MockProver, VerifyFailure},
+        dev::{FailureLocation, MockProver, VerifyFailure},
         plonk::{Circuit, Instance},
     };
     use pairing::bn256::Fr as Fp;
@@ -178,12 +178,12 @@ mod tests {
     #[test]
     fn evm_word() {
         #[derive(Default)]
-        struct MyCircuit<F: FieldExt> {
+        struct MyCircuit<F: Field> {
             word: [Option<u8>; 32],
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             // Introduce an additional instance column here to test lookups
             // with public inputs. This is analogous to the bus mapping
             // commitment which will be provided as public inputs.
@@ -212,7 +212,7 @@ mod tests {
 
                 // Make sure each encoded word has been committed to in the
                 // public inputs.
-                meta.lookup_any(|meta| {
+                meta.lookup_any("Encoded word / Pub inputs", |meta| {
                     let q_encode = meta.query_selector(q_encode);
                     let pub_inputs = meta.query_instance(pub_inputs, Rotation::cur());
 
@@ -251,7 +251,7 @@ mod tests {
             let word = Fp::random(rng);
             let circuit = MyCircuit::<Fp> {
                 word: word
-                    .to_bytes()
+                    .to_repr()
                     .iter()
                     .map(|b| Some(*b))
                     .collect::<Vec<_>>()
@@ -265,13 +265,20 @@ mod tests {
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
+                    name: "Encoded word / Pub inputs",
                     lookup_index: 32,
-                    row: 0
+                    location: FailureLocation::InRegion {
+                        region: halo2_proofs::dev::metadata::Region::from((
+                            1,
+                            "assign word".to_string()
+                        )),
+                        offset: 0
+                    }
                 }])
             );
 
             // Calculate word commitment and use it as public input.
-            let encoded: Fp = encode(word.to_bytes().iter().rev().cloned(), r());
+            let encoded: Fp = encode(word.to_repr().iter().rev().cloned(), r());
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]).unwrap();
             assert_eq!(prover.verify(), Ok(()))
         }

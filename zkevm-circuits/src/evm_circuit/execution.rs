@@ -8,7 +8,8 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{
+use eth_types::Field;
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
@@ -131,7 +132,7 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionConfig<F> {
+impl<F: Field> ExecutionConfig<F> {
     pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
@@ -168,14 +169,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     .state
                     .execution_state
                     .iter()
-                    .fold(1.expr(), |acc, cell| acc - cell.expr()),
+                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
             );
 
             // Cells representation for execution_state should be bool.
             let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
                 (
                     "Representation for execution_state should be bool",
-                    cell.expr() * (1.expr() - cell.expr()),
+                    cell.expr() * (1u64.expr() - cell.expr()),
                 )
             });
 
@@ -186,7 +187,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let begin_tx_selector = step_curr.execution_state_selector(ExecutionState::BeginTx);
                 std::iter::once((
                     "First step should be BeginTx",
-                    q_step_first * (begin_tx_selector - 1.expr()),
+                    q_step_first * (begin_tx_selector - 1u64.expr()),
                 ))
             };
 
@@ -200,15 +201,15 @@ impl<F: FieldExt> ExecutionConfig<F> {
         // column. In this way, ExecutionGadget could enable the byte range
         // lookup by enable qs_byte_lookup.
         for advice in advices {
-            meta.lookup_any(|meta| {
+            meta.lookup_any("Qs byte", |meta| {
                 let advice = meta.query_advice(advice, Rotation::cur());
                 let qs_byte_lookup = meta.query_advice(qs_byte_lookup, Rotation::cur());
 
                 vec![
                     qs_byte_lookup.clone() * FixedTableTag::Range256.expr(),
                     qs_byte_lookup * advice,
-                    0.expr(),
-                    0.expr(),
+                    0u64.expr(),
+                    0u64.expr(),
                 ]
                 .into_iter()
                 .zip(fixed_table.table_exprs(meta).to_vec().into_iter())
@@ -376,10 +377,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
         }
 
         macro_rules! lookup {
-            ($id:path, $table:ident) => {
+            ($id:path, $table:ident, $descrip:expr) => {
                 if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
                     for input_exprs in acc_lookups {
-                        meta.lookup_any(|meta| {
+                        meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
                             let q_step = meta.query_selector(q_step);
                             input_exprs
                                 .into_iter()
@@ -392,11 +393,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
             };
         }
 
-        lookup!(Table::Fixed, fixed_table);
-        lookup!(Table::Tx, tx_table);
-        lookup!(Table::Rw, rw_table);
-        lookup!(Table::Bytecode, bytecode_table);
-        lookup!(Table::Block, block_table);
+        lookup!(Table::Fixed, fixed_table, "fixed table");
+        lookup!(Table::Tx, tx_table, "Tx table");
+        lookup!(Table::Rw, rw_table, "RW table");
+        lookup!(Table::Bytecode, bytecode_table, "Bytecode table");
+        lookup!(Table::Block, block_table, "Block table");
     }
 
     pub fn assign_block(

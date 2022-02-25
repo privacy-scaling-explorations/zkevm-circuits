@@ -13,8 +13,9 @@ use crate::{
     },
     util::Expr,
 };
+use eth_types::Field;
 use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -23,7 +24,7 @@ pub(crate) struct CoinbaseGadget<F> {
     coinbase_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CoinbaseGadget<F> {
     const NAME: &'static str = "COINBASE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::COINBASE;
