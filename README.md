@@ -1,4 +1,4 @@
-# Circuits for zkEVM
+# Circuits for zkEV
 
 [![CI checks](https://github.com/appliedzkp/zkevm-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/appliedzkp/zkevm-circuits/actions/workflows/ci.yml)
 
