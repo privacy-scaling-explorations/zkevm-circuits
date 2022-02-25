@@ -5,8 +5,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{ToLittleEndian, ToScalar, Word};
-use ff::PrimeField;
+use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::plonk::Error;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 use std::convert::TryFrom;
@@ -98,7 +97,7 @@ pub(crate) struct AddWordsGadget<F, const N: usize> {
     carry_hi: Cell<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>, const N: usize> AddWordsGadget<F, N> {
+impl<F: Field, const N: usize> AddWordsGadget<F, N> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addends: [util::Word<F>; N]) -> Self {
         let sum = cb.query_word();
         let carry_lo = cb.query_cell();
@@ -472,7 +471,7 @@ pub struct RangeCheckGadget<F, const N_BYTES: usize> {
     parts: [Cell<F>; N_BYTES],
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
+impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         let parts = cb.query_bytes();
 
@@ -518,7 +517,7 @@ pub struct LtGadget<F, const N_BYTES: usize> {
     range: F, // The range of the inputs, `256**N_BYTES`
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>, const N_BYTES: usize> LtGadget<F, N_BYTES> {
+impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
@@ -580,7 +579,7 @@ pub struct ComparisonGadget<F, const N_BYTES: usize> {
     eq: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
+impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
@@ -677,9 +676,7 @@ pub struct ConstantDivisionGadget<F, const N_BYTES: usize> {
     quotient_range_check: RangeCheckGadget<F, N_BYTES>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>, const N_BYTES: usize>
-    ConstantDivisionGadget<F, N_BYTES>
-{
+impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         numerator: Expression<F>,
@@ -750,7 +747,7 @@ pub struct MinMaxGadget<F, const N_BYTES: usize> {
     max: Expression<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
+impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,

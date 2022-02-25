@@ -12,8 +12,8 @@ use crate::{
     },
     util::Expr,
 };
-use ff::PrimeField;
-use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct MsizeGadget<F> {
@@ -21,7 +21,7 @@ pub(crate) struct MsizeGadget<F> {
     value: RandomLinearCombination<F, 8>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for MsizeGadget<F> {
+impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
     const NAME: &'static str = "MSIZE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;

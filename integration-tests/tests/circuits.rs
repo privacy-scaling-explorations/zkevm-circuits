@@ -16,9 +16,8 @@ lazy_static! {
 /// usable EVM Circuit yet.  The code in this module is copied from
 /// `zkevm_circuits::evm_circuit::test` at `zkevm-circuits/src/evm_circuit.rs`.
 mod test_evm_circuit {
-    use ff::PrimeField;
+    use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::*,
@@ -40,7 +39,7 @@ mod test_evm_circuit {
         evm_circuit: EvmCircuit<F>,
     }
 
-    impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> TestCircuitConfig<F> {
+    impl<F: Field> TestCircuitConfig<F> {
         fn load_txs(
             &self,
             layouter: &mut impl Layouter<F>,
@@ -160,7 +159,7 @@ mod test_evm_circuit {
         }
     }
 
-    impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> Circuit<F> for TestCircuit<F> {
+    impl<F: Field> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -220,13 +219,13 @@ mod test_evm_circuit {
         }
     }
 
-    pub fn run_test_circuit_complete_fixed_table<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+    pub fn run_test_circuit_complete_fixed_table<F: Field>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
     }
 
-    fn run_test_circuit<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+    fn run_test_circuit<F: Field>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {

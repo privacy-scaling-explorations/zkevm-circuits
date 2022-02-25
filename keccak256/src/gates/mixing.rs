@@ -6,6 +6,7 @@ use super::{
 };
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
+use eth_types::Field;
 use halo2_proofs::circuit::{AssignedCell, Region};
 use halo2_proofs::plonk::{Expression, Instance, Selector};
 use halo2_proofs::poly::Rotation;
@@ -13,8 +14,6 @@ use halo2_proofs::{
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use pairing::arithmetic::FieldExt;
-use pairing::group::ff::PrimeField;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -30,10 +29,7 @@ pub struct MixingConfig<F> {
     out_mixing: [Column<Advice>; 25],
 }
 
-impl<F: FieldExt> MixingConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> MixingConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         table: &FromBase9TableConfig<F>,
@@ -362,20 +358,14 @@ mod tests {
             table: FromBase9TableConfig<F>,
         }
 
-        impl<F: FieldExt> MyConfig<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> MyConfig<F> {
             pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)?;
                 Ok(())
             }
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

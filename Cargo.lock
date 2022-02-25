@@ -475,6 +475,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std",
  "bus-mapping",
+ "eth-types",
  "ff 0.11.0",
  "halo2_proofs",
  "itertools",
@@ -2073,6 +2074,7 @@ checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
+ "eth-types",
  "halo2_proofs",
  "itertools",
  "num-bigint",

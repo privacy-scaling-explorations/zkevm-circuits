@@ -111,13 +111,12 @@ use crate::gates::{
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
-use pairing::group::ff::PrimeField;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
@@ -136,10 +135,7 @@ pub struct LaneRotateConversionConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> LaneRotateConversionConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> LaneRotateConversionConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         lane_idx: usize,
@@ -398,7 +394,7 @@ pub struct SumConfig<F> {
     sum: Column<Advice>,
     _marker: PhantomData<F>,
 }
-impl<F: FieldExt> SumConfig<F> {
+impl<F: Field> SumConfig<F> {
     // We assume the input columns are all copiable
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enable = meta.selector();
@@ -457,10 +453,7 @@ pub struct OverflowCheckConfig<F> {
     step2_acc: Column<Advice>,
     step3_acc: Column<Advice>,
 }
-impl<F: FieldExt> OverflowCheckConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> OverflowCheckConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         cols_to_copy: Vec<Column<Advice>>,

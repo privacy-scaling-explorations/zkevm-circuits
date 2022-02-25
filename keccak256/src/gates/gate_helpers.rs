@@ -1,14 +1,11 @@
+use eth_types::Field;
 use num_bigint::BigUint;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 
 /// Convert a bigUint value to FieldExt
 ///
 /// We assume the input value is smaller than the field size
-pub fn biguint_to_f<F: FieldExt>(x: &BigUint) -> F
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+pub fn biguint_to_f<F: Field>(x: &BigUint) -> F {
     let mut x_bytes = x.to_bytes_le();
     debug_assert!(
         x_bytes.len() <= 32,
@@ -20,10 +17,7 @@ where
     F::from_repr_vartime(x_bytes).unwrap()
 }
 
-pub fn f_to_biguint<F: FieldExt>(x: F) -> BigUint
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+pub fn f_to_biguint<F: Field>(x: F) -> BigUint {
     BigUint::from_bytes_le(&x.to_repr())
 }
 

@@ -5,7 +5,7 @@ use halo2_proofs::{
 };
 
 use crate::gates::tables::BaseInfo;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
+use eth_types::Field;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BaseConversionConfig<F> {
@@ -22,10 +22,7 @@ pub(crate) struct BaseConversionConfig<F> {
     output_acc: Column<Advice>,
 }
 
-impl<F: FieldExt> BaseConversionConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> BaseConversionConfig<F> {
     /// Side effect: lane and parent_flag is equality enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -177,7 +174,6 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use num_bigint::BigUint;
-    use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
@@ -191,10 +187,7 @@ mod tests {
             table: FromBinaryTableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
-        impl<F: FieldExt> MyConfig<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> MyConfig<F> {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
@@ -251,10 +244,7 @@ mod tests {
             input_b2_lane: F,
             output_b13_lane: F,
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -308,10 +298,7 @@ mod tests {
             table: FromBase9TableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
-        impl<F: FieldExt> MyConfig<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> MyConfig<F> {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBase9TableConfig::configure(meta);
                 let lane = meta.advice_column();
@@ -367,10 +354,7 @@ mod tests {
             input_lane: F,
             output_lane: F,
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

@@ -1,12 +1,11 @@
 use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
 use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, TableColumn},
 };
-use pairing::group::ff::PrimeField;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -24,7 +23,7 @@ pub struct RangeCheckConfig<F, const K: u64> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const K: u64> RangeCheckConfig<F, K> {
+impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "range",
@@ -53,7 +52,7 @@ pub struct Base13toBase9TableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> Base13toBase9TableConfig<F> {
+impl<F: Field> Base13toBase9TableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "13 -> 9",
@@ -120,7 +119,7 @@ pub struct SpecialChunkTableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SpecialChunkTableConfig<F> {
+impl<F: Field> SpecialChunkTableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "Special Chunks",
@@ -177,10 +176,7 @@ pub(crate) struct BaseInfo<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BaseInfo<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> BaseInfo<F> {
     pub fn input_pob(&self) -> F {
         F::from(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
@@ -250,7 +246,7 @@ pub struct FromBinaryTableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> FromBinaryTableConfig<F> {
+impl<F: Field> FromBinaryTableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "2 -> (9 and 13)",
@@ -316,7 +312,7 @@ pub struct FromBase9TableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> FromBase9TableConfig<F> {
+impl<F: Field> FromBase9TableConfig<F> {
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "9 -> (2 and 13)",

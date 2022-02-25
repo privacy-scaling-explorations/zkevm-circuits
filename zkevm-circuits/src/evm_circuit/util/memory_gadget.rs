@@ -11,11 +11,12 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use eth_types::evm_types::GasCost;
-use eth_types::{ToLittleEndian, U256};
-use ff::PrimeField;
-use halo2_proofs::plonk::Error;
-use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    circuit::Region,
+    plonk::{Error, Expression},
+};
 use std::convert::TryInto;
 
 /// Decodes the usable part of an address stored in a Word
@@ -161,7 +162,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
     memory_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> MemoryWordSizeGadget<F> {
+impl<F: Field> MemoryWordSizeGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address: Expression<F>) -> Self {
         let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
 
@@ -200,11 +201,8 @@ pub(crate) struct MemoryExpansionGadget<F, const N: usize, const N_BYTES_MEMORY_
     gas_cost: Expression<F>,
 }
 
-impl<
-        F: FieldExt + PrimeField<Repr = [u8; 32]>,
-        const N: usize,
-        const N_BYTES_MEMORY_WORD_SIZE: usize,
-    > MemoryExpansionGadget<F, N, N_BYTES_MEMORY_WORD_SIZE>
+impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
+    MemoryExpansionGadget<F, N, N_BYTES_MEMORY_WORD_SIZE>
 {
     /// Input requirements:
     /// - `curr_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
@@ -343,7 +341,7 @@ pub(crate) struct MemoryCopierGasGadget<F> {
     gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> MemoryCopierGasGadget<F> {
+impl<F: Field> MemoryCopierGasGadget<F> {
     pub const GAS_COPY: GasCost = GasCost::COPY;
     pub const WORD_SIZE: u64 = 32u64;
 
@@ -410,11 +408,8 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
     min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
 
-impl<
-        F: FieldExt + PrimeField<Repr = [u8; 32]>,
-        const MAX_BYTES: usize,
-        const ADDR_SIZE_IN_BYTES: usize,
-    > BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
+    BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,

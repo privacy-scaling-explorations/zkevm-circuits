@@ -16,6 +16,7 @@ bus-mapping = { path = "../bus-mapping" }
 rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10"
+eth-types = { path = "../eth-types" }
 
 [features]
 default = []

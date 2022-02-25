@@ -1,7 +1,7 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2_proofs::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
+use halo2_proofs::{circuit::Layouter, plonk::*};
 
 mod execution;
 pub mod param;
@@ -11,8 +11,8 @@ pub(crate) mod util;
 pub mod table;
 pub mod witness;
 
+use eth_types::Field;
 use execution::ExecutionConfig;
-use ff::PrimeField;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
 
@@ -23,7 +23,7 @@ pub struct EvmCircuit<F> {
     execution: ExecutionConfig<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> EvmCircuit<F> {
+impl<F: Field> EvmCircuit<F> {
     /// Configure EvmCircuit
     pub fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
@@ -111,10 +111,9 @@ pub mod test {
         rw_table::RwTable,
         util::Expr,
     };
-    use eth_types::{evm_types::GasCost, Word};
-    use ff::PrimeField;
+    use eth_types::{evm_types::GasCost, Field, Word};
     use halo2_proofs::{
-        arithmetic::{BaseExt, FieldExt},
+        arithmetic::BaseExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
@@ -159,7 +158,7 @@ pub mod test {
         evm_circuit: EvmCircuit<F>,
     }
 
-    impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> TestCircuitConfig<F> {
+    impl<F: Field> TestCircuitConfig<F> {
         fn load_txs(
             &self,
             layouter: &mut impl Layouter<F>,
@@ -316,7 +315,7 @@ pub mod test {
         }
     }
 
-    impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> Circuit<F> for TestCircuit<F> {
+    impl<F: Field> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -378,7 +377,7 @@ pub mod test {
         }
     }
 
-    pub fn run_test_circuit<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+    pub fn run_test_circuit<F: Field>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -412,7 +411,7 @@ pub mod test {
         prover.verify()
     }
 
-    pub fn run_test_circuit_incomplete_fixed_table<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+    pub fn run_test_circuit_incomplete_fixed_table<F: Field>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(
@@ -428,7 +427,7 @@ pub mod test {
         )
     }
 
-    pub fn run_test_circuit_complete_fixed_table<F: FieldExt + PrimeField<Repr = [u8; 32]>>(
+    pub fn run_test_circuit_complete_fixed_table<F: Field>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())

@@ -12,9 +12,9 @@ use crate::{
     },
     util::Expr,
 };
+use eth_types::Field;
 use eth_types::ToLittleEndian;
-use ff::PrimeField;
-use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallValueGadget<F> {
@@ -24,7 +24,7 @@ pub(crate) struct CallValueGadget<F> {
     call_value: Cell<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionGadget<F> for CallValueGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
     const NAME: &'static str = "CALLVALUE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLVALUE;

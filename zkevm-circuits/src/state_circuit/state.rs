@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
-use ff::PrimeField;
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -126,7 +126,7 @@ pub struct Config<
 }
 
 impl<
-        F: FieldExt + PrimeField<Repr = [u8; 32]>,
+        F: Field,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
@@ -1052,7 +1052,7 @@ impl<
 }
 
 impl<
-        F: FieldExt + PrimeField<Repr = [u8; 32]>,
+        F: Field,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,

@@ -1,10 +1,10 @@
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::{convert::TryInto, marker::PhantomData};
 
 #[derive(Clone, Debug)]
@@ -15,10 +15,7 @@ pub struct XiConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> XiConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> XiConfig<F> {
     pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
@@ -113,7 +110,6 @@ mod tests {
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -127,10 +123,7 @@ mod tests {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = XiConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

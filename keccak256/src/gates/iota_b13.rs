@@ -1,14 +1,13 @@
 use crate::arith_helpers::*;
 use crate::common::*;
 use crate::keccak_arith::*;
+use eth_types::Field;
 use halo2_proofs::circuit::{AssignedCell, Layouter};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
-use pairing::group::ff::PrimeField;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -23,10 +22,7 @@ pub struct IotaB13Config<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> IotaB13Config<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> IotaB13Config<F> {
     // We assume state is recieved in base-9.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -225,10 +221,7 @@ mod tests {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = IotaB13Config<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

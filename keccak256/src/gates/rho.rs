@@ -4,11 +4,11 @@ use crate::gates::{
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };
 
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
@@ -22,10 +22,7 @@ pub struct RhoConfig<F> {
     step3_range_table: RangeCheckConfig<F, STEP3_RANGE>,
 }
 
-impl<F: FieldExt> RhoConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> RhoConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>, state: [Column<Advice>; 25]) -> Self {
         let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
         let special_chunk_table = SpecialChunkTableConfig::configure(meta);
@@ -129,7 +126,6 @@ mod tests {
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     #[test]
@@ -139,10 +135,7 @@ mod tests {
             in_state: [F; 25],
             out_state: [F; 25],
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = RhoConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

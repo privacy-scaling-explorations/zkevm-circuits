@@ -1,8 +1,7 @@
 //! Evm circuit benchmarks
 
-use ff::PrimeField;
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
@@ -16,7 +15,7 @@ struct KeccakRoundTestCircuit<F> {
     is_mixing: bool,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> Circuit<F> for KeccakRoundTestCircuit<F> {
+impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
     type Config = KeccakFConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 

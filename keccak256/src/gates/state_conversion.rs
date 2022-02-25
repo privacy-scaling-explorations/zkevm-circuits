@@ -5,7 +5,7 @@ use halo2_proofs::{
 
 use crate::gates::base_conversion::BaseConversionConfig;
 use crate::gates::tables::BaseInfo;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
+use eth_types::Field;
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
@@ -15,10 +15,7 @@ pub(crate) struct StateBaseConversion<F> {
     state: [Column<Advice>; 25],
 }
 
-impl<F: FieldExt> StateBaseConversion<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> StateBaseConversion<F> {
     /// Side effect: parent flag is enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -68,7 +65,6 @@ mod tests {
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
-    use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
@@ -82,10 +78,7 @@ mod tests {
             table: FromBinaryTableConfig<F>,
             conversion: StateBaseConversion<F>,
         }
-        impl<F: FieldExt> MyConfig<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> MyConfig<F> {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let state: [Column<Advice>; 25] = (0..25)
@@ -154,10 +147,7 @@ mod tests {
             in_state: [F; 25],
             out_state: [F; 25],
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

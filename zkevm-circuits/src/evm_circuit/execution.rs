@@ -8,7 +8,7 @@ use crate::{
     },
     util::Expr,
 };
-use ff::PrimeField;
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
@@ -132,7 +132,7 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> ExecutionConfig<F> {
+impl<F: Field> ExecutionConfig<F> {
     pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],

@@ -8,17 +8,17 @@ use crate::{
     },
     keccak_arith::*,
 };
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
-pub struct KeccakFConfig<F: FieldExt> {
+pub struct KeccakFConfig<F: Field> {
     theta_config: ThetaConfig<F>,
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
@@ -31,10 +31,7 @@ pub struct KeccakFConfig<F: FieldExt> {
     base_conv_activator: Column<Advice>,
 }
 
-impl<F: FieldExt> KeccakFConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let state = (0..25)
@@ -309,10 +306,7 @@ mod tests {
             is_mixing: bool,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = KeccakFConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

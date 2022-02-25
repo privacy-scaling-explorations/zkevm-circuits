@@ -1,9 +1,9 @@
 use crate::common::State;
+use eth_types::Field;
 use halo2_proofs::circuit::AssignedCell;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::ops::{Index, IndexMut};
 
 pub const B2: u8 = 2;
@@ -192,10 +192,7 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
-pub fn state_to_biguint<F: FieldExt, const N: usize>(state: [F; N]) -> StateBigInt
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+pub fn state_to_biguint<F: Field, const N: usize>(state: [F; N]) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
@@ -205,16 +202,13 @@ where
     }
 }
 
-pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> State
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+pub fn state_to_state_bigint<F: Field, const N: usize>(state: [F; N]) -> State {
     let mut matrix = [[0u64; 5]; 5];
 
     let mut elems: Vec<u64> = state
         .iter()
         .map(|elem| elem.to_repr())
-        // This is horrible. But FieldExt does not give much better alternatives
+        // This is horrible. But Field does not give much better alternatives
         // and refactoring `State` will be done once the
         // keccak_all_togheter is done.
         .map(|bytes| {
@@ -232,10 +226,7 @@ where
     matrix
 }
 
-pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) -> [F; N]
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+pub fn state_bigint_to_field<F: Field, const N: usize>(state: StateBigInt) -> [F; N] {
     let mut arr = [F::zero(); N];
     let vector: Vec<F> = state
         .xy
@@ -253,7 +244,7 @@ where
 }
 
 /// Returns only the value of a an assigned state cell.
-pub fn split_state_cells<F: FieldExt, const N: usize>(state: [AssignedCell<F, F>; N]) -> [F; N] {
+pub fn split_state_cells<F: Field, const N: usize>(state: [AssignedCell<F, F>; N]) -> [F; N] {
     let mut res = [F::zero(); N];
     state
         .iter()
@@ -262,7 +253,7 @@ pub fn split_state_cells<F: FieldExt, const N: usize>(state: [AssignedCell<F, F>
     res
 }
 
-pub fn f_from_radix_be<F: FieldExt>(buf: &[u8], base: u8) -> F {
+pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
     let base = F::from(base.into());
     buf.iter()
         .fold(F::zero(), |acc, &x| acc * base + F::from(x.into()))

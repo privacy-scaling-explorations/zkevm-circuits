@@ -2,6 +2,7 @@ use crate::arith_helpers::*;
 use crate::common::*;
 use crate::gates::gate_helpers::biguint_to_f;
 use crate::keccak_arith::*;
+use eth_types::Field;
 use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::circuit::Layouter;
 use halo2_proofs::plonk::Instance;
@@ -11,8 +12,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
-use pairing::group::ff::PrimeField;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -26,10 +25,7 @@ pub struct IotaB9Config<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> IotaB9Config<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> IotaB9Config<F> {
     pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
@@ -300,10 +296,7 @@ mod tests {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = IotaB9Config<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -457,10 +450,7 @@ mod tests {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = IotaB9Config<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

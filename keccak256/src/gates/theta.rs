@@ -1,11 +1,11 @@
 use crate::arith_helpers::*;
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::{arithmetic::FieldExt, group::ff::PrimeField};
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -16,10 +16,7 @@ pub struct ThetaConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ThetaConfig<F>
-where
-    F: PrimeField<Repr = [u8; 32]>,
-{
+impl<F: Field> ThetaConfig<F> {
     pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
@@ -112,7 +109,7 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
@@ -124,10 +121,7 @@ mod tests {
             out_state: [F; 25],
             _marker: PhantomData<F>,
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F>
-        where
-            F: PrimeField<Repr = [u8; 32]>,
-        {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = ThetaConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

@@ -1,8 +1,7 @@
 //! Evm circuit benchmarks
 
-use ff::PrimeField;
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
@@ -13,7 +12,7 @@ pub struct TestCircuit<F> {
     block: Block<F>,
 }
 
-impl<F: FieldExt + PrimeField<Repr = [u8; 32]>> Circuit<F> for TestCircuit<F> {
+impl<F: Field> Circuit<F> for TestCircuit<F> {
     type Config = EvmCircuit<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
