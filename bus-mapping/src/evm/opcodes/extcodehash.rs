@@ -73,36 +73,59 @@ mod extcodehash_tests {
         circuit_input_builder::{ExecStep, TransactionContext},
         mock::BlockData,
     };
-    use eth_types::{address, bytecode, evm_types::StackAddress, ToWord};
-    use eth_types::{H160, U256};
+    use eth_types::{address, bytecode, evm_types::StackAddress, Address, Bytecode, ToWord, U256};
+    use lazy_static::lazy_static;
     use mock::new_single_tx_trace_code_at_start;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn nonexistent_account() -> Result<(), Error> {
-        // Test the case where the account doesn't exist, because there is not
-        // any code deployed at address 0xaabbccddee000000000000000000000000000000.
-        test_ok(
-            address!("0xaabbccddee000000000000000000000000000000"),
-            false,
-        )
+    lazy_static! {
+        static ref EMPTY_ACCOUNT: Address = address!("0xaabbccddee000000000000000000000000000000");
+        // new_single_tx_trace_code_at_start works by executing code deployed at the default
+        // address, meaning that the external code hash returned for it will not be 0.
+        static ref EXISTING_ACCOUNT: Address = Address::default();
     }
 
     #[test]
-    fn existing_account() -> Result<(), Error> {
-        // new_single_tx_trace_code_at_start works by executing code deployed at the
-        // default address so in this test case the account will exist, meaning that the
-        // external code hash returned will not be 0.
-        test_ok(H160::default(), true)
+    fn cold_empty_account() -> Result<(), Error> {
+        test_ok(false, false)
     }
 
-    fn test_ok(address: H160, account_should_exist: bool) -> Result<(), Error> {
-        let code = bytecode! {
+    #[test]
+    fn warm_empty_account() -> Result<(), Error> {
+        test_ok(false, true)
+    }
+
+    #[test]
+    fn cold_existing_account() -> Result<(), Error> {
+        test_ok(true, false)
+    }
+
+    #[test]
+    fn warm_existing_account() -> Result<(), Error> {
+        test_ok(true, true)
+    }
+
+    fn test_ok(exists: bool, is_warm: bool) -> Result<(), Error> {
+        let address = if exists {
+            *EXISTING_ACCOUNT
+        } else {
+            *EMPTY_ACCOUNT
+        };
+
+        let mut code = Bytecode::default();
+        if is_warm {
+            code.append(&bytecode! {
+                PUSH20(address.to_word())
+                EXTCODEHASH
+                POP
+            });
+        }
+        code.append(&bytecode! {
             PUSH20(address.to_word())
             #[start]
             EXTCODEHASH
             STOP
-        };
+        });
 
         // Get the execution steps from the external tracer
         let block = BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code)?);
@@ -154,7 +177,7 @@ mod extcodehash_tests {
         );
 
         let (account_exists, account) = state_ref.sdb.get_account(&address);
-        assert_eq!(account_should_exist, account_exists);
+        assert_eq!(exists, account_exists);
 
         let code_hash = if account_exists {
             account.code_hash.to_word()
