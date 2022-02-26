@@ -13,7 +13,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, ToAddress, ToLittleEndian, ToScalar, U256, Field};
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -128,17 +128,21 @@ mod test {
             EXTCODEHASH
             STOP
         };
-
         assert_eq!(run_test_circuits(code), Ok(()));
     }
 
     #[test]
     fn extcodehash_gadget_warm_account() {
+        // The default address is already in the address access set because
+        // `run_test_circuits` works by executing bytecode deployed at the
+        // default address.
         test_ok(H160::default());
     }
 
     #[test]
     fn extcodehash_gadget_cold_account() {
-        test_ok(address!("0xaabbccddee000000000000000000000000000000"));
+        // This address isn't otherwise accessed, so calling EXTCODEHASH on it will
+        // incur a higher gas cost.
+        test_ok(address!("0xaabbccddee000000000000000000000000000011"));
     }
 }

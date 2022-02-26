@@ -15,14 +15,13 @@ impl Opcode for Extcodehash {
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
-
         let stack_address = step.stack.last_filled();
 
+        // Pop external address off stack
         let external_address = step.stack.last()?.to_address();
-        let code_hash = steps[1].stack.last()?;
-
         state.push_stack_op(RW::READ, stack_address, external_address.to_word());
 
+        // Read transaction id from call context
         state.push_op(
             RW::READ,
             CallContextOp {
@@ -32,12 +31,12 @@ impl Opcode for Extcodehash {
             },
         );
 
+        // Update transaction access list for external_address
         let account_previously_accessed = match step.gas_cost {
             GasCost::WARM_STORAGE_READ_COST => true,
             GasCost::COLD_ACCOUNT_ACCESS_COST => false,
             _ => unreachable!(),
         };
-
         state.push_op(
             RW::WRITE,
             TxAccessListAccountOp {
@@ -49,6 +48,7 @@ impl Opcode for Extcodehash {
         );
 
         // Account read for code hash of external account
+        let code_hash = steps[1].stack.last()?;
         state.push_op(
             RW::READ,
             AccountOp {
@@ -173,7 +173,7 @@ mod extcodehash_tests {
             },
         );
 
-        // Add the Stack write
+        // Add the stack write
         state_ref.push_stack_op(RW::WRITE, StackAddress::from(1022), code_hash);
 
         tx.steps_mut().push(step);
