@@ -13,8 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, ToAddress, ToLittleEndian, ToScalar, U256};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::GasCost, ToAddress, ToLittleEndian, ToScalar, U256, Field};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
@@ -25,7 +25,7 @@ pub(crate) struct ExtcodehashGadget<F> {
     external_code_hash: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ExtcodehashGadget<F> {
+impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
     const NAME: &'static str = "EXTCODEHASH";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODEHASH;
