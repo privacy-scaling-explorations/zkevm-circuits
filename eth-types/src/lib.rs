@@ -40,10 +40,10 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
-/// trait and it's repr.
+/// trait and its repr.
 pub trait Field: FieldExt + PrimeField<Repr = [u8; 32]> {}
 
-// Impl custom `Field` trait for BN256 Fr to be used and consistend with the
+// Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
 
