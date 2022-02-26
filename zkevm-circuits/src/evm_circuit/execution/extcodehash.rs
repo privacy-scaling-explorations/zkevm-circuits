@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag},
         util::{
@@ -13,9 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Address, ToAddress, ToLittleEndian, ToScalar, H160, U256};
+use eth_types::{evm_types::GasCost, ToAddress, ToLittleEndian, ToScalar, U256};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
-use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {

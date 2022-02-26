@@ -4,7 +4,7 @@ use crate::operation::{
     AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp, RW,
 };
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, evm_types::GasCost};
+use eth_types::{evm_types::GasCost, GethExecStep, ToAddress, ToWord};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodehash;
