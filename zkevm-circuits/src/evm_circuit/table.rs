@@ -178,6 +178,10 @@ pub enum CallContextFieldTag {
     IsPersistent,
     IsStatic,
 
+    LastCalleeId,
+    LastCalleeReturnDataOffset,
+    LastCalleeReturnDataLength,
+
     IsRoot,
     IsCreate,
     CodeSource,
