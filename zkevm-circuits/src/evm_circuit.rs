@@ -16,6 +16,8 @@ use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
 
+use self::param::STEP_HEIGHT;
+
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
 pub struct EvmCircuit<F> {
@@ -85,7 +87,7 @@ impl<F: Field> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         self.execution.assign_block(layouter, block)
     }
 
@@ -94,8 +96,14 @@ impl<F: Field> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         self.execution.assign_block_exact(layouter, block)
+    }
+
+    /// Calculate which rows are "actually" used in the circuit
+    pub fn get_active_rows(block: &Block<F>) -> impl Iterator<Item = usize> {
+        (0..block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT)
+            .step_by(STEP_HEIGHT)
     }
 }
 
@@ -304,6 +312,7 @@ pub mod test {
     pub struct TestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
+        last_offset: usize,
     }
 
     impl<F> TestCircuit<F> {
@@ -311,6 +320,7 @@ pub mod test {
             Self {
                 block,
                 fixed_table_tags,
+                last_offset: 0,
             }
         }
     }
@@ -373,7 +383,8 @@ pub mod test {
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
             config
                 .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+                .assign_block_exact(&mut layouter, &self.block)?;
+            Ok(())
         }
     }
 
@@ -405,10 +416,10 @@ pub mod test {
                 ]
             })
             .collect();
+        let active_rows = EvmCircuit::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
-
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
-        prover.verify()
+        prover.verify_at_rows(active_rows)
     }
 
     pub fn run_test_circuit_incomplete_fixed_table<F: Field>(

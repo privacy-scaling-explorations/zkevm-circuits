@@ -477,7 +477,7 @@ dependencies = [
  "bus-mapping",
  "eth-types",
  "ff 0.11.0",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_02_23)",
  "itertools",
  "keccak256",
  "pairing_bn256",
@@ -1766,6 +1766,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2_proofs"
+version = "0.1.0-beta.1"
+source = "git+https://github.com/scroll-tech/halo2.git?rev=4604e7b#4604e7b80c6edfa3fa4db3edc0f19079e5639673"
+dependencies = [
+ "blake2b_simd",
+ "bumpalo",
+ "cfg-if 0.1.10",
+ "ff 0.11.0",
+ "group 0.11.0",
+ "pairing_bn256",
+ "rand",
+ "rand_core",
+ "rayon",
+ "subtle",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1997,7 +2014,7 @@ dependencies = [
  "eth-types",
  "ethers",
  "ff 0.11.0",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_02_23)",
  "lazy_static",
  "log",
  "pairing_bn256",
@@ -2075,7 +2092,7 @@ name = "keccak256"
 version = "0.1.0"
 dependencies = [
  "eth-types",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_02_23)",
  "itertools",
  "num-bigint",
  "num-traits",
@@ -2708,7 +2725,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-providers",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_02_23)",
  "log",
  "pairing_bn256",
  "rand",
@@ -4029,7 +4046,7 @@ dependencies = [
  "digest 0.7.6",
  "eth-types",
  "ff 0.11.0",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/scroll-tech/halo2.git?rev=4604e7b)",
  "itertools",
  "keccak256",
  "mock",
