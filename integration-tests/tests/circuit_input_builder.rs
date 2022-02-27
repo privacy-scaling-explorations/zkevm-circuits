@@ -53,3 +53,12 @@ async fn test_circuit_input_builder_block_deploy_greeter() {
     let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
     test_circuit_input_builder_block(*block_num).await;
 }
+
+/// This test builds the complete circuit inputs for the block with multiple
+/// transfer txs.
+#[tokio::test]
+async fn test_circuit_input_builder_block_multiple_transfers_0() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Multiple transfers 0").unwrap();
+    test_circuit_input_builder_block(*block_num).await;
+}

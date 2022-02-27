@@ -12,9 +12,8 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
@@ -23,7 +22,7 @@ pub(crate) struct PushGadget<F> {
     selectors: [Cell<F>; 31],
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
+impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     const NAME: &'static str = "PUSH";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PUSH;

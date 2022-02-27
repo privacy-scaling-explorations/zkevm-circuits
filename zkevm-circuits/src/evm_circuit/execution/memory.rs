@@ -18,9 +18,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -33,7 +32,7 @@ pub(crate) struct MemoryGadget<F> {
     is_mstore8: IsEqualGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
+impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
     const NAME: &'static str = "MEMORY";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MEMORY;

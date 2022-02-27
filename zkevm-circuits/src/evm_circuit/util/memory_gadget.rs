@@ -11,10 +11,12 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use eth_types::evm_types::GasCost;
-use eth_types::{ToLittleEndian, U256};
-use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    circuit::Region,
+    plonk::{Error, Expression},
+};
 use std::convert::TryInto;
 
 /// Decodes the usable part of an address stored in a Word
@@ -23,7 +25,7 @@ pub(crate) mod address_low {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{from_bytes, Word},
     };
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
         from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
@@ -43,7 +45,7 @@ pub(crate) mod address_high {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{sum, Word},
     };
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
         sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
@@ -160,7 +162,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
     memory_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
-impl<F: FieldExt> MemoryWordSizeGadget<F> {
+impl<F: Field> MemoryWordSizeGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address: Expression<F>) -> Self {
         let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
 
@@ -199,7 +201,7 @@ pub(crate) struct MemoryExpansionGadget<F, const N: usize, const N_BYTES_MEMORY_
     gas_cost: Expression<F>,
 }
 
-impl<F: FieldExt, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
+impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     MemoryExpansionGadget<F, N, N_BYTES_MEMORY_WORD_SIZE>
 {
     /// Input requirements:
@@ -339,7 +341,7 @@ pub(crate) struct MemoryCopierGasGadget<F> {
     gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
-impl<F: FieldExt> MemoryCopierGasGadget<F> {
+impl<F: Field> MemoryCopierGasGadget<F> {
     pub const GAS_COPY: GasCost = GasCost::COPY;
     pub const WORD_SIZE: u64 = 32u64;
 
@@ -406,7 +408,7 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
     min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
 
-impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
+impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
     BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(

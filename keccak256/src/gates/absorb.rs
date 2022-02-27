@@ -1,14 +1,12 @@
 use crate::arith_helpers::*;
 use crate::common::*;
-use halo2::circuit::Cell;
-use halo2::circuit::Layouter;
-use halo2::circuit::Region;
-use halo2::{
+use eth_types::Field;
+use halo2_proofs::circuit::{AssignedCell, Layouter, Region};
+use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
 #[derive(Clone, Debug)]
@@ -18,7 +16,7 @@ pub struct AbsorbConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AbsorbConfig<F> {
+impl<F: Field> AbsorbConfig<F> {
     pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     // Rows are assigned as:
@@ -42,7 +40,7 @@ impl<F: FieldExt> AbsorbConfig<F> {
         let q_mixing = meta.selector();
         state
             .iter()
-            .for_each(|column| meta.enable_equality((*column).into()));
+            .for_each(|column| meta.enable_equality(*column));
 
         meta.create_gate("absorb", |meta| {
             // We do a trick which consists on multiplying an internal selector
@@ -86,9 +84,9 @@ impl<F: FieldExt> AbsorbConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        flag: (Cell, F),
+        flag: AssignedCell<F, F>,
         next_input: [F; NEXT_INPUTS_LANES],
-    ) -> Result<(Cell, F), Error> {
+    ) -> Result<AssignedCell<F, F>, Error> {
         // Generate next_input in base-9.
         let mut next_mixing = state_to_biguint::<F, NEXT_INPUTS_LANES>(next_input);
         for (x, y) in (0..5).cartesian_product(0..5) {
@@ -111,41 +109,38 @@ impl<F: FieldExt> AbsorbConfig<F> {
         }
 
         // Assign flag at last column(17th).
-        let obtained_cell = region.assign_advice(
+        let flag_assig_cell = flag.copy_advice(
             || format!("assign next_input {}", NEXT_INPUTS_LANES),
+            region,
             self.state[NEXT_INPUTS_LANES],
             offset,
-            || Ok(flag.1),
         )?;
-        region.constrain_equal(flag.0, obtained_cell)?;
 
-        Ok((obtained_cell, flag.1))
+        Ok(flag_assig_cell)
     }
 
-    /// Doc this
+    /// Doc this $
     pub fn copy_state_flag_next_inputs(
         &self,
         layouter: &mut impl Layouter<F>,
-        in_state: [(Cell, F); 25],
+        in_state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
         // Passed in base-2 and converted internally after witnessing it.
         next_input: [F; NEXT_INPUTS_LANES],
-        flag: (Cell, F),
-    ) -> Result<([(Cell, F); 25], (Cell, F)), Error> {
+        flag: AssignedCell<F, F>,
+    ) -> Result<([AssignedCell<F, F>; 25], AssignedCell<F, F>), Error> {
         layouter.assign_region(
             || "Absorb state assignations",
             |mut region| {
                 let mut offset = 0;
                 // State at offset + 0
-                for (idx, (cell, value)) in in_state.iter().enumerate() {
-                    let new_cell = region.assign_advice(
+                for (idx, in_state) in in_state.iter().enumerate() {
+                    in_state.copy_advice(
                         || format!("assign state {}", idx),
+                        &mut region,
                         self.state[idx],
                         offset,
-                        || Ok(*value),
                     )?;
-
-                    region.constrain_equal(*cell, new_cell)?;
                 }
 
                 offset += 1;
@@ -153,21 +148,22 @@ impl<F: FieldExt> AbsorbConfig<F> {
                 self.q_mixing.enable(&mut region, offset)?;
 
                 // Assign `next_inputs` and flag.
-                let flag = self.assign_next_inp_and_flag(&mut region, offset, flag, next_input)?;
+                let flag =
+                    self.assign_next_inp_and_flag(&mut region, offset, flag.clone(), next_input)?;
 
                 offset += 1;
                 // Assign out_state at offset + 2
-                let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                 for (idx, lane) in out_state.iter().enumerate() {
-                    let cell = region.assign_advice(
+                    let assig_cell = region.assign_advice(
                         || format!("assign state {}", idx),
                         self.state[idx],
                         offset,
                         || Ok(*lane),
                     )?;
-                    state.push((cell, *lane));
+                    state.push(assig_cell);
                 }
-                let out_state: [(Cell, F); 25] = state
+                let out_state: [AssignedCell<F, F>; 25] = state
                     .try_into()
                     .expect("Unexpected into_slice conversion err");
 
@@ -182,11 +178,12 @@ mod tests {
     use super::*;
     use crate::common::State;
     use crate::keccak_arith::KeccakFArith;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
+    use pairing::group::ff::PrimeField;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -201,7 +198,10 @@ mod tests {
             is_mixing: bool,
             _marker: PhantomData<F>,
         }
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F>
+        where
+            F: PrimeField<Repr = [u8; 32]>,
+        {
             type Config = AbsorbConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -213,7 +213,7 @@ mod tests {
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let column = meta.advice_column();
-                        meta.enable_equality(column.into());
+                        meta.enable_equality(column);
                         column
                     })
                     .collect::<Vec<_>>()
@@ -229,25 +229,24 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 let val: F = (self.is_mixing as u64).into();
-                let flag: (Cell, F) = layouter.assign_region(
+                let flag: AssignedCell<F, F> = layouter.assign_region(
                     || "witness_is_mixing_flag",
                     |mut region| {
                         let offset = 1;
-                        let cell = region.assign_advice(
+                        region.assign_advice(
                             || "assign is_mixing",
                             config.state[NEXT_INPUTS_LANES + 1],
                             offset,
                             || Ok(val),
-                        )?;
-                        Ok((cell, val))
+                        )
                     },
                 )?;
 
                 // Witness `in_state`.
-                let in_state: [(Cell, F); 25] = layouter.assign_region(
+                let in_state: [AssignedCell<F, F>; 25] = layouter.assign_region(
                     || "Witness input state",
                     |mut region| {
-                        let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                        let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                         for (idx, val) in self.in_state.iter().enumerate() {
                             let cell = region.assign_advice(
                                 || "witness input state",
@@ -255,7 +254,7 @@ mod tests {
                                 0,
                                 || Ok(*val),
                             )?;
-                            state.push((cell, *val))
+                            state.push(cell)
                         }
 
                         Ok(state.try_into().unwrap())
@@ -264,7 +263,7 @@ mod tests {
 
                 config.copy_state_flag_next_inputs(
                     &mut layouter,
-                    in_state,
+                    &in_state,
                     self.out_state,
                     self.next_input,
                     flag,

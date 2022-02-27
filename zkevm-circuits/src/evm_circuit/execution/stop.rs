@@ -7,14 +7,15 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
     opcode: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
+impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const NAME: &'static str = "STOP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;

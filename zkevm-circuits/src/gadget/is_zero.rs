@@ -1,4 +1,4 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{Chip, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
@@ -119,7 +119,7 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 #[cfg(test)]
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
-    use halo2::{
+    use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
