@@ -560,6 +560,15 @@ impl Rw {
         }
     }
 
+    pub fn tx_refund_value_pair(&self) -> (Word, Word) {
+        match self {
+            Self::TxRefund {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn account_value_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
@@ -576,6 +585,20 @@ impl Rw {
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
+            _ => unreachable!(),
+        }
+    }
+
+    // TODO: merge with aux_pair
+    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
+        match self {
+            Self::AccountStorage {
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+                ..
+            } => (*value, *value_prev, *tx_id, *committed_value),
             _ => unreachable!(),
         }
     }
@@ -1053,6 +1076,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::GAS => ExecutionState::GAS,
             OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
             OpcodeId::SLOAD => ExecutionState::SLOAD,
+            OpcodeId::SSTORE => ExecutionState::SSTORE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
