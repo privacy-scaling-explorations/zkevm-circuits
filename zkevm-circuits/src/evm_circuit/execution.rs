@@ -76,6 +76,7 @@ use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
 use storage::SloadGadget;
+use storage::SstoreGadget;
 use swap::SwapGadget;
 use timestamp::TimestampGadget;
 
@@ -133,6 +134,7 @@ pub(crate) struct ExecutionConfig<F> {
     timestamp_gadget: TimestampGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sload_gadget: SloadGadget<F>,
+    sstore_gadget: SstoreGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -268,6 +270,7 @@ impl<F: Field> ExecutionConfig<F> {
             coinbase_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
+            sstore_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -524,6 +527,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
+            ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::CALLDATACOPY => {
                 assign_exec_step!(self.calldatacopy_gadget)
             }
