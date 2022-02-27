@@ -15,9 +15,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
-use halo2::{
-    arithmetic::FieldExt,
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression},
 };
@@ -36,7 +35,7 @@ pub(crate) struct SloadGadget<F> {
     is_warm: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
+impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
     const NAME: &'static str = "SLOAD";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SLOAD;
@@ -154,7 +153,7 @@ pub(crate) struct SloadGasGadget<F> {
     gas_cost: Expression<F>,
 }
 
-impl<F: FieldExt> SloadGasGadget<F> {
+impl<F: Field> SloadGasGadget<F> {
     pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
