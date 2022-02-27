@@ -2,12 +2,14 @@ use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use ethers_providers::Http;
-use halo2::{
+use halo2_proofs::{
     plonk::*,
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
 use pairing::bn256::{Fr, G1Affine};
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
 use std::env::var;
 use std::fs::File;
 use std::io::BufReader;
@@ -77,9 +79,15 @@ async fn main() {
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, evm_circuit");
         let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk for params, vk, evm_circuit");
 
+        // Create randomness
+        let rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(&params, &pk, &[circuit], &[], &mut transcript).expect("evm proof");
+        create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("evm proof");
         evm_proof = transcript.finalize();
     }
 
@@ -109,9 +117,15 @@ async fn main() {
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");
         let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk for params, vk, state_circuit");
 
+        // Create randomness
+        let rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(&params, &pk, &[circuit], &[], &mut transcript).expect("state proof");
+        create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("state proof");
         state_proof = transcript.finalize();
     }
 

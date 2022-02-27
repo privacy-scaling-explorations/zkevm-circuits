@@ -8,7 +8,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::ToLittleEndian;
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},

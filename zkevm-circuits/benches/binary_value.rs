@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use halo2::{
+use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
@@ -78,7 +78,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         let binary_table = meta.fixed_column();
 
         if LOOKUP {
-            meta.lookup_any(|meta| {
+            meta.lookup_any("binary lookup", |meta| {
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let flag = meta.query_advice(flag, Rotation::cur());
                 let binary_table = meta.query_fixed(binary_table, Rotation::cur());

@@ -1,15 +1,13 @@
 use crate::arith_helpers::*;
 use crate::common::*;
 use crate::keccak_arith::*;
-use halo2::circuit::Cell;
-use halo2::circuit::Layouter;
-use halo2::plonk::Instance;
-use halo2::{
+use eth_types::Field;
+use halo2_proofs::circuit::{AssignedCell, Layouter};
+use halo2_proofs::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -24,7 +22,7 @@ pub struct IotaB13Config<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> IotaB13Config<F> {
+impl<F: Field> IotaB13Config<F> {
     // We assume state is recieved in base-9.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -39,8 +37,8 @@ impl<F: FieldExt> IotaB13Config<F> {
         // Declare the q_mixing.
         let q_mixing = meta.selector();
         // Enable copy constraints over PI and the Advices.
-        meta.enable_equality(round_ctant_b13.into());
-        meta.enable_equality(round_constants.into());
+        meta.enable_equality(round_ctant_b13);
+        meta.enable_equality(round_constants);
 
         meta.create_gate("iota_b13 gate", |meta| {
             // We do a trick which consists on multiplying an internal selector
@@ -77,11 +75,11 @@ impl<F: FieldExt> IotaB13Config<F> {
     pub fn copy_state_flag_and_assing_rc(
         &self,
         layouter: &mut impl Layouter<F>,
-        state: [(Cell, F); 25],
+        state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
         absolute_row: usize,
-        flag: (Cell, F),
-    ) -> Result<[(Cell, F); 25], Error> {
+        flag: &AssignedCell<F, F>,
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
         layouter.assign_region(
             || "Assign IotaB13 state",
             |mut region| {
@@ -102,22 +100,20 @@ impl<F: FieldExt> IotaB13Config<F> {
         )
     }
 
-    /// Copies the `[(Cell,F);25]` to the `state` Advice column.
+    /// Copies the `input_state` cells to the `state` Advice column.
     fn copy_state(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        in_state: [(Cell, F); 25],
+        in_state: &[AssignedCell<F, F>; 25],
     ) -> Result<(), Error> {
-        for (idx, (cell, value)) in in_state.iter().enumerate() {
-            let new_cell = region.assign_advice(
+        for (idx, in_state_cell) in in_state.iter().enumerate() {
+            in_state_cell.copy_advice(
                 || format!("copy in_state {}", idx),
+                region,
                 self.state[idx],
                 offset,
-                || Ok(*value),
             )?;
-
-            region.constrain_equal(*cell, new_cell)?;
         }
 
         Ok(())
@@ -128,15 +124,14 @@ impl<F: FieldExt> IotaB13Config<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        flag: (Cell, F),
+        flag: &AssignedCell<F, F>,
     ) -> Result<(), Error> {
-        let obtained_cell = region.assign_advice(
-            || format!("assign is_mixing flag {:?}", flag.1),
+        flag.copy_advice(
+            || "assign is_mixing flag",
+            region,
             self.round_ctant_b13,
             offset,
-            || Ok(flag.1),
         )?;
-        region.constrain_equal(flag.0, obtained_cell)?;
 
         Ok(())
     }
@@ -147,9 +142,9 @@ impl<F: FieldExt> IotaB13Config<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         state: [F; 25],
-    ) -> Result<[(Cell, F); 25], Error> {
-        let mut out_vec: Vec<(Cell, F)> = vec![];
-        let out_state: [(Cell, F); 25] = {
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
+        let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
+        let out_state: [AssignedCell<F, F>; 25] = {
             for (idx, lane) in state.iter().enumerate() {
                 let out_cell = region.assign_advice(
                     || format!("assign state[{}]", idx),
@@ -157,7 +152,7 @@ impl<F: FieldExt> IotaB13Config<F> {
                     offset,
                     || Ok(*lane),
                 )?;
-                out_vec.push((out_cell, *lane));
+                out_vec.push(out_cell);
             }
             out_vec.try_into().unwrap()
         };
@@ -203,9 +198,9 @@ mod tests {
     use super::*;
     use crate::common::{PERMUTATION, ROUND_CONSTANTS};
     use crate::gates::gate_helpers::biguint_to_f;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
@@ -226,7 +221,7 @@ mod tests {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = IotaB13Config<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -238,7 +233,7 @@ mod tests {
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let column = meta.advice_column();
-                        meta.enable_equality(column.into());
+                        meta.enable_equality(column);
                         column
                     })
                     .collect::<Vec<_>>()
@@ -263,17 +258,16 @@ mod tests {
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `is_mixing` flag
-                        let cell = region.assign_advice(
+                        let flag = region.assign_advice(
                             || "witness is_missing",
                             config.round_ctant_b13,
                             offset + 1,
                             || Ok(val),
                         )?;
-                        let flag = (cell, val);
 
                         // Witness `state`
-                        let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                        let in_state: [AssignedCell<F, F>; 25] = {
+                            let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -281,7 +275,7 @@ mod tests {
                                     offset,
                                     || Ok(*val),
                                 )?;
-                                state.push((cell, *val))
+                                state.push(cell)
                             }
                             state.try_into().unwrap()
                         };
@@ -292,10 +286,10 @@ mod tests {
                 // Assign `in_state`, `out_state`, round and flag
                 config.copy_state_flag_and_assing_rc(
                     &mut layouter,
-                    in_state,
+                    &in_state,
                     self.out_state,
                     self.round_ctant,
-                    flag,
+                    &flag,
                 )?;
                 Ok(())
             }

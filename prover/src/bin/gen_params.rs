@@ -1,5 +1,5 @@
-use halo2::poly::commitment::Setup;
-use pairing::bn256::Bn256;
+use halo2_proofs::poly::commitment::Params;
+use pairing::bn256::{Bn256, G1Affine};
 use std::env;
 use std::fs::File;
 use std::io::Write;
@@ -18,9 +18,11 @@ fn main() {
 
     println!("Generating params with degree: {}", degree);
 
-    let params = Setup::<Bn256>::new(degree, rand::rngs::OsRng::default());
+    let general_params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
     let mut buf = Vec::new();
-    params.write(&mut buf).expect("Failed to write params");
+    general_params
+        .write(&mut buf)
+        .expect("Failed to write params");
     file.write_all(&buf[..])
         .expect("Failed to write params to file");
 

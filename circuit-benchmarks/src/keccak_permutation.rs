@@ -1,8 +1,8 @@
 //! Evm circuit benchmarks
 
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::{Cell, Layouter, SimpleFloorPlanner},
+use eth_types::Field;
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use keccak256::{circuit::KeccakFConfig, common::NEXT_INPUTS_LANES, keccak_arith::KeccakFArith};
@@ -15,7 +15,7 @@ struct KeccakRoundTestCircuit<F> {
     is_mixing: bool,
 }
 
-impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
+impl<F: Field> Circuit<F> for KeccakRoundTestCircuit<F> {
     type Config = KeccakFConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -40,8 +40,8 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
             || "Keccak round witnes & flag assignment",
             |mut region| {
                 // Witness `state`
-                let in_state: [(Cell, F); 25] = {
-                    let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                let in_state: [AssignedCell<F, F>; 25] = {
+                    let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                     for (idx, val) in self.in_state.iter().enumerate() {
                         let cell = region.assign_advice(
                             || "witness input state",
@@ -49,7 +49,7 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
                             offset,
                             || Ok(*val),
                         )?;
-                        state.push((cell, *val))
+                        state.push(cell)
                     }
                     state.try_into().unwrap()
                 };
@@ -72,10 +72,9 @@ impl<F: FieldExt> Circuit<F> for KeccakRoundTestCircuit<F> {
 mod tests {
     use super::*;
     use ark_std::{end_timer, start_timer};
-    use halo2::plonk::{create_proof, keygen_pk, keygen_vk};
-    use halo2::{
-        plonk::verify_proof,
-        poly::commitment::Setup,
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
+    use halo2_proofs::{
+        poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
     use itertools::Itertools;
@@ -85,8 +84,7 @@ mod tests {
         common::{State, ROUND_CONSTANTS},
         gates::gate_helpers::*,
     };
-    use pairing::bn256::Bn256;
-    use pairing::bn256::Fr;
+    use pairing::bn256::{Bn256, Fr, G1Affine};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
@@ -160,7 +158,7 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = Setup::<Bn256>::new(degree, rng);
+        let general_params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
         end_timer!(start1);
 
         let vk = keygen_vk(&general_params, &circuit).unwrap();
@@ -177,6 +175,7 @@ mod tests {
             &pk,
             &[circuit],
             &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
+            rng,
             &mut transcript,
         )
         .unwrap();
@@ -184,15 +183,17 @@ mod tests {
         end_timer!(start2);
 
         // Verify
-        let verifier_params =
-            Setup::<Bn256>::verifier_params(&general_params, PERMUTATION * 2).unwrap();
+        let verifier_params: ParamsVerifier<Bn256> =
+            general_params.verifier(PERMUTATION * 2).unwrap();
         let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleVerifier::new(&verifier_params);
 
         // Bench verification time
         let start3 = start_timer!(|| "EVM Proof verification");
         verify_proof(
             &verifier_params,
             pk.get_vk(),
+            strategy,
             &[&[constants_b9.as_slice(), constants_b13.as_slice()]],
             &mut verifier_transcript,
         )

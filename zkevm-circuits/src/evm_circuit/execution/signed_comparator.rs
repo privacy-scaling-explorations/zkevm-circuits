@@ -13,9 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT
 /// and SGT.
@@ -35,7 +34,7 @@ pub(crate) struct SignedComparatorGadget<F> {
     is_sgt: IsEqualGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
+impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
     const NAME: &'static str = "SCMP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SCMP;

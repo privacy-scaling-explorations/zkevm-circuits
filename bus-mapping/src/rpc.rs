@@ -165,6 +165,24 @@ impl<P: JsonRpcClient> GethClient<P> {
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))
     }
+
+    /// Calls `miner_stop` via JSON-RPC, which makes the node stop mining
+    /// blocks.  Useful for integration tests.
+    pub async fn miner_stop(&self) -> Result<(), Error> {
+        self.0
+            .request("miner_stop", ())
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))
+    }
+
+    /// Calls `miner_start` via JSON-RPC, which makes the node start mining
+    /// blocks.  Useful for integration tests.
+    pub async fn miner_start(&self) -> Result<(), Error> {
+        self.0
+            .request("miner_start", [serialize(&1)])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))
+    }
 }
 
 // Integration tests found in `integration-tests/tests/rpc.rs`.
