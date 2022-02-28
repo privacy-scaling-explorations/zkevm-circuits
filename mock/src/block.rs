@@ -25,7 +25,7 @@ pub struct MockBlock {
     total_difficulty: Word,
     seal_fields: Vec<Bytes>,
     uncles: Vec<Hash>,
-    transactions: Vec<MockTransaction>,
+    pub(crate) transactions: Vec<MockTransaction>,
     size: Word,
     mix_hash: Hash,
     nonce: U64,
@@ -85,6 +85,35 @@ impl From<MockBlock> for Block<Transaction> {
                 .iter()
                 .map(|mock_tx| (mock_tx.to_owned()).into())
                 .collect::<Vec<Transaction>>(),
+            size: Some(mock.size),
+            mix_hash: Some(mock.mix_hash),
+            nonce: Some(mock.nonce),
+            base_fee_per_gas: Some(mock.base_fee_per_gas),
+        }
+    }
+}
+
+impl From<MockBlock> for Block<()> {
+    fn from(mock: MockBlock) -> Self {
+        Block {
+            hash: mock.hash.or_else(|| Some(Hash::default())),
+            parent_hash: mock.parent_hash,
+            uncles_hash: mock.uncles_hash,
+            author: mock.author,
+            state_root: mock.state_root,
+            transactions_root: mock.transactions_root,
+            receipts_root: mock.receipts_root,
+            number: Some(mock.number),
+            gas_used: mock.gas_used,
+            gas_limit: mock.gas_limit,
+            extra_data: mock.extra_data,
+            logs_bloom: mock.logs_bloom,
+            timestamp: mock.timestamp,
+            difficulty: mock.difficulty,
+            total_difficulty: Some(mock.total_difficulty),
+            seal_fields: mock.seal_fields,
+            uncles: mock.uncles,
+            transactions: vec![],
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),

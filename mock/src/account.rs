@@ -3,7 +3,7 @@
 use eth_types::{geth_types::Account, Address, Bytes, Word};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Mock structure which represents an Account and can be used for tests.
 pub struct MockAccount {
     /// Address
@@ -16,18 +16,6 @@ pub struct MockAccount {
     pub code: Bytes,
     /// Storage
     pub storage: HashMap<Word, Word>,
-}
-
-impl Default for MockAccount {
-    fn default() -> Self {
-        MockAccount {
-            address: Address::default(),
-            nonce: Word::default(),
-            balance: Word::default(),
-            code: Bytes::default(),
-            storage: HashMap::default(),
-        }
-    }
 }
 
 impl From<MockAccount> for Account {
