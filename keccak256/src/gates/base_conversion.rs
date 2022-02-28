@@ -97,20 +97,12 @@ impl<F: Field> BaseConversionConfig<F> {
         input: AssignedCell<F, F>,
         flag: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        // TODO: Add propper err handling once AssignedCell has a better API for it.
-        let (input_coefs, output_coefs, _) = self
-            .base_info
-            .compute_coefs(*input.value().unwrap_or(&F::zero()))?;
-
+        let advices = self.base_info.compute_witness(input.value())?;
         layouter.assign_region(
             || "Base conversion",
             |mut region| {
-                let mut input_acc = F::zero();
-                let input_pob = self.base_info.input_pob();
-                let mut output_acc = F::zero();
-                let output_pob = self.base_info.output_pob();
-                for (offset, (&input_coef, &output_coef)) in
-                    input_coefs.iter().zip(output_coefs.iter()).enumerate()
+                for (offset, &(input_coef, input_acc, output_coef, output_acc)) in
+                    advices.iter().enumerate()
                 {
                     self.q_lookup.enable(&mut region, offset)?;
                     if offset != 0 {
@@ -122,34 +114,32 @@ impl<F: Field> BaseConversionConfig<F> {
                         || "Input Coef",
                         self.input_coef,
                         offset,
-                        || Ok(input_coef),
+                        || input_coef.ok_or(Error::Synthesis),
                     )?;
-                    input_acc = input_acc * input_pob + input_coef;
                     let input_acc_cell = region.assign_advice(
                         || "Input Acc",
                         self.input_acc,
                         offset,
-                        || Ok(input_acc),
+                        || input_acc.ok_or(Error::Synthesis),
                     )?;
                     let output_coef_cell = region.assign_advice(
                         || "Output Coef",
                         self.output_coef,
                         offset,
-                        || Ok(output_coef),
+                        || output_coef.ok_or(Error::Synthesis),
                     )?;
-                    output_acc = output_acc * output_pob + output_coef;
                     let output_acc_cell = region.assign_advice(
                         || "Output Acc",
                         self.output_acc,
                         offset,
-                        || Ok(output_acc),
+                        || output_acc.ok_or(Error::Synthesis),
                     )?;
 
                     if offset == 0 {
                         // bind first acc to first coef
                         region.constrain_equal(input_acc_cell.cell(), input_coef_cell.cell())?;
                         region.constrain_equal(output_acc_cell.cell(), output_coef_cell.cell())?;
-                    } else if offset == input_coefs.len() - 1 {
+                    } else if offset == advices.len() - 1 {
                         //region.constrain_equal(input_acc_cell, input.0)?;
                         return Ok(output_acc_cell);
                     }

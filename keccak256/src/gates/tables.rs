@@ -9,7 +9,7 @@ use halo2_proofs::{
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 
 use crate::gates::gate_helpers::f_to_biguint;
 
@@ -194,7 +194,35 @@ impl<F: Field> BaseInfo<F> {
             .len()
     }
 
-    pub fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>, F), Error> {
+    pub fn compute_witness(
+        &self,
+        input: Option<&F>,
+    ) -> Result<Vec<(Option<F>, Option<F>, Option<F>, Option<F>)>, Error> {
+        let advices = match input {
+            // Prover has some value, compute values.
+            Some(x) => self
+                .compute_coefs(*x)?
+                .into_iter()
+                .map(|(input_coef, input_acc, output_coef, output_acc)| {
+                    (
+                        Some(input_coef),
+                        Some(input_acc),
+                        Some(output_coef),
+                        Some(output_acc),
+                    )
+                })
+                .collect_vec(),
+            // Verifier has no input, use None to build cells.
+            None => (0..self.max_chunks)
+                .chunks(self.num_chunks)
+                .into_iter()
+                .map(|_| (None, None, None, None))
+                .collect_vec(),
+        };
+        Ok(advices)
+    }
+
+    fn compute_coefs(&self, input: F) -> Result<Vec<(F, F, F, F)>, Error> {
         // big-endian
         let input_chunks: Vec<u8> = {
             let raw = f_to_biguint(input);
@@ -213,16 +241,19 @@ impl<F: Field> BaseInfo<F> {
             .rev()
             .map(|chunks| f_from_radix_be(chunks, self.input_base))
             .collect();
+
+        let input_accs: Vec<F> = input_coefs
+            .iter()
+            .scan(F::zero(), |acc, &x| {
+                *acc = *acc * self.input_pob() + x;
+                Some(*acc)
+            })
+            .collect_vec();
         let convert_chunk = match self.input_base {
             B2 => |x| x,
             B13 => convert_b13_coef,
             B9 => convert_b9_coef,
             _ => unreachable!(),
-        };
-        let output: F = {
-            let converted_chunks: Vec<u8> =
-                input_chunks.iter().map(|&x| convert_chunk(x)).collect_vec();
-            f_from_radix_be(&converted_chunks, self.output_base)
         };
 
         let output_coefs: Vec<F> = input_chunks
@@ -234,7 +265,15 @@ impl<F: Field> BaseInfo<F> {
                 f_from_radix_be(&converted_chunks, self.output_base)
             })
             .collect();
-        Ok((input_coefs, output_coefs, output))
+        let output_accs: Vec<F> = output_coefs
+            .iter()
+            .scan(F::zero(), |acc, &x| {
+                *acc = *acc * self.output_pob() + x;
+                Some(*acc)
+            })
+            .collect_vec();
+
+        Ok(izip!(input_coefs, input_accs, output_coefs, output_accs).collect_vec())
     }
 }
 
