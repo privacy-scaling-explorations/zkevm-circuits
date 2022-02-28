@@ -63,14 +63,27 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let mut calldata_word = (0..N_BYTES_WORD)
             .map(|idx| {
-                cb.condition(buffer_reader.read_flag(idx), |cb| {
-                    cb.tx_context_lookup(
-                        tx_id.expr(),
-                        TxContextFieldTag::CallData,
-                        Some(calldata_start.expr() + idx.expr()),
-                        buffer_reader.byte(idx),
-                    );
-                });
+                cb.condition(
+                    cb.curr.state.is_root.expr() * buffer_reader.read_flag(idx),
+                    |cb| {
+                        cb.tx_context_lookup(
+                            tx_id.expr(),
+                            TxContextFieldTag::CallData,
+                            Some(src_addr.expr() + idx.expr()),
+                            buffer_reader.byte(idx),
+                        );
+                    },
+                );
+                cb.condition(
+                    (1.expr() - cb.curr.state.is_root.expr()) * buffer_reader.read_flag(idx),
+                    |cb| {
+                        cb.memory_lookup(
+                            0.expr(),
+                            src_addr.expr() + idx.expr(),
+                            buffer_reader.byte(idx),
+                        );
+                    },
+                );
                 buffer_reader.byte(idx)
             })
             .collect::<Vec<Expression<F>>>();
@@ -88,7 +101,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
         ));
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(3.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(0.expr()),
             ..Default::default()
@@ -112,7 +125,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        _call: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -138,15 +151,24 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // assign to the buffer reader gadget.
         let src_addr = calldata_offset.as_usize();
-        let src_addr_end = tx.call_data.len().min(src_addr + N_BYTES_WORD);
+        let src_addr_end = (call.call_data_length as usize).min(src_addr + N_BYTES_WORD);
         self.src_addr
             .assign(region, offset, Some(F::from(src_addr as u64)))?;
         self.src_addr_end
             .assign(region, offset, Some(F::from(src_addr_end as u64)))?;
+
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
         for (i, byte) in calldata_bytes.iter_mut().enumerate() {
-            if src_addr + i < tx.call_data_length {
-                *byte = tx.call_data[src_addr + i];
+            if call.is_root {
+                // fetch from tx call data
+                if src_addr + i < tx.call_data_length {
+                    *byte = tx.call_data[src_addr + i];
+                }
+            } else {
+                // fetch from memory
+                if src_addr + i < call.call_data_length as usize {
+                    *byte = block.rws[step.rw_indices[2 + i]].memory_value();
+                }
             }
         }
         self.buffer_reader.assign(
@@ -178,7 +200,35 @@ mod test {
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
 
-    fn test_ok(call_data: Vec<u8>, calldata_offset: Word, expected: Word) {
+    fn bytes_from_hex(s: &str) -> Vec<u8> {
+        hex::decode(s).expect("invalid hex")
+    }
+
+    fn word_from_hex(s: &str) -> Word {
+        Word::from_big_endian(&bytes_from_hex(s))
+    }
+
+    fn test_data() -> Vec<(Vec<u8>, usize, Word)> {
+        vec![
+            (
+                bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEE"),
+                0,
+                word_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEE"),
+            ),
+            (
+                bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+                31,
+                word_from_hex("FF00000000000000000000000000000000000000000000000000000000000000"),
+            ),
+            (
+                bytes_from_hex("a1bacf5488bfafc33bad736db41f06866eaeb35e1c1dd81dfc268357ec98563f"),
+                16,
+                word_from_hex("6eaeb35e1c1dd81dfc268357ec98563f00000000000000000000000000000000"),
+            ),
+        ]
+    }
+
+    fn test_ok(call_data: Vec<u8>, calldata_offset: Word, expected: Word, is_root: bool) {
         let randomness = Fr::rand();
         let bytecode = bytecode! {
             #[start]
@@ -191,7 +241,7 @@ mod test {
         let call_id = 1;
         let call_data_length = call_data.len();
 
-        let rws_stack = vec![
+        let mut rws_stack = vec![
             Rw::Stack {
                 rw_counter: 1,
                 is_write: true,
@@ -206,13 +256,6 @@ mod test {
                 stack_pointer: 1023,
                 value: calldata_offset,
             },
-            Rw::Stack {
-                rw_counter: 4,
-                is_write: true,
-                call_id,
-                stack_pointer: 1023,
-                value: expected,
-            },
         ];
         let rws_call_context = vec![Rw::CallContext {
             rw_counter: 3,
@@ -221,7 +264,39 @@ mod test {
             field_tag: CallContextFieldTag::TxId,
             value: Word::one(),
         }];
+        let mut rw_indices = vec![(RwTableTag::Stack, 1), (RwTableTag::CallContext, 0)];
+
+        // if not root call, add calldata to memory.
         let mut rws_map = HashMap::new();
+        let mut rw_counter = 4;
+        if !is_root {
+            let rws_memory = call_data
+                .iter()
+                .skip(calldata_offset.as_usize())
+                .enumerate()
+                .map(|(idx, byte)| Rw::Memory {
+                    call_id,
+                    memory_address: (calldata_offset.as_usize() + idx) as u64,
+                    is_write: false,
+                    byte: *byte,
+                    rw_counter: rw_counter + idx,
+                })
+                .collect::<Vec<Rw>>();
+            rw_counter += rws_memory.len();
+            let mut extra_indices = (0..rws_memory.len())
+                .map(|i| (RwTableTag::Memory, i))
+                .collect();
+            rw_indices.append(&mut extra_indices);
+            rws_map.insert(RwTableTag::Memory, rws_memory);
+        }
+        rw_indices.push((RwTableTag::Stack, 2));
+        rws_stack.push(Rw::Stack {
+            rw_counter,
+            is_write: true,
+            call_id,
+            stack_pointer: 1023,
+            value: expected,
+        });
         rws_map.insert(RwTableTag::Stack, rws_stack);
         rws_map.insert(RwTableTag::CallContext, rws_call_context);
 
@@ -243,11 +318,7 @@ mod test {
             },
             ExecStep {
                 execution_state: ExecutionState::CALLDATALOAD,
-                rw_indices: vec![
-                    (RwTableTag::Stack, 1),
-                    (RwTableTag::CallContext, 0),
-                    (RwTableTag::Stack, 2),
-                ],
+                rw_indices,
                 rw_counter: 2,
                 program_counter: 33,
                 stack_pointer: 1023,
@@ -258,7 +329,7 @@ mod test {
             },
             ExecStep {
                 execution_state: ExecutionState::STOP,
-                rw_counter: 5,
+                rw_counter: rw_counter + 1,
                 program_counter: 34,
                 stack_pointer: 1023,
                 gas_left: 0,
@@ -271,12 +342,12 @@ mod test {
             randomness,
             txs: vec![Transaction {
                 id: tx_id,
-                call_data,
-                call_data_length,
+                call_data_length: if is_root { call_data.len() } else { 0 },
+                call_data: if is_root { call_data } else { vec![] },
                 steps,
                 calls: vec![Call {
                     id: call_id,
-                    is_root: true,
+                    is_root,
                     is_create: false,
                     call_data_length: call_data_length as u64,
                     code_source: CodeSource::Account(bytecode.hash),
@@ -293,30 +364,16 @@ mod test {
     }
 
     #[test]
-    fn calldataload_gadget_simple() {
-        let bytes_from_hex = |s: &str| -> Vec<u8> { hex::decode(s).expect("invalid hex") };
-        let word_from_hex = |s: &str| -> Word { Word::from_big_endian(&bytes_from_hex(s)) };
-
-        let test_data: Vec<(Vec<u8>, usize, Word)> = vec![
-            (
-                bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEE"),
-                0,
-                word_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEE"),
-            ),
-            (
-                bytes_from_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
-                31,
-                word_from_hex("FF00000000000000000000000000000000000000000000000000000000000000"),
-            ),
-            (
-                bytes_from_hex("a1bacf5488bfafc33bad736db41f06866eaeb35e1c1dd81dfc268357ec98563f"),
-                16,
-                word_from_hex("6eaeb35e1c1dd81dfc268357ec98563f00000000000000000000000000000000"),
-            ),
-        ];
-
-        test_data
+    fn calldataload_gadget_root() {
+        test_data()
             .iter()
-            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2));
+            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, true));
+    }
+
+    #[test]
+    fn calldataload_gadget_internal() {
+        test_data()
+            .iter()
+            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, false));
     }
 }
