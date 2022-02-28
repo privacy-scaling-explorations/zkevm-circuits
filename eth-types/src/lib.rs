@@ -350,11 +350,13 @@ pub struct GethExecTraceInternal {
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[doc(hidden)]
+//#[doc(hidden)]
 pub struct GethExecTrace {
+    /// TODO: Doc & remove pub
     pub gas: Gas,
+    /// TODO: Doc
     pub failed: bool,
-    // return_value is a hex encoded byte array
+    /// return_value is a hex encoded byte array
     pub struct_logs: Vec<GethExecStep>,
 }
 
