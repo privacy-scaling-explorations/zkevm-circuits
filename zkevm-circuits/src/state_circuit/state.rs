@@ -89,6 +89,8 @@ pub(crate) struct BusMapping<F: FieldExt> {
     value_prev: Variable<F, F>,
 }
 
+struct AssignRet<F: FieldExt> (usize, Vec<BusMapping<F>>);
+
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
@@ -98,11 +100,9 @@ pub struct Config<
     // synthesis
     const SANITY_CHECK: bool,
     const RW_COUNTER_MAX: usize,
-    const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
-    const STACK_ROWS_MAX: usize,
     const STACK_ADDRESS_MAX: usize,
-    const STORAGE_ROWS_MAX: usize,
+    const ROWS_MAX: usize,
 > {
     rw_counter: Column<Advice>,
     is_write: Column<Advice>,
@@ -136,21 +136,17 @@ impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
-        const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
-        const STACK_ROWS_MAX: usize,
         const STACK_ADDRESS_MAX: usize,
-        const STORAGE_ROWS_MAX: usize,
+        const ROWS_MAX: usize,
     >
     Config<
         F,
         SANITY_CHECK,
         RW_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
+        ROWS_MAX,
     >
 {
 
@@ -641,11 +637,11 @@ impl<
         ops: Vec<Rw>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
         offset: usize,
-    ) -> Result<Vec<BusMapping<F>>, Error> {
+    ) -> Result<AssignRet<F>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let mut offset = offset;
-        let offset_limit = offset + MEMORY_ROWS_MAX;
+        let offset_limit = ROWS_MAX;
 
         for (index, oper) in ops.iter().enumerate() {
             if !matches!(oper, Rw::Memory { .. }) {
@@ -687,15 +683,8 @@ impl<
             address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
             offset += 1;
         }
-        self.pad_rows(
-            region,
-            ops.is_empty(),
-            offset,
-            offset_limit,
-            MEMORY_TAG as usize,
-        )?;
 
-        Ok(bus_mappings)
+        Ok(AssignRet::<_>(offset, bus_mappings))
     }
 
     fn assign_stack_ops(
@@ -705,14 +694,13 @@ impl<
         ops: Vec<Rw>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
         offset: usize,
-    ) -> Result<Vec<BusMapping<F>>, Error> {
-        if ops.len() > STACK_ROWS_MAX {
+    ) -> Result<AssignRet<F>, Error> {
+        if offset + ops.len() > ROWS_MAX {
             panic!("too many stack operations");
         }
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let mut offset = offset;
-        let offset_limit = offset + STACK_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             if !matches!(oper, Rw::Stack { .. }) {
                 panic!("expect stack operation");
@@ -756,15 +744,7 @@ impl<
             offset += 1;
         }
 
-        self.pad_rows(
-            region,
-            ops.is_empty(),
-            offset,
-            offset_limit,
-            STACK_TAG as usize,
-        )?;
-
-        Ok(bus_mappings)
+        Ok(AssignRet::<_>(offset, bus_mappings))
     }
 
     fn assign_storage_ops(
@@ -775,14 +755,13 @@ impl<
         address_diff_is_zero_chip: &IsZeroChip<F>,
         storage_key_diff_is_zero_chip: &IsZeroChip<F>,
         offset: usize,
-    ) -> Result<Vec<BusMapping<F>>, Error> {
-        if ops.len() > STORAGE_ROWS_MAX {
+    ) -> Result<AssignRet<F>, Error> {
+        if offset + ops.len() > ROWS_MAX {
             panic!("too many storage operations");
         }
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let mut offset = offset;
-        let offset_limit = offset + STORAGE_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             if !matches!(oper, Rw::AccountStorage { .. }) {
                 panic!("expect stack operation");
@@ -824,24 +803,14 @@ impl<
             offset += 1;
         }
 
-        self.pad_rows(
-            region,
-            ops.is_empty(),
-            offset,
-            offset_limit,
-            STORAGE_TAG as usize,
-        )?;
-
-        Ok(bus_mappings)
+        Ok(AssignRet::<_>(offset, bus_mappings))
     }
 
     fn pad_rows(
         &self,
         region: &mut Region<F>,
-        need_pad_start_row: bool,
         start_offset: usize,
         end_offset: usize,
-        target: usize,
     ) -> Result<(), Error> {
         // We pad all remaining rows to avoid the check at the first unused row.
         // Without padding, (address_cur - address_prev) would not be zero at
@@ -899,9 +868,9 @@ impl<
                     memory_ops.clone(),
                     &address_diff_is_zero_chip,
                     offset,
-                );
-                bus_mappings.extend(memory_mappings.unwrap());
-                offset += MEMORY_ROWS_MAX;
+                ).unwrap();
+                bus_mappings.extend(memory_mappings.1);
+                offset = memory_mappings.0;
 
                 let stack_mappings = self.assign_stack_ops(
                     &mut region,
@@ -909,9 +878,9 @@ impl<
                     stack_ops.clone(),
                     &address_diff_is_zero_chip,
                     offset,
-                );
-                bus_mappings.extend(stack_mappings.unwrap());
-                offset += STACK_ROWS_MAX;
+                ).unwrap();
+                bus_mappings.extend(stack_mappings.1);
+                offset = stack_mappings.0;
 
                 let storage_mappings = self.assign_storage_ops(
                     &mut region,
@@ -920,8 +889,11 @@ impl<
                     &account_addr_diff_is_zero_chip,
                     &storage_key_diff_is_zero_chip,
                     offset,
-                );
-                bus_mappings.extend(storage_mappings.unwrap());
+                ).unwrap();
+                bus_mappings.extend(storage_mappings.1);
+                offset = storage_mappings.0;
+
+                self.pad_rows(&mut region, offset, ROWS_MAX)?;
 
                 Ok(bus_mappings.clone())
             },
@@ -1045,11 +1017,9 @@ pub struct StateCircuit<
     F: FieldExt,
     const SANITY_CHECK: bool,
     const RW_COUNTER_MAX: usize,
-    const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
-    const STACK_ROWS_MAX: usize,
     const STACK_ADDRESS_MAX: usize,
-    const STORAGE_ROWS_MAX: usize,
+    const ROWS_MAX: usize,
 > {
     /// randomness used in linear combination
     pub randomness: F,
@@ -1065,21 +1035,17 @@ impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
-        const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
-        const STACK_ROWS_MAX: usize,
         const STACK_ADDRESS_MAX: usize,
-        const STORAGE_ROWS_MAX: usize,
+        const ROWS_MAX: usize,
     >
     StateCircuit<
         F,
         SANITY_CHECK,
         RW_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
+        ROWS_MAX,
     >
 {
     /// Use rw_map to build a StateCircuit instance
@@ -1113,32 +1079,26 @@ impl<
         F: FieldExt,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
-        const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
-        const STACK_ROWS_MAX: usize,
         const STACK_ADDRESS_MAX: usize,
-        const STORAGE_ROWS_MAX: usize,
+        const ROWS_MAX: usize,
     > Circuit<F>
     for StateCircuit<
         F,
         SANITY_CHECK,
         RW_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
+        ROWS_MAX,
     >
 {
     type Config = Config<
         F,
         SANITY_CHECK,
         RW_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
+        ROWS_MAX,
     >;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -1183,11 +1143,9 @@ mod tests {
                 Fr,
                 true,
                 $rw_counter_max,
-                $memory_rows_max,
                 $memory_address_max,
-                $stack_rows_max,
                 $stack_address_max,
-                $storage_rows_max,
+                {$memory_rows_max + $stack_rows_max + $storage_rows_max},
             >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
@@ -1202,11 +1160,9 @@ mod tests {
                 Fr,
                 false,
                 $rw_counter_max,
-                $memory_rows_max,
                 $memory_address_max,
-                $stack_rows_max,
                 $stack_address_max,
-                $storage_rows_max,
+                {$memory_rows_max + $stack_rows_max + $storage_rows_max},
             >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();

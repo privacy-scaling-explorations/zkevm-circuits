@@ -98,11 +98,9 @@ async fn main() {
             Fr,
             true,
             GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
+            GLOBAL_COUNTER_MAX,
         >::new_from_rw_map(block.randomness, &block.rws);
 
         // TODO: same quest like in the first scope
