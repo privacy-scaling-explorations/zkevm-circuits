@@ -63,6 +63,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let mut calldata_word = (0..N_BYTES_WORD)
             .map(|idx| {
+                // for a root call, the call data comes from tx's data field.
                 cb.condition(
                     cb.curr.state.is_root.expr() * buffer_reader.read_flag(idx),
                     |cb| {
@@ -74,6 +75,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         );
                     },
                 );
+                // for an internal call, the call data comes from memory.
                 cb.condition(
                     (1.expr() - cb.curr.state.is_root.expr()) * buffer_reader.read_flag(idx),
                     |cb| {
