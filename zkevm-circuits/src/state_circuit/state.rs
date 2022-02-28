@@ -159,13 +159,13 @@ impl<
         let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
-        //let key2_limbs = [();8].map(|_|meta.advice_column());
-        //let key4_bytes = [();32].map(|_|meta.advice_column());
-        //let auxs = [();2].map(|_|meta.advice_column());
-        let dummy = meta.advice_column();
+        let key2_limbs = [(); 8].map(|_| meta.advice_column());
+        let key4_bytes = [(); 32].map(|_| meta.advice_column());
+        let auxs = [(); 2].map(|_| meta.advice_column());
+        /*let dummy = meta.advice_column();
         let key2_limbs = [dummy; 8];
         let key4_bytes = [dummy; 32];
-        let auxs = [dummy; 2];
+        let auxs = [dummy; 2];*/
 
         let s_enable = meta.fixed_column();
 
