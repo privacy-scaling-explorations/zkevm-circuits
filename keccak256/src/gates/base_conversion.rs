@@ -199,15 +199,19 @@ mod tests {
             pub fn assign_region(
                 &self,
                 layouter: &mut impl Layouter<F>,
-                input: F,
-            ) -> Result<F, Error> {
+                input: Option<F>,
+            ) -> Result<AssignedCell<F, F>, Error> {
                 // The main flag is enabled
                 let flag_value = F::one();
                 let (lane, flag) = layouter.assign_region(
                     || "Input lane",
                     |mut region| {
-                        let lane =
-                            region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input))?;
+                        let lane = region.assign_advice(
+                            || "Input lane",
+                            self.lane,
+                            0,
+                            || input.ok_or(Error::Synthesis),
+                        )?;
                         let flag = region.assign_advice(
                             || "main flag",
                             self.flag,
@@ -222,17 +226,14 @@ mod tests {
                     || "Input lane",
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
-                // TODO: Handle this better once AssignedCell has the API to do so
-                Ok(*output
-                    .value()
-                    .unwrap_or(&F::from_u128(0x22c268c05977fd626636ccu128)))
+                Ok(output)
             }
         }
 
         #[derive(Default)]
         struct MyCircuit<F> {
-            input_b2_lane: F,
-            output_b13_lane: F,
+            input_b2_lane: Option<F>,
+            output_b13_lane: Option<F>,
         }
         impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
@@ -253,14 +254,16 @@ mod tests {
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
                 let output = config.assign_region(&mut layouter, self.input_b2_lane)?;
-                assert_eq!(output, self.output_b13_lane);
+                if output.value().is_some() {
+                    assert_eq!(output.value(), self.output_b13_lane.as_ref());
+                }
                 Ok(())
             }
         }
         let input = 12345678u64;
         let circuit = MyCircuit::<Fp> {
-            input_b2_lane: Fp::from(input),
-            output_b13_lane: biguint_to_f::<Fp>(&convert_b2_to_b13(input)),
+            input_b2_lane: Some(Fp::from(input)),
+            output_b13_lane: Some(biguint_to_f::<Fp>(&convert_b2_to_b13(input))),
         };
         let k = 17;
 
@@ -310,15 +313,19 @@ mod tests {
             pub fn assign_region(
                 &self,
                 layouter: &mut impl Layouter<F>,
-                input: F,
-            ) -> Result<F, Error> {
+                input: Option<F>,
+            ) -> Result<AssignedCell<F, F>, Error> {
                 // The main flag is enabled
                 let flag_value = F::one();
                 let (lane, flag) = layouter.assign_region(
                     || "Input lane",
                     |mut region| {
-                        let lane =
-                            region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input))?;
+                        let lane = region.assign_advice(
+                            || "Input lane",
+                            self.lane,
+                            0,
+                            || input.ok_or(Error::Synthesis),
+                        )?;
                         let flag = region.assign_advice(
                             || "main flag",
                             self.flag,
@@ -335,14 +342,14 @@ mod tests {
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
 
-                Ok(*output.value().expect("Add propper err handling"))
+                Ok(output)
             }
         }
 
         #[derive(Default)]
         struct MyCircuit<F> {
-            input_lane: F,
-            output_lane: F,
+            input_lane: Option<F>,
+            output_lane: Option<F>,
         }
         impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
@@ -363,15 +370,17 @@ mod tests {
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
                 let output = config.assign_region(&mut layouter, self.input_lane)?;
-                assert_eq!(output, self.output_lane);
+                if output.value().is_some() {
+                    assert_eq!(output.value(), self.output_lane.as_ref());
+                }
                 Ok(())
             }
         }
         let input = BigUint::parse_bytes(b"02939a42ef593e37757abe328e9e409e75dcd76cf1b3427bc3", 16)
             .unwrap();
         let circuit = MyCircuit::<Fp> {
-            input_lane: biguint_to_f::<Fp>(&input),
-            output_lane: biguint_to_f::<Fp>(&convert_b9_lane_to_b13(input)),
+            input_lane: Some(biguint_to_f::<Fp>(&input)),
+            output_lane: Some(biguint_to_f::<Fp>(&convert_b9_lane_to_b13(input))),
         };
         let k = 17;
         let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
