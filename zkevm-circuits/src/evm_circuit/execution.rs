@@ -404,8 +404,8 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
+    ) -> Result<usize, Error> {
+        let offset = layouter.assign_region(
             || "Execution step",
             |mut region| {
                 let mut offset = 0;
@@ -423,13 +423,13 @@ impl<F: Field> ExecutionConfig<F> {
                         offset += STEP_HEIGHT;
                     }
                 }
-                Ok(())
+                Ok(offset)
             },
         )?;
 
         // TODO: Pad leftover region to the desired capacity
 
-        Ok(())
+        Ok(offset)
     }
 
     /// Assign exact steps in block without padding for unit test purpose
@@ -437,8 +437,8 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
+    ) -> Result<usize, Error> {
+        let offset = layouter.assign_region(
             || "Execution step",
             |mut region| {
                 let mut offset = 0;
@@ -452,9 +452,10 @@ impl<F: Field> ExecutionConfig<F> {
                         offset += STEP_HEIGHT;
                     }
                 }
-                Ok(())
+                Ok(offset)
             },
-        )
+        )?;
+        Ok(offset)
     }
 
     fn assign_exec_step(
