@@ -60,23 +60,18 @@ async fn test_state_circuit_block(block_num: u64) {
     trace!("storage_ops: {:#?}", storage_ops);
 
     const DEGREE: usize = 16;
+    const RW_COUNTER_MAX: usize = 2000;
     const MEMORY_ADDRESS_MAX: usize = 2000;
     const STACK_ADDRESS_MAX: usize = 1024;
-
-    const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+    const ROWS_MAX: usize = 2000;
 
     let circuit = StateCircuit::<
         Fr,
         true,
-        GLOBAL_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
+        ROWS_MAX,
     >::new(Fr::rand(), memory_ops, stack_ops, storage_ops);
 
     use pairing::bn256::Fr as Fp;

@@ -925,6 +925,7 @@ impl<
     ) -> Result<BusMapping<F>, Error> {
         let address = {
             let cell =
+                region.assign_advice(|| "address", self.address(), offset, || Ok(address))?;
             Variable::<F, F>::new(cell, Some(address))
         };
 
@@ -974,7 +975,7 @@ impl<
             let cell =
                 region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
 
-            Variable::<F, F>::new(cell, Some(flag))
+            Variable::<F, F>::new(cell, Some(is_write))
         };
 
         let target = {
