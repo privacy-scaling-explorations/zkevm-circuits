@@ -84,11 +84,10 @@ pub fn test_circuits_using_witness_block(
     // public input, since randomness in state circuit and evm
     // circuit must be same
     if config.enable_state_circuit_test {
-        let state_circuit =
-            StateCircuit::<Fr, true, 2000, 100, 1023, 2000>::new_from_rw_map(
-                block.randomness,
-                &block.rws,
-            );
+        let state_circuit = StateCircuit::<Fr, true, 2000, 100, 1023, 2000>::new_from_rw_map(
+            block.randomness,
+            &block.rws,
+        );
         let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
         prover.verify()?;
     }

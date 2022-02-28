@@ -89,7 +89,7 @@ pub(crate) struct BusMapping<F: FieldExt> {
     value_prev: Variable<F, F>,
 }
 
-struct AssignRet<F: FieldExt> (usize, Vec<BusMapping<F>>);
+struct AssignRet<F: FieldExt>(usize, Vec<BusMapping<F>>);
 
 #[derive(Clone, Debug)]
 pub struct Config<
@@ -113,13 +113,14 @@ pub struct Config<
     auxs: [Column<Advice>; 2],
 
     // helper cols here
+    s_enable: Column<Fixed>,
     value_prev: Column<Advice>,
     address_diff_inv: Column<Advice>,
     account_addr_diff_inv: Column<Advice>,
     storage_key_diff_inv: Column<Advice>,
 
     // helper chips here
-    address_diff_is_zero: IsZeroConfig<F>, //check key3
+    address_diff_is_zero: IsZeroConfig<F>,      //check key3
     account_addr_diff_is_zero: IsZeroConfig<F>, //check key2
     storage_key_diff_is_zero: IsZeroConfig<F>,
     address_monotone: MonotoneConfig,
@@ -129,7 +130,6 @@ pub struct Config<
     memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
-
 }
 
 impl<
@@ -139,31 +139,36 @@ impl<
         const MEMORY_ADDRESS_MAX: usize,
         const STACK_ADDRESS_MAX: usize,
         const ROWS_MAX: usize,
-    >
-    Config<
-        F,
-        SANITY_CHECK,
-        RW_COUNTER_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ADDRESS_MAX,
-        ROWS_MAX,
-    >
+    > Config<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
-
-    fn tag(&self) -> Column<Advice> { self.keys[0] }
-    fn account_addr(&self) -> Column<Advice> { self.keys[2] }
-    fn address(&self) -> Column<Advice> { self.keys[3] }
-    fn storage_key(&self) -> Column<Advice> { self.keys[4] }
+    fn tag(&self) -> Column<Advice> {
+        self.keys[0]
+    }
+    fn account_addr(&self) -> Column<Advice> {
+        self.keys[2]
+    }
+    fn address(&self) -> Column<Advice> {
+        self.keys[3]
+    }
+    fn storage_key(&self) -> Column<Advice> {
+        self.keys[4]
+    }
 
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-
-        let rw_counter = meta.advice_column();        
+        let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
-        let keys = [();5].map(|_|meta.advice_column());
-        let key2_limbs = [();8].map(|_|meta.advice_column());
-        let key4_bytes = [();32].map(|_|meta.advice_column());
-        let auxs = [();2].map(|_|meta.advice_column());
+        let keys = [(); 5].map(|_| meta.advice_column());
+        //let key2_limbs = [();8].map(|_|meta.advice_column());
+        //let key4_bytes = [();32].map(|_|meta.advice_column());
+        //let auxs = [();2].map(|_|meta.advice_column());
+        let dummy = meta.advice_column();
+        let key2_limbs = [dummy; 8];
+        let key4_bytes = [dummy; 32];
+        let auxs = [dummy; 2];
+
+        let s_enable = meta.fixed_column();
+
         let value = meta.advice_column();
         let value_prev = meta.advice_column();
 
@@ -190,11 +195,7 @@ impl<
             let tag_cur = meta.query_advice(tag, Rotation::cur());
             let tag_next = meta.query_advice(tag, Rotation::next());
             generate_lagrange_base_polynomial(tag_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
-                * generate_lagrange_base_polynomial(
-                    tag_next,
-                    MEMORY_TAG,
-                    EMPTY_TAG..=STORAGE_TAG,
-                )
+                * generate_lagrange_base_polynomial(tag_next, MEMORY_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
 
         let q_memory_not_first = |meta: &mut VirtualCells<F>| {
@@ -207,11 +208,7 @@ impl<
             let tag_next = meta.query_advice(tag, Rotation::next());
 
             generate_lagrange_base_polynomial(tag_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
-                * generate_lagrange_base_polynomial(
-                    tag_next,
-                    STACK_TAG,
-                    EMPTY_TAG..=STORAGE_TAG,
-                )
+                * generate_lagrange_base_polynomial(tag_next, STACK_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
 
         let q_stack_not_first = |meta: &mut VirtualCells<F>| {
@@ -222,32 +219,28 @@ impl<
             let tag_cur = meta.query_advice(tag, Rotation::cur());
             let tag_next = meta.query_advice(tag, Rotation::next());
             generate_lagrange_base_polynomial(tag_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
-                * generate_lagrange_base_polynomial(
-                    tag_next,
-                    STORAGE_TAG,
-                    EMPTY_TAG..=STORAGE_TAG,
-                )
+                * generate_lagrange_base_polynomial(tag_next, STORAGE_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
         let q_storage_not_first = |meta: &mut VirtualCells<F>| {
             let tag = meta.query_advice(tag, Rotation::cur());
             generate_lagrange_base_polynomial(tag, STORAGE_TAG, EMPTY_TAG..=STORAGE_TAG)
         };
 
-        /* 
-            try to detect both address and account_addr's diff here, because one of them
-            should be always 0, ONLY USE THIS CHIP FOR STACK/MEMORY/STORAGE
-         */
+        /*
+           try to detect both address and account_addr's diff here, because one of them
+           should be always 0, ONLY USE THIS CHIP FOR STACK/MEMORY/STORAGE
+        */
         let address_diff_is_zero = IsZeroChip::configure(
             meta,
             |meta| {
                 let tag = meta.query_advice(tag, Rotation::cur());
                 let q_not_first = tag.clone() * (tag - one.clone());
 
-                q_not_first
+                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
             },
             |meta| {
                 let address_cur = meta.query_advice(address, Rotation::cur());
-                let address_prev = meta.query_advice(address, Rotation::prev());             
+                let address_prev = meta.query_advice(address, Rotation::prev());
                 address_cur - address_prev
             },
             address_diff_inv,
@@ -259,11 +252,11 @@ impl<
                 let tag = meta.query_advice(tag, Rotation::cur());
                 let q_not_first = tag.clone() * (tag - one.clone());
 
-                q_not_first
+                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
             },
             |meta| {
                 let account_addr_cur = meta.query_advice(account_addr, Rotation::cur());
-                let account_addr_prev = meta.query_advice(account_addr, Rotation::prev());                
+                let account_addr_prev = meta.query_advice(account_addr, Rotation::prev());
                 account_addr_cur - account_addr_prev
             },
             account_addr_diff_inv,
@@ -278,7 +271,7 @@ impl<
                 // mutually exclusive, q_not_first is binary.
                 let q_not_first = q_memory_not_first(meta) + q_stack_not_first(meta);
 
-                q_not_first 
+                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
             },
             address,
         );
@@ -300,7 +293,7 @@ impl<
             let q_memory_first = q_memory_first(meta);
 
             // read value must be 0
-            vec![q_memory_first * q_read * value]
+            vec![meta.query_fixed(s_enable, Rotation::cur()) * q_memory_first * q_read * value]
         });
 
         meta.create_gate("Memory operation + padding", |meta| {
@@ -331,13 +324,14 @@ impl<
             // let tag = meta.query_advice(tag, Rotation::cur());
             // let padding = meta.query_advice(padding, Rotation::cur());
             // let bool_check_padding = padding.clone() * (one.clone() - padding);
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
 
             vec![
-                q_memory_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
+                s_enable.clone() * q_memory_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
                 // if address changes, read value should be 0
-                q_memory_not_first.clone() * address_diff * q_read.clone() * value_cur.clone(),
+                s_enable.clone() * q_memory_not_first.clone() * address_diff * q_read.clone() * value_cur.clone(),
                 // or else, read value should be the same as the previous value
-                q_memory_not_first
+                s_enable * q_memory_not_first
                     * address_diff_is_zero.is_zero_expression.clone()
                     * q_read
                     * (value_cur - value_prev),
@@ -362,10 +356,11 @@ impl<
             let q_read = one.clone() - is_write;
             // when addresses changes, we don't require the operation is write as this is
             // enforced by evm circuit
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
 
             vec![
-                q_stack_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
-                q_stack_not_first * q_read * (value_cur - value_prev), /* when reading, the
+                s_enable.clone() * q_stack_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
+                s_enable * q_stack_not_first * q_read * (value_cur - value_prev), /* when reading, the
                                                               * value is the same as
                                                               * at the previous op */
             ]
@@ -432,11 +427,10 @@ impl<
         let storage_key_diff_is_zero = IsZeroChip::configure(
             meta,
             |meta| {
-
                 let tag = meta.query_advice(tag, Rotation::cur());
                 let q_not_first = tag.clone() * (tag - one.clone());
 
-                q_not_first
+                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
             },
             |meta| {
                 let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
@@ -453,6 +447,7 @@ impl<
             let q_read = one.clone() - is_write;
 
             vec![
+                meta.query_fixed(s_enable, Rotation::cur()) *
                 q_storage_first * q_read, /* first storage op has to be
                                            * write (is_write = 1) */
             ]
@@ -487,24 +482,25 @@ impl<
             // If is_write == 0 (read), and rw_counter != 0, value_prev == value_cur
             let value_previous = meta.query_advice(value, Rotation::prev());
             let q_read = one.clone() - is_write.clone();
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
 
             vec![
-                q_storage_not_first.clone() * address_diff * q_read.clone(), // when address changes, the is_write is 1 (write)
-                q_storage_not_first.clone() * storage_key_diff * q_read.clone(), // when storage_key_diff changes, the is_write is 1 (write)
-                q_storage_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
-                q_storage_not_first.clone()
+                s_enable.clone() * q_storage_not_first.clone() * address_diff * q_read.clone(), // when address changes, the is_write is 1 (write)
+                s_enable.clone() * q_storage_not_first.clone() * storage_key_diff * q_read.clone(), // when storage_key_diff changes, the is_write is 1 (write)
+                s_enable.clone() * q_storage_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
+                s_enable.clone() * q_storage_not_first.clone()
                     * q_read.clone()
                     * (value_cur - value_previous.clone()), // when reading, the value is the same as at the previous op
                 // Note that this last constraint needs to hold only when address and storage key don't change,
                 // but we don't need to check this as the first operation at new address and
                 // new storage key always has to be write - that means q_read is 1 only when
                 // the address and storage key doesn't change.
-                is_write
+                s_enable.clone() * is_write
                     * q_storage_not_first.clone()
                     * account_addr_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
                     * (value_prev_cur.clone() - value_previous),
-                q_read
+                s_enable * q_read
                     * q_storage_not_first
                     * account_addr_diff_is_zero.clone().is_zero_expression
                     * storage_key_diff_is_zero.clone().is_zero_expression
@@ -536,7 +532,7 @@ impl<
 
         // TODO: monotone address for storage
 
-        Config {            
+        Config {
             rw_counter,
             value,
             is_write,
@@ -545,11 +541,12 @@ impl<
             key4_bytes,
             auxs,
 
+            s_enable,
             value_prev,
             address_diff_inv,
             account_addr_diff_inv,
             storage_key_diff_inv,
-            
+
             rw_counter_table,
             memory_address_table_zero,
             stack_address_table_zero,
@@ -817,7 +814,7 @@ impl<
         // the first unused row and some checks would be triggered.
 
         for i in start_offset..end_offset {
-/*            let target = if need_pad_start_row && i == start_offset {
+            /*            let target = if need_pad_start_row && i == start_offset {
                 START_TAG
             } else {
                 target
@@ -842,7 +839,8 @@ impl<
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
 
         let address_diff_is_zero_chip = IsZeroChip::construct(self.address_diff_is_zero.clone());
-        let account_addr_diff_is_zero_chip = IsZeroChip::construct(self.account_addr_diff_is_zero.clone());
+        let account_addr_diff_is_zero_chip =
+            IsZeroChip::construct(self.account_addr_diff_is_zero.clone());
 
         let memory_address_monotone_chip =
             MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::construct(
@@ -850,7 +848,7 @@ impl<
             );
         memory_address_monotone_chip.load(&mut layouter)?;
 
-/*        let padding_monotone_chip =
+        /*        let padding_monotone_chip =
             MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
         padding_monotone_chip.load(&mut layouter)?;*/
 
@@ -862,38 +860,49 @@ impl<
             |mut region| {
                 let mut offset = 0;
 
-                let memory_mappings = self.assign_memory_ops(
-                    &mut region,
-                    randomness,
-                    memory_ops.clone(),
-                    &address_diff_is_zero_chip,
-                    offset,
-                ).unwrap();
+                let memory_mappings = self
+                    .assign_memory_ops(
+                        &mut region,
+                        randomness,
+                        memory_ops.clone(),
+                        &address_diff_is_zero_chip,
+                        offset,
+                    )
+                    .unwrap();
                 bus_mappings.extend(memory_mappings.1);
                 offset = memory_mappings.0;
 
-                let stack_mappings = self.assign_stack_ops(
-                    &mut region,
-                    randomness,
-                    stack_ops.clone(),
-                    &address_diff_is_zero_chip,
-                    offset,
-                ).unwrap();
+                let stack_mappings = self
+                    .assign_stack_ops(
+                        &mut region,
+                        randomness,
+                        stack_ops.clone(),
+                        &address_diff_is_zero_chip,
+                        offset,
+                    )
+                    .unwrap();
                 bus_mappings.extend(stack_mappings.1);
                 offset = stack_mappings.0;
 
-                let storage_mappings = self.assign_storage_ops(
-                    &mut region,
-                    randomness,
-                    storage_ops.clone(),
-                    &account_addr_diff_is_zero_chip,
-                    &storage_key_diff_is_zero_chip,
-                    offset,
-                ).unwrap();
+                let storage_mappings = self
+                    .assign_storage_ops(
+                        &mut region,
+                        randomness,
+                        storage_ops.clone(),
+                        &account_addr_diff_is_zero_chip,
+                        &storage_key_diff_is_zero_chip,
+                        offset,
+                    )
+                    .unwrap();
                 bus_mappings.extend(storage_mappings.1);
                 offset = storage_mappings.0;
 
                 self.pad_rows(&mut region, offset, ROWS_MAX)?;
+
+                // enable all rows
+                for i in 0..ROWS_MAX {
+                    region.assign_fixed(|| "enable row", self.s_enable, i, || Ok(F::one()))?;
+                }
 
                 Ok(bus_mappings.clone())
             },
@@ -914,7 +923,8 @@ impl<
         value_prev: F,
     ) -> Result<BusMapping<F>, Error> {
         let address = {
-            let cell = region.assign_advice(|| "address", self.address(), offset, || Ok(address))?;
+            let cell =
+                region.assign_advice(|| "address", self.address(), offset, || Ok(address))?;
             Variable::<F, F> {
                 cell,
                 field_elem: Some(address),
@@ -981,7 +991,8 @@ impl<
         };
 
         let is_write = {
-            let cell = region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
+            let cell =
+                region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
 
             Variable::<F, F> {
                 cell,
@@ -1039,14 +1050,7 @@ impl<
         const STACK_ADDRESS_MAX: usize,
         const ROWS_MAX: usize,
     >
-    StateCircuit<
-        F,
-        SANITY_CHECK,
-        RW_COUNTER_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ADDRESS_MAX,
-        ROWS_MAX,
-    >
+    StateCircuit<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
     /// Use rw_map to build a StateCircuit instance
     pub fn new_from_rw_map(randomness: F, rw_map: &RwMap) -> Self {
@@ -1092,14 +1096,8 @@ impl<
         ROWS_MAX,
     >
 {
-    type Config = Config<
-        F,
-        SANITY_CHECK,
-        RW_COUNTER_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ADDRESS_MAX,
-        ROWS_MAX,
-    >;
+    type Config =
+        Config<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -1145,7 +1143,7 @@ mod tests {
                 $rw_counter_max,
                 $memory_address_max,
                 $stack_address_max,
-                {$memory_rows_max + $stack_rows_max + $storage_rows_max},
+                { $memory_rows_max + $stack_rows_max + $storage_rows_max },
             >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
@@ -1162,7 +1160,7 @@ mod tests {
                 $rw_counter_max,
                 $memory_address_max,
                 $stack_address_max,
-                {$memory_rows_max + $stack_rows_max + $storage_rows_max},
+                { $memory_rows_max + $stack_rows_max + $storage_rows_max },
             >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
@@ -1188,7 +1186,7 @@ mod tests {
     }
 
     #[test]
-    fn state_circuit() {
+    fn state_circuit_simple() {
         let memory_op_0 = Operation::new(
             RWCounter::from(12),
             RW::WRITE,
@@ -1254,7 +1252,7 @@ mod tests {
         );
 
         test_state_circuit_ok!(
-            14,
+            12,
             2000,
             100,
             2,
