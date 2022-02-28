@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 ff = "0.11"
-halo2 = { git = "https://github.com/appliedzkp/halo2.git", rev = "b78c39cacc1c79d287032f1b5f94beb661b3fb42" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_02_23" }
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 ark-std = { version = "0.3", features = ["print-trace"] }
 zkevm-circuits = { path = "../zkevm-circuits" }
@@ -16,6 +16,7 @@ bus-mapping = { path = "../bus-mapping" }
 rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10"
+eth-types = { path = "../eth-types" }
 
 [features]
 default = []

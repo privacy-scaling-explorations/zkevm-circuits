@@ -11,8 +11,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PopGadget<F> {
@@ -20,7 +20,7 @@ pub(crate) struct PopGadget<F> {
     value: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
+impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
     const NAME: &'static str = "POP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::POP;

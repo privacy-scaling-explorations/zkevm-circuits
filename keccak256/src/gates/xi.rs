@@ -1,10 +1,10 @@
-use halo2::{
-    circuit::{Cell, Layouter},
+use eth_types::Field;
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
 use std::{convert::TryInto, marker::PhantomData};
 
 #[derive(Clone, Debug)]
@@ -15,7 +15,7 @@ pub struct XiConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> XiConfig<F> {
+impl<F: Field> XiConfig<F> {
     pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
@@ -63,26 +63,25 @@ impl<F: FieldExt> XiConfig<F> {
     pub fn assign_state(
         &self,
         layouter: &mut impl Layouter<F>,
-        state: [(Cell, F); 25],
+        state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
-    ) -> Result<[(Cell, F); 25], Error> {
+    ) -> Result<[AssignedCell<F, F>; 25], Error> {
         layouter.assign_region(
             || "Xi assignation",
             |mut region| {
                 let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
-                for (idx, lane) in state.iter().enumerate() {
-                    let obtained_cell = region.assign_advice(
+                for (idx, state_item) in state.iter().enumerate() {
+                    state_item.copy_advice(
                         || format!("assign state {}", idx),
+                        &mut region,
                         self.state[idx],
                         offset,
-                        || Ok(lane.1),
                     )?;
-                    region.constrain_equal(lane.0, obtained_cell)?;
                 }
 
-                let mut out_vec: Vec<(Cell, F)> = vec![];
-                let out_state: [(Cell, F); 25] = {
+                let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
+                let out_state: [AssignedCell<F, F>; 25] = {
                     for (idx, lane) in out_state.iter().enumerate() {
                         let out_cell = region.assign_advice(
                             || format!("assign out_state {}", idx),
@@ -90,7 +89,7 @@ impl<F: FieldExt> XiConfig<F> {
                             offset + 1,
                             || Ok(*lane),
                         )?;
-                        out_vec.push((out_cell, *lane));
+                        out_vec.push(out_cell);
                     }
                     out_vec.try_into().unwrap()
                 };
@@ -107,11 +106,10 @@ mod tests {
     use crate::common::*;
     use crate::gates::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
-    use halo2::circuit::Layouter;
-    use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
@@ -125,7 +123,7 @@ mod tests {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = XiConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -139,7 +137,7 @@ mod tests {
                 let state: [Column<Advice>; 25] = (0..25)
                     .map(|_| {
                         let column = meta.advice_column();
-                        meta.enable_equality(column.into());
+                        meta.enable_equality(column);
                         column
                     })
                     .collect::<Vec<_>>()
@@ -159,8 +157,8 @@ mod tests {
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `state`
-                        let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
+                        let in_state: [AssignedCell<F, F>; 25] = {
+                            let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -168,7 +166,7 @@ mod tests {
                                     offset,
                                     || Ok(*val),
                                 )?;
-                                state.push((cell, *val))
+                                state.push(cell)
                             }
                             state.try_into().unwrap()
                         };
@@ -176,7 +174,7 @@ mod tests {
                     },
                 )?;
 
-                config.assign_state(&mut layouter, in_state, self.out_state)?;
+                config.assign_state(&mut layouter, &in_state, self.out_state)?;
                 Ok(())
             }
         }

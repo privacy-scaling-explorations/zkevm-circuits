@@ -3,7 +3,7 @@ use crate::{
     state_circuit::StateCircuit,
 };
 use eth_types::evm_types::Gas;
-use halo2::dev::{MockProver, VerifyFailure};
+use halo2_proofs::dev::{MockProver, VerifyFailure};
 use pairing::bn256::Fr;
 
 pub enum FixedTableConfig {

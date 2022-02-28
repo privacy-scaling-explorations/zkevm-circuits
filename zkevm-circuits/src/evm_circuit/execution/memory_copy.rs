@@ -14,7 +14,8 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 // The max number of bytes that can be copied in a step limited by the number
 // of cells in a step
@@ -41,7 +42,7 @@ pub(crate) struct CopyToMemoryGadget<F> {
     finish_gadget: ComparisonGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
     const NAME: &'static str = "COPYTOMEMORY";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CopyToMemory;
@@ -228,7 +229,7 @@ pub mod test {
     };
     //use crate::evm_circuit::witness::RwMap;
     use eth_types::evm_types::OpcodeId;
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
     use std::collections::HashMap;
 
