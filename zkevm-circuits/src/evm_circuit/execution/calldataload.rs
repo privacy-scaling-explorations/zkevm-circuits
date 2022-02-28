@@ -1,8 +1,8 @@
 use std::convert::TryInto;
 
-use eth_types::ToLittleEndian;
-use halo2::{
-    arithmetic::FieldExt,
+use eth_types::{Field, ToLittleEndian};
+use halo2_proofs::{
+    circuit::Region,
     plonk::{Error, Expression},
 };
 
@@ -41,7 +41,7 @@ pub(crate) struct CallDataLoadGadget<F> {
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATALOAD;
 
     const NAME: &'static str = "CALLDATALOAD";
@@ -121,7 +121,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut halo2::circuit::Region<'_, F>,
+        region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
@@ -190,7 +190,7 @@ mod test {
 
     use bus_mapping::evm::OpcodeId;
     use eth_types::{bytecode, Word};
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
     use crate::evm_circuit::{
