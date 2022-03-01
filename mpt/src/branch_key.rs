@@ -30,10 +30,8 @@ impl<F: FieldExt> BranchKeyChip<F> {
         modified_node: Column<Advice>, // index of the modified node
         // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
         // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
-        c16_col: Column<Advice>, // TODO
-        c1_col: Column<Advice>,  // TODO
+        c16_col: Column<Advice>,
+        c1_col: Column<Advice>,
         key_rlc: Column<Advice>, // used first for account address, then for storage key
         key_rlc_mult: Column<Advice>,
         acc_r: F,
@@ -78,41 +76,10 @@ impl<F: FieldExt> BranchKeyChip<F> {
             // If sel2 = 1, then modified_node is multiplied by 1.
             // NOTE: modified_node presents nibbles: n0, n1, ...
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-            let sel1_prev = meta.query_advice(sel1, Rotation(-20));
+            let sel1_prev = meta.query_advice(c16_col, Rotation(-20));
             // Rotation(-20) lands into previous branch init.
-            let sel1_cur = meta.query_advice(sel1, Rotation::prev());
-            let sel2_cur = meta.query_advice(sel2, Rotation::prev());
-
-            let c16_mult_prev = meta.query_advice(
-                c16_col,
-                Rotation(-20),
-            );
-            let c16_mult_cur = meta.query_advice(
-                c16_col,
-                Rotation::prev(),
-            );
-            let c1_mult_cur = meta.query_advice(
-                c1_col,
-                Rotation::prev(),
-            );
-            
-            // TODO: remove below
-            // debugging
-            constraints.push((
-                "c16_mult_cur",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (sel1_cur.clone() - c16_mult_cur.clone()),
-            ));
-            constraints.push((
-                "c1_mult_cur",
-                not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (sel2_cur.clone() - c1_mult_cur.clone()),
-            ));
-            // end debugging
+            let sel1_cur = meta.query_advice(c16_col, Rotation::prev());
+            let sel2_cur = meta.query_advice(c1_col, Rotation::prev());
 
             let key_rlc_prev = meta.query_advice(key_rlc, Rotation(-19));
             let key_rlc_cur = meta.query_advice(key_rlc, Rotation::cur());

@@ -304,8 +304,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices[IS_EXTENSION_EVEN_KEY_LEN_POS - LAYOUT_OFFSET],
             s_advices[IS_EXTENSION_ODD_KEY_LEN_POS - LAYOUT_OFFSET],
             modified_node,
-            sel1,
-            sel2,
             s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
             s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
             key_rlc,
@@ -1456,6 +1454,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             // If sel1 = 1 and long, we have nibble+48 in s_advices[1].
                             // If sel2 = 1 and short, we have 32 in s_advices[0].
                             // If sel2 = 1 and long, we have 32 in s_advices[1].
+
+                            // TODO: remove sel1, sel2, this is now set in witness generator.
 
                             // Note that if the last branch is placeholder,
                             // sel1 and sel2 are still switched at this branch which
