@@ -72,7 +72,7 @@ pub struct BaseConstraintBuilder<F> {
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {
-    fn new(max_degree: usize) -> Self {
+    pub(crate) fn new(max_degree: usize) -> Self {
         BaseConstraintBuilder {
             constraints: Vec::new(),
             max_degree,

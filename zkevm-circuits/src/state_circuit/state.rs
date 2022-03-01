@@ -1,5 +1,11 @@
 use crate::{
-    evm_circuit::{util::math_gadget::generate_lagrange_base_polynomial, witness::RwMap},
+    evm_circuit::{
+        util::{
+            constraint_builder::BaseConstraintBuilder,
+            math_gadget::generate_lagrange_base_polynomial,
+        },
+        witness::RwMap,
+    },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         monotone::{MonotoneChip, MonotoneConfig},
@@ -75,6 +81,8 @@ const START_TAG: usize = 1;
 const MEMORY_TAG: usize = 2;
 const STACK_TAG: usize = 3;
 const STORAGE_TAG: usize = 4;
+
+const MAX_DEGREE: usize = 15;
 
 /// A mapping derived from witnessed memory operations.
 /// TODO: The complete version of this mapping will involve storage, stack,
@@ -183,6 +191,8 @@ impl<
         let stack_address_table_zero = meta.fixed_column();
         let memory_value_table = meta.fixed_column();
 
+        let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
+
         let tag = keys[0];
         let address = keys[3];
         let account_addr = keys[2];
@@ -246,6 +256,7 @@ impl<
             },
             address_diff_inv,
         );
+        let address_diff_is_zero_exp = address_diff_is_zero.is_zero_expression.clone();
 
         let account_addr_diff_is_zero = IsZeroChip::configure(
             meta,
@@ -262,6 +273,23 @@ impl<
             },
             account_addr_diff_inv,
         );
+        let _account_addr_diff_is_zero_expr = account_addr_diff_is_zero.is_zero_expression.clone();
+        let storage_key_diff_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| {
+                let tag = meta.query_advice(tag, Rotation::cur());
+                let q_not_first = tag.clone() * (tag - one.clone());
+
+                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
+            },
+            |meta| {
+                let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
+                let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
+                storage_key_cur - storage_key_prev
+            },
+            storage_key_diff_inv,
+        );
+        let _storage_key_diff_is_zero_exp = storage_key_diff_is_zero.is_zero_expression.clone();
 
         // Only one monotone gadget is used for memory and stack (with
         // MEMORY_ADDRESS_MAX as it is bigger)
@@ -277,14 +305,15 @@ impl<
             address,
         );
 
-        // Padding monotonicity could be checked using gates (as padding only
-        // takes values 0 and 1), but it's much slower than using a
-        // lookup.
-        /*let padding_monotone = MonotoneChip::<F, 1, true, false>::configure(
-            meta,
-            |meta| q_memory_not_first(meta) + q_stack_not_first(meta),
-            padding,
-        );*/
+        meta.create_gate("General constraints", |meta| {
+            let mut cb = new_cb();
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
+            let is_write = meta.query_advice(is_write, Rotation::cur());
+            cb.condition(s_enable, |cb|{
+            cb.require_boolean("is_write should be boolean", is_write.clone())
+            });
+            cb.constraints
+        });
 
         // A gate for the first row (does not need Rotation::prev).
         meta.create_gate("First memory row operation", |meta| {
@@ -298,73 +327,57 @@ impl<
         });
 
         meta.create_gate("Memory operation + padding", |meta| {
+            let mut cb = new_cb();
             // if is_read:
             //      if address_cur == address_prev:
             //          value == prev_value
             //      else:
             //          value == 0
             let q_memory_not_first = q_memory_not_first(meta);
-            let address_diff = {
-                let address_prev = meta.query_advice(address, Rotation::prev());
-                let address_cur = meta.query_advice(address, Rotation::cur());
-                address_cur - address_prev
-            };
 
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-
-            // is_write == 0 or 1
-            // (is_write) * (1 - is_write)
-            let bool_check_is_write = is_write.clone() * (one.clone() - is_write.clone());
-
-            // If is_write == 0 (read), and rw_counter != 0, value_prev ==
-            // value_cur
-            let value_prev = meta.query_advice(value, Rotation::prev());
-            let q_read = one.clone() - is_write;
-
-            // let tag = meta.query_advice(tag, Rotation::cur());
-            // let padding = meta.query_advice(padding, Rotation::cur());
-            // let bool_check_padding = padding.clone() * (one.clone() - padding);
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
+            let value_cur = meta.query_advice(value, Rotation::cur());
+            let value_prev = meta.query_advice(value, Rotation::prev());
+            let is_write = meta.query_advice(is_write, Rotation::cur());
+            let q_read = one.clone() - is_write;
+            let address_prev = meta.query_advice(address, Rotation::prev());
+            let address_cur = meta.query_advice(address, Rotation::cur());
 
-            vec![
-                s_enable.clone() * q_memory_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
-                // if address changes, read value should be 0
-                s_enable.clone() * q_memory_not_first.clone() * address_diff * q_read.clone() * value_cur.clone(),
-                // or else, read value should be the same as the previous value
-                s_enable * q_memory_not_first
-                    * address_diff_is_zero.is_zero_expression.clone()
-                    * q_read
-                    * (value_cur - value_prev),
-                // tag * bool_check_padding, // padding is 0 or 1
-            ]
+            let address_diff = address_cur - address_prev;
+            let value_diff = value_cur.clone() - value_prev;
+            cb.require_zero(
+                "if address changes, read value should be 0",
+                address_diff * q_read.clone() * value_cur,
+            );
+            cb.require_zero(
+                "if address does not change, read value should be the same as the previous value",
+                address_diff_is_zero_exp.clone() * q_read * value_diff,
+            );
+
+            cb.gate(s_enable * q_memory_not_first)
         });
 
         // We don't require first stack op to be write as this is enforced by
         // evm circuit.
 
         meta.create_gate("Stack operation", |meta| {
+            let mut cb = new_cb();
             let q_stack_not_first = q_stack_not_first(meta);
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
 
-            // is_write == 0 or 1
-            // (is_write) * (1 - is_write)
-            let bool_check_is_write = is_write.clone() * (one.clone() - is_write.clone());
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
+            let value_cur = meta.query_advice(value, Rotation::cur());
+            let value_prev = meta.query_advice(value, Rotation::prev());
+            let is_write = meta.query_advice(is_write, Rotation::cur());
+            let q_read = one.clone() - is_write;
 
             // If is_write == 0 (read), and rw_counter != 0, value_prev == value_cur
-            let value_prev = meta.query_advice(value, Rotation::prev());
-            let q_read = one.clone() - is_write;
             // when addresses changes, we don't require the operation is write as this is
             // enforced by evm circuit
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-
-            vec![
-                s_enable.clone() * q_stack_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
-                s_enable * q_stack_not_first * q_read * (value_cur - value_prev), /* when reading, the
-                                                              * value is the same as
-                                                              * at the previous op */
-            ]
+            cb.require_zero(
+                "when reading, the value is the same as at the previous op",
+                q_read * (value_cur - value_prev),
+            );
+            cb.gate(s_enable * q_stack_not_first)
         });
 
         // rw_counter monotonicity is checked for memory and stack when
@@ -425,22 +438,6 @@ impl<
             vec![(q_memory_not_first * value, memory_value_table)]
         });
 
-        let storage_key_diff_is_zero = IsZeroChip::configure(
-            meta,
-            |meta| {
-                let tag = meta.query_advice(tag, Rotation::cur());
-                let q_not_first = tag.clone() * (tag - one.clone());
-
-                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
-            },
-            |meta| {
-                let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
-                let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
-                storage_key_cur - storage_key_prev
-            },
-            storage_key_diff_inv,
-        );
-
         meta.create_gate("First storage row operation", |meta| {
             let q_storage_first = q_storage_first(meta);
 
@@ -455,58 +452,40 @@ impl<
         });
 
         meta.create_gate("Storage operation", |meta| {
+            let mut cb = new_cb();
             let q_storage_not_first = q_storage_not_first(meta);
-            let address_diff = {
-                let address_prev = meta.query_advice(address, Rotation::prev());
-                let address_cur = meta.query_advice(address, Rotation::cur());
-                address_cur - address_prev
-            };
 
-            let storage_key_diff = {
-                let storage_key_prev =
-                    meta.query_advice(storage_key, Rotation::prev());
-                let storage_key_cur =
-                    meta.query_advice(storage_key, Rotation::cur());
-                storage_key_cur - storage_key_prev
-            };
+            let address_prev = meta.query_advice(address, Rotation::prev());
+            let address_cur = meta.query_advice(address, Rotation::cur());
+            let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
+            let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
 
             let value_cur = meta.query_advice(value, Rotation::cur());
-            let value_prev_cur = meta.query_advice(value_prev, Rotation::cur());
-            let value_prev_prev =
-                meta.query_advice(value_prev, Rotation::prev());
+            let value_previous = meta.query_advice(value, Rotation::prev());
+
             let is_write = meta.query_advice(is_write, Rotation::cur());
 
-            // is_write == 0 or 1
-            // (is_write) * (1 - is_write)
-            let bool_check_is_write = is_write.clone() * (one.clone() - is_write.clone());
+            let q_read = one.clone() - is_write;
 
-            // If is_write == 0 (read), and rw_counter != 0, value_prev == value_cur
-            let value_previous = meta.query_advice(value, Rotation::prev());
-            let q_read = one.clone() - is_write.clone();
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-
-            vec![
-                s_enable.clone() * q_storage_not_first.clone() * address_diff * q_read.clone(), // when address changes, the is_write is 1 (write)
-                s_enable.clone() * q_storage_not_first.clone() * storage_key_diff * q_read.clone(), // when storage_key_diff changes, the is_write is 1 (write)
-                s_enable.clone() * q_storage_not_first.clone() * bool_check_is_write, // is_write is either 0 or 1
-                s_enable.clone() * q_storage_not_first.clone()
-                    * q_read.clone()
-                    * (value_cur - value_previous.clone()), // when reading, the value is the same as at the previous op
-                // Note that this last constraint needs to hold only when address and storage key don't change,
-                // but we don't need to check this as the first operation at new address and
-                // new storage key always has to be write - that means q_read is 1 only when
-                // the address and storage key doesn't change.
-                s_enable.clone() * is_write
-                    * q_storage_not_first.clone()
-                    * account_addr_diff_is_zero.clone().is_zero_expression
-                    * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (value_prev_cur.clone() - value_previous),
-                s_enable * q_read
-                    * q_storage_not_first
-                    * account_addr_diff_is_zero.clone().is_zero_expression
-                    * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (value_prev_cur - value_prev_prev),
-            ]
+            cb.condition(q_read, |cb| {
+                cb.require_equal(
+                    "if address changes, is_write == true",
+                    address_cur,
+                    address_prev,
+                );
+                cb.require_equal(
+                    "if storage_key changes, is_write == true",
+                    storage_key_cur,
+                    storage_key_prev,
+                );
+                cb.require_equal(
+                    "when reading, the value is the same as at the previous op",
+                    value_cur,
+                    value_previous,
+                )
+            });
+            cb.gate(s_enable * q_storage_not_first)
         });
 
         // rw_counter monotonicity is checked for storage when address_cur
