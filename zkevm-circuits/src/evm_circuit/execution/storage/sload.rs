@@ -24,7 +24,6 @@ use halo2_proofs::{
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
-    call_id: Cell<F>,
     tx_id: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
@@ -43,14 +42,13 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let call_id = cb.query_cell();
         let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
             CallContextFieldTag::TxId,
             CallContextFieldTag::RwCounterEndOfReversion,
             CallContextFieldTag::IsPersistent,
             CallContextFieldTag::CalleeAddress,
         ]
-        .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
+        .map(|field_tag| cb.call_context(None, field_tag));
 
         let key = cb.query_word();
         // Pop the key from the stack
@@ -91,7 +89,6 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         Self {
             same_context,
-            call_id,
             tx_id,
             rw_counter_end_of_reversion,
             is_persistent,
@@ -113,9 +110,6 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-
-        self.call_id
-            .assign(region, offset, Some(F::from(call.id as u64)))?;
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
