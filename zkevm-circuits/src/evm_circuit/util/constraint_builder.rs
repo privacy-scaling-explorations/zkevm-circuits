@@ -634,7 +634,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
             // Swap value and value_prev respect to tag
             if tag.is_reversible() {
-                values.swap(3, 4)
+                values.swap(4, 5)
             };
 
             cb.rw_lookup_with_counter(
