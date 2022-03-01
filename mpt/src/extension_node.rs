@@ -9,12 +9,13 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, into_words_expr},
+    helpers::{compute_rlc, get_bool_constraint, into_words_expr},
     param::{
-        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-        IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
-        IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
-        IS_EXTENSION_ODD_KEY_LEN_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
+        IS_EXT_SHORT_C1_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
         LAYOUT_OFFSET,
     },
 };
@@ -140,76 +141,118 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            // Get into branch init:
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            // NOTE: even and odd is for number of nibbles that are compactly encoded.
+
+            // To reduce the expression degree, we pack together multiple information.
+            let is_ext_short_c16 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_short_c1 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_even_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_even_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
 
-            // NOTE: is_key_even and is_key_odd is for number of nibbles that
-            // are compactly encoded.
-            let is_key_even = meta.query_advice(
-                s_advices[IS_EXTENSION_EVEN_KEY_LEN_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            let is_key_odd = meta.query_advice(
-                s_advices[IS_EXTENSION_ODD_KEY_LEN_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            let is_short = meta.query_advice(
-                s_advices[IS_EXTENSION_KEY_SHORT_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            let is_long = meta.query_advice(
-                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            let bool_check_is_extension_node = is_extension_node.clone()
-                * (one.clone() - is_extension_node.clone());
-            let bool_check_is_key_even =
-                is_key_even.clone() * (one.clone() - is_key_even.clone());
-            let bool_check_is_key_odd =
-                is_key_odd.clone() * (one.clone() - is_key_odd.clone());
-            let bool_check_is_short =
-                is_short.clone() * (one.clone() - is_short.clone());
-            let bool_check_is_long =
-                is_long.clone() * (one.clone() - is_long.clone());
-
             constraints.push((
-                "bool is_extension_node",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * bool_check_is_extension_node,
+                "bool check is_ext_short_c16",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_short_c16.clone(),
+                ),
             ));
             constraints.push((
-                "bool is_key_even",
-                q_not_first.clone() * q_enable.clone() * bool_check_is_key_even,
+                "bool check is_ext_short_c1",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_short_c1.clone(),
+                ),
             ));
             constraints.push((
-                "bool is_key_odd",
-                q_not_first.clone() * q_enable.clone() * bool_check_is_key_odd,
+                "bool check is_ext_long_even_c16",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_long_even_c16.clone(),
+                ),
             ));
             constraints.push((
-                "bool is_short",
-                q_not_first.clone() * q_enable.clone() * bool_check_is_short,
+                "bool check is_ext_long_even_c1",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_long_even_c1.clone(),
+                ),
             ));
             constraints.push((
-                "bool is_long",
-                q_not_first.clone() * q_enable.clone() * bool_check_is_long,
+                "bool check is_ext_long_odd_c16",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_long_odd_c16.clone(),
+                ),
+            ));
+            constraints.push((
+                "bool check is_ext_long_odd_c1",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_long_odd_c1.clone(),
+                ),
             ));
 
+            // At most one of the six selectors above can be enabled. If sum is 0, it is
+            // a regular branch. If sum is 1, it is an extension node.
             constraints.push((
-                "is_key_even + is_key_odd = 1",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * (is_key_even.clone() + is_key_odd.clone() - one.clone()),
+                "bool check extension node selectors sum",
+                get_bool_constraint(
+                    q_not_first.clone() * q_enable.clone(),
+                    is_ext_short_c16.clone()
+                        + is_ext_short_c1.clone()
+                        + is_ext_long_even_c16.clone()
+                        + is_ext_long_even_c1.clone()
+                        + is_ext_long_odd_c16.clone()
+                        + is_ext_long_odd_c1.clone(),
+                ),
             ));
-            constraints.push((
-                "is_short + is_long = 1",
-                q_not_first.clone()
-                    * q_enable.clone()
-                    * (is_short.clone() + is_long.clone() - one.clone()),
-            ));
+
+            // is_branch_c16 and is_branch_c1 correspond to the six extension selectors.
+            let is_branch_c16 = meta.query_advice(
+                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_branch_c1 = meta.query_advice(
+                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let mut constrain_sel =
+                |branch_sel: Expression<F>, ext_sel: Expression<F>| {
+                    constraints.push((
+                        "branch c16/c1 selector - extension c16/c1 selector",
+                        q_not_first.clone()
+                            * q_enable.clone()
+                            * ext_sel.clone()
+                            * (branch_sel - ext_sel),
+                    ));
+                };
+
+            constrain_sel(is_branch_c16.clone(), is_ext_short_c16.clone());
+            constrain_sel(is_branch_c1.clone(), is_ext_short_c1.clone());
+            constrain_sel(is_branch_c16.clone(), is_ext_long_even_c16.clone());
+            constrain_sel(is_branch_c1.clone(), is_ext_long_even_c1.clone());
+            constrain_sel(is_branch_c16.clone(), is_ext_long_odd_c16.clone());
+            constrain_sel(is_branch_c1.clone(), is_ext_long_odd_c1.clone());
 
             /*
             If key_len = 1 (is_short = 1, is_long = 0)
@@ -229,34 +272,23 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let s_advices0 =
                     meta.query_advice(s_advices[0], Rotation::cur());
 
-                // This prevents setting is_short = 1 when it's not short (s_rlp1 > 226 in that case):
-                // Using this constraints and bool & sum (is_short + is_long) constraints above
-                // the selectors are ensured to be set properly.
+                // This prevents setting to short when it's not short (s_rlp1 > 226 in that case):
                 constraints.push((
-                    "is_short implies s_rlp1 = 226",
+                    "short implies s_rlp1 = 226",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * is_short.clone()
+                        * (is_ext_short_c16.clone() + is_ext_short_c1.clone())
                         * (s_rlp1 - c226),
                 ));
-                constraints.push((
-                    "is_short implies is_key_odd",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_short.clone()
-                        * (is_key_odd.clone() - one.clone()),
-                ));
 
-                // This prevents setting is_key_even = 1 when it's not even,
+                // This prevents setting to even when it's not even,
                 // because when it's not even s_advices0 != 0 (hexToCompact adds 16).
-                // Using this constraints and bool & sum (is_key_even + is_key_odd) constraints above
-                // the selectors are ensured to be set properly.
                 constraints.push((
-                    "is_long & is_key_even implies s_advices0 = 0",
+                    "long & even implies s_advices0 = 0",
                     q_not_first.clone()
                         * q_enable.clone()
-                        * is_long.clone()
-                        * is_key_even.clone()
+                        * (is_ext_long_even_c16.clone()
+                            + is_ext_long_even_c1.clone())
                         * s_advices0,
                 ));
             }

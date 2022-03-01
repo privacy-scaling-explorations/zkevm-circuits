@@ -24,9 +24,9 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
-        IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
-        IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXTENSION_EVEN_KEY_LEN_POS,
+        IS_EXTENSION_KEY_LONG_POS, IS_EXTENSION_KEY_SHORT_POS,
+        IS_EXTENSION_NODE_POS, IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET,
     },
     storage_root_in_account_leaf::StorageRootChip,
 };
@@ -306,6 +306,8 @@ impl<F: FieldExt> MPTConfig<F> {
             modified_node,
             sel1,
             sel2,
+            s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+            s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
             key_rlc,
             key_rlc_mult,
             acc_r,

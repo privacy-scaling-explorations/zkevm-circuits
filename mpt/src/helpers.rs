@@ -160,3 +160,11 @@ pub fn mult_diff_lookup<F: FieldExt>(
         constraints
     });
 }
+
+pub fn get_bool_constraint<F: FieldExt>(
+    q_enable: Expression<F>,
+    expr: Expression<F>,
+) -> Expression<F> {
+    let one = Expression::Constant(F::from(1_u64));
+    q_enable * expr.clone() * (one - expr.clone())
+}
