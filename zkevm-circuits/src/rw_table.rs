@@ -14,6 +14,7 @@ pub struct RwTable {
     pub rw_counter: Column<Advice>,
     pub is_write: Column<Advice>,
     pub tag: Column<Advice>,
+    pub key1: Column<Advice>,
     pub key2: Column<Advice>,
     pub key3: Column<Advice>,
     pub key4: Column<Advice>,
@@ -23,12 +24,13 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl<F: FieldExt> LookupTable<F, 10> for RwTable {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; 10] {
+impl<F: FieldExt> LookupTable<F, 11> for RwTable {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; 11] {
         [
             meta.query_advice(self.rw_counter, Rotation::cur()),
             meta.query_advice(self.is_write, Rotation::cur()),
             meta.query_advice(self.tag, Rotation::cur()),
+            meta.query_advice(self.key1, Rotation::cur()),
             meta.query_advice(self.key2, Rotation::cur()),
             meta.query_advice(self.key3, Rotation::cur()),
             meta.query_advice(self.key4, Rotation::cur()),
@@ -45,6 +47,7 @@ impl RwTable {
             rw_counter: meta.advice_column(),
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
+            key1: meta.advice_column(),
             key2: meta.advice_column(),
             key3: meta.advice_column(),
             key4: meta.advice_column(),
@@ -64,6 +67,7 @@ impl RwTable {
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
             (self.tag, row.tag),
+            (self.key1, row.key1),
             (self.key2, row.key2),
             (self.key3, row.key3),
             (self.key4, row.key4),

@@ -37,7 +37,7 @@ impl<F: Field> EvmCircuit<F> {
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 10>,
+        RwTable: LookupTable<F, 11>,
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {

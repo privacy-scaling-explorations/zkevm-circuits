@@ -1,10 +1,11 @@
 use crate::{
     evm_circuit::{
+        table::RwTableTag,
         util::{
             constraint_builder::BaseConstraintBuilder,
             math_gadget::generate_lagrange_base_polynomial,
         },
-        witness::RwMap,
+        witness::{RwMap, RwRow},
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -26,25 +27,25 @@ use pairing::arithmetic::FieldExt;
 /*
 Example state table:
 
-|            |          |       |    keys(4)  |key2_limbs(8)|   key4_bytes(32)   |         |                |            |
-| rw_counter | is_write | value | tag  | ...  | ...  | ...  |      |      |      | padding |    storage_key | value_prev |
-------------------------------------------------------------------------------------------------------------------------------
-|     0      |     1    |  0    |  1   |      |      |      |      |      |      |    0    |                |            |   // init row (write value 0)
-|     12     |     1    |  12   |  2   |      |      |      |      |      |      |    0    |                |            |
-|     24     |     0    |  12   |  2   |      |      |      |      |      |      |    0    |                |            |
-|     0      |     1    |  0    |  2   |      |      |      |      |      |      |    0    |                |            |   // init row (write value 0)
-|     2      |     0    |  12   |  2   |      |      |      |      |      |      |    0    |                |            |
-|            |          |       |  2   |      |      |      |      |      |      |    1    |                |            |   // padding
-|            |          |       |  2   |      |      |      |      |      |      |    1    |                |            |   // padding
-|     3      |     1    |  4    |  1   |      |      |      |      |      |      |    0    |                |            |
-|     17     |     1    |  32   |  3   |      |      |      |      |      |      |    0    |                |            |
-|     89     |     0    |  32   |  3   |      |      |      |      |      |      |    0    |                |            |
-|     48     |     1    |  32   |  3   |      |      |      |      |      |      |    0    |                |            |
-|     49     |     0    |  32   |  3   |      |      |      |      |      |      |    0    |                |            |
-|            |          |       |  3   |      |      |      |      |      |      |    1    |                |            |   // padding
-|     55     |     1    |  32   |  1   |      |      |      |      |      |      |    0    |         5      |     0      |   // first storage op at the new address has to be write
-|     56     |     1    |  33   |  4   |      |      |      |  <RLC storageKey>  |    0    |         8      |     32     |
-|            |          |       |  4   |      |      |      |      |      |      |    1    |                |            |   // padding
+|            |          |       |    keys(4)  |key2_limbs(8)|   key4_bytes(32)   |                |
+| rw_counter | is_write | value | tag  | ...  | ...  | ...  |      |      |      |  storage_key   |
+-------------------------------------------------------------------------------------------------------
+|     0      |     1    |  0    |  1   |      |      |      |      |      |      |                |   // init row (write value 0)
+|     12     |     1    |  12   |  2   |      |      |      |      |      |      |                |
+|     24     |     0    |  12   |  2   |      |      |      |      |      |      |                |
+|     0      |     1    |  0    |  2   |      |      |      |      |      |      |                |   // init row (write value 0)
+|     2      |     0    |  12   |  2   |      |      |      |      |      |      |                |
+|            |          |       |  2   |      |      |      |      |      |      |                |   // padding
+|            |          |       |  2   |      |      |      |      |      |      |                |   // padding
+|     3      |     1    |  4    |  1   |      |      |      |      |      |      |                |
+|     17     |     1    |  32   |  3   |      |      |      |      |      |      |                |
+|     89     |     0    |  32   |  3   |      |      |      |      |      |      |                |
+|     48     |     1    |  32   |  3   |      |      |      |      |      |      |                |
+|     49     |     0    |  32   |  3   |      |      |      |      |      |      |                |
+|            |          |       |  3   |      |      |      |      |      |      |                |   // padding
+|     55     |     1    |  32   |  1   |      |      |      |      |      |      |         5      |   // first storage op at the new address has to be write
+|     56     |     1    |  33   |  4   |      |      |      |  <RLC storageKey>  |         8      |
+|            |          |       |  4   |      |      |      |      |      |      |                |   // padding
 */
 
 // tag:
@@ -53,18 +54,11 @@ Example state table:
 // 3 - stack
 // 4 - storage
 
-// address presents memory address, stack pointer, and account address for
-// memory, stack, and storage ops respectively two columns are not displayed:
-// address_diff and storage_key_diff (needed to check whether the address or
-// storage_key changed) storage_key and value_prev are needed for storage ops
-// only padding specifies whether the row is just a padding to fill all the rows
-// that are intended for a particular target
-
 const EMPTY_TAG: usize = 0;
 const START_TAG: usize = 1;
-const MEMORY_TAG: usize = 2;
-const STACK_TAG: usize = 3;
-const STORAGE_TAG: usize = 4;
+const MEMORY_TAG: usize = RwTableTag::Memory as usize;
+const STACK_TAG: usize = RwTableTag::Stack as usize;
+const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
 
 const MAX_DEGREE: usize = 15;
 
@@ -161,7 +155,6 @@ impl<
         let s_enable = meta.fixed_column();
 
         let value = meta.advice_column();
-        let value_prev = meta.advice_column();
 
         // would be used for both address and account_addr
         let address_diff_inv = meta.advice_column();
@@ -587,129 +580,14 @@ impl<
         )
     }
 
-    fn assign_memory_ops(
+    #[allow(clippy::too_many_arguments)]
+    fn assign_single_type_rows(
         &self,
         region: &mut Region<F>,
         randomness: F,
         ops: Vec<Rw>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
-        offset: usize,
-    ) -> Result<AssignRet<F>, Error> {
-        let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
-
-        let mut offset = offset;
-        let offset_limit = ROWS_MAX;
-
-        for (index, oper) in ops.iter().enumerate() {
-            if !matches!(oper, Rw::Memory { .. }) {
-                panic!("expect memory operation");
-            }
-            let row = oper.table_assignment(randomness);
-
-            let address = row.key3;
-            let address_prev = if index > 0 {
-                ops[index - 1].table_assignment(randomness).key3
-            } else {
-                F::zero()
-            };
-
-            if SANITY_CHECK && address > F::from(MEMORY_ADDRESS_MAX as u64) {
-                panic!(
-                    "memory address out of range {:?} > {}",
-                    address, MEMORY_ADDRESS_MAX
-                );
-            }
-
-            let target = if index == 0 { START_TAG } else { MEMORY_TAG };
-            if offset >= offset_limit {
-                panic!("too many memory operations {} > {}", offset, offset_limit);
-            }
-            let bus_mapping = self.assign_op(
-                region,
-                offset,
-                address,
-                row.rw_counter,
-                row.value,
-                row.is_write,
-                F::from(target as u64),
-                F::zero(),
-                F::zero(),
-            )?;
-            bus_mappings.push(bus_mapping);
-
-            address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
-            offset += 1;
-        }
-
-        Ok(AssignRet::<_>(offset, bus_mappings))
-    }
-
-    fn assign_stack_ops(
-        &self,
-        region: &mut Region<F>,
-        randomness: F,
-        ops: Vec<Rw>,
-        address_diff_is_zero_chip: &IsZeroChip<F>,
-        offset: usize,
-    ) -> Result<AssignRet<F>, Error> {
-        if offset + ops.len() > ROWS_MAX {
-            panic!("too many stack operations");
-        }
-        let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
-
-        let mut offset = offset;
-        for (index, oper) in ops.iter().enumerate() {
-            if !matches!(oper, Rw::Stack { .. }) {
-                panic!("expect stack operation");
-            }
-            let row = oper.table_assignment(randomness);
-            let address = row.key3;
-            let address_prev = if index > 0 {
-                ops[index - 1].table_assignment(randomness).key3
-            } else {
-                F::zero()
-            };
-
-            if SANITY_CHECK && address > F::from(STACK_ADDRESS_MAX as u64) {
-                panic!(
-                    "stack address out of range {:?} > {}",
-                    address, STACK_ADDRESS_MAX as u64
-                );
-            }
-
-            let target = if index > 0 {
-                STACK_TAG // 3
-            } else {
-                START_TAG // 1
-            };
-
-            let bus_mapping = self.assign_op(
-                region,
-                offset,
-                address,
-                row.rw_counter,
-                row.value,
-                row.is_write,
-                F::from(target as u64),
-                F::zero(),
-                F::zero(),
-            )?;
-            bus_mappings.push(bus_mapping);
-
-            address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
-
-            offset += 1;
-        }
-
-        Ok(AssignRet::<_>(offset, bus_mappings))
-    }
-
-    fn assign_storage_ops(
-        &self,
-        region: &mut Region<F>,
-        randomness: F,
-        ops: Vec<Rw>,
-        address_diff_is_zero_chip: &IsZeroChip<F>,
+        account_addr_diff_is_zero_chip: &IsZeroChip<F>,
         storage_key_diff_is_zero_chip: &IsZeroChip<F>,
         offset: usize,
     ) -> Result<AssignRet<F>, Error> {
@@ -717,49 +595,28 @@ impl<
             panic!("too many storage operations");
         }
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
-
         let mut offset = offset;
         for (index, oper) in ops.iter().enumerate() {
-            if !matches!(oper, Rw::AccountStorage { .. }) {
-                panic!("expect stack operation");
-            }
-
             let row = oper.table_assignment(randomness);
-
-            let target = if index > 0 { STORAGE_TAG } else { START_TAG };
-            let address = row.key2;
-            let storage_key = row.key3;
-            let (address_prev, storage_key_prev) = if index > 0 {
-                let prev_row = ops[index - 1].table_assignment(randomness);
-                (prev_row.key2, prev_row.key3)
+            let row_prev = if index == 0 {
+                RwRow::default()
             } else {
-                (F::zero(), F::zero())
+                ops[index - 1].table_assignment(randomness)
             };
-
-            let bus_mapping = self.assign_op(
+            let is_init_row = index == 0;
+            let bus_mapping = self.assign_row(
                 region,
                 offset,
-                row.key2,
-                row.rw_counter,
-                row.value,
-                row.is_write,
-                F::from(target as u64),
-                row.key3,
-                row.value_prev,
+                is_init_row,
+                row,
+                row_prev,
+                address_diff_is_zero_chip,
+                account_addr_diff_is_zero_chip,
+                storage_key_diff_is_zero_chip,
             )?;
             bus_mappings.push(bus_mapping);
-
-            address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
-
-            storage_key_diff_is_zero_chip.assign(
-                region,
-                offset,
-                Some(storage_key - storage_key_prev),
-            )?;
-
             offset += 1;
         }
-
         Ok(AssignRet::<_>(offset, bus_mappings))
     }
 
@@ -774,13 +631,7 @@ impl<
         // the first unused row and some checks would be triggered.
 
         for i in start_offset..end_offset {
-            /*            let target = if need_pad_start_row && i == start_offset {
-                START_TAG
-            } else {
-                target
-            };*/
             region.assign_advice(|| "target", self.tag(), i, || Ok(F::from(START_TAG as u64)))?;
-            //region.assign_advice(|| "padding", self.padding, i, || Ok(F::one()))?;
             region.assign_advice(|| "memory", self.is_write, i, || Ok(F::one()))?;
         }
 
@@ -808,10 +659,6 @@ impl<
             );
         memory_address_monotone_chip.load(&mut layouter)?;
 
-        /*        let padding_monotone_chip =
-            MonotoneChip::<F, 1, true, false>::construct(self.padding_monotone.clone());
-        padding_monotone_chip.load(&mut layouter)?;*/
-
         let storage_key_diff_is_zero_chip =
             IsZeroChip::construct(self.storage_key_diff_is_zero.clone());
 
@@ -821,11 +668,13 @@ impl<
                 let mut offset = 0;
 
                 let memory_mappings = self
-                    .assign_memory_ops(
+                    .assign_single_type_rows(
                         &mut region,
                         randomness,
                         memory_ops.clone(),
                         &address_diff_is_zero_chip,
+                        &account_addr_diff_is_zero_chip,
+                        &storage_key_diff_is_zero_chip,
                         offset,
                     )
                     .unwrap();
@@ -833,11 +682,13 @@ impl<
                 offset = memory_mappings.0;
 
                 let stack_mappings = self
-                    .assign_stack_ops(
+                    .assign_single_type_rows(
                         &mut region,
                         randomness,
                         stack_ops.clone(),
                         &address_diff_is_zero_chip,
+                        &account_addr_diff_is_zero_chip,
+                        &storage_key_diff_is_zero_chip,
                         offset,
                     )
                     .unwrap();
@@ -845,10 +696,11 @@ impl<
                 offset = stack_mappings.0;
 
                 let storage_mappings = self
-                    .assign_storage_ops(
+                    .assign_single_type_rows(
                         &mut region,
                         randomness,
                         storage_ops.clone(),
+                        &address_diff_is_zero_chip,
                         &account_addr_diff_is_zero_chip,
                         &storage_key_diff_is_zero_chip,
                         offset,
@@ -870,74 +722,100 @@ impl<
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn assign_op(
+    fn assign_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        address: F,
-        rw_counter: F,
-        value: F,
-        is_write: F,
-        target: F,
-        storage_key: F,
-        value_prev: F,
+        is_init_row: bool,
+        row: RwRow<F>,
+        row_prev: RwRow<F>,
+        address_diff_is_zero_chip: &IsZeroChip<F>,
+        account_addr_diff_is_zero_chip: &IsZeroChip<F>,
+        storage_key_diff_is_zero_chip: &IsZeroChip<F>,
     ) -> Result<BusMapping<F>, Error> {
-        let address = {
-            let cell =
-                region.assign_advice(|| "address", self.address(), offset, || Ok(address))?;
-            Variable::<F, F>::new(cell, Some(address))
+        let account_address = row.key2;
+        let account_address_prev = row_prev.key2;
+        let address = row.key3;
+        let address_prev = row_prev.key3;
+        let rw_counter = row.rw_counter;
+        let value = row.value;
+        let is_write = row.is_write;
+        // TODO: use same tag later
+        let target = if is_init_row {
+            F::from(START_TAG as u64)
+        } else {
+            row.tag
         };
+        let storage_key = row.key4;
+        let storage_key_prev = row_prev.key4;
 
-        if SANITY_CHECK && rw_counter > F::from(RW_COUNTER_MAX as u64) {
-            panic!("rw_counter out of range");
+        // check witness sanity
+        if offset > ROWS_MAX {
+            panic!("too many storage operations");
         }
-        let rw_counter = {
-            let cell = region.assign_advice(
-                || "global counter",
-                self.rw_counter,
-                offset,
-                || Ok(rw_counter),
-            )?;
+        if SANITY_CHECK {
+            if rw_counter > F::from(RW_COUNTER_MAX as u64) {
+                panic!("rw_counter out of range");
+            }
+            if row.tag == F::from(STACK_TAG as u64) && address > F::from(STACK_ADDRESS_MAX as u64) {
+                panic!(
+                    "stack address out of range {:?} > {}",
+                    address, STACK_ADDRESS_MAX
+                );
+            }
+            if row.tag == F::from(MEMORY_TAG as u64) && address > F::from(MEMORY_ADDRESS_MAX as u64)
+            {
+                panic!(
+                    "memory address out of range {:?} > {}",
+                    address, MEMORY_ADDRESS_MAX
+                );
+            }
+        }
 
-            Variable::<F, F>::new(cell, Some(rw_counter))
-        };
+        let _account_addr_cell = region.assign_advice(
+            || "account_address/key2",
+            self.account_addr(),
+            offset,
+            || Ok(account_address),
+        )?;
+        let address_cell =
+            region.assign_advice(|| "address", self.address(), offset, || Ok(address))?;
+        let rw_counter_cell = region.assign_advice(
+            || "global counter",
+            self.rw_counter,
+            offset,
+            || Ok(rw_counter),
+        )?;
+        let value_cell = region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
+        let storage_key_cell = region.assign_advice(
+            || "storage key",
+            self.storage_key(),
+            offset,
+            || Ok(storage_key),
+        )?;
+        let is_write_cell =
+            region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
+        let target_cell = region.assign_advice(|| "target", self.tag(), offset, || Ok(target))?;
 
-        let value = {
-            let cell = region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
-
-            Variable::<F, F>::new(cell, Some(value))
-        };
-
-        let storage_key = {
-            let cell = region.assign_advice(
-                || "storage key",
-                self.storage_key(),
-                offset,
-                || Ok(storage_key),
-            )?;
-
-            Variable::<F, F>::new(cell, Some(storage_key))
-        };
-
-        let is_write = {
-            let cell =
-                region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
-
-            Variable::<F, F>::new(cell, Some(is_write))
-        };
-
-        let target = {
-            let cell = region.assign_advice(|| "target", self.tag(), offset, || Ok(target))?;
-            Variable::<F, F>::new(cell, Some(target))
-        };
+        address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
+        account_addr_diff_is_zero_chip.assign(
+            region,
+            offset,
+            Some(account_address - account_address_prev),
+        )?;
+        storage_key_diff_is_zero_chip.assign(
+            region,
+            offset,
+            Some(storage_key - storage_key_prev),
+        )?;
 
         Ok(BusMapping {
-            rw_counter,
-            target,
-            is_write,
-            address,
-            value,
-            storage_key,
+            rw_counter: Variable::<F, F>::new(rw_counter_cell, Some(rw_counter)),
+            target: Variable::<F, F>::new(target_cell, Some(target)),
+            is_write: Variable::<F, F>::new(is_write_cell, Some(is_write)),
+            address: Variable::<F, F>::new(address_cell, Some(address)),
+            value: Variable::<F, F>::new(value_cell, Some(value)),
+            storage_key: Variable::<F, F>::new(storage_key_cell, Some(storage_key)),
         })
     }
 }
