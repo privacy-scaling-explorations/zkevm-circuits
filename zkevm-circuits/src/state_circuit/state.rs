@@ -60,22 +60,6 @@ Example state table:
 // only padding specifies whether the row is just a padding to fill all the rows
 // that are intended for a particular target
 
-/*
-Example bus mapping:
-// TODO: this is going to change
-
-| target | address | rw_counter | value | storage_key | value_prev |is_write|
----------------------------------------------------------------------------
-|    2   |    0    |     12     |  12   |             |            |  1   |
-|    2   |    0    |     24     |  12   |             |            |  0   |
-|    2   |    1    |     2      |  12   |             |            |  0   |
-|    1   |    0    |     3      |  4    |             |            |  1   |
-|    3   |    0    |     17     |  32   |             |            |  1   |
-|    3   |    0    |     89     |  32   |             |            |  0   |
-|    3   |    1    |     48     |  32   |             |            |  1   |
-|    3   |    1    |     49     |  32   |             |            |  0   |
-*/
-
 const EMPTY_TAG: usize = 0;
 const START_TAG: usize = 1;
 const MEMORY_TAG: usize = 2;
@@ -95,7 +79,6 @@ pub(crate) struct BusMapping<F: FieldExt> {
     address: Variable<F, F>,
     value: Variable<F, F>,
     storage_key: Variable<F, F>,
-    value_prev: Variable<F, F>,
 }
 
 struct AssignRet<F: FieldExt>(usize, Vec<BusMapping<F>>);
@@ -123,7 +106,6 @@ pub struct Config<
 
     // helper cols here
     s_enable: Column<Fixed>,
-    value_prev: Column<Advice>,
     address_diff_inv: Column<Advice>,
     account_addr_diff_inv: Column<Advice>,
     storage_key_diff_inv: Column<Advice>,
@@ -520,9 +502,7 @@ impl<
             key2_limbs,
             key4_bytes,
             auxs,
-
             s_enable,
-            value_prev,
             address_diff_inv,
             account_addr_diff_inv,
             storage_key_diff_inv,
@@ -939,17 +919,6 @@ impl<
             Variable::<F, F>::new(cell, Some(storage_key))
         };
 
-        let value_prev = {
-            let cell = region.assign_advice(
-                || "value prev",
-                self.value_prev,
-                offset,
-                || Ok(value_prev),
-            )?;
-
-            Variable::<F, F>::new(cell, Some(value_prev))
-        };
-
         let is_write = {
             let cell =
                 region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
@@ -969,7 +938,6 @@ impl<
             address,
             value,
             storage_key,
-            value_prev,
         })
     }
 }
