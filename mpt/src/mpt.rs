@@ -439,8 +439,6 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             c_advices,
             modified_node,
-            sel1,
-            sel2,
             key_rlc,
             key_rlc_mult,
             mult_diff,

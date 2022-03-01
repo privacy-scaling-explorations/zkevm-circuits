@@ -15,7 +15,7 @@ use crate::{
     param::{
         HASH_WIDTH, IS_EXTENSION_EVEN_KEY_LEN_POS, IS_EXTENSION_KEY_LONG_POS,
         IS_EXTENSION_KEY_SHORT_POS, IS_EXTENSION_NODE_POS,
-        IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET,
+        IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
     },
 };
 
@@ -42,10 +42,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         s_advices: [Column<Advice>; HASH_WIDTH],
         c_advices: [Column<Advice>; HASH_WIDTH],
         modified_node: Column<Advice>, // index of the modified node
-        // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
-        // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
         key_rlc: Column<Advice>, // used first for account address, then for storage key
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -72,13 +68,41 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // branch children:
             let rot_into_prev_branch = rot_into_branch_init - 3;
 
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            // To reduce the expression degree, we pack together multiple information.
+            // Constraints on selectors are in extension_node.
+            // NOTE: even and odd refers to number of nibbles that are compactly encoded.
+            let is_ext_short_c16 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_short_c1 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_even_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_even_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
 
-            // NOTE: is_key_even and is_key_odd is for number of nibbles that
-            // are compactly encoded.
+            let is_extension_node = is_ext_short_c16.clone()
+                + is_ext_short_c1.clone()
+                + is_ext_long_even_c16.clone()
+                + is_ext_long_even_c1.clone()
+                + is_ext_long_odd_c16.clone()
+                + is_ext_long_odd_c1.clone();
+
             let is_key_even = meta.query_advice(
                 s_advices[IS_EXTENSION_EVEN_KEY_LEN_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
@@ -100,10 +124,11 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
             // also (together with extension node key length) whether the extension
             // node key nibble needs to be multiplied by 16 or not.
+            
             let sel1 =
-                meta.query_advice(sel1, Rotation(rot_into_branch_init));
+                meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
             let sel2 =
-                meta.query_advice(sel2, Rotation(rot_into_branch_init));
+                meta.query_advice(s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
 
             // We are in extension row C, -18 brings us in the branch init row.
             // -19 is account leaf storage codehash when we are in the first storage proof level.
@@ -235,32 +260,26 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             );
             constraints.push((
                 "long even sel1 extension",
-                    is_key_even.clone()
-                    * check_extension.clone()
+                    is_ext_long_even_c16.clone()
+                    * is_extension_c_row.clone()
                     * not_branch_or_after.clone()
-                    * is_long.clone()
-                    * sel1.clone()
                     * (key_rlc_cur.clone() - long_even_rlc_sel1.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
             constraints.push((
                 "long even sel1 branch",
-                    is_key_even.clone()
-                    * check_extension.clone()
+                    is_ext_long_even_c16.clone()
+                    * is_extension_c_row.clone()
                     * not_branch_or_after.clone()
-                    * is_long.clone()
-                    * sel1.clone()
                     * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                         c16.clone() * modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
             ));
             constraints.push((
                 "long even sel1 branch mult",
-                    is_key_even.clone()
-                    * check_extension.clone()
+                    is_ext_long_even_c16.clone()
+                    * is_extension_c_row.clone()
                     * not_branch_or_after.clone()
-                    * is_long.clone()
-                    * sel1.clone()
                     * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
             ));
@@ -283,11 +302,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 // is checked in a lookup below.
                 constraints.push((
                     "long odd sel2 nibble correspond to byte",
-                    is_key_odd.clone()
-                    * check_extension.clone()
+                    is_ext_long_odd_c1.clone()
+                        * is_extension_c_row.clone()
                         * not_branch_or_after.clone()
-                        * is_long.clone()
-                        * sel2.clone()
                         * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
                 ));
 
@@ -300,34 +317,28 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             }
             constraints.push((
                 "long odd sel2 extension",
-                    is_key_odd.clone()
-                    * check_extension.clone()
-                    * not_branch_or_after.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
+                    is_ext_long_odd_c1.clone()
+                        * is_extension_c_row.clone()
+                        * not_branch_or_after.clone()
+                        * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
             constraints.push((
                 "long odd sel2 branch",
-                    is_key_odd.clone()
-                    * check_extension.clone()
-                    * not_branch_or_after.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                        modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
+                    is_ext_long_odd_c1.clone()
+                        * is_extension_c_row.clone()
+                        * not_branch_or_after.clone()
+                        * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                            modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
             ));
             constraints.push((
                 "long odd sel2 branch mult",
-                    is_key_odd.clone()
-                    * check_extension.clone()
-                    * not_branch_or_after.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
-                    // mult_diff is checked in a lookup below
+                    is_ext_long_odd_c1.clone()
+                        * is_extension_c_row.clone()
+                        * not_branch_or_after.clone()
+                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
+                        // mult_diff is checked in a lookup below
             ));
 
             // short
@@ -337,29 +348,26 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 extension",
                     not_branch_or_after.clone()
-                    * check_extension.clone()
-                    * is_short.clone()
-                    * sel1.clone()
-                    * (key_rlc_cur.clone() - short_sel1_rlc.clone())
+                        * is_ext_short_c16.clone()
+                        * is_extension_c_row.clone()
+                        * (key_rlc_cur.clone() - short_sel1_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
             constraints.push((
                 "short sel1 branch",
                     not_branch_or_after.clone()
-                    * check_extension.clone()
-                    * is_short.clone()
-                    * sel1.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                        c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
+                        * is_ext_short_c16.clone()
+                        * is_extension_c_row.clone()
+                        * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                            c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
             ));
             constraints.push((
                 "short sel1 branch mult",
                     not_branch_or_after.clone()
-                    * check_extension.clone()
-                    * is_short.clone()
-                    * sel1.clone()
-                    * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
+                        * is_ext_short_c16.clone()
+                        * is_extension_c_row.clone()
+                        * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
             ));
 
             /* 
@@ -390,9 +398,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 constraints.push((
                     "long even sel2 nibble correspond to byte",
                         after_first_level.clone() // no need for check_extension here
-                        * is_key_even.clone()
-                        * is_long.clone()
-                        * sel2.clone()
+                        * is_ext_long_even_c1.clone()
                         * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
                 ));
 
@@ -406,39 +412,31 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel2 extension",
                     after_first_level.clone()
-                    * is_key_even.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_cur.clone() - long_even_sel2_rlc.clone())
+                        * is_ext_long_even_c1.clone()
+                        * (key_rlc_cur.clone() - long_even_sel2_rlc.clone())
             ));
             // We check branch key RLC in extension C row too (otherwise +rotation would be needed
             // because we first have branch rows and then extension rows):
             constraints.push((
                 "long even sel2 branch",
                     after_first_level.clone()
-                    * is_key_even.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_branch.clone() - key_rlc_cur.clone() -
-                        modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
+                        * is_ext_long_even_c1.clone()
+                        * (key_rlc_branch.clone() - key_rlc_cur.clone() -
+                            modified_node_cur.clone() * key_rlc_mult_prev_level.clone() * mult_diff.clone())
             ));
             constraints.push((
                 "long even sel2 branch mult",
                     after_first_level
-                    * is_key_even.clone()
-                    * is_long.clone()
-                    * sel2.clone()
-                    * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone() * r_table[0].clone())
-                    // mult_diff is checked in a lookup below
+                        * is_ext_long_even_c1.clone()
+                        * (key_rlc_mult_branch.clone() - key_rlc_mult_prev_level.clone() * mult_diff.clone() * r_table[0].clone())
+                        // mult_diff is checked in a lookup below
             ));
 
             // long odd not first level not first storage selector:
             let long_odd = not_first_level.clone()
                     * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
-                    * is_extension_node.clone()
                     * is_extension_c_row.clone()
-                    * is_key_odd.clone()
-                    * is_long.clone();
+                    * (is_ext_long_odd_c16.clone() + is_ext_long_odd_c1.clone());
     
             /* 
             Example:
@@ -482,9 +480,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             // short: 
             let short = not_first_level.clone()
                 * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
-                * is_extension_node.clone()
                 * is_extension_c_row.clone()
-                * is_short.clone();
+                * (is_ext_short_c16.clone() + is_ext_short_c1.clone());
 
             let short_sel2_rlc = key_rlc_prev_level.clone() +
                 c16.clone() * (s_rlp2 - c16.clone()) * key_rlc_mult_prev_level.clone(); // -16 because of hexToCompact
@@ -514,20 +511,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         });
 
         let get_long_even = |meta: &mut VirtualCells<F>| {
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            // NOTE: is_key_even and is_key_odd is for number of nibbles that
-            // are compactly encoded.
-            let is_key_even = meta.query_advice(
-                s_advices[IS_EXTENSION_EVEN_KEY_LEN_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            let is_long = meta.query_advice(
-                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
             let is_account_leaf_storage_codehash_prev = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_branch_init - 1),
@@ -535,59 +518,86 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
 
+            let is_ext_long_even_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_even_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+
             (one.clone() - is_account_leaf_storage_codehash_prev.clone())
-                * is_extension_node.clone()
                 * is_extension_c_row.clone()
-                * is_key_even.clone()
-                * is_long.clone()
+                * (is_ext_long_even_c16 + is_ext_long_even_c1)
         };
 
         let get_long_odd = |meta: &mut VirtualCells<F>| { 
-            let is_key_odd = meta.query_advice(
-                s_advices[IS_EXTENSION_ODD_KEY_LEN_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
-            let is_long = meta.query_advice(
-                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
             let is_account_leaf_storage_codehash_prev = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_branch_init - 1),
             );
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
 
+            let is_ext_long_odd_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+
             (one.clone() - is_account_leaf_storage_codehash_prev.clone())
-                * is_extension_node.clone()
                 * is_extension_c_row.clone()
-                * is_key_odd.clone()
-                * is_long.clone()
+                * (is_ext_long_odd_c16 + is_ext_long_odd_c1)
         };
 
         // mult_diff
         meta.lookup_any(|meta| {
             let mut constraints = vec![];
 
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
                 
-            let is_long = meta.query_advice(
-                s_advices[IS_EXTENSION_KEY_LONG_POS - LAYOUT_OFFSET],
+            let is_ext_short_c16 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
-            let is_short = meta.query_advice(
-                s_advices[IS_EXTENSION_KEY_SHORT_POS - LAYOUT_OFFSET],
+            let is_ext_short_c1 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_branch_init),
             );
+            let is_ext_long_even_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_even_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+            let is_ext_long_odd_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_branch_init),
+            );
+
+            let is_extension_node = is_ext_short_c16.clone()
+                + is_ext_short_c1.clone()
+                + is_ext_long_even_c16.clone()
+                + is_ext_long_even_c1.clone()
+                + is_ext_long_odd_c16.clone()
+                + is_ext_long_odd_c1.clone();
+            let is_long = is_ext_long_even_c16.clone()
+                + is_ext_long_even_c1.clone()
+                + is_ext_long_odd_c16.clone()
+                + is_ext_long_odd_c1.clone();
+            let is_short = is_ext_short_c16.clone()
+                + is_ext_short_c1.clone();
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::prev());
             // key_len = s_rlp2 - 128 - 1 if long
@@ -623,11 +633,26 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 let mut constraints = vec![];
 
                 let sel1 =
-                    meta.query_advice(sel1, Rotation(rot_into_branch_init));
+                    meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
                 let sel2 =
-                    meta.query_advice(sel2, Rotation(rot_into_branch_init));
+                    meta.query_advice(s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+
                 let long_even_sel2 = get_long_even(meta) * sel2;
                 let long_odd_sel1 = get_long_odd(meta) * sel1;
+
+                let is_ext_long_even_c1 = meta.query_advice(
+                    s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_branch_init),
+                );
+                let is_ext_long_odd_c16 = meta.query_advice(
+                    s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_branch_init),
+                );
+                let is_ext_long_odd_c1 = meta.query_advice(
+                    s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_branch_init),
+                );
+
                 let second_nibble =
                     meta.query_advice(s_advices[ind], Rotation::cur());
 
@@ -652,9 +677,10 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 let mut constraints = vec![];
 
                 let sel1 =
-                    meta.query_advice(sel1, Rotation(rot_into_branch_init));
+                    meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
                 let sel2 =
-                    meta.query_advice(sel2, Rotation(rot_into_branch_init));
+                    meta.query_advice(s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
+
                 let long_even_sel2 = get_long_even(meta) * sel2;
                 let long_odd_sel1 = get_long_odd(meta) * sel1;
 
