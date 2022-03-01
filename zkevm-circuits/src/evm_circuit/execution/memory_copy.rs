@@ -54,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         let src_addr_end = cb.query_cell();
         let from_tx = cb.query_bool();
         let tx_id = cb.query_cell();
-        let buffer_reader = BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
+        let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end.expr());
         let from_memory = 1.expr() - from_tx.expr();
 
         // Copy bytes from src and dst

@@ -15,7 +15,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             memory_gadget::BufferReaderGadget,
-            Cell, MemoryAddress, RandomLinearCombination,
+            select, Cell, MemoryAddress, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -31,11 +31,14 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// Transaction id from the tx context.
     tx_id: Cell<F>,
     /// The bytes offset in calldata, from which we load a 32-bytes word.
-    calldata_start: MemoryAddress<F>,
-    /// Start reading into buffer from this source address.
-    src_addr: Cell<F>,
-    /// End of the source address.
-    src_addr_end: Cell<F>,
+    offset: MemoryAddress<F>,
+    /// The size of the call's data (tx input for a root call or calldata length
+    /// of an internal call).
+    calldata_length: Cell<F>,
+    /// The offset from where call data begins. This is 0 for a root call since
+    /// tx data starts at the first byte, but can be non-zero offset for an
+    /// internal call.
+    calldata_offset: Cell<F>,
     /// Gadget to read from tx calldata, which we validate against the word
     /// pushed to stack.
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
@@ -49,17 +52,57 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let calldata_start = cb.query_rlc();
+        let offset = cb.query_rlc();
 
         // Pop the offset value from stack.
-        cb.stack_pop(calldata_start.expr());
+        cb.stack_pop(offset.expr());
 
         // Add a lookup constrain for TxId in the RW table.
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
-        let src_addr = cb.query_cell();
-        let src_addr_end = cb.query_cell();
-        let buffer_reader = BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
+        let calldata_length = cb.query_cell();
+        let calldata_offset = cb.query_cell();
+
+        let src_addr = select::expr(
+            cb.curr.state.is_root.expr(),
+            offset.expr(),
+            offset.expr() + calldata_offset.expr(),
+        );
+        let src_addr_end = select::expr(
+            cb.curr.state.is_root.expr(),
+            calldata_length.expr(),
+            calldata_length.expr() + calldata_offset.expr(),
+        );
+
+        cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            cb.tx_context_lookup(
+                tx_id.expr(),
+                TxContextFieldTag::CallDataLength,
+                None,
+                calldata_length.expr(),
+            );
+            cb.require_equal(
+                "if is_root then calldata_offset == 0",
+                calldata_offset.expr(),
+                0.expr(),
+            );
+        });
+        cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::CallDataLength,
+                calldata_length.expr(),
+            );
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::CallDataOffset,
+                calldata_offset.expr(),
+            );
+        });
+
+        let buffer_reader = BufferReaderGadget::construct(cb, src_addr.clone(), src_addr_end);
 
         let mut calldata_word = (0..N_BYTES_WORD)
             .map(|idx| {
@@ -113,9 +156,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         Self {
             same_context,
-            calldata_start,
-            src_addr,
-            src_addr_end,
+            offset,
+            calldata_length,
+            calldata_offset,
             tx_id,
             buffer_reader,
         }
@@ -134,14 +177,14 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // set the value for bytes offset in calldata. This is where we start
         // reading bytes from.
-        let calldata_offset = block.rws[step.rw_indices[0]].stack_value();
+        let data_offset = block.rws[step.rw_indices[0]].stack_value();
 
         // assign the calldata start and end cells.
-        self.calldata_start.assign(
+        self.offset.assign(
             region,
             offset,
             Some(
-                calldata_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
+                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
                     .unwrap(),
             ),
@@ -152,14 +195,26 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
         // assign to the buffer reader gadget.
-        let src_addr = calldata_offset.as_usize();
-        let src_addr_end = (call.call_data_length as usize).min(src_addr + N_BYTES_WORD);
-        self.src_addr
-            .assign(region, offset, Some(F::from(src_addr as u64)))?;
-        self.src_addr_end
-            .assign(region, offset, Some(F::from(src_addr_end as u64)))?;
+        let (calldata_length, calldata_offset) = if call.is_root {
+            (tx.call_data_length as u64, 0u64)
+        } else {
+            (call.call_data_length, call.call_data_offset)
+        };
+        self.calldata_length
+            .assign(region, offset, Some(F::from(calldata_length)))?;
+        self.calldata_offset
+            .assign(region, offset, Some(F::from(calldata_offset)))?;
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
+        let (src_addr, src_addr_end) = if call.is_root {
+            (data_offset.as_usize(), tx.call_data_length as usize)
+        } else {
+            (
+                data_offset.as_usize() + calldata_offset as usize,
+                calldata_length as usize + calldata_offset as usize,
+            )
+        };
+
         for (i, byte) in calldata_bytes.iter_mut().enumerate() {
             if call.is_root {
                 // fetch from tx call data
@@ -169,7 +224,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             } else {
                 // fetch from memory
                 if src_addr + i < call.call_data_length as usize {
-                    *byte = block.rws[step.rw_indices[2 + i]].memory_value();
+                    *byte = block.rws[step.rw_indices[4 + i]].memory_value();
                 }
             }
         }
@@ -230,11 +285,11 @@ mod test {
         ]
     }
 
-    fn test_ok(call_data: Vec<u8>, calldata_offset: Word, expected: Word, is_root: bool) {
+    fn test_ok(call_data: Vec<u8>, offset: Word, expected: Word, call_data_offset: Option<u64>) {
         let randomness = Fr::rand();
         let bytecode = bytecode! {
             #[start]
-            PUSH32(calldata_offset)
+            PUSH32(offset)
             CALLDATALOAD
             STOP
         };
@@ -249,17 +304,17 @@ mod test {
                 is_write: true,
                 call_id,
                 stack_pointer: 1023,
-                value: calldata_offset,
+                value: offset,
             },
             Rw::Stack {
                 rw_counter: 2,
                 is_write: false,
                 call_id,
                 stack_pointer: 1023,
-                value: calldata_offset,
+                value: offset,
             },
         ];
-        let rws_call_context = vec![Rw::CallContext {
+        let mut rws_call_context = vec![Rw::CallContext {
             rw_counter: 3,
             is_write: false,
             call_id,
@@ -271,14 +326,39 @@ mod test {
         // if not root call, add calldata to memory.
         let mut rws_map = HashMap::new();
         let mut rw_counter = 4;
-        if !is_root {
+        // if call data offset is provided, then it is an internal call.
+        if call_data_offset.is_some() {
+            // handle call context rws.
+            rws_call_context.append(&mut vec![
+                Rw::CallContext {
+                    is_write: false,
+                    call_id,
+                    rw_counter,
+                    field_tag: CallContextFieldTag::CallDataLength,
+                    value: Word::from(call_data_length as u64),
+                },
+                Rw::CallContext {
+                    is_write: false,
+                    call_id,
+                    rw_counter: rw_counter + 1,
+                    field_tag: CallContextFieldTag::CallDataOffset,
+                    value: call_data_offset.map_or(Word::from(0u64), Word::from),
+                },
+            ]);
+            rw_indices.append(&mut vec![
+                (RwTableTag::CallContext, 1),
+                (RwTableTag::CallContext, 2),
+            ]);
+            rw_counter += 2;
+
+            // handle memory rws.
             let rws_memory = call_data
                 .iter()
-                .skip(calldata_offset.as_usize())
+                .skip(offset.as_usize())
                 .enumerate()
                 .map(|(idx, byte)| Rw::Memory {
                     call_id,
-                    memory_address: (calldata_offset.as_usize() + idx) as u64,
+                    memory_address: (offset.as_usize() + idx) as u64,
                     is_write: false,
                     byte: *byte,
                     rw_counter: rw_counter + idx,
@@ -344,14 +424,23 @@ mod test {
             randomness,
             txs: vec![Transaction {
                 id: tx_id,
-                call_data_length: if is_root { call_data.len() } else { 0 },
-                call_data: if is_root { call_data } else { vec![] },
+                call_data_length: if call_data_offset.is_none() {
+                    call_data.len()
+                } else {
+                    0
+                },
+                call_data: if call_data_offset.is_none() {
+                    call_data
+                } else {
+                    vec![]
+                },
                 steps,
                 calls: vec![Call {
                     id: call_id,
-                    is_root,
+                    is_root: call_data_offset.is_none(),
                     is_create: false,
                     call_data_length: call_data_length as u64,
+                    call_data_offset: call_data_offset.unwrap_or(0),
                     code_source: CodeSource::Account(bytecode.hash),
                     ..Default::default()
                 }],
@@ -369,13 +458,13 @@ mod test {
     fn calldataload_gadget_root() {
         test_data()
             .iter()
-            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, true));
+            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, None));
     }
 
     #[test]
     fn calldataload_gadget_internal() {
         test_data()
             .iter()
-            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, false));
+            .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, Some(0u64)));
     }
 }
