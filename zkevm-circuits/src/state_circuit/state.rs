@@ -309,8 +309,8 @@ impl<
             let mut cb = new_cb();
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            cb.condition(s_enable, |cb|{
-            cb.require_boolean("is_write should be boolean", is_write.clone())
+            cb.condition(s_enable, |cb| {
+                cb.require_boolean("is_write should be boolean", is_write.clone())
             });
             cb.constraints
         });
