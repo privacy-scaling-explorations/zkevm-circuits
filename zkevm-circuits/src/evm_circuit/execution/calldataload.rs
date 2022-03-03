@@ -15,7 +15,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             memory_gadget::BufferReaderGadget,
-            select, Cell, MemoryAddress, RandomLinearCombination,
+            Cell, MemoryAddress, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -63,16 +63,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let calldata_length = cb.query_cell();
         let calldata_offset = cb.query_cell();
 
-        let src_addr = select::expr(
-            cb.curr.state.is_root.expr(),
-            offset.expr(),
-            offset.expr() + calldata_offset.expr(),
-        );
-        let src_addr_end = select::expr(
-            cb.curr.state.is_root.expr(),
-            calldata_length.expr(),
-            calldata_length.expr() + calldata_offset.expr(),
-        );
+        let src_addr = offset.expr() + calldata_offset.expr();
+        let src_addr_end = calldata_length.expr() + calldata_offset.expr();
 
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             cb.tx_context_lookup(
@@ -206,14 +198,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .assign(region, offset, Some(F::from(calldata_offset)))?;
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
-        let (src_addr, src_addr_end) = if call.is_root {
-            (data_offset.as_usize(), tx.call_data_length as usize)
-        } else {
-            (
-                data_offset.as_usize() + calldata_offset as usize,
-                calldata_length as usize + calldata_offset as usize,
-            )
-        };
+        let (src_addr, src_addr_end) = (
+            data_offset.as_usize() + calldata_offset as usize,
+            calldata_length as usize + calldata_offset as usize,
+        );
 
         for (i, byte) in calldata_bytes.iter_mut().enumerate() {
             if call.is_root {
