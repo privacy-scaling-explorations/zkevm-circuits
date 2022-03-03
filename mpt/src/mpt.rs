@@ -679,8 +679,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
             r_table.clone(),
             fixed_table.clone(),
         );

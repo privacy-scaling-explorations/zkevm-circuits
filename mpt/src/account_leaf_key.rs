@@ -11,7 +11,10 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
-    param::{HASH_WIDTH, R_TABLE_LEN},
+    param::{
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET,
+        R_TABLE_LEN,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -36,8 +39,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         acc_mult: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
     ) -> AccountLeafKeyConfig {
@@ -138,8 +139,14 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot));
             let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
             // sel1, sel2 is in init branch
-            let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
-            let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
+            let sel1 = meta.query_advice(
+                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot - 1),
+            );
+            let sel2 = meta.query_advice(
+                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot - 1),
+            );
 
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
