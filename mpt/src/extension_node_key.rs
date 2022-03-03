@@ -10,7 +10,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, range_lookups, key_len_lookup},
+    helpers::{compute_rlc, range_lookups, key_len_lookup, get_is_extension_node},
     mpt::FixedTableTag,
     param::{
         HASH_WIDTH,
@@ -56,43 +56,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
         // TODO: RLP
 
-        let get_is_extension_node = |meta: &mut VirtualCells<F>, rot: i32| {
-            // To reduce the expression degree, we pack together multiple information.
-            // Constraints on selectors are in extension_node.
-            // NOTE: even and odd refers to number of nibbles that are compactly encoded.
-            let is_ext_short_c16 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
-                Rotation(rot),
-            );
-            let is_ext_short_c1 = meta.query_advice(
-                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
-                Rotation(rot),
-            );
-            let is_ext_long_even_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
-                Rotation(rot),
-            );
-            let is_ext_long_even_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
-                Rotation(rot),
-            );
-            let is_ext_long_odd_c16 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
-                Rotation(rot),
-            );
-            let is_ext_long_odd_c1 = meta.query_advice(
-                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
-                Rotation(rot),
-            );
-
-            is_ext_short_c16.clone()
-                + is_ext_short_c1.clone()
-                + is_ext_long_even_c16.clone()
-                + is_ext_long_even_c1.clone()
-                + is_ext_long_odd_c16.clone()
-                + is_ext_long_odd_c1.clone()
-        };
-
         meta.create_gate("extension node key", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level =
@@ -132,7 +95,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Rotation(rot_into_branch_init),
             );
 
-            let is_extension_node = get_is_extension_node(meta, rot_into_branch_init);
+            let is_extension_node = get_is_extension_node(meta, s_advices, rot_into_branch_init);
 
             // sel1 and sel2 determines whether branch modified_node needs to be
             // multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
@@ -777,13 +740,13 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             let is_extension_s_row =
                 meta.query_advice(is_last_branch_child, Rotation(-1));
 
-            get_is_extension_node(meta, rot_into_branch_init+1) * is_extension_s_row
+            get_is_extension_node(meta, s_advices, rot_into_branch_init+1) * is_extension_s_row
         };
         let sel_c = |meta: &mut VirtualCells<F>| {
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
 
-            get_is_extension_node(meta, rot_into_branch_init) * is_extension_c_row
+            get_is_extension_node(meta, s_advices, rot_into_branch_init) * is_extension_c_row
         };
 
         range_lookups(

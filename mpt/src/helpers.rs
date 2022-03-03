@@ -6,7 +6,14 @@ use halo2::{
 };
 use pairing::arithmetic::FieldExt;
 
-use crate::{mpt::FixedTableTag, param::R_TABLE_LEN};
+use crate::{
+    mpt::FixedTableTag,
+    param::{
+        HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
+        IS_EXT_SHORT_C1_POS, LAYOUT_OFFSET, R_TABLE_LEN,
+    },
+};
 
 // Turn 32 hash cells into 4 cells containing keccak words.
 pub fn into_words_expr<F: FieldExt>(
@@ -167,4 +174,62 @@ pub fn get_bool_constraint<F: FieldExt>(
 ) -> Expression<F> {
     let one = Expression::Constant(F::from(1_u64));
     q_enable * expr.clone() * (one - expr.clone())
+}
+
+pub fn get_is_extension_node<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_advices: [Column<Advice>; HASH_WIDTH],
+    rot: i32,
+) -> Expression<F> {
+    // To reduce the expression degree, we pack together multiple information.
+    // Constraints on selectors are in extension_node.
+    // NOTE: even and odd refers to number of nibbles that are compactly encoded.
+    let is_ext_short_c16 = meta.query_advice(
+        s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+    let is_ext_short_c1 = meta.query_advice(
+        s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+    let is_ext_long_even_c16 = meta.query_advice(
+        s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+    let is_ext_long_even_c1 = meta.query_advice(
+        s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+    let is_ext_long_odd_c16 = meta.query_advice(
+        s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+    let is_ext_long_odd_c1 = meta.query_advice(
+        s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+
+    is_ext_short_c16
+        + is_ext_short_c1
+        + is_ext_long_even_c16
+        + is_ext_long_even_c1
+        + is_ext_long_odd_c16
+        + is_ext_long_odd_c1
+}
+
+pub fn get_is_extension_node_one_nibble<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_advices: [Column<Advice>; HASH_WIDTH],
+    rot: i32,
+) -> Expression<F> {
+    let is_ext_short_c16 = meta.query_advice(
+        s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+    let is_ext_short_c1 = meta.query_advice(
+        s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+        Rotation(rot),
+    );
+
+    is_ext_short_c16 + is_ext_short_c1
 }

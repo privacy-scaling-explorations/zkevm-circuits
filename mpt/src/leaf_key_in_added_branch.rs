@@ -9,7 +9,10 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
+    helpers::{
+        compute_rlc, get_is_extension_node_one_nibble, key_len_lookup,
+        mult_diff_lookup, range_lookups,
+    },
     mpt::FixedTableTag,
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS},
 };
@@ -224,12 +227,21 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init - 1),
             );
 
+            let is_one_nibble = get_is_extension_node_one_nibble(
+                meta,
+                s_advices,
+                rot_branch_init,
+            );
+
             // Any rotation that lands into branch children can be used.
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
             let mut key_mult = branch_rlc_mult.clone()
                 * mult_diff.clone()
                 * (one.clone() - is_leaf_without_branch.clone())
-                + is_leaf_without_branch.clone() * mult_diff.clone();
+                + is_leaf_without_branch.clone() * is_one_nibble.clone()
+                + is_leaf_without_branch.clone()
+                    * mult_diff.clone()
+                    * (one.clone() - is_one_nibble.clone());
             let drifted_pos_mult =
                 key_mult.clone() * c16.clone() * sel1.clone()
                     + key_mult.clone() * sel2.clone();
