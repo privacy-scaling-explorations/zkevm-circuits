@@ -221,7 +221,7 @@ mod test {
                     is_create: false,
                     code_source: CodeSource::Account(bytecode.hash),
                     rw_counter_end_of_reversion,
-                    is_persistent: is_persistent,
+                    is_persistent,
                     is_success: is_persistent,
                     callee_address: tx.to.unwrap(),
                     ..Default::default()
