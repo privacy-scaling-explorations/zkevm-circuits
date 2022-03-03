@@ -105,7 +105,7 @@ mod evm_circ_benches {
         end_timer!(start2);
 
         // Verify
-        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
+        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE).unwrap();
         let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleVerifier::new(&verifier_params);
 
