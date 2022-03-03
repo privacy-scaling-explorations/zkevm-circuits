@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS},
 };
 
 use crate::param::{
@@ -39,8 +40,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -187,8 +186,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
             // sel1 and sel2 determines whether drifted_pos needs to be
             // multiplied by 16 or not.
-            let sel1 = meta.query_advice(sel1, Rotation(rot_branch_init));
-            let sel2 = meta.query_advice(sel2, Rotation(rot_branch_init));
+            let sel1 = meta.query_advice(
+                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let sel2 = meta.query_advice(
+                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
 
             // Note: previous key_rlc in s_keccak[2] and s_keccak[3] could be queried instead.
             let branch_rlc_mult =
@@ -224,7 +229,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let mut key_mult = branch_rlc_mult.clone()
                 * mult_diff.clone()
                 * (one.clone() - is_leaf_without_branch.clone())
-                + is_leaf_without_branch.clone();
+                + is_leaf_without_branch.clone() * mult_diff.clone();
             let drifted_pos_mult =
                 key_mult.clone() * c16.clone() * sel1.clone()
                     + key_mult.clone() * sel2.clone();

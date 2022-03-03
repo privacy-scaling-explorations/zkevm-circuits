@@ -11,7 +11,10 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
-    param::{HASH_WIDTH, KECCAK_OUTPUT_WIDTH, R_TABLE_LEN},
+    param::{
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, KECCAK_OUTPUT_WIDTH,
+        LAYOUT_OFFSET, R_TABLE_LEN,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -42,8 +45,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
         acc_mult: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
-        sel1: Column<Advice>,
-        sel2: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         modified_node: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -196,8 +197,14 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let key_mult_start = meta.query_advice(key_rlc_mult, Rotation(rot));
 
             // sel1 and sel2 are in init branch
-            let sel1 = meta.query_advice(sel1, Rotation(rot - 1));
-            let sel2 = meta.query_advice(sel2, Rotation(rot - 1));
+            let sel1 = meta.query_advice(
+                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot - 1),
+            );
+            let sel2 = meta.query_advice(
+                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot - 1),
+            );
 
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
@@ -533,15 +540,19 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // key RLC and key RLC mult from the level above placeholder fails
             // due to ConstraintPoisened error.
             // sel1 and sel2 are in init branch
+            // Note that when is_first_storage_level, it is always sel2 = 1 because
+            // there are all 32 bytes in a key.
             let sel1 = (one.clone() - is_first_storage_level.clone())
-                * meta.query_advice(sel1, Rotation(rot_level_above - 1))
-                + is_first_storage_level.clone()
-                    * meta.query_advice(sel1, Rotation(rot_into_init));
-
+                * meta.query_advice(
+                    s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                    Rotation(rot_level_above - 1),
+                );
             let sel2 = (one.clone() - is_first_storage_level.clone())
-                * meta.query_advice(sel2, Rotation(rot_level_above - 1))
-                + is_first_storage_level.clone()
-                    * meta.query_advice(sel2, Rotation(rot_into_init));
+                * meta.query_advice(
+                    s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                    Rotation(rot_level_above - 1),
+                )
+                + is_first_storage_level.clone();
 
             // For short RLP (key starts at s_advices[0]):
 

@@ -107,7 +107,6 @@ pub struct MPTConfig<F> {
     acc_c: Column<Advice>, // for branch c
     acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
-    // sel1 and sel2 in branch init: denote whether it's the first or second nibble of the key byte
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie - but no branch is added or turned into leaf)
     sel1: Column<Advice>,
     sel2: Column<Advice>,
@@ -547,8 +546,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             modified_node,
             is_account_leaf_storage_codehash_c,
@@ -576,8 +573,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             modified_node,
             is_account_leaf_storage_codehash_c,
@@ -605,8 +600,6 @@ impl<F: FieldExt> MPTConfig<F> {
             c_keccak,
             acc_s,
             acc_mult_s,
-            sel1,
-            sel2,
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -1277,6 +1270,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
                     let mut rlp_len_rem_c: i32 = 0;
 
+                    // TODO: replace with packed extension selectors:
                     let mut is_extension_node = false;
                     let mut is_even = false;
                     let mut is_odd = false;
