@@ -26,7 +26,10 @@ use crate::{
     param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXTENSION_EVEN_KEY_LEN_POS,
         IS_EXTENSION_KEY_LONG_POS, IS_EXTENSION_KEY_SHORT_POS,
-        IS_EXTENSION_NODE_POS, IS_EXTENSION_ODD_KEY_LEN_POS, LAYOUT_OFFSET,
+        IS_EXTENSION_NODE_POS, IS_EXTENSION_ODD_KEY_LEN_POS,
+        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
+        IS_EXT_SHORT_C1_POS, LAYOUT_OFFSET,
     },
     storage_root_in_account_leaf::StorageRootChip,
 };
@@ -1268,7 +1271,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is subtracted by the number of RLP bytes in this row (1 or 33)
                     let mut rlp_len_rem_c: i32 = 0;
 
-                    // TODO: replace with packed extension selectors:
                     let mut is_extension_node = false;
                     let mut is_even = false;
                     let mut is_odd = false;
@@ -1453,19 +1455,24 @@ impl<F: FieldExt> MPTConfig<F> {
                             let mut sel1 = F::zero();
                             let mut sel2 = F::zero();
                             // extension node:
+                            is_even = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
+                                + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
+                                == 1;
+                            is_odd = witness[offset][IS_EXT_LONG_ODD_C16_POS]
+                                + witness[offset][IS_EXT_LONG_ODD_C1_POS]
+                                + witness[offset][IS_EXT_SHORT_C16_POS]
+                                + witness[offset][IS_EXT_SHORT_C1_POS]
+                                == 1;
+                            is_short = witness[offset][IS_EXT_SHORT_C16_POS]
+                                + witness[offset][IS_EXT_SHORT_C1_POS]
+                                == 1;
+                            is_long = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
+                                + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
+                                + witness[offset][IS_EXT_LONG_ODD_C16_POS]
+                                + witness[offset][IS_EXT_LONG_ODD_C1_POS]
+                                == 1;
                             is_extension_node =
-                                witness[offset][IS_EXTENSION_NODE_POS] == 1;
-                            is_even = witness[offset]
-                                [IS_EXTENSION_EVEN_KEY_LEN_POS]
-                                == 1;
-                            is_odd = witness[offset]
-                                [IS_EXTENSION_ODD_KEY_LEN_POS]
-                                == 1;
-                            is_short = witness[offset]
-                                [IS_EXTENSION_KEY_SHORT_POS]
-                                == 1;
-                            is_long =
-                                witness[offset][IS_EXTENSION_KEY_LONG_POS] == 1;
+                                is_even == true || is_odd == true;
                             // end of extension node
 
                             if !is_extension_node {
