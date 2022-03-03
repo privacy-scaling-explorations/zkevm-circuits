@@ -179,8 +179,14 @@ mod test {
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
     use std::convert::TryInto;
 
-    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
-        let rw_counter_end_of_reversion = if result { 0 } else { 19 };
+    fn test_ok(
+        tx: eth_types::Transaction,
+        key: Word,
+        value: Word,
+        is_warm: bool,
+        is_persistent: bool,
+    ) {
+        let rw_counter_end_of_reversion = if is_persistent { 0 } else { 19 };
 
         let call_data_gas_cost = tx
             .input
@@ -215,8 +221,8 @@ mod test {
                     is_create: false,
                     code_source: CodeSource::Account(bytecode.hash),
                     rw_counter_end_of_reversion,
-                    is_persistent: result,
-                    is_success: result,
+                    is_persistent: is_persistent,
+                    is_success: is_persistent,
                     callee_address: tx.to.unwrap(),
                     ..Default::default()
                 }],
@@ -233,7 +239,7 @@ mod test {
                                 (RwTableTag::Stack, 1),
                                 (RwTableTag::TxAccessListAccountStorage, 0),
                             ],
-                            if result {
+                            if is_persistent {
                                 vec![]
                             } else {
                                 vec![(RwTableTag::TxAccessListAccountStorage, 1)]
@@ -315,7 +321,7 @@ mod test {
                                 value: true,
                                 value_prev: is_warm,
                             }],
-                            if result {
+                            if is_persistent {
                                 vec![]
                             } else {
                                 vec![Rw::TxAccessListAccountStorage {
@@ -353,7 +359,7 @@ mod test {
                                 is_write: false,
                                 call_id: 1,
                                 field_tag: CallContextFieldTag::IsPersistent,
-                                value: Word::from(result as u64),
+                                value: Word::from(is_persistent as u64),
                             },
                             Rw::CallContext {
                                 rw_counter: 12,
