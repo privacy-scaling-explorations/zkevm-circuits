@@ -243,7 +243,7 @@ mod test {
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
-    fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
+    fn test_ok_root(_call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
         let bytecode = bytecode! {
             PUSH32(length)
             PUSH32(data_offset)

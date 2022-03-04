@@ -1121,6 +1121,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::INVALID(_) if [4, 5].contains(&step.bus_mapping_instance.len()) => {
                 ExecutionState::EndTx
             }
+            OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }

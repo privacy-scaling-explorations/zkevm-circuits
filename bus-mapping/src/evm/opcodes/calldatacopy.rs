@@ -1,7 +1,7 @@
 use super::Opcode;
-use crate::Error;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::RW;
+use crate::operation::{CallContextField, CallContextOp, RW};
+use crate::Error;
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]
@@ -14,7 +14,6 @@ impl Opcode for Calldatacopy {
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
-        // `CALLDATACOPY` needs three read operation
         state.push_stack_op(
             exec_step,
             RW::READ,
@@ -32,6 +31,15 @@ impl Opcode for Calldatacopy {
             RW::READ,
             step.stack.nth_last_filled(2),
             step.stack.nth_last(2)?,
+        );
+        state.push_op(
+            exec_step,
+            RW::READ,
+            CallContextOp {
+                call_id: state.call().call_id,
+                field: CallContextField::TxId,
+                value: state.tx_ctx.id().into(),
+            },
         );
 
         Ok(())
@@ -52,33 +60,13 @@ impl Opcode for Calldatacopy {
     }
 }
 
-
 fn gen_memory_copy_steps(
-    state: &mut CircuitInputStateRef,
+    _state: &mut CircuitInputStateRef,
     next_steps: &[GethExecStep],
 ) -> Result<(), Error> {
     let length = next_steps[0].stack.nth_last(0)?;
     if !length.is_zero() {
-
-        /*
-
-        make_memory_copy_steps(
-            call_id,
-            &call_data,
-            0,
-            data_offset.as_u64(),
-            memory_offset.as_u64(),
-            length.as_usize(),
-            true,
-            100,
-            1024,
-            next_memory_word_size * 32,
-            &mut rw_counter,
-            &mut rws,
-            &mut steps,
-        );
-
-        */
+        // TODO
     }
 
     Ok(())
