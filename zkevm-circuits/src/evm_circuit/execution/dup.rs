@@ -11,9 +11,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct DupGadget<F> {
@@ -21,7 +20,7 @@ pub(crate) struct DupGadget<F> {
     value: Cell<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
+impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
     const NAME: &'static str = "DUP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::DUP;
@@ -59,8 +58,8 @@ impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

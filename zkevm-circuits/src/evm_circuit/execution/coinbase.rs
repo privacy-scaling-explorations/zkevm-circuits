@@ -1,33 +1,36 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            Cell, Word,
+            from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
+use eth_types::Field;
 use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{circuit::Region, plonk::Error};
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CoinbaseGadget<F> {
     same_context: SameContextGadget<F>,
-    coinbase_address: Cell<F>,
+    coinbase_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CoinbaseGadget<F> {
     const NAME: &'static str = "COINBASE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::COINBASE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let coinbase_address = cb.query_cell();
+        let coinbase_address = cb.query_rlc();
 
         // Push the value to the stack
         cb.stack_push(coinbase_address.expr());
@@ -36,7 +39,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
         cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
             None,
-            coinbase_address.expr(),
+            from_bytes::expr(&coinbase_address.cells),
         );
 
         // State transition
@@ -60,8 +63,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -71,10 +74,11 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
         self.coinbase_address.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
-                coinbase.to_le_bytes(),
-                block.randomness,
-            )),
+            Some(
+                coinbase.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
+                    .try_into()
+                    .unwrap(),
+            ),
         )?;
 
         Ok(())

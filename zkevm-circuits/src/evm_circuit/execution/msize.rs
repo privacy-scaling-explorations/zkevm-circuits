@@ -12,7 +12,8 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct MsizeGadget<F> {
@@ -20,7 +21,7 @@ pub(crate) struct MsizeGadget<F> {
     value: RandomLinearCombination<F, 8>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
+impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
     const NAME: &'static str = "MSIZE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
@@ -59,8 +60,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         _: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

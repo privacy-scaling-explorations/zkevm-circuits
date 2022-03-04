@@ -13,8 +13,9 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
+use eth_types::Field;
 use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ByteGadget<F> {
@@ -25,7 +26,7 @@ pub(crate) struct ByteGadget<F> {
     is_byte_selected: [IsEqualGadget<F>; 32],
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
+impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
     const NAME: &'static str = "BYTE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BYTE;
@@ -92,8 +93,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -151,7 +152,7 @@ mod test {
         let index = rand_word();
         let value = rand_word();
         test_ok(index, value);
-        test_ok(index % 32, value);
+        test_ok(index % Word::from(32u8), value);
     }
 
     #[test]

@@ -6,7 +6,10 @@ use itertools::Itertools;
 pub struct KeccakFArith {}
 
 impl KeccakFArith {
-    pub fn permute_and_absorb(&self, a: &mut StateBigInt, next_inputs: &State, has_next: bool) {
+    pub fn permute_and_absorb(
+        a: &mut StateBigInt,
+        next_inputs: Option<&State>,
+    ) -> Option<StateBigInt> {
         for rc in ROUND_CONSTANTS.iter().take(PERMUTATION - 1) {
             let s1 = KeccakFArith::theta(a);
             let s2 = KeccakFArith::rho(&s1);
@@ -19,12 +22,12 @@ impl KeccakFArith {
         let s2 = KeccakFArith::rho(&s1);
         let s3 = KeccakFArith::pi(&s2);
         let s4 = KeccakFArith::xi(&s3);
-        if has_next {
-            let s5 = KeccakFArith::absorb(&s4, next_inputs);
-            *a = StateBigInt::from_state_big_int(&s5, convert_b9_lane_to_b13);
-            *a = KeccakFArith::iota_b13(a, ROUND_CONSTANTS[PERMUTATION - 1]);
+        let res = KeccakFArith::mixing(&s4, next_inputs, *ROUND_CONSTANTS.last().unwrap());
+        *a = res.clone();
+        if next_inputs.is_some() {
+            Some(res)
         } else {
-            *a = KeccakFArith::iota_b9(&s4, ROUND_CONSTANTS[PERMUTATION - 1]);
+            None
         }
     }
 
@@ -91,19 +94,15 @@ impl KeccakFArith {
     pub fn mixing(a: &StateBigInt, next_input: Option<&State>, rc: u64) -> StateBigInt {
         if let Some(next_input) = next_input {
             let out_1 = KeccakFArith::absorb(a, next_input);
+
             // Base conversion from 9 to 13
             let mut out_2 = StateBigInt::default();
             for (x, y) in (0..5).cartesian_product(0..5) {
                 out_2[(x, y)] = convert_b9_lane_to_b13(out_1[(x, y)].clone())
             }
-
             KeccakFArith::iota_b13(&out_2, rc)
         } else {
-            let mut state = KeccakFArith::iota_b9(a, rc);
-            for (x, y) in (0..5).cartesian_product(0..5) {
-                state[(x, y)] = convert_b9_lane_to_b13(state[(x, y)].clone());
-            }
-            state
+            KeccakFArith::iota_b9(a, rc)
         }
     }
 }
@@ -151,16 +150,11 @@ impl Keccak {
 struct Sponge {
     rate: usize,
     capacity: usize,
-    keccak_f: KeccakFArith,
 }
 
 impl Sponge {
     pub fn new(rate: usize, capacity: usize) -> Sponge {
-        Sponge {
-            rate,
-            capacity,
-            keccak_f: KeccakFArith::default(),
-        }
+        Sponge { rate, capacity }
     }
 
     pub fn absorb(&self, state: &mut State, message: &[u8]) {
@@ -194,11 +188,9 @@ impl Sponge {
                 }
                 continue;
             }
-            self.keccak_f
-                .permute_and_absorb(&mut state_bit_int, &next_inputs, true);
+            KeccakFArith::permute_and_absorb(&mut state_bit_int, Some(&next_inputs));
         }
-        self.keccak_f
-            .permute_and_absorb(&mut state_bit_int, &State::default(), false);
+        KeccakFArith::permute_and_absorb(&mut state_bit_int, None);
         for (x, y) in (0..5).cartesian_product(0..5) {
             state[x][y] = convert_b9_lane_to_b2(state_bit_int[(x, y)].clone())
         }

@@ -13,7 +13,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
 // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
@@ -26,7 +27,7 @@ pub(crate) struct AddGadget<F> {
     is_sub: PairSelectGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
+impl<F: Field> ExecutionGadget<F> for AddGadget<F> {
     const NAME: &'static str = "ADD";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADD;
@@ -74,8 +75,8 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

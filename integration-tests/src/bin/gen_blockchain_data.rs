@@ -9,7 +9,8 @@ use ethers::{
     solc::Solc,
 };
 use integration_tests::{
-    get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS, CONTRACTS_PATH,
+    get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
+    CONTRACTS_PATH,
 };
 use log::{debug, info};
 use std::collections::HashMap;
@@ -142,9 +143,61 @@ async fn main() {
         (block_num.as_u64(), contract.address()),
     );
 
+    // Generate a block with multiple transfers
+    info!("Generating block with multiple transfers...");
+    const NUM_TXS: usize = 4;
+    let wallets: Vec<_> = (0..NUM_TXS + 1)
+        .map(|i| Arc::new(SignerMiddleware::new(get_provider(), get_wallet(i as u32))))
+        .collect();
+
+    let cli = get_client();
+
+    // Fund NUM_TXS wallets from coinbase
+    cli.miner_stop().await.expect("cannot stop miner");
+    let mut pending_txs = Vec::new();
+    for wallet in &wallets[0..NUM_TXS] {
+        let tx = TransactionRequest::new()
+            .to(wallet.address())
+            .value(WEI_IN_ETHER * 2u8) // send 2 ETH
+            .from(accounts[0]);
+        pending_txs.push(
+            prov.send_transaction(tx, None)
+                .await
+                .expect("cannot send tx"),
+        );
+    }
+    cli.miner_start().await.expect("cannot start miner");
+    for tx in pending_txs {
+        tx.await.expect("cannot confirm tx");
+    }
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Fund wallets".to_string(), block_num.as_u64());
+
+    // Make NUM_TXS transfers in a "chain"
+    cli.miner_stop().await.expect("cannot stop miner");
+    let mut pending_txs = Vec::new();
+    for i in 0..NUM_TXS {
+        let tx = TransactionRequest::new()
+            .to(wallets[i + 1].address())
+            .value(WEI_IN_ETHER / (2 * (i + 1))) // send a fraction of an ETH
+            .from(wallets[i].address());
+        pending_txs.push(
+            wallets[i]
+                .send_transaction(tx, None)
+                .await
+                .expect("cannot send tx"),
+        );
+    }
+    cli.miner_start().await.expect("cannot start miner");
+    for tx in pending_txs {
+        tx.await.expect("cannot confirm tx");
+    }
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Multiple transfers 0".to_string(), block_num.as_u64());
+
     let gen_data = GenDataOutput {
         coinbase: accounts[0],
-        wallets: vec![get_wallet(0).address()],
+        wallets: wallets.iter().map(|w| w.address()).collect(),
         blocks,
         deployments,
     };

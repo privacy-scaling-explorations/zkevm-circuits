@@ -4,10 +4,12 @@
 mod tests {
     use crate::bench_params::{DEGREE, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX};
     use ark_std::{end_timer, start_timer};
-    use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-    use halo2::{plonk::*, poly::commitment::Setup};
-    use pairing::bn256::Bn256;
-    use pairing::bn256::Fr;
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
+    use halo2_proofs::{
+        poly::commitment::{Params, ParamsVerifier},
+        transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+    };
+    use pairing::bn256::{Bn256, Fr, G1Affine};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::state_circuit::StateCircuit;
@@ -20,7 +22,6 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_state_circuit_prover() {
-        let public_inputs_size = 0;
         let empty_circuit = StateCircuit::<
             Fr,
             true,
@@ -41,30 +42,45 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let params = Setup::<Bn256>::new(DEGREE as u32, rng);
-        let verifier_params = Setup::<Bn256>::verifier_params(&params, public_inputs_size).unwrap();
+        let general_params: Params<G1Affine> =
+            Params::<G1Affine>::unsafe_setup::<Bn256>(DEGREE.try_into().unwrap());
+        let verifier_params: ParamsVerifier<Bn256> = general_params.verifier(DEGREE * 2).unwrap();
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        let vk = keygen_vk(&general_params, &empty_circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&general_params, vk, &empty_circuit).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
         let proof_message = format!("State Proof generation with {} rows", DEGREE);
         let start2 = start_timer!(|| proof_message);
-        create_proof(&params, &pk, &[empty_circuit], &[&[]], &mut transcript)
-            .expect("proof generation should not fail");
+        create_proof(
+            &general_params,
+            &pk,
+            &[empty_circuit],
+            &[&[]],
+            rng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
         let proof = transcript.finalize();
         end_timer!(start2);
 
         // Bench verification time
         let start3 = start_timer!(|| "State Proof verification");
-        let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let mut verifier_transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleVerifier::new(&verifier_params);
 
-        verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
-            .expect("failed to verify bench circuit");
+        verify_proof(
+            &verifier_params,
+            pk.get_vk(),
+            strategy,
+            &[&[]],
+            &mut verifier_transcript,
+        )
+        .expect("failed to verify bench circuit");
         end_timer!(start3);
     }
 }

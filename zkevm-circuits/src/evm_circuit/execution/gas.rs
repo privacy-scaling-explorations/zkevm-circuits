@@ -12,9 +12,8 @@ use crate::{
     },
     util::Expr,
 };
-
-use bus_mapping::evm::OpcodeId;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct GasGadget<F> {
@@ -22,7 +21,7 @@ pub(crate) struct GasGadget<F> {
     gas_left: RandomLinearCombination<F, N_BYTES_GAS>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
+impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
     const NAME: &'static str = "GAS";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::GAS;
@@ -62,8 +61,8 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         _block: &Block<F>,
-        _transaction: &Transaction<F>,
-        _call: &Call<F>,
+        _transaction: &Transaction,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -124,7 +123,7 @@ mod test {
         builder
             .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .expect("could not handle block tx");
-        let mut block = block_convert(config.randomness, bytecode.code(), &builder.block);
+        let mut block = block_convert(&builder.block, &builder.code_db);
 
         // The above block has 2 steps (GAS and STOP). We forcefully assign a
         // wrong `gas_left` value for the second step, to assert that

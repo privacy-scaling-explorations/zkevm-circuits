@@ -1,7 +1,7 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
+use halo2_proofs::{circuit::Layouter, plonk::*};
 
 mod execution;
 pub mod param;
@@ -11,6 +11,7 @@ pub(crate) mod util;
 pub mod table;
 pub mod witness;
 
+use eth_types::Field;
 use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
@@ -22,7 +23,7 @@ pub struct EvmCircuit<F> {
     execution: ExecutionConfig<F>,
 }
 
-impl<F: FieldExt> EvmCircuit<F> {
+impl<F: Field> EvmCircuit<F> {
     /// Configure EvmCircuit
     pub fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
@@ -98,20 +99,21 @@ impl<F: FieldExt> EvmCircuit<F> {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test {
+#[cfg(any(feature = "test", test))]
+pub mod test {
     use crate::{
         evm_circuit::{
             param::STEP_HEIGHT,
             table::FixedTableTag,
-            witness::{Block, BlockContext, Bytecode, Rw, Transaction},
+            witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
             EvmCircuit,
         },
+        rw_table::RwTable,
         util::Expr,
     };
-    use eth_types::Word;
-    use halo2::{
-        arithmetic::{BaseExt, FieldExt},
+    use eth_types::{evm_types::GasCost, Field, Word};
+    use halo2_proofs::{
+        arithmetic::BaseExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
@@ -132,7 +134,7 @@ pub(crate) mod test {
     }
 
     pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        vec![random(); n]
+        (0..n).map(|_| random()).collect()
     }
 
     pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
@@ -148,19 +150,19 @@ pub(crate) mod test {
     }
 
     #[derive(Clone)]
-    pub(crate) struct TestCircuitConfig<F> {
+    pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: [Column<Advice>; 10],
+        rw_table: RwTable,
         bytecode_table: [Column<Advice>; 4],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
     }
 
-    impl<F: FieldExt> TestCircuitConfig<F> {
+    impl<F: Field> TestCircuitConfig<F> {
         fn load_txs(
             &self,
             layouter: &mut impl Layouter<F>,
-            txs: &[Transaction<F>],
+            txs: &[Transaction],
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
@@ -198,34 +200,23 @@ pub(crate) mod test {
         fn load_rws(
             &self,
             layouter: &mut impl Layouter<F>,
-            rws: &[Rw],
+            rws: &RwMap,
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
                 || "rw table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.rw_table {
-                        region.assign_advice(
-                            || "rw table all-zero row",
-                            column,
-                            offset,
-                            || Ok(F::zero()),
-                        )?;
-                    }
+                    self.rw_table
+                        .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
-                    for rw in rws.iter() {
-                        for (column, value) in
-                            self.rw_table.iter().zip(rw.table_assignment(randomness))
-                        {
-                            region.assign_advice(
-                                || format!("rw table row {}", offset),
-                                *column,
-                                offset,
-                                || Ok(value),
-                            )?;
-                        }
+                    for rw in rws.0.values().flat_map(|rws| rws.iter()) {
+                        self.rw_table.assign(
+                            &mut region,
+                            offset,
+                            &rw.table_assignment(randomness),
+                        )?;
                         offset += 1;
                     }
                     Ok(())
@@ -271,10 +262,10 @@ pub(crate) mod test {
             )
         }
 
-        fn load_blocks(
+        fn load_block(
             &self,
             layouter: &mut impl Layouter<F>,
-            block: &BlockContext<F>,
+            block: &BlockContext,
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
@@ -310,7 +301,7 @@ pub(crate) mod test {
     }
 
     #[derive(Default)]
-    pub(crate) struct TestCircuit<F> {
+    pub struct TestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     }
@@ -324,7 +315,7 @@ pub(crate) mod test {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+    impl<F: Field> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -334,7 +325,7 @@ pub(crate) mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = [(); 10].map(|_| meta.advice_column());
+            let rw_table = RwTable::construct(meta);
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
@@ -379,14 +370,14 @@ pub(crate) mod test {
             config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
             config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
             config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
-            config.load_blocks(&mut layouter, &self.block.context, self.block.randomness)?;
+            config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
         }
     }
 
-    pub(crate) fn run_test_circuit<F: FieldExt>(
+    pub fn run_test_circuit<F: Field>(
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -420,7 +411,7 @@ pub(crate) mod test {
         prover.verify()
     }
 
-    pub(crate) fn run_test_circuit_incomplete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_incomplete_fixed_table<F: Field>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(
@@ -438,9 +429,33 @@ pub(crate) mod test {
         )
     }
 
-    pub(crate) fn run_test_circuit_complete_fixed_table<F: FieldExt>(
+    pub fn run_test_circuit_complete_fixed_table<F: Field>(
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
+    }
+
+    pub(crate) fn calc_memory_expension_gas_cost(
+        curr_memory_word_size: u64,
+        next_memory_word_size: u64,
+    ) -> u64 {
+        if next_memory_word_size <= curr_memory_word_size {
+            0
+        } else {
+            let total_cost = |mem_word_size| {
+                mem_word_size * GasCost::MEMORY.as_u64() + mem_word_size * mem_word_size / 512
+            };
+            total_cost(next_memory_word_size) - total_cost(curr_memory_word_size)
+        }
+    }
+
+    pub(crate) fn calc_memory_copier_gas_cost(
+        curr_memory_word_size: u64,
+        next_memory_word_size: u64,
+        num_copy_bytes: u64,
+    ) -> u64 {
+        let num_words = (num_copy_bytes + 31) / 32;
+        num_words * GasCost::COPY.as_u64()
+            + calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size)
     }
 }

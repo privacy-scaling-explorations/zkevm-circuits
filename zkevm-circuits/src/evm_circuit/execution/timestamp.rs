@@ -1,7 +1,7 @@
-use crate::evm_circuit::param::N_BYTES_U64;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_U64,
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
@@ -13,7 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
@@ -22,7 +23,7 @@ pub(crate) struct TimestampGadget<F> {
     timestamp: RandomLinearCombination<F, N_BYTES_U64>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
+impl<F: Field> ExecutionGadget<F> for TimestampGadget<F> {
     const NAME: &'static str = "TIMESTAMP";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::TIMESTAMP;
@@ -33,7 +34,7 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
 
         // Lookup block table with timestamp
         cb.block_lookup(
-            BlockContextFieldTag::Time.expr(),
+            BlockContextFieldTag::Timestamp.expr(),
             None,
             from_bytes::expr(&timestamp.cells),
         );
@@ -59,8 +60,8 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

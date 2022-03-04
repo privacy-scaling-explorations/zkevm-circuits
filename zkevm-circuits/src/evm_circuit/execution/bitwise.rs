@@ -13,8 +13,9 @@ use crate::{
     util::Expr,
 };
 use eth_types::evm_types::OpcodeId;
+use eth_types::Field;
 use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BitwiseGadget<F> {
@@ -24,7 +25,7 @@ pub(crate) struct BitwiseGadget<F> {
     c: Word<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
+impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
     const NAME: &'static str = "BITWISE";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BITWISE;
@@ -81,8 +82,8 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -102,7 +103,7 @@ mod test {
     use crate::{
         evm_circuit::test::rand_word,
         test_util::{
-            get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig, FixedTableConfig,
+            get_fixed_table, test_circuits_using_bytecode, BytecodeTestConfig, FixedTableConfig,
         },
     };
     use eth_types::{bytecode, Word};
@@ -127,7 +128,7 @@ mod test {
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Complete),
             ..Default::default()
         };
-        assert_eq!(run_test_circuits_with_config(bytecode, test_config), Ok(()));
+        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
     }
 
     #[test]

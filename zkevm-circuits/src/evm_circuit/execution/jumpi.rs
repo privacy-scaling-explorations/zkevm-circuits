@@ -17,9 +17,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -30,7 +29,7 @@ pub(crate) struct JumpiGadget<F> {
     is_condition_zero: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
+impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
     const NAME: &'static str = "JUMPI";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
@@ -87,8 +86,8 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -160,14 +159,14 @@ mod test {
 
     #[test]
     fn jumpi_gadget_rand() {
-        test_ok(rand_range(68..1 << 11), 0.into());
+        test_ok(rand_range(68..1 << 11), Word::zero());
         test_ok(rand_range(68..1 << 11), rand_word());
     }
 
     #[test]
     #[ignore]
     fn jumpi_gadget_rand_huge_bytecode() {
-        test_ok(rand_range(1 << 11..0x5fff), 0.into());
+        test_ok(rand_range(1 << 11..0x5fff), Word::zero());
         test_ok(rand_range(1 << 11..0x5fff), rand_word());
     }
 }

@@ -1,8 +1,9 @@
 use crate::common::State;
+use eth_types::Field;
+use halo2_proofs::circuit::AssignedCell;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
-use pairing::arithmetic::FieldExt;
 use std::ops::{Index, IndexMut};
 
 pub const B2: u8 = 2;
@@ -15,14 +16,15 @@ pub const B9: u8 = 9;
 /// where x1, x2, x3, x4 are binary.
 /// We have the property that `0 <= f_arith(...) < 9` and
 /// the map from `f_arith(...)` to `f_logic(...)` is injective.
-pub const A1: u8 = 2;
-pub const A2: u8 = 1;
-pub const A3: u8 = 3;
-pub const A4: u8 = 2;
+pub const A1: u64 = 2;
+pub const A2: u64 = 1;
+pub const A3: u64 = 3;
+pub const A4: u64 = 2;
 
 pub type Lane13 = BigUint;
 pub type Lane9 = BigUint;
 
+#[derive(Debug)]
 pub struct StateBigInt {
     pub(crate) xy: Vec<BigUint>,
 }
@@ -129,6 +131,7 @@ pub fn convert_b9_coef(x: u8) -> u8 {
 }
 
 // We assume the input comes from Theta step and has 65 chunks
+// expecting outputs from theta gate
 pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     // 65 chunks
     let mut chunks = x.to_radix_le(B13.into());
@@ -189,23 +192,23 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
-pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
+pub fn state_to_biguint<F: Field, const N: usize>(state: [F; N]) -> StateBigInt {
     StateBigInt {
         xy: state
             .iter()
-            .map(|elem| elem.to_bytes())
+            .map(|elem| elem.to_repr())
             .map(|bytes| BigUint::from_bytes_le(&bytes))
             .collect(),
     }
 }
 
-pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> State {
+pub fn state_to_state_bigint<F: Field, const N: usize>(state: [F; N]) -> State {
     let mut matrix = [[0u64; 5]; 5];
 
     let mut elems: Vec<u64> = state
         .iter()
-        .map(|elem| elem.to_bytes())
-        // This is horrible. But FieldExt does not give much better alternatives
+        .map(|elem| elem.to_repr())
+        // This is horrible. But Field does not give much better alternatives
         // and refactoring `State` will be done once the
         // keccak_all_togheter is done.
         .map(|bytes| {
@@ -223,7 +226,7 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> Stat
     matrix
 }
 
-pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) -> [F; N] {
+pub fn state_bigint_to_field<F: Field, const N: usize>(state: StateBigInt) -> [F; N] {
     let mut arr = [F::zero(); N];
     let vector: Vec<F> = state
         .xy
@@ -234,13 +237,23 @@ pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) ->
             array[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
             array
         })
-        .map(|bytes| F::from_bytes(&bytes).unwrap())
+        .map(|bytes| F::from_repr(bytes).unwrap())
         .collect();
     arr[0..N].copy_from_slice(&vector[0..N]);
     arr
 }
 
-pub fn f_from_radix_be<F: FieldExt>(buf: &[u8], base: u8) -> F {
+/// Returns only the value of a an assigned state cell.
+pub fn split_state_cells<F: Field, const N: usize>(state: [AssignedCell<F, F>; N]) -> [F; N] {
+    let mut res = [F::zero(); N];
+    state
+        .iter()
+        .enumerate()
+        .for_each(|(idx, assigned_cell)| res[idx] = *assigned_cell.value().unwrap());
+    res
+}
+
+pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
     let base = F::from(base.into());
     buf.iter()
         .fold(F::zero(), |acc, &x| acc * base + F::from(x.into()))

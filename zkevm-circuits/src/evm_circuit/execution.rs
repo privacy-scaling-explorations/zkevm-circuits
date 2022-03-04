@@ -8,7 +8,8 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{
+use eth_types::Field;
+use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
@@ -20,6 +21,10 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod calldatacopy;
+mod calldatasize;
+mod caller;
+mod callvalue;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -29,12 +34,13 @@ mod jump;
 mod jumpdest;
 mod jumpi;
 mod memory;
+mod memory_copy;
 mod msize;
 mod mul;
 mod pc;
 mod pop;
 mod push;
-mod shr;
+mod selfbalance;
 mod signed_comparator;
 mod signextend;
 mod stop;
@@ -45,6 +51,10 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use calldatacopy::CallDataCopyGadget;
+use calldatasize::CallDataSizeGadget;
+use caller::CallerGadget;
+use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -54,12 +64,13 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
+use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
-use shr::ShrGadget;
+use selfbalance::SelfbalanceGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
@@ -78,8 +89,8 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        transaction: &Transaction<F>,
-        call: &Call<F>,
+        transaction: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error>;
 }
@@ -95,6 +106,10 @@ pub(crate) struct ExecutionConfig<F> {
     bitwise_gadget: BitwiseGadget<F>,
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
+    calldatacopy_gadget: CallDataCopyGadget<F>,
+    calldatasize_gadget: CallDataSizeGadget<F>,
+    caller_gadget: CallerGadget<F>,
+    call_value_gadget: CallValueGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
@@ -103,6 +118,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpi_gadget: JumpiGadget<F>,
     gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
+    copy_to_memory_gadget: CopyToMemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
@@ -114,9 +130,10 @@ pub(crate) struct ExecutionConfig<F> {
     msize_gadget: MsizeGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
+    selfbalance_gadget: SelfbalanceGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionConfig<F> {
+impl<F: Field> ExecutionConfig<F> {
     pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
@@ -153,14 +170,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
                     .state
                     .execution_state
                     .iter()
-                    .fold(1.expr(), |acc, cell| acc - cell.expr()),
+                    .fold(1u64.expr(), |acc, cell| acc - cell.expr()),
             );
 
             // Cells representation for execution_state should be bool.
             let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
                 (
                     "Representation for execution_state should be bool",
-                    cell.expr() * (1.expr() - cell.expr()),
+                    cell.expr() * (1u64.expr() - cell.expr()),
                 )
             });
 
@@ -171,7 +188,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 let begin_tx_selector = step_curr.execution_state_selector(ExecutionState::BeginTx);
                 std::iter::once((
                     "First step should be BeginTx",
-                    q_step_first * (begin_tx_selector - 1.expr()),
+                    q_step_first * (begin_tx_selector - 1u64.expr()),
                 ))
             };
 
@@ -185,15 +202,15 @@ impl<F: FieldExt> ExecutionConfig<F> {
         // column. In this way, ExecutionGadget could enable the byte range
         // lookup by enable qs_byte_lookup.
         for advice in advices {
-            meta.lookup_any(|meta| {
+            meta.lookup_any("Qs byte", |meta| {
                 let advice = meta.query_advice(advice, Rotation::cur());
                 let qs_byte_lookup = meta.query_advice(qs_byte_lookup, Rotation::cur());
 
                 vec![
                     qs_byte_lookup.clone() * FixedTableTag::Range256.expr(),
                     qs_byte_lookup * advice,
-                    0.expr(),
-                    0.expr(),
+                    0u64.expr(),
+                    0u64.expr(),
                 ]
                 .into_iter()
                 .zip(fixed_table.table_exprs(meta).to_vec().into_iter())
@@ -224,6 +241,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
             bitwise_gadget: configure_gadget!(),
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
+            calldatacopy_gadget: configure_gadget!(),
+            calldatasize_gadget: configure_gadget!(),
+            caller_gadget: configure_gadget!(),
+            call_value_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             error_oog_pure_memory_gadget: configure_gadget!(),
@@ -232,10 +253,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jumpi_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
+            copy_to_memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
-            shr_gadget: configure_gadget!(),
+            selfbalance_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
@@ -282,9 +304,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
-        let insert_result = presets_map.insert(G::EXECUTION_STATE, presets);
         debug_assert!(
-            insert_result.is_none(),
+            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
         );
 
@@ -357,10 +378,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
         }
 
         macro_rules! lookup {
-            ($id:path, $table:ident) => {
+            ($id:path, $table:ident, $descrip:expr) => {
                 if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
                     for input_exprs in acc_lookups {
-                        meta.lookup_any(|meta| {
+                        meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
                             let q_step = meta.query_selector(q_step);
                             input_exprs
                                 .into_iter()
@@ -373,11 +394,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
             };
         }
 
-        lookup!(Table::Fixed, fixed_table);
-        lookup!(Table::Tx, tx_table);
-        lookup!(Table::Rw, rw_table);
-        lookup!(Table::Bytecode, bytecode_table);
-        lookup!(Table::Block, block_table);
+        lookup!(Table::Fixed, fixed_table, "fixed table");
+        lookup!(Table::Tx, tx_table, "Tx table");
+        lookup!(Table::Rw, rw_table, "RW table");
+        lookup!(Table::Bytecode, bytecode_table, "Bytecode table");
+        lookup!(Table::Block, block_table, "Block table");
     }
 
     pub fn assign_block(
@@ -442,11 +463,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        transaction: &Transaction<F>,
-        call: &Call<F>,
+        transaction: &Transaction,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.step.assign_exec_step(region, offset, call, step)?;
+        self.step
+            .assign_exec_step(region, offset, block, transaction, call, step)?;
 
         for (cell, value) in self
             .presets_map
@@ -489,13 +511,26 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
+            ExecutionState::CALLVALUE => {
+                assign_exec_step!(self.call_value_gadget)
+            }
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::TIMESTAMP => {
                 assign_exec_step!(self.timestamp_gadget)
             }
-            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
+            ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::CALLDATACOPY => {
+                assign_exec_step!(self.calldatacopy_gadget)
+            }
+            ExecutionState::CopyToMemory => {
+                assign_exec_step!(self.copy_to_memory_gadget)
+            }
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
+            }
+            ExecutionState::CALLDATASIZE => {
+                assign_exec_step!(self.calldatasize_gadget)
             }
             _ => unimplemented!(),
         }

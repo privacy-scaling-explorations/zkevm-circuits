@@ -1,8 +1,8 @@
 use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
 use eth_types::U256;
-use halo2::{
+use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{self, Region},
+    circuit::{AssignedCell, Region},
     plonk::{Advice, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -11,9 +11,6 @@ pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
-
-type Address = u64;
-type MemorySize = u64;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -38,7 +35,7 @@ impl<F: FieldExt> Cell<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: Option<F>,
-    ) -> Result<circuit::Cell, Error> {
+    ) -> Result<AssignedCell<F, F>, Error> {
         region.assign_advice(
             || {
                 format!(
@@ -74,7 +71,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 }
 
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
-    const NUM_BYTES: usize = N;
+    const N_BYTES: usize = N;
 
     pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
         bytes.iter().rev().fold(F::zero(), |acc, byte| {
@@ -110,7 +107,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         region: &mut Region<'_, F>,
         offset: usize,
         bytes: Option<[u8; N]>,
-    ) -> Result<Vec<circuit::Cell>, Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         bytes.map_or(Err(Error::Synthesis), |bytes| {
             self.cells
                 .iter()
@@ -133,7 +130,7 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
         inputs: I,
@@ -154,7 +151,7 @@ pub(crate) mod sum {
 /// otherwise. Inputs need to be boolean
 pub(crate) mod and {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
         inputs: I,
@@ -169,11 +166,44 @@ pub(crate) mod and {
     }
 }
 
+/// Returns `1` when `expr[0] || expr[1] || ... == 1`, and returns `0`
+/// otherwise. Inputs need to be boolean
+pub(crate) mod or {
+    use super::{and, not};
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
+        inputs: I,
+    ) -> Expression<F> {
+        not::expr(and::expr(inputs.into_iter().map(not::expr)))
+    }
+
+    pub(crate) fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+        not::value(and::value(inputs.into_iter().map(not::value).collect()))
+    }
+}
+
+/// Returns `1` when `b == 0`, and returns `0` otherwise.
+/// `b` needs to be boolean
+pub(crate) mod not {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(b: E) -> Expression<F> {
+        1.expr() - b.expr()
+    }
+
+    pub(crate) fn value<F: FieldExt>(b: F) -> F {
+        F::one() - b
+    }
+}
+
 /// Returns `when_true` when `selector == 1`, and returns `when_false` when
 /// `selector == 0`. `selector` needs to be boolean.
 pub(crate) mod select {
     use crate::util::Expr;
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(
         selector: Expression<F>,
@@ -203,7 +233,7 @@ pub(crate) mod select {
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(

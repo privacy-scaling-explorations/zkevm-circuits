@@ -1,8 +1,8 @@
 use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
 use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
-use halo2::{
-    arithmetic::FieldExt,
+use eth_types::Field;
+use halo2_proofs::{
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, TableColumn},
 };
@@ -18,6 +18,33 @@ const NUM_OF_BINARY_CHUNKS: usize = 16;
 const NUM_OF_B9_CHUNKS: usize = 5;
 
 #[derive(Debug, Clone)]
+pub struct RangeCheckConfig<F, const K: u64> {
+    pub range: TableColumn,
+    _marker: PhantomData<F>,
+}
+
+impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || "range",
+            |mut table| {
+                for i in 0..=K {
+                    table.assign_cell(|| "range", self.range, i as usize, || Ok(F::from(i)))?;
+                }
+                Ok(())
+            },
+        )
+    }
+
+    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            range: meta.lookup_table_column(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Base13toBase9TableConfig<F> {
     pub base13: TableColumn,
     pub base9: TableColumn,
@@ -25,7 +52,7 @@ pub struct Base13toBase9TableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> Base13toBase9TableConfig<F> {
+impl<F: Field> Base13toBase9TableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "13 -> 9",
@@ -92,7 +119,7 @@ pub struct SpecialChunkTableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SpecialChunkTableConfig<F> {
+impl<F: Field> SpecialChunkTableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "Special Chunks",
@@ -149,7 +176,7 @@ pub(crate) struct BaseInfo<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BaseInfo<F> {
+impl<F: Field> BaseInfo<F> {
     pub fn input_pob(&self) -> F {
         F::from(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
@@ -219,7 +246,7 @@ pub struct FromBinaryTableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> FromBinaryTableConfig<F> {
+impl<F: Field> FromBinaryTableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "2 -> (9 and 13)",
@@ -285,8 +312,8 @@ pub struct FromBase9TableConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> FromBase9TableConfig<F> {
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+impl<F: Field> FromBase9TableConfig<F> {
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "9 -> (2 and 13)",
             |mut table| {
@@ -322,7 +349,7 @@ impl<F: FieldExt> FromBase9TableConfig<F> {
         )
     }
 
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             base2: meta.lookup_table_column(),
             base9: meta.lookup_table_column(),

@@ -1,4 +1,12 @@
 //! Definition of each opcode of the EVM.
+use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::Error;
+use core::fmt::Debug;
+use eth_types::GethExecStep;
+
+mod calldatasize;
+mod caller;
+mod callvalue;
 mod coinbase;
 mod dup;
 mod gas;
@@ -11,19 +19,19 @@ mod mstore;
 mod pc;
 mod pop;
 mod push;
+mod selfbalance;
 mod sload;
 mod stackonlyop;
 mod stop;
 mod swap;
 mod timestamp;
-use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::evm::OpcodeId;
-use crate::Error;
-use core::fmt::Debug;
-use eth_types::GethExecStep;
 use log::warn;
 
 use self::push::Push;
+use calldatasize::Calldatasize;
+use caller::Caller;
+use callvalue::Callvalue;
 use dup::Dup;
 use gas::Gas;
 use jump::Jump;
@@ -34,6 +42,7 @@ use msize::Msize;
 use mstore::Mstore;
 use pc::Pc;
 use pop::Pop;
+use selfbalance::Selfbalance;
 use sload::Sload;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
@@ -96,10 +105,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
         // OpcodeId::ORIGIN => {},
-        // OpcodeId::CALLER => {},
-        // OpcodeId::CALLVALUE => {},
+        OpcodeId::CALLER => Caller::gen_associated_ops,
+        OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         // OpcodeId::CALLDATALOAD => {},
-        // OpcodeId::CALLDATASIZE => {},
+        OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
         // OpcodeId::CALLDATACOPY => {},
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
@@ -116,7 +125,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
         // OpcodeId::CHAINID => {},
-        // OpcodeId::SELFBALANCE => {},
+        OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         // OpcodeId::BASEFEE => {},
         OpcodeId::POP => Pop::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,

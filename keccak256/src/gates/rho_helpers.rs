@@ -2,7 +2,6 @@ use crate::{
     arith_helpers::{convert_b13_coef, convert_b13_lane_to_b9, B13, B2, B9},
     common::LANE_SIZE,
 };
-
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
@@ -300,13 +299,13 @@ mod tests {
         let step2 = 2;
         assert_eq!(
             STEP2_RANGE,
-            (STEP_COUNTS[step2 - 1] * OVERFLOW_TRANSFORM[step2]).into()
+            u64::from(STEP_COUNTS[step2 - 1] * OVERFLOW_TRANSFORM[step2])
         );
 
         let step3 = 3;
         assert_eq!(
             STEP3_RANGE,
-            (STEP_COUNTS[step3 - 1] * OVERFLOW_TRANSFORM[step3]).into()
+            u64::from(STEP_COUNTS[step3 - 1] * OVERFLOW_TRANSFORM[step3])
         );
     }
     #[test]

@@ -18,9 +18,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::ToLittleEndian;
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -33,7 +32,7 @@ pub(crate) struct MemoryGadget<F> {
     is_mstore8: IsEqualGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
+impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
     const NAME: &'static str = "MEMORY";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MEMORY;
@@ -142,8 +141,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -194,16 +193,16 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-
     use crate::{
         evm_circuit::test::rand_word,
-        test_util::{run_test_circuits_with_config, BytecodeTestConfig},
+        test_util::{test_circuits_using_bytecode, BytecodeTestConfig},
     };
+    use eth_types::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::{bytecode, Word};
+    use eth_types::Word;
     use std::iter;
 
-    fn test_ok(opcode: OpcodeId, address: Word, value: Word, _memory_size: u64, gas_cost: u64) {
+    fn test_ok(opcode: OpcodeId, address: Word, value: Word, gas_cost: u64) {
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(address)
@@ -213,13 +212,16 @@ mod test {
         };
 
         let test_config = BytecodeTestConfig {
-            gas_limit: gas_cost + 100_000,
+            gas_limit: GasCost::TX.as_u64()
+                + OpcodeId::PUSH32.as_u64()
+                + OpcodeId::PUSH32.as_u64()
+                + gas_cost,
             // we have to disable state circit now, since the memory size used
             // here is too large
             enable_state_circuit_test: false,
             ..Default::default()
         };
-        assert_eq!(run_test_circuits_with_config(bytecode, test_config), Ok(()));
+        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
     }
 
     #[test]
@@ -228,56 +230,55 @@ mod test {
             OpcodeId::MSTORE,
             Word::from(0x12FFFF),
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-            38913,
             3074206,
         );
         test_ok(
             OpcodeId::MLOAD,
             Word::from(0x12FFFF),
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-            38913,
             3074206,
         );
         test_ok(
             OpcodeId::MLOAD,
             Word::from(0x12FFFF) + 16,
             Word::from_big_endian(&(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>()),
-            38914,
             3074361,
         );
         test_ok(
             OpcodeId::MSTORE8,
             Word::from(0x12FFFF),
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-            38912,
             3074051,
         );
     }
 
     #[test]
     fn memory_gadget_rand() {
-        let calc_memory_size_and_gas_cost = |opcode, address: Word| {
-            let memory_size = (address.as_u64()
+        let calc_gas_cost = |opcode, memory_address: Word| {
+            let memory_address = memory_address.as_u64()
                 + match opcode {
                     OpcodeId::MSTORE | OpcodeId::MLOAD => 32,
                     OpcodeId::MSTORE8 => 1,
                     _ => 0,
                 }
-                + 31)
-                / 32;
-            let gas_cost =
-                memory_size * memory_size / 512 + 3 * memory_size + GasCost::FASTEST.as_u64();
-            (memory_size, gas_cost)
+                + 31;
+            let memory_size = memory_address / 32;
+
+            GasCost::FASTEST.as_u64() + 3 * memory_size + memory_size * memory_size / 512
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
             // we use 15-bit here to reduce testing resource consumption.
-            // In real cases the address is 5 bytes (40 bits)
-            let max_memory_size_pow_of_two = 15;
-            let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
+            // In real cases the memory_address is 5 bytes (40 bits)
+            let max_memory_address_pow_of_two = 15;
+            let memory_address = rand_word() % (1u64 << max_memory_address_pow_of_two);
             let value = rand_word();
-            let (memory_size, gas_cost) = calc_memory_size_and_gas_cost(opcode, address);
-            test_ok(opcode, address, value, memory_size, gas_cost);
+            test_ok(
+                opcode,
+                memory_address,
+                value,
+                calc_gas_cost(opcode, memory_address),
+            );
         }
     }
 }

@@ -5,7 +5,7 @@
 
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
-use eth_types::{Address, ChainConstants};
+use eth_types::Address;
 use ethers::{
     abi,
     core::k256::ecdsa::SigningKey,
@@ -64,12 +64,10 @@ pub fn get_provider() -> Provider<Http> {
     Provider::new(transport).interval(Duration::from_millis(100))
 }
 
-/// Get the chain constants by querying the geth client.
-pub async fn get_chain_constants() -> ChainConstants {
+/// Get the chain id by querying the geth client.
+pub async fn get_chain_id() -> u64 {
     let client = get_client();
-    ChainConstants {
-        chain_id: client.get_chain_id().await.unwrap(),
-    }
+    client.get_chain_id().await.unwrap()
 }
 
 const PHRASE: &str =
