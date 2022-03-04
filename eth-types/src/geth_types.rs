@@ -1,11 +1,33 @@
 //! Types needed for generating Ethereum traces
 
-use crate::{AccessList, Address, Block, Bytes, Error, GethExecTrace, Word, U64};
+use crate::{AccessList, Address, Block, Bytes, Error, GethExecTrace, Word, H256, U64};
 use serde::Serialize;
+use serde::Serializer;
+use serde_with::{serde_as, SerializeAs};
 use std::collections::HashMap;
 
+struct WordMapAsH256Map;
+
+impl SerializeAs<HashMap<Word, Word>> for WordMapAsH256Map {
+    fn serialize_as<S>(value: &HashMap<Word, Word>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_map(value.iter().map(|(k, v)| {
+            let mut h256k = H256::zero();
+            k.to_big_endian(h256k.as_bytes_mut());
+
+            let mut h256v = H256::zero();
+            v.to_big_endian(h256v.as_bytes_mut());
+
+            (h256k, h256v)
+        }))
+    }
+}
+
 /// Definition of all of the data related to an account.
-#[derive(Debug, Default, Clone, Serialize)]
+#[serde_as]
+#[derive(PartialEq, Eq, Debug, Default, Clone, Serialize)]
 pub struct Account {
     /// Address
     pub address: Address,
@@ -16,6 +38,7 @@ pub struct Account {
     /// EVM Code
     pub code: Bytes,
     /// Storage
+    #[serde_as(as = "WordMapAsH256Map")]
     pub storage: HashMap<Word, Word>,
 }
 
