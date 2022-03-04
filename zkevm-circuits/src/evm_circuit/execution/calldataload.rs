@@ -239,6 +239,7 @@ mod test {
     use pairing::bn256::Fr;
 
     use crate::evm_circuit::{
+        param::N_BYTES_WORD,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
         test::run_test_circuit_incomplete_fixed_table,
@@ -315,7 +316,8 @@ mod test {
         let mut rws_map = HashMap::new();
         let mut rw_counter = 4;
         // if call data offset is provided, then it is an internal call.
-        if call_data_offset.is_some() {
+        if let Some(call_data_offset) = call_data_offset {
+            let src_addr = offset.as_usize() + call_data_offset as usize;
             // handle call context rws.
             rws_call_context.append(&mut vec![
                 Rw::CallContext {
@@ -330,7 +332,7 @@ mod test {
                     call_id,
                     rw_counter: rw_counter + 1,
                     field_tag: CallContextFieldTag::CallDataOffset,
-                    value: call_data_offset.map_or(Word::from(0u64), Word::from),
+                    value: Word::from(call_data_offset),
                 },
             ]);
             rw_indices.append(&mut vec![
@@ -342,11 +344,12 @@ mod test {
             // handle memory rws.
             let rws_memory = call_data
                 .iter()
-                .skip(offset.as_usize())
+                .skip(src_addr)
+                .take(N_BYTES_WORD)
                 .enumerate()
                 .map(|(idx, byte)| Rw::Memory {
                     call_id,
-                    memory_address: (offset.as_usize() + idx) as u64,
+                    memory_address: (src_addr + idx) as u64,
                     is_write: false,
                     byte: *byte,
                     rw_counter: rw_counter + idx,
@@ -454,5 +457,12 @@ mod test {
         test_data()
             .iter()
             .for_each(|t| test_ok(t.0.clone(), Word::from(t.1), t.2, Some(0u64)));
+
+        test_ok(
+            bytes_from_hex("73ccaaba64c27c285a0ada6ffb1804dc959a99b99a5c0cba8a2bd5bd3937be6a3ef6f6ae8dac116faf671072c9d5958a"),
+            Word::from(4u64),
+            word_from_hex("04dc959a99b99a5c0cba8a2bd5bd3937be6a3ef6f6ae8dac116faf671072c9d5"),
+            Some(10u64),
+        );
     }
 }
