@@ -7,11 +7,10 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::into_words_expr,
+    helpers::{get_is_extension_node, into_words_expr},
     param::{
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-        IS_EXTENSION_NODE_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
-        LAYOUT_OFFSET,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
     },
 };
 
@@ -57,10 +56,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 Rotation(rot_into_branch_init - 1),
             );
 
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
+            let is_extension_node =
+                get_is_extension_node(meta, s_advices, rot_into_branch_init);
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child =
@@ -145,10 +142,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 Rotation(rot_into_branch_init - 1),
             );
 
-            let is_extension_node = meta.query_advice(
-                s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                Rotation(rot_into_branch_init),
-            );
+            let is_extension_node =
+                get_is_extension_node(meta, s_advices, rot_into_branch_init);
 
             // We need to do the lookup only if we are in the last branch child.
             let is_after_last_branch_child = meta.query_advice(

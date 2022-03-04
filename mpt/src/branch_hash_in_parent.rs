@@ -6,7 +6,10 @@ use halo2::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::param::{KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH};
+use crate::{
+    helpers::get_is_extension_node,
+    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchHashInParentConfig {}
@@ -23,7 +26,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
-        is_extension_node: Column<Advice>,
+        s_advices: [Column<Advice>; HASH_WIDTH],
         sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
@@ -57,8 +60,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 meta.query_advice(is_branch_placeholder, Rotation(-16));
             let acc = meta.query_advice(acc, Rotation::cur());
 
-            let is_extension_node =
-                meta.query_advice(is_extension_node, Rotation(-16));
+            let is_extension_node = get_is_extension_node(meta, s_advices, -16);
 
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let c128 = Expression::Constant(F::from(128));

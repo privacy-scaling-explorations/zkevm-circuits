@@ -20,14 +20,15 @@ use crate::{
     branch_rows::BranchRowsChip,
     extension_node::ExtensionNodeChip,
     extension_node_key::ExtensionNodeKeyChip,
+    helpers::get_is_extension_node,
     leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXTENSION_NODE_POS,
-        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
-        IS_EXT_SHORT_C1_POS, LAYOUT_OFFSET,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS,
+        IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        LAYOUT_OFFSET,
     },
     storage_root_in_account_leaf::StorageRootChip,
 };
@@ -339,7 +340,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
-            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            s_advices,
             s_keccak,
             acc_s,
             acc_mult_s,
@@ -352,7 +353,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
-            s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
+            s_advices,
             c_keccak,
             acc_c,
             acc_mult_c,
@@ -366,10 +367,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 let is_after_last_branch_child =
                     meta.query_advice(is_last_branch_child, Rotation(-1));
                 // is_extension_node is in branch init row
-                let is_extension_node = meta.query_advice(
-                    s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                    Rotation(-17),
-                );
+                let is_extension_node =
+                    get_is_extension_node(meta, s_advices, -17);
 
                 is_after_last_branch_child * is_extension_node
             },
@@ -398,10 +397,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 let is_after_last_branch_child =
                     meta.query_advice(is_last_branch_child, Rotation(-2));
                 // is_extension_node is in branch init row
-                let is_extension_node = meta.query_advice(
-                    s_advices[IS_EXTENSION_NODE_POS - LAYOUT_OFFSET],
-                    Rotation(-18),
-                );
+                let is_extension_node =
+                    get_is_extension_node(meta, s_advices, -18);
 
                 is_after_last_branch_child * is_extension_node
             },
@@ -2336,9 +2333,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else if row[row.len() - 1] == 16 {
-                                if witness[offset - 17][IS_EXTENSION_NODE_POS]
-                                    == 1
-                                {
+                                if is_extension_node {
                                     // Intermediate RLC value and mult (after key)
                                     // to know which mult we need to use in c_advices.
                                     acc_s = F::zero();
@@ -2385,9 +2380,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || Ok(extension_node_rlc),
                                 )?;
                             } else if row[row.len() - 1] == 17 {
-                                if witness[offset - 18][IS_EXTENSION_NODE_POS]
-                                    == 1
-                                {
+                                if is_extension_node {
                                     // We use intermediate value from previous row (because
                                     // up to acc_s it's about key and this is the same
                                     // for both S and C).

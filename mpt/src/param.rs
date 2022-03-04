@@ -19,7 +19,6 @@ pub const R_TABLE_LEN: usize = 32;
 pub const IS_BRANCH_S_PLACEHOLDER_POS: usize = 11;
 pub const IS_BRANCH_C_PLACEHOLDER_POS: usize = 12;
 pub const DRIFTED_POS: usize = 13;
-pub const IS_EXTENSION_NODE_POS: usize = 14;
 pub const IS_EXTENSION_EVEN_KEY_LEN_POS: usize = 15;
 pub const IS_EXTENSION_ODD_KEY_LEN_POS: usize = 16;
 pub const IS_EXTENSION_KEY_SHORT_POS: usize = 17;
