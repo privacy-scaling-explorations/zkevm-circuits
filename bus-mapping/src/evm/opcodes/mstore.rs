@@ -20,12 +20,12 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         // First stack read (offset)
         let offset = step.stack.nth_last(0)?;
         let offset_pos = step.stack.nth_last_filled(0);
-        state.push_stack_op(RW::READ, offset_pos, offset);
+        state.push_stack_op(RW::READ, offset_pos, offset)?;
 
         // Second stack read (value)
         let value = step.stack.nth_last(1)?;
         let value_pos = step.stack.nth_last_filled(1);
-        state.push_stack_op(RW::READ, value_pos, value);
+        state.push_stack_op(RW::READ, value_pos, value)?;
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
@@ -37,13 +37,13 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                     RW::WRITE,
                     offset_addr,
                     *value.to_le_bytes().first().unwrap(),
-                );
+                )?;
             }
             false => {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte);
+                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte)?;
                 }
             }
         }
@@ -59,6 +59,7 @@ mod mstore_tests {
     use eth_types::bytecode;
     use eth_types::evm_types::{MemoryAddress, OpcodeId, StackAddress};
     use eth_types::Word;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -109,7 +110,7 @@ mod mstore_tests {
                 .map(|idx| &builder.block.container.memory
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             Word::from(0x1234)
                 .to_be_bytes()
                 .into_iter()
@@ -118,7 +119,7 @@ mod mstore_tests {
                     RW::WRITE,
                     MemoryOp::new(1, MemoryAddress(idx + 0x100), byte)
                 ))
-                .collect::<Vec<_>>()
+                .collect_vec()
         )
     }
 

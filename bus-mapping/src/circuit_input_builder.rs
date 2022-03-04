@@ -155,6 +155,24 @@ impl ExecStep {
     }
 }
 
+impl Default for ExecStep {
+    fn default() -> Self {
+        Self {
+            op: OpcodeId::INVALID(0),
+            pc: ProgramCounter(0),
+            stack_size: 0,
+            memory_size: 0,
+            gas_left: Gas(0),
+            gas_cost: GasCost(0),
+            call_index: 0,
+            rwc: RWCounter(0),
+            swc: 0,
+            bus_mapping_instance: Vec::new(),
+            error: None,
+        }
+    }
+}
+
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
 #[derive(Debug)]
 pub struct BlockContext {
@@ -276,6 +294,12 @@ impl CallKind {
     }
 }
 
+impl Default for CallKind {
+    fn default() -> Self {
+        Self::Call
+    }
+}
+
 impl TryFrom<OpcodeId> for CallKind {
     type Error = Error;
 
@@ -293,7 +317,7 @@ impl TryFrom<OpcodeId> for CallKind {
 }
 
 /// Circuit Input related to an Ethereum Call
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Call {
     /// Unique call identifier within the Block.
     pub call_id: usize,
@@ -443,16 +467,25 @@ impl TransactionContext {
     }
 
     /// Return the index of the current call (the last call in the call stack).
-    fn call_index(&self) -> usize {
-        self.calls.last().expect("calls should not be empty").index
+    fn call_index(&self) -> Result<usize, Error> {
+        self.calls
+            .last()
+            .ok_or(Error::InvalidGethExecTrace(
+                "Call stack is empty but call is used",
+            ))
+            .map(|call| call.index)
     }
 
-    fn call_ctx(&self) -> &CallContext {
-        self.calls.last().expect("calls should not be empty")
+    fn call_ctx(&self) -> Result<&CallContext, Error> {
+        self.calls.last().ok_or(Error::InvalidGethExecTrace(
+            "Call stack is empty but call is used",
+        ))
     }
 
-    fn call_ctx_mut(&mut self) -> &mut CallContext {
-        self.calls.last_mut().expect("calls should not be empty")
+    fn call_ctx_mut(&mut self) -> Result<&mut CallContext, Error> {
+        self.calls.last_mut().ok_or(Error::InvalidGethExecTrace(
+            "Call stack is empty but call is used",
+        ))
     }
 
     /// Push a new call context and its index into the call stack.
@@ -536,46 +569,35 @@ impl Transaction {
             let code_hash = account.code_hash;
             Call {
                 call_id,
-                caller_id: 0,
                 kind: CallKind::Call,
-                is_static: false,
                 is_root: true,
                 is_persistent: is_success,
                 is_success,
-                rw_counter_end_of_reversion: 0,
                 caller_address: eth_tx.from,
                 address,
                 code_source: CodeSource::Address(address),
                 code_hash,
                 depth: 1,
                 value: eth_tx.value,
-                call_data_offset: 0,
                 call_data_length: eth_tx.input.as_ref().len() as u64,
-                return_data_offset: 0,
-                return_data_length: 0,
+                ..Default::default()
             }
         } else {
             // Contract creation
             let code_hash = code_db.insert(eth_tx.input.to_vec());
             Call {
                 call_id,
-                caller_id: 0,
                 kind: CallKind::Create,
-                is_static: false,
                 is_root: true,
                 is_persistent: is_success,
                 is_success,
-                rw_counter_end_of_reversion: 0,
                 caller_address: eth_tx.from,
                 address: get_contract_address(eth_tx.from, eth_tx.nonce),
                 code_source: CodeSource::Tx,
                 code_hash,
                 depth: 1,
                 value: eth_tx.value,
-                call_data_offset: 0,
-                call_data_length: 0,
-                return_data_offset: 0,
-                return_data_length: 0,
+                ..Default::default()
             }
         };
 
@@ -657,7 +679,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// This method should be used in `Opcode::gen_associated_ops` instead of
     /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
     /// example, a write `StorageOp`).
-    pub fn push_op_reversible<T: Op>(&mut self, rw: RW, op: T) {
+    pub fn push_op_reversible<T: Op>(&mut self, rw: RW, op: T) -> Result<(), Error> {
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
             rw,
@@ -666,10 +688,10 @@ impl<'a> CircuitInputStateRef<'a> {
         self.step.bus_mapping_instance.push(op_ref);
 
         // Increase state_write_counter
-        self.call_ctx_mut().swc += 1;
+        self.call_ctx_mut()?.swc += 1;
 
         // Add the operation into reversible_ops if this call is not persistent
-        if !self.call().is_persistent {
+        if !self.call()?.is_persistent {
             self.tx_ctx
                 .reversion_groups
                 .last_mut()
@@ -677,6 +699,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 .op_refs
                 .push((self.tx.steps.len(), op_ref));
         }
+
+        Ok(())
     }
 
     /// Push a [`MemoryOp`] into the [`OperationContainer`] with the next
@@ -684,16 +708,15 @@ impl<'a> CircuitInputStateRef<'a> {
     /// the stored operation ([`OperationRef`]) inside the bus-mapping
     /// instance of the current [`ExecStep`].  Then increase the `block_ctx`
     /// [`RWCounter`] by one.
-    pub fn push_memory_op(&mut self, rw: RW, address: MemoryAddress, value: u8) {
-        let call_id = self.call().call_id;
-        self.push_op(
-            rw,
-            MemoryOp {
-                call_id,
-                address,
-                value,
-            },
-        );
+    pub fn push_memory_op(
+        &mut self,
+        rw: RW,
+        address: MemoryAddress,
+        value: u8,
+    ) -> Result<(), Error> {
+        let call_id = self.call()?.call_id;
+        self.push_op(rw, MemoryOp::new(call_id, address, value));
+        Ok(())
     }
 
     /// Push a [`StackOp`] into the [`OperationContainer`] with the next
@@ -701,35 +724,38 @@ impl<'a> CircuitInputStateRef<'a> {
     /// the stored operation ([`OperationRef`]) inside the bus-mapping
     /// instance of the current [`ExecStep`].  Then increase the `block_ctx`
     /// [`RWCounter`] by one.
-    pub fn push_stack_op(&mut self, rw: RW, address: StackAddress, value: Word) {
-        let call_id = self.call().call_id;
-        self.push_op(
-            rw,
-            StackOp {
-                call_id,
-                address,
-                value,
-            },
-        );
+    pub fn push_stack_op(
+        &mut self,
+        rw: RW,
+        address: StackAddress,
+        value: Word,
+    ) -> Result<(), Error> {
+        let call_id = self.call()?.call_id;
+        self.push_op(rw, StackOp::new(call_id, address, value));
+        Ok(())
     }
 
     /// Reference to the current Call
-    pub fn call(&self) -> &Call {
-        &self.tx.calls[self.tx_ctx.call_index()]
+    pub fn call(&self) -> Result<&Call, Error> {
+        self.tx_ctx
+            .call_index()
+            .map(|call_idx| &self.tx.calls[call_idx])
     }
 
     /// Mutable reference to the current Call
-    pub fn call_mut(&mut self) -> &mut Call {
-        &mut self.tx.calls[self.tx_ctx.call_index()]
+    pub fn call_mut(&mut self) -> Result<&mut Call, Error> {
+        self.tx_ctx
+            .call_index()
+            .map(|call_idx| &mut self.tx.calls[call_idx])
     }
 
     /// Reference to the current CallContext
-    pub fn call_ctx(&self) -> &CallContext {
+    pub fn call_ctx(&self) -> Result<&CallContext, Error> {
         self.tx_ctx.call_ctx()
     }
 
     /// Mutable reference to the call CallContext
-    pub fn call_ctx_mut(&mut self) -> &mut CallContext {
+    pub fn call_ctx_mut(&mut self) -> Result<&mut CallContext, Error> {
         self.tx_ctx.call_ctx_mut()
     }
 
@@ -738,18 +764,19 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn push_call(&mut self, call: Call) {
         let call_id = call.call_id;
 
-        self.tx_ctx.push_call_ctx(self.tx.calls.len());
+        let call_idx = self.tx.calls.len();
+        self.tx_ctx.push_call_ctx(call_idx);
         self.tx.push_call(call);
 
         self.block_ctx
             .call_map
-            .insert(call_id, (self.block.txs.len(), self.tx_ctx.call_index()));
+            .insert(call_id, (self.block.txs.len(), call_idx));
     }
 
     /// Return the contract address of a CREATE step.  This is calculated by
     /// inspecting the current address and its nonce from the StateDB.
     fn create_address(&self) -> Result<Address, Error> {
-        let sender = self.call().address;
+        let sender = self.call()?.address;
         let (found, account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
@@ -763,10 +790,15 @@ impl<'a> CircuitInputStateRef<'a> {
         let salt = step.stack.nth_last(3)?;
         let init_code = get_create_init_code(step)?;
         Ok(get_create2_address(
-            self.call().address,
+            self.call()?.address,
             salt.to_be_bytes().to_vec(),
             init_code.to_vec(),
         ))
+    }
+
+    /// Check if address is a precompiled or not.
+    pub fn is_precompiled(&self, address: &Address) -> bool {
+        (1..=9).contains(address.as_bytes().last().unwrap())
     }
 
     /// Parse [`Call`] from a *CALL*/CREATE* step.
@@ -777,31 +809,24 @@ impl<'a> CircuitInputStateRef<'a> {
             .get(self.tx.calls().len())
             .unwrap();
         let kind = CallKind::try_from(step.op)?;
+        let caller = self.call()?;
 
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
-                self.call().address,
+                caller.address,
                 step.stack.nth_last(1)?.to_address(),
                 step.stack.nth_last(2)?,
             ),
-            CallKind::CallCode => (
-                self.call().address,
-                self.call().address,
-                step.stack.nth_last(2)?,
-            ),
-            CallKind::DelegateCall => (self.call().caller_address, self.call().address, 0.into()),
+            CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
+            CallKind::DelegateCall => (caller.caller_address, caller.address, 0.into()),
             CallKind::StaticCall => (
-                self.call().address,
+                caller.address,
                 step.stack.nth_last(1)?.to_address(),
                 0.into(),
             ),
-            CallKind::Create => (
-                self.call().address,
-                self.create_address()?,
-                step.stack.last()?,
-            ),
+            CallKind::Create => (caller.address, self.create_address()?, step.stack.last()?),
             CallKind::Create2 => (
-                self.call().address,
+                caller.address,
                 self.create2_address(step)?,
                 step.stack.last()?,
             ),
@@ -828,30 +853,22 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         };
 
-        let get_memory_offset_length = |nth: usize| -> Result<_, Error> {
-            let offset = step.stack.nth_last(nth)?;
-            let length = step.stack.nth_last(nth + 1)?;
-            if length.is_zero() {
-                return Ok((0, 0));
-            }
-            Ok((offset.low_u64(), length.low_u64()))
-        };
         let (call_data_offset, call_data_length, return_data_offset, return_data_length) =
             match kind {
                 CallKind::Call | CallKind::CallCode => {
-                    let call_data = get_memory_offset_length(3)?;
-                    let return_data = get_memory_offset_length(5)?;
+                    let call_data = get_call_memory_offset_length(step, 3)?;
+                    let return_data = get_call_memory_offset_length(step, 5)?;
                     (call_data.0, call_data.1, return_data.0, return_data.1)
                 }
                 CallKind::DelegateCall | CallKind::StaticCall => {
-                    let call_data = get_memory_offset_length(2)?;
-                    let return_data = get_memory_offset_length(4)?;
+                    let call_data = get_call_memory_offset_length(step, 2)?;
+                    let return_data = get_call_memory_offset_length(step, 4)?;
                     (call_data.0, call_data.1, return_data.0, return_data.1)
                 }
                 CallKind::Create | CallKind::Create2 => (0, 0, 0, 0),
             };
 
-        let caller = self.call();
+        let caller = self.call()?;
         let call = Call {
             call_id: self.block_ctx.rwc.0,
             caller_id: caller.call_id,
@@ -1015,7 +1032,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// previous call context.
     pub fn handle_return(&mut self) -> Result<(), Error> {
         // Handle reversion if this call doens't end successfully
-        if !self.call().is_success {
+        if !self.call()?.is_success {
             self.handle_reversion();
         }
 
@@ -1052,6 +1069,8 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
             .unwrap_or_else(Word::zero);
 
+        let call = self.call()?;
+
         // Return from a call with a failure
         if step.depth != next_depth && next_result.is_zero() {
             if !matches!(step.op, OpcodeId::RETURN) {
@@ -1069,7 +1088,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     | OpcodeId::LOG2
                     | OpcodeId::LOG3
                     | OpcodeId::LOG4
-                        if self.call().is_static =>
+                        if call.is_static =>
                     {
                         Some(ExecError::WriteProtection)
                     }
@@ -1082,9 +1101,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     }
                 });
             } else {
-                // Calling RETURN
-                let call = self.call();
-
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
                 if !call.is_root && call.is_create() {
                     let offset = step.stack.nth_last(0)?;
@@ -1153,11 +1169,11 @@ impl<'a> CircuitInputStateRef<'a> {
             };
 
             // CALL with value
-            if matches!(step.op, OpcodeId::CALL) && !value.is_zero() && self.call().is_static {
+            if matches!(step.op, OpcodeId::CALL) && !value.is_zero() && self.call()?.is_static {
                 return Ok(Some(ExecError::WriteProtection));
             }
 
-            let sender = self.call().address;
+            let sender = self.call()?.address;
             let (found, account) = self.sdb.get_account(&sender);
             if !found {
                 return Err(Error::AccountNotFound(sender));
@@ -1274,7 +1290,7 @@ impl<'a> CircuitInputBuilder {
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
-    /// operations and set the correct value.  This is required because when we
+    /// operations and set the correct value. This is required because when we
     /// generate the RwCounterEndOfReversion operation in
     /// `gen_associated_ops` we don't know yet which value it will take,
     /// so we put a placeholder; so we do it here after the values are known.
@@ -1327,28 +1343,17 @@ impl<'a> CircuitInputBuilder {
         // - op: None
         // Generate BeginTx step
         let mut step = ExecStep {
-            op: OpcodeId::INVALID(0),
-            pc: ProgramCounter(0),
-            stack_size: 0,
-            memory_size: 0,
             gas_left: Gas(tx.gas),
-            gas_cost: GasCost(0),
-            call_index: 0,
             rwc: self.block_ctx.rwc,
-            swc: 0,
-            bus_mapping_instance: Vec::new(),
-            error: None,
+            ..Default::default()
         };
         gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx, &mut step))?;
         tx.steps.push(step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-            let mut step = ExecStep::new(
-                geth_step,
-                tx_ctx.call_index(),
-                self.block_ctx.rwc,
-                tx_ctx.call_ctx().swc,
-            );
+            let call_ctx = tx_ctx.call_ctx()?;
+            let mut step =
+                ExecStep::new(geth_step, call_ctx.index, self.block_ctx.rwc, call_ctx.swc);
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
             gen_associated_ops(
@@ -1364,15 +1369,12 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: EndTx
         // - op: None
         // Generate EndTx step
-        let step_prev = tx.steps.last().unwrap();
+        let step_prev = tx
+            .steps
+            .last()
+            .expect("steps should have at least one BeginTx step");
         let mut step = ExecStep {
-            op: OpcodeId::INVALID(0),
-            pc: ProgramCounter(0),
-            stack_size: 0,
-            memory_size: 0,
             gas_left: Gas(step_prev.gas_left.0 - step_prev.gas_cost.0),
-            gas_cost: GasCost(0),
-            call_index: 0,
             rwc: self.block_ctx.rwc,
             // For tx without code execution
             swc: if let Some(call_ctx) = tx_ctx.calls.last() {
@@ -1380,13 +1382,13 @@ impl<'a> CircuitInputBuilder {
             } else {
                 0
             },
-            bus_mapping_instance: Vec::new(),
-            error: None,
+            ..Default::default()
         };
         gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx, &mut step))?;
         tx.steps.push(step);
 
         self.block.txs.push(tx);
+        self.sdb.clear_access_list_and_refund();
 
         Ok(())
     }
@@ -1433,11 +1435,22 @@ fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
         panic!("Unknown GethExecStep.error: {}", error);
     }
 }
-/// Retreive the init_code from memory for {CREATE, CREATE2}
+/// Retrieve the init_code from memory for {CREATE, CREATE2}
 pub fn get_create_init_code(step: &GethExecStep) -> Result<&[u8], Error> {
     let offset = step.stack.nth_last(1)?;
     let length = step.stack.nth_last(2)?;
     Ok(&step.memory.0[offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
+}
+
+/// Retrieve the memory offset and length of call.
+pub fn get_call_memory_offset_length(step: &GethExecStep, nth: usize) -> Result<(u64, u64), Error> {
+    let offset = step.stack.nth_last(nth)?;
+    let length = step.stack.nth_last(nth + 1)?;
+    if length.is_zero() {
+        Ok((0, 0))
+    } else {
+        Ok((offset.low_u64(), length.low_u64()))
+    }
 }
 
 /// State and Code Access with "keys/index" used in the access operation.
@@ -1537,6 +1550,12 @@ pub enum CodeSource {
     Tx,
     /// Code comes from Memory by a CREATE* opcode.
     Memory,
+}
+
+impl Default for CodeSource {
+    fn default() -> Self {
+        Self::Tx
+    }
 }
 
 /// Generate the State Access trace from the given trace.  All state read/write

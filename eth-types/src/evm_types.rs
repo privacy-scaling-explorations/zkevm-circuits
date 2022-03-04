@@ -1,12 +1,13 @@
 //! Evm types needed for parsing instruction sets as well
 
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
 pub mod memory;
 pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-use serde::{Deserialize, Serialize};
-use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
     opcode_ids::OpcodeId,

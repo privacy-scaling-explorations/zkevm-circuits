@@ -247,13 +247,13 @@ mod test {
 
     #[test]
     fn end_tx_gadget_simple() {
+        // TODO: Enable this with respective code when SSTORE is implemented.
         // Tx with non-capped refund
-        test_ok(vec![mock_tx(
-            address!("0x00000000000000000000000000000000000000fe"),
-            Some(27000),
-            None,
-        )]);
-        // TODO: Enable this when SSTORE is implemented.
+        // test_ok(vec![mock_tx(
+        //     address!("0x00000000000000000000000000000000000000fe"),
+        //     Some(27000),
+        //     None,
+        // )]);
         // Tx with capped refund
         // test_ok(vec![mock_tx(
         //     address!("0x00000000000000000000000000000000000000fe"),

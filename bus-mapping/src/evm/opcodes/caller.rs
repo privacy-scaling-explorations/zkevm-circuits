@@ -21,13 +21,13 @@ impl Opcode for Caller {
         state.push_op(
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::CallerAddress,
                 value,
             },
         );
         // Stack write of the caller_address
-        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value);
+        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value)?;
 
         Ok(())
     }

@@ -19,6 +19,12 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
     fn configure(_: &mut ConstraintBuilder<F>) -> Self {
+        // TODO: For last step, constrain:
+        //         - tx_id is equal to total_tx
+        //         - rw_counter is equal to public input one
+
+        // TODO: For the rest steps, propagate the rw_counter and call_id to next step.
+
         Self {
             _marker: PhantomData,
         }

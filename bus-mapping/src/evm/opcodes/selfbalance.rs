@@ -14,13 +14,13 @@ impl Opcode for Selfbalance {
     ) -> Result<(), Error> {
         let step = &steps[0];
         let self_balance = steps[1].stack.last()?;
-        let callee_address = state.call().address;
+        let callee_address = state.call()?.address;
 
         // CallContext read of the callee_address
         state.push_op(
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::CalleeAddress,
                 value: callee_address.to_word(),
             },
@@ -42,7 +42,7 @@ impl Opcode for Selfbalance {
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
             self_balance,
-        );
+        )?;
 
         Ok(())
     }

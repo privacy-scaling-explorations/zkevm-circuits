@@ -231,7 +231,7 @@ pub fn gen_associated_ops(
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
-    let call = state.call().clone();
+    let call = state.call()?.clone();
 
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
@@ -305,7 +305,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
             value: caller_balance,
             value_prev: caller_balance_prev,
         },
-    );
+    )?;
 
     let (found, callee_account) = state.sdb.get_account_mut(&call.address);
     if !found {
@@ -322,17 +322,23 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
             value: callee_balance,
             value_prev: callee_balance_prev,
         },
-    );
+    )?;
 
-    state.push_op(
-        RW::READ,
-        AccountOp {
-            address: call.address,
-            field: AccountField::CodeHash,
-            value: code_hash.to_word(),
-            value_prev: code_hash.to_word(),
-        },
-    );
+    if call.is_create() {
+        unimplemented!("Creation transaction is not yet implemented")
+    } else if state.is_precompiled(&call.address) {
+        unimplemented!("Call to precompiled is not yet implemented")
+    } else {
+        state.push_op(
+            RW::READ,
+            AccountOp {
+                address: call.address,
+                field: AccountField::CodeHash,
+                value: code_hash.to_word(),
+                value_prev: code_hash.to_word(),
+            },
+        );
+    }
 
     for (field, value) in [
         (CallContextField::Depth, call.depth.into()),
@@ -380,7 +386,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         },
     );
 
-    let refund = state.sdb.get_refund();
+    let refund = state.sdb.refund();
     state.push_op(
         RW::READ,
         TxRefundOp {

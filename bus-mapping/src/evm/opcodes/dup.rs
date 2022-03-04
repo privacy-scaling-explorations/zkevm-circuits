@@ -17,13 +17,13 @@ impl<const N: usize> Opcode for Dup<N> {
 
         let stack_value_read = step.stack.nth_last(N - 1)?;
         let stack_position = step.stack.nth_last_filled(N - 1);
-        state.push_stack_op(RW::READ, stack_position, stack_value_read);
+        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
 
         state.push_stack_op(
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
             stack_value_read,
-        );
+        )?;
 
         Ok(())
     }
@@ -36,6 +36,7 @@ mod dup_tests {
     use eth_types::bytecode;
     use eth_types::evm_types::StackAddress;
     use eth_types::word;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -69,7 +70,7 @@ mod dup_tests {
                 .steps()
                 .iter()
                 .filter(|step| step.op.is_dup())
-                .collect::<Vec<_>>()[i];
+                .collect_vec()[i];
 
             assert_eq!(
                 [0, 1]

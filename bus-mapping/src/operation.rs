@@ -179,7 +179,7 @@ impl Op for MemoryOp {
     }
 
     fn reverse(&self) -> Self {
-        unreachable!()
+        unreachable!("MemoryOp can't be reverted")
     }
 }
 
@@ -256,7 +256,7 @@ impl Op for StackOp {
     }
 
     fn reverse(&self) -> Self {
-        unreachable!()
+        unreachable!("StackOp can't be reverted")
     }
 }
 
@@ -481,9 +481,9 @@ impl Op for TxAccessListAccountStorageOp {
 pub struct TxRefundOp {
     /// Transaction ID: Transaction index in the block starting at 1.
     pub tx_id: usize,
-    /// Refund Value after the operation
+    /// Refund of gas after the operation
     pub value: u64,
-    /// Refund Value before the operation
+    /// Refund of gas before the operation
     pub value_prev: u64,
 }
 
@@ -729,7 +729,7 @@ impl Op for CallContextOp {
     }
 
     fn reverse(&self) -> Self {
-        unreachable!()
+        unreachable!("CallContextOp can't be reverted")
     }
 }
 

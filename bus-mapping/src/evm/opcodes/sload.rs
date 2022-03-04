@@ -24,14 +24,14 @@ impl Opcode for Sload {
         let stack_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(RW::READ, stack_position, stack_value_read);
+        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
 
         // Storage read
         let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
         state.push_op(
             RW::READ,
             StorageOp::new(
-                state.call().address,
+                state.call()?.address,
                 stack_value_read,
                 storage_value_read,
                 storage_value_read,
@@ -41,7 +41,7 @@ impl Opcode for Sload {
         );
 
         // First stack write
-        state.push_stack_op(RW::WRITE, stack_position, storage_value_read);
+        state.push_stack_op(RW::WRITE, stack_position, storage_value_read)?;
 
         Ok(())
     }

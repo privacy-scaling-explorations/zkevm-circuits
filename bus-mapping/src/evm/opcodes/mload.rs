@@ -26,7 +26,7 @@ impl Opcode for Mload {
         let stack_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(RW::READ, stack_position, stack_value_read);
+        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
@@ -40,18 +40,17 @@ impl Opcode for Mload {
         //
         // First stack write
         //
-        state.push_stack_op(RW::WRITE, stack_position, mem_read_value);
+        state.push_stack_op(RW::WRITE, stack_position, mem_read_value)?;
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
-        let bytes = mem_read_value.to_be_bytes();
-        bytes.iter().for_each(|value_byte| {
-            state.push_memory_op(RW::READ, mem_read_addr, *value_byte);
+        for byte in mem_read_value.to_be_bytes() {
+            state.push_memory_op(RW::READ, mem_read_addr, byte)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
-        });
+        }
 
         Ok(())
     }
@@ -64,6 +63,7 @@ mod mload_tests {
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::Word;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -113,13 +113,13 @@ mod mload_tests {
                 .map(|idx| &builder.block.container.memory
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             Word::from(0x80)
                 .to_be_bytes()
                 .into_iter()
                 .enumerate()
                 .map(|(idx, byte)| (RW::READ, MemoryOp::new(1, MemoryAddress(idx + 0x40), byte)))
-                .collect::<Vec<_>>()
+                .collect_vec()
         )
     }
 }

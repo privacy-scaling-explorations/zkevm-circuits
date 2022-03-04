@@ -73,6 +73,7 @@ impl Account {
 #[derive(Debug, Clone)]
 pub struct StateDB {
     state: HashMap<Address, Account>,
+    // Fields with transaction lifespan, will be clear in `clear_access_list_and_refund`.
     access_list_account: HashSet<Address>,
     access_list_account_storage: HashSet<(Address, U256)>,
     refund: u64,
@@ -166,7 +167,7 @@ impl StateDB {
 
     /// Remove `addr` from account access list.
     pub fn remove_account_from_access_list(&mut self, addr: &Address) {
-        assert!(self.access_list_account.remove(addr));
+        debug_assert!(self.access_list_account.remove(addr));
     }
 
     /// Add `(addr, key)` into account storage access list. Returns `true` if
@@ -177,12 +178,20 @@ impl StateDB {
 
     /// Remove `(addr, key)` from account storage access list.
     pub fn remove_account_storage_from_access_list(&mut self, pair: &(Address, Word)) {
-        assert!(self.access_list_account_storage.remove(pair));
+        debug_assert!(self.access_list_account_storage.remove(pair));
     }
 
-    /// Get refund.
-    pub fn get_refund(&self) -> u64 {
+    /// Retrieve refund.
+    pub fn refund(&self) -> u64 {
         self.refund
+    }
+
+    /// Clear access list and refund. It should be invoked before processing
+    /// with new transaction with the same [`StateDB`].
+    pub fn clear_access_list_and_refund(&mut self) {
+        self.access_list_account = HashSet::new();
+        self.access_list_account_storage = HashSet::new();
+        self.refund = 0;
     }
 }
 

@@ -25,7 +25,7 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
                 RW::READ,
                 step.stack.nth_last_filled(i),
                 step.stack.nth_last(i)?,
-            );
+            )?;
         }
 
         // N_PUSH stack writes
@@ -34,7 +34,7 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
                 RW::WRITE,
                 steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
                 steps[1].stack.nth_last(N_PUSH - 1 - i)?,
-            );
+            )?;
         }
 
         Ok(())
@@ -48,6 +48,7 @@ mod stackonlyop_tests {
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::{bytecode::Bytecode, word, Word};
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     fn stack_only_opcode_impl<const N_POP: usize, const N_PUSH: usize>(
@@ -78,10 +79,8 @@ mod stackonlyop_tests {
                     &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()]
                 })
                 .map(|operation| (operation.rw(), operation.op().clone()))
-                .collect::<Vec<_>>(),
-            pops.into_iter()
-                .map(|pop| (RW::READ, pop))
-                .collect::<Vec<_>>()
+                .collect_vec(),
+            pops.into_iter().map(|pop| (RW::READ, pop)).collect_vec()
         );
         assert_eq!(
             (0..N_PUSH)
@@ -90,11 +89,11 @@ mod stackonlyop_tests {
                         [step.bus_mapping_instance[N_POP + idx].as_usize()]
                 })
                 .map(|operation| (operation.rw(), operation.op().clone()))
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             pushes
                 .into_iter()
                 .map(|push| (RW::WRITE, push))
-                .collect::<Vec<_>>()
+                .collect_vec()
         );
     }
 
