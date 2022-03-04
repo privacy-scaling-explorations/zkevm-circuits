@@ -11,7 +11,8 @@ use crate::{
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ShrGadget<F> {
@@ -19,7 +20,7 @@ pub(crate) struct ShrGadget<F> {
     shr_words: ShrWordsGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
+impl<F: Field> ExecutionGadget<F> for ShrGadget<F> {
     const NAME: &'static str = "SHR";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SHR;
@@ -54,8 +55,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

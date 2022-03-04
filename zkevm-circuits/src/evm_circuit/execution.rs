@@ -41,6 +41,7 @@ mod pc;
 mod pop;
 mod push;
 mod selfbalance;
+mod shr;
 mod signed_comparator;
 mod signextend;
 mod stop;
@@ -71,6 +72,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
+use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
@@ -260,6 +262,7 @@ impl<F: Field> ExecutionConfig<F> {
             selfbalance_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
@@ -520,6 +523,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.timestamp_gadget)
             }
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::CALLDATACOPY => {
                 assign_exec_step!(self.calldatacopy_gadget)
             }

@@ -787,30 +787,6 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     }
 }
 
-// This function generates Lagrange polynomial given a cell, index, and domain
-// size. The polynomial will be equal to 1 when `cell == idx`, otherwise 0.
-// The value of the cell needs to be in the range [0, domain_size)
-fn generate_lagrange_base_polynomial<F: FieldExt>(
-    cell: Cell<F>,
-    idx: u64,
-    domain_size: u64,
-) -> Expression<F> {
-    let mut base_poly = 1.expr();
-    let mut accumulated_inverse = 1.expr();
-    for x in 0..domain_size {
-        if x != idx {
-            base_poly = base_poly * (cell.expr() - x.expr());
-            let inverse = if x < idx {
-                F::from_u128((idx - x) as u128).invert().unwrap()
-            } else {
-                -F::from_u128((x - idx) as u128).invert().unwrap()
-            };
-            accumulated_inverse = accumulated_inverse * inverse;
-        }
-    }
-    base_poly * accumulated_inverse
-}
-
 #[derive(Clone, Debug)]
 pub struct ShrWordsGadget<F> {
     a: util::Word<F>,
@@ -892,7 +868,7 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         for transplacement in (0_usize)..(4_usize) {
             // generate the polynomial depends on the shift_div64
             let select_transplacement_polynomial =
-                generate_lagrange_base_polynomial(shift_div64.clone(), transplacement as u64, 4u64);
+                generate_lagrange_base_polynomial(shift_div64.clone(), transplacement, 0..4);
             for idx in 0..(4 - transplacement) {
                 let tmpidx = idx + transplacement;
                 let merge_a = if idx + transplacement == (3_usize) {
@@ -938,8 +914,8 @@ impl<F: FieldExt> ShrWordsGadget<F> {
         for digit_transplacement in 0..8 {
             let select_transplacement_polynomial = generate_lagrange_base_polynomial(
                 shift_mod64_div8.clone(),
-                digit_transplacement as u64,
-                8u64,
+                digit_transplacement,
+                0..8,
             );
             for virtual_idx in 0..4 {
                 for idx in (digit_transplacement + 1)..8 {
@@ -962,8 +938,8 @@ impl<F: FieldExt> ShrWordsGadget<F> {
             for digit_transplacement in 0..8 {
                 let select_transplacement_polynomial = generate_lagrange_base_polynomial(
                     shift_mod64_div8.clone(),
-                    digit_transplacement as u64,
-                    8u64,
+                    digit_transplacement,
+                    0..8,
                 );
                 let nowidx = (virtual_idx * 8 + digit_transplacement) as usize;
                 slice_bits_polynomial[0] = slice_bits_polynomial[0].clone()
@@ -1151,11 +1127,11 @@ impl<F: FieldExt> ShrWordsGadget<F> {
 pub(crate) fn generate_lagrange_base_polynomial<
     F: FieldExt,
     Exp: Expr<F>,
-    R: Iterator<Item = usize>,
+    I: Iterator<Item = usize>,
 >(
     exp: Exp,
     val: usize,
-    range: R,
+    range: I,
 ) -> Expression<F> {
     let mut numerator = 1u64.expr();
     let mut denominator = F::from(1);
