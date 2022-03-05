@@ -43,8 +43,8 @@ mod push;
 mod selfbalance;
 mod signed_comparator;
 mod signextend;
-mod stop;
 mod sload;
+mod stop;
 mod swap;
 mod timestamp;
 
@@ -74,8 +74,8 @@ use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
-use stop::StopGadget;
 use sload::SloadGadget;
+use stop::StopGadget;
 use swap::SwapGadget;
 use timestamp::TimestampGadget;
 
