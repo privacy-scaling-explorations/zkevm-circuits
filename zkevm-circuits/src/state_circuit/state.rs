@@ -1768,8 +1768,8 @@ mod tests {
                 Word::from(0x40),
                 Word::from(32),
                 Word::zero(), /* Fails because not the same
-                                * as value in the previous row - note: this
-                                * is WRITE. */
+                               * as value in the previous row - note: this
+                               * is WRITE. */
                 1usize,
                 Word::zero(),
             ),
