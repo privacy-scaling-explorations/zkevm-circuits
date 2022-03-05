@@ -146,7 +146,10 @@ mod extcodehash_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let gas_cost = step.gas_cost;
+
+        // Sanity check that address is actually warm if that is what we're testing.
+        assert_eq!(is_warm, step.gas_cost == GasCost::WARM_STORAGE_READ_COST);
+
         let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the Stack pop
@@ -161,18 +164,13 @@ mod extcodehash_tests {
             },
         );
 
-        let account_previously_accessed = match gas_cost {
-            GasCost::WARM_STORAGE_READ_COST => true,
-            GasCost::COLD_ACCOUNT_ACCESS_COST => false,
-            _ => unreachable!(),
-        };
         state_ref.push_op(
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state_ref.tx_ctx.id(),
                 address,
                 value: true,
-                value_prev: account_previously_accessed,
+                value_prev: is_warm,
             },
         );
 
