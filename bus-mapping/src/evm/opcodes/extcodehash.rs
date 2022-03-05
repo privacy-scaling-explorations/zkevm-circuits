@@ -60,7 +60,7 @@ impl Opcode for Extcodehash {
         );
 
         // Stack write of the the code
-        state.push_stack_op(RW::WRITE, stack_address.map(|a| a - 1), code_hash);
+        state.push_stack_op(RW::WRITE, stack_address, code_hash);
 
         Ok(())
     }

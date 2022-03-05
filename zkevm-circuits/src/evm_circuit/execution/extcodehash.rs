@@ -50,6 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             AccountFieldTag::CodeHash,
             external_code_hash.expr(),
         );
+        cb.stack_push(external_code_hash.expr());
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
