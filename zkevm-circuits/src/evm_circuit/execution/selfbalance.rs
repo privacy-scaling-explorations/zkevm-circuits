@@ -29,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+        let callee_address = cb.query_cell();
 
         let self_balance = cb.query_cell();
         cb.account_read(
@@ -37,6 +37,9 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
             AccountFieldTag::Balance,
             self_balance.expr(),
         );
+
+        // cb.call_context_lookup(false.expr(), None,
+        // CallContextFieldTag::CalleeAddress, callee_address.expr());
 
         cb.stack_push(self_balance.expr());
 

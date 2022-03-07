@@ -21,7 +21,10 @@ pub(crate) struct ExtcodehashGadget<F> {
     same_context: SameContextGadget<F>,
     external_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     tx_id: Cell<F>,
-    previously_accessed: Cell<F>,
+    is_warm: Cell<F>,
+    nonce: Cell<F>,
+    balance: Cell<F>,
+    code_hash: Cell<F>,
     external_code_hash: Cell<F>,
 }
 
@@ -36,30 +39,45 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
-        let previously_accessed = cb.query_bool();
+        let is_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
             from_bytes::expr(&external_address.cells),
             1.expr(),
-            previously_accessed.expr(),
+            is_warm.expr(),
         );
 
-        let external_code_hash = cb.query_cell();
+        let nonce = cb.query_cell();
+        cb.account_read(
+            from_bytes::expr(&external_address.cells),
+            AccountFieldTag::Nonce,
+            nonce.expr(),
+        );
+        let balance = cb.query_cell();
+        cb.account_read(
+            from_bytes::expr(&external_address.cells),
+            AccountFieldTag::Balance,
+            balance.expr(),
+        );
+        let code_hash = cb.query_cell();
         cb.account_read(
             from_bytes::expr(&external_address.cells),
             AccountFieldTag::CodeHash,
-            external_code_hash.expr(),
+            code_hash.expr(),
         );
+
+        let external_code_hash = cb.query_cell();
+        // TODO.... constraint that it's 0 when needed....
         cb.stack_push(external_code_hash.expr());
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(5.expr()),
+            rw_counter: Delta(7.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             ..Default::default()
         };
-        let dynamic_gas_cost = (1.expr() - previously_accessed.expr())
+        let dynamic_gas_cost = (1.expr() - is_warm.expr())
             * (GasCost::COLD_ACCOUNT_ACCESS_COST.as_u64()
                 - GasCost::WARM_STORAGE_READ_COST.as_u64())
             .expr();
@@ -70,7 +88,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             same_context,
             external_address,
             tx_id,
-            previously_accessed,
+            is_warm,
+            nonce,
+            balance,
+            code_hash,
             external_code_hash,
         }
     }
@@ -95,15 +116,34 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.tx_id
             .assign(region, offset, U256::from(tx.id).to_scalar())?;
 
-        let previously_accessed = match GasCost::from(step.gas_cost) {
+        let is_warm = match GasCost::from(step.gas_cost) {
             GasCost::COLD_ACCOUNT_ACCESS_COST => 0,
             GasCost::WARM_STORAGE_READ_COST => 1,
             _ => unreachable!(),
         };
-        self.previously_accessed
-            .assign(region, offset, Some(F::from(previously_accessed)))?;
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm)))?;
 
-        let external_code_hash = block.rws[step.rw_indices[4]].stack_value();
+        let nonce = block.rws[step.rw_indices[3]].table_assignment(block.randomness).value;
+        self.nonce.assign(
+            region,
+            offset,
+            Some(nonce),
+        )?;
+        let balance = block.rws[step.rw_indices[4]].table_assignment(block.randomness).value;
+        self.balance.assign(
+            region,
+            offset,
+            Some(balance),
+        )?;
+        let code_hash = block.rws[step.rw_indices[5]].table_assignment(block.randomness).value;
+        self.code_hash.assign(
+            region,
+            offset,
+            Some(code_hash),
+        )?;
+
+        let external_code_hash = block.rws[step.rw_indices[6]].stack_value();
         self.external_code_hash.assign(
             region,
             offset,
