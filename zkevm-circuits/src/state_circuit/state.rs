@@ -12,7 +12,6 @@ use crate::{
         Variable,
     },
 };
-use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
@@ -612,29 +611,11 @@ impl<
     StateCircuit<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
     /// Use rw_map to build a StateCircuit instance
-    pub fn new_from_rw_map(randomness: F, rw_map: &RwMap) -> Self {
+    pub fn new(randomness: F, rw_map: &RwMap) -> Self {
         Self {
             randomness,
             rw_map: rw_map.clone(),
         }
-    }
-
-    #[deprecated]
-    /// Use memory_ops, stack_ops, storage_ops to build a StateCircuit instance.
-    /// This method will be removed in favor for `new_from_rw_map` later.
-    pub fn new(
-        randomness: F,
-        memory_ops: Vec<Operation<MemoryOp>>,
-        stack_ops: Vec<Operation<StackOp>>,
-        storage_ops: Vec<Operation<StorageOp>>,
-    ) -> Self {
-        let rw_map = RwMap::from(&OperationContainer {
-            memory: memory_ops,
-            stack: stack_ops,
-            storage: storage_ops,
-            ..Default::default()
-        });
-        Self::new_from_rw_map(randomness, &rw_map)
     }
 }
 
@@ -681,7 +662,9 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus_mapping::operation::{MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW};
+    use bus_mapping::operation::{
+        MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
+    };
     use eth_types::evm_types::{MemoryAddress, StackAddress};
     use eth_types::{address, bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
@@ -703,7 +686,7 @@ mod tests {
                 $memory_address_max,
                 $stack_address_max,
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
-            >::new_from_rw_map(Fr::rand(), &rw_map);
+            >::new(Fr::rand(), &rw_map);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             let verify_result = prover.verify();
@@ -726,7 +709,7 @@ mod tests {
                 $memory_address_max,
                 $stack_address_max,
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
-            >::new_from_rw_map(Fr::rand(), &rw_map);
+            >::new(Fr::rand(), &rw_map);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             assert!(prover.verify().is_err());
