@@ -9,7 +9,6 @@ use crate::{
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-        monotone::{MonotoneChip, MonotoneConfig},
         Variable,
     },
 };
@@ -21,11 +20,10 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::evm_circuit::witness::Rw;
 use pairing::arithmetic::FieldExt;
 
 /*
-Example state table:
+(FIXME) Example state table:
 
 |            |          |       |    keys(4)  |key2_limbs(8)|   key4_bytes(32)   |                |
 | rw_counter | is_write | value | tag  | ...  | ...  | ...  |      |      |      |  storage_key   |
@@ -35,17 +33,13 @@ Example state table:
 |     24     |     0    |  12   |  2   |      |      |      |      |      |      |                |
 |     0      |     1    |  0    |  2   |      |      |      |      |      |      |                |   // init row (write value 0)
 |     2      |     0    |  12   |  2   |      |      |      |      |      |      |                |
-|            |          |       |  2   |      |      |      |      |      |      |                |   // padding
-|            |          |       |  2   |      |      |      |      |      |      |                |   // padding
-|     3      |     1    |  4    |  1   |      |      |      |      |      |      |                |
+|     3      |     1    |  4    |  3   |      |      |      |      |      |      |                |
 |     17     |     1    |  32   |  3   |      |      |      |      |      |      |                |
 |     89     |     0    |  32   |  3   |      |      |      |      |      |      |                |
 |     48     |     1    |  32   |  3   |      |      |      |      |      |      |                |
 |     49     |     0    |  32   |  3   |      |      |      |      |      |      |                |
-|            |          |       |  3   |      |      |      |      |      |      |                |   // padding
-|     55     |     1    |  32   |  1   |      |      |      |      |      |      |         5      |   // first storage op at the new address has to be write
+|     55     |     1    |  32   |  4   |      |      |      |      |      |      |         5      |   // first storage op at the new address has to be write
 |     56     |     1    |  33   |  4   |      |      |      |  <RLC storageKey>  |         8      |
-|            |          |       |  4   |      |      |      |      |      |      |                |   // padding
 */
 
 // tag:
@@ -62,9 +56,7 @@ const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
 
 const MAX_DEGREE: usize = 15;
 
-/// A mapping derived from witnessed memory operations.
-/// TODO: The complete version of this mapping will involve storage, stack,
-/// and opcode details as well.
+/// A mapping derived from witnessed operations.
 #[derive(Clone, Debug)]
 pub(crate) struct BusMapping<F: FieldExt> {
     rw_counter: Variable<F, F>,
@@ -90,30 +82,26 @@ pub struct Config<
     const STACK_ADDRESS_MAX: usize,
     const ROWS_MAX: usize,
 > {
+    s_enable: Column<Fixed>,
     rw_counter: Column<Advice>,
     is_write: Column<Advice>,
     keys: [Column<Advice>; 5],
+
+    // helper column used for IsZero chip
+    keys_diff_inv: [Column<Advice>; 5],
+
     key2_limbs: [Column<Advice>; 8],
     key4_bytes: [Column<Advice>; 32],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
 
-    // helper cols here
-    s_enable: Column<Fixed>,
-    address_diff_inv: Column<Advice>,
-    account_addr_diff_inv: Column<Advice>,
-    storage_key_diff_inv: Column<Advice>,
-
     // helper chips here
-    address_diff_is_zero: IsZeroConfig<F>,      //check key3
-    account_addr_diff_is_zero: IsZeroConfig<F>, //check key2
-    storage_key_diff_is_zero: IsZeroConfig<F>,
-    address_monotone: MonotoneConfig,
+    key_is_same_with_prev: [IsZeroConfig<F>; 5],
 
     // range tables here, TODO: organize them to a single struct?
     rw_counter_table: Column<Fixed>,
-    memory_address_table_zero: Column<Fixed>,
     stack_address_table_zero: Column<Fixed>,
+    memory_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
 }
 
@@ -144,22 +132,14 @@ impl<
         let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
+        let keys_diff_inv = [(); 5].map(|_| meta.advice_column());
         let key2_limbs = [(); 8].map(|_| meta.advice_column());
         let key4_bytes = [(); 32].map(|_| meta.advice_column());
         let auxs = [(); 2].map(|_| meta.advice_column());
-        /*let dummy = meta.advice_column();
-        let key2_limbs = [dummy; 8];
-        let key4_bytes = [dummy; 32];
-        let auxs = [dummy; 2];*/
 
         let s_enable = meta.fixed_column();
 
         let value = meta.advice_column();
-
-        // would be used for both address and account_addr
-        let address_diff_inv = meta.advice_column();
-        let account_addr_diff_inv = meta.advice_column();
-        let storage_key_diff_inv = meta.advice_column();
 
         let rw_counter_table = meta.fixed_column();
         let memory_address_table_zero = meta.fixed_column();
@@ -168,205 +148,81 @@ impl<
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
 
+        // alias keys for later use
         let tag = keys[0];
         let address = keys[3];
-        let account_addr = keys[2];
-        let storage_key = keys[4];
 
         let one = Expression::Constant(F::from(1));
 
-        let q_memory_first = |meta: &mut VirtualCells<F>| {
-            // For first memory row it holds tag_cur = START_TAG and tag_next
-            // = MEMORY_TAG.
+        let q_tag_is = |meta: &mut VirtualCells<F>, tag_value: usize| {
             let tag_cur = meta.query_advice(tag, Rotation::cur());
-            let tag_next = meta.query_advice(tag, Rotation::next());
-            generate_lagrange_base_polynomial(tag_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
-                * generate_lagrange_base_polynomial(tag_next, MEMORY_TAG, EMPTY_TAG..=STORAGE_TAG)
+            let all_possible_values = EMPTY_TAG..=STORAGE_TAG;
+            generate_lagrange_base_polynomial(tag_cur, tag_value, all_possible_values)
         };
+        let q_memory = |meta: &mut VirtualCells<F>| q_tag_is(meta, MEMORY_TAG);
+        let q_stack = |meta: &mut VirtualCells<F>| q_tag_is(meta, STACK_TAG);
+        let q_storage = |meta: &mut VirtualCells<F>| q_tag_is(meta, STORAGE_TAG);
 
-        let q_memory_not_first = |meta: &mut VirtualCells<F>| {
-            let tag = meta.query_advice(tag, Rotation::cur());
-            generate_lagrange_base_polynomial(tag, MEMORY_TAG, EMPTY_TAG..=STORAGE_TAG)
+        let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
+            IsZeroChip::configure(
+                meta,
+                |meta| meta.query_fixed(s_enable, Rotation::cur()),
+                |meta| {
+                    let value_cur = meta.query_advice(keys[idx], Rotation::cur());
+                    let value_prev = meta.query_advice(keys[idx], Rotation::prev());
+                    value_cur - value_prev
+                },
+                keys_diff_inv[idx],
+            )
+        });
+
+        let q_all_keys_same = |_meta: &mut VirtualCells<F>| {
+            key_is_same_with_prev[0].is_zero_expression.clone()
+                * key_is_same_with_prev[1].is_zero_expression.clone()
+                * key_is_same_with_prev[2].is_zero_expression.clone()
+                * key_is_same_with_prev[3].is_zero_expression.clone()
+                * key_is_same_with_prev[4].is_zero_expression.clone()
         };
+        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| one.clone() - q_all_keys_same(meta);
 
-        let q_stack_first = |meta: &mut VirtualCells<F>| {
-            let tag_cur = meta.query_advice(tag, Rotation::cur());
-            let tag_next = meta.query_advice(tag, Rotation::next());
-
-            generate_lagrange_base_polynomial(tag_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
-                * generate_lagrange_base_polynomial(tag_next, STACK_TAG, EMPTY_TAG..=STORAGE_TAG)
-        };
-
-        let q_stack_not_first = |meta: &mut VirtualCells<F>| {
-            let tag = meta.query_advice(tag, Rotation::cur());
-            generate_lagrange_base_polynomial(tag, STACK_TAG, EMPTY_TAG..=STORAGE_TAG)
-        };
-        let q_storage_first = |meta: &mut VirtualCells<F>| {
-            let tag_cur = meta.query_advice(tag, Rotation::cur());
-            let tag_next = meta.query_advice(tag, Rotation::next());
-            generate_lagrange_base_polynomial(tag_cur, START_TAG, EMPTY_TAG..=STORAGE_TAG)
-                * generate_lagrange_base_polynomial(tag_next, STORAGE_TAG, EMPTY_TAG..=STORAGE_TAG)
-        };
-        let q_storage_not_first = |meta: &mut VirtualCells<F>| {
-            let tag = meta.query_advice(tag, Rotation::cur());
-            generate_lagrange_base_polynomial(tag, STORAGE_TAG, EMPTY_TAG..=STORAGE_TAG)
-        };
-
-        /*
-           try to detect both address and account_addr's diff here, because one of them
-           should be always 0, ONLY USE THIS CHIP FOR STACK/MEMORY/STORAGE
-        */
-        let address_diff_is_zero = IsZeroChip::configure(
-            meta,
-            |meta| {
-                let tag = meta.query_advice(tag, Rotation::cur());
-                let q_not_first = tag.clone() * (tag - one.clone());
-
-                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
-            },
-            |meta| {
-                let address_cur = meta.query_advice(address, Rotation::cur());
-                let address_prev = meta.query_advice(address, Rotation::prev());
-                address_cur - address_prev
-            },
-            address_diff_inv,
-        );
-        let address_diff_is_zero_exp = address_diff_is_zero.is_zero_expression.clone();
-
-        let account_addr_diff_is_zero = IsZeroChip::configure(
-            meta,
-            |meta| {
-                let tag = meta.query_advice(tag, Rotation::cur());
-                let q_not_first = tag.clone() * (tag - one.clone());
-
-                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
-            },
-            |meta| {
-                let account_addr_cur = meta.query_advice(account_addr, Rotation::cur());
-                let account_addr_prev = meta.query_advice(account_addr, Rotation::prev());
-                account_addr_cur - account_addr_prev
-            },
-            account_addr_diff_inv,
-        );
-        let _account_addr_diff_is_zero_expr = account_addr_diff_is_zero.is_zero_expression.clone();
-        let storage_key_diff_is_zero = IsZeroChip::configure(
-            meta,
-            |meta| {
-                let tag = meta.query_advice(tag, Rotation::cur());
-                let q_not_first = tag.clone() * (tag - one.clone());
-
-                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
-            },
-            |meta| {
-                let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
-                let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
-                storage_key_cur - storage_key_prev
-            },
-            storage_key_diff_inv,
-        );
-        let _storage_key_diff_is_zero_exp = storage_key_diff_is_zero.is_zero_expression.clone();
-
-        // Only one monotone gadget is used for memory and stack (with
-        // MEMORY_ADDRESS_MAX as it is bigger)
-        let address_monotone = MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::configure(
-            meta,
-            |meta| {
-                // Since q_memory_not_first and q_stack_non_first are
-                // mutually exclusive, q_not_first is binary.
-                let q_not_first = q_memory_not_first(meta) + q_stack_not_first(meta);
-
-                q_not_first * meta.query_fixed(s_enable, Rotation::cur())
-            },
-            address,
-        );
+        ///////////////////////// General constraints /////////////////////////////////
 
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            cb.condition(s_enable, |cb| {
-                cb.require_boolean("is_write should be boolean", is_write.clone())
-            });
-            cb.constraints
-        });
+            let is_read = one.clone() - is_write.clone();
+            let value_cur = meta.query_advice(value.clone(), Rotation::cur());
+            let value_prev = meta.query_advice(value.clone(), Rotation::prev());
 
-        // A gate for the first row (does not need Rotation::prev).
-        meta.create_gate("First memory row operation", |meta| {
-            let value = meta.query_advice(value, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
-            let q_memory_first = q_memory_first(meta);
+            // 3. is_write is boolean
+            cb.require_boolean("is_write should be boolean", is_write.clone());
 
-            // read value must be 0
-            vec![meta.query_fixed(s_enable, Rotation::cur()) * q_memory_first * q_read * value]
-        });
-
-        meta.create_gate("Memory operation + padding", |meta| {
-            let mut cb = new_cb();
-            // if is_read:
-            //      if address_cur == address_prev:
-            //          value == prev_value
-            //      else:
-            //          value == 0
-            let q_memory_not_first = q_memory_not_first(meta);
-
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let value_prev = meta.query_advice(value, Rotation::prev());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
-            let address_prev = meta.query_advice(address, Rotation::prev());
-            let address_cur = meta.query_advice(address, Rotation::cur());
-
-            let address_diff = address_cur - address_prev;
-            let value_diff = value_cur.clone() - value_prev;
+            // 6. Read consistency
+            // When a row is READ
+            // AND When all the keys are equal in two consecutive a rows:
+            //- The corresponding value must be equal to the previous row
             cb.require_zero(
-                "if address changes, read value should be 0",
-                address_diff * q_read.clone() * value_cur,
-            );
-            cb.require_zero(
-                "if address does not change, read value should be the same as the previous value",
-                address_diff_is_zero_exp.clone() * q_read * value_diff,
+                "if read and keys are same, value should be same with prev",
+                q_all_keys_same(meta) * is_read * (value_cur - value_prev),
             );
 
-            cb.gate(s_enable * q_memory_not_first)
+            cb.gate(s_enable)
         });
 
-        // We don't require first stack op to be write as this is enforced by
-        // evm circuit.
-
-        meta.create_gate("Stack operation", |meta| {
-            let mut cb = new_cb();
-            let q_stack_not_first = q_stack_not_first(meta);
-
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let value_prev = meta.query_advice(value, Rotation::prev());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
-
-            // If is_write == 0 (read), and rw_counter != 0, value_prev == value_cur
-            // when addresses changes, we don't require the operation is write as this is
-            // enforced by evm circuit
-            cb.require_zero(
-                "when reading, the value is the same as at the previous op",
-                q_read * (value_cur - value_prev),
-            );
-            cb.gate(s_enable * q_stack_not_first)
-        });
-
-        // rw_counter monotonicity is checked for memory and stack when
-        // address_cur == address_prev. (Recall that operations are
-        // ordered first by address, and then by rw_counter.)
+        // 5. RWC is monotonically strictly increasing for a set of all keys
+        //
+        // When tag is not Start and all the keys are equal in two consecutive a rows:
+        // - The corresponding rwc must be strictly increasing.
+        // TODO: rewrite using range check gates rather than lookup
         meta.lookup_any("rw counter monotonicity", |meta| {
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
             let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-            let q_not_first = q_memory_not_first(meta) + q_stack_not_first(meta);
 
             vec![(
-                q_not_first
-                    * address_diff_is_zero.clone().is_zero_expression
+                s_enable * q_all_keys_same(meta)
                     * (rw_counter - rw_counter_prev - one.clone()), /*
                                                                      * - 1 because it needs to
                                                                      *   be strictly monotone */
@@ -374,9 +230,37 @@ impl<
             )]
         });
 
-        // Memory address is in the allowed range.
+        ///////////////////////// Memory related constraints /////////////////////////
+
+        meta.create_gate("Memory operation", |meta| {
+            let mut cb = new_cb();
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
+            let value_cur = meta.query_advice(value, Rotation::cur());
+            let is_write = meta.query_advice(is_write, Rotation::cur());
+            let q_read = one.clone() - is_write;
+
+            // 0. Unused keys are 0
+            let key2 = meta.query_advice(keys[2], Rotation::cur());
+            let key4 = meta.query_advice(keys[4], Rotation::cur());
+            cb.require_zero("key2 is 0", key2);
+            cb.require_zero("key4 is 0", key4);
+
+            // 1. First access for a set of all keys
+            //
+            // When the set of all keys changes (first access of an address in a call)
+            // - If READ, value must be 0
+            cb.require_zero(
+                "if address changes, read value should be 0",
+                q_not_all_keys_same(meta) * q_read.clone() * value_cur,
+            );
+
+            cb.gate(s_enable * q_memory(meta))
+        });
+
+        // 2. mem_addr in range
+        // TODO: rewrite this using range check gates instead of lookup
         meta.lookup_any("Memory address in allowed range", |meta| {
-            let q_memory = q_memory_first(meta) + q_memory_not_first(meta);
+            let q_memory = q_memory(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
@@ -384,9 +268,48 @@ impl<
             vec![(q_memory * address_cur, memory_address_table_zero)]
         });
 
-        // Stack address is in the allowed range.
+        // 3. value is a byte
+        // Memory value is in the allowed range.
+        meta.lookup_any("Memory value in allowed range", |meta| {
+            let q_memory = q_memory(meta);
+            let value = meta.query_advice(value, Rotation::cur());
+            let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
+
+            vec![(q_memory * value, memory_value_table)]
+        });
+
+        ///////////////////////// Stack related constraints /////////////////////////
+
+        meta.create_gate("Stack operation", |meta| {
+            let mut cb = new_cb();
+
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
+            let is_write = meta.query_advice(is_write, Rotation::cur());
+            let q_read = one.clone() - is_write;
+            let key2 = meta.query_advice(keys[2], Rotation::cur());
+            let key4 = meta.query_advice(keys[4], Rotation::cur());
+
+            // 0. Unused keys are 0
+            cb.require_zero("key2 is 0", key2);
+            cb.require_zero("key4 is 0", key4);
+
+            // 1. First access for a set of all keys
+            //
+            // The first stack operation in a stack position is always a write (can't
+            // read if it isn't written before)
+            //
+            // When the set of all keys changes (first access of a stack position in a call)
+            // - It must be a WRITE
+            cb.require_zero(
+                "if address changes, operation is always a write",
+                q_not_all_keys_same(meta) * q_read,
+            );
+            cb.gate(s_enable * q_stack(meta))
+        });
+
+        // 2. stack_ptr in range
         meta.lookup_any("Stack address in allowed range", |meta| {
-            let q_stack = q_stack_first(meta) + q_stack_not_first(meta);
+            let q_stack = q_stack(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
@@ -394,120 +317,77 @@ impl<
             vec![(q_stack * address_cur, stack_address_table_zero)]
         });
 
-        // rw_counter is in the allowed range:
-        meta.lookup_any("Global Counter in allowed range", |meta| {
-            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
-
-            vec![(rw_counter, rw_counter_table)]
-        });
-
-        // Memory value (for non-first rows) is in the allowed range.
-        // Memory first row value doesn't need to be checked - it is checked
-        // above where memory init row value has to be 0.
-        meta.lookup_any("Memory value in allowed range", |meta| {
-            let q_memory_not_first = q_memory_not_first(meta);
-            let value = meta.query_advice(value, Rotation::cur());
-            let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
-
-            vec![(q_memory_not_first * value, memory_value_table)]
-        });
-
-        meta.create_gate("First storage row operation", |meta| {
-            let q_storage_first = q_storage_first(meta);
-
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
-
-            vec![
-                meta.query_fixed(s_enable, Rotation::cur()) *
-                q_storage_first * q_read, /* first storage op has to be
-                                           * write (is_write = 1) */
-            ]
-        });
-
-        meta.create_gate("Storage operation", |meta| {
+        // 3. stack_ptr only increases by 0 or 1
+        meta.create_gate("Stack pointer diff be 0 or 1", |meta| {
             let mut cb = new_cb();
-            let q_storage_not_first = q_storage_not_first(meta);
+            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
+            let q_stack = q_stack(meta);
+            let tag_is_same_with_prev = key_is_same_with_prev[0].is_zero_expression.clone();
+            let call_id_same_with_prev = key_is_same_with_prev[1].is_zero_expression.clone();
+            let stack_ptr = meta.query_advice(keys[3], Rotation::cur());
+            let stack_ptr_prev = meta.query_advice(keys[3], Rotation::prev());
+            cb.require_boolean(
+                "stack pointer only increases by 0 or 1",
+                stack_ptr - stack_ptr_prev,
+            );
+            cb.gate(s_enable * q_stack * tag_is_same_with_prev * call_id_same_with_prev);
+            cb.constraints
+        });
 
-            let address_prev = meta.query_advice(address, Rotation::prev());
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let storage_key_prev = meta.query_advice(storage_key, Rotation::prev());
-            let storage_key_cur = meta.query_advice(storage_key, Rotation::cur());
+        ///////////////////////// Storage related constraints /////////////////////////
 
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let value_previous = meta.query_advice(value, Rotation::prev());
+        meta.create_gate("Storage Operation", |meta| {
+            let mut cb = new_cb();
+            let q_storage = q_storage(meta);
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
-
             let q_read = one.clone() - is_write;
-
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            cb.condition(q_read, |cb| {
-                cb.require_equal(
-                    "if address changes, is_write == true",
-                    address_cur,
-                    address_prev,
-                );
-                cb.require_equal(
-                    "if storage_key changes, is_write == true",
-                    storage_key_cur,
-                    storage_key_prev,
-                );
-                cb.require_equal(
-                    "when reading, the value is the same as at the previous op",
-                    value_cur,
-                    value_previous,
-                )
-            });
-            cb.gate(s_enable * q_storage_not_first)
-        });
-
-        // rw_counter monotonicity is checked for storage when address_cur
-        // == address_prev and storage_key_cur = storage_key_prev.
-        // (Recall that storage operations are ordered first by account address,
-        // then by storage_key, and finally by rw_counter.)
-
-        meta.lookup_any("Global Counter in allowed range", |meta| {
-            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
-            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-            let q_storage_not_first = q_storage_not_first(meta);
+            let key1 = meta.query_advice(keys[1], Rotation::cur());
+            let key3 = meta.query_advice(keys[4], Rotation::cur());
 
-            vec![(
-                q_storage_not_first
-                    * account_addr_diff_is_zero.clone().is_zero_expression
-                    * storage_key_diff_is_zero.clone().is_zero_expression
-                    * (rw_counter - rw_counter_prev - one.clone()), /*
-                                                                     * - 1 because it needs to
-                                                                     *   be strictly monotone */
-                rw_counter_table,
-            )]
+            // TODO: cold VS warm
+            // TODO: connection to MPT on first and last access for each (address, key)
+
+            // 0. Unused keys are 0
+            cb.require_zero("key1 is 0", key1);
+            cb.require_zero("key3 is 0", key3);
+
+            // 1. First access for a set of all keys
+            //
+            // We add an extra write to set the value of the state in previous block, with
+            // rwc=0.
+            //
+            // When the set of all keys changes (first access of storage (address, key))
+            // - It must be a WRITE
+            cb.require_zero(
+                "First access for storage is write",
+                q_not_all_keys_same(meta) * q_read,
+            );
+            cb.require_zero(
+                "First access for storage has rw_counter as 0",
+                q_not_all_keys_same(meta) * rw_counter,
+            );
+
+            cb.gate(s_enable * q_storage)
         });
-
-        // TODO: monotone address for storage
 
         Config {
             rw_counter,
             value,
             is_write,
             keys,
+            keys_diff_inv,
             key2_limbs,
             key4_bytes,
             auxs,
             s_enable,
-            address_diff_inv,
-            account_addr_diff_inv,
-            storage_key_diff_inv,
-
+            key_is_same_with_prev,
             rw_counter_table,
             memory_address_table_zero,
             stack_address_table_zero,
             memory_value_table,
-            address_diff_is_zero,
-            account_addr_diff_is_zero,
-            address_monotone,
-            storage_key_diff_is_zero,
         }
     }
 
@@ -584,36 +464,23 @@ impl<
     fn assign_single_type_rows(
         &self,
         region: &mut Region<F>,
-        randomness: F,
-        ops: Vec<Rw>,
-        address_diff_is_zero_chip: &IsZeroChip<F>,
-        account_addr_diff_is_zero_chip: &IsZeroChip<F>,
-        storage_key_diff_is_zero_chip: &IsZeroChip<F>,
+        rows: Vec<RwRow<F>>,
+        diff_is_zero_chips: &[IsZeroChip<F>; 5],
         offset: usize,
     ) -> Result<AssignRet<F>, Error> {
-        if offset + ops.len() > ROWS_MAX {
+        if offset + rows.len() > ROWS_MAX {
             panic!("too many storage operations");
         }
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
         let mut offset = offset;
-        for (index, oper) in ops.iter().enumerate() {
-            let row = oper.table_assignment(randomness);
+        for (index, row) in rows.iter().enumerate() {
             let row_prev = if index == 0 {
                 RwRow::default()
             } else {
-                ops[index - 1].table_assignment(randomness)
+                rows[index - 1]
             };
-            let is_init_row = index == 0;
-            let bus_mapping = self.assign_row(
-                region,
-                offset,
-                is_init_row,
-                row,
-                row_prev,
-                address_diff_is_zero_chip,
-                account_addr_diff_is_zero_chip,
-                storage_key_diff_is_zero_chip,
-            )?;
+            let bus_mapping =
+                self.assign_row(region, offset, *row, row_prev, diff_is_zero_chips)?;
             bus_mappings.push(bus_mapping);
             offset += 1;
         }
@@ -643,76 +510,44 @@ impl<
         &self,
         mut layouter: impl Layouter<F>,
         randomness: F,
-        memory_ops: Vec<Rw>,
-        stack_ops: Vec<Rw>,
-        storage_ops: Vec<Rw>,
+        rw_map: &RwMap,
     ) -> Result<Vec<BusMapping<F>>, Error> {
         let mut bus_mappings: Vec<BusMapping<F>> = Vec::new();
-
-        let address_diff_is_zero_chip = IsZeroChip::construct(self.address_diff_is_zero.clone());
-        let account_addr_diff_is_zero_chip =
-            IsZeroChip::construct(self.account_addr_diff_is_zero.clone());
-
-        let memory_address_monotone_chip =
-            MonotoneChip::<F, MEMORY_ADDRESS_MAX, true, false>::construct(
-                self.address_monotone.clone(),
-            );
-        memory_address_monotone_chip.load(&mut layouter)?;
-
-        let storage_key_diff_is_zero_chip =
-            IsZeroChip::construct(self.storage_key_diff_is_zero.clone());
+        let key_is_same_with_prev_chips: [IsZeroChip<F>; 5] = [0, 1, 2, 3, 4]
+            .map(|idx| IsZeroChip::construct(self.key_is_same_with_prev[idx].clone()));
 
         layouter.assign_region(
             || "State operations",
             |mut region| {
                 let mut offset = 0;
+                let rw_types = vec![
+                    RwTableTag::Memory,
+                    RwTableTag::Stack,
+                    RwTableTag::AccountStorage,
+                ];
+                for tag in rw_types {
+                    let mut rws: Vec<_> = rw_map.0[&tag]
+                        .iter()
+                        .map(|rw| rw.table_assignment(randomness))
+                        .collect();
+                    rws.sort_by_key(|rw| (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4));
+                    let mappings = self
+                        .assign_single_type_rows(
+                            &mut region,
+                            rws,
+                            &key_is_same_with_prev_chips,
+                            offset,
+                        )
+                        .unwrap();
+                    bus_mappings.extend(mappings.1);
 
-                let memory_mappings = self
-                    .assign_single_type_rows(
-                        &mut region,
-                        randomness,
-                        memory_ops.clone(),
-                        &address_diff_is_zero_chip,
-                        &account_addr_diff_is_zero_chip,
-                        &storage_key_diff_is_zero_chip,
-                        offset,
-                    )
-                    .unwrap();
-                bus_mappings.extend(memory_mappings.1);
-                offset = memory_mappings.0;
+                    offset = mappings.0;
+                }
 
-                let stack_mappings = self
-                    .assign_single_type_rows(
-                        &mut region,
-                        randomness,
-                        stack_ops.clone(),
-                        &address_diff_is_zero_chip,
-                        &account_addr_diff_is_zero_chip,
-                        &storage_key_diff_is_zero_chip,
-                        offset,
-                    )
-                    .unwrap();
-                bus_mappings.extend(stack_mappings.1);
-                offset = stack_mappings.0;
-
-                let storage_mappings = self
-                    .assign_single_type_rows(
-                        &mut region,
-                        randomness,
-                        storage_ops.clone(),
-                        &address_diff_is_zero_chip,
-                        &account_addr_diff_is_zero_chip,
-                        &storage_key_diff_is_zero_chip,
-                        offset,
-                    )
-                    .unwrap();
-                bus_mappings.extend(storage_mappings.1);
-                offset = storage_mappings.0;
-
-                self.pad_rows(&mut region, offset, ROWS_MAX)?;
+                //self.pad_rows(&mut region, offset, ROWS_MAX)?;
 
                 // enable all rows
-                for i in 0..ROWS_MAX {
+                for i in 0..offset {
                     region.assign_fixed(|| "enable row", self.s_enable, i, || Ok(F::one()))?;
                 }
 
@@ -721,33 +556,21 @@ impl<
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn assign_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        is_init_row: bool,
         row: RwRow<F>,
         row_prev: RwRow<F>,
-        address_diff_is_zero_chip: &IsZeroChip<F>,
-        account_addr_diff_is_zero_chip: &IsZeroChip<F>,
-        storage_key_diff_is_zero_chip: &IsZeroChip<F>,
+        diff_is_zero_chips: &[IsZeroChip<F>; 5],
     ) -> Result<BusMapping<F>, Error> {
         let account_address = row.key2;
-        let account_address_prev = row_prev.key2;
         let address = row.key3;
-        let address_prev = row_prev.key3;
         let rw_counter = row.rw_counter;
         let value = row.value;
         let is_write = row.is_write;
-        // TODO: use same tag later
-        let target = if is_init_row {
-            F::from(START_TAG as u64)
-        } else {
-            row.tag
-        };
+        let target = row.tag;
         let storage_key = row.key4;
-        let storage_key_prev = row_prev.key4;
 
         // check witness sanity
         if offset > ROWS_MAX {
@@ -781,7 +604,7 @@ impl<
         let address_cell =
             region.assign_advice(|| "address", self.address(), offset, || Ok(address))?;
         let rw_counter_cell = region.assign_advice(
-            || "global counter",
+            || "rw counter",
             self.rw_counter,
             offset,
             || Ok(rw_counter),
@@ -797,17 +620,22 @@ impl<
             region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
         let target_cell = region.assign_advice(|| "target", self.tag(), offset, || Ok(target))?;
 
-        address_diff_is_zero_chip.assign(region, offset, Some(address - address_prev))?;
-        account_addr_diff_is_zero_chip.assign(
-            region,
-            offset,
-            Some(account_address - account_address_prev),
-        )?;
-        storage_key_diff_is_zero_chip.assign(
-            region,
-            offset,
-            Some(storage_key - storage_key_prev),
-        )?;
+        for i in 0..5 {
+            println!("assign inv {} {}", offset, i);
+            diff_is_zero_chips[i].assign(
+                region,
+                offset,
+                Some(match i {
+                    // FIXME: find a better way here
+                    0 => (row.tag - row_prev.tag),
+                    1 => (row.key1 - row_prev.key1),
+                    2 => (row.key2 - row_prev.key2),
+                    3 => (row.key3 - row_prev.key3),
+                    4 => (row.key4 - row_prev.key4),
+                    _ => unreachable!(),
+                }),
+            )?;
+        }
 
         Ok(BusMapping {
             rw_counter: Variable::<F, F>::new(rw_counter_cell, Some(rw_counter)),
@@ -832,12 +660,8 @@ pub struct StateCircuit<
 > {
     /// randomness used in linear combination
     pub randomness: F,
-    /// Memory Operations
-    pub memory_ops: Vec<Rw>,
-    /// Stack Operations
-    pub stack_ops: Vec<Rw>,
-    /// Storage Operations
-    pub storage_ops: Vec<Rw>,
+    /// witness for rw map
+    pub rw_map: RwMap,
 }
 
 impl<
@@ -854,13 +678,13 @@ impl<
     pub fn new_from_rw_map(randomness: F, rw_map: &RwMap) -> Self {
         Self {
             randomness,
-            memory_ops: rw_map.sorted_memory_rw(),
-            stack_ops: rw_map.sorted_stack_rw(),
-            storage_ops: rw_map.sorted_storage_rw(),
+            rw_map: rw_map.clone(),
         }
     }
+
+    #[deprecated]
     /// Use memory_ops, stack_ops, storage_ops to build a StateCircuit instance.
-    /// This method should be replaced with `new_from_rw_map` later.
+    /// This method will be removed in favor for `new_from_rw_map` later.
     pub fn new(
         randomness: F,
         memory_ops: Vec<Operation<MemoryOp>>,
@@ -912,13 +736,7 @@ impl<
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
-        config.assign(
-            layouter,
-            self.randomness,
-            self.memory_ops.clone(),
-            self.stack_ops.clone(),
-            self.storage_ops.clone(),
-        )?;
+        config.assign(layouter, self.randomness, &self.rw_map)?;
 
         Ok(())
     }
@@ -935,6 +753,12 @@ mod tests {
 
     macro_rules! test_state_circuit_ok {
         ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
+            let rw_map = RwMap::from(&OperationContainer {
+                memory: $memory_ops,
+                stack: $stack_ops,
+                storage: $storage_ops,
+                ..Default::default()
+            });
             let circuit = StateCircuit::<
                 Fr,
                 true,
@@ -942,7 +766,7 @@ mod tests {
                 $memory_address_max,
                 $stack_address_max,
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
-            >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
+            >::new_from_rw_map(Fr::rand(), &rw_map);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             let verify_result = prover.verify();
@@ -952,14 +776,20 @@ mod tests {
 
     macro_rules! test_state_circuit_error {
         ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
+            let rw_map = RwMap::from(&OperationContainer {
+                memory: $memory_ops,
+                stack: $stack_ops,
+                storage: $storage_ops,
+                ..Default::default()
+            });
             let circuit = StateCircuit::<
                 Fr,
-                false,
+                true,
                 $rw_counter_max,
                 $memory_address_max,
                 $stack_address_max,
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
-            >::new(Fr::rand(), $memory_ops, $stack_ops, $storage_ops);
+            >::new_from_rw_map(Fr::rand(), &rw_map);
 
             let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             assert!(prover.verify().is_err());

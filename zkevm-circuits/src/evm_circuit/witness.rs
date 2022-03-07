@@ -514,7 +514,7 @@ pub enum Rw {
         byte: u8,
     },
 }
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
     pub rw_counter: F,
     pub is_write: F,
