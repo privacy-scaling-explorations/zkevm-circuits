@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::ToLittleEndian;
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, H256, U256};
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Region, plonk::Error};
 use lazy_static::lazy_static;
@@ -32,8 +32,10 @@ pub(crate) struct ExtcodehashGadget<F> {
     nonce: Cell<F>,
     balance: Cell<F>,
     code_hash: Cell<F>,
-    is_empty: Cell<F>, // I think this can be combined with nonzero_witness?
-    nonzero_witness: Cell<F>,
+    is_empty: Cell<F>, // boolean for if the external account is empty
+    nonempty_witness: Cell<F>, /* if the account isn't empty, will witness that by holding
+                        * inverse of one of balance, nonce, or RLC(code hash) -
+                        * RLC(EMPTY_CODE_HASH_LE_BYTES) */
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -94,15 +96,17 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             is_empty.expr() * (code_hash.expr() - empty_code_hash_rlc.clone()),
         );
 
-        let nonzero_witness = cb.query_cell();
+        let nonempty_witness = cb.query_cell();
         cb.require_zero(
-            "is_empty is 1 when none of nonce, balance, or (code_hash - empty_code_hash_rlc) are invertible",
-            (1.expr() - is_empty.expr()) *
-            (1.expr() - nonce.expr() * nonzero_witness.expr()) *
-            (1.expr() - balance.expr() * nonzero_witness.expr()) *
-            (1.expr() - (code_hash.expr() - empty_code_hash_rlc) * nonzero_witness.expr()),
+            "is_empty is 1 if nonce, balance, or (code_hash - empty_code_hash_rlc) are all zero",
+            (1.expr() - is_empty.expr())
+                * (1.expr() - nonce.expr() * nonempty_witness.expr())
+                * (1.expr() - balance.expr() * nonempty_witness.expr())
+                * (1.expr() - (code_hash.expr() - empty_code_hash_rlc) * nonempty_witness.expr()),
         );
 
+        // The stack push is 0 if the external account is empty. Otherwise, it's the
+        // code hash
         cb.stack_push((1.expr() - is_empty.expr()) * code_hash.expr());
 
         let opcode = cb.query_cell();
@@ -126,7 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             balance,
             code_hash,
             is_empty,
-            nonzero_witness,
+            nonempty_witness,
         }
     }
 
@@ -158,7 +162,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm)))?;
 
-        let [nonce, balance, code_hash, external_code_hash] = [3, 4, 5, 6].map(|i| {
+        let [nonce, balance, code_hash] = [3, 4, 5].map(|i| {
             block.rws[step.rw_indices[i]]
                 .table_assignment(block.randomness)
                 .value
@@ -167,24 +171,18 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.balance.assign(region, offset, Some(balance))?;
         self.code_hash.assign(region, offset, Some(code_hash))?;
 
-        dbg!(code_hash);
-        dbg!(external_code_hash);
-
         let empty_code_hash_rlc =
             Word::random_linear_combine(*EMPTY_CODE_HASH_LE_BYTES, block.randomness);
 
-        dbg!(empty_code_hash_rlc);
-
-        if let Some(inverse) = nonce.invert().into() {
-            self.nonzero_witness.assign(region, offset, Some(inverse))?;
-        } else if let Some(inverse) = balance.invert().into() {
-            self.nonzero_witness.assign(region, offset, Some(inverse))?;
-        } else if let Some(inverse) = (code_hash - empty_code_hash_rlc).invert().into() {
-            self.nonzero_witness.assign(region, offset, Some(inverse))?;
+        if let Some(inverse) = Option::from(nonce.invert())
+            .or_else(|| balance.invert().into())
+            .or_else(|| (code_hash - empty_code_hash_rlc).invert().into())
+        {
+            self.nonempty_witness
+                .assign(region, offset, Some(inverse))?;
         } else {
             self.is_empty.assign(region, offset, Some(F::one()))?;
         }
-        // dbg!(is_empty);
 
         Ok(())
     }
@@ -194,12 +192,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 mod test {
     use crate::{
         evm_circuit::witness::block_convert,
-        test_util::{run_test_circuits, test_circuits_using_witness_block, BytecodeTestConfig},
+        test_util::{test_circuits_using_witness_block, BytecodeTestConfig},
     };
     use bus_mapping::mock::BlockData;
     use eth_types::{
-        address, bytecode, evm_types::StackAddress, geth_types::Account as GethAccount, Address,
-        Bytecode, Bytes, ToWord, H160, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, U256,
     };
     use lazy_static::lazy_static;
     use mock::new_single_tx_trace_accounts;
@@ -209,7 +206,7 @@ mod test {
             address!("0xaabbccddee000000000000000000000000000000");
     }
 
-    fn test_ok(external_account: Option<GethAccount>, is_warm: bool) {
+    fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
             .as_ref()
             .map(|a| a.address)
@@ -232,7 +229,7 @@ mod test {
             STOP
         });
 
-        let mut accounts = vec![GethAccount {
+        let mut accounts = vec![Account {
             address: Address::default(), // This is the address of the executing account
             code: Bytes::from(code.to_vec()),
             ..Default::default()
@@ -269,7 +266,7 @@ mod test {
     #[test]
     fn extcodehash_warm_existing_account() {
         test_ok(
-            Some(GethAccount {
+            Some(Account {
                 address: *EXTERNAL_ADDRESS,
                 nonce: U256::from(259),
                 code: Bytes::from([3]),
@@ -282,7 +279,7 @@ mod test {
     #[test]
     fn extcodehash_cold_existing_account() {
         test_ok(
-            Some(GethAccount {
+            Some(Account {
                 address: *EXTERNAL_ADDRESS,
                 balance: U256::from(900),
                 code: Bytes::from([32, 59]),
@@ -296,22 +293,23 @@ mod test {
     fn extcodehash_nonempty_account_edge_cases() {
         // EIP-158 defines empty accounts to be those with balance = 0, nonce = 0, and
         // code = [].
-        let nonce_only_account = GethAccount {
+        let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
             balance: U256::from(200),
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously
         // empty account.
-        let balance_only_account = GethAccount {
+        let balance_only_account = Account {
             address: *EXTERNAL_ADDRESS,
             balance: U256::from(200),
             ..Default::default()
         };
         // This account state should no longer be possible because contract nonces start
-        // at 1, per EIP-161. However, this requirement is still in the yellow paper and
-        // our constraints, so we test this case anyways.
-        let contract_only_account = GethAccount {
+        // at 1, per EIP-161. However, the requirement that the code be emtpy is still
+        // in the yellow paper and our constraints, so we test this case
+        // anyways.
+        let contract_only_account = Account {
             address: *EXTERNAL_ADDRESS,
             code: Bytes::from([32, 59]),
             ..Default::default()
