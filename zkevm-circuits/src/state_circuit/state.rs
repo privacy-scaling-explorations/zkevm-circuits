@@ -192,11 +192,11 @@ impl<
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let is_read = one.clone() - is_write.clone();
-            let value_cur = meta.query_advice(value.clone(), Rotation::cur());
-            let value_prev = meta.query_advice(value.clone(), Rotation::prev());
+            let value_cur = meta.query_advice(value, Rotation::cur());
+            let value_prev = meta.query_advice(value, Rotation::prev());
 
             // 3. is_write is boolean
-            cb.require_boolean("is_write should be boolean", is_write.clone());
+            cb.require_boolean("is_write should be boolean", is_write);
 
             // 6. Read consistency
             // When a row is READ
@@ -251,7 +251,7 @@ impl<
             // - If READ, value must be 0
             cb.require_zero(
                 "if address changes, read value should be 0",
-                q_not_all_keys_same(meta) * q_read.clone() * value_cur,
+                q_not_all_keys_same(meta) * q_read * value_cur,
             );
 
             cb.gate(s_enable * q_memory(meta))
@@ -484,7 +484,7 @@ impl<
                         .iter()
                         .map(|rw| rw.table_assignment(randomness))
                 })
-                .flat_map(|rw| rw.clone())
+                .flatten()
                 .collect();
                 rows.sort_by_key(|rw| (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter));
 
@@ -562,7 +562,7 @@ impl<
         region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
         region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
 
-        for i in 0..5 {
+        for (i, diff_is_zero_chip) in diff_is_zero_chips.iter().enumerate() {
             let (value, diff) = match i {
                 // FIXME: find a better way here
                 0 => (row.tag, row.tag - row_prev.tag),
@@ -578,7 +578,7 @@ impl<
                 offset,
                 || Ok(value),
             )?;
-            diff_is_zero_chips[i].assign(region, offset, Some(diff))?;
+            diff_is_zero_chip.assign(region, offset, Some(diff))?;
         }
 
         Ok(())
@@ -1229,7 +1229,6 @@ mod tests {
         );
     }
 
-    
     #[ignore = "disabled temporarily since we sort rws inside the assign method. FIXME later"]
     #[test]
     fn non_monotone_address() {
