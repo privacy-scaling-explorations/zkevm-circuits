@@ -44,8 +44,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.assign_block(&mut layouter, &self.block)?;
-        Ok(())
+        config.assign_block(&mut layouter, &self.block)
     }
 }
 
