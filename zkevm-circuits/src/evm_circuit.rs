@@ -87,7 +87,7 @@ impl<F: Field> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         self.execution.assign_block(layouter, block)
     }
 
@@ -96,7 +96,7 @@ impl<F: Field> EvmCircuit<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         self.execution.assign_block_exact(layouter, block)
     }
 
@@ -317,7 +317,6 @@ pub mod test {
     pub struct TestCircuit<F> {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
-        last_offset: usize,
     }
 
     impl<F> TestCircuit<F> {
@@ -325,7 +324,6 @@ pub mod test {
             Self {
                 block,
                 fixed_table_tags,
-                last_offset: 0,
             }
         }
     }
@@ -388,8 +386,7 @@ pub mod test {
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
             config
                 .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)?;
-            Ok(())
+                .assign_block_exact(&mut layouter, &self.block)
         }
     }
 

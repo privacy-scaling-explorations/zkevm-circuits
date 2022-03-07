@@ -62,10 +62,11 @@ async fn test_state_circuit_block(block_num: u64) {
     trace!("storage_ops: {:#?}", storage_ops);
 
     const DEGREE: usize = 16;
-    const RW_COUNTER_MAX: usize = 2000;
     const MEMORY_ADDRESS_MAX: usize = 2000;
     const STACK_ADDRESS_MAX: usize = 1024;
-    const ROWS_MAX: usize = 2000;
+
+    const RW_COUNTER_MAX: usize = 1 << DEGREE;
+    const ROWS_MAX: usize = 1 << DEGREE;
 
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,

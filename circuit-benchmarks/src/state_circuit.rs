@@ -14,8 +14,8 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::state_circuit::StateCircuit;
 
-    const RW_COUNTER_MAX: usize = 2000;
-    const ROWS_MAX: usize = 2000;
+    const RW_COUNTER_MAX: usize = 1 << DEGREE;
+    const ROWS_MAX: usize = 1 << DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
