@@ -7,13 +7,13 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, Cell, RandomLinearCombination, Word,
+            from_bytes, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -124,34 +124,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm)))?;
 
-        let nonce = block.rws[step.rw_indices[3]].table_assignment(block.randomness).value;
-        self.nonce.assign(
-            region,
-            offset,
-            Some(nonce),
-        )?;
-        let balance = block.rws[step.rw_indices[4]].table_assignment(block.randomness).value;
-        self.balance.assign(
-            region,
-            offset,
-            Some(balance),
-        )?;
-        let code_hash = block.rws[step.rw_indices[5]].table_assignment(block.randomness).value;
-        self.code_hash.assign(
-            region,
-            offset,
-            Some(code_hash),
-        )?;
-
-        let external_code_hash = block.rws[step.rw_indices[6]].stack_value();
-        self.external_code_hash.assign(
-            region,
-            offset,
-            Some(Word::random_linear_combine(
-                external_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        let [nonce, balance, code_hash, external_code_hash] = [3, 4, 5, 6].map(|i| {
+            block.rws[step.rw_indices[i]]
+                .table_assignment(block.randomness)
+                .value
+        });
+        self.nonce.assign(region, offset, Some(nonce))?;
+        self.balance.assign(region, offset, Some(balance))?;
+        self.code_hash.assign(region, offset, Some(code_hash))?;
+        self.external_code_hash
+            .assign(region, offset, Some(external_code_hash))?;
 
         Ok(())
     }
