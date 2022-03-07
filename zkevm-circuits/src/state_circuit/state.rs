@@ -66,8 +66,6 @@ pub(crate) struct BusMapping<F: FieldExt> {
     storage_key: Variable<F, F>,
 }
 
-struct AssignRet<F: FieldExt>(usize, Vec<BusMapping<F>>);
-
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
