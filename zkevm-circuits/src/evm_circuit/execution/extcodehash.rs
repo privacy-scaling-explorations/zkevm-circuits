@@ -192,31 +192,137 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
-    use eth_types::{address, bytecode, ToWord, H160};
+    use crate::{
+        evm_circuit::witness::block_convert,
+        test_util::{run_test_circuits, test_circuits_using_witness_block, BytecodeTestConfig},
+    };
+    use bus_mapping::mock::BlockData;
+    use eth_types::{
+        address, bytecode, evm_types::StackAddress, geth_types::Account as GethAccount, Address,
+        Bytecode, Bytes, ToWord, H160, U256,
+    };
+    use lazy_static::lazy_static;
+    use mock::new_single_tx_trace_accounts;
 
-    fn test_ok(address: H160) {
-        let code = bytecode! {
-            PUSH20(address.to_word())
+    lazy_static! {
+        static ref EXTERNAL_ADDRESS: Address =
+            address!("0xaabbccddee000000000000000000000000000000");
+    }
+
+    fn test_ok(external_account: Option<GethAccount>, is_warm: bool) {
+        let external_address = external_account
+            .as_ref()
+            .map(|a| a.address)
+            .unwrap_or(*EXTERNAL_ADDRESS);
+
+        // Make the external account warm, if needed, by first getting its external code
+        // hash.
+        let mut code = Bytecode::default();
+        if is_warm {
+            code.append(&bytecode! {
+                PUSH20(external_address.to_word())
+                EXTCODEHASH // TODO: change this to BALANCE once it's implemented
+                POP
+            });
+        }
+        code.append(&bytecode! {
+            PUSH20(external_address.to_word())
             #[start]
             EXTCODEHASH
             STOP
+        });
+
+        let mut accounts = vec![GethAccount {
+            address: Address::default(), // This is the address of the executing account
+            code: Bytes::from(code.to_vec()),
+            ..Default::default()
+        }];
+        if let Some(external_account) = external_account {
+            accounts.push(external_account)
+        }
+
+        // execute the bytecode and get trace
+        let geth_data = new_single_tx_trace_accounts(accounts).unwrap();
+        let block_trace = BlockData::new_from_geth_data(geth_data);
+
+        let mut builder = block_trace.new_circuit_input_builder();
+        builder
+            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
+            .unwrap();
+        test_circuits_using_witness_block(
+            block_convert(&builder.block, &builder.code_db),
+            BytecodeTestConfig::default(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn extcodehash_warm_empty_account() {
+        test_ok(None, true);
+    }
+
+    #[test]
+    fn extcodehash_cold_empty_account() {
+        test_ok(None, false);
+    }
+
+    #[test]
+    fn extcodehash_warm_existing_account() {
+        test_ok(
+            Some(GethAccount {
+                address: *EXTERNAL_ADDRESS,
+                nonce: U256::from(259),
+                code: Bytes::from([3]),
+                ..Default::default()
+            }),
+            true,
+        );
+    }
+
+    #[test]
+    fn extcodehash_cold_existing_account() {
+        test_ok(
+            Some(GethAccount {
+                address: *EXTERNAL_ADDRESS,
+                balance: U256::from(900),
+                code: Bytes::from([32, 59]),
+                ..Default::default()
+            }),
+            false,
+        );
+    }
+
+    #[test]
+    fn extcodehash_nonempty_account_edge_cases() {
+        // EIP-158 defines empty accounts to be those with balance = 0, nonce = 0, and
+        // code = [].
+        let nonce_only_account = GethAccount {
+            address: *EXTERNAL_ADDRESS,
+            balance: U256::from(200),
+            ..Default::default()
         };
-        assert_eq!(run_test_circuits(code), Ok(()));
-    }
+        // This account state is possible if another account sends ETH to a previously
+        // empty account.
+        let balance_only_account = GethAccount {
+            address: *EXTERNAL_ADDRESS,
+            balance: U256::from(200),
+            ..Default::default()
+        };
+        // This account state should no longer be possible because contract nonces start
+        // at 1, per EIP-161. However, this requirement is still in the yellow paper and
+        // our constraints, so we test this case anyways.
+        let contract_only_account = GethAccount {
+            address: *EXTERNAL_ADDRESS,
+            code: Bytes::from([32, 59]),
+            ..Default::default()
+        };
 
-    #[test]
-    fn extcodehash_gadget_warm_account() {
-        // The default address is already in the address access set because
-        // `run_test_circuits` works by executing bytecode deployed at the
-        // default address.
-        test_ok(H160::default());
-    }
-
-    #[test]
-    fn extcodehash_gadget_cold_account() {
-        // This address isn't otherwise accessed, so calling EXTCODEHASH on it will
-        // incur a higher gas cost.
-        test_ok(address!("0xaabbccddee000000000000000000000000000011"));
+        for account in [
+            nonce_only_account,
+            balance_only_account,
+            contract_only_account,
+        ] {
+            test_ok(Some(account), false);
+        }
     }
 }
