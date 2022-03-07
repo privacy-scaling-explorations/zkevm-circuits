@@ -73,17 +73,12 @@ mod extcodehash_tests {
         circuit_input_builder::{ExecStep, TransactionContext},
         mock::BlockData,
     };
-    use eth_types::{address, bytecode, evm_types::StackAddress, Address, Bytecode, ToWord, U256};
-    use lazy_static::lazy_static;
-    use mock::new_single_tx_trace_code_at_start;
+    use eth_types::{
+        address, bytecode, evm_types::StackAddress, geth_types::Account, Address, Bytecode, Bytes,
+        ToWord, U256,
+    };
+    use mock::new_single_tx_trace_accounts;
     use pretty_assertions::assert_eq;
-
-    lazy_static! {
-        static ref EMPTY_ACCOUNT: Address = address!("0xaabbccddee000000000000000000000000000000");
-        // new_single_tx_trace_code_at_start works by executing code deployed at the default
-        // address, meaning that the external code hash returned for it will not be 0.
-        static ref EXISTING_ACCOUNT: Address = Address::default();
-    }
 
     #[test]
     fn cold_empty_account() -> Result<(), Error> {
@@ -106,29 +101,44 @@ mod extcodehash_tests {
     }
 
     fn test_ok(exists: bool, is_warm: bool) -> Result<(), Error> {
-        let address = if exists {
-            *EXISTING_ACCOUNT
-        } else {
-            *EMPTY_ACCOUNT
-        };
+        // In each test case, this is the external address we will call EXTCODEHASH on.
+        let external_address = address!("0xaabbccddee000000000000000000000000000000");
 
+        // Make the external account warm, if needed, by first getting its balance.
         let mut code = Bytecode::default();
         if is_warm {
             code.append(&bytecode! {
-                PUSH20(address.to_word())
-                EXTCODEHASH
+                PUSH20(external_address.to_word())
+                BALANCE
                 POP
             });
         }
         code.append(&bytecode! {
-            PUSH20(address.to_word())
+            PUSH20(external_address.to_word())
             #[start]
             EXTCODEHASH
             STOP
         });
 
+        let mut accounts = vec![Account {
+            address: Address::default(), // This is the address of the
+            code: Bytes::from(code.to_vec()),
+            ..Default::default()
+        }];
+        // Let the external account exist, if needed, by making its code non-empty.
+        if exists {
+            accounts.push(Account {
+                address: external_address,
+                code: Bytes::from([34, 54, 56]),
+                ..Default::default()
+            })
+        }
+
         // Get the execution steps from the external tracer
-        let block = BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code)?);
+        let mut geth_data = new_single_tx_trace_accounts(accounts)?;
+        geth_data.geth_trace.struct_logs =
+            geth_data.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
+        let block = BlockData::new_from_geth_data(geth_data);
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -153,7 +163,11 @@ mod extcodehash_tests {
         let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the Stack pop
-        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), address.to_word());
+        state_ref.push_stack_op(
+            RW::READ,
+            StackAddress::from(1023),
+            external_address.to_word(),
+        );
 
         state_ref.push_op(
             RW::READ,
@@ -168,13 +182,13 @@ mod extcodehash_tests {
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state_ref.tx_ctx.id(),
-                address,
+                address: external_address,
                 value: true,
                 value_prev: is_warm,
             },
         );
 
-        let (account_exists, account) = state_ref.sdb.get_account(&address);
+        let (account_exists, account) = state_ref.sdb.get_account(&external_address);
         assert_eq!(exists, account_exists);
 
         let code_hash = if account_exists {
@@ -187,7 +201,7 @@ mod extcodehash_tests {
         state_ref.push_op(
             RW::READ,
             AccountOp {
-                address,
+                address: external_address,
                 field: AccountField::CodeHash,
                 value: code_hash,
                 value_prev: code_hash,
@@ -195,7 +209,7 @@ mod extcodehash_tests {
         );
 
         // Add the stack write
-        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1022), code_hash);
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), code_hash);
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
