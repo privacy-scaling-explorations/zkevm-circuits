@@ -7,14 +7,21 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, Cell, RandomLinearCombination,
+            from_bytes, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
+use eth_types::ToLittleEndian;
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, H256, U256};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Region, plonk::Error};
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref EMPTY_CODE_HASH_LE_BYTES: [u8; 32] = U256::from(keccak256(&[])).to_le_bytes();
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
@@ -25,7 +32,8 @@ pub(crate) struct ExtcodehashGadget<F> {
     nonce: Cell<F>,
     balance: Cell<F>,
     code_hash: Cell<F>,
-    is_empty: Cell<F>,
+    is_empty: Cell<F>, // I think this can be combined with nonzero_witness?
+    nonzero_witness: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -67,8 +75,33 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         );
 
         let is_empty = cb.query_bool();
-        // TODO.... require is_empty to be nonce == 0 && balance && 0 && code_hash ==
-        // hash("")
+        cb.require_zero(
+            "is_empty is 0 when nonce is non-zero",
+            is_empty.expr() * nonce.expr(),
+        );
+        // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
+        // go to the work of writing out the RLC expression
+        cb.require_zero(
+            "is_empty is 0 when balance is non-zero",
+            is_empty.expr() * balance.expr(),
+        );
+        let empty_code_hash_rlc = Word::random_linear_combine_expr(
+            EMPTY_CODE_HASH_LE_BYTES.map(|x| x.expr()),
+            cb.power_of_randomness(),
+        );
+        cb.require_zero(
+            "is_empty is 0 when code_hash is non-zero",
+            is_empty.expr() * (code_hash.expr() - empty_code_hash_rlc.clone()),
+        );
+
+        let nonzero_witness = cb.query_cell();
+        cb.require_zero(
+            "is_empty is 1 when none of nonce, balance, or (code_hash - empty_code_hash_rlc) are invertible",
+            (1.expr() - is_empty.expr()) *
+            (1.expr() - nonce.expr() * nonzero_witness.expr()) *
+            (1.expr() - balance.expr() * nonzero_witness.expr()) *
+            (1.expr() - (code_hash.expr() - empty_code_hash_rlc) * nonzero_witness.expr()),
+        );
 
         cb.stack_push((1.expr() - is_empty.expr()) * code_hash.expr());
 
@@ -80,9 +113,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             ..Default::default()
         };
         let dynamic_gas_cost = (1.expr() - is_warm.expr())
-            * (GasCost::COLD_ACCOUNT_ACCESS_COST.as_u64()
-                - GasCost::WARM_STORAGE_READ_COST.as_u64())
-            .expr();
+            * (GasCost::COLD_ACCOUNT_ACCESS_COST.expr() - GasCost::WARM_STORAGE_READ_COST.expr());
         let same_context =
             SameContextGadget::construct(cb, opcode, step_state_transition, Some(dynamic_gas_cost));
 
@@ -95,6 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             balance,
             code_hash,
             is_empty,
+            nonzero_witness,
         }
     }
 
@@ -135,13 +167,24 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.balance.assign(region, offset, Some(balance))?;
         self.code_hash.assign(region, offset, Some(code_hash))?;
 
-        let is_empty = if external_code_hash == F::zero() {
-            1
+        dbg!(code_hash);
+        dbg!(external_code_hash);
+
+        let empty_code_hash_rlc =
+            Word::random_linear_combine(*EMPTY_CODE_HASH_LE_BYTES, block.randomness);
+
+        dbg!(empty_code_hash_rlc);
+
+        if let Some(inverse) = nonce.invert().into() {
+            self.nonzero_witness.assign(region, offset, Some(inverse))?;
+        } else if let Some(inverse) = balance.invert().into() {
+            self.nonzero_witness.assign(region, offset, Some(inverse))?;
+        } else if let Some(inverse) = (code_hash - empty_code_hash_rlc).invert().into() {
+            self.nonzero_witness.assign(region, offset, Some(inverse))?;
         } else {
-            0
-        };
-        self.is_empty
-            .assign(region, offset, Some(F::from(is_empty)))?;
+            self.is_empty.assign(region, offset, Some(F::one()))?;
+        }
+        // dbg!(is_empty);
 
         Ok(())
     }

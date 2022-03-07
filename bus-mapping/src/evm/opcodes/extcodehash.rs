@@ -148,11 +148,11 @@ mod extcodehash_tests {
         });
 
         let mut accounts = vec![GethAccount {
-            address: Address::default(), // This is the address of the
+            address: Address::default(), // This is the address of the executing account
             code: Bytes::from(code.to_vec()),
             ..Default::default()
         }];
-        // Let the external account exist, if needed, by making its code non-empty.
+        // Let the external account exist, if needed, by making its code non-empty
         if exists {
             accounts.push(GethAccount {
                 address: external_address,
