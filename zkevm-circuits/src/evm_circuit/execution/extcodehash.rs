@@ -25,7 +25,7 @@ pub(crate) struct ExtcodehashGadget<F> {
     nonce: Cell<F>,
     balance: Cell<F>,
     code_hash: Cell<F>,
-    external_code_hash: Cell<F>,
+    is_empty: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -66,9 +66,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             code_hash.expr(),
         );
 
-        let external_code_hash = cb.query_cell();
-        // TODO.... constraint that it's 0 when needed....
-        cb.stack_push(external_code_hash.expr());
+        let is_empty = cb.query_bool();
+        // TODO.... require is_empty to be nonce == 0 && balance && 0 && code_hash ==
+        // hash("")
+
+        cb.stack_push((1.expr() - is_empty.expr()) * code_hash.expr());
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
@@ -92,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             nonce,
             balance,
             code_hash,
-            external_code_hash,
+            is_empty,
         }
     }
 
@@ -132,8 +134,14 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.nonce.assign(region, offset, Some(nonce))?;
         self.balance.assign(region, offset, Some(balance))?;
         self.code_hash.assign(region, offset, Some(code_hash))?;
-        self.external_code_hash
-            .assign(region, offset, Some(external_code_hash))?;
+
+        let is_empty = if external_code_hash == F::zero() {
+            1
+        } else {
+            0
+        };
+        self.is_empty
+            .assign(region, offset, Some(F::from(is_empty)))?;
 
         Ok(())
     }
