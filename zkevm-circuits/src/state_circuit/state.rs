@@ -393,11 +393,11 @@ impl<
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter
             .assign_region(
-                || "global counter table",
+                || "rw counter table",
                 |mut region| {
                     for idx in 0..=RW_COUNTER_MAX {
                         region.assign_fixed(
-                            || "global counter table",
+                            || "rw counter table",
                             self.rw_counter_table,
                             idx,
                             || Ok(F::from(idx as u64)),
@@ -506,16 +506,6 @@ impl<
                     offset += 1;
                 }
 
-                //self.pad_rows(&mut region, offset, ROWS_MAX)?;
-
-                // enable all rows
-                region.assign_fixed(|| "disable row 0", self.s_enable, 0, || Ok(F::zero()))?;
-                for i in 1..offset {
-                    region.assign_fixed(|| "enable row", self.s_enable, i, || Ok(F::one()))?;
-                }
-                for i in offset..=ROWS_MAX {
-                    region.assign_fixed(|| "disable row", self.s_enable, i, || Ok(F::zero()))?;
-                }
                 Ok(())
             },
         )
@@ -556,7 +546,7 @@ impl<
                 );
             }
         }
-
+        region.assign_fixed(|| "enable row", self.s_enable, offset, || Ok(F::one()))?;
         region.assign_advice(|| "rw counter", self.rw_counter, offset, || Ok(rw_counter))?;
         region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
         region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
