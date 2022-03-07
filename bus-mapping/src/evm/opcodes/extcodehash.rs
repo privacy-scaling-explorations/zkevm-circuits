@@ -1,9 +1,12 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::operation::{
-    AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp, RW,
+use crate::{
+    circuit_input_builder::CircuitInputStateRef,
+    operation::{
+        AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp, RW,
+    },
+    state_db::Account,
+    Error,
 };
-use crate::Error;
 use eth_types::{evm_types::GasCost, GethExecStep, ToAddress, ToWord};
 
 #[derive(Debug, Copy, Clone)]
@@ -47,20 +50,44 @@ impl Opcode for Extcodehash {
             },
         );
 
-        // Account read for code hash of external account
-        let code_hash = steps[1].stack.last()?;
+        // These three lookups are required to determine the existence of the external
+        // account
+        let &Account {
+            nonce,
+            code_hash,
+            balance,
+            ..
+        } = state.sdb.get_account(&external_address).1;
+        state.push_op(
+            RW::READ,
+            AccountOp {
+                address: external_address,
+                field: AccountField::Nonce,
+                value: nonce,
+                value_prev: nonce,
+            },
+        );
+        state.push_op(
+            RW::READ,
+            AccountOp {
+                address: external_address,
+                field: AccountField::Balance,
+                value: balance,
+                value_prev: balance,
+            },
+        );
         state.push_op(
             RW::READ,
             AccountOp {
                 address: external_address,
                 field: AccountField::CodeHash,
-                value: code_hash,
-                value_prev: code_hash,
+                value: code_hash.to_word(),
+                value_prev: code_hash.to_word(),
             },
         );
 
-        // Stack write of the the code
-        state.push_stack_op(RW::WRITE, stack_address, code_hash);
+        // Stack write of the result of EXTCODEHASH.
+        state.push_stack_op(RW::WRITE, stack_address, steps[1].stack.last()?);
 
         Ok(())
     }
@@ -74,8 +101,8 @@ mod extcodehash_tests {
         mock::BlockData,
     };
     use eth_types::{
-        address, bytecode, evm_types::StackAddress, geth_types::Account, Address, Bytecode, Bytes,
-        ToWord, U256,
+        address, bytecode, evm_types::StackAddress, geth_types::Account as GethAccount, Address,
+        Bytecode, Bytes, U256,
     };
     use mock::new_single_tx_trace_accounts;
     use pretty_assertions::assert_eq;
@@ -120,14 +147,14 @@ mod extcodehash_tests {
             STOP
         });
 
-        let mut accounts = vec![Account {
+        let mut accounts = vec![GethAccount {
             address: Address::default(), // This is the address of the
             code: Bytes::from(code.to_vec()),
             ..Default::default()
         }];
         // Let the external account exist, if needed, by making its code non-empty.
         if exists {
-            accounts.push(Account {
+            accounts.push(GethAccount {
                 address: external_address,
                 code: Bytes::from([34, 54, 56]),
                 ..Default::default()
@@ -188,28 +215,56 @@ mod extcodehash_tests {
             },
         );
 
-        let (account_exists, account) = state_ref.sdb.get_account(&external_address);
+        let (
+            account_exists,
+            &Account {
+                nonce,
+                balance,
+                code_hash,
+                ..
+            },
+        ) = state_ref.sdb.get_account(&external_address);
         assert_eq!(exists, account_exists);
 
-        let code_hash = if account_exists {
-            account.code_hash.to_word()
-        } else {
-            U256::zero()
-        };
-
-        // Add the code hash read
+        // Add the nonce, balance, code hash reads
+        state_ref.push_op(
+            RW::READ,
+            AccountOp {
+                address: external_address,
+                field: AccountField::Nonce,
+                value: nonce,
+                value_prev: nonce,
+            },
+        );
+        state_ref.push_op(
+            RW::READ,
+            AccountOp {
+                address: external_address,
+                field: AccountField::Balance,
+                value: balance,
+                value_prev: balance,
+            },
+        );
         state_ref.push_op(
             RW::READ,
             AccountOp {
                 address: external_address,
                 field: AccountField::CodeHash,
-                value: code_hash,
-                value_prev: code_hash,
+                value: code_hash.to_word(),
+                value_prev: code_hash.to_word(),
             },
         );
 
         // Add the stack write
-        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), code_hash);
+        state_ref.push_stack_op(
+            RW::WRITE,
+            StackAddress::from(1023),
+            if account_exists {
+                code_hash.to_word()
+            } else {
+                U256::zero()
+            },
+        );
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
