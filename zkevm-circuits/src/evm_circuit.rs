@@ -101,14 +101,19 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(block: &Block<F>) -> impl Iterator<Item = usize> {
-        (0..block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT)
-            .step_by(STEP_HEIGHT)
+    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+        let max_offset = block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT;
+        // gates are only enabled at "q_step" rows
+        let gates_row_ids = (0..max_offset).step_by(STEP_HEIGHT).collect();
+        // lookups are enabled at "q_step" rows and byte lookup rows
+        let lookup_row_ids = (0..max_offset).collect();
+        (gates_row_ids, lookup_row_ids)
     }
 }
 
 #[cfg(any(feature = "test", test))]
 pub mod test {
+
     use crate::{
         evm_circuit::{
             param::STEP_HEIGHT,
@@ -416,10 +421,10 @@ pub mod test {
                 ]
             })
             .collect();
-        let active_rows = EvmCircuit::get_active_rows(&block);
+        let (active_gate_rows, active_lookup_rows) = EvmCircuit::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
-        prover.verify_at_rows(active_rows)
+        prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 
     pub fn run_test_circuit_incomplete_fixed_table<F: Field>(
