@@ -113,7 +113,9 @@ pub struct MPTConfig<F> {
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
-    key_rlc: Column<Advice>, // used first for account address, then for storage key
+    // key_rlc & key_rlc_mult used for account address, for storage key,
+    // and for mult_diff_nonce/mult_diff_balance in account_leaf_nonce_balance
+    key_rlc: Column<Advice>,
     key_rlc_mult: Column<Advice>,
     mult_diff: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -699,8 +701,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_mult_c,
-            s_keccak[2],
-            s_keccak[3],
+            key_rlc,
+            key_rlc_mult,
             r_table.clone(),
             fixed_table.clone(),
         );
@@ -1622,9 +1624,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     (ext_row[1] - 16) as u64,
                                                 ) * F::from(16)
                                                     * key_rlc_mult;
-                                            // mult_diff is not needed in this case (is_short
-                                            // always has only one nibble and we can use
-                                            // this information)
                                             key_rlc = extension_node_rlc;
                                             // branch part:
                                             key_rlc +=
@@ -2253,13 +2252,13 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 region.assign_advice(
                                     || "assign mult diff".to_string(),
-                                    self.s_keccak[2],
+                                    self.key_rlc,
                                     offset,
                                     || Ok(mult_diff_s),
                                 )?;
                                 region.assign_advice(
                                     || "assign mult diff".to_string(),
-                                    self.s_keccak[3],
+                                    self.key_rlc_mult,
                                     offset,
                                     || Ok(mult_diff_c),
                                 )?;

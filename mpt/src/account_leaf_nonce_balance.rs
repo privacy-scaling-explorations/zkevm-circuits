@@ -37,8 +37,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         acc: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_mult_c: Column<Advice>,
-        s_keccak2: Column<Advice>, // for mult_diff_nonce
-        s_keccak3: Column<Advice>, // for mult_diff_balance
+        mult_diff_nonce: Column<Advice>,
+        mult_diff_balance: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
     ) -> AccountLeafNonceBalanceConfig {
@@ -70,9 +70,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
             let acc_mult_after_nonce =
                 meta.query_advice(acc_mult_c, Rotation::cur());
-            let mult_diff_nonce = meta.query_advice(s_keccak2, Rotation::cur());
+            let mult_diff_nonce =
+                meta.query_advice(mult_diff_nonce, Rotation::cur());
             let mult_diff_balance =
-                meta.query_advice(s_keccak3, Rotation::cur());
+                meta.query_advice(mult_diff_balance, Rotation::cur());
 
             let s_advices0 = meta.query_advice(s_advices[0], Rotation::cur());
 
@@ -158,7 +159,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             q_enable.clone(),
             5, // 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length info
             s_advices[0],
-            s_keccak2,
+            mult_diff_nonce,
             fixed_table,
         );
 
@@ -182,7 +183,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             q_enable,
             1, // 1 for byte with length info
             c_advices[0],
-            s_keccak3,
+            mult_diff_balance,
             fixed_table,
         );
 
