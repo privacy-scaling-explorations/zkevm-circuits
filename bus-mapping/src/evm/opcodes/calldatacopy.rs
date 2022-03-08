@@ -41,24 +41,27 @@ impl Opcode for Calldatacopy {
                 value: state.tx_ctx.id().into(),
             },
         );
-        state.push_op(
-            exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call().call_id,
-                field: CallContextField::CallDataLength,
-                value: state.call().call_data_length.into(),
-            },
-        );
-        state.push_op(
-            exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call().call_id,
-                field: CallContextField::CallDataOffset,
-                value: state.call().call_data_offset.into(),
-            },
-        );
+
+        if !state.call().is_root {
+            state.push_op(
+                exec_step,
+                RW::READ,
+                CallContextOp {
+                    call_id: state.call().call_id,
+                    field: CallContextField::CallDataLength,
+                    value: state.call().call_data_length.into(),
+                },
+            );
+            state.push_op(
+                exec_step,
+                RW::READ,
+                CallContextOp {
+                    call_id: state.call().call_id,
+                    field: CallContextField::CallDataOffset,
+                    value: state.call().call_data_offset.into(),
+                },
+            );
+        }
 
         Ok(())
     }

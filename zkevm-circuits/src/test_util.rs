@@ -32,6 +32,7 @@ pub struct BytecodeTestConfig {
     pub enable_evm_circuit_test: bool,
     pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
     pub enable_state_circuit_test: bool,
+    pub is_root_call: bool,
     pub gas_limit: u64,
 }
 
@@ -39,6 +40,7 @@ impl Default for BytecodeTestConfig {
     fn default() -> Self {
         Self {
             gas_limit: 1_000_000u64,
+            is_root_call: true,
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),

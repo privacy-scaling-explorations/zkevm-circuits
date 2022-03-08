@@ -23,11 +23,13 @@ mod number_tests {
             BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+        builder
+            .handle_tx(&block.eth_tx, &block.geth_trace, true)
+            .unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
         let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+            .new_tx(&block.eth_tx, !block.geth_trace.failed, true)
             .unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
