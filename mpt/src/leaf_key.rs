@@ -39,12 +39,13 @@ impl<F: FieldExt> LeafKeyChip<F> {
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         // s_keccak[0] and s_keccak[1] to see whether it's long or short RLP &
-        // s_keccak[2] and s_keccak[3] for previous level key RLC
         s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
+        key_rlc_prev: Column<Advice>,
+        key_rlc_mult_prev: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         modified_node: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -485,8 +486,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let key_rlc_prev_level = (one.clone() - is_first_storage_level)
                 * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
-            let rlc = meta.query_advice(s_keccak[2], Rotation::cur());
-            let mult = meta.query_advice(s_keccak[3], Rotation::cur());
+            let rlc = meta.query_advice(key_rlc_prev, Rotation::cur());
+            let mult = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
 
             constraints.push((
                 "Previous key RLC",
@@ -529,10 +530,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
 
             // previous key RLC:
             let key_rlc_acc_start = meta
-                .query_advice(s_keccak[2], Rotation::cur())
+                .query_advice(key_rlc_prev, Rotation::cur())
                 * (one.clone() - is_first_storage_level.clone());
             let key_mult_start = meta
-                .query_advice(s_keccak[3], Rotation::cur())
+                .query_advice(key_rlc_mult_prev, Rotation::cur())
                 * (one.clone() - is_first_storage_level.clone())
                 + is_first_storage_level.clone();
 

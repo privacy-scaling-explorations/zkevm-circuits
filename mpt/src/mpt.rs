@@ -110,6 +110,7 @@ pub struct MPTConfig<F> {
     acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie - but no branch is added or turned into leaf)
+    // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
@@ -544,6 +545,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
+            sel1,
+            sel2,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             modified_node,
             is_account_leaf_storage_codehash_c,
@@ -571,6 +574,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
+            sel1,
+            sel2,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             modified_node,
             is_account_leaf_storage_codehash_c,
@@ -2104,13 +2109,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Constraint for this is in leaf_key.
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
-                                    self.s_keccak[2],
+                                    self.sel1,
                                     offset,
                                     || Ok(key_rlc_prev),
                                 )?;
                                 region.assign_advice(
                                     || "assign key_rlc_mult".to_string(),
-                                    self.s_keccak[3],
+                                    self.sel2,
                                     offset,
                                     || Ok(key_rlc_mult_prev),
                                 )?;
