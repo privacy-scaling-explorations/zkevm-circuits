@@ -28,9 +28,9 @@ pub(crate) struct SloadGadget<F> {
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
     callee_address: Cell<F>,
-    key: Word<F>,
-    value: Word<F>,
-    committed_value: Word<F>,
+    key: Cell<F>,
+    value: Cell<F>,
+    committed_value: Cell<F>,
     is_warm: Cell<F>,
 }
 
@@ -50,12 +50,12 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
-        let key = cb.query_word();
+        let key = cb.query_cell();
         // Pop the key from the stack
         cb.stack_pop(key.expr());
 
-        let value = cb.query_word();
-        let committed_value = cb.query_word();
+        let value = cb.query_cell();
+        let committed_value = cb.query_cell();
         cb.account_storage_read(
             callee_address.expr(),
             key.expr(),
@@ -125,13 +125,32 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         let [key, value] =
             [step.rw_indices[4], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
-        self.key.assign(region, offset, Some(key.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.key.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                key.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
+        self.value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                value.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
-        self.committed_value
-            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.committed_value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                committed_value.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
         self.is_warm
