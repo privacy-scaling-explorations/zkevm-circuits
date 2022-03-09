@@ -24,6 +24,9 @@ use crate::{
 
 use super::ExecutionGadget;
 
+// The offset in the RW indices that mark the start of memory lookups.
+const OFFSET_RW_MEMORY_INDICES: usize = 5usize;
+
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataLoadGadget<F> {
     /// Gadget to constrain the same context.
@@ -39,6 +42,8 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// tx data starts at the first byte, but can be non-zero offset for an
     /// internal call.
     calldata_offset: Cell<F>,
+    /// Parent call ID that makes a call to this internal call.
+    caller_id: Cell<F>,
     /// Gadget to read from tx calldata, which we validate against the word
     /// pushed to stack.
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
@@ -62,6 +67,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let calldata_length = cb.query_cell();
         let calldata_offset = cb.query_cell();
+        let caller_id = cb.query_cell();
 
         let src_addr = offset.expr() + calldata_offset.expr();
         let src_addr_end = calldata_length.expr() + calldata_offset.expr();
@@ -92,6 +98,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 CallContextFieldTag::CallDataOffset,
                 calldata_offset.expr(),
             );
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::CallerId,
+                caller_id.expr(),
+            );
         });
 
         let buffer_reader = BufferReaderGadget::construct(cb, src_addr.clone(), src_addr_end);
@@ -118,6 +130,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                             0.expr(),
                             src_addr.expr() + idx.expr(),
                             buffer_reader.byte(idx),
+                            Some(caller_id.expr()),
                         );
                     },
                 );
@@ -151,6 +164,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             offset,
             calldata_length,
             calldata_offset,
+            caller_id,
             tx_id,
             buffer_reader,
         }
@@ -187,15 +201,21 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
         // assign to the buffer reader gadget.
-        let (calldata_length, calldata_offset) = if call.is_root {
-            (tx.call_data_length as u64, 0u64)
+        let (calldata_length, calldata_offset, caller_id) = if call.is_root {
+            (tx.call_data_length as u64, 0u64, 0u64)
         } else {
-            (call.call_data_length, call.call_data_offset)
+            (
+                call.call_data_length,
+                call.call_data_offset,
+                call.caller_id as u64,
+            )
         };
         self.calldata_length
             .assign(region, offset, Some(F::from(calldata_length)))?;
         self.calldata_offset
             .assign(region, offset, Some(F::from(calldata_offset)))?;
+        self.caller_id
+            .assign(region, offset, Some(F::from(caller_id)))?;
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
         let (src_addr, src_addr_end) = (
@@ -212,7 +232,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             } else {
                 // fetch from memory
                 if src_addr + i < call.call_data_length as usize {
-                    *byte = block.rws[step.rw_indices[4 + i]].memory_value();
+                    *byte = block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
                 }
             }
         }
@@ -239,6 +259,7 @@ mod test {
     use pairing::bn256::Fr;
 
     use crate::evm_circuit::{
+        execution::calldataload::OFFSET_RW_MEMORY_INDICES,
         param::N_BYTES_WORD,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
@@ -284,7 +305,11 @@ mod test {
         };
         let bytecode = Bytecode::new(bytecode.to_vec());
         let tx_id = 1;
-        let call_id = 1;
+        let (call_id, parent_call_id) = if call_data_offset.is_some() {
+            (1, 0)
+        } else {
+            (2, 1)
+        };
         let call_data_length = call_data.len();
 
         let mut rws_stack = vec![
@@ -334,12 +359,22 @@ mod test {
                     field_tag: CallContextFieldTag::CallDataOffset,
                     value: Word::from(call_data_offset),
                 },
+                Rw::CallContext {
+                    is_write: false,
+                    call_id,
+                    rw_counter: rw_counter + 2,
+                    field_tag: CallContextFieldTag::CallerId,
+                    value: Word::from(parent_call_id as u64),
+                },
             ]);
             rw_indices.append(&mut vec![
                 (RwTableTag::CallContext, 1),
                 (RwTableTag::CallContext, 2),
+                (RwTableTag::CallContext, 3),
             ]);
-            rw_counter += 2;
+            rw_counter += 3;
+
+            assert_eq!(rw_indices.len(), OFFSET_RW_MEMORY_INDICES);
 
             // handle memory rws.
             let rws_memory = call_data
@@ -348,7 +383,7 @@ mod test {
                 .take(N_BYTES_WORD)
                 .enumerate()
                 .map(|(idx, byte)| Rw::Memory {
-                    call_id,
+                    call_id: parent_call_id,
                     memory_address: (src_addr + idx) as u64,
                     is_write: false,
                     byte: *byte,
@@ -433,6 +468,7 @@ mod test {
                     call_data_length: call_data_length as u64,
                     call_data_offset: call_data_offset.unwrap_or(0),
                     code_source: CodeSource::Account(bytecode.hash),
+                    caller_id: parent_call_id,
                     ..Default::default()
                 }],
                 ..Default::default()
