@@ -19,7 +19,7 @@ use crate::rpc::GethClient;
 use ethers_providers::JsonRpcClient;
 
 /// Out of Gas errors by opcode
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OogError {
     /// Out of Gas for opcodes which have non-zero constant gas cost
     Constant,
@@ -65,7 +65,7 @@ pub enum OogError {
 }
 
 /// EVM Execution Error
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ExecError {
     /// Invalid Opcode
     InvalidOpcode,
@@ -102,7 +102,7 @@ pub enum ExecError {
 }
 
 /// Execution state
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
@@ -135,7 +135,7 @@ pub enum StepAuxiliaryData {
 }
 
 /// An execution step of the EVM.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExecStep {
     /// Execution state
     pub exec_state: ExecState,
@@ -589,8 +589,8 @@ impl Transaction {
         sdb: &StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
+        config: TransactionConfig,
         is_success: bool,
-        is_root: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -638,6 +638,11 @@ impl Transaction {
             }
         };
 
+        let mut input = eth_tx.input.to_vec();
+        if input.len() < config.call_data_length {
+            input.resize(config.call_data_length, 0);
+        }
+
         Ok(Self {
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
@@ -645,7 +650,7 @@ impl Transaction {
             from: eth_tx.from,
             to: eth_tx.to.unwrap_or_default(),
             value: eth_tx.value,
-            input: eth_tx.input.to_vec(),
+            input,
             calls: vec![call],
             steps: Vec::new(),
         })
@@ -673,6 +678,24 @@ impl Transaction {
 
     fn push_call(&mut self, call: Call) {
         self.calls.push(call);
+    }
+}
+
+#[derive(Debug)]
+/// Transaction configuration
+pub struct TransactionConfig {
+    /// If root call
+    pub is_root_call: bool,
+    /// Initialized length of call data
+    pub call_data_length: usize,
+}
+
+impl Default for TransactionConfig {
+    fn default() -> Self {
+        Self {
+            is_root_call: true,
+            call_data_length: 0,
+        }
     }
 }
 
@@ -1328,8 +1351,8 @@ impl<'a> CircuitInputBuilder {
     pub fn new_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,
+        config: TransactionConfig,
         is_success: bool,
-        is_root: bool,
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
 
@@ -1349,8 +1372,8 @@ impl<'a> CircuitInputBuilder {
             &self.sdb,
             &mut self.code_db,
             eth_tx,
+            config,
             is_success,
-            is_root,
         )
     }
 
