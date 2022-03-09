@@ -535,7 +535,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CopyToMemory => {
                 assign_exec_step!(self.copy_to_memory_gadget)
             }
-            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
