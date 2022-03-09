@@ -101,11 +101,24 @@ pub enum ExecError {
     MaxCodeSizeExceeded,
 }
 
+/// Execution state
+#[derive(Debug)]
+pub enum ExecState {
+    /// EVM Opcode ID
+    Op(OpcodeId),
+    /// Virtual step Begin Tx
+    BeginTx,
+    /// Virtual step End Tx
+    EndTx,
+    /// Virtual step Copy To Memory
+    CopyToMemory,
+}
+
 /// An execution step of the EVM.
 #[derive(Debug)]
 pub struct ExecStep {
-    /// The opcode ID
-    pub op: OpcodeId,
+    /// Execution state
+    pub exec_state: ExecState,
     /// Program Counter
     pub pc: ProgramCounter,
     /// Stack size
@@ -140,7 +153,7 @@ impl ExecStep {
         swc: usize, // State Write Counter
     ) -> Self {
         ExecStep {
-            op: step.op,
+            exec_state: ExecState::Op(step.op),
             pc: step.pc,
             stack_size: step.stack.0.len(),
             memory_size: step.memory.0.len(),
