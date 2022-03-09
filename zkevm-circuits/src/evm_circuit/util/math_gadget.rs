@@ -792,11 +792,11 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
 pub(crate) fn generate_lagrange_base_polynomial<
     F: FieldExt,
     Exp: Expr<F>,
-    R: Iterator<Item = usize>,
+    I: Iterator<Item = usize>,
 >(
     exp: Exp,
     val: usize,
-    range: R,
+    range: I,
 ) -> Expression<F> {
     let mut numerator = 1u64.expr();
     let mut denominator = F::from(1);
@@ -814,13 +814,18 @@ pub struct ShrWordsGadget<F> {
     a: util::Word<F>,
     shift: util::Word<F>,
     b: util::Word<F>,
+    // slice_hi means the higher part of split digit
+    // slice_lo means the lower part of the split digit
     a_slice_hi: [Cell<F>; 32],
     a_slice_lo: [Cell<F>; 32],
+    // shift_div64, shift_mod64_div8, shift_mod8
+    // is used to seperate shift[0]
     shift_div64: Cell<F>,
     shift_mod64_div8: Cell<F>,
-    shift_mod8: Cell<F>,
     shift_mod64_decpow: Cell<F>, // means 2^(8-shift_mod64)
     shift_mod64_pow: Cell<F>,    // means 2^shift_mod64
+    shift_mod8: Cell<F>,
+    // is_zero will check combination of shift[1..32] == 0
     is_zero: IsZeroGadget<F>,
 }
 impl<F: Field> ShrWordsGadget<F> {
@@ -838,9 +843,12 @@ impl<F: Field> ShrWordsGadget<F> {
         let shift_mod64_pow = cb.query_cell();
         let shift_mod8 = cb.query_cell();
 
+        // check (combination of shift[1..32] == 0) == 1 - shift_overflow
         let mut sum = 0.expr();
         (1..32).for_each(|idx| sum = sum.clone() + shift.cells[idx].expr());
         let is_zero = IsZeroGadget::construct(cb, sum);
+        // if combination of shift[1..32] == 0
+        // shift_overflow will be equal to 0, otherwise 1.
         let shift_overflow = 1.expr() - is_zero.expr();
         cb.require_equal(
             "shift_overflow == shift > 256 ",
@@ -875,6 +883,8 @@ impl<F: Field> ShrWordsGadget<F> {
             b_digits.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
         }
 
+        // check combination of a_slice_back_digits and a_slice_front_digits
+        // == b_digits
         let mut shr_constraints = (0..4).map(|_| 0.expr()).collect::<Vec<Expression<F>>>();
         for transplacement in (0_usize)..(4_usize) {
             // generate the polynomial depends on the shift_div64

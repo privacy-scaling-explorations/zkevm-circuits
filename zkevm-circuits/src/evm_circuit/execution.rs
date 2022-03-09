@@ -528,6 +528,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::CALLDATACOPY => {
                 assign_exec_step!(self.calldatacopy_gadget)
             }
