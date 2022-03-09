@@ -283,6 +283,28 @@ pub enum StepAuxiliaryData {
     },
 }
 
+impl From<circuit_input_builder::StepAuxiliaryData> for StepAuxiliaryData {
+    fn from(data: circuit_input_builder::StepAuxiliaryData) -> Self {
+        match data {
+            circuit_input_builder::StepAuxiliaryData::CopyToMemory {
+                src_addr,
+                dst_addr,
+                bytes_left,
+                src_addr_end,
+                from_tx,
+                selectors,
+            } => StepAuxiliaryData::CopyToMemory {
+                src_addr,
+                dst_addr,
+                bytes_left,
+                src_addr_end,
+                from_tx,
+                selectors,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
     /// The index in the Transaction calls
@@ -1117,7 +1139,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
-                    _ => unimplemented!("unimplemented opcode {:?}", step.op),
+                    _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
             circuit_input_builder::ExecState::BeginTx =>  ExecutionState::BeginTx,
@@ -1168,7 +1190,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         state_write_counter: step.swc,
-        aux_data: Default::default(),
+        aux_data: step.aux_data.clone().map(Into::into),
     }
 }
 
