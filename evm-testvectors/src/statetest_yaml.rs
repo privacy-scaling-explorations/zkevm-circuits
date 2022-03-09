@@ -42,16 +42,16 @@ impl Refs {
 }
 
 pub struct YamlStateTestBuilder {
-    lllc: Option<Lllc>,
+    lllc: Lllc,
 }
 
 impl YamlStateTestBuilder {
-    pub fn new(lllc: Option<Lllc>) -> Self {
+    pub fn new(lllc: Lllc) -> Self {
         Self { lllc }
     }
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
-    pub fn from_yaml(&self, source: &str) -> Result<Vec<StateTest>> {
+    pub fn from_yaml(&mut self, source: &str) -> Result<Vec<StateTest>> {
         // get the yaml root element
         let doc = yaml_rust::YamlLoader::load_from_str(source)?
             .into_iter()
@@ -188,7 +188,7 @@ impl YamlStateTestBuilder {
     }
 
     /// parse a vector of address=>(storage,balance,code,nonce) entry
-    fn parse_accounts(&self, yaml: &Yaml) -> Result<HashMap<Address, PartialAccount>> {
+    fn parse_accounts(&mut self, yaml: &Yaml) -> Result<HashMap<Address, PartialAccount>> {
         let mut accounts = HashMap::new();
         for (address, account) in yaml.as_hash().context("parse_hash")?.iter() {
             let acc_storage = &account["storage"];
@@ -337,19 +337,15 @@ impl YamlStateTestBuilder {
     }
 
     // parse entry as code, can be 0x, :raw or { LLL }
-    fn parse_code(&self, yaml: &Yaml) -> Result<Bytes> {
+    fn parse_code(&mut self, yaml: &Yaml) -> Result<Bytes> {
         let tags = Self::decompose_tags(yaml.as_str().context("not an str")?);
 
         if let Some(notag) = tags.get("") {
             if notag.starts_with("0x") {
                 Ok(Bytes::from(hex::decode(&tags[""][2..])?))
             } else if notag.starts_with('{') {
-                if let Some(lllc) = self.lllc.as_ref() {
-                    let code = notag.trim_start_matches('{').trim_end_matches('}').trim();
-                    lllc.compile(code)
-                } else {
-                    bail!("No lllc compiler defined")
-                }
+                let code = notag.trim_start_matches('{').trim_end_matches('}').trim();
+                self.lllc.compile(code)
             } else {
                 bail!("do not know what to do with code");
             }
@@ -539,7 +535,7 @@ arith:
 
     #[test]
     fn test_combinations() -> Result<()> {
-        let tcs = YamlStateTestBuilder::new(None)
+        let tcs = YamlStateTestBuilder::new(Lllc::default())
             .from_yaml(
                 &TEMPLATE
                     .replace("{{ storage }}", "0x01")
@@ -572,7 +568,7 @@ arith:
 
     #[test]
     fn test_parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(None).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &TEMPLATE
                 .replace("{{ storage }}", "0x01")
                 .replace("{{ balance }}", "1000000000000")
@@ -646,7 +642,7 @@ arith:
 
     #[test]
     fn test_result_pass() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(None).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &TEMPLATE
                 .replace("{{ storage }}", "0x01")
                 .replace("{{ balance }}", "1000000000000")
@@ -658,7 +654,7 @@ arith:
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(None).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &TEMPLATE
                 .replace("{{ storage }}", "0x02")
                 .replace("{{ balance }}", "1000000000000")
@@ -679,7 +675,7 @@ arith:
     }
     #[test]
     fn test_result_bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(None).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &TEMPLATE
                 .replace("{{ storage }}", "0x02")
                 .replace("{{ balance }}", "1000000000001")
@@ -700,7 +696,7 @@ arith:
 
     #[test]
     fn test_result_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(None).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &TEMPLATE
                 .replace("{{ storage }}", "0x02")
                 .replace("{{ balance }}", "1000000000000")
@@ -720,7 +716,7 @@ arith:
 
     #[test]
     fn test_result_bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(None).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &TEMPLATE
                 .replace("{{ storage }}", "0x02")
                 .replace("{{ balance }}", "1000000000000")

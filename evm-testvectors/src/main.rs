@@ -10,7 +10,7 @@ use anyhow::{bail, Result};
 /// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
 
 /// # Errors
-fn run_yaml_state_tests(yaml: &str, lllc: Option<Lllc>) -> Result<()> {
+fn run_yaml_state_tests(yaml: &str, lllc: Lllc) -> Result<()> {
     let mut failed = 0;
 
     // generate all combinations of tests specified in the yaml
@@ -36,7 +36,7 @@ fn run_yaml_state_tests(yaml: &str, lllc: Option<Lllc>) -> Result<()> {
 fn main() -> Result<()>{
     run_yaml_state_tests(
         include_str!("../tests/src/GeneralStateTestsFiller/VMTests/vmArithmeticTest/addFiller.yml"),
-        Some(lllc::Lllc::with_docker()), 
+        lllc::Lllc::default().with_docker_lllc().with_default_cache()?, 
     )?;
     Ok(())
 }
