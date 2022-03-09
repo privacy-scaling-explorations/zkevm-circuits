@@ -4,16 +4,15 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ShrWordsGadget,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ShrGadget<F> {
@@ -21,7 +20,7 @@ pub(crate) struct ShrGadget<F> {
     shr_words: ShrWordsGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
+impl<F: Field> ExecutionGadget<F> for ShrGadget<F> {
     const NAME: &'static str = "SHR";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SHR;
@@ -43,12 +42,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -61,13 +55,12 @@ impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
-        _: &Call<F>,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
+        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [shift, a, b] = indices.map(|idx| block.rws[idx].stack_value());
         self.shr_words.assign(region, offset, a, shift, b)
     }
@@ -77,9 +70,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ShrGadget<F> {
 mod test {
     use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
-    use bus_mapping::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
     use rand::Rng;
 
     fn test_ok(opcode: OpcodeId, a: Word, shift: Word) {

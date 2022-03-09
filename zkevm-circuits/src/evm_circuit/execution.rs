@@ -40,13 +40,9 @@ mod mul;
 mod pc;
 mod pop;
 mod push;
-<<<<<<< HEAD
 mod selfbalance;
 mod shr;
 mod signed_comparator;
-=======
-mod shr;
->>>>>>> fixed clippy and fmt
 mod signextend;
 mod sload;
 mod stop;
@@ -76,13 +72,9 @@ use mul::MulGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
-<<<<<<< HEAD
 use selfbalance::SelfbalanceGadget;
 use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
-=======
-use shr::ShrGadget;
->>>>>>> fixed clippy and fmt
 use signextend::SignextendGadget;
 use sload::SloadGadget;
 use stop::StopGadget;
@@ -144,7 +136,6 @@ pub(crate) struct ExecutionConfig<F> {
     timestamp_gadget: TimestampGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sload_gadget: SloadGadget<F>,
-    shr_gadget: ShrGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -271,13 +262,9 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
-<<<<<<< HEAD
             selfbalance_gadget: configure_gadget!(),
             shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
-=======
-            shr_gadget: configure_gadget!(),
->>>>>>> fixed clippy and fmt
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),

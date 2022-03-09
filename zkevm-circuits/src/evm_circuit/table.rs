@@ -99,14 +99,11 @@ impl FixedTableTag {
                                 F::from(opcode.as_u64()),
                                 F::zero(),
                             ]
-                        },
-                    )
-                }),
-            ),
+                        })
+                }))
+            }
             Self::Bitslevel => Box::new((0..9).flat_map(move |level| {
-                (0..(1 << level)).map(move |idx| {
-                    [tag, F::from(level), F::from(idx), F::zero()]
-                })
+                (0..(1 << level)).map(move |idx| [tag, F::from(level), F::from(idx), F::zero()])
             })),
             Self::Pow64 => Box::new((0..64).map(move |idx| {
                 [
