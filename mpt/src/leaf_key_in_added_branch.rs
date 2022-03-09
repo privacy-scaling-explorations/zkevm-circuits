@@ -41,6 +41,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         s_advices: [Column<Advice>; HASH_WIDTH],
         s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
         c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
+        s_modified_node_rlc: Column<Advice>,
+        c_modified_node_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         key_rlc: Column<Advice>,
@@ -112,13 +114,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
+            let is_short =
+                meta.query_advice(c_modified_node_rlc, Rotation::cur());
 
             q_enable * is_short
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
-            let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
+            let is_long =
+                meta.query_advice(s_modified_node_rlc, Rotation::cur());
 
             q_enable * is_long
         };
@@ -198,15 +202,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
-            // Note: previous key_rlc in s_keccak[2] and s_keccak[3] could be queried instead.
+            // Note: previous key_rlc in sel1/sel2 could be queried instead.
             let branch_rlc_mult =
                 meta.query_advice(key_rlc_mult, Rotation(-30));
 
             let mult_diff =
                 meta.query_advice(mult_diff, Rotation(rot_branch_init + 1));
 
-            let is_long = meta.query_advice(s_keccak[0], Rotation::cur());
-            let is_short = meta.query_advice(s_keccak[1], Rotation::cur());
+            let is_long =
+                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+            let is_short =
+                meta.query_advice(c_modified_node_rlc, Rotation::cur());
 
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.

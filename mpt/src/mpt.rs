@@ -104,10 +104,12 @@ pub struct MPTConfig<F> {
     c_advices: [Column<Advice>; HASH_WIDTH],
     s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-    acc_s: Column<Advice>, // for branch s and account leaf
-    acc_mult_s: Column<Advice>, // for branch s and account leaf
-    acc_c: Column<Advice>, // for branch c
-    acc_mult_c: Column<Advice>, // for branch c
+    s_modified_node_rlc: Column<Advice>, // this will replace s_keccak (used also for leaf long/short)
+    c_modified_node_rlc: Column<Advice>, // this will replace c_keccak (used also for leaf long/short)
+    acc_s: Column<Advice>,               // for branch s and account leaf
+    acc_mult_s: Column<Advice>,          // for branch s and account leaf
+    acc_c: Column<Advice>,               // for branch c
+    acc_mult_c: Column<Advice>,          // for branch c
     acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie - but no branch is added or turned into leaf)
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
@@ -222,6 +224,9 @@ impl<F: FieldExt> MPTConfig<F> {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
+
+        let s_modified_node_rlc = meta.advice_column();
+        let c_modified_node_rlc = meta.advice_column();
 
         let acc_s = meta.advice_column();
         let acc_mult_s = meta.advice_column();
@@ -540,7 +545,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp1,
             c_rlp2,
             s_advices,
-            s_keccak,
+            s_modified_node_rlc,
+            c_modified_node_rlc,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -569,7 +575,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp1,
             c_rlp2,
             s_advices,
-            s_keccak,
+            s_modified_node_rlc,
+            c_modified_node_rlc,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -601,6 +608,8 @@ impl<F: FieldExt> MPTConfig<F> {
             s_advices,
             s_keccak,
             c_keccak,
+            s_modified_node_rlc,
+            c_modified_node_rlc,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -783,6 +792,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_advices,
             s_keccak,
             c_keccak,
+            s_modified_node_rlc,
+            c_modified_node_rlc,
             acc_s,
             acc_mult_s,
             acc_c,
@@ -867,15 +878,15 @@ impl<F: FieldExt> MPTConfig<F> {
 
         // because used for is_long
         region.assign_advice(
-            || "assign s_keccak 0".to_string(),
-            self.s_keccak[0],
+            || "assign s_modified_node_rlc".to_string(),
+            self.s_modified_node_rlc,
             offset,
             || Ok(F::zero()),
         )?;
         // because used for is_short
         region.assign_advice(
-            || "assign s_keccak 1".to_string(),
-            self.s_keccak[1],
+            || "assign c_modified_node_rlc".to_string(),
+            self.c_modified_node_rlc,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1987,16 +1998,22 @@ impl<F: FieldExt> MPTConfig<F> {
                                     }
                                     region
                                         .assign_advice(
-                                            || "assign acc_s".to_string(),
-                                            self.s_keccak[0],
+                                            || {
+                                                "assign s_modified_node_rlc"
+                                                    .to_string()
+                                            },
+                                            self.s_modified_node_rlc,
                                             offset,
                                             || Ok(F::from(is_long as u64)),
                                         )
                                         .ok();
                                     region
                                         .assign_advice(
-                                            || "assign acc_c".to_string(),
-                                            self.s_keccak[1],
+                                            || {
+                                                "assign c_modified_node_rlc"
+                                                    .to_string()
+                                            },
+                                            self.c_modified_node_rlc,
                                             offset,
                                             || Ok(F::from(is_short as u64)),
                                         )
