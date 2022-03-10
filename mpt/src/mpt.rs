@@ -106,10 +106,12 @@ pub struct MPTConfig<F> {
     c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
     s_modified_node_rlc: Column<Advice>, // this will replace s_keccak (used also for leaf long/short)
     c_modified_node_rlc: Column<Advice>, // this will replace c_keccak (used also for leaf long/short)
-    acc_s: Column<Advice>,               // for branch s and account leaf
-    acc_mult_s: Column<Advice>,          // for branch s and account leaf
-    acc_c: Column<Advice>,               // for branch c
-    acc_mult_c: Column<Advice>,          // for branch c
+    s_root: Column<Advice>,
+    c_root: Column<Advice>,
+    acc_s: Column<Advice>, // for branch s and account leaf
+    acc_mult_s: Column<Advice>, // for branch s and account leaf
+    acc_c: Column<Advice>, // for branch c
+    acc_mult_c: Column<Advice>, // for branch c
     acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie - but no branch is added or turned into leaf)
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
@@ -227,6 +229,9 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let s_modified_node_rlc = meta.advice_column();
         let c_modified_node_rlc = meta.advice_column();
+
+        let s_root = meta.advice_column();
+        let c_root = meta.advice_column();
 
         let acc_s = meta.advice_column();
         let acc_mult_s = meta.advice_column();
@@ -794,6 +799,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_keccak,
             s_modified_node_rlc,
             c_modified_node_rlc,
+            s_root,
+            c_root,
             acc_s,
             acc_mult_s,
             acc_c,
@@ -1323,6 +1330,36 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.not_first_level,
                             offset,
                             || Ok(not_first_level),
+                        )?;
+
+                        let mut s_root_rlc = F::zero();
+                        let mut c_root_rlc = F::zero();
+                        let l = row.len();
+                        let mut mult = F::one();
+                        for i in 0..HASH_WIDTH {
+                            s_root_rlc +=
+                                F::from(row[l - 2 * HASH_WIDTH + i] as u64)
+                                    * mult.clone();
+                            mult *= self.acc_r;
+                        }
+                        let mut mult = F::one();
+                        for i in 0..HASH_WIDTH {
+                            c_root_rlc +=
+                                F::from(row[l - HASH_WIDTH + i] as u64)
+                                    * mult.clone();
+                            mult *= self.acc_r;
+                        }
+                        region.assign_advice(
+                            || "assign s_root",
+                            self.s_root,
+                            offset,
+                            || Ok(s_root_rlc),
+                        )?;
+                        region.assign_advice(
+                            || "assign c_root",
+                            self.c_root,
+                            offset,
+                            || Ok(c_root_rlc),
                         )?;
 
                         if row[row.len() - 1] == 0 {
