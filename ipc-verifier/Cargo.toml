@@ -5,3 +5,6 @@ authors = [ "Jules de Smit <julesdesmit@gmail.com>" ]
 edition = "2021"
 
 [dependencies]
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_03_06" }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
+zkevm-circuits = { path = "../zkevm-circuits" }
