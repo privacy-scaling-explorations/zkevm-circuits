@@ -1254,8 +1254,6 @@ impl<F: FieldExt> MPTConfig<F> {
         &self,
         mut layouter: impl Layouter<F>,
         witness: &[Vec<u8>],
-        account_key_rlc: u64, // to be removed when integrated with state circuit
-        storage_key_rlc: u64, // to be removed when integrated with state circuit
     ) {
         layouter
             .assign_region(
@@ -2173,18 +2171,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(key_rlc_mult_prev),
                                 )?;
-
-                                if (!is_branch_s_placeholder
-                                    && row[row.len() - 1] == 2)
-                                    || (!is_branch_c_placeholder
-                                        && row[row.len() - 1] == 3)
-                                {
-                                    // TODO: remove once integrated with state circuit
-                                    assert_eq!(
-                                        F::from(storage_key_rlc as u64),
-                                        key_rlc_new,
-                                    );
-                                }
                             }
 
                             if row[row.len() - 1] == 13
@@ -2241,12 +2227,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(key_rlc_new),
                                 )?;
-
-                                // TODO: remove once integrated with state circuit
-                                assert_eq!(
-                                    F::from(account_key_rlc as u64),
-                                    key_rlc_new,
-                                );
                             } else if row[row.len() - 1] == 7 {
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
@@ -2688,8 +2668,6 @@ mod tests {
         struct MyCircuit<F> {
             _marker: PhantomData<F>,
             witness: Vec<Vec<u8>>,
-            account_key_rlc: u64, // for testing purposes only
-            storage_key_rlc: u64, // for testing purposes only
         }
 
         impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
@@ -2719,13 +2697,7 @@ mod tests {
                 }
 
                 config.load(&mut layouter, to_be_hashed)?;
-                // account_key_rlc and storage_key_rlc to be removed once integrated with state circuit
-                config.assign(
-                    layouter,
-                    &self.witness,
-                    self.account_key_rlc,
-                    self.storage_key_rlc,
-                );
+                config.assign(layouter, &self.witness);
 
                 Ok(())
             }
@@ -2748,24 +2720,12 @@ mod tests {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split("-");
                 parts.next();
-                let account_key_rlc =
-                    parts.next().unwrap().parse::<u64>().unwrap();
-                let storage_key_rlc = parts
-                    .next()
-                    .unwrap()
-                    .split(".")
-                    .next()
-                    .unwrap()
-                    .parse::<u64>()
-                    .unwrap();
                 let file = std::fs::File::open(path);
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
                 let circuit = MyCircuit::<Fp> {
                     _marker: PhantomData,
                     witness: w,
-                    account_key_rlc,
-                    storage_key_rlc,
                 };
 
                 let prover =
