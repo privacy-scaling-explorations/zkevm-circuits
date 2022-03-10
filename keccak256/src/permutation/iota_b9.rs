@@ -1,7 +1,7 @@
 use crate::arith_helpers::*;
 use crate::common::*;
+use crate::gate_helpers::biguint_to_f;
 use crate::keccak_arith::*;
-use crate::permutation::gate_helpers::biguint_to_f;
 use eth_types::Field;
 use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::circuit::Layouter;

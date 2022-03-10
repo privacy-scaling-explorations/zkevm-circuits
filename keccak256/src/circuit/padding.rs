@@ -6,8 +6,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use std::convert::TryInto;
 
 pub type Byte = u8;
 pub type AssignedByte<F> = AssignedCell<F, F>;
@@ -41,7 +40,7 @@ impl<F: Field> WordBuilderConfig<F> {
                 let q_enable = meta.query_selector(q_enable);
 
                 vec![(
-                    q_enable.clone() * meta.query_advice(byte, Rotation::cur()),
+                    q_enable * meta.query_advice(byte, Rotation::cur()),
                     byte_table.range,
                 )]
             });

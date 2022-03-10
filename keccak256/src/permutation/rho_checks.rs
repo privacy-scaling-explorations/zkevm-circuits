@@ -106,8 +106,8 @@
 //! detector 170 and fail the final sum check.
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
+use crate::gate_helpers::{biguint_to_f, f_to_biguint};
 use crate::permutation::{
-    gate_helpers::*,
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };

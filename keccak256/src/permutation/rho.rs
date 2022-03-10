@@ -120,8 +120,8 @@ mod tests {
     use super::*;
     use crate::arith_helpers::*;
     use crate::common::*;
+    use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
-    use crate::permutation::gate_helpers::*;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};

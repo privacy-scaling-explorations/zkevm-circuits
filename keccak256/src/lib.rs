@@ -4,6 +4,7 @@
 pub mod arith_helpers;
 pub mod circuit;
 pub mod common;
+pub mod gate_helpers;
 pub mod permutation;
 // We build arith module to get test cases for the circuit
 pub mod keccak_arith;
