@@ -33,6 +33,7 @@ pub struct BytecodeTestConfig {
     pub enable_state_circuit_test: bool,
     pub is_root_call: bool,
     pub call_data_length: usize,
+    pub call_data_offset: u64,
     pub gas_limit: u64,
     pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
 }
@@ -44,6 +45,7 @@ impl Default for BytecodeTestConfig {
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
             call_data_length: 0,
+            call_data_offset: 0,
             gas_limit: 1_000_000u64,
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
         }
@@ -55,6 +57,7 @@ impl From<&BytecodeTestConfig> for bus_mapping::circuit_input_builder::Transacti
         Self {
             is_root_call: config.is_root_call,
             call_data_length: config.call_data_length,
+            call_data_offset: config.call_data_offset,
         }
     }
 }
@@ -78,6 +81,8 @@ pub fn test_circuits_using_bytecode(
 
     // build a witness block from trace result
     let block = crate::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
+
+    println!("zkevm - 1 - {block:?}");
 
     // finish required tests according to config using this witness block
     test_circuits_using_witness_block(block, config)

@@ -688,6 +688,8 @@ pub struct TransactionConfig {
     pub is_root_call: bool,
     /// Initialized length of call data
     pub call_data_length: usize,
+    /// Initialized offset of call data
+    pub call_data_offset: u64,
 }
 
 impl Default for TransactionConfig {
@@ -695,6 +697,7 @@ impl Default for TransactionConfig {
         Self {
             is_root_call: true,
             call_data_length: 0,
+            call_data_offset: 0,
         }
     }
 }
