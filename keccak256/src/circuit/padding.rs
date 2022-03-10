@@ -1,3 +1,5 @@
+// Added until this is used by another component
+#![allow(dead_code)]
 use super::BYTES_PER_WORD;
 use crate::permutation::tables::RangeCheckConfig;
 use eth_types::Field;
