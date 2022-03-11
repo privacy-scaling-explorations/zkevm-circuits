@@ -1,3 +1,4 @@
+mod code_cache;
 mod exec;
 mod lllc;
 mod statetest;
@@ -19,6 +20,7 @@ fn run_yaml_state_tests(yaml: &str, lllc: Lllc) -> Result<()> {
     // for each test
     for tc in tcs {
         let id = tc.id.to_string();
+
         if let Some(err) = tc.run().err() {
             log::error!(target: "vmvectests", "FAILED test {} : {}",id, err);
             failed += 1;
@@ -33,10 +35,14 @@ fn run_yaml_state_tests(yaml: &str, lllc: Lllc) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()>{
+fn main() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     run_yaml_state_tests(
         include_str!("../tests/src/GeneralStateTestsFiller/VMTests/vmArithmeticTest/addFiller.yml"),
-        lllc::Lllc::default().with_docker_lllc().with_default_cache()?, 
+        lllc::Lllc::default()
+            .with_docker_lllc()
+            .with_default_cache()?,
     )?;
     Ok(())
 }
