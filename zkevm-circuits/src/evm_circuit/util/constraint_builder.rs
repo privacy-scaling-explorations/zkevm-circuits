@@ -72,7 +72,7 @@ pub struct BaseConstraintBuilder<F> {
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {
-    fn new(max_degree: usize) -> Self {
+    pub(crate) fn new(max_degree: usize) -> Self {
         BaseConstraintBuilder {
             constraints: Vec::new(),
             max_degree,
@@ -583,7 +583,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         counter: Expression<F>,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 7],
+        values: [Expression<F>; 8],
     ) {
         self.add_lookup(
             name,
@@ -603,7 +603,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         name: &'static str,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 7],
+        values: [Expression<F>; 8],
     ) {
         self.rw_lookup_with_counter(
             name,
@@ -620,7 +620,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         name: &'static str,
         tag: RwTableTag,
-        mut values: [Expression<F>; 7],
+        mut values: [Expression<F>; 8],
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) {
@@ -634,7 +634,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
             // Swap value and value_prev respect to tag
             if tag.is_reversible() {
-                values.swap(3, 4)
+                values.swap(4, 5)
             };
 
             cb.rw_lookup_with_counter(
@@ -666,6 +666,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 tx_id,
                 account_address,
                 0.expr(),
+                0.expr(),
                 value.clone(),
                 value_prev.clone(),
                 0.expr(),
@@ -693,6 +694,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 tx_id,
                 account_address,
+                0.expr(),
                 key,
                 value,
                 value_prev,
@@ -717,6 +719,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             false.expr(),
             RwTableTag::Account,
             [
+                0.expr(),
                 account_address,
                 field_tag.expr(),
                 0.expr(),
@@ -740,6 +743,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             true.expr(),
             RwTableTag::Account,
             [
+                0.expr(),
                 account_address,
                 field_tag.expr(),
                 0.expr(),
@@ -764,6 +768,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "Account write with reversion",
             RwTableTag::Account,
             [
+                0.expr(),
                 account_address,
                 field_tag.expr(),
                 0.expr(),
@@ -792,9 +797,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             false.expr(),
             RwTableTag::AccountStorage,
             [
-                account_address,
-                key,
                 0.expr(),
+                account_address,
+                0.expr(),
+                key,
                 value.clone(),
                 value,
                 tx_id,
@@ -828,6 +834,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::CallContext,
             [
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
                 field_tag.expr(),
                 0.expr(),
                 value,
@@ -862,6 +869,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Stack,
             [
                 self.curr.state.call_id.expr(),
+                0.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
                 0.expr(),
                 value,
@@ -886,6 +894,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Memory,
             [
                 self.curr.state.call_id.expr(),
+                0.expr(),
                 memory_address,
                 0.expr(),
                 byte,
@@ -910,6 +919,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Memory,
             [
                 self.curr.state.call_id.expr(),
+                0.expr(),
                 memory_address,
                 0.expr(),
                 byte,

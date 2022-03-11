@@ -106,12 +106,10 @@ async fn main() {
             Fr,
             true,
             GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
-        >::new_from_rw_map(block.randomness, &block.rws);
+            GLOBAL_COUNTER_MAX,
+        >::new(block.randomness, &block.rws);
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");
