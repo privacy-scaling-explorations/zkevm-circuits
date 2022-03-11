@@ -129,8 +129,8 @@ pub enum BlockContextFieldTag {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RwTableTag {
-    Stack = 2,
-    Memory,
+    Memory = 2,
+    Stack,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -242,7 +242,7 @@ pub(crate) enum Lookup<F> {
         /// all tags.
         tag: Expression<F>,
         /// Values corresponding to the tag.
-        values: [Expression<F>; 7],
+        values: [Expression<F>; 8],
     },
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.

@@ -85,10 +85,7 @@ pub fn test_circuits_using_witness_block(
     // circuit must be same
     if config.enable_state_circuit_test {
         let state_circuit =
-            StateCircuit::<Fr, true, 2000, 100, 100, 100, 1023, 100>::new_from_rw_map(
-                block.randomness,
-                &block.rws,
-            );
+            StateCircuit::<Fr, true, 2000, 100, 1023, 2000>::new(block.randomness, &block.rws);
         let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
         prover.verify()?;
     }
