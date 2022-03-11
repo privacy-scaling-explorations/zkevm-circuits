@@ -37,6 +37,7 @@ mod memory;
 mod memory_copy;
 mod msize;
 mod mul;
+mod number;
 mod pc;
 mod pop;
 mod push;
@@ -68,6 +69,7 @@ use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
+use number::NumberGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -132,6 +134,7 @@ pub(crate) struct ExecutionConfig<F> {
     coinbase_gadget: CoinbaseGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    number_gadget: NumberGadget<F>,
     sload_gadget: SloadGadget<F>,
 }
 
@@ -267,6 +270,7 @@ impl<F: Field> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
+            number_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
@@ -521,6 +525,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::TIMESTAMP => {
                 assign_exec_step!(self.timestamp_gadget)
+            }
+            ExecutionState::NUMBER => {
+                assign_exec_step!(self.number_gadget)
             }
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),

@@ -65,10 +65,7 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.number.to_le_bytes(),
-                        randomness,
-                    ),
+                    self.number.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Timestamp as u64),
@@ -1059,6 +1056,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
             OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
+            OpcodeId::NUMBER => ExecutionState::NUMBER,
             OpcodeId::GAS => ExecutionState::GAS,
             OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
             OpcodeId::SLOAD => ExecutionState::SLOAD,
