@@ -84,17 +84,14 @@ impl<F: Field> ExecutionGadget<F> for NumberGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::bytecode;
-
-    fn test_ok() {
+    
+    #[test]
+    fn number_gadget_test() {
         let bytecode = bytecode! {
             #[start]
             NUMBER
             STOP
         };
         assert_eq!(run_test_circuits(bytecode), Ok(()));
-    }
-    #[test]
-    fn number_gadget_test() {
-        test_ok();
     }
 }
