@@ -589,8 +589,8 @@ impl Transaction {
         sdb: &StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
-        config: TransactionConfig,
         is_success: bool,
+        call_data: Option<&[u8]>,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -638,10 +638,10 @@ impl Transaction {
             }
         };
 
-        let mut input = eth_tx.input.to_vec();
-        if input.len() < config.call_data_length {
-            input.resize(config.call_data_length, 0);
-        }
+        let input = match call_data {
+            Some(data) => data.to_vec(),
+            None => eth_tx.input.to_vec(),
+        };
 
         Ok(Self {
             nonce: eth_tx.nonce.as_u64(),
@@ -1354,8 +1354,8 @@ impl<'a> CircuitInputBuilder {
     pub fn new_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,
-        config: TransactionConfig,
         is_success: bool,
+        call_data: Option<&[u8]>,
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
 
@@ -1375,8 +1375,8 @@ impl<'a> CircuitInputBuilder {
             &self.sdb,
             &mut self.code_db,
             eth_tx,
-            config,
             is_success,
+            call_data,
         )
     }
 

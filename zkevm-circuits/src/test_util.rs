@@ -31,33 +31,19 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
 pub struct BytecodeTestConfig {
     pub enable_evm_circuit_test: bool,
     pub enable_state_circuit_test: bool,
-    pub is_root_call: bool,
-    pub call_data_length: usize,
-    pub call_data_offset: u64,
     pub gas_limit: u64,
     pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
+    pub call_data: Option<Vec<u8>>,
 }
 
 impl Default for BytecodeTestConfig {
     fn default() -> Self {
         Self {
-            is_root_call: true,
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
-            call_data_length: 0,
-            call_data_offset: 0,
             gas_limit: 1_000_000u64,
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
-        }
-    }
-}
-
-impl From<&BytecodeTestConfig> for bus_mapping::circuit_input_builder::TransactionConfig {
-    fn from(config: &BytecodeTestConfig) -> Self {
-        Self {
-            is_root_call: config.is_root_call,
-            call_data_length: config.call_data_length,
-            call_data_offset: config.call_data_offset,
+            call_data: None,
         }
     }
 }

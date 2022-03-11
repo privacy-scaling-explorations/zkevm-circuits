@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep, StepAuxiliaryData};
 use crate::operation::{CallContextField, CallContextOp, RWCounter, RW};
 use crate::Error;
-use eth_types::evm_types::{Gas, GasCost, ProgramCounter};
+use eth_types::evm_types::ProgramCounter;
 use eth_types::GethExecStep;
 use std::collections::HashMap;
 
@@ -47,27 +47,14 @@ impl Opcode for Calldatacopy {
             },
         );
 
-        let (memory_word_size, gas_cost) = if state.call().is_root {
-            let next_memory_word_size = if length.is_zero() {
-                0
-            } else {
-                (memory_offset.as_u64() + length.as_u64() + 31) / 32
-            };
-
-            let gas_cost = GasCost::FASTEST.as_u64()
-                + calc_memory_copier_gas_cost(0, next_memory_word_size, length.as_u64());
-
-            (next_memory_word_size, gas_cost)
-        } else {
-            let call_data_length = state.call().call_data_length.into();
-            let call_data_offset = state.call().call_data_offset.into();
+        if !state.call().is_root {
             state.push_op(
                 exec_step,
                 RW::READ,
                 CallContextOp {
                     call_id: state.call().call_id,
                     field: CallContextField::CallDataLength,
-                    value: call_data_length,
+                    value: state.call().call_data_length.into(),
                 },
             );
             state.push_op(
@@ -76,34 +63,10 @@ impl Opcode for Calldatacopy {
                 CallContextOp {
                     call_id: state.call().call_id,
                     field: CallContextField::CallDataOffset,
-                    value: call_data_offset,
+                    value: state.call().call_data_offset.into(),
                 },
             );
-
-            let curr_memory_word_size =
-                (call_data_offset.as_u64() + call_data_length.as_u64() + 31) / 32;
-            let next_memory_word_size = if length.is_zero() {
-                curr_memory_word_size
-            } else {
-                std::cmp::max(
-                    curr_memory_word_size,
-                    (memory_offset.as_u64() + length.as_u64() + 31) / 32,
-                )
-            };
-
-            let gas_cost = GasCost::FASTEST.as_u64()
-                + calc_memory_copier_gas_cost(
-                    curr_memory_word_size,
-                    next_memory_word_size,
-                    length.as_u64(),
-                );
-
-            (curr_memory_word_size, gas_cost)
         };
-
-        // Should we set `gas_cost` and `memory_size` here?
-        exec_step.gas_cost = GasCost(gas_cost);
-        exec_step.memory_size = (memory_word_size * 32) as usize;
 
         println!("bus-mapping - 2 - {exec_step:?}");
 
@@ -130,27 +93,6 @@ impl Opcode for Calldatacopy {
     }
 }
 
-fn calc_memory_expension_gas_cost(curr_memory_word_size: u64, next_memory_word_size: u64) -> u64 {
-    if next_memory_word_size <= curr_memory_word_size {
-        0
-    } else {
-        let total_cost = |mem_word_size| {
-            mem_word_size * GasCost::MEMORY.as_u64() + mem_word_size * mem_word_size / 512
-        };
-        total_cost(next_memory_word_size) - total_cost(curr_memory_word_size)
-    }
-}
-
-fn calc_memory_copier_gas_cost(
-    curr_memory_word_size: u64,
-    next_memory_word_size: u64,
-    num_copy_bytes: u64,
-) -> u64 {
-    let num_words = (num_copy_bytes + 31) / 32;
-    num_words * GasCost::COPY.as_u64()
-        + calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size)
-}
-
 fn gen_memory_copy_step(
     state: &mut CircuitInputStateRef,
     last_step: &ExecStep,
@@ -166,8 +108,6 @@ fn gen_memory_copy_step(
     step.rwc = RWCounter(step.rwc.0 + step.bus_mapping_instance.len());
     step.bus_mapping_instance = Vec::new();
     step.exec_state = ExecState::CopyToMemory;
-    step.gas_left = Gas(step.gas_left.0 - step.gas_cost.0);
-    step.gas_cost = GasCost(0);
     step.pc = ProgramCounter(step.pc.0 + 1);
     step.stack_size = 0;
     step.memory_size = memory_size;
