@@ -183,7 +183,7 @@ impl<
         let q_not_all_keys_same = |meta: &mut VirtualCells<F>| one.clone() - q_all_keys_same(meta);
 
         ///////////////////////// General constraints /////////////////////////////////
-
+        // Constraints that affect all rows, no matter which Tag they use
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
@@ -192,8 +192,27 @@ impl<
             let value_cur = meta.query_advice(value, Rotation::cur());
             let value_prev = meta.query_advice(value, Rotation::prev());
 
+            // TODO: 0. key0, key1, key3 are in the expected range
+
+            // TODO: 1. key2 is linear combination of 10 x 16bit limbs and also in range
+
+            // TODO: 2. key4 is RLC encoded
+
             // 3. is_write is boolean
             cb.require_boolean("is_write should be boolean", is_write);
+
+            // 4. Keys are sorted in lexicographic order for same Tag
+            //
+            // This check also ensures that Tag monotonically increases for all values
+            // except for Start
+            //
+            // When in two consecutive rows the keys are equal in a column:
+            // - The corresponding keys in the following column must be increasing.
+            //
+            // key4 is RLC encoded, so it doesn't keep the order.  We use the key4 bytes
+            // decomposition instead.  Since we will use a chain of comparison gadgets,
+            // we try to merge multiple keys together to reduce the number of required
+            // gadgets.
 
             // 6. Read consistency
             // When a row is READ
@@ -262,6 +281,8 @@ impl<
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
+            // s_enable is omitted here deliberately, since `memory_address_table_zero` will
+            // contain '0', and 'q_memory * address_cur' on unused rows will be 0 too.
             vec![(q_memory * address_cur, memory_address_table_zero)]
         });
 
@@ -469,7 +490,11 @@ impl<
         layouter.assign_region(
             || "State operations",
             |mut region| {
+                // TODO: a "START_TAG" row should be inserted before all other rows in the final
+                // implmentation. Here we start from 1 to prevent some
+                // col.prev() problems since blinding rows are unavailable for constaints.
                 let mut offset = 1;
+
                 let mut rows: Vec<RwRow<F>> = [
                     RwTableTag::Memory,
                     RwTableTag::Stack,
@@ -567,6 +592,9 @@ impl<
             )?;
             diff_is_zero_chip.assign(region, offset, Some(diff))?;
         }
+
+        region.assign_advice(|| "aux1", self.auxs[0], offset, || Ok(row.aux1))?;
+        region.assign_advice(|| "aux2", self.auxs[1], offset, || Ok(row.aux2))?;
 
         Ok(())
     }
