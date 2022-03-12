@@ -16,6 +16,7 @@ mod jumpi;
 mod mload;
 mod msize;
 mod mstore;
+mod number;
 mod pc;
 mod pop;
 mod push;
@@ -121,7 +122,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::BLOCKHASH => {},
         OpcodeId::COINBASE => StackOnlyOpcode::<0>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0>::gen_associated_ops,
-        // OpcodeId::NUMBER => {},
+        OpcodeId::NUMBER => StackOnlyOpcode::<0>::gen_associated_ops,
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
         // OpcodeId::CHAINID => {},

@@ -65,10 +65,7 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.number.to_le_bytes(),
-                        randomness,
-                    ),
+                    self.number.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Timestamp as u64),
@@ -483,6 +480,8 @@ pub enum Rw {
         storage_key: Word,
         value: Word,
         value_prev: Word,
+        tx_id: usize,
+        committed_value: Word,
     },
     AccountDestructed {
         rw_counter: usize,
@@ -514,11 +513,12 @@ pub enum Rw {
         byte: u8,
     },
 }
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
     pub rw_counter: F,
     pub is_write: F,
     pub tag: F,
+    pub key1: F,
     pub key2: F,
     pub key3: F,
     pub key4: F,
@@ -528,19 +528,20 @@ pub struct RwRow<F: FieldExt> {
     pub aux2: F,
 }
 
-impl<F: FieldExt> From<[F; 10]> for RwRow<F> {
-    fn from(row: [F; 10]) -> Self {
+impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
+    fn from(row: [F; 11]) -> Self {
         Self {
             rw_counter: row[0],
             is_write: row[1],
             tag: row[2],
-            key2: row[3],
-            key3: row[4],
-            key4: row[5],
-            value: row[6],
-            value_prev: row[7],
-            aux1: row[8],
-            aux2: row[9],
+            key1: row[3],
+            key2: row[4],
+            key3: row[5],
+            key4: row[6],
+            value: row[7],
+            value_prev: row[8],
+            aux1: row[9],
+            aux2: row[10],
         }
     }
 }
@@ -563,6 +564,17 @@ impl Rw {
             Self::Account {
                 value, value_prev, ..
             } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn aux_pair(&self) -> (usize, Word) {
+        match self {
+            Self::AccountStorage {
+                tx_id,
+                committed_value,
+                ..
+            } => (*tx_id, *committed_value),
             _ => unreachable!(),
         }
     }
@@ -604,6 +616,7 @@ impl Rw {
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
                 F::zero(),
+                F::zero(),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
                 F::zero(),
@@ -621,9 +634,10 @@ impl Rw {
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
-                F::from(RwTableTag::TxAccessListAccount as u64),
+                F::from(RwTableTag::TxAccessListAccountStorage as u64),
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(
                     storage_key.to_le_bytes(),
                     randomness,
@@ -653,6 +667,7 @@ impl Rw {
                     F::from(*rw_counter as u64),
                     F::from(*is_write as u64),
                     F::from(RwTableTag::Account as u64),
+                    F::zero(),
                     account_address.to_scalar().unwrap(),
                     F::from(*field_tag as u64),
                     F::zero(),
@@ -674,6 +689,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::CallContext as u64),
                 F::from(*call_id as u64),
+                F::zero(),
                 F::from(*field_tag as u64),
                 F::zero(),
                 match field_tag {
@@ -702,6 +718,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::Stack as u64),
                 F::from(*call_id as u64),
+                F::zero(),
                 F::from(*stack_pointer as u64),
                 F::zero(),
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
@@ -721,6 +738,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::Memory as u64),
                 F::from(*call_id as u64),
+                F::zero(),
                 F::from(*memory_address),
                 F::zero(),
                 F::from(*byte as u64),
@@ -736,23 +754,29 @@ impl Rw {
                 storage_key,
                 value,
                 value_prev,
+                tx_id,
+                committed_value,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
                 F::from(RwTableTag::AccountStorage as u64),
+                F::zero(),
                 account_address.to_scalar().unwrap(),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(
                     storage_key.to_le_bytes(),
                     randomness,
                 ),
-                F::zero(),
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
                 RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
                     randomness,
                 ),
-                F::zero(), // TODO: txid
-                F::zero(), // TODO: committed_value
+                F::from(*tx_id as u64),
+                RandomLinearCombination::random_linear_combine(
+                    committed_value.to_le_bytes(),
+                    randomness,
+                ),
             ]
             .into(),
             _ => unimplemented!(),
@@ -854,6 +878,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     storage_key: op.op().key,
                     value: op.op().value,
                     value_prev: op.op().value_prev,
+                    tx_id: op.op().tx_id,
+                    committed_value: op.op().committed_value,
                 })
                 .collect(),
         );
@@ -1030,8 +1056,10 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
             OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
+            OpcodeId::NUMBER => ExecutionState::NUMBER,
             OpcodeId::GAS => ExecutionState::GAS,
             OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+            OpcodeId::SLOAD => ExecutionState::SLOAD,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
