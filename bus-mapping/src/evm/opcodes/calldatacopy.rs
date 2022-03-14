@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep, StepAuxiliaryData};
 use crate::operation::{CallContextField, CallContextOp, RWCounter, RW};
 use crate::Error;
-use eth_types::evm_types::ProgramCounter;
+use eth_types::evm_types::{Gas, GasCost, ProgramCounter};
 use eth_types::GethExecStep;
 use std::collections::HashMap;
 
@@ -68,8 +68,6 @@ impl Opcode for Calldatacopy {
             );
         };
 
-        println!("bus-mapping - 2 - {exec_step:?}");
-
         Ok(())
     }
 
@@ -104,13 +102,20 @@ fn gen_memory_copy_step(
     from_tx: bool,
     bytes_map: &HashMap<u64, u8>,
 ) -> ExecStep {
-    let mut step = last_step.clone();
-    step.rwc = RWCounter(step.rwc.0 + step.bus_mapping_instance.len());
-    step.bus_mapping_instance = Vec::new();
-    step.exec_state = ExecState::CopyToMemory;
-    step.pc = ProgramCounter(step.pc.0 + 1);
-    step.stack_size = 0;
-    step.memory_size = memory_size;
+    let mut step = ExecStep {
+        exec_state: ExecState::CopyToMemory,
+        pc: ProgramCounter(last_step.pc.0 + 1),
+        stack_size: 0,
+        memory_size,
+        gas_left: Gas(last_step.gas_left.0 - last_step.gas_cost.0),
+        gas_cost: GasCost(0),
+        call_index: last_step.call_index,
+        rwc: RWCounter(last_step.rwc.0 + last_step.bus_mapping_instance.len()),
+        swc: last_step.swc,
+        bus_mapping_instance: vec![],
+        error: None,
+        aux_data: None,
+    };
 
     let mut selectors = vec![0u8; MAX_COPY_BYTES];
     for (idx, selector) in selectors.iter_mut().enumerate() {
@@ -134,6 +139,7 @@ fn gen_memory_copy_step(
             state.push_memory_op(&mut step, RW::WRITE, (idx + dst_addr as usize).into(), byte);
         }
     }
+
     step.aux_data = Some(StepAuxiliaryData::CopyToMemory {
         src_addr,
         dst_addr,
@@ -142,6 +148,7 @@ fn gen_memory_copy_step(
         from_tx,
         selectors,
     });
+
     step
 }
 
@@ -155,19 +162,17 @@ fn gen_memory_copy_steps(
     let length = next_steps[0].stack.nth_last(2)?.as_usize();
 
     let is_root = state.call().is_root;
+    let call_data_length = state.call().call_data_length;
     let (src_addr, buffer_addr, buffer_addr_end) = if is_root {
-        (data_offset, 0, 0 + state.tx.input.len() as u64)
+        (data_offset, 0, call_data_length)
     } else {
         let call_data_offset = state.call().call_data_offset;
-
         (
             call_data_offset + data_offset,
             call_data_offset,
-            call_data_offset + state.tx.input.len() as u64,
+            call_data_offset + call_data_length,
         )
     };
-
-    let buffer: Vec<u8> = vec![0; (buffer_addr_end - buffer_addr) as usize];
 
     let memory_size = if length == 0 {
         0
@@ -175,6 +180,7 @@ fn gen_memory_copy_steps(
         (memory_offset + length as u64 + 31) / 32 * 32
     };
 
+    let buffer: Vec<u8> = vec![0; (buffer_addr_end - buffer_addr) as usize];
     let bytes_map = (buffer_addr..buffer_addr_end)
         .zip(buffer.iter().copied())
         .collect();
@@ -182,9 +188,8 @@ fn gen_memory_copy_steps(
     let mut copied = 0;
     let mut steps = vec![];
     let mut last_step = call_data_copy_step;
-
     while copied < length {
-        steps.push(gen_memory_copy_step(
+        let step = gen_memory_copy_step(
             state,
             last_step,
             src_addr + copied as u64,
@@ -194,10 +199,115 @@ fn gen_memory_copy_steps(
             memory_size as usize,
             is_root,
             &bytes_map,
-        ));
+        );
+        steps.push(step);
         last_step = steps.last().unwrap();
         copied += MAX_COPY_BYTES;
     }
 
     Ok(steps)
+}
+
+#[cfg(test)]
+mod calldatacopy_tests {
+    use crate::{
+        circuit_input_builder::{ExecStep, TransactionContext},
+        mock::BlockData,
+        operation::{CallContextField, CallContextOp, RW},
+        Error,
+    };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::{bytecode, Word};
+    use mock::new_single_tx_trace_code_at_start;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn calldatacopy_opcode_impl() -> Result<(), Error> {
+        // Set length to zero for only testing CallDataCopy (without CopyToMemory
+        // steps).
+        let length = Word::from(0);
+        let data_offset = Word::from(0);
+        let memory_offset = Word::from(0x40);
+
+        let code = bytecode! {
+            PUSH32(length)
+            PUSH32(data_offset)
+            PUSH32(memory_offset)
+            #[start]
+            CALLDATACOPY
+            STOP
+        };
+
+        // Get the execution steps from the external tracer
+        let block =
+            BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
+
+        let mut builder = block.new_circuit_input_builder();
+        builder
+            .handle_tx(&block.eth_tx, &block.geth_trace, None)
+            .unwrap();
+
+        let mut test_builder = block.new_circuit_input_builder();
+        let mut tx = test_builder
+            .new_tx(&block.eth_tx, !block.geth_trace.failed, None)
+            .unwrap();
+        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
+
+        // Generate step corresponding to CALLDATACOPY
+        let mut step = ExecStep::new(
+            &block.geth_trace.struct_logs[0],
+            0,
+            test_builder.block_ctx.rwc,
+            0,
+        );
+        let mut state = test_builder.state_ref(&mut tx, &mut tx_ctx);
+
+        state.push_stack_op(&mut step, RW::READ, StackAddress::from(1021), memory_offset);
+        state.push_stack_op(&mut step, RW::READ, StackAddress::from(1022), data_offset);
+        state.push_stack_op(&mut step, RW::READ, StackAddress::from(1023), length);
+        state.push_op(
+            &mut step,
+            RW::READ,
+            CallContextOp {
+                call_id: state.call().call_id,
+                field: CallContextField::TxId,
+                value: state.tx_ctx.id().into(),
+            },
+        );
+
+        if !state.call().is_root {
+            state.push_op(
+                &mut step,
+                RW::READ,
+                CallContextOp {
+                    call_id: state.call().call_id,
+                    field: CallContextField::CallDataLength,
+                    value: state.call().call_data_length.into(),
+                },
+            );
+            state.push_op(
+                &mut step,
+                RW::READ,
+                CallContextOp {
+                    call_id: state.call().call_id,
+                    field: CallContextField::CallDataOffset,
+                    value: state.call().call_data_offset.into(),
+                },
+            );
+        };
+
+        tx.steps_mut().push(step);
+        test_builder.block.txs_mut().push(tx);
+
+        // Compare first step bus mapping instance
+        assert_eq!(
+            builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+        );
+
+        // Compare containers
+        assert_eq!(builder.block.container, test_builder.block.container);
+
+        Ok(())
+    }
 }
