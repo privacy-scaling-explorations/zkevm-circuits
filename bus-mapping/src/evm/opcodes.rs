@@ -324,10 +324,11 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         },
     )?;
 
+    #[allow(clippy::if_same_then_else)]
     if call.is_create() {
-        unimplemented!("Creation transaction is not yet implemented")
+        // TODO: Implement creation transaction
     } else if state.is_precompiled(&call.address) {
-        unimplemented!("Call to precompiled is not yet implemented")
+        // TODO: Implement calling to precompiled
     } else {
         state.push_op(
             RW::READ,

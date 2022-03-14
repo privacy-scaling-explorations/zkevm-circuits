@@ -1741,7 +1741,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<AccessSet, Error> {
-        let mut block_access_trace = Vec::new();
+        let mut block_access_trace = vec![Access {
+            step_index: None,
+            rw: RW::WRITE,
+            value: AccessValue::Account {
+                address: eth_block.author,
+            },
+        }];
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
             let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
