@@ -15,6 +15,7 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     match conf {
         FixedTableConfig::Incomplete => {
             vec![
+                FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,
                 FixedTableTag::Range256,
@@ -59,7 +60,7 @@ pub fn test_circuits_using_bytecode(
     );
     let mut builder = block_trace.new_circuit_input_builder();
     builder
-        .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
+        .handle_block(&block_trace.eth_block, &block_trace.geth_traces)
         .unwrap();
 
     // build a witness block from trace result

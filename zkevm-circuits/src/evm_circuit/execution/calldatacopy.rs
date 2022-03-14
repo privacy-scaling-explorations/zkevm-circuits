@@ -18,6 +18,7 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::{circuit::Region, plonk::Error};
@@ -145,15 +146,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
+            gas_left: Delta(
+                -(OpcodeId::CALLDATACOPY.constant_gas_cost().expr() + memory_copier_gas.gas_cost()),
+            ),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            Some(memory_copier_gas.gas_cost()),
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,

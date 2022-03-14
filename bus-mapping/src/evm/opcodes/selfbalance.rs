@@ -14,13 +14,13 @@ impl Opcode for Selfbalance {
     ) -> Result<(), Error> {
         let step = &steps[0];
         let self_balance = steps[1].stack.last()?;
-        let callee_address = state.call().address;
+        let callee_address = state.call()?.address;
 
         // CallContext read of the callee_address
         state.push_op(
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::CalleeAddress,
                 value: callee_address.to_word(),
             },
@@ -42,7 +42,7 @@ impl Opcode for Selfbalance {
             RW::WRITE,
             step.stack.last_filled().map(|a| a - 1),
             self_balance,
-        );
+        )?;
 
         Ok(())
     }
@@ -51,82 +51,78 @@ impl Opcode for Selfbalance {
 #[cfg(test)]
 mod selfbalance_tests {
     use super::*;
-    use crate::circuit_input_builder::{ExecStep, TransactionContext};
-    use eth_types::{bytecode, evm_types::StackAddress, ToWord};
+    use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
+    use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress};
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn selfbalance_opcode_impl() -> Result<(), Error> {
+    fn selfbalance_opcode_impl() {
         let code = bytecode! {
-            #[start]
             SELFBALANCE
             STOP
         };
 
-        let mut geth_data = mock::new_single_tx_trace_code(&code)?;
-        geth_data.geth_trace.struct_logs =
-            geth_data.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
-
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(geth_data);
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to SELFBALANCE
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.op == OpcodeId::SELFBALANCE)
+            .unwrap();
 
-        let callee_address = block.eth_tx.to.unwrap();
-        let self_balance = state_ref.sdb.get_account(&callee_address).1.balance;
+        let call_id = builder.block.txs()[0].calls()[0].call_id;
+        let callee_address = builder.block.txs()[0].to;
+        let self_balance = builder.sdb.get_account(&callee_address).1.balance;
 
-        // CallContext read for callee_address
-        state_ref.push_op(
-            RW::READ,
-            CallContextOp {
-                call_id: state_ref.call().call_id,
-                field: CallContextField::CalleeAddress,
-                value: callee_address.to_word(),
-            },
-        );
-
-        // Account read for balance of callee_address
-        state_ref.push_op(
-            RW::READ,
-            AccountOp {
-                address: callee_address,
-                field: AccountField::Balance,
-                value: self_balance,
-                value_prev: self_balance,
-            },
-        );
-
-        // Add the Stack write
-        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1024 - 1), self_balance);
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            {
+                let operation =
+                    &builder.block.container.call_context[step.bus_mapping_instance[0].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::CalleeAddress,
+                    value: callee_address.to_word(),
+                }
+            )
         );
-
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.account[step.bus_mapping_instance[1].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &AccountOp {
+                    address: callee_address,
+                    field: AccountField::Balance,
+                    value: self_balance,
+                    value_prev: self_balance,
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.stack[step.bus_mapping_instance[2].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::WRITE,
+                &StackOp::new(1, StackAddress::from(1023), self_balance)
+            )
+        );
     }
 }

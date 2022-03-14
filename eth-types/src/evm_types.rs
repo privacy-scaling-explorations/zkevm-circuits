@@ -1,12 +1,13 @@
 //! Evm types needed for parsing instruction sets as well
 
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
 pub mod memory;
 pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-use serde::{Deserialize, Serialize};
-use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
     opcode_ids::OpcodeId,
@@ -59,6 +60,9 @@ impl fmt::Debug for Gas {
         f.write_fmt(format_args!("{}", self.0))
     }
 }
+
+/// Quotient for max refund of gas used
+pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 
 /// Defines the gas consumption.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
