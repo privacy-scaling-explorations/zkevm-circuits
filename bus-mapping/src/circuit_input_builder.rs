@@ -798,7 +798,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Check if address is a precompiled or not.
     pub fn is_precompiled(&self, address: &Address) -> bool {
-        (1..=9).contains(address.as_bytes().last().unwrap())
+        address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
     /// Parse [`Call`] from a *CALL*/CREATE* step.
