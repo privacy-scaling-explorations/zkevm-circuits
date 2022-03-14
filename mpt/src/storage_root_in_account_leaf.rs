@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{get_is_extension_node, into_words_expr},
+    helpers::{get_is_extension_node, hash_expr_into_rlc, into_words_expr},
     param::{
         HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
         KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
@@ -36,6 +36,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         acc_c: Column<Advice>,
         acc_mult_c: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        acc_r: F,
         is_s: bool,
     ) -> StorageRootConfig {
         let config = StorageRootConfig {};
@@ -87,8 +88,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     sc_hash.push(meta.query_advice(*column, Rotation(-17)));
                 }
             }
-            let storage_root_words = into_words_expr(sc_hash);
-
+            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
@@ -98,18 +98,14 @@ impl<F: FieldExt> StorageRootChip<F> {
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, word) in storage_root_words.iter().enumerate() {
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * (one.clone() - is_extension_node.clone())
-                        * is_last_branch_child.clone()
-                        * is_account_leaf_storage_codehash_prev.clone()
-                        * word.clone(),
-                    keccak_table_i,
-                ));
-            }
+            constraints.push((
+                not_first_level.clone()
+                    * (one.clone() - is_extension_node.clone())
+                    * is_last_branch_child.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * hash_rlc,
+                meta.query_fixed(keccak_table[1], Rotation::cur()),
+            ));
 
             constraints
         });
@@ -169,7 +165,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     ));
                 }
             }
-            let storage_root_words = into_words_expr(sc_hash);
+            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
 
             let mut constraints = vec![];
             constraints.push((
@@ -181,19 +177,15 @@ impl<F: FieldExt> StorageRootChip<F> {
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, word) in storage_root_words.iter().enumerate() {
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * is_extension_node.clone()
-                        * is_after_last_branch_child.clone()
-                        * is_account_leaf_storage_codehash_prev.clone()
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * word.clone(),
-                    keccak_table_i,
-                ));
-            }
+            constraints.push((
+                not_first_level.clone()
+                    * is_extension_node.clone()
+                    * is_after_last_branch_child.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * hash_rlc.clone(),
+                meta.query_fixed(keccak_table[1], Rotation::cur()),
+            ));
 
             constraints
         });
@@ -227,7 +219,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                     sc_hash.push(meta.query_advice(*column, Rotation(rot)));
                 }
             }
-            let storage_root_words = into_words_expr(sc_hash);
+            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
 
             let mut constraints = vec![];
             constraints.push((
@@ -237,17 +229,13 @@ impl<F: FieldExt> StorageRootChip<F> {
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, word) in storage_root_words.iter().enumerate() {
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * is_leaf.clone()
-                        * is_account_leaf_storage_codehash_prev.clone()
-                        * word.clone(),
-                    keccak_table_i,
-                ));
-            }
+            constraints.push((
+                not_first_level.clone()
+                    * is_leaf.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * hash_rlc.clone(),
+                meta.query_fixed(keccak_table[1], Rotation::cur()),
+            ));
 
             constraints
         });

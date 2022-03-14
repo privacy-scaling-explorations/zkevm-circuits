@@ -30,7 +30,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+        mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
@@ -48,8 +48,8 @@ impl<F: FieldExt> LeafValueChip<F> {
         // TODO: use r_table
 
         // NOTE: Rotation -6 can be used here (in S and C leaf), because
-        // s_keccak and c_keccak have the same value in all branch rows (thus, the same
-        // value in branch node_index: 13 and branch node_index: 15).
+        // s_mod_node_hash_rlc and c_mod_node_hash_rlc have the same value in all branch rows
+        // (thus, the same value in branch node_index: 13 and branch node_index: 15).
         // The same holds for sel1 and sel2.
         let rot = -6;
         let mut rot_into_init = -20;
@@ -119,19 +119,18 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * (one.clone() - is_branch_placeholder.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                let sc_keccak = meta.query_advice(*column, Rotation(rot));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_enable.clone()
-                        * sc_keccak
-                        * (one.clone() - sel.clone())
-                        * (one.clone() - is_leaf_without_branch.clone())
-                        * (one.clone() - is_branch_placeholder.clone()),
-                    keccak_table_i,
-                ));
-            }
+            let mod_node_hash_rlc_cur =
+                meta.query_advice(mod_node_hash_rlc, Rotation(rot));
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                q_enable.clone()
+                    * mod_node_hash_rlc_cur
+                    * (one.clone() - sel.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_branch_placeholder.clone()),
+                keccak_table_i,
+            ));
 
             constraints
         });
@@ -183,22 +182,20 @@ impl<F: FieldExt> LeafValueChip<F> {
                     * is_branch_placeholder.clone(),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                let sc_keccak = meta.query_advice(
-                    *column,
-                    Rotation(rot_into_init - 3), // -3 to get from init branch into the previous branch (last row), note that -2 is needed because of extension nodes
-                );
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_enable.clone()
-                        * sc_keccak
-                        * (one.clone() - sel.clone())
-                        * (one.clone() - is_leaf_without_branch.clone())
-                        * is_branch_placeholder.clone(),
-                    keccak_table_i,
-                ));
-            }
+            let mod_node_hash_rlc = meta.query_advice(
+                mod_node_hash_rlc,
+                Rotation(rot_into_init - 3), // -3 to get from init branch into the previous branch (last row), note that -2 is needed because of extension nodes
+            );
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                q_enable.clone()
+                    * mod_node_hash_rlc
+                    * (one.clone() - sel.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * is_branch_placeholder.clone(),
+                keccak_table_i,
+            ));
 
             constraints
         });

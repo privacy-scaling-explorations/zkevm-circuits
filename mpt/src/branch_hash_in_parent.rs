@@ -27,7 +27,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         is_last_branch_child: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+        mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -77,22 +77,21 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                // Any rotation that lands into branch can be used instead of -19.
-                let keccak = meta.query_advice(*column, Rotation(-19));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
+            // Any rotation that lands into branch can be used instead of -19.
+            let mod_node_hash_rlc_cur =
+                meta.query_advice(mod_node_hash_rlc, Rotation(-19));
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                not_first_level.clone()
                         * is_last_branch_child.clone()
                         * (one.clone()
                             - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_extension_node.clone())
-                        * keccak,
-                    keccak_table_i,
-                ));
-            }
+                        * mod_node_hash_rlc_cur,
+                keccak_table_i,
+            ));
 
             constraints
         });

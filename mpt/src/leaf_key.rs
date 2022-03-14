@@ -38,8 +38,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
         c_rlp1: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        s_modified_node_rlc: Column<Advice>,
-        c_modified_node_rlc: Column<Advice>,
+        s_mod_node_hash_rlc: Column<Advice>,
+        c_mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         key_rlc: Column<Advice>,
@@ -75,9 +75,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
                 "is long",
                 q_enable.clone() * is_long * (s_rlp1.clone() - c248),
@@ -121,14 +121,14 @@ impl<F: FieldExt> LeafKeyChip<F> {
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             q_enable * is_short
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
 
             q_enable * is_long
         };
@@ -181,9 +181,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let mut constraints = vec![];
 
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             let mut rot_into_account = -1;
             if !is_s {
@@ -332,9 +332,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let mut constraints = vec![];
 
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             let mut rot_into_account = -1;
             if !is_s {
@@ -520,9 +520,9 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let mut constraints = vec![];
 
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             // Note: key rlc is in the first branch node (not branch init).
             let rot_level_above = rot_into_init + 1 - 19;

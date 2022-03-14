@@ -233,3 +233,28 @@ pub fn get_is_extension_node_one_nibble<F: FieldExt>(
 
     is_ext_short_c16 + is_ext_short_c1
 }
+
+pub(crate) fn hash_into_rlc<F: FieldExt>(message: &[u8], r: F) -> F {
+    let mut rlc = F::zero();
+    let mut mult = F::one();
+    for i in 0..message.len() {
+        rlc += F::from(message[i] as u64) * mult;
+        mult *= r;
+    }
+
+    rlc
+}
+
+pub(crate) fn hash_expr_into_rlc<F: FieldExt>(
+    message: &[Expression<F>],
+    r: F,
+) -> Expression<F> {
+    let mut rlc = Expression::Constant(F::zero());
+    let mut mult = F::one();
+    for i in 0..message.len() {
+        rlc = rlc + message[i].clone() * mult;
+        mult *= r;
+    }
+
+    rlc
+}

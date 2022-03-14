@@ -20,7 +20,7 @@ use crate::{
     branch_rows::BranchRowsChip,
     extension_node::ExtensionNodeChip,
     extension_node_key::ExtensionNodeKeyChip,
-    helpers::get_is_extension_node,
+    helpers::{get_is_extension_node, hash_into_rlc},
     leaf_key::LeafKeyChip,
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
@@ -102,10 +102,8 @@ pub struct MPTConfig<F> {
     c_rlp2: Column<Advice>,
     s_advices: [Column<Advice>; HASH_WIDTH],
     c_advices: [Column<Advice>; HASH_WIDTH],
-    s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-    c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
-    s_modified_node_rlc: Column<Advice>, // this will replace s_keccak (used also for leaf long/short)
-    c_modified_node_rlc: Column<Advice>, // this will replace c_keccak (used also for leaf long/short)
+    s_mod_node_hash_rlc: Column<Advice>, // modified node s_advices RLC when s_advices present hash (used also for leaf long/short)
+    c_mod_node_hash_rlc: Column<Advice>, // modified node c_advices RLC when c_advices present hash (used also for leaf long/short)
     s_root: Column<Advice>,
     c_root: Column<Advice>,
     acc_s: Column<Advice>, // for branch s and account leaf
@@ -157,8 +155,9 @@ impl<F: FieldExt> MPTConfig<F> {
         // TODO: r_table constraints
 
         // TODO: in many cases different rotations can be used - for example, when getting back
-        // into s_keccak or c_keccak to get the hash (all 16 branch children contain the same hash in
-        // s_keccak and c_keccak), so we can choose the rotations smartly to have at least as possible of them
+        // into s_mod_node_hash_rlc or c_mod_node_hash_rlc to get the hash
+        // (all 16 branch children contain the same hash in s_mod_node_hash_rlc and c_mod_node_hash_rlc),
+        // so we can choose the rotations smartly to have at least as possible of them
 
         let is_branch_init = meta.advice_column();
         let is_branch_child = meta.advice_column();
@@ -213,22 +212,8 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH] = (0
-            ..KECCAK_OUTPUT_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH] = (0
-            ..KECCAK_OUTPUT_WIDTH)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let s_modified_node_rlc = meta.advice_column();
-        let c_modified_node_rlc = meta.advice_column();
+        let s_mod_node_hash_rlc = meta.advice_column();
+        let c_mod_node_hash_rlc = meta.advice_column();
 
         let s_root = meta.advice_column();
         let c_root = meta.advice_column();
@@ -327,24 +312,26 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_not_first,
             is_branch_child,
-            s_keccak,
+            s_mod_node_hash_rlc,
             s_advices,
             node_index,
             is_modified,
             is_at_drifted_pos,
             sel1,
+            acc_r,
         );
 
         BranchRowsChip::<F>::configure(
             meta,
             q_not_first,
             is_branch_child,
-            c_keccak,
+            c_mod_node_hash_rlc,
             c_advices,
             node_index,
             is_modified,
             is_at_drifted_pos,
             sel2,
+            acc_r,
         );
 
         BranchHashInParentChip::<F>::configure(
@@ -354,7 +341,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_last_branch_child,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             s_advices,
-            s_keccak,
+            s_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
             keccak_table,
@@ -367,7 +354,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_last_branch_child,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             s_advices,
-            c_keccak,
+            c_mod_node_hash_rlc,
             acc_c,
             acc_mult_c,
             keccak_table,
@@ -398,9 +385,10 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             keccak_table,
-            s_keccak,
+            s_mod_node_hash_rlc,
             r_table.clone(),
             true,
+            acc_r,
         );
 
         ExtensionNodeChip::<F>::configure(
@@ -428,9 +416,10 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             keccak_table,
-            c_keccak,
+            c_mod_node_hash_rlc,
             r_table.clone(),
             false,
+            acc_r,
         );
 
         ExtensionNodeKeyChip::<F>::configure(
@@ -467,6 +456,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             keccak_table,
+            acc_r,
             true,
         );
 
@@ -483,6 +473,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_c,
             acc_mult_c,
             keccak_table,
+            acc_r,
             false,
         );
 
@@ -550,8 +541,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp1,
             c_rlp2,
             s_advices,
-            s_modified_node_rlc,
-            c_modified_node_rlc,
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -580,8 +571,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp1,
             c_rlp2,
             s_advices,
-            s_modified_node_rlc,
-            c_modified_node_rlc,
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -611,10 +602,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp1,
             c_rlp2,
             s_advices,
-            s_keccak,
-            c_keccak,
-            s_modified_node_rlc,
-            c_modified_node_rlc,
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
             key_rlc,
@@ -640,7 +629,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp1,
             s_rlp2,
             s_advices,
-            s_keccak,
+            s_mod_node_hash_rlc,
             keccak_table,
             acc_s,
             acc_mult_s,
@@ -665,7 +654,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp1,
             s_rlp2,
             s_advices,
-            c_keccak,
+            c_mod_node_hash_rlc,
             keccak_table,
             acc_s,
             acc_mult_s,
@@ -742,7 +731,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             fixed_table.clone(),
-            s_keccak,
+            s_mod_node_hash_rlc,
             keccak_table,
             true,
         );
@@ -761,7 +750,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             fixed_table.clone(),
-            c_keccak,
+            c_mod_node_hash_rlc,
             keccak_table,
             false,
         );
@@ -795,10 +784,8 @@ impl<F: FieldExt> MPTConfig<F> {
             c_rlp2,
             s_advices,
             c_advices,
-            s_keccak,
-            c_keccak,
-            s_modified_node_rlc,
-            c_modified_node_rlc,
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
             s_root,
             c_root,
             acc_s,
@@ -886,14 +873,14 @@ impl<F: FieldExt> MPTConfig<F> {
         // because used for is_long
         region.assign_advice(
             || "assign s_modified_node_rlc".to_string(),
-            self.s_modified_node_rlc,
+            self.s_mod_node_hash_rlc,
             offset,
             || Ok(F::zero()),
         )?;
         // because used for is_short
         region.assign_advice(
             || "assign c_modified_node_rlc".to_string(),
-            self.c_modified_node_rlc,
+            self.c_mod_node_hash_rlc,
             offset,
             || Ok(F::zero()),
         )?;
@@ -1127,8 +1114,8 @@ impl<F: FieldExt> MPTConfig<F> {
         key_rlc_mult: F,
         mult_diff: F,
         row: &[u8],
-        s_words: &[u64],
-        c_words: &[u64],
+        s_mod_node_hash_rlc: F,
+        c_mod_node_hash_rlc: F,
         drifted_pos: u8,
         s_rlp1: i32,
         c_rlp1: i32,
@@ -1157,22 +1144,18 @@ impl<F: FieldExt> MPTConfig<F> {
             offset,
         )?;
 
-        for (ind, column) in self.s_keccak.iter().enumerate() {
-            region.assign_advice(
-                || "Keccak s",
-                *column,
-                offset,
-                || Ok(F::from(s_words[ind])),
-            )?;
-        }
-        for (ind, column) in self.c_keccak.iter().enumerate() {
-            region.assign_advice(
-                || "Keccak c",
-                *column,
-                offset,
-                || Ok(F::from(c_words[ind])),
-            )?;
-        }
+        region.assign_advice(
+            || "s_mod_node_hash_rlc",
+            self.s_mod_node_hash_rlc,
+            offset,
+            || Ok(s_mod_node_hash_rlc),
+        )?;
+        region.assign_advice(
+            || "c_mod_node_hash_rlc",
+            self.c_mod_node_hash_rlc,
+            offset,
+            || Ok(c_mod_node_hash_rlc),
+        )?;
 
         region.assign_advice(
             || "key rlc",
@@ -1262,8 +1245,8 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut offset = 0;
 
                     let mut modified_node = 0;
-                    let mut s_words: Vec<u64> = vec![0, 0, 0, 0];
-                    let mut c_words: Vec<u64> = vec![0, 0, 0, 0];
+                    let mut s_mod_node_hash_rlc = F::zero();
+                    let mut c_mod_node_hash_rlc = F::zero();
                     let mut node_index: u8 = 0;
                     let mut acc_s = F::zero();
                     let mut acc_mult_s = F::zero();
@@ -1375,8 +1358,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 [ind + 1 + modified_node as usize]
                                 [C_START..C_START + HASH_WIDTH]
                                 .to_vec();
-                            s_words = self.convert_into_words(&s_hash);
-                            c_words = self.convert_into_words(&c_hash);
+                            s_mod_node_hash_rlc =
+                                hash_into_rlc(&s_hash, self.acc_r);
+                            c_mod_node_hash_rlc =
+                                hash_into_rlc(&c_hash, self.acc_r);
 
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 1 {
                                 // We put hash of a node that moved down to the added branch.
@@ -1385,7 +1370,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     [ind + 1 + drifted_pos as usize]
                                     [S_START..S_START + HASH_WIDTH]
                                     .to_vec();
-                                s_words = self.convert_into_words(&s_hash);
+                                s_mod_node_hash_rlc =
+                                    hash_into_rlc(&s_hash, self.acc_r);
                                 is_branch_s_placeholder = true
                             } else {
                                 is_branch_s_placeholder = false
@@ -1395,14 +1381,15 @@ impl<F: FieldExt> MPTConfig<F> {
                                     [ind + 1 + drifted_pos as usize]
                                     [C_START..C_START + HASH_WIDTH]
                                     .to_vec();
-                                c_words = self.convert_into_words(&c_hash);
+                                c_mod_node_hash_rlc =
+                                    hash_into_rlc(&c_hash, self.acc_r);
                                 is_branch_c_placeholder = true
                             } else {
                                 is_branch_c_placeholder = false
                             }
                             // If no placeholder branch, we set drifted_pos = modified_node. This
-                            // is needed just to make some other constraints (s_keccak/c_keccak
-                            // corresponds to the proper node) easier to write.
+                            // is needed just to make some other constraints (s_mod_node_hash_rlc
+                            // and c_mod_node_hash_rlc correspond to the proper node) easier to write.
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 0
                                 && row[IS_BRANCH_C_PLACEHOLDER_POS] == 0
                             {
@@ -1796,8 +1783,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     key_rlc_mult,
                                     mult_diff,
                                     &row[0..row.len() - 1].to_vec(),
-                                    &s_words,
-                                    &c_words,
+                                    s_mod_node_hash_rlc,
+                                    c_mod_node_hash_rlc,
                                     drifted_pos,
                                     rlp_len_rem_s,
                                     rlp_len_rem_c,
@@ -1815,19 +1802,19 @@ impl<F: FieldExt> MPTConfig<F> {
                                     key_rlc_mult,
                                     mult_diff,
                                     &row[0..row.len() - 1].to_vec(),
-                                    &s_words,
-                                    &c_words,
+                                    s_mod_node_hash_rlc,
+                                    c_mod_node_hash_rlc,
                                     drifted_pos,
                                     rlp_len_rem_s,
                                     rlp_len_rem_c,
                                     offset,
                                 )?;
-                                // sel1 is to distinguish whether s_words is [128, 0, 0, 0].
-                                // sel2 is to distinguish whether c_words is [128, 0, 0, 0].
+                                // sel1 is to distinguish whether the S node is empty.
+                                // sel2 is to distinguish whether the C node is empty.
                                 // Note that 128 comes from the RLP byte denoting empty leaf.
-                                // Having [128, 0, 0, 0] for *_word means there is no node at
-                                // this position in branch - for example, s_words
-                                // is [128, 0, 0, 0] and c_words is some other value
+                                // Having 128 for *_mod_node_hash_rlc means there is no node at
+                                // this position in branch - for example,
+                                // s_mode_node_hash_rlc = 128 and c_words is some other value
                                 // when new value is added to the trie
                                 // (as opposed to just updating the value).
                                 // Note that there is a potential attack if a leaf node
@@ -1835,24 +1822,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // but the probability is negligible.
                                 let mut sel1 = F::zero();
                                 let mut sel2 = F::zero();
-                                if s_words[0] == 128
-                                    && s_words
-                                        .iter()
-                                        .skip(1)
-                                        .filter(|w| **w == 0_u64)
-                                        .count()
-                                        == KECCAK_OUTPUT_WIDTH - 1
-                                {
+                                if s_mod_node_hash_rlc == F::from(128 as u64) {
                                     sel1 = F::one();
                                 }
-                                if c_words[0] == 128
-                                    && c_words
-                                        .iter()
-                                        .skip(1)
-                                        .filter(|w| **w == 0_u64)
-                                        .count()
-                                        == KECCAK_OUTPUT_WIDTH - 1
-                                {
+                                if c_mod_node_hash_rlc == F::from(128 as u64) {
                                     sel2 = F::one();
                                 }
 
@@ -2037,7 +2010,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 "assign s_modified_node_rlc"
                                                     .to_string()
                                             },
-                                            self.s_modified_node_rlc,
+                                            self.s_mod_node_hash_rlc,
                                             offset,
                                             || Ok(F::from(is_long as u64)),
                                         )
@@ -2048,7 +2021,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                                 "assign c_modified_node_rlc"
                                                     .to_string()
                                             },
-                                            self.c_modified_node_rlc,
+                                            self.c_mod_node_hash_rlc,
                                             offset,
                                             || Ok(F::from(is_short as u64)),
                                         )
@@ -2474,20 +2447,6 @@ impl<F: FieldExt> MPTConfig<F> {
         Ok(())
     }
 
-    // see bits_to_u64_words_le
-    fn convert_into_words(&self, message: &[u8]) -> Vec<u64> {
-        let words_total = message.len() / 8;
-        let mut words: Vec<u64> = vec![0; words_total];
-
-        for i in 0..words_total {
-            let mut word_bits: [u8; 8] = Default::default();
-            word_bits.copy_from_slice(&message[i * 8..i * 8 + 8]);
-            words[i] = u64::from_le_bytes(word_bits);
-        }
-
-        words
-    }
-
     fn compute_keccak(&self, msg: &[u8]) -> Vec<u8> {
         let mut keccak = Keccak::default();
         keccak.update(msg);
@@ -2520,20 +2479,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         || Ok(rlc),
                     )?;
 
-                    let keccak_output = self.convert_into_words(&hash);
+                    let hash_rlc = hash_into_rlc(&hash, self.acc_r);
+                    region.assign_fixed(
+                        || "Keccak table",
+                        self.keccak_table[1],
+                        offset,
+                        || Ok(hash_rlc),
+                    )?;
 
-                    for (ind, column) in self.keccak_table.iter().enumerate() {
-                        if ind == 0 {
-                            continue;
-                        }
-                        let val = keccak_output[ind - KECCAK_INPUT_WIDTH];
-                        region.assign_fixed(
-                            || "Keccak table",
-                            *column,
-                            offset,
-                            || Ok(F::from(val)),
-                        )?;
-                    }
                     offset += 1;
                 }
 

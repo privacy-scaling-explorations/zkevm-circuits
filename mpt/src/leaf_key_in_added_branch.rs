@@ -39,10 +39,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         c_rlp1: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        s_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
-        c_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH], // to check hash && to see whether it's long or short RLP
-        s_modified_node_rlc: Column<Advice>,
-        c_modified_node_rlc: Column<Advice>,
+        s_mod_node_hash_rlc: Column<Advice>,
+        c_mod_node_hash_rlc: Column<Advice>,
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         key_rlc: Column<Advice>,
@@ -115,14 +113,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             q_enable * is_short
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
 
             q_enable * is_long
         };
@@ -210,9 +208,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 meta.query_advice(mult_diff, Rotation(rot_branch_init + 1));
 
             let is_long =
-                meta.query_advice(s_modified_node_rlc, Rotation::cur());
+                meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short =
-                meta.query_advice(c_modified_node_rlc, Rotation::cur());
+                meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
             // before it drifted down into extension/branch.
@@ -417,18 +415,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            for (ind, column) in s_keccak.iter().enumerate() {
-                // placeholder branch contains hash of a leaf that moved to added branch
-                let s_keccak = meta.query_advice(*column, Rotation(rot));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_enable.clone()
-                        * s_keccak
-                        * is_branch_s_placeholder.clone(),
-                    keccak_table_i,
-                ));
-            }
+            // placeholder branch contains hash of a leaf that moved to added branch
+            let s_mod_node_hash_rlc =
+                meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                q_enable.clone()
+                    * s_mod_node_hash_rlc
+                    * is_branch_s_placeholder.clone(),
+                keccak_table_i,
+            ));
 
             constraints
         });
@@ -472,18 +469,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            for (ind, column) in c_keccak.iter().enumerate() {
-                // placeholder branch contains hash of a leaf that moved to added branch
-                let c_keccak = meta.query_advice(*column, Rotation(rot));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_enable.clone()
-                        * c_keccak
-                        * is_branch_c_placeholder.clone(),
-                    keccak_table_i,
-                ));
-            }
+            // placeholder branch contains hash of a leaf that moved to added branch
+            let c_mod_node_hash_rlc =
+                meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                q_enable.clone()
+                    * c_mod_node_hash_rlc
+                    * is_branch_c_placeholder.clone(),
+                keccak_table_i,
+            ));
 
             constraints
         });

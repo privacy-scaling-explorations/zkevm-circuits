@@ -9,7 +9,9 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, get_bool_constraint, into_words_expr},
+    helpers::{
+        compute_rlc, get_bool_constraint, hash_expr_into_rlc, into_words_expr,
+    },
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -118,9 +120,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         acc_c: Column<Advice>,
         acc_mult_c: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
-        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+        mod_node_hash_rlc: Column<Advice>,
         r_table: Vec<Expression<F>>,
         is_s: bool,
+        acc_r: F,
     ) -> ExtensionNodeConfig {
         let config = ExtensionNodeConfig {};
         let one = Expression::Constant(F::from(1_u64));
@@ -323,15 +326,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             for column in c_advices.iter() {
                 sc_hash.push(meta.query_advice(*column, Rotation::cur()));
             }
-            let words = into_words_expr(sc_hash);
-            for (ind, word) in words.iter().enumerate() {
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    q_not_first.clone() * q_enable.clone() * word.clone(),
-                    keccak_table_i,
-                ));
-            }
+            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+            constraints.push((
+                q_not_first.clone() * q_enable.clone() * hash_rlc.clone(),
+                meta.query_fixed(keccak_table[1], Rotation::cur()),
+            ));
 
             constraints
         });
@@ -440,21 +439,20 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                // Any rotation that lands into branch can be used instead of -21.
-                let keccak = meta.query_advice(*column, Rotation(-21));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * q_enable.clone()
-                        * (one.clone()
-                            - is_account_leaf_storage_codehash_c.clone())
-                        * (one.clone() - is_branch_placeholder.clone())
-                        * keccak,
-                    keccak_table_i,
-                ));
-            }
+            // Any rotation that lands into branch can be used instead of -21.
+            let mod_node_hash_rlc_cur =
+                meta.query_advice(mod_node_hash_rlc, Rotation(-21));
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                not_first_level.clone()
+                    * q_enable.clone()
+                    * (one.clone()
+                        - is_account_leaf_storage_codehash_c.clone())
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * mod_node_hash_rlc_cur,
+                keccak_table_i,
+            ));
 
             constraints
         });

@@ -38,7 +38,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
-        sc_keccak: [Column<Advice>; KECCAK_OUTPUT_WIDTH],
+        mod_node_hash_rlc: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
@@ -152,19 +152,18 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                     * acc_s,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
-            for (ind, column) in sc_keccak.iter().enumerate() {
-                // Any rotation that lands into branch can be used instead of -17.
-                let s_keccak = meta.query_advice(*column, Rotation(-17));
-                let keccak_table_i =
-                    meta.query_fixed(keccak_table[ind + 1], Rotation::cur());
-                constraints.push((
-                    not_first_level.clone()
-                        * (one.clone() - leaf_without_branch.clone())
-                        * is_account_leaf_storage_codehash.clone()
-                        * s_keccak,
-                    keccak_table_i,
-                ));
-            }
+            // Any rotation that lands into branch can be used instead of -17.
+            let mod_node_hash_rlc_cur =
+                meta.query_advice(mod_node_hash_rlc, Rotation(-17));
+            let keccak_table_i =
+                meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                not_first_level.clone()
+                    * (one.clone() - leaf_without_branch.clone())
+                    * is_account_leaf_storage_codehash.clone()
+                    * mod_node_hash_rlc_cur,
+                keccak_table_i,
+            ));
 
             constraints
         });
