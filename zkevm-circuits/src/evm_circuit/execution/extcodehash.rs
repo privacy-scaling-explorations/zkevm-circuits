@@ -55,6 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             from_bytes::expr(&external_address.cells),
             1.expr(),
             is_warm.expr(),
+            None,
         );
 
         let nonce = cb.query_cell();
@@ -109,17 +110,18 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         // code hash
         cb.stack_push((1.expr() - is_empty.expr()) * code_hash.expr());
 
-        let opcode = cb.query_cell();
+        let gas_cost = is_warm.expr() * GasCost::WARM_STORAGE_READ_COST.expr()
+            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS_COST.expr();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(7.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
+            gas_left: Delta(-gas_cost),
             ..Default::default()
         };
-        let dynamic_gas_cost = (1.expr() - is_warm.expr())
-            * (GasCost::COLD_ACCOUNT_ACCESS_COST.expr() - GasCost::WARM_STORAGE_READ_COST.expr());
-        let same_context =
-            SameContextGadget::construct(cb, opcode, step_state_transition, Some(dynamic_gas_cost));
+
+        let opcode = cb.query_cell();
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -240,12 +242,11 @@ mod test {
 
         // execute the bytecode and get trace
         let geth_data = new_single_tx_trace_accounts(accounts).unwrap();
-        let block_trace = BlockData::new_from_geth_data(geth_data);
+        let block = BlockData::new_from_geth_data(geth_data);
 
-        let mut builder = block_trace.new_circuit_input_builder();
-        builder
-            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
-            .unwrap();
+        let mut builder = block.new_circuit_input_builder();
+        builder.handle_block(&block.eth_block, &block.geth_traces).unwrap();
+
         test_circuits_using_witness_block(
             block_convert(&builder.block, &builder.code_db),
             BytecodeTestConfig::default(),
