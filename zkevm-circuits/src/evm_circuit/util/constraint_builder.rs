@@ -887,13 +887,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         is_write: Expression<F>,
         memory_address: Expression<F>,
         byte: Expression<F>,
+        call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
             "Memory lookup",
             is_write,
             RwTableTag::Memory,
             [
-                self.curr.state.call_id.expr(),
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 memory_address,
                 0.expr(),

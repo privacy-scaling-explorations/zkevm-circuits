@@ -22,6 +22,7 @@ mod begin_tx;
 mod bitwise;
 mod byte;
 mod calldatacopy;
+mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
@@ -54,6 +55,7 @@ use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
+use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
@@ -111,6 +113,7 @@ pub(crate) struct ExecutionConfig<F> {
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
+    calldataload_gadget: CallDataLoadGadget<F>,
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
@@ -247,6 +250,7 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             calldatacopy_gadget: configure_gadget!(),
+            calldataload_gadget: configure_gadget!(),
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
@@ -536,6 +540,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::CopyToMemory => {
                 assign_exec_step!(self.copy_to_memory_gadget)
+            }
+            ExecutionState::CALLDATALOAD => {
+                assign_exec_step!(self.calldataload_gadget)
             }
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
