@@ -324,20 +324,24 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         },
     )?;
 
-    if call.is_create() {
-        unimplemented!("Creation transaction is not yet implemented")
-    } else if state.is_precompiled(&call.address) {
-        unimplemented!("Call to precompiled is not yet implemented")
-    } else {
-        state.push_op(
-            RW::READ,
-            AccountOp {
-                address: call.address,
-                field: AccountField::CodeHash,
-                value: code_hash.to_word(),
-                value_prev: code_hash.to_word(),
-            },
-        );
+    match (call.is_create(), state.is_precompiled(&call.address)) {
+        (true, _) => {
+            // TODO: Implement creation transaction
+        }
+        (_, true) => {
+            // TODO: Implement calling to precompiled
+        }
+        _ => {
+            state.push_op(
+                RW::READ,
+                AccountOp {
+                    address: call.address,
+                    field: AccountField::CodeHash,
+                    value: code_hash.to_word(),
+                    value_prev: code_hash.to_word(),
+                },
+            );
+        }
     }
 
     for (field, value) in [
