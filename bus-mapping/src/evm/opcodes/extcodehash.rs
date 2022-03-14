@@ -22,13 +22,13 @@ impl Opcode for Extcodehash {
 
         // Pop external address off stack
         let external_address = step.stack.last()?.to_address();
-        state.push_stack_op(RW::READ, stack_address, external_address.to_word());
+        state.push_stack_op(RW::READ, stack_address, external_address.to_word())?;
 
         // Read transaction id from call context
         state.push_op(
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::TxId,
                 value: state.tx_ctx.id().into(),
             },
@@ -87,7 +87,7 @@ impl Opcode for Extcodehash {
         );
 
         // Stack write of the result of EXTCODEHASH.
-        state.push_stack_op(RW::WRITE, stack_address, steps[1].stack.last()?);
+        state.push_stack_op(RW::WRITE, stack_address, steps[1].stack.last()?)?;
 
         Ok(())
     }
@@ -96,14 +96,13 @@ impl Opcode for Extcodehash {
 #[cfg(test)]
 mod extcodehash_tests {
     use super::*;
-    use crate::{
-        circuit_input_builder::{ExecStep, TransactionContext},
-        mock::BlockData,
-    };
+    use crate::mock::BlockData;
+    use crate::operation::StackOp;
     use eth_types::{
-        address, bytecode, evm_types::StackAddress, geth_types::Account as GethAccount, Address,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account as GethAccount, Address,
         Bytecode, Bytes, U256,
     };
+    use ethers_core::utils::keccak256;
     use mock::new_single_tx_trace_accounts;
     use pretty_assertions::assert_eq;
 
@@ -142,7 +141,6 @@ mod extcodehash_tests {
         }
         code.append(&bytecode! {
             PUSH20(external_address.to_word())
-            #[start]
             EXTCODEHASH
             STOP
         });
@@ -152,131 +150,151 @@ mod extcodehash_tests {
             code: Bytes::from(code.to_vec()),
             ..Default::default()
         }];
+
         // Let the external account exist, if needed, by making its code non-empty
+        let (mut nonce, mut balance, mut code) = (U256::zero(), U256::zero(), Bytes::default());
         if exists {
+            nonce = U256::from(300u64);
+            balance = U256::from(800u64);
+            code = Bytes::from([34, 54, 56]);
+
             accounts.push(GethAccount {
                 address: external_address,
-                code: Bytes::from([34, 54, 56]),
+                nonce,
+                balance,
+                code: code.clone(),
                 ..Default::default()
             })
         }
+        let code_hash = keccak256(&code).into();
 
         // Get the execution steps from the external tracer
-        let mut geth_data = new_single_tx_trace_accounts(accounts)?;
-        geth_data.geth_trace.struct_logs =
-            geth_data.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
+        let geth_data = new_single_tx_trace_accounts(accounts)?;
         let block = BlockData::new_from_geth_data(geth_data);
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+        builder.handle_block(&block.eth_block, &block.geth_traces)?;
 
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        let transaction = &builder.block.txs()[0];
+
+        let step = transaction
+            .steps()
+            .iter()
+            .find(|step| step.op == OpcodeId::EXTCODEHASH)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to CALLER
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
+        let tx_id = 1; // why is the -1 needed????
+        let call_id = transaction.calls()[0].call_id;
 
-        // Sanity check that address is actually warm if that is what we're testing.
-        assert_eq!(is_warm, step.gas_cost == GasCost::WARM_STORAGE_READ_COST);
-
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
-
-        // Add the Stack pop
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1023),
-            external_address.to_word(),
-        );
-
-        state_ref.push_op(
-            RW::READ,
-            CallContextOp {
-                call_id: state_ref.call().call_id,
-                field: CallContextField::TxId,
-                value: state_ref.tx_ctx.id().into(),
-            },
-        );
-
-        state_ref.push_op(
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id: state_ref.tx_ctx.id(),
-                address: external_address,
-                value: true,
-                value_prev: is_warm,
-            },
-        );
-
-        let (
-            account_exists,
-            &Account {
-                nonce,
-                balance,
-                code_hash,
-                ..
-            },
-        ) = state_ref.sdb.get_account(&external_address);
-        assert_eq!(exists, account_exists);
-
-        // Add the nonce, balance, code hash reads
-        state_ref.push_op(
-            RW::READ,
-            AccountOp {
-                address: external_address,
-                field: AccountField::Nonce,
-                value: nonce,
-                value_prev: nonce,
-            },
-        );
-        state_ref.push_op(
-            RW::READ,
-            AccountOp {
-                address: external_address,
-                field: AccountField::Balance,
-                value: balance,
-                value_prev: balance,
-            },
-        );
-        state_ref.push_op(
-            RW::READ,
-            AccountOp {
-                address: external_address,
-                field: AccountField::CodeHash,
-                value: code_hash.to_word(),
-                value_prev: code_hash.to_word(),
-            },
-        );
-
-        // Add the stack write
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress::from(1023),
-            if account_exists {
-                code_hash.to_word()
-            } else {
-                U256::zero()
-            },
-        );
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            {
+                let operation =
+                    &builder.block.container.stack[step.bus_mapping_instance[0].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &StackOp {
+                    call_id,
+                    address: 1023.into(),
+                    value: external_address.to_word()
+                }
+            )
         );
-
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.call_context[step.bus_mapping_instance[1].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::TxId,
+                    value: tx_id.into()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &builder.block.container.tx_access_list_account
+                    [step.bus_mapping_instance[2].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::WRITE,
+                &TxAccessListAccountOp {
+                    tx_id,
+                    address: external_address,
+                    value: true,
+                    value_prev: is_warm
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.account[step.bus_mapping_instance[3].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &AccountOp {
+                    address: external_address,
+                    field: AccountField::Nonce,
+                    value: if exists { nonce } else { U256::zero() },
+                    value_prev: if exists { nonce } else { U256::zero() },
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.account[step.bus_mapping_instance[4].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &AccountOp {
+                    address: external_address,
+                    field: AccountField::Balance,
+                    value: if exists { balance } else { U256::zero() },
+                    value_prev: if exists { balance } else { U256::zero() },
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.account[step.bus_mapping_instance[5].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &AccountOp {
+                    address: external_address,
+                    field: AccountField::CodeHash,
+                    value: code_hash,
+                    value_prev: code_hash,
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.stack[step.bus_mapping_instance[6].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::WRITE,
+                &StackOp {
+                    call_id,
+                    address: 1023.into(),
+                    value: if exists { code_hash } else { U256::zero() }
+                }
+            )
+        );
 
         Ok(())
     }
