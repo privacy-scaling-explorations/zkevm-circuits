@@ -245,7 +245,9 @@ mod test {
         let block = BlockData::new_from_geth_data(geth_data);
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_block(&block.eth_block, &block.geth_traces).unwrap();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
 
         test_circuits_using_witness_block(
             block_convert(&builder.block, &builder.code_db),
