@@ -481,9 +481,9 @@ impl Op for TxAccessListAccountStorageOp {
 pub struct TxRefundOp {
     /// Transaction ID: Transaction index in the block starting at 1.
     pub tx_id: usize,
-    /// Refund of gas after the operation
+    /// Refund Value in units of gas after the operation.
     pub value: u64,
-    /// Refund of gas before the operation
+    /// Refund Value in units of gas after the operation.
     pub value_prev: u64,
 }
 

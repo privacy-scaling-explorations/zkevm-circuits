@@ -146,7 +146,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
-        let refund = block.rws[step.rw_indices[1]].tx_refund_value();
+        let (refund, _) = block.rws[step.rw_indices[1]].tx_refund_value_pair();
         let [caller_balance_pair, coinbase_balance_pair] =
             [step.rw_indices[2], step.rw_indices[3]].map(|idx| block.rws[idx].account_value_pair());
 
