@@ -4,7 +4,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::gates::tables::BaseInfo;
+use super::tables::BaseInfo;
 use eth_types::Field;
 
 #[derive(Clone, Debug)]
@@ -97,7 +97,6 @@ impl<F: Field> BaseConversionConfig<F> {
         input: AssignedCell<F, F>,
         flag: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        // TODO: Add propper err handling once AssignedCell has a better API for it.
         let (input_coefs, output_coefs, _) = self
             .base_info
             .compute_coefs(*input.value().unwrap_or(&F::zero()))?;
@@ -164,10 +163,8 @@ impl<F: Field> BaseConversionConfig<F> {
 mod tests {
     use super::*;
     use crate::arith_helpers::{convert_b2_to_b13, convert_b9_lane_to_b13};
-    use crate::gates::{
-        gate_helpers::biguint_to_f,
-        tables::{FromBase9TableConfig, FromBinaryTableConfig},
-    };
+    use crate::gate_helpers::biguint_to_f;
+    use crate::permutation::tables::{FromBase9TableConfig, FromBinaryTableConfig};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
@@ -210,7 +207,7 @@ mod tests {
                 &self,
                 layouter: &mut impl Layouter<F>,
                 input: F,
-            ) -> Result<F, Error> {
+            ) -> Result<AssignedCell<F, F>, Error> {
                 // The main flag is enabled
                 let flag_value = F::one();
                 let (lane, flag) = layouter.assign_region(
@@ -232,10 +229,7 @@ mod tests {
                     || "Input lane",
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
-                // TODO: Handle this better once AssignedCell has the API to do so
-                Ok(*output
-                    .value()
-                    .unwrap_or(&F::from_u128(0x22c268c05977fd626636ccu128)))
+                Ok(output)
             }
         }
 
@@ -263,7 +257,9 @@ mod tests {
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
                 let output = config.assign_region(&mut layouter, self.input_b2_lane)?;
-                assert_eq!(output, self.output_b13_lane);
+                if output.value().is_some() {
+                    assert_eq!(output.value(), Some(&self.output_b13_lane));
+                }
                 Ok(())
             }
         }
@@ -321,7 +317,7 @@ mod tests {
                 &self,
                 layouter: &mut impl Layouter<F>,
                 input: F,
-            ) -> Result<F, Error> {
+            ) -> Result<AssignedCell<F, F>, Error> {
                 // The main flag is enabled
                 let flag_value = F::one();
                 let (lane, flag) = layouter.assign_region(
@@ -345,7 +341,7 @@ mod tests {
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
                 )?;
 
-                Ok(*output.value().expect("Add propper err handling"))
+                Ok(output)
             }
         }
 
@@ -373,7 +369,9 @@ mod tests {
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
                 let output = config.assign_region(&mut layouter, self.input_lane)?;
-                assert_eq!(output, self.output_lane);
+                if output.value().is_some() {
+                    assert_eq!(output.value(), Some(&self.output_lane));
+                }
                 Ok(())
             }
         }

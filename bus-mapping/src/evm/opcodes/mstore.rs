@@ -20,12 +20,12 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         // First stack read (offset)
         let offset = step.stack.nth_last(0)?;
         let offset_pos = step.stack.nth_last_filled(0);
-        state.push_stack_op(RW::READ, offset_pos, offset);
+        state.push_stack_op(RW::READ, offset_pos, offset)?;
 
         // Second stack read (value)
         let value = step.stack.nth_last(1)?;
         let value_pos = step.stack.nth_last_filled(1);
-        state.push_stack_op(RW::READ, value_pos, value);
+        state.push_stack_op(RW::READ, value_pos, value)?;
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
@@ -37,13 +37,13 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                     RW::WRITE,
                     offset_addr,
                     *value.to_le_bytes().first().unwrap(),
-                );
+                )?;
             }
             false => {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte);
+                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte)?;
                 }
             }
         }
@@ -55,125 +55,120 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 #[cfg(test)]
 mod mstore_tests {
     use super::*;
-    use crate::circuit_input_builder::{ExecStep, TransactionContext};
-    use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::{bytecode, Word};
+    use crate::operation::{MemoryOp, StackOp};
+    use eth_types::bytecode;
+    use eth_types::evm_types::{MemoryAddress, OpcodeId, StackAddress};
+    use eth_types::Word;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn mstore_opcode_impl() -> Result<(), Error> {
+    fn mstore_opcode_impl() {
         let code = bytecode! {
             .setup_state()
             PUSH2(0x1234)
             PUSH2(0x100)
-            #[start]
             MSTORE
             STOP
         };
 
         // Get the execution steps from the external tracer
         let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+            mock::new_single_tx_trace_code(&code).unwrap(),
         );
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to MSTORE
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .filter(|step| step.op == OpcodeId::MSTORE)
+            .nth(1)
+            .unwrap();
 
-        // Add StackOps associated to the 0x100, 0x1234 reads starting from last
-        // stack position.
-        state_ref.push_stack_op(RW::READ, StackAddress::from(1022), Word::from(0x100));
-        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x1234));
-
-        // Add the 32 MemoryOp generated from the Memory write at addr
-        // 0x100..0x120 for each byte.
-        for (i, byte) in Word::from(0x1234).to_be_bytes().iter().enumerate() {
-            state_ref.push_memory_op(RW::WRITE, MemoryAddress(0x100 + i), *byte);
-        }
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            [0, 1]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1022), Word::from(0x100))
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x1234))
+                )
+            ]
         );
 
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        assert_eq!(
+            (2..34)
+                .map(|idx| &builder.block.container.memory
+                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op().clone()))
+                .collect_vec(),
+            Word::from(0x1234)
+                .to_be_bytes()
+                .into_iter()
+                .enumerate()
+                .map(|(idx, byte)| (
+                    RW::WRITE,
+                    MemoryOp::new(1, MemoryAddress(idx + 0x100), byte)
+                ))
+                .collect_vec()
+        )
     }
 
     #[test]
-    fn mstore8_opcode_impl() -> Result<(), Error> {
+    fn mstore8_opcode_impl() {
         let code = bytecode! {
             .setup_state()
             PUSH2(0x1234)
             PUSH2(0x100)
-            #[start]
             MSTORE8
             STOP
         };
 
         // Get the execution steps from the external tracer
         let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+            mock::new_single_tx_trace_code(&code).unwrap(),
         );
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to MSTORE
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.op == OpcodeId::MSTORE8)
+            .unwrap();
 
-        // Add StackOps associated to the 0x100, 0x12 reads starting from last
-        // stack position.
-        state_ref.push_stack_op(RW::READ, StackAddress::from(1022), Word::from(0x100));
-        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x1234));
-
-        // Add 1 MemoryOp generated from the Memory write at addr 0x100.
-        state_ref.push_memory_op(RW::WRITE, MemoryAddress(0x100), 0x34);
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            [0, 1]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1022), Word::from(0x100))
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x1234))
+                )
+            ]
         );
 
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        let memory_op = &builder.block.container.memory[step.bus_mapping_instance[2].as_usize()];
+        assert_eq!(
+            (memory_op.rw(), memory_op.op()),
+            (RW::WRITE, &MemoryOp::new(1, MemoryAddress(0x100), 0x34))
+        )
     }
 }

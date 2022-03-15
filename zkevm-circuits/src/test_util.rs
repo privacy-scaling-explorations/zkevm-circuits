@@ -15,6 +15,7 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     match conf {
         FixedTableConfig::Incomplete => {
             vec![
+                FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,
                 FixedTableTag::Range256,
@@ -59,7 +60,7 @@ pub fn test_circuits_using_bytecode(
     );
     let mut builder = block_trace.new_circuit_input_builder();
     builder
-        .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
+        .handle_block(&block_trace.eth_block, &block_trace.geth_traces)
         .unwrap();
 
     // build a witness block from trace result
@@ -85,10 +86,7 @@ pub fn test_circuits_using_witness_block(
     // circuit must be same
     if config.enable_state_circuit_test {
         let state_circuit =
-            StateCircuit::<Fr, true, 2000, 100, 100, 100, 1023, 100>::new_from_rw_map(
-                block.randomness,
-                &block.rws,
-            );
+            StateCircuit::<Fr, true, 2000, 100, 1023, 2000>::new(block.randomness, &block.rws);
         let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
         prover.verify()?;
     }

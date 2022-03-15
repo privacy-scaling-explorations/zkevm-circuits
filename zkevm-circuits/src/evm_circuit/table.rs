@@ -23,7 +23,8 @@ impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
 
 #[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
-    Range16 = 1,
+    Range5 = 1,
+    Range16,
     Range32,
     Range256,
     Range512,
@@ -37,6 +38,7 @@ pub enum FixedTableTag {
 impl FixedTableTag {
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
+            Self::Range5,
             Self::Range16,
             Self::Range32,
             Self::Range256,
@@ -54,6 +56,9 @@ impl FixedTableTag {
     pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
+            Self::Range5 => {
+                Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
             Self::Range16 => {
                 Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
@@ -129,8 +134,8 @@ pub enum BlockContextFieldTag {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RwTableTag {
-    Stack = 2,
-    Memory,
+    Memory = 2,
+    Stack,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -242,7 +247,7 @@ pub(crate) enum Lookup<F> {
         /// all tags.
         tag: Expression<F>,
         /// Values corresponding to the tag.
-        values: [Expression<F>; 7],
+        values: [Expression<F>; 8],
     },
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.

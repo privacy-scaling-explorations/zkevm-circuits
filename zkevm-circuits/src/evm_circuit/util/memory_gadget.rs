@@ -413,8 +413,8 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
 {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        addr_start: &Cell<F>,
-        addr_end: &Cell<F>,
+        addr_start: Expression<F>,
+        addr_end: Expression<F>,
     ) -> Self {
         let bytes = array_init(|_| cb.query_byte());
         let selectors = array_init(|_| cb.query_bool());
@@ -433,11 +433,11 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         // The constraints on bound_dist[0].
         //   bound_dist[0] == addr_end - addr_start if addr_start < addr_end
         //   bound_dist[0] == 0 if addr_start >= addr_end
-        let min_gadget = MinMaxGadget::construct(cb, addr_start.expr(), addr_end.expr());
+        let min_gadget = MinMaxGadget::construct(cb, addr_start, addr_end.clone());
         cb.require_equal(
             "bound_dist[0] == addr_end - min(addr_start, add_end)",
             bound_dist[0].expr(),
-            addr_end.expr() - min_gadget.min(),
+            addr_end - min_gadget.min(),
         );
         // Constraints on bound_dist[1..MAX_BYTES]
         //   diff = bound_dist[idx - 1] - bound_dist[idx]
