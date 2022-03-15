@@ -175,21 +175,21 @@ mod extcodehash_tests {
         let mut builder = block.new_circuit_input_builder();
         builder.handle_block(&block.eth_block, &block.geth_traces)?;
 
-        let transaction = &builder.block.txs()[0];
+        let tx_id = 1;
+        let transaction = &builder.block.txs()[tx_id - 1];
+        let call_id = transaction.calls()[0].call_id;
 
-        let step = transaction
+        let indices = transaction
             .steps()
             .iter()
             .find(|step| step.op == OpcodeId::EXTCODEHASH)
-            .unwrap();
-
-        let tx_id = 1; // why is the -1 needed????
-        let call_id = transaction.calls()[0].call_id;
-
+            .unwrap()
+            .bus_mapping_instance
+            .clone();
+        let container = builder.block.container;
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.stack[step.bus_mapping_instance[0].as_usize()];
+                let operation = &container.stack[indices[0].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -203,8 +203,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.call_context[step.bus_mapping_instance[1].as_usize()];
+                let operation = &container.call_context[indices[1].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -218,8 +217,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &builder.block.container.tx_access_list_account
-                    [step.bus_mapping_instance[2].as_usize()];
+                let operation = &container.tx_access_list_account[indices[2].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -234,8 +232,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.account[step.bus_mapping_instance[3].as_usize()];
+                let operation = &container.account[indices[3].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -250,8 +247,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.account[step.bus_mapping_instance[4].as_usize()];
+                let operation = &container.account[indices[4].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -266,8 +262,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.account[step.bus_mapping_instance[5].as_usize()];
+                let operation = &container.account[indices[5].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -282,8 +277,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.stack[step.bus_mapping_instance[6].as_usize()];
+                let operation = &container.stack[indices[6].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
