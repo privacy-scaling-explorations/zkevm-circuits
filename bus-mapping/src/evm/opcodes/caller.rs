@@ -12,15 +12,15 @@ pub(crate) struct Caller;
 impl Opcode for Caller {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step);
         // Get caller_address result from next step
-        let value = steps[1].stack.last()?;
+        let value = geth_steps[1].stack.last()?;
         // CallContext read of the caller_address
         state.push_op(
-            exec_step,
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -30,13 +30,13 @@ impl Opcode for Caller {
         );
         // Stack write of the caller_address
         state.push_stack_op(
-            exec_step,
+            &mut exec_step,
             RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
+            geth_step.stack.last_filled().map(|a| a - 1),
             value,
         )?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 

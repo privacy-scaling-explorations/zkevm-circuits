@@ -15,15 +15,14 @@ pub(crate) struct StackOnlyOpcode<const N_POP: usize, const N_PUSH: usize>;
 impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, N_PUSH> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-
-        // N_POP stack reads
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step);
+        // N stack reads
         for i in 0..N_POP {
             state.push_stack_op(
-                exec_step,
+                &mut exec_step,
                 RW::READ,
                 step.stack.nth_last_filled(i),
                 step.stack.nth_last(i)?,
@@ -33,14 +32,14 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
         // N_PUSH stack writes
         for i in 0..N_PUSH {
             state.push_stack_op(
-                exec_step,
+                &mut exec_step,
                 RW::WRITE,
                 steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
                 steps[1].stack.nth_last(N_PUSH - 1 - i)?,
             )?;
         }
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 

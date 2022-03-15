@@ -24,12 +24,12 @@ mod number_tests {
 
         let mut builder = block.new_circuit_input_builder();
         builder
-            .handle_tx(&block.eth_tx, &block.geth_trace, None)
+            .handle_tx(&block.eth_tx, &block.geth_trace)
             .unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
         let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed, None)
+            .new_tx(&block.eth_tx, !block.geth_trace.failed)
             .unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 

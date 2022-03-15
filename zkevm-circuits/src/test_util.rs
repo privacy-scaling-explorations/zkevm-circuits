@@ -28,12 +28,12 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
     pub enable_evm_circuit_test: bool,
     pub enable_state_circuit_test: bool,
     pub gas_limit: u64,
     pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
-    pub call_data: Option<Vec<u8>>,
 }
 
 impl Default for BytecodeTestConfig {
@@ -43,22 +43,22 @@ impl Default for BytecodeTestConfig {
             enable_state_circuit_test: true,
             gas_limit: 1_000_000u64,
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
-            call_data: None,
         }
     }
 }
 
 pub fn run_test_circuits(bytecode: eth_types::Bytecode) -> Result<(), Vec<VerifyFailure>> {
-    test_circuits_using_bytecode(bytecode, BytecodeTestConfig::default())
+    test_circuits_using_bytecode(bytecode, BytecodeTestConfig::default(), None)
 }
 
 pub fn test_circuits_using_bytecode(
     bytecode: eth_types::Bytecode,
     config: BytecodeTestConfig,
+    call_data: Option<Vec<u8>>,
 ) -> Result<(), Vec<VerifyFailure>> {
     // execute the bytecode and get trace
     let block_trace = bus_mapping::mock::BlockData::new_from_geth_data(
-        mock::new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit)).unwrap(),
+        mock::new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit), call_data).unwrap(),
     );
     let mut builder = block_trace.new_circuit_input_builder();
     builder

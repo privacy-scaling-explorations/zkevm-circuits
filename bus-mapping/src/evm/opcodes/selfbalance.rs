@@ -10,16 +10,16 @@ pub(crate) struct Selfbalance;
 impl Opcode for Selfbalance {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        let self_balance = steps[1].stack.last()?;
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step);
+        let self_balance = geth_steps[1].stack.last()?;
         let callee_address = state.call()?.address;
 
         // CallContext read of the callee_address
         state.push_op(
-            exec_step,
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -30,7 +30,7 @@ impl Opcode for Selfbalance {
 
         // Account read for the balance of the callee_address
         state.push_op(
-            exec_step,
+            &mut exec_step,
             RW::READ,
             AccountOp {
                 address: callee_address,
@@ -42,13 +42,13 @@ impl Opcode for Selfbalance {
 
         // Stack write of self_balance
         state.push_stack_op(
-            exec_step,
+            &mut exec_step,
             RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
+            geth_step.stack.last_filled().map(|a| a - 1),
             self_balance,
         )?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 

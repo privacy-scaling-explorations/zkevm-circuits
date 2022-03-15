@@ -15,22 +15,22 @@ pub(crate) struct Sload;
 impl Opcode for Sload {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step);
 
         // First stack read
-        let stack_value_read = step.stack.last()?;
-        let stack_position = step.stack.last_filled();
+        let stack_value_read = geth_step.stack.last()?;
+        let stack_position = geth_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(exec_step, RW::READ, stack_position, stack_value_read)?;
+        state.push_stack_op(&mut exec_step, RW::READ, stack_position, stack_value_read)?;
 
         // Storage read
-        let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
+        let storage_value_read = geth_step.storage.get_or_err(&stack_value_read)?;
         state.push_op(
-            exec_step,
+            &mut exec_step,
             RW::READ,
             StorageOp::new(
                 state.call()?.address,
@@ -43,9 +43,9 @@ impl Opcode for Sload {
         );
 
         // First stack write
-        state.push_stack_op(exec_step, RW::WRITE, stack_position, storage_value_read)?;
+        state.push_stack_op(&mut exec_step, RW::WRITE, stack_position, storage_value_read)?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 

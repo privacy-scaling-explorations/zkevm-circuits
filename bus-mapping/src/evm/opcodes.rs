@@ -52,31 +52,29 @@ pub trait Opcode: Debug {
     /// is implemented for.
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        next_steps: &[GethExecStep],
-    ) -> Result<(), Error>;
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error>;
 
-    ///
-    fn gen_associated_ops_multi(
-        state: &mut CircuitInputStateRef,
-        next_steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let mut step = state.new_step(&next_steps[0]);
-        Self::gen_associated_ops(state, &mut step, next_steps)?;
-        state.push_step_to_tx(step);
-        Ok(())
-    }
+    // fn gen_associated_ops(
+    //     state: &mut CircuitInputStateRef,
+    //     next_steps: &[GethExecStep],
+    // ) -> Result<(), Error> {
+    //     let mut step = state.new_step(&next_steps[0]);
+    //     Self::gen_associated_ops(state, &mut step, next_steps)?;
+    //     state.push_step_to_tx(step);
+    //     Ok(())
+    // }
 }
 
 fn dummy_gen_associated_ops(
     _state: &mut CircuitInputStateRef,
     _next_steps: &[GethExecStep],
-) -> Result<(), Error> {
-    Ok(())
+) -> Result<Vec<ExecStep>, Error> {
+    Ok(vec![])
 }
 
 type FnGenAssociatedOps =
-    fn(state: &mut CircuitInputStateRef, next_steps: &[GethExecStep]) -> Result<(), Error>;
+    fn(state: &mut CircuitInputStateRef, next_steps: &[GethExecStep]) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
@@ -114,7 +112,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
         OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops_multi,
+        OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
         // OpcodeId::GASPRICE => {},
@@ -130,7 +128,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
         // OpcodeId::CHAINID => {},
-        OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops_multi,
+        OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         // OpcodeId::BASEFEE => {},
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
@@ -239,7 +237,7 @@ pub fn gen_associated_ops(
     opcode_id: &OpcodeId,
     state: &mut CircuitInputStateRef,
     next_steps: &[GethExecStep],
-) -> Result<(), Error> {
+) -> Result<Vec<ExecStep>, Error> {
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, next_steps)
 }

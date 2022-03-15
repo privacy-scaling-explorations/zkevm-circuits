@@ -11,24 +11,24 @@ pub(crate) struct Swap<const N: usize>;
 impl<const N: usize> Opcode for Swap<N> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step);
 
         // Peek b and a
-        let stack_b_value_read = step.stack.nth_last(N)?;
-        let stack_b_position = step.stack.nth_last_filled(N);
-        state.push_stack_op(exec_step, RW::READ, stack_b_position, stack_b_value_read)?;
-        let stack_a_value_read = step.stack.last()?;
-        let stack_a_position = step.stack.last_filled();
-        state.push_stack_op(exec_step, RW::READ, stack_a_position, stack_a_value_read)?;
+        let stack_b_value_read = geth_step.stack.nth_last(N)?;
+        let stack_b_position = geth_step.stack.nth_last_filled(N);
+        state.push_stack_op(&mut exec_step, RW::READ, stack_b_position, stack_b_value_read)?;
+        let stack_a_value_read = geth_step.stack.last()?;
+        let stack_a_position = geth_step.stack.last_filled();
+        state.push_stack_op(&mut exec_step, RW::READ, stack_a_position, stack_a_value_read)?;
 
         // Write a into b_position, write b into a_position
-        state.push_stack_op(exec_step, RW::WRITE, stack_b_position, stack_a_value_read)?;
-        state.push_stack_op(exec_step, RW::WRITE, stack_a_position, stack_b_value_read)?;
+        state.push_stack_op(&mut exec_step, RW::WRITE, stack_b_position, stack_a_value_read)?;
+        state.push_stack_op(&mut exec_step, RW::WRITE, stack_a_position, stack_b_value_read)?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 

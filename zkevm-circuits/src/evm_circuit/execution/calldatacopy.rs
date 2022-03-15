@@ -252,11 +252,12 @@ mod test {
             CALLDATACOPY
             STOP
         };
+        let call_data = Some(rand_bytes(call_data_length));
+        println!("calldata = {:?}", call_data);
         let test_config = BytecodeTestConfig {
-            call_data: Some(rand_bytes(call_data_length)),
             ..Default::default()
         };
-        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
+        assert_eq!(test_circuits_using_bytecode(bytecode, test_config, call_data), Ok(()));
     }
 
     fn test_ok_internal(
@@ -430,17 +431,16 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        /* gupeng
-        test_ok_root_old(64, Word::from(0x40), Word::from(0), Word::from(10));
+        //test_ok_root_old(64, Word::from(0x40), Word::from(0), Word::from(10));
         test_ok_root(64, Word::from(0x40), Word::from(0), Word::from(10));
-        */
-        test_ok_internal(
-            Word::from(0x40),
-            Word::from(64),
-            Word::from(0xA0),
-            Word::from(16),
-            Word::from(10),
-        );
+        return
+        // test_ok_internal(
+        //     Word::from(0x40),
+        //     Word::from(64),
+        //     Word::from(0xA0),
+        //     Word::from(16),
+        //     Word::from(10),
+        // );
     }
 
     #[test]

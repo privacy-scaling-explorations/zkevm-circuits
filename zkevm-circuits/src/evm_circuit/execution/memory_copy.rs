@@ -70,14 +70,14 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                 )
             });
             // Read bytes[i] from Tx
-            cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
-                cb.tx_context_lookup(
-                    tx_id.expr(),
-                    TxContextFieldTag::CallData,
-                    Some(src_addr.expr() + i.expr()),
-                    buffer_reader.byte(i),
-                )
-            });
+            // cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
+            //     cb.tx_context_lookup(
+            //         tx_id.expr(),
+            //         TxContextFieldTag::CallData,
+            //         Some(src_addr.expr() + i.expr()),
+            //         buffer_reader.byte(i),
+            //     )
+            // });
             // Write bytes[i] to memory when selectors[i] != 0
             cb.condition(buffer_reader.has_data(i), |cb| {
                 cb.memory_lookup(

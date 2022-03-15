@@ -577,8 +577,10 @@ pub struct Transaction {
     /// Value
     pub value: Word,
     /// Input / Call Data
-    pub input: Vec<u8>, // call_data
+    pub input: Vec<u8>,
+    /// Calls made in the transaction
     calls: Vec<Call>,
+    /// Execution steps
     steps: Vec<ExecStep>,
 }
 
@@ -590,7 +592,6 @@ impl Transaction {
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
-        call_data: Option<&[u8]>,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -638,11 +639,6 @@ impl Transaction {
             }
         };
 
-        let input = match call_data {
-            Some(data) => data.to_vec(),
-            None => eth_tx.input.to_vec(),
-        };
-
         Ok(Self {
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
@@ -650,7 +646,7 @@ impl Transaction {
             from: eth_tx.from,
             to: eth_tx.to.unwrap_or_default(),
             value: eth_tx.value,
-            input,
+            input: eth_tx.input.to_vec(),
             calls: vec![call],
             steps: Vec::new(),
         })
@@ -681,27 +677,6 @@ impl Transaction {
     }
 }
 
-#[derive(Debug)]
-/// Transaction configuration
-pub struct TransactionConfig {
-    /// If root call
-    pub is_root_call: bool,
-    /// Initialized length of call data
-    pub call_data_length: usize,
-    /// Initialized offset of call data
-    pub call_data_offset: u64,
-}
-
-impl Default for TransactionConfig {
-    fn default() -> Self {
-        Self {
-            is_root_call: true,
-            call_data_length: 0,
-            call_data_offset: 0,
-        }
-    }
-}
-
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
 pub struct CircuitInputStateRef<'a> {
@@ -717,6 +692,8 @@ pub struct CircuitInputStateRef<'a> {
     pub tx: &'a mut Transaction,
     /// Transaction Context
     pub tx_ctx: &'a mut TransactionContext,
+    // /// Steps
+    //pub steps: Vec<ExecStep>,
 }
 
 impl<'a> CircuitInputStateRef<'a> {
@@ -728,11 +705,6 @@ impl<'a> CircuitInputStateRef<'a> {
             self.block_ctx.rwc,
             self.tx_ctx.call_ctx().swc,
         )
-    }
-
-    ///
-    pub fn push_step_to_tx(&mut self, step: ExecStep) {
-        self.tx.steps.push(step);
     }
 
     /// Push an [`Operation`] into the [`OperationContainer`] with the next
@@ -826,6 +798,14 @@ impl<'a> CircuitInputStateRef<'a> {
             .call_index()
             .map(|call_idx| &self.tx.calls[call_idx])
     }
+
+    // pub fn caller(&self) -> Option<&Call> {
+    //     if self.tx.calls.len() == 1 {
+    //         None
+    //     } else {
+    //         Some(&self.tx.calls[self.tx_ctx.call_index()])
+    //     }
+    // }
 
     /// Mutable reference to the current Call
     pub fn call_mut(&mut self) -> Result<&mut Call, Error> {
@@ -1355,7 +1335,6 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
-        call_data: Option<&[u8]>,
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
 
@@ -1376,7 +1355,6 @@ impl<'a> CircuitInputBuilder {
             &mut self.code_db,
             eth_tx,
             is_success,
-            call_data,
         )
     }
 
@@ -1443,12 +1421,12 @@ impl<'a> CircuitInputBuilder {
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-
-            gen_associated_ops(
+            let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
                 &geth_trace.struct_logs[index..],
             )?;
+            tx.steps.extend(exec_steps);
         }
 
         // TODO: Move into gen_associated_steps with
@@ -2055,7 +2033,7 @@ mod tracer_tests {
                  STOP
         };
         let block =
-            mock::new_single_tx_trace_code_gas(&code, Gas(1_000_000_000_000_000u64)).unwrap();
+            mock::new_single_tx_trace_code_gas(&code, Gas(1_000_000_000_000_000u64), None).unwrap();
         let struct_logs = &block.geth_traces[0].struct_logs;
 
         // get last CALL
@@ -2915,7 +2893,7 @@ mod tracer_tests {
             PUSH1(0x1)
             PUSH1(0x2)
         };
-        let block = mock::new_single_tx_trace_code_gas(&code, Gas(21004)).unwrap();
+        let block = mock::new_single_tx_trace_code_gas(&code, Gas(21004), None).unwrap();
         let struct_logs = &block.geth_traces[0].struct_logs;
 
         assert_eq!(struct_logs[1].error, Some(GETH_ERR_OUT_OF_GAS.to_string()));

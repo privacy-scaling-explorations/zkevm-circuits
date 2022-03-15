@@ -16,79 +16,71 @@ pub(crate) struct Calldatacopy;
 impl Opcode for Calldatacopy {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        exec_step: &mut ExecStep,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        let memory_offset = step.stack.nth_last(0)?;
-        let data_offset = step.stack.nth_last(1)?;
-        let length = step.stack.nth_last(2)?;
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_steps = Vec::new();
+        let calldatacopy_step = gen_calldatacopy_step(state, geth_step)?;
+        let memory_copy_steps = gen_memory_copy_steps(state, &calldatacopy_step, geth_steps)?;
+        exec_steps.push(calldatacopy_step);
+        exec_steps.extend(memory_copy_steps);
+        Ok(exec_steps)
+    }
+}
 
-        state.push_stack_op(
-            exec_step,
-            RW::READ,
-            step.stack.nth_last_filled(0),
-            memory_offset,
-        );
-        state.push_stack_op(
-            exec_step,
-            RW::READ,
-            step.stack.nth_last_filled(1),
-            data_offset,
-        );
-        state.push_stack_op(exec_step, RW::READ, step.stack.nth_last_filled(2), length);
+fn gen_calldatacopy_step(
+    state: &mut CircuitInputStateRef,
+    geth_step: &GethExecStep,
+) -> Result<ExecStep, Error> {
+    let mut exec_step = state.new_step(geth_step);
+    let memory_offset = geth_step.stack.nth_last(0)?;
+    let data_offset = geth_step.stack.nth_last(1)?;
+    let length = geth_step.stack.nth_last(2)?;
+
+    state.push_stack_op(
+        &mut exec_step,
+        RW::READ,
+        geth_step.stack.nth_last_filled(0),
+        memory_offset,
+    );
+    state.push_stack_op(
+        &mut exec_step,
+        RW::READ,
+        geth_step.stack.nth_last_filled(1),
+        data_offset,
+    );
+    state.push_stack_op(&mut exec_step, RW::READ, geth_step.stack.nth_last_filled(2), length);
+    state.push_op(
+        &mut exec_step,
+        RW::READ,
+        CallContextOp {
+            call_id: state.call().call_id,
+            field: CallContextField::TxId,
+            value: state.tx_ctx.id().into(),
+        },
+    );
+
+    if !state.call().is_root {
         state.push_op(
-            exec_step,
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call().call_id,
-                field: CallContextField::TxId,
-                value: state.tx_ctx.id().into(),
+                field: CallContextField::CallDataLength,
+                value: state.call().call_data_length.into(),
             },
         );
-
-        if !state.call().is_root {
-            state.push_op(
-                exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call().call_id,
-                    field: CallContextField::CallDataLength,
-                    value: state.call().call_data_length.into(),
-                },
-            );
-            state.push_op(
-                exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call().call_id,
-                    field: CallContextField::CallDataOffset,
-                    value: state.call().call_data_offset.into(),
-                },
-            );
-        };
-
-        Ok(())
-    }
-
-    fn gen_associated_ops_multi(
-        state: &mut CircuitInputStateRef,
-        next_steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        // Generate an ExecStep of state CALLDATACOPY.
-        let mut call_data_copy_step = state.new_step(&next_steps[0]);
-        Self::gen_associated_ops(state, &mut call_data_copy_step, next_steps)?;
-
-        // Generate ExecSteps of virtual state CopyToMemory.
-        let copy_to_memory_steps = gen_memory_copy_steps(state, &call_data_copy_step, next_steps)?;
-
-        state.push_step_to_tx(call_data_copy_step);
-        for s in copy_to_memory_steps {
-            state.push_step_to_tx(s);
-        }
-
-        Ok(())
-    }
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            CallContextOp {
+                call_id: state.call().call_id,
+                field: CallContextField::CallDataOffset,
+                value: state.call().call_data_offset.into(),
+            },
+        );
+    };
+    Ok(exec_step)
 }
 
 fn gen_memory_copy_step(
@@ -107,7 +99,7 @@ fn gen_memory_copy_step(
         pc: ProgramCounter(last_step.pc.0 + 1),
         stack_size: 0,
         memory_size,
-        gas_left: Gas(last_step.gas_left.0 - last_step.gas_cost.0),
+        gas_left: last_step.gas_left,
         gas_cost: GasCost(0),
         call_index: last_step.call_index,
         rwc: RWCounter(last_step.rwc.0 + last_step.bus_mapping_instance.len()),
@@ -128,7 +120,7 @@ fn gen_memory_copy_step(
                     state.push_memory_op(
                         &mut step,
                         RW::READ,
-                        (idx + src_addr as usize).into(),
+                        (addr as usize).into(),
                         bytes_map[&addr],
                     );
                 }
@@ -155,11 +147,11 @@ fn gen_memory_copy_step(
 fn gen_memory_copy_steps(
     state: &mut CircuitInputStateRef,
     call_data_copy_step: &ExecStep,
-    next_steps: &[GethExecStep],
+    geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let memory_offset = next_steps[0].stack.nth_last(0)?.as_u64();
-    let data_offset = next_steps[0].stack.nth_last(1)?.as_u64();
-    let length = next_steps[0].stack.nth_last(2)?.as_usize();
+    let memory_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
+    let data_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
+    let length = geth_steps[0].stack.nth_last(2)?.as_usize();
 
     let is_root = state.call().is_root;
     let call_data_length = state.call().call_data_length;
@@ -244,12 +236,12 @@ mod calldatacopy_tests {
 
         let mut builder = block.new_circuit_input_builder();
         builder
-            .handle_tx(&block.eth_tx, &block.geth_trace, None)
+            .handle_tx(&block.eth_tx, &block.geth_trace)
             .unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
         let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed, None)
+            .new_tx(&block.eth_tx, !block.geth_trace.failed)
             .unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 

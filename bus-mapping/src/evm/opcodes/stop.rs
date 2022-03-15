@@ -15,11 +15,10 @@ pub(crate) struct Stop;
 impl Opcode for Stop {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        _exec_step: &mut ExecStep,
         _steps: &[GethExecStep],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ExecStep>, Error> {
         state.handle_return()?;
 
-        Ok(())
+        Ok(vec![])
     }
 }
