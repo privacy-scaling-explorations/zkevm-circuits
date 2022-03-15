@@ -15,13 +15,13 @@ case $circuit in
       exit 1
       ;;
    "evm")
-       run_suffix="evm_circuit_prover"
+      run_suffix="evm_circuit_prover"
       ;;
    "keccak")
-       run_suffix="keccak_round"
+      run_suffix="keccak_round"
       ;;
    "state")
-       run_suffix="state_circuit_prover"
+      run_suffix="state_circuit_prover"
       ;;
    *)
       echo "No proper value"
