@@ -20,9 +20,8 @@ impl Opcode for Calldatacopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_steps = Vec::new();
-        let calldatacopy_step = gen_calldatacopy_step(state, geth_step)?;
-        let memory_copy_steps = gen_memory_copy_steps(state, &calldatacopy_step, geth_steps)?;
-        exec_steps.push(calldatacopy_step);
+        exec_steps.push(gen_calldatacopy_step(state, geth_step)?);
+        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
         exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
     }
@@ -80,120 +79,84 @@ fn gen_calldatacopy_step(
             },
         );
     };
+    println!("exec_step = {exec_step:?}");
     Ok(exec_step)
 }
 
 fn gen_memory_copy_step(
     state: &mut CircuitInputStateRef,
-    last_step: &ExecStep,
+    exec_step: &mut ExecStep,
     src_addr: u64,
     dst_addr: u64,
     src_addr_end: u64,
     bytes_left: usize,
-    memory_size: usize,
-    from_tx: bool,
-    bytes_map: &HashMap<u64, u8>,
-) -> ExecStep {
-    let mut step = ExecStep {
-        exec_state: ExecState::CopyToMemory,
-        pc: ProgramCounter(last_step.pc.0 + 1),
-        stack_size: 0,
-        memory_size,
-        gas_left: last_step.gas_left,
-        gas_cost: GasCost(0),
-        call_index: last_step.call_index,
-        rwc: RWCounter(last_step.rwc.0 + last_step.bus_mapping_instance.len()),
-        swc: last_step.swc,
-        bus_mapping_instance: vec![],
-        error: None,
-        aux_data: None,
-    };
-
+) {
     let mut selectors = vec![0u8; MAX_COPY_BYTES];
     for (idx, selector) in selectors.iter_mut().enumerate() {
         if idx < bytes_left {
             *selector = 1;
             let addr = src_addr + idx as u64;
             let byte = if addr < src_addr_end {
-                debug_assert!(bytes_map.contains_key(&addr));
-                if !from_tx {
-                    state.push_memory_op(
-                        &mut step,
-                        RW::READ,
-                        (addr as usize).into(),
-                        bytes_map[&addr],
-                    );
+                if state.call().is_root {
+                    state.tx.input[addr as usize]
+                } else {
+                    // TODO, read caller memory
+                    // state.push_memory_op(
+                    //     exec_step,
+                    //     RW::READ,
+                    //     (addr as usize).into(),
+                    //     bytes_map[&addr],
+                    // );
+                    0u8
                 }
-                bytes_map[&addr]
             } else {
                 0
             };
-            state.push_memory_op(&mut step, RW::WRITE, (idx + dst_addr as usize).into(), byte);
+            println!("calldata[{}] = {}", addr, byte);
+            state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte);
         }
     }
 
-    step.aux_data = Some(StepAuxiliaryData::CopyToMemory {
+    exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory {
         src_addr,
         dst_addr,
         bytes_left: bytes_left as u64,
         src_addr_end,
-        from_tx,
+        from_tx: state.call().is_root,
         selectors,
     });
-
-    step
 }
 
 fn gen_memory_copy_steps(
     state: &mut CircuitInputStateRef,
-    call_data_copy_step: &ExecStep,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let memory_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
     let data_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
     let length = geth_steps[0].stack.nth_last(2)?.as_usize();
 
-    let is_root = state.call().is_root;
+    let call_data_offset = state.call().call_data_offset;
     let call_data_length = state.call().call_data_length;
-    let (src_addr, buffer_addr, buffer_addr_end) = if is_root {
-        (data_offset, 0, call_data_length)
-    } else {
-        let call_data_offset = state.call().call_data_offset;
-        (
-            call_data_offset + data_offset,
-            call_data_offset,
-            call_data_offset + call_data_length,
-        )
-    };
-
-    let memory_size = if length == 0 {
-        0
-    } else {
-        (memory_offset + length as u64 + 31) / 32 * 32
-    };
-
-    let buffer: Vec<u8> = vec![0; (buffer_addr_end - buffer_addr) as usize];
-    let bytes_map = (buffer_addr..buffer_addr_end)
-        .zip(buffer.iter().copied())
-        .collect();
+    let (src_addr, buffer_addr_end) = (
+        call_data_offset + data_offset,
+        call_data_offset + call_data_length,
+    );
 
     let mut copied = 0;
     let mut steps = vec![];
-    let mut last_step = call_data_copy_step;
     while copied < length {
-        let step = gen_memory_copy_step(
+        let mut exec_step = state.new_step(&geth_steps[1]);
+        exec_step.exec_state = ExecState::CopyToMemory;
+        gen_memory_copy_step(
             state,
-            last_step,
+            &mut exec_step,
             src_addr + copied as u64,
             memory_offset + copied as u64,
             buffer_addr_end,
             length - copied,
-            memory_size as usize,
-            is_root,
-            &bytes_map,
         );
-        steps.push(step);
-        last_step = steps.last().unwrap();
+        println!("exec_step = {:?}", exec_step);
+        steps.push(exec_step);
         copied += MAX_COPY_BYTES;
     }
 

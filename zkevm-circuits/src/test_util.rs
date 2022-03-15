@@ -68,8 +68,6 @@ pub fn test_circuits_using_bytecode(
     // build a witness block from trace result
     let block = crate::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
 
-    println!("zkevm - 1 - {block:?}");
-
     // finish required tests according to config using this witness block
     test_circuits_using_witness_block(block, config)
 }
