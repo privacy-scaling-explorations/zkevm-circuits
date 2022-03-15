@@ -715,6 +715,30 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn tx_refund_write(
+        &mut self,
+        tx_id: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
+    ) {
+        self.state_write(
+            "TxRefund write",
+            RwTableTag::TxRefund,
+            [
+                tx_id,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
+            reversion_info,
+        );
+    }
+
     // Account
 
     pub(crate) fn account_read(
@@ -789,6 +813,34 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 tx_id,
                 committed_value,
             ],
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_storage_write(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        tx_id: Expression<F>,
+        committed_value: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
+    ) {
+        self.state_write(
+            "AccountStorage write",
+            RwTableTag::AccountStorage,
+            [
+                0.expr(),
+                account_address,
+                0.expr(),
+                key,
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+            ],
+            reversion_info,
         );
     }
 

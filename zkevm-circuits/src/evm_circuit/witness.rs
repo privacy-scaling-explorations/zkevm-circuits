@@ -559,9 +559,11 @@ impl Rw {
         }
     }
 
-    pub fn tx_refund_value(&self) -> u64 {
+    pub fn tx_refund_value_pair(&self) -> (u64, u64) {
         match self {
-            Self::TxRefund { value, .. } => *value,
+            Self::TxRefund {
+                value, value_prev, ..
+            } => (*value, *value_prev),
             _ => unreachable!(),
         }
     }
@@ -582,6 +584,19 @@ impl Rw {
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
+        match self {
+            Self::AccountStorage {
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+                ..
+            } => (*value, *value_prev, *tx_id, *committed_value),
             _ => unreachable!(),
         }
     }
@@ -1098,6 +1113,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::GAS => ExecutionState::GAS,
             OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
             OpcodeId::SLOAD => ExecutionState::SLOAD,
+            OpcodeId::SSTORE => ExecutionState::SSTORE,
             // TODO: Use better way to convert BeginTx and EndTx.
             OpcodeId::INVALID(_) if [19, 21].contains(&step.bus_mapping_instance.len()) => {
                 ExecutionState::BeginTx
