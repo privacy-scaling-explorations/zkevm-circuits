@@ -32,6 +32,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         is_leaf_c_value: Column<Advice>,
         is_account_leaf_key_s: Column<Advice>,
         is_account_leaf_nonce_balance_s: Column<Advice>,
+        is_account_leaf_nonce_balance_c: Column<Advice>,
         is_account_leaf_storage_codehash_s: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_leaf_in_added_branch: Column<Advice>,
@@ -71,6 +72,8 @@ impl<F: FieldExt> SelectorsChip<F> {
                 meta.query_advice(is_account_leaf_key_s, Rotation::cur());
             let is_account_leaf_nonce_balance_s = meta
                 .query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
+            let is_account_leaf_nonce_balance_c = meta
+                .query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
             let is_account_leaf_storage_codehash_s = meta.query_advice(
                 is_account_leaf_storage_codehash_s,
                 Rotation::cur(),
@@ -132,6 +135,13 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(
                     q_enable.clone(),
                     is_account_leaf_nonce_balance_s.clone(),
+                ),
+            ));
+            constraints.push((
+                "bool check is_account_nonce_balance_c",
+                get_bool_constraint(
+                    q_enable.clone(),
+                    is_account_leaf_nonce_balance_c.clone(),
                 ),
             ));
             constraints.push((

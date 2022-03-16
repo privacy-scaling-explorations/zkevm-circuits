@@ -9,9 +9,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{
-        compute_rlc, get_bool_constraint, hash_expr_into_rlc, into_words_expr,
-    },
+    helpers::{compute_rlc, get_bool_constraint, hash_expr_into_rlc},
     param::{
         HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,

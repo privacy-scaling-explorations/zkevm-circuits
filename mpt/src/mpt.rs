@@ -84,9 +84,8 @@ pub struct MPTConfig<F> {
     is_leaf_c_value: Column<Advice>,
     is_account_leaf_key_s: Column<Advice>,
     is_account_leaf_nonce_balance_s: Column<Advice>,
+    is_account_leaf_nonce_balance_c: Column<Advice>,
     is_account_leaf_storage_codehash_s: Column<Advice>,
-    // There is no is_account_leaf_key_c and is_account_leaf_nonce_balance_c
-    // because it's always the same for S and C, so we just use S for both.
     is_account_leaf_storage_codehash_c: Column<Advice>,
     node_index: Column<Advice>,
     is_modified: Column<Advice>, // whether this branch node is modified
@@ -169,6 +168,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let is_account_leaf_key_s = meta.advice_column();
         let is_account_leaf_nonce_balance_s = meta.advice_column();
+        let is_account_leaf_nonce_balance_c = meta.advice_column();
         let is_account_leaf_storage_codehash_s = meta.advice_column();
         let is_account_leaf_storage_codehash_c = meta.advice_column();
 
@@ -261,6 +261,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_c_value,
             is_account_leaf_key_s,
             is_account_leaf_nonce_balance_s,
+            is_account_leaf_nonce_balance_c,
             is_account_leaf_storage_codehash_s,
             is_account_leaf_storage_codehash_c,
             is_leaf_in_added_branch,
@@ -715,8 +716,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
         );
 
-        // NOTE: storage leaf chip (LeafHashChip) checks the keccak, while
-        // account leaf chip doesn't do this internally, the lookup is in mpt.rs
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
             q_not_first,
@@ -768,6 +767,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_leaf_c_value,
             is_account_leaf_key_s,
             is_account_leaf_nonce_balance_s,
+            is_account_leaf_nonce_balance_c,
             is_account_leaf_storage_codehash_s,
             is_account_leaf_storage_codehash_c,
             node_index,
@@ -820,6 +820,7 @@ impl<F: FieldExt> MPTConfig<F> {
         is_leaf_c_value: bool,
         is_account_leaf_key_s: bool,
         is_account_leaf_nonce_balance_s: bool,
+        is_account_leaf_nonce_balance_c: bool,
         is_account_leaf_storage_codehash_s: bool,
         is_account_leaf_storage_codehash_c: bool,
         drifted_pos: u8,
@@ -1000,6 +1001,12 @@ impl<F: FieldExt> MPTConfig<F> {
             || Ok(F::from(is_account_leaf_nonce_balance_s as u64)),
         )?;
         region.assign_advice(
+            || "assign is account leaf nonce balance c".to_string(),
+            self.is_account_leaf_nonce_balance_c,
+            offset,
+            || Ok(F::from(is_account_leaf_nonce_balance_c as u64)),
+        )?;
+        region.assign_advice(
             || "assign is account leaf storage codehash s".to_string(),
             self.is_account_leaf_storage_codehash_s,
             offset,
@@ -1099,7 +1106,7 @@ impl<F: FieldExt> MPTConfig<F> {
     ) -> Result<(), Error> {
         self.assign_row(
             region, row, true, false, false, 0, 0, false, false, false, false,
-            false, false, false, false, 0, false, false, false, offset,
+            false, false, false, false, false, 0, false, false, false, offset,
         )?;
 
         Ok(())
@@ -1129,6 +1136,7 @@ impl<F: FieldExt> MPTConfig<F> {
             node_index == 15,
             node_index,
             key,
+            false,
             false,
             false,
             false,
@@ -1250,8 +1258,10 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut node_index: u8 = 0;
                     let mut acc_s = F::zero();
                     let mut acc_mult_s = F::zero();
-                    let mut acc_nonce_balance = F::zero();
-                    let mut acc_mult_nonce_balance = F::zero();
+                    let mut acc_nonce_balance_s = F::zero();
+                    let mut acc_mult_nonce_balance_s = F::zero();
+                    let mut acc_nonce_balance_c = F::zero();
+                    let mut acc_mult_nonce_balance_c = F::zero();
 
                     let mut acc_c = F::zero();
                     let mut acc_mult_c = F::zero();
@@ -1294,11 +1304,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
                         .iter()
-                        .filter(|r| {
-                            r[r.len() - 1] != 5
-                                && r[r.len() - 1] != 4
-                                && r[r.len() - 1] != 9
-                        })
+                        .filter(|r| r[r.len() - 1] != 5 && r[r.len() - 1] != 4)
                         .enumerate()
                     {
                         if ind == 19_usize && row[row.len() - 1] == 0 {
@@ -1916,6 +1922,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || row[row.len() - 1] == 6
                             || row[row.len() - 1] == 7
                             || row[row.len() - 1] == 8
+                            || row[row.len() - 1] == 9
                             || row[row.len() - 1] == 11
                             || row[row.len() - 1] == 13
                             || row[row.len() - 1] == 14
@@ -1938,6 +1945,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             let mut is_account_leaf_key_s = false;
                             let mut is_account_leaf_nonce_balance_s = false;
+                            let mut is_account_leaf_nonce_balance_c = false;
                             let mut is_account_leaf_storage_codehash_s = false;
                             let mut is_account_leaf_storage_codehash_c = false;
 
@@ -1954,6 +1962,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row[row.len() - 1] == 7 {
                                 is_account_leaf_nonce_balance_s = true;
                             } else if row[row.len() - 1] == 8 {
+                                is_account_leaf_nonce_balance_c = true;
+                            } else if row[row.len() - 1] == 9 {
                                 is_account_leaf_storage_codehash_s = true;
                             } else if row[row.len() - 1] == 11 {
                                 is_account_leaf_storage_codehash_c = true;
@@ -1986,6 +1996,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_leaf_c_value,
                                 is_account_leaf_key_s,
                                 is_account_leaf_nonce_balance_s,
+                                is_account_leaf_nonce_balance_c,
                                 is_account_leaf_storage_codehash_s,
                                 is_account_leaf_storage_codehash_c,
                                 0,
@@ -2200,7 +2211,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(key_rlc_new),
                                 )?;
-                            } else if row[row.len() - 1] == 7 {
+                            } else if row[row.len() - 1] == 7
+                                || row[row.len() - 1] == 8
+                            {
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
                                     row,
@@ -2274,18 +2287,22 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(mult_diff_c),
                                 )?;
-
-                                acc_nonce_balance = acc_s;
-                                acc_mult_nonce_balance = acc_mult_s;
-                            } else if row[row.len() - 1] == 8
+                                if row[row.len() - 1] == 7 {
+                                    acc_nonce_balance_s = acc_s;
+                                    acc_mult_nonce_balance_s = acc_mult_s;
+                                } else {
+                                    acc_nonce_balance_c = acc_s;
+                                    acc_mult_nonce_balance_c = acc_mult_s;
+                                }
+                            } else if row[row.len() - 1] == 9
                                 || row[row.len() - 1] == 11
                             {
-                                if row[row.len() - 1] == 11 {
-                                    // Leaf key and nonce/balance for S and C
-                                    // are always the same, so we just use
-                                    // accumulated value from S.
-                                    acc_s = acc_nonce_balance;
-                                    acc_mult_s = acc_mult_nonce_balance;
+                                if row[row.len() - 1] == 9 {
+                                    acc_s = acc_nonce_balance_s;
+                                    acc_mult_s = acc_mult_nonce_balance_s;
+                                } else {
+                                    acc_s = acc_nonce_balance_c;
+                                    acc_mult_s = acc_mult_nonce_balance_c;
                                 }
                                 // storage
                                 compute_acc_and_mult(
