@@ -35,18 +35,19 @@ impl Opcode for Extcodehash {
         );
 
         // Update transaction access list for external_address
-        let account_previously_accessed = match step.gas_cost {
+        let is_warm = match step.gas_cost {
             GasCost::WARM_STORAGE_READ_COST => true,
             GasCost::COLD_ACCOUNT_ACCESS_COST => false,
             _ => unreachable!(),
         };
+        state.sdb.add_account_to_access_list(external_address);
         state.push_op(
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address: external_address,
                 value: true,
-                value_prev: account_previously_accessed,
+                value_prev: is_warm,
             },
         );
 
@@ -174,6 +175,9 @@ mod extcodehash_tests {
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_block(&block.eth_block, &block.geth_traces)?;
+
+        // Check that `external_address` is in access list as a result of bus mapping.
+        assert!(builder.sdb.add_account_to_access_list(external_address));
 
         let tx_id = 1;
         let transaction = &builder.block.txs()[tx_id - 1];
