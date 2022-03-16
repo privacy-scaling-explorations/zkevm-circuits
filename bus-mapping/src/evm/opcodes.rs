@@ -67,10 +67,10 @@ pub trait Opcode: Debug {
 }
 
 fn dummy_gen_associated_ops(
-    _state: &mut CircuitInputStateRef,
-    _next_steps: &[GethExecStep],
+    state: &mut CircuitInputStateRef,
+    next_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    Ok(vec![])
+    Ok(vec![state.new_step(&next_steps[0])?])
 }
 
 type FnGenAssociatedOps =
