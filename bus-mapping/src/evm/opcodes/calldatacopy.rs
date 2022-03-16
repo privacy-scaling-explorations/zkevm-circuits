@@ -77,7 +77,6 @@ fn gen_calldatacopy_step(
             },
         );
     };
-    println!("exec_step = {exec_step:?}");
     Ok(exec_step)
 }
 
@@ -89,7 +88,7 @@ fn gen_memory_copy_step(
     src_addr_end: u64,
     bytes_left: usize,
     is_root: bool,
-) {
+) -> Result<(), Error> {
     let mut selectors = vec![0u8; MAX_COPY_BYTES];
     for (idx, selector) in selectors.iter_mut().enumerate() {
         if idx < bytes_left {
@@ -111,8 +110,7 @@ fn gen_memory_copy_step(
             } else {
                 0
             };
-            println!("calldata[{}] = {}", addr, byte);
-            state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte);
+            state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
         }
     }
 
@@ -124,6 +122,8 @@ fn gen_memory_copy_step(
         from_tx: is_root,
         selectors,
     });
+
+    Ok(())
 }
 
 fn gen_memory_copy_steps(
@@ -154,8 +154,7 @@ fn gen_memory_copy_steps(
             buffer_addr_end,
             length - copied,
             state.call()?.is_root,
-        );
-        println!("exec_step = {:?}", exec_step);
+        )?;
         steps.push(exec_step);
         copied += MAX_COPY_BYTES;
     }
@@ -163,108 +162,74 @@ fn gen_memory_copy_steps(
     Ok(steps)
 }
 
-/*
 #[cfg(test)]
 mod calldatacopy_tests {
-    use crate::{
-        circuit_input_builder::{ExecStep, TransactionContext},
-        mock::BlockData,
-        operation::{CallContextField, CallContextOp, RW},
-        Error,
-    };
-    use eth_types::evm_types::StackAddress;
-    use eth_types::{bytecode, Word};
-    use mock::new_single_tx_trace_code_at_start;
+    use super::*;
+    use crate::circuit_input_builder::ExecState;
+    use crate::operation::StackOp;
+    use eth_types::{Word, bytecode};
+    use eth_types::evm_types::{OpcodeId, StackAddress};
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn calldatacopy_opcode_impl() -> Result<(), Error> {
-        // Set length to zero for only testing CallDataCopy (without CopyToMemory
-        // steps).
-        let length = Word::from(0);
-        let data_offset = Word::from(0);
-        let memory_offset = Word::from(0x40);
-
+    fn calldatacopy_opcode_impl() {
         let code = bytecode! {
-            PUSH32(length)
-            PUSH32(data_offset)
-            PUSH32(memory_offset)
-            #[start]
+            PUSH32(0)
+            PUSH32(0)
+            PUSH32(0x40)
             CALLDATACOPY
             STOP
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder
-            .handle_tx(&block.eth_tx, &block.geth_trace)
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to CALLDATACOPY
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state = test_builder.state_ref(&mut tx, &mut tx_ctx);
-
-        state.push_stack_op(&mut step, RW::READ, StackAddress::from(1021), memory_offset);
-        state.push_stack_op(&mut step, RW::READ, StackAddress::from(1022), data_offset);
-        state.push_stack_op(&mut step, RW::READ, StackAddress::from(1023), length);
-        state.push_op(
-            &mut step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call().call_id,
-                field: CallContextField::TxId,
-                value: state.tx_ctx.id().into(),
-            },
-        );
-
-        if !state.call().is_root {
-            state.push_op(
-                &mut step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call().call_id,
-                    field: CallContextField::CallDataLength,
-                    value: state.call().call_data_length.into(),
-                },
-            );
-            state.push_op(
-                &mut step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call().call_id,
-                    field: CallContextField::CallDataOffset,
-                    value: state.call().call_data_offset.into(),
-                },
-            );
-        };
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            [0, 1, 2]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1021), Word::from(0x40))
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1022), Word::from(0))
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(0))
+                ),
+            ]
         );
 
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        assert_eq!(
+            {
+                let operation = &builder.block.container.call_context[step.bus_mapping_instance[3].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id: builder.block.txs()[0].calls()[0].call_id,
+                    field: CallContextField::TxId,
+                    value: Word::from(1),
+                }
+            )
+        );
     }
 }
-*/

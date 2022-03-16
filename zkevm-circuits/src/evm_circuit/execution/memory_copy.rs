@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::TxContextFieldTag,
         util::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ComparisonGadget,
