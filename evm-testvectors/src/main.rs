@@ -1,3 +1,4 @@
+mod abi;
 mod code_cache;
 mod exec;
 mod lllc;

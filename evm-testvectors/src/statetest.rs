@@ -14,7 +14,7 @@ pub enum StateTestError {
     NonceMismatch { expected: U256, found: U256 },
     #[error("code mismatch (expected {expected:?}, found {found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
-    #[error("storage mismatch slot={} (expected {expected:?}, found {found:?})")]
+    #[error("storage mismatch slot={slot:?} (expected {expected:?}, found {found:?})")]
     StorageMismatch {
         slot: U256,
         expected: U256,
@@ -87,7 +87,7 @@ impl StateTest {
                     gas_limit: U256::from(self.env.current_gas_limit),
                     base_fee: U256::one(),
                 },
-                transaction: geth_types::Transaction {
+                transactions: vec![geth_types::Transaction {
                     from: self.from,
                     to: self.to,
                     nonce: self.nonce,
@@ -98,7 +98,7 @@ impl StateTest {
                     gas_tip_cap: U256::zero(),
                     call_data: self.data,
                     access_list: None,
-                },
+                }],
                 accounts: self.pre,
             },
             self.result,

@@ -1,4 +1,5 @@
 use super::lllc::Lllc;
+use crate::abi;
 use crate::statetest::{Env, PartialAccount, StateTest};
 use anyhow::{bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
@@ -274,69 +275,13 @@ impl YamlStateTestBuilder {
         if let Some(raw) = tags.get(":raw") {
             Ok((Bytes::from(hex::decode(&raw[2..])?), label))
         } else if let Some(abi) = tags.get(":abi") {
-            Ok((Self::encode_abi_funccall(abi)?, label))
+            Ok((abi::encode_funccall(abi)?, label))
         } else {
             bail!("do not know what to do with calldata")
         }
     }
 
-    /// encodes an abi call (e.g. "f(uint) 1")
-    pub fn encode_abi_funccall(spec: &str) -> Result<Bytes> {
-        use ethers_core::abi::{Function, Param, ParamType, StateMutability, Token};
-
-        // split parts into `func_name` ([`func_params`]) `args`
-
-        let tokens: Vec<_> = spec.split(' ').collect();
-        let func = tokens[0];
-        let args = &tokens[1..];
-
-        let func_name_params: Vec<_> = func.split([',', '(', ')']).collect();
-        let func_name = func_name_params[0];
-        let func_params = &func_name_params[1..func_name_params.len() - 1];
-
-        // transform func_params and args into the appropiate types
-
-        let map_type = |t| match t {
-            "uint" => ParamType::Uint(256),
-            _ => unimplemented!(),
-        };
-
-        let encode_type = |t, v| match t {
-            &ParamType::Uint(256) => U256::from_str_radix(v, 10).map(Token::Uint),
-            _ => unimplemented!(),
-        };
-
-        let func_params: Vec<_> = func_params
-            .iter()
-            .enumerate()
-            .map(|(n, t)| Param {
-                name: format!("p{}", n),
-                kind: map_type(t),
-                internal_type: None,
-            })
-            .collect();
-
-        let args: Vec<Token> = func_params
-            .iter()
-            .zip(args)
-            .map(|(typ, val)| encode_type(&typ.kind, val))
-            .collect::<std::result::Result<_, _>>()?;
-
-        // generate and return calldata
-
-        #[allow(deprecated)]
-        let func = Function {
-            name: func_name.to_string(),
-            inputs: func_params,
-            outputs: vec![],
-            state_mutability: StateMutability::Payable,
-            constant: false,
-        };
-
-        Ok(Bytes::from(func.encode_input(&args)?))
-    }
-
-    // parse entry as code, can be 0x, :raw or { LLL }
+    /// parse entry as code, can be 0x, :raw or { LLL }
     fn parse_code(&mut self, yaml: &Yaml) -> Result<Bytes> {
         let tags = Self::decompose_tags(yaml.as_str().context("not an str")?);
 
@@ -356,14 +301,14 @@ impl YamlStateTestBuilder {
         }
     }
 
-    // parse a hash entry
+    /// parse a hash entry
     fn parse_hash(yaml: &Yaml) -> Result<H256> {
         Ok(H256::from_slice(&hex::decode(
             yaml.as_str().context("not a str")?,
         )?))
     }
 
-    // parse an uint256 entry
+    /// parse an uint256 entry
     fn parse_u256(yaml: &Yaml) -> Result<U256> {
         if let Some(as_int) = yaml.as_i64() {
             Ok(U256::from(as_int))
@@ -378,7 +323,7 @@ impl YamlStateTestBuilder {
         }
     }
 
-    // parse u64 entry
+    /// parse u64 entry
     #[allow(clippy::cast_sign_loss)]
     fn parse_u64(yaml: &Yaml) -> Result<u64> {
         if let Some(as_int) = yaml.as_i64() {
@@ -394,10 +339,10 @@ impl YamlStateTestBuilder {
         }
     }
 
-    // parse a unique or a list of references,
-    //   -1 => Ref::Any
-    //   a int value => Ref::Index(value)
-    //   :label xxx => Ref::Label(value)
+    /// parse a unique or a list of references,
+    ///   -1 => Ref::Any
+    ///   a int value => Ref::Index(value)
+    ///   :label xxx => Ref::Label(value)
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_refs(yaml: &Yaml) -> Result<Refs> {
         // convert a unique element into a list
@@ -452,15 +397,15 @@ arith:
   pre:
     cccccccccccccccccccccccccccccccccccccccc:
       balance: 1000000000000
-      code: :raw 0x6001
+      code: :raw {{ pre_code }}
       nonce: '0'
-      storage:
-        0 : 0x01
+      storage: {}
     a94f5374fce5edbc8e2a8697c15331677e6ebf0b:
       balance: 1000000000000
       code: '0x'
       nonce: '0'
-      storage: {}
+      storage:
+        0 : 0x01
   transaction:
     data:
     - :raw 0x00
@@ -514,35 +459,49 @@ arith:
         - '>=Istanbul'
       result:
         cccccccccccccccccccccccccccccccccccccccc:
+          balance: {{ res_balance }}
+          nonce: {{ res_nonce }}
+          code: {{ res_code }}
+        a94f5374fce5edbc8e2a8697c15331677e6ebf0b:
           storage:
-            # 17^9
-            0: {{ storage }}
-          balance: {{ balance }}
-          nonce: {{ nonce }}
-          code: {{ code }}
-"#;
+            0: {{ res_storage }}
+ 
 
-    #[test]
-    fn test_abi_encoding() -> Result<()> {
-        // [TODO] does not match with
-        // https://github.com/ethereum/tests/blob/0e8d25bb613cab7f9e99430f970e1e6cbffdbf1a/GeneralStateTests/VMTests/vmArithmeticTest/add.json#L244
-        assert_eq!(
-            hex::encode(YamlStateTestBuilder::encode_abi_funccall("f(uint) 4")?),
-            "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
-        );
-        Ok(())
+"#;
+    struct Template {
+        pre_code: String,
+        res_storage: String,
+        res_balance: String,
+        res_code: String,
+        res_nonce: String,
+    }
+
+    impl Default for Template {
+        fn default() -> Self {
+            Self {
+                pre_code: ":raw 0x6001".into(),
+                res_storage: "0x01".into(),
+                res_balance: "1000000000000".into(),
+                res_code: ":raw 0x6001".into(),
+                res_nonce: "0".into(),
+            }
+        }
+    }
+    impl ToString for Template {
+        fn to_string(&self) -> String {
+            TEMPLATE
+                .replace("{{ pre_code }}", &self.pre_code)
+                .replace("{{ res_storage }}", &self.res_storage)
+                .replace("{{ res_balance }}", &self.res_balance)
+                .replace("{{ res_code }}", &self.res_code)
+                .replace("{{ res_nonce }}", &self.res_nonce)
+        }
     }
 
     #[test]
     fn test_combinations() -> Result<()> {
         let tcs = YamlStateTestBuilder::new(Lllc::default())
-            .from_yaml(
-                &TEMPLATE
-                    .replace("{{ storage }}", "0x01")
-                    .replace("{{ balance }}", "40")
-                    .replace("{{ code }}", ":raw 0x6001")
-                    .replace("{{ nonce }}", "0"),
-            )?
+            .from_yaml(&Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
             .collect::<HashMap<_, _>>();
@@ -550,7 +509,7 @@ arith:
         assert_eq!(tcs.len(), 8);
 
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
-        let check = |id: &str, v: u64| {
+        let check_ccccc_balance = |id: &str, v: u64| {
             assert_eq!(
                 tcs[id].result[&ccccc].balance,
                 Some(U256::from(v)),
@@ -559,22 +518,17 @@ arith:
             )
         };
 
-        check("arith_d0_g0_v0", 40);
-        check("arith_d1(data1)_g1_v1", 10);
-        check("arith_d0_g1_v0", 20);
-        check("arith_d0_g0_v1", 30);
+        check_ccccc_balance("arith_d0_g0_v0", 1000000000000);
+        check_ccccc_balance("arith_d1(data1)_g1_v1", 10);
+        check_ccccc_balance("arith_d0_g1_v0", 20);
+        check_ccccc_balance("arith_d0_g0_v1", 30);
         Ok(())
     }
 
     #[test]
     fn test_parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
-            &TEMPLATE
-                .replace("{{ storage }}", "0x01")
-                .replace("{{ balance }}", "1000000000000")
-                .replace("{{ code }}", ":raw 0x6001")
-                .replace("{{ nonce }}", "0"),
-        )?;
+        let mut tc = YamlStateTestBuilder::new(Lllc::default())
+            .from_yaml(&Template::default().to_string())?;
         let current = tc.remove(0);
 
         let a94f5 = address!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
@@ -610,7 +564,7 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01]),
                         nonce: U256::zero(),
-                        storage: HashMap::from([(U256::zero(), U256::one())]),
+                        storage: HashMap::new(),
                     },
                 ),
                 (
@@ -620,20 +574,32 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::default(),
                         nonce: U256::zero(),
-                        storage: HashMap::new(),
+                        storage: HashMap::from([(U256::zero(), U256::one())]),
                     },
                 ),
             ]),
-            result: HashMap::from([(
-                ccccc.clone(),
-                PartialAccount {
-                    address: ccccc.clone(),
-                    balance: Some(U256::from(1000000000000u64)),
-                    nonce: Some(U256::from(0)),
-                    code: Some(Bytes::from(&[0x60, 0x01])),
-                    storage: HashMap::from([(U256::zero(), U256::one())]),
-                },
-            )]),
+            result: HashMap::from([
+                (
+                    ccccc.clone(),
+                    PartialAccount {
+                        address: ccccc.clone(),
+                        balance: Some(U256::from(1000000000000u64)),
+                        nonce: Some(U256::from(0)),
+                        code: Some(Bytes::from(&[0x60, 0x01])),
+                        storage: HashMap::new(),
+                    },
+                ),
+                (
+                    a94f5.clone(),
+                    PartialAccount {
+                        address: a94f5.clone(),
+                        balance: None,
+                        nonce: None,
+                        code: None,
+                        storage: HashMap::from([(U256::zero(), U256::one())]),
+                    },
+                ),
+            ]),
         };
 
         assert_eq!(current, expected);
@@ -642,26 +608,20 @@ arith:
 
     #[test]
     fn test_result_pass() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
-            &TEMPLATE
-                .replace("{{ storage }}", "0x01")
-                .replace("{{ balance }}", "1000000000000")
-                .replace("{{ code }}", ":raw 0x6001")
-                .replace("{{ nonce }}", "0"),
-        )?;
+        let mut tc = YamlStateTestBuilder::new(Lllc::default())
+            .from_yaml(&Template::default().to_string())?;
         tc.remove(0).run()?;
         Ok(())
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
-            &TEMPLATE
-                .replace("{{ storage }}", "0x02")
-                .replace("{{ balance }}", "1000000000000")
-                .replace("{{ code }}", ":raw 0x6001")
-                .replace("{{ nonce }}", "0"),
+            &Template {
+                res_storage: "2".into(),
+                ..Default::default()
+            }
+            .to_string(),
         )?;
-
         assert_eq!(
             tc.remove(0).run(),
             Err(StateTestError::StorageMismatch {
@@ -676,13 +636,12 @@ arith:
     #[test]
     fn test_result_bad_balance() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
-            &TEMPLATE
-                .replace("{{ storage }}", "0x02")
-                .replace("{{ balance }}", "1000000000001")
-                .replace("{{ code }}", ":raw 0x6001")
-                .replace("{{ nonce }}", "0"),
+            &Template {
+                res_balance: "1000000000001".into(),
+                ..Default::default()
+            }
+            .to_string(),
         )?;
-
         assert_eq!(
             tc.remove(0).run(),
             Err(StateTestError::BalanceMismatch {
@@ -697,11 +656,11 @@ arith:
     #[test]
     fn test_result_bad_code() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
-            &TEMPLATE
-                .replace("{{ storage }}", "0x02")
-                .replace("{{ balance }}", "1000000000000")
-                .replace("{{ code }}", ":raw 0x6002")
-                .replace("{{ nonce }}", "0"),
+            &Template {
+                res_code: ":raw 0x6002".into(),
+                ..Default::default()
+            }
+            .to_string(),
         )?;
         assert_eq!(
             tc.remove(0).run(),
@@ -717,11 +676,11 @@ arith:
     #[test]
     fn test_result_bad_nonce() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
-            &TEMPLATE
-                .replace("{{ storage }}", "0x02")
-                .replace("{{ balance }}", "1000000000000")
-                .replace("{{ code }}", ":raw 0x6001")
-                .replace("{{ nonce }}", "2"),
+            &Template {
+                res_nonce: "2".into(),
+                ..Default::default()
+            }
+            .to_string(),
         )?;
 
         assert_eq!(
@@ -732,6 +691,23 @@ arith:
             })
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_result_sstore() -> Result<()> {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+            &Template {
+                pre_code: ":raw 0x6077600055".into(),
+                res_code: ":raw 0x6077600055".into(),
+                res_storage: "0x77".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        tc.remove(0).run()?;
         Ok(())
     }
 }
