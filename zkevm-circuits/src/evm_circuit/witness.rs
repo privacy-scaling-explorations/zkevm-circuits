@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::circuit_input_builder::{self, ExecError, OogError};
+use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
 use bus_mapping::operation::{self, AccountField, CallContextField};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
@@ -269,40 +269,6 @@ pub struct Call {
     pub is_persistent: bool,
     /// Indicate if it's a static call
     pub is_static: bool,
-}
-
-#[derive(Clone, Debug)]
-pub enum StepAuxiliaryData {
-    CopyToMemory {
-        src_addr: u64,
-        dst_addr: u64,
-        bytes_left: u64,
-        src_addr_end: u64,
-        from_tx: bool,
-        selectors: Vec<u8>,
-    },
-}
-
-impl From<circuit_input_builder::StepAuxiliaryData> for StepAuxiliaryData {
-    fn from(data: circuit_input_builder::StepAuxiliaryData) -> Self {
-        match data {
-            circuit_input_builder::StepAuxiliaryData::CopyToMemory {
-                src_addr,
-                dst_addr,
-                bytes_left,
-                src_addr_end,
-                from_tx,
-                selectors,
-            } => StepAuxiliaryData::CopyToMemory {
-                src_addr,
-                dst_addr,
-                bytes_left,
-                src_addr_end,
-                from_tx,
-                selectors,
-            },
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default)]

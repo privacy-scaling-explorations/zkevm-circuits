@@ -831,14 +831,6 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|call_idx| &self.tx.calls[call_idx])
     }
 
-    // pub fn caller(&self) -> Option<&Call> {
-    //     if self.tx.calls.len() == 1 {
-    //         None
-    //     } else {
-    //         Some(&self.tx.calls[self.tx_ctx.call_index()])
-    //     }
-    // }
-
     /// Mutable reference to the current Call
     pub fn call_mut(&mut self) -> Result<&mut Call, Error> {
         self.tx_ctx
