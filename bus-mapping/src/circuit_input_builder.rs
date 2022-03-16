@@ -730,7 +730,7 @@ pub struct CircuitInputStateRef<'a> {
 }
 
 impl<'a> CircuitInputStateRef<'a> {
-    ///
+    /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
         Ok(ExecStep::new(
