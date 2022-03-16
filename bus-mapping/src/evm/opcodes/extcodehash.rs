@@ -41,7 +41,7 @@ impl Opcode for Extcodehash {
             _ => unreachable!(),
         };
         state.sdb.add_account_to_access_list(external_address);
-        state.push_op(
+        state.push_op_reversible(
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
@@ -49,7 +49,7 @@ impl Opcode for Extcodehash {
                 value: true,
                 value_prev: is_warm,
             },
-        );
+        )?;
 
         // These three lookups are required to determine the existence of the external
         // account
