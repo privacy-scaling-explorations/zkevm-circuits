@@ -1142,9 +1142,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
-            circuit_input_builder::ExecState::BeginTx =>  ExecutionState::BeginTx,
-            circuit_input_builder::ExecState::EndTx =>  ExecutionState::EndTx,
-            circuit_input_builder::ExecState::CopyToMemory =>  ExecutionState::CopyToMemory,
+            circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
+            circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
+            circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
         }
     }
 }

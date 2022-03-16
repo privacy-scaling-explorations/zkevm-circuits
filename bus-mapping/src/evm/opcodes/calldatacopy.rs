@@ -17,8 +17,7 @@ impl Opcode for Calldatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = Vec::new();
-        exec_steps.push(gen_calldatacopy_step(state, geth_step)?);
+        let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
         let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
         exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
@@ -46,7 +45,12 @@ fn gen_calldatacopy_step(
         geth_step.stack.nth_last_filled(1),
         data_offset,
     )?;
-    state.push_stack_op(&mut exec_step, RW::READ, geth_step.stack.nth_last_filled(2), length)?;
+    state.push_stack_op(
+        &mut exec_step,
+        RW::READ,
+        geth_step.stack.nth_last_filled(2),
+        length,
+    )?;
     state.push_op(
         &mut exec_step,
         RW::READ,
@@ -167,8 +171,8 @@ mod calldatacopy_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::operation::StackOp;
-    use eth_types::{Word, bytecode};
     use eth_types::evm_types::{OpcodeId, StackAddress};
+    use eth_types::{bytecode, Word};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -219,7 +223,8 @@ mod calldatacopy_tests {
 
         assert_eq!(
             {
-                let operation = &builder.block.container.call_context[step.bus_mapping_instance[3].as_usize()];
+                let operation =
+                    &builder.block.container.call_context[step.bus_mapping_instance[3].as_usize()];
                 (operation.rw(), operation.op())
             },
             (

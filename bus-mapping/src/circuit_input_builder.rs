@@ -761,7 +761,12 @@ impl<'a> CircuitInputStateRef<'a> {
     /// This method should be used in `Opcode::gen_associated_ops` instead of
     /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
     /// example, a write `StorageOp`).
-    pub fn push_op_reversible<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) -> Result<(), Error>  {
+    pub fn push_op_reversible<T: Op>(
+        &mut self,
+        step: &mut ExecStep,
+        rw: RW,
+        op: T,
+    ) -> Result<(), Error> {
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
             rw,
@@ -798,11 +803,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value: u8,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(
-            step,
-            rw,
-            MemoryOp::new(call_id, address, value),
-        );
+        self.push_op(step, rw, MemoryOp::new(call_id, address, value));
         Ok(())
     }
 
@@ -819,11 +820,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(
-            step,
-            rw,
-            StackOp::new(call_id, address, value),
-        );
+        self.push_op(step, rw, StackOp::new(call_id, address, value));
         Ok(())
     }
 
@@ -1384,13 +1381,7 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(
-            call_id,
-            &self.sdb,
-            &mut self.code_db,
-            eth_tx,
-            is_success,
-        )
+        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion

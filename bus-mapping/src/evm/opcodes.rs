@@ -73,8 +73,10 @@ fn dummy_gen_associated_ops(
     Ok(vec![state.new_step(&next_steps[0])?])
 }
 
-type FnGenAssociatedOps =
-    fn(state: &mut CircuitInputStateRef, next_steps: &[GethExecStep]) -> Result<Vec<ExecStep>, Error>;
+type FnGenAssociatedOps = fn(
+    state: &mut CircuitInputStateRef,
+    next_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
@@ -404,7 +406,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 }
 
 pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
-    let prev_step = state.tx
+    let prev_step = state
+        .tx
         .steps()
         .last()
         .expect("steps should have at least one BeginTx step");

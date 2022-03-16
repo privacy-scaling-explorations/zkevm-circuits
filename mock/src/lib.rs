@@ -90,8 +90,11 @@ pub fn new_single_tx_trace_code(code: &Bytecode) -> Result<GethData, Error> {
 /// Create a new block with a single tx with the given gas limit that
 /// executes the code passed by argument.  The trace will be generated
 /// automatically with the external_tracer from the code.
-pub fn new_single_tx_trace_code_gas(code: &Bytecode, gas: Gas, input: Option<Vec<u8>>)
--> Result<GethData, Error> {
+pub fn new_single_tx_trace_code_gas(
+    code: &Bytecode,
+    gas: Gas,
+    input: Option<Vec<u8>>,
+) -> Result<GethData, Error> {
     let tracer_account = new_tracer_account(code);
     new_single_tx_trace_accounts_gas(vec![tracer_account], gas, input)
 }

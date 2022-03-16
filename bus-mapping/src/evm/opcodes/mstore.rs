@@ -45,7 +45,12 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(&mut exec_step, RW::WRITE, offset_addr.map(|a| a + i), *byte)?;
+                    state.push_memory_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        offset_addr.map(|a| a + i),
+                        *byte,
+                    )?;
                 }
             }
         }

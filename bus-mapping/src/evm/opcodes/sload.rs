@@ -43,7 +43,12 @@ impl Opcode for Sload {
         );
 
         // First stack write
-        state.push_stack_op(&mut exec_step, RW::WRITE, stack_position, storage_value_read)?;
+        state.push_stack_op(
+            &mut exec_step,
+            RW::WRITE,
+            stack_position,
+            storage_value_read,
+        )?;
 
         Ok(vec![exec_step])
     }

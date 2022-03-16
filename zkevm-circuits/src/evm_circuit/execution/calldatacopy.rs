@@ -257,7 +257,10 @@ mod test {
         let test_config = BytecodeTestConfig {
             ..Default::default()
         };
-        assert_eq!(test_circuits_using_bytecode(bytecode, test_config, call_data), Ok(()));
+        assert_eq!(
+            test_circuits_using_bytecode(bytecode, test_config, call_data),
+            Ok(())
+        );
     }
 
     fn test_ok_internal(
