@@ -115,7 +115,7 @@ pub enum ExecState {
 }
 
 impl ExecState {
-    /// Returns `true` if the `OpcodeId` is a `PUSHn`.
+    /// Returns `true` if `ExecState` is an opcode and the opcode is a `PUSHn`.
     pub fn is_push(&self) -> bool {
         if let ExecState::Op(op) = self {
             op.is_push()
@@ -124,7 +124,7 @@ impl ExecState {
         }
     }
 
-    /// Returns `true` if the `OpcodeId` is a `DUPn`.
+    /// Returns `true` if `ExecState` is an opcode and the opcode is a `DUPn`.
     pub fn is_dup(&self) -> bool {
         if let ExecState::Op(op) = self {
             op.is_dup()
@@ -133,7 +133,7 @@ impl ExecState {
         }
     }
 
-    /// Returns `true` if the `OpcodeId` is a `SWAPn`.
+    /// Returns `true` if `ExecState` is an opcode and the opcode is a `SWAPn`.
     pub fn is_swap(&self) -> bool {
         if let ExecState::Op(op) = self {
             op.is_swap()

@@ -102,14 +102,8 @@ fn gen_memory_copy_step(
                 if is_root {
                     state.tx.input[addr as usize]
                 } else {
-                    // TODO, read caller memory
-                    // state.push_memory_op(
-                    //     exec_step,
-                    //     RW::READ,
-                    //     (addr as usize).into(),
-                    //     bytes_map[&addr],
-                    // );
-                    0u8
+                    // TODO: read caller memory
+                    unreachable!()
                 }
             } else {
                 0

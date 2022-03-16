@@ -54,16 +54,6 @@ pub trait Opcode: Debug {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error>;
-
-    // fn gen_associated_ops(
-    //     state: &mut CircuitInputStateRef,
-    //     next_steps: &[GethExecStep],
-    // ) -> Result<(), Error> {
-    //     let mut step = state.new_step(&next_steps[0]);
-    //     Self::gen_associated_ops(state, &mut step, next_steps)?;
-    //     state.push_step_to_tx(step);
-    //     Ok(())
-    // }
 }
 
 fn dummy_gen_associated_ops(

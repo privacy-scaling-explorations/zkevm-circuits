@@ -19,7 +19,7 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        // N stack reads
+        // N_POP stack reads
         for i in 0..N_POP {
             state.push_stack_op(
                 &mut exec_step,

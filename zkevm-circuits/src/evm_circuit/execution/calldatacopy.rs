@@ -252,13 +252,10 @@ mod test {
             CALLDATACOPY
             STOP
         };
-        let call_data = Some(rand_bytes(call_data_length));
-        println!("calldata = {:?}", call_data);
-        let test_config = BytecodeTestConfig {
-            ..Default::default()
-        };
+        let call_data = rand_bytes(call_data_length);
+        let test_config = BytecodeTestConfig::default();
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, call_data),
+            test_circuits_using_bytecode(bytecode, test_config, Some(call_data)),
             Ok(())
         );
     }
