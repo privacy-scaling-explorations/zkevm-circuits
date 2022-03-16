@@ -17,7 +17,7 @@ impl Opcode for Stop {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        let exec_step = state.new_step(&geth_steps[0]);
+        let exec_step = state.new_step(&geth_steps[0])?;
         state.handle_return()?;
         Ok(vec![exec_step])
     }

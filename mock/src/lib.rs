@@ -64,8 +64,9 @@ pub fn new(
 pub fn new_single_tx_trace_accounts_gas(
     accounts: Vec<Account>,
     gas: Gas,
+    input: Option<Vec<u8>>,
 ) -> Result<GethData, Error> {
-    let mut eth_tx = new_tx(&new_block());
+    let mut eth_tx = new_tx(&new_block(), input);
     eth_tx.gas = Word::from(gas.0);
     new(accounts, vec![eth_tx])
 }

@@ -102,7 +102,7 @@ pub enum ExecError {
 }
 
 /// Execution state
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
@@ -112,6 +112,35 @@ pub enum ExecState {
     EndTx,
     /// Virtual step Copy To Memory
     CopyToMemory,
+}
+
+impl ExecState {
+    /// Returns `true` if the `OpcodeId` is a `PUSHn`.
+    pub fn is_push(&self) -> bool {
+        if let ExecState::Op(op) = self {
+            op.is_push()
+        } else {
+            false
+        }
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `DUPn`.
+    pub fn is_dup(&self) -> bool {
+        if let ExecState::Op(op) = self {
+            op.is_dup()
+        } else {
+            false
+        }
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `SWAPn`.
+    pub fn is_swap(&self) -> bool {
+        if let ExecState::Op(op) = self {
+            op.is_swap()
+        } else {
+            false
+        }
+    }
 }
 
 /// Auxiliary data of Execution step
@@ -194,7 +223,7 @@ impl ExecStep {
 impl Default for ExecStep {
     fn default() -> Self {
         Self {
-            op: OpcodeId::INVALID(0),
+            exec_state: ExecState::Op(OpcodeId::INVALID(0)),
             pc: ProgramCounter(0),
             stack_size: 0,
             memory_size: 0,
@@ -205,6 +234,7 @@ impl Default for ExecStep {
             swc: 0,
             bus_mapping_instance: Vec::new(),
             error: None,
+            aux_data: None,
         }
     }
 }
@@ -404,12 +434,12 @@ impl Call {
 /// Context of a [`Call`].
 #[derive(Debug, Default)]
 pub struct CallContext {
-    // Index of call
-    index: usize,
+    /// Index of call
+    pub index: usize,
     /// State Write Counter tracks the count of state write operations in the
     /// call. When a subcall in this call succeeds, the `swc` increases by the
     /// number of successful state writes in the subcall.
-    swc: usize,
+    pub swc: usize,
 }
 
 /// A reversion group is the collection of calls and the operations which are
@@ -500,6 +530,11 @@ impl TransactionContext {
     /// Return is_last_tx of the this transaction.
     pub fn is_last_tx(&self) -> bool {
         self.is_last_tx
+    }
+
+    /// Return the calls in this transaction.
+    pub fn calls(&self) -> &[CallContext] {
+        &self.calls
     }
 
     /// Return the index of the current call (the last call in the call stack).
@@ -692,19 +727,18 @@ pub struct CircuitInputStateRef<'a> {
     pub tx: &'a mut Transaction,
     /// Transaction Context
     pub tx_ctx: &'a mut TransactionContext,
-    // /// Steps
-    //pub steps: Vec<ExecStep>,
 }
 
 impl<'a> CircuitInputStateRef<'a> {
     ///
-    pub fn new_step(&self, geth_step: &GethExecStep) -> ExecStep {
-        ExecStep::new(
+    pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
+        let call_ctx = self.tx_ctx.call_ctx()?;
+        Ok(ExecStep::new(
             geth_step,
-            self.tx_ctx.call_index(),
+            call_ctx.index,
             self.block_ctx.rwc,
-            self.tx_ctx.call_ctx().swc,
-        )
+            call_ctx.swc,
+        ))
     }
 
     /// Push an [`Operation`] into the [`OperationContainer`] with the next
@@ -769,6 +803,7 @@ impl<'a> CircuitInputStateRef<'a> {
             rw,
             MemoryOp::new(call_id, address, value),
         );
+        Ok(())
     }
 
     /// Push a [`StackOp`] into the [`OperationContainer`] with the next
@@ -1411,13 +1446,8 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: BeginTx
         // - op: None
         // Generate BeginTx step
-        let mut step = ExecStep {
-            gas_left: Gas(tx.gas),
-            rwc: self.block_ctx.rwc,
-            ..Default::default()
-        };
-        gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx, &mut step))?;
-        tx.steps.push(step);
+        let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        tx.steps.push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
@@ -1433,23 +1463,8 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: EndTx
         // - op: None
         // Generate EndTx step
-        let step_prev = tx
-            .steps
-            .last()
-            .expect("steps should have at least one BeginTx step");
-        let mut step = ExecStep {
-            gas_left: Gas(step_prev.gas_left.0 - step_prev.gas_cost.0),
-            rwc: self.block_ctx.rwc,
-            // For tx without code execution
-            swc: if let Some(call_ctx) = tx_ctx.calls.last() {
-                call_ctx.swc
-            } else {
-                0
-            },
-            ..Default::default()
-        };
-        gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx, &mut step))?;
-        tx.steps.push(step);
+        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        tx.steps.push(end_tx_step);
 
         self.block.txs.push(tx);
         self.sdb.clear_access_list_and_refund();

@@ -17,7 +17,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
         // First stack read (offset)
         let offset = geth_step.stack.nth_last(0)?;
         let offset_pos = geth_step.stack.nth_last_filled(0);
@@ -57,6 +57,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 #[cfg(test)]
 mod mstore_tests {
     use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::{MemoryOp, StackOp};
     use eth_types::bytecode;
     use eth_types::evm_types::{MemoryAddress, OpcodeId, StackAddress};
@@ -87,7 +88,7 @@ mod mstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .filter(|step| step.op == OpcodeId::MSTORE)
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::MSTORE))
             .nth(1)
             .unwrap();
 
@@ -148,7 +149,7 @@ mod mstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::MSTORE8)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::MSTORE8))
             .unwrap();
 
         assert_eq!(

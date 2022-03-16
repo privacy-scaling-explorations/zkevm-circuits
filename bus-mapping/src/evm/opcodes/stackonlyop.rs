@@ -18,14 +18,14 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
         // N stack reads
         for i in 0..N_POP {
             state.push_stack_op(
                 &mut exec_step,
                 RW::READ,
-                step.stack.nth_last_filled(i),
-                step.stack.nth_last(i)?,
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
             )?;
         }
 
@@ -34,8 +34,8 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
             state.push_stack_op(
                 &mut exec_step,
                 RW::WRITE,
-                steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
-                steps[1].stack.nth_last(N_PUSH - 1 - i)?,
+                geth_steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
+                geth_steps[1].stack.nth_last(N_PUSH - 1 - i)?,
             )?;
         }
 
@@ -46,6 +46,7 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
 #[cfg(test)]
 mod stackonlyop_tests {
     use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::StackOp;
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
@@ -72,7 +73,7 @@ mod stackonlyop_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == opcode)
+            .find(|step| step.exec_state == ExecState::Op(opcode))
             .unwrap();
 
         assert_eq!(

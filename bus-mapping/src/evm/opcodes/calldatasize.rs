@@ -17,7 +17,7 @@ impl Opcode for Calldatasize {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
         let value = geth_steps[1].stack.last()?;
         state.push_op(
             &mut exec_step,
@@ -40,6 +40,7 @@ impl Opcode for Calldatasize {
 
 #[cfg(test)]
 mod calldatasize_tests {
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
     use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress};
     use pretty_assertions::assert_eq;
@@ -64,7 +65,7 @@ mod calldatasize_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::CALLDATASIZE)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATASIZE))
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;

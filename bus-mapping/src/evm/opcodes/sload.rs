@@ -18,7 +18,7 @@ impl Opcode for Sload {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
 
         // First stack read
         let stack_value_read = geth_step.stack.last()?;
@@ -52,6 +52,7 @@ impl Opcode for Sload {
 #[cfg(test)]
 mod sload_tests {
     use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::StackOp;
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
@@ -85,7 +86,7 @@ mod sload_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::SLOAD)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::SLOAD))
             .unwrap();
 
         assert_eq!(

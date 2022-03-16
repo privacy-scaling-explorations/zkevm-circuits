@@ -15,7 +15,7 @@ impl Opcode for Callvalue {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
         // Get call_value result from next step
         let value = geth_steps[1].stack.last()?;
         // CallContext read of the call_value
@@ -42,6 +42,7 @@ impl Opcode for Callvalue {
 
 #[cfg(test)]
 mod callvalue_tests {
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
     use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress};
     use pretty_assertions::assert_eq;
@@ -66,7 +67,7 @@ mod callvalue_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::CALLVALUE)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLVALUE))
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;

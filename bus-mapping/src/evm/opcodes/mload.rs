@@ -19,7 +19,7 @@ impl Opcode for Mload {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
         //
         // First stack read
         //
@@ -60,6 +60,7 @@ impl Opcode for Mload {
 #[cfg(test)]
 mod mload_tests {
     use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::{MemoryOp, StackOp};
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
@@ -90,7 +91,7 @@ mod mload_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::MLOAD)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::MLOAD))
             .unwrap();
 
         assert_eq!(

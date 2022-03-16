@@ -31,7 +31,7 @@ fn gen_calldatacopy_step(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_step(geth_step);
+    let mut exec_step = state.new_step(geth_step)?;
     let memory_offset = geth_step.stack.nth_last(0)?;
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
@@ -41,41 +41,41 @@ fn gen_calldatacopy_step(
         RW::READ,
         geth_step.stack.nth_last_filled(0),
         memory_offset,
-    );
+    )?;
     state.push_stack_op(
         &mut exec_step,
         RW::READ,
         geth_step.stack.nth_last_filled(1),
         data_offset,
-    );
-    state.push_stack_op(&mut exec_step, RW::READ, geth_step.stack.nth_last_filled(2), length);
+    )?;
+    state.push_stack_op(&mut exec_step, RW::READ, geth_step.stack.nth_last_filled(2), length)?;
     state.push_op(
         &mut exec_step,
         RW::READ,
         CallContextOp {
-            call_id: state.call().call_id,
+            call_id: state.call()?.call_id,
             field: CallContextField::TxId,
             value: state.tx_ctx.id().into(),
         },
     );
 
-    if !state.call().is_root {
+    if !state.call()?.is_root {
         state.push_op(
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::CallDataLength,
-                value: state.call().call_data_length.into(),
+                value: state.call()?.call_data_length.into(),
             },
         );
         state.push_op(
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::CallDataOffset,
-                value: state.call().call_data_offset.into(),
+                value: state.call()?.call_data_offset.into(),
             },
         );
     };
@@ -90,6 +90,7 @@ fn gen_memory_copy_step(
     dst_addr: u64,
     src_addr_end: u64,
     bytes_left: usize,
+    is_root: bool,
 ) {
     let mut selectors = vec![0u8; MAX_COPY_BYTES];
     for (idx, selector) in selectors.iter_mut().enumerate() {
@@ -97,7 +98,7 @@ fn gen_memory_copy_step(
             *selector = 1;
             let addr = src_addr + idx as u64;
             let byte = if addr < src_addr_end {
-                if state.call().is_root {
+                if is_root {
                     state.tx.input[addr as usize]
                 } else {
                     // TODO, read caller memory
@@ -122,7 +123,7 @@ fn gen_memory_copy_step(
         dst_addr,
         bytes_left: bytes_left as u64,
         src_addr_end,
-        from_tx: state.call().is_root,
+        from_tx: is_root,
         selectors,
     });
 }
@@ -135,8 +136,8 @@ fn gen_memory_copy_steps(
     let data_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
     let length = geth_steps[0].stack.nth_last(2)?.as_usize();
 
-    let call_data_offset = state.call().call_data_offset;
-    let call_data_length = state.call().call_data_length;
+    let call_data_offset = state.call()?.call_data_offset;
+    let call_data_length = state.call()?.call_data_length;
     let (src_addr, buffer_addr_end) = (
         call_data_offset + data_offset,
         call_data_offset + call_data_length,
@@ -145,7 +146,7 @@ fn gen_memory_copy_steps(
     let mut copied = 0;
     let mut steps = vec![];
     while copied < length {
-        let mut exec_step = state.new_step(&geth_steps[1]);
+        let mut exec_step = state.new_step(&geth_steps[1])?;
         exec_step.exec_state = ExecState::CopyToMemory;
         gen_memory_copy_step(
             state,
@@ -154,6 +155,7 @@ fn gen_memory_copy_steps(
             memory_offset + copied as u64,
             buffer_addr_end,
             length - copied,
+            state.call()?.is_root,
         );
         println!("exec_step = {:?}", exec_step);
         steps.push(exec_step);
@@ -163,6 +165,7 @@ fn gen_memory_copy_steps(
     Ok(steps)
 }
 
+/*
 #[cfg(test)]
 mod calldatacopy_tests {
     use crate::{
@@ -266,3 +269,4 @@ mod calldatacopy_tests {
         Ok(())
     }
 }
+*/

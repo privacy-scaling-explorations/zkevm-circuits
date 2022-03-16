@@ -14,7 +14,7 @@ impl<const N: usize> Opcode for Swap<N> {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
 
         // Peek b and a
         let stack_b_value_read = geth_step.stack.nth_last(N)?;
@@ -72,7 +72,7 @@ mod swap_tests {
             let step = builder.block.txs()[0]
                 .steps()
                 .iter()
-                .filter(|step| step.op.is_swap())
+                .filter(|step| step.exec_state.is_swap())
                 .collect_vec()[i];
 
 

@@ -14,7 +14,7 @@ impl<const N: usize> Opcode for Dup<N> {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step);
+        let mut exec_step = state.new_step(geth_step)?;
 
         let stack_value_read = geth_step.stack.nth_last(N - 1)?;
         let stack_position = geth_step.stack.nth_last_filled(N - 1);
@@ -71,7 +71,7 @@ mod dup_tests {
             let step = builder.block.txs()[0]
                 .steps()
                 .iter()
-                .filter(|step| step.op.is_dup())
+                .filter(|step| step.exec_state.is_dup())
                 .collect_vec()[i];
 
             assert_eq!(
