@@ -298,7 +298,7 @@ mod test {
         // code = [].
         let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
-            balance: U256::from(200),
+            nonce: U256::from(200),
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously
