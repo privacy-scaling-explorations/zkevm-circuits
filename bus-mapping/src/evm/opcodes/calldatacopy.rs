@@ -1,10 +1,8 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep, StepAuxiliaryData};
-use crate::operation::{CallContextField, CallContextOp, RWCounter, RW};
+use crate::operation::{CallContextField, CallContextOp, RW};
 use crate::Error;
-use eth_types::evm_types::{Gas, GasCost, ProgramCounter};
 use eth_types::GethExecStep;
-use std::collections::HashMap;
 
 // The max number of bytes that can be copied in a step limited by the number
 // of cells in a step

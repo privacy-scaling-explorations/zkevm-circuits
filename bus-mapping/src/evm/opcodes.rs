@@ -1,6 +1,6 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
@@ -244,6 +244,7 @@ pub fn gen_associated_ops(
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
     let mut exec_step = ExecStep {
+        exec_state: ExecState::BeginTx,
         gas_left: Gas(state.tx.gas),
         rwc: state.block_ctx.rwc,
         ..Default::default()
@@ -408,6 +409,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .last()
         .expect("steps should have at least one BeginTx step");
     let mut exec_step = ExecStep {
+        exec_state: ExecState::EndTx,
         gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
         rwc: state.block_ctx.rwc,
         // For tx without code execution
