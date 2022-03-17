@@ -31,9 +31,9 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
 #[derive(Debug, Clone)]
 pub struct BytecodeTestConfig {
     pub enable_evm_circuit_test: bool,
+    pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
     pub enable_state_circuit_test: bool,
     pub gas_limit: u64,
-    pub evm_circuit_lookup_tags: Vec<FixedTableTag>,
 }
 
 impl Default for BytecodeTestConfig {
