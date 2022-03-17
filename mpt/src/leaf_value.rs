@@ -53,8 +53,10 @@ impl<F: FieldExt> LeafValueChip<F> {
         // The same holds for sel1 and sel2.
         let rot = -6;
         let mut rot_into_init = -20;
+        let mut rot_into_account = -2;
         if !is_s {
             rot_into_init = -22;
+            rot_into_account = -4;
         }
 
         // RLC is needed in lookup below and in storage_root_in_account_leaf for
@@ -98,10 +100,6 @@ impl<F: FieldExt> LeafValueChip<F> {
             let is_branch_placeholder = meta
                 .query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
-            let mut rot_into_account = -2;
-            if !is_s {
-                rot_into_account = -4;
-            }
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
@@ -166,7 +164,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_init - 1),
+                Rotation(rot_into_account - 19),
             );
 
             // Note: sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)

@@ -12,8 +12,8 @@ use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, KECCAK_OUTPUT_WIDTH,
-        LAYOUT_OFFSET, R_TABLE_LEN,
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET,
+        R_TABLE_LEN,
     },
 };
 
@@ -57,8 +57,10 @@ impl<F: FieldExt> LeafKeyChip<F> {
         let one = Expression::Constant(F::one());
 
         let mut rot_into_init = -19;
+        let mut rot_into_account = -1;
         if !is_s {
             rot_into_init = -21;
+            rot_into_account = -3;
         }
 
         // TODO: if key is of length 1, then there is one less byte in RLP meta data
@@ -185,10 +187,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_short =
                 meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
-            let mut rot_into_account = -1;
-            if !is_s {
-                rot_into_account = -3;
-            }
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_account),
@@ -336,10 +334,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_short =
                 meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
-            let mut rot_into_account = -1;
-            if !is_s {
-                rot_into_account = -3;
-            }
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_account),
@@ -469,10 +463,6 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 Rotation(rot_into_init - 1),
             );
 
-            let mut rot_into_account = -1;
-            if !is_s {
-                rot_into_account = -3;
-            }
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_account),
@@ -494,20 +484,21 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let key_rlc_prev_level = (one.clone() - is_first_storage_level)
                 * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
-            let rlc = meta.query_advice(key_rlc_prev, Rotation::cur());
-            let mult = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
+            let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
+            let mult_prev =
+                meta.query_advice(key_rlc_mult_prev, Rotation::cur());
 
             constraints.push((
                 "Previous key RLC",
                 q_enable.clone()
-                    * (rlc - key_rlc_prev_level)
+                    * (rlc_prev - key_rlc_prev_level)
                     * (one.clone() - is_leaf_without_branch.clone()),
             ));
             constraints.push((
                 "Previous key RLC mult",
                 q_enable
-                    * (mult - key_rlc_mult_prev_level)
-                    * (one.clone() - is_leaf_without_branch),
+                    * (mult_prev - key_rlc_mult_prev_level)
+                    * (one.clone() - is_leaf_without_branch.clone()),
             ));
 
             constraints
@@ -530,6 +521,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_first_storage_level = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_init - 1),
+            );
+
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
             );
 
             let c32 = Expression::Constant(F::from(32));
@@ -584,6 +580,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * (s_advice0.clone() - c32.clone())
                     * sel2.clone()
                     * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_short.clone(),
             ));
 
@@ -610,6 +607,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 q_enable.clone()
                     * (key_rlc_acc_short - key_rlc.clone())
                     * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_short.clone(),
             ));
 
@@ -629,6 +627,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                     * (s_advice1.clone() - c32.clone())
                     * sel2.clone()
                     * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_long.clone(),
             ));
 
@@ -655,6 +654,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
                 q_enable.clone()
                     * (key_rlc_acc_long - key_rlc.clone())
                     * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_long.clone(),
             ));
 

@@ -59,6 +59,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         let c32 = Expression::Constant(F::from(32_u64));
         let c48 = Expression::Constant(F::from(48_u64));
         let rot_branch_init = -23;
+        let rot_into_account = -5;
 
         // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row) is added
         // to RLC, finally lookup is used to check the hash that
@@ -226,9 +227,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-4));
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-2));
 
-            let is_leaf_without_branch = meta.query_advice(
+            let is_first_storage_level = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_branch_init - 1),
+            );
+
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
             );
 
             let is_one_nibble = get_is_extension_node_one_nibble(
@@ -241,9 +247,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
             let mut key_mult = branch_rlc_mult.clone()
                 * mult_diff.clone()
-                * (one.clone() - is_leaf_without_branch.clone())
-                + is_leaf_without_branch.clone() * is_one_nibble.clone()
-                + is_leaf_without_branch.clone()
+                * (one.clone() - is_first_storage_level.clone())
+                + is_first_storage_level.clone() * is_one_nibble.clone()
+                + is_first_storage_level.clone()
                     * mult_diff.clone()
                     * (one.clone() - is_one_nibble.clone());
             let drifted_pos_mult =
@@ -265,6 +271,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * (s_advice0.clone() - c32.clone())
                     * sel2.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_short.clone(),
             ));
 
@@ -290,6 +297,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_short.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
             constraints.push((
@@ -297,6 +305,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_short.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_short.clone()),
             ));
 
@@ -312,6 +321,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * (s_advice1.clone() - c32.clone())
                     * sel2.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * is_long.clone(),
             ));
 
@@ -337,6 +347,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_long.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
             ));
             constraints.push((
@@ -344,6 +355,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_long.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
             ));
 
@@ -403,6 +415,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 );
             // Note: value doesn't reach c_rlp1.
 
+            // If leaf without branch, then there is no added branch.
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+
             // Any rotation that lands into branch children can be used.
             let rot = -17;
             let is_branch_s_placeholder = meta.query_advice(
@@ -411,7 +429,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             );
 
             constraints.push((
-                q_enable.clone() * rlc * is_branch_s_placeholder.clone(),
+                q_enable.clone()
+                    * rlc
+                    * is_branch_s_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
@@ -423,7 +444,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             constraints.push((
                 q_enable.clone()
                     * s_mod_node_hash_rlc
-                    * is_branch_s_placeholder.clone(),
+                    * is_branch_s_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch),
                 keccak_table_i,
             ));
 
@@ -457,6 +479,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 );
             // Note: value doesn't reach c_rlp1.
 
+            // If leaf without branch, then there is no added branch.
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+
             // Any rotation that lands into branch children can be used.
             let rot = -17;
             let is_branch_c_placeholder = meta.query_advice(
@@ -465,7 +493,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             );
 
             constraints.push((
-                q_enable.clone() * rlc * is_branch_c_placeholder.clone(),
+                q_enable.clone()
+                    * rlc
+                    * is_branch_c_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
@@ -477,7 +508,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             constraints.push((
                 q_enable.clone()
                     * c_mod_node_hash_rlc
-                    * is_branch_c_placeholder.clone(),
+                    * is_branch_c_placeholder.clone()
+                    * (one - is_leaf_without_branch),
                 keccak_table_i,
             ));
 

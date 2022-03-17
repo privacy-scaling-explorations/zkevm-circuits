@@ -423,6 +423,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
+        /*
         ExtensionNodeKeyChip::<F>::configure(
             meta,
             q_not_first,
@@ -443,6 +444,7 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
             r_table.clone(),
         );
+        */
 
         StorageRootChip::<F>::configure(
             meta,

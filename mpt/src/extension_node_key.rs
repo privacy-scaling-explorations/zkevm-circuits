@@ -169,7 +169,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             ));
 
             let not_branch_or_after = (one.clone() - is_branch_init_prev.clone())
-                    * (one.clone() - is_branch_child_prev.clone()); // to prevent Poisoned Constraint
+                    * (one.clone() - is_branch_child_prev.clone()); // to prevent ConstraintPoisoned error
 
             constraints.push((
                 "extension node row S key RLC is the same as branch key RLC when NOT extension node",
