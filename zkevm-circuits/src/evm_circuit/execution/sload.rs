@@ -5,10 +5,7 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, To},
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -86,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
-            state_write_counter: To(1.expr()),
+            state_write_counter: Delta(1.expr()),
             gas_left: Delta(-gas_cost),
             ..Default::default()
         };
