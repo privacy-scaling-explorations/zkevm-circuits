@@ -23,9 +23,7 @@ mod number_tests {
             BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
 
         let mut builder = block.new_circuit_input_builder();
-        builder
-            .handle_tx(&block.eth_tx, &block.geth_trace)
-            .unwrap();
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
         let mut tx = test_builder

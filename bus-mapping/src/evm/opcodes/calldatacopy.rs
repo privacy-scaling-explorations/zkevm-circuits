@@ -93,23 +93,19 @@ fn gen_memory_copy_step(
     bytes_left: usize,
     is_root: bool,
 ) -> Result<(), Error> {
-    let mut selectors = vec![0u8; MAX_COPY_BYTES];
-    for (idx, selector) in selectors.iter_mut().enumerate() {
-        if idx < bytes_left {
-            *selector = 1;
-            let addr = src_addr + idx as u64;
-            let byte = if addr < src_addr_end {
-                if is_root {
-                    state.tx.input[addr as usize]
-                } else {
-                    // TODO: read caller memory
-                    unreachable!()
-                }
+    for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
+        let addr = src_addr + idx as u64;
+        let byte = if addr < src_addr_end {
+            if is_root {
+                state.tx.input[addr as usize]
             } else {
-                0
-            };
-            state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
-        }
+                // TODO: read caller memory
+                unimplemented!()
+            }
+        } else {
+            0
+        };
+        state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
     }
 
     exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory {
@@ -118,7 +114,6 @@ fn gen_memory_copy_step(
         bytes_left: bytes_left as u64,
         src_addr_end,
         from_tx: is_root,
-        selectors,
     });
 
     Ok(())

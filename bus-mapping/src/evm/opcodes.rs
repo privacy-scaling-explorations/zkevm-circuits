@@ -1,6 +1,6 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
@@ -10,7 +10,7 @@ use crate::{
 };
 use core::fmt::Debug;
 use eth_types::{
-    evm_types::{Gas, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToWord,
 };
 use log::warn;
@@ -58,14 +58,14 @@ pub trait Opcode: Debug {
 
 fn dummy_gen_associated_ops(
     state: &mut CircuitInputStateRef,
-    next_steps: &[GethExecStep],
+    geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    Ok(vec![state.new_step(&next_steps[0])?])
+    Ok(vec![state.new_step(&geth_steps[0])?])
 }
 
 type FnGenAssociatedOps = fn(
     state: &mut CircuitInputStateRef,
-    next_steps: &[GethExecStep],
+    geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
@@ -228,19 +228,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 pub fn gen_associated_ops(
     opcode_id: &OpcodeId,
     state: &mut CircuitInputStateRef,
-    next_steps: &[GethExecStep],
+    geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-    fn_gen_associated_ops(state, next_steps)
+    fn_gen_associated_ops(state, geth_steps)
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
-    let mut exec_step = ExecStep {
-        exec_state: ExecState::BeginTx,
-        gas_left: Gas(state.tx.gas),
-        rwc: state.block_ctx.rwc,
-        ..Default::default()
-    };
+    let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
     for (field, value) in [
@@ -396,23 +391,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 }
 
 pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
-    let prev_step = state
-        .tx
-        .steps()
-        .last()
-        .expect("steps should have at least one BeginTx step");
-    let mut exec_step = ExecStep {
-        exec_state: ExecState::EndTx,
-        gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
-        rwc: state.block_ctx.rwc,
-        // For tx without code execution
-        swc: if let Some(call_ctx) = state.tx_ctx.calls().last() {
-            call_ctx.swc
-        } else {
-            0
-        },
-        ..Default::default()
-    };
+    let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
     state.push_op(

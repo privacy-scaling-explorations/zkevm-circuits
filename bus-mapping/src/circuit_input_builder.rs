@@ -156,10 +156,8 @@ pub enum StepAuxiliaryData {
         bytes_left: u64,
         /// Source end address
         src_addr_end: u64,
-        /// If from transaction
+        /// Indicate if copy from transaction call data
         from_tx: bool,
-        /// Selectors
-        selectors: Vec<u8>,
     },
 }
 
@@ -196,7 +194,7 @@ pub struct ExecStep {
 }
 
 impl ExecStep {
-    /// Create a new Self from a [`GethExecStep`].
+    /// Create a new Self from a `GethExecStep`.
     pub fn new(
         step: &GethExecStep,
         call_index: usize,
@@ -739,6 +737,37 @@ impl<'a> CircuitInputStateRef<'a> {
             self.block_ctx.rwc,
             call_ctx.swc,
         ))
+    }
+
+    /// Create a new BeginTx step
+    pub fn new_begin_tx_step(&self) -> ExecStep {
+        ExecStep {
+            exec_state: ExecState::BeginTx,
+            gas_left: Gas(self.tx.gas),
+            rwc: self.block_ctx.rwc,
+            ..Default::default()
+        }
+    }
+
+    /// Create a new EndTx step
+    pub fn new_end_tx_step(&self) -> ExecStep {
+        let prev_step = self
+            .tx
+            .steps()
+            .last()
+            .expect("steps should have at least one BeginTx step");
+        ExecStep {
+            exec_state: ExecState::EndTx,
+            gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
+            rwc: self.block_ctx.rwc,
+            // For tx without code execution
+            swc: if let Some(call_ctx) = self.tx_ctx.calls().last() {
+                call_ctx.swc
+            } else {
+                0
+            },
+            ..Default::default()
+        }
     }
 
     /// Push an [`Operation`] into the [`OperationContainer`] with the next
