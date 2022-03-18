@@ -5,10 +5,7 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, To},
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, select, Cell, Word,
         },
@@ -134,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr()),
-            state_write_counter: To(3.expr()),
+            state_write_counter: Delta(3.expr()),
             gas_left: Delta(-gas_cost.expr()),
             ..Default::default()
         };
