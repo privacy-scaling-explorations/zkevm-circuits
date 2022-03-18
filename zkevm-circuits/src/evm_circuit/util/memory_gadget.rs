@@ -401,7 +401,8 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
     /// The selectors that indicate if the corrsponding byte contains real data
     /// or is padded
     selectors: [Cell<F>; MAX_BYTES],
-    /// bound_dist[i] = max(addr_end - addr_start - i, 0)
+    /// `bound_dist` is defined as `max(addr_end - addr_start - i, 0)` for `i`
+    /// in 0..MAX_BYTES
     bound_dist: [Cell<F>; MAX_BYTES],
     /// Check if bound_dist is zero
     bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
