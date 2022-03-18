@@ -26,7 +26,7 @@ impl Opcode for Mload {
         let stack_position = step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(RW::READ, stack_position, stack_value_read);
+        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
@@ -40,18 +40,17 @@ impl Opcode for Mload {
         //
         // First stack write
         //
-        state.push_stack_op(RW::WRITE, stack_position, mem_read_value);
+        state.push_stack_op(RW::WRITE, stack_position, mem_read_value)?;
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
-        let bytes = mem_read_value.to_be_bytes();
-        bytes.iter().for_each(|value_byte| {
-            state.push_memory_op(RW::READ, mem_read_addr, *value_byte);
+        for byte in mem_read_value.to_be_bytes() {
+            state.push_memory_op(RW::READ, mem_read_addr, byte)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
-        });
+        }
 
         Ok(())
     }
@@ -60,74 +59,67 @@ impl Opcode for Mload {
 #[cfg(test)]
 mod mload_tests {
     use super::*;
-    use crate::circuit_input_builder::{ExecStep, TransactionContext};
-    use eth_types::evm_types::StackAddress;
-    use eth_types::{bytecode, Word};
+    use crate::operation::{MemoryOp, StackOp};
+    use eth_types::bytecode;
+    use eth_types::evm_types::{OpcodeId, StackAddress};
+    use eth_types::Word;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn mload_opcode_impl() -> Result<(), Error> {
+    fn mload_opcode_impl() {
         let code = bytecode! {
             .setup_state()
 
             PUSH1(0x40u64)
-            #[start]
             MLOAD
             STOP
         };
 
         // Get the execution steps from the external tracer
         let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+            mock::new_single_tx_trace_code(&code).unwrap(),
         );
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to MLOAD
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
-
-        // Add StackOp associated to the 0x40 read from the latest Stack pos.
-        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x40));
-
-        // Add the last Stack write
-        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), Word::from(0x80));
-
-        // Add the 32 MemoryOp generated from the Memory read at addr
-        // 0x40<->0x80 for each byte.
-        Word::from(0x80)
-            .to_be_bytes()
+        let step = builder.block.txs()[0]
+            .steps()
             .iter()
-            .enumerate()
-            .map(|(idx, byte)| (idx + 0x40, byte))
-            .for_each(|(idx, byte)| {
-                state_ref.push_memory_op(RW::READ, idx.into(), *byte);
-            });
+            .find(|step| step.op == OpcodeId::MLOAD)
+            .unwrap();
 
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            [0, 1]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x40))
+                ),
+                (
+                    RW::WRITE,
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x80))
+                )
+            ]
         );
 
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        assert_eq!(
+            (2..34)
+                .map(|idx| &builder.block.container.memory
+                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op().clone()))
+                .collect_vec(),
+            Word::from(0x80)
+                .to_be_bytes()
+                .into_iter()
+                .enumerate()
+                .map(|(idx, byte)| (RW::READ, MemoryOp::new(1, MemoryAddress(idx + 0x40), byte)))
+                .collect_vec()
+        )
     }
 }

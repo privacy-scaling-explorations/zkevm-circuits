@@ -1,10 +1,12 @@
 #![cfg(feature = "circuits")]
 
 use bus_mapping::circuit_input_builder::BuilderClient;
+use bus_mapping::operation::OperationContainer;
 use halo2_proofs::dev::MockProver;
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;
+use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
     test::run_test_circuit_complete_fixed_table, witness::block_convert,
 };
@@ -63,21 +65,23 @@ async fn test_state_circuit_block(block_num: u64) {
     const MEMORY_ADDRESS_MAX: usize = 2000;
     const STACK_ADDRESS_MAX: usize = 1024;
 
-    const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+    const RW_COUNTER_MAX: usize = 1 << DEGREE;
+    const ROWS_MAX: usize = 1 << DEGREE;
 
+    let rw_map = RwMap::from(&OperationContainer {
+        memory: memory_ops,
+        stack: stack_ops,
+        storage: storage_ops,
+        ..Default::default()
+    });
     let circuit = StateCircuit::<
         Fr,
         true,
-        GLOBAL_COUNTER_MAX,
-        MEMORY_ROWS_MAX,
+        RW_COUNTER_MAX,
         MEMORY_ADDRESS_MAX,
-        STACK_ROWS_MAX,
         STACK_ADDRESS_MAX,
-        STORAGE_ROWS_MAX,
-    >::new(Fr::rand(), memory_ops, stack_ops, storage_ops);
+        ROWS_MAX,
+    >::new(Fr::rand(), &rw_map);
 
     use pairing::bn256::Fr as Fp;
     let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();

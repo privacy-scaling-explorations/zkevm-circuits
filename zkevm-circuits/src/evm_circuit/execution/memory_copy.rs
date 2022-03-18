@@ -54,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         let src_addr_end = cb.query_cell();
         let from_tx = cb.query_bool();
         let tx_id = cb.query_cell();
-        let buffer_reader = BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
+        let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end.expr());
         let from_memory = 1.expr() - from_tx.expr();
 
         // Copy bytes from src and dst
@@ -62,7 +62,12 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             let read_flag = buffer_reader.read_flag(i);
             // Read bytes[i] from memory
             cb.condition(from_memory.clone() * read_flag.clone(), |cb| {
-                cb.memory_lookup(0.expr(), src_addr.expr() + i.expr(), buffer_reader.byte(i))
+                cb.memory_lookup(
+                    0.expr(),
+                    src_addr.expr() + i.expr(),
+                    buffer_reader.byte(i),
+                    None,
+                )
             });
             // Read bytes[i] from Tx
             cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
@@ -75,7 +80,12 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             });
             // Write bytes[i] to memory when selectors[i] != 0
             cb.condition(buffer_reader.has_data(i), |cb| {
-                cb.memory_lookup(1.expr(), dst_addr.expr() + i.expr(), buffer_reader.byte(i))
+                cb.memory_lookup(
+                    1.expr(),
+                    dst_addr.expr() + i.expr(),
+                    buffer_reader.byte(i),
+                    None,
+                )
             });
         }
 

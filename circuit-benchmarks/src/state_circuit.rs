@@ -14,10 +14,8 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::state_circuit::StateCircuit;
 
-    const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+    const RW_COUNTER_MAX: usize = 1 << DEGREE;
+    const ROWS_MAX: usize = 1 << DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -25,12 +23,10 @@ mod tests {
         let empty_circuit = StateCircuit::<
             Fr,
             true,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ROWS_MAX,
+            RW_COUNTER_MAX,
             MEMORY_ADDRESS_MAX,
-            STACK_ROWS_MAX,
             STACK_ADDRESS_MAX,
-            STORAGE_ROWS_MAX,
+            ROWS_MAX,
         >::default();
 
         // Initialize the polynomial commitment parameters

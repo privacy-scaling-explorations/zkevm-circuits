@@ -37,7 +37,7 @@ impl<F: Field> EvmCircuit<F> {
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 10>,
+        RwTable: LookupTable<F, 11>,
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {
@@ -430,6 +430,7 @@ pub mod test {
         run_test_circuit(
             block,
             vec![
+                FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,
                 FixedTableTag::Range256,

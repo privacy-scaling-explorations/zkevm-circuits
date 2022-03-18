@@ -14,7 +14,7 @@ use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, convert::TryInto};
+use std::{collections::HashMap, convert::TryInto, iter};
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -65,10 +65,7 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.number.to_le_bytes(),
-                        randomness,
-                    ),
+                    self.number.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Timestamp as u64),
@@ -465,8 +462,8 @@ pub enum Rw {
         rw_counter: usize,
         is_write: bool,
         tx_id: usize,
-        value: Word,
-        value_prev: Word,
+        value: u64,
+        value_prev: u64,
     },
     Account {
         rw_counter: usize,
@@ -516,11 +513,12 @@ pub enum Rw {
         byte: u8,
     },
 }
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
     pub rw_counter: F,
     pub is_write: F,
     pub tag: F,
+    pub key1: F,
     pub key2: F,
     pub key3: F,
     pub key4: F,
@@ -530,19 +528,20 @@ pub struct RwRow<F: FieldExt> {
     pub aux2: F,
 }
 
-impl<F: FieldExt> From<[F; 10]> for RwRow<F> {
-    fn from(row: [F; 10]) -> Self {
+impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
+    fn from(row: [F; 11]) -> Self {
         Self {
             rw_counter: row[0],
             is_write: row[1],
             tag: row[2],
-            key2: row[3],
-            key3: row[4],
-            key4: row[5],
-            value: row[6],
-            value_prev: row[7],
-            aux1: row[8],
-            aux2: row[9],
+            key1: row[3],
+            key2: row[4],
+            key3: row[5],
+            key4: row[6],
+            value: row[7],
+            value_prev: row[8],
+            aux1: row[9],
+            aux2: row[10],
         }
     }
 }
@@ -554,6 +553,15 @@ impl Rw {
                 value, value_prev, ..
             } => (*value, *value_prev),
             Self::TxAccessListAccountStorage {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn tx_refund_value_pair(&self) -> (u64, u64) {
+        match self {
+            Self::TxRefund {
                 value, value_prev, ..
             } => (*value, *value_prev),
             _ => unreachable!(),
@@ -576,6 +584,19 @@ impl Rw {
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
+        match self {
+            Self::AccountStorage {
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+                ..
+            } => (*value, *value_prev, *tx_id, *committed_value),
             _ => unreachable!(),
         }
     }
@@ -617,6 +638,7 @@ impl Rw {
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
                 F::zero(),
+                F::zero(),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
                 F::zero(),
@@ -637,12 +659,33 @@ impl Rw {
                 F::from(RwTableTag::TxAccessListAccountStorage as u64),
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(
                     storage_key.to_le_bytes(),
                     randomness,
                 ),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
+                F::zero(),
+                F::zero(),
+            ]
+            .into(),
+            Self::TxRefund {
+                rw_counter,
+                is_write,
+                tx_id,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxRefund as u64),
+                F::from(*tx_id as u64),
+                F::zero(),
+                F::zero(),
+                F::zero(),
+                F::from(*value),
+                F::from(*value_prev),
                 F::zero(),
                 F::zero(),
             ]
@@ -666,6 +709,7 @@ impl Rw {
                     F::from(*rw_counter as u64),
                     F::from(*is_write as u64),
                     F::from(RwTableTag::Account as u64),
+                    F::zero(),
                     account_address.to_scalar().unwrap(),
                     F::from(*field_tag as u64),
                     F::zero(),
@@ -687,6 +731,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::CallContext as u64),
                 F::from(*call_id as u64),
+                F::zero(),
                 F::from(*field_tag as u64),
                 F::zero(),
                 match field_tag {
@@ -696,7 +741,9 @@ impl Rw {
                             randomness,
                         )
                     }
-                    CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
+                    CallContextFieldTag::CallerAddress
+                    | CallContextFieldTag::CalleeAddress
+                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
                     _ => F::from(value.low_u64()),
                 },
                 F::zero(),
@@ -715,6 +762,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::Stack as u64),
                 F::from(*call_id as u64),
+                F::zero(),
                 F::from(*stack_pointer as u64),
                 F::zero(),
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
@@ -734,6 +782,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::Memory as u64),
                 F::from(*call_id as u64),
+                F::zero(),
                 F::from(*memory_address),
                 F::zero(),
                 F::from(*byte as u64),
@@ -755,12 +804,13 @@ impl Rw {
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
                 F::from(RwTableTag::AccountStorage as u64),
+                F::zero(),
                 account_address.to_scalar().unwrap(),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(
                     storage_key.to_le_bytes(),
                     randomness,
                 ),
-                F::zero(),
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
                 RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
@@ -978,7 +1028,6 @@ impl From<&operation::OperationContainer> for RwMap {
 impl From<&ExecError> for ExecutionState {
     fn from(error: &ExecError) -> Self {
         match error {
-            ExecError::Reverted => ExecutionState::ErrorReverted,
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
             ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
@@ -993,18 +1042,27 @@ impl From<&ExecError> for ExecutionState {
             ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
-                OogError::PureMemory => ExecutionState::ErrorOutOfGasPureMemory,
-                OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
-                OogError::CallDataCopy => ExecutionState::ErrorOutOfGasCALLDATACOPY,
-                OogError::CodeCopy => ExecutionState::ErrorOutOfGasCODECOPY,
-                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
-                OogError::ReturnDataCopy => ExecutionState::ErrorOutOfGasRETURNDATACOPY,
+                OogError::StaticMemoryExpansion => {
+                    ExecutionState::ErrorOutOfGasStaticMemoryExpansion
+                }
+                OogError::DynamicMemoryExpansion => {
+                    ExecutionState::ErrorOutOfGasDynamicMemoryExpansion
+                }
+                OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
+                OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
+                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
+                OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
+                OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
+                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
+                OogError::Sload => ExecutionState::ErrorOutOfGasSLOAD,
+                OogError::Sstore => ExecutionState::ErrorOutOfGasSSTORE,
                 OogError::Call => ExecutionState::ErrorOutOfGasCALL,
                 OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
                 OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
                 OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
+                OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
     }
@@ -1032,7 +1090,8 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::SHR => ExecutionState::SHR,
             OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
             OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
-            OpcodeId::STOP => ExecutionState::STOP,
+            // TODO: Convert REVERT and RETURN to their own ExecutionState.
+            OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
             OpcodeId::AND => ExecutionState::BITWISE,
             OpcodeId::XOR => ExecutionState::BITWISE,
             OpcodeId::OR => ExecutionState::BITWISE,
@@ -1051,9 +1110,18 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
             OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
+            OpcodeId::NUMBER => ExecutionState::NUMBER,
             OpcodeId::GAS => ExecutionState::GAS,
             OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
             OpcodeId::SLOAD => ExecutionState::SLOAD,
+            OpcodeId::SSTORE => ExecutionState::SSTORE,
+            // TODO: Use better way to convert BeginTx and EndTx.
+            OpcodeId::INVALID(_) if [19, 21].contains(&step.bus_mapping_instance.len()) => {
+                ExecutionState::BeginTx
+            }
+            OpcodeId::INVALID(_) if [4, 5].contains(&step.bus_mapping_instance.len()) => {
+                ExecutionState::EndTx
+            }
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -1101,9 +1169,9 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
     }
 }
 
-fn tx_convert(tx: &circuit_input_builder::Transaction) -> Transaction {
+fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bool) -> Transaction {
     Transaction {
-        id: 1,
+        id,
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,
@@ -1145,7 +1213,24 @@ fn tx_convert(tx: &circuit_input_builder::Transaction) -> Transaction {
                 is_static: call.is_static,
             })
             .collect(),
-        steps: tx.steps().iter().map(step_convert).collect(),
+        steps: tx
+            .steps()
+            .iter()
+            .map(step_convert)
+            .chain(
+                (if is_last_tx {
+                    Some(iter::once(ExecStep {
+                        rw_counter: tx.steps().last().unwrap().rwc.0 + 4,
+                        execution_state: ExecutionState::EndBlock,
+                        ..Default::default()
+                    }))
+                } else {
+                    None
+                })
+                .into_iter()
+                .flatten(),
+            )
+            .collect(),
     }
 }
 pub fn block_convert(
@@ -1156,7 +1241,12 @@ pub fn block_convert(
         randomness: Fp::rand(),
         context: block.into(),
         rws: RwMap::from(&block.container),
-        txs: block.txs().iter().map(tx_convert).collect(),
+        txs: block
+            .txs()
+            .iter()
+            .enumerate()
+            .map(|(idx, tx)| tx_convert(tx, idx + 1, idx + 1 == block.txs().len()))
+            .collect(),
         bytecodes: block
             .txs()
             .iter()
