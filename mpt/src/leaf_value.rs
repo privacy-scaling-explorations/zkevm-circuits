@@ -162,9 +162,13 @@ impl<F: FieldExt> LeafValueChip<F> {
                 .query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
-            let is_leaf_without_branch = meta.query_advice(
+            let is_leaf_without_branch_without_placeholder = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_account - 19),
+            );
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
             );
 
             // Note: sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value is added or deleted from trie)
@@ -176,6 +180,8 @@ impl<F: FieldExt> LeafValueChip<F> {
                 q_enable.clone()
                     * rlc
                     * (one.clone() - sel.clone())
+                    * (one.clone()
+                        - is_leaf_without_branch_without_placeholder.clone())
                     * (one.clone() - is_leaf_without_branch.clone())
                     * is_branch_placeholder.clone(),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -190,6 +196,8 @@ impl<F: FieldExt> LeafValueChip<F> {
                 q_enable.clone()
                     * mod_node_hash_rlc
                     * (one.clone() - sel.clone())
+                    * (one.clone()
+                        - is_leaf_without_branch_without_placeholder.clone())
                     * (one.clone() - is_leaf_without_branch.clone())
                     * is_branch_placeholder.clone(),
                 keccak_table_i,

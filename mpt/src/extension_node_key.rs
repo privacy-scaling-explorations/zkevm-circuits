@@ -236,6 +236,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel1 extension",
                     is_ext_long_even_c16.clone()
+                    * not_branch_or_after.clone()
                     * is_extension_c_row.clone()
                     * (key_rlc_cur.clone() - long_even_rlc_sel1.clone())
             ));
@@ -244,6 +245,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel1 branch",
                     is_ext_long_even_c16.clone()
+                    * not_branch_or_after.clone()
                     * is_extension_c_row.clone()
                     * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                         c16.clone() * modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
@@ -251,6 +253,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long even sel1 branch mult",
                     is_ext_long_even_c16.clone()
+                    * not_branch_or_after.clone()
                     * is_extension_c_row.clone()
                     * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
@@ -290,6 +293,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long odd sel2 extension",
                     is_ext_long_odd_c1.clone()
+                        * not_branch_or_after.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
             ));
@@ -298,6 +302,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long odd sel2 branch",
                     is_ext_long_odd_c1.clone()
+                        * not_branch_or_after.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                             modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
@@ -305,6 +310,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "long odd sel2 branch mult",
                     is_ext_long_odd_c1.clone()
+                        * not_branch_or_after.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
                         // mult_diff is checked in a lookup below
@@ -317,6 +323,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 extension",
                     is_ext_short_c16.clone()
+                        * not_branch_or_after.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_cur.clone() - short_sel1_rlc.clone())
             ));
@@ -325,6 +332,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 branch",
                     is_ext_short_c16.clone()
+                        * not_branch_or_after.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                             c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
@@ -332,6 +340,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "short sel1 branch mult",
                     is_ext_short_c16.clone()
+                        * not_branch_or_after.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
             ));
@@ -523,6 +532,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         // mult_diff
         meta.lookup_any(|meta| {
             let mut constraints = vec![];
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
 
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
@@ -581,12 +592,12 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             constraints.push((
                 is_extension_c_row.clone() * is_extension_node.clone()
-                    * key_len,
+                    * key_len * not_first_level.clone(),
                 meta.query_fixed(fixed_table[1], Rotation::cur()),
             ));
             constraints.push((
                 is_extension_c_row.clone() * is_extension_node.clone()
-                    * mult_diff,
+                    * mult_diff * not_first_level.clone(),
                 meta.query_fixed(fixed_table[2], Rotation::cur()),
             ));
 
@@ -597,6 +608,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         for ind in 0..HASH_WIDTH - 1 {
             meta.lookup_any(|meta| {
                 let mut constraints = vec![];
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
 
                 let sel1 =
                     meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
@@ -616,7 +629,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     meta.query_fixed(fixed_table[0], Rotation::cur()),
                 ));
                 constraints.push((
-                    (long_even_sel2 + long_odd_sel1) * second_nibble,
+                    (long_even_sel2 + long_odd_sel1) * not_first_level * second_nibble,
                     meta.query_fixed(fixed_table[1], Rotation::cur()),
                 ));
 
@@ -628,6 +641,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         for ind in 0..HASH_WIDTH - 1 {
             meta.lookup_any(|meta| {
                 let mut constraints = vec![];
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
 
                 let sel1 =
                     meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
@@ -650,7 +665,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     meta.query_fixed(fixed_table[0], Rotation::cur()),
                 ));
                 constraints.push((
-                    (long_even_sel2 + long_odd_sel1) * first_nibble,
+                    (long_even_sel2 + long_odd_sel1) * not_first_level * first_nibble,
                     meta.query_fixed(fixed_table[1], Rotation::cur()),
                 ));
 
@@ -740,6 +755,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             get_is_extension_node(meta, s_advices, rot_into_branch_init) * is_extension_c_row
         };
 
+        /*
         range_lookups(
             meta,
             sel_s,
@@ -777,6 +793,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             FixedTableTag::Range256,
             fixed_table,
         );
+        */
 
         config
     }

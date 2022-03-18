@@ -108,6 +108,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         not_first_level: Column<Fixed>,
         q_not_first: Column<Fixed>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_branch_init: Column<Advice>, // to avoid ConstraintPoisened and failed lookups (when rotation lands into < 0)
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp2: Column<Advice>,
@@ -170,45 +171,60 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 Rotation(rot_into_branch_init),
             );
 
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
+
             constraints.push((
                 "bool check is_ext_short_c16",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_short_c16.clone(),
                 ),
             ));
             constraints.push((
                 "bool check is_ext_short_c1",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_short_c1.clone(),
                 ),
             ));
             constraints.push((
                 "bool check is_ext_long_even_c16",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_long_even_c16.clone(),
                 ),
             ));
             constraints.push((
                 "bool check is_ext_long_even_c1",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_long_even_c1.clone(),
                 ),
             ));
             constraints.push((
                 "bool check is_ext_long_odd_c16",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_long_odd_c16.clone(),
                 ),
             ));
             constraints.push((
                 "bool check is_ext_long_odd_c1",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_long_odd_c1.clone(),
                 ),
             ));
@@ -218,7 +234,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints.push((
                 "bool check extension node selectors sum",
                 get_bool_constraint(
-                    q_not_first.clone() * q_enable.clone(),
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()),
                     is_ext_short_c16.clone()
                         + is_ext_short_c1.clone()
                         + is_ext_long_even_c16.clone()
@@ -243,6 +261,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                         "branch c16/c1 selector - extension c16/c1 selector",
                         q_not_first.clone()
                             * q_enable.clone()
+                            * (one.clone() - is_branch_init_prev.clone())
                             * ext_sel.clone()
                             * (branch_sel - ext_sel),
                     ));
@@ -303,6 +322,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         meta.lookup_any(|meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
 
             let mut acc = meta.query_advice(acc_s, Rotation(-1));
             let mut mult = meta.query_advice(acc_mult_s, Rotation(-1));
@@ -315,7 +336,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             let mut constraints = vec![];
             constraints.push((
-                q_not_first.clone() * q_enable.clone() * branch_acc, // TODO: replace with acc once ValueNode is added
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
@@ -326,7 +350,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             }
             let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
             constraints.push((
-                q_not_first.clone() * q_enable.clone() * hash_rlc.clone(),
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_branch_init_prev)
+                    * hash_rlc.clone(),
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
             ));
 
@@ -335,9 +362,11 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
         // Check whether RLC is properly computed.
         meta.create_gate("Extension node RLC", |meta| {
+            let mut constraints = vec![];
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+            let is_branch_init_prev =
+                meta.query_advice(is_branch_init, Rotation::prev());
 
             let mut rot = 0;
             if !is_s {
@@ -366,7 +395,10 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let acc_s = meta.query_advice(acc_s, Rotation(rot));
             constraints.push((
                 "acc_s",
-                q_not_first.clone() * q_enable.clone() * (rlc - acc_s.clone()),
+                q_not_first.clone()
+                    * q_enable.clone()
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (rlc - acc_s.clone()),
             ));
 
             // We use rotation 0 in both cases from now on:
@@ -393,7 +425,13 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             rlc = rlc + c_advices_rlc;
 
             let acc_c = meta.query_advice(acc_c, Rotation::cur());
-            constraints.push(("acc_c", q_not_first * q_enable * (rlc - acc_c)));
+            constraints.push((
+                "acc_c",
+                q_not_first
+                    * q_enable
+                    * (one.clone() - is_branch_init_prev.clone())
+                    * (rlc - acc_c),
+            ));
 
             constraints
         });

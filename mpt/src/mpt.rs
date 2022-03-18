@@ -370,12 +370,17 @@ impl<F: FieldExt> MPTConfig<F> {
                 // is_extension_node is in branch init row
                 let is_extension_node =
                     get_is_extension_node(meta, s_advices, -17);
+                let is_branch_init_prev =
+                    meta.query_advice(is_branch_init, Rotation::prev());
 
-                is_after_last_branch_child * is_extension_node
+                is_after_last_branch_child
+                    * is_extension_node
+                    * is_branch_init_prev
             },
             not_first_level,
             q_not_first,
             is_account_leaf_storage_codehash_c,
+            is_branch_init,
             s_rlp1,
             s_rlp2,
             c_rlp2,
@@ -401,12 +406,17 @@ impl<F: FieldExt> MPTConfig<F> {
                 // is_extension_node is in branch init row
                 let is_extension_node =
                     get_is_extension_node(meta, s_advices, -18);
+                let is_branch_init_prev =
+                    meta.query_advice(is_branch_init, Rotation::prev());
 
-                is_after_last_branch_child * is_extension_node
+                is_after_last_branch_child
+                    * is_extension_node
+                    * is_branch_init_prev
             },
             not_first_level,
             q_not_first,
             is_account_leaf_storage_codehash_c,
+            is_branch_init,
             s_rlp1,
             s_rlp2,
             c_rlp2,
@@ -423,7 +433,6 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        /*
         ExtensionNodeKeyChip::<F>::configure(
             meta,
             q_not_first,
@@ -444,7 +453,6 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table.clone(),
             r_table.clone(),
         );
-        */
 
         StorageRootChip::<F>::configure(
             meta,
@@ -622,12 +630,12 @@ impl<F: FieldExt> MPTConfig<F> {
         LeafValueChip::<F>::configure(
             meta,
             |meta| {
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
                 let is_leaf_s_value =
                     meta.query_advice(is_leaf_s_value, Rotation::cur());
 
-                q_not_first * is_leaf_s_value
+                not_first_level * is_leaf_s_value
             },
             s_rlp1,
             s_rlp2,
@@ -647,12 +655,12 @@ impl<F: FieldExt> MPTConfig<F> {
         LeafValueChip::<F>::configure(
             meta,
             |meta| {
-                let q_not_first =
-                    meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level =
+                    meta.query_fixed(not_first_level, Rotation::cur());
                 let is_leaf_c_value =
                     meta.query_advice(is_leaf_c_value, Rotation::cur());
 
-                q_not_first * is_leaf_c_value
+                not_first_level * is_leaf_c_value
             },
             s_rlp1,
             s_rlp2,
