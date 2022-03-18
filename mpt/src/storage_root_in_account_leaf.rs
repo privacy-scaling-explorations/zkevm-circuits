@@ -243,6 +243,63 @@ impl<F: FieldExt> StorageRootChip<F> {
             constraints
         });
 
+        // If there is no branch, just a leaf, but after a placeholder.
+        meta.lookup_any(|meta| {
+            let not_first_level =
+                meta.query_fixed(not_first_level, Rotation::cur());
+
+            // Check in leaf value row.
+            let mut rot = -2 - 19;
+            let mut is_leaf = meta.query_advice(is_leaf_s, Rotation::cur());
+            if !is_s {
+                rot = -4 - 19;
+                is_leaf = meta.query_advice(is_leaf_c, Rotation::cur());
+            }
+
+            let is_branch_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot + 1),
+            );
+
+            let is_account_leaf_storage_codehash_prev = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot),
+            );
+
+            let acc = meta.query_advice(acc_s, Rotation::cur());
+
+            let mut sc_hash = vec![];
+            // Note: storage root is always in s_advices!
+            for column in s_advices.iter() {
+                if is_s {
+                    sc_hash.push(meta.query_advice(*column, Rotation(rot - 1)));
+                } else {
+                    sc_hash.push(meta.query_advice(*column, Rotation(rot)));
+                }
+            }
+            let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+
+            let mut constraints = vec![];
+            constraints.push((
+                not_first_level.clone()
+                    * is_leaf.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_branch_placeholder.clone()
+                    * acc,
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+            constraints.push((
+                not_first_level.clone()
+                    * is_leaf.clone()
+                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_branch_placeholder.clone()
+                    * hash_rlc.clone(),
+                meta.query_fixed(keccak_table[1], Rotation::cur()),
+            ));
+
+            constraints
+        });
+
         config
     }
 
