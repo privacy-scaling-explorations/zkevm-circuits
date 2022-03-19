@@ -4042,3 +4042,8 @@ dependencies = [
  "serde_json",
  "sha3 0.7.3",
 ]
+
+[[patch.unused]]
+name = "halo2_proofs"
+version = "0.1.0-beta.1"
+source = "git+https://github.com/Brechtpd/halo2/?branch=opt_poly#8912c0bd7d95731bcde5e9c18d017679f5e9b5d7"
