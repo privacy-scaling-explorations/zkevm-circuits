@@ -33,6 +33,7 @@ mod end_block;
 mod end_tx;
 mod error_oog_static_memory;
 mod gas;
+mod is_zero;
 mod jump;
 mod jumpdest;
 mod jumpi;
@@ -70,6 +71,7 @@ use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use gas::GasGadget;
+use is_zero::Is0Gadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
@@ -130,6 +132,7 @@ pub(crate) struct ExecutionConfig<F> {
     dup_gadget: DupGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
+    is0_gadget: Is0Gadget<F>,
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
@@ -332,6 +335,7 @@ impl<F: Field> ExecutionConfig<F> {
             q_step,
             q_step_first,
             q_step_last,
+            is0_gadget: configure_gadget!(),
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
@@ -483,15 +487,22 @@ impl<F: Field> ExecutionConfig<F> {
         macro_rules! lookup {
             ($id:path, $table:ident, $descrip:expr) => {
                 if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
-                    for input_exprs in acc_lookups {
-                        meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
-                            let q_step = meta.query_selector(q_step);
-                            input_exprs
-                                .into_iter()
-                                .zip($table.table_exprs(meta).to_vec().into_iter())
-                                .map(|(input, table)| (q_step.clone() * input, table))
-                                .collect::<Vec<_>>()
-                        });
+                    for (lookup_idx, input_exprs) in acc_lookups.into_iter().enumerate() {
+                        let idx =
+                            meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
+                                let q_step = meta.query_selector(q_step);
+                                input_exprs
+                                    .into_iter()
+                                    .zip($table.table_exprs(meta).to_vec().into_iter())
+                                    .map(|(input, table)| (q_step.clone() * input, table))
+                                    .collect::<Vec<_>>()
+                            });
+                        println!(
+                            "LOOKUP TABLE {} <=> {} {}",
+                            idx,
+                            stringify!($descrip),
+                            lookup_idx
+                        );
                     }
                 }
             };
@@ -576,6 +587,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("assign_exec_step {} {:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 
@@ -606,6 +618,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }
+            ExecutionState::ISZERO => assign_exec_step!(self.is0_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::SCMP => {
                 assign_exec_step!(self.signed_comparator_gadget)

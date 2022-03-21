@@ -103,6 +103,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             committed_value.clone(),
             is_warm.clone(),
         );
+        cb.require_equal("hahah", gas_cost.expr(), 22100.expr());
 
         let tx_refund_prev = cb.query_cell();
         let tx_refund = SstoreTxRefundGadget::construct(
@@ -215,6 +216,10 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         )?;
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
+        println!(
+            "is warm {} value_prev {} committed_value {}",
+            is_warm, value_prev, committed_value
+        );
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
@@ -222,6 +227,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Some(F::from(tx_refund_prev)))?;
 
+        println!("refund prev {}", tx_refund_prev);
         self.gas_cost.assign(
             region,
             offset,
@@ -388,6 +394,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value_prev: Cell<F>,
         committed_value: Cell<F>,
     ) -> Self {
+        let tx_refund_old_offset =
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr();
         let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
@@ -400,13 +408,13 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         // original_value!=0&&value_prev!=0
         let nz_nz_allne_case_refund = cb.copy(select::expr(
             value_is_zero.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            tx_refund_old.expr(),
+            tx_refund_old_offset.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old_offset.expr(),
         ));
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
-            tx_refund_old.expr() - GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old_offset.expr() - GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
             nz_nz_allne_case_refund.expr(),
         );
         // original_value!=value_prev, value_prev!=value, original_value!=0
@@ -419,8 +427,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         // original_value!=value_prev, value_prev!=value, original_value==0
         let ez_ne_ne_case_refund = cb.copy(select::expr(
             original_eq_value.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
-            tx_refund_old.expr(),
+            tx_refund_old_offset.expr() + GasCost::SSTORE_SET_GAS.expr()
+                - GasCost::SLOAD_GAS.expr(),
+            tx_refund_old_offset.expr(),
         ));
         // original_value!=value_prev, value_prev!=value
         let ne_ne_case_refund = select::expr(
@@ -431,12 +440,12 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         // original_value==value_prev, value_prev!=value
         let eq_ne_case_refund = cb.copy(select::expr(
             not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            tx_refund_old.expr(),
+            tx_refund_old_offset.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old_offset.expr(),
         ));
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
-            tx_refund_old.expr(),
+            tx_refund_old_offset.expr(),
             select::expr(
                 original_eq_prev.expr(),
                 eq_ne_case_refund.expr(),
@@ -465,7 +474,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the new tx_refund
-        self.tx_refund_new.clone()
+        // self.tx_refund_new.clone()  - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr()
+        0.expr()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -481,6 +491,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     ) -> Result<(), Error> {
         self.tx_refund_old
             .assign(region, offset, Some(F::from(tx_refund_old)))?;
+        let tx_refund_old = tx_refund_old + GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
         self.value.assign(
             region,
             offset,
@@ -549,6 +560,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         let nz_allne_case_refund = if value_prev == eth_types::Word::zero() {
             tx_refund_old - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+            //let (result, _) =
+            // tx_refund_old.overflowing_sub(GasCost::SSTORE_CLEARS_SCHEDULE.
+            // as_u64()); result
         } else {
             nz_nz_allne_case_refund
         };
@@ -583,14 +597,17 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        param::STACK_CAPACITY,
-        step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag},
-        test::{rand_fp, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+    use crate::test_util::run_test_circuits;
+    use crate::{
+        evm_circuit::{
+            param::STACK_CAPACITY,
+            step::ExecutionState,
+            table::{CallContextFieldTag, RwTableTag},
+            test::{rand_fp, run_test_circuit_incomplete_fixed_table},
+            witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+        },
+        test_util::{test_circuits_using_bytecode, BytecodeTestConfig},
     };
-
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
     use std::convert::TryInto;
@@ -626,7 +643,9 @@ mod test {
         committed_value: Word,
     ) -> u64 {
         let mut tx_refund_new = tx_refund_old;
+        tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
 
+        //original_value!=value_prev, value_prev!=value, original_value!=0
         if value_prev != value {
             if committed_value == value_prev {
                 if (committed_value != Word::from(0)) && (value == Word::from(0)) {
@@ -652,6 +671,8 @@ mod test {
                 }
             }
         }
+
+        tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
 
         tx_refund_new
     }
@@ -1124,6 +1145,32 @@ mod test {
             0x060504.into(),
             false,
             false,
+        );
+    }
+
+    #[test]
+    fn sstore_simple_with_busmapping() {
+        let bytecode = bytecode! {
+            #[start]
+            PUSH32(0x030201) // value
+            PUSH32(0x060504) // key
+            SSTORE
+            PUSH32(0x030202)
+            SLOAD
+            STOP
+        };
+        /*
+        SSTORE
+        PUSH32(0x030201)
+        SLOAD */
+
+        let test_config = BytecodeTestConfig {
+            enable_state_circuit_test: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            test_circuits_using_bytecode(bytecode, test_config, None),
+            Ok(())
         );
     }
 }

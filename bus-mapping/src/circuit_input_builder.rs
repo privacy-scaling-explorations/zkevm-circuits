@@ -1975,6 +1975,7 @@ mod tracer_tests {
                 &GethExecTrace {
                     gas: Gas(0),
                     failed: false,
+                    return_value: "".to_owned(),
                     struct_logs: vec![geth_step.clone()],
                 },
                 false,
