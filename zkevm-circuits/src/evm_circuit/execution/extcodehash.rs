@@ -28,6 +28,8 @@ pub(crate) struct ExtcodehashGadget<F> {
     same_context: SameContextGadget<F>,
     external_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     tx_id: Cell<F>,
+    is_persistent: Cell<F>,
+    rw_counter_end_of_reversion: Cell<F>,
     is_warm: Cell<F>,
     nonce: Cell<F>,
     balance: Cell<F>,
@@ -47,7 +49,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let external_address = cb.query_rlc();
         cb.stack_pop(external_address.expr());
 
-        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
+            CallContextFieldTag::TxId,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            CallContextFieldTag::IsPersistent,
+        ]
+        .map(|tag| cb.call_context(None, tag));
 
         let is_warm = cb.query_bool();
         cb.account_access_list_write(
@@ -55,7 +62,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             from_bytes::expr(&external_address.cells),
             1.expr(),
             is_warm.expr(),
-            None,
+            Some(
+                (
+                    &is_persistent,
+                    rw_counter_end_of_reversion.expr() - cb.curr.state.state_write_counter.expr(),
+                )
+                    .into(),
+            ),
         );
 
         let nonce = cb.query_cell();
@@ -113,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let gas_cost = is_warm.expr() * GasCost::WARM_STORAGE_READ_COST.expr()
             + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS_COST.expr();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
@@ -128,6 +141,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             same_context,
             external_address,
             tx_id,
+            is_persistent,
+            rw_counter_end_of_reversion,
             is_warm,
             nonce,
             balance,
@@ -143,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -156,6 +171,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         self.tx_id
             .assign(region, offset, U256::from(tx.id).to_scalar())?;
+        self.is_persistent
+            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Some(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
 
         let is_warm = match GasCost::from(step.gas_cost) {
             GasCost::COLD_ACCOUNT_ACCESS_COST => 0,

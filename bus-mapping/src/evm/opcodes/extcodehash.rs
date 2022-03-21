@@ -7,7 +7,7 @@ use crate::{
     state_db::Account,
     Error,
 };
-use eth_types::{evm_types::GasCost, GethExecStep, ToAddress, ToWord};
+use eth_types::{evm_types::GasCost, GethExecStep, ToAddress, ToWord, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodehash;
@@ -24,15 +24,30 @@ impl Opcode for Extcodehash {
         let external_address = step.stack.last()?.to_address();
         state.push_stack_op(RW::READ, stack_address, external_address.to_word())?;
 
-        // Read transaction id from call context
-        state.push_op(
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::TxId,
-                value: state.tx_ctx.id().into(),
-            },
-        );
+        // Read transaction id, rw_counter_end_of_reversion, and is_persistent from call
+        // context
+        let call = state.call()?;
+        let call_id = call.call_id;
+        for (field, value) in [
+            (CallContextField::TxId, U256::from(state.tx_ctx.id())),
+            (
+                CallContextField::RwCounterEndOfReversion,
+                U256::from(call.rw_counter_end_of_reversion as u64),
+            ),
+            (
+                CallContextField::IsPersistent,
+                U256::from(call.is_persistent as u64),
+            ),
+        ] {
+            state.push_op(
+                RW::READ,
+                CallContextOp {
+                    call_id,
+                    field,
+                    value,
+                },
+            );
+        }
 
         // Update transaction access list for external_address
         let is_warm = match step.gas_cost {
@@ -221,7 +236,35 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.tx_access_list_account[indices[2].as_usize()];
+                let operation = &container.call_context[indices[2].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::RwCounterEndOfReversion,
+                    value: U256::zero()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.call_context[indices[3].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::IsPersistent,
+                    value: U256::one()
+                }
+            )
+        );
+        assert_eq!(
+            {
+                let operation = &container.tx_access_list_account[indices[4].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -236,7 +279,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.account[indices[3].as_usize()];
+                let operation = &container.account[indices[5].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -251,7 +294,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.account[indices[4].as_usize()];
+                let operation = &container.account[indices[6].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -266,7 +309,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.account[indices[5].as_usize()];
+                let operation = &container.account[indices[7].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
@@ -281,7 +324,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[6].as_usize()];
+                let operation = &container.stack[indices[8].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
