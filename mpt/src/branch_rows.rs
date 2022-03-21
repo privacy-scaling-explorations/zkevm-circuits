@@ -100,9 +100,8 @@ impl<F: FieldExt> BranchRowsChip<F> {
             // (while it should be is_at_first_nibble), but then the attacker
             // would need to use is_modified node for leaf_key_in_added_branch
             // (hash of it is in keccak at is_at_first_nibble), but then the
-            // constraint of leaf_in_added_branch having the same key (TODO this
-            // constraint in leaf_key_in_added_branch) except for
-            // the first nibble will fail.
+            // constraint of leaf_in_added_branch having the same key except for
+            // the first nibble (and extension node nibbles if extension node) will fail.
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
             // Needs to correspond when is_modified or is_at_first_nibble.
             constraints.push((
@@ -114,17 +113,13 @@ impl<F: FieldExt> BranchRowsChip<F> {
                         * (hash_rlc.clone() - mod_node_hash_rlc_cur),
             ));
 
-            // sel1 - denoting whether leaf is empty at modified_node.
-            // When sel1 = 1, s_advices need to be [128, 0, ..., 0].
-            // If sel1 = 1, there is no leaf at this position (value is being added or
-            // deleted) and we don't check the hash of it in leaf_value.
-
-            // sel2 - denoting whether leaf is empty at modified_node.
-            // When sel2 = 1, c_advices need to be [128, 0, ..., 0].
-            // If sel2 = 1, there is no leaf at this position (value is being added or
+            // sel - denoting whether leaf is empty at modified_node.
+            // When sel = 1, *_advices need to be [128, 0, ..., 0].
+            // If sel = 1, there is no leaf at this position (value is being added or
             // deleted) and we don't check the hash of it in leaf_value.
 
             let c128 = Expression::Constant(F::from(128));
+            let sel_prev = meta.query_advice(sel, Rotation::prev());
             let sel_cur = meta.query_advice(sel, Rotation::cur());
 
             // advices[0] = 128
@@ -150,12 +145,20 @@ impl<F: FieldExt> BranchRowsChip<F> {
                 ));
             }
 
+            constraints.push((
+                "sel the same for all branch children",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * node_index_cur.clone() // ignore if node_index = 0 (there is no previous)
+                    * (sel_cur - sel_prev),
+            ));
+
             // TODO: constraint for is_modified = is_at_first_nibble, to do this
             // we can check modified_node = first_nibble in branch init and then check
             // in each branch node: modified_node_prev = modified_node_cur and
             // first_nibble_prev = first_nibble_cur, this way we can use only Rotation(-1).
 
-            // TODO: sel1 and sel2 - need to be the same in all branch children
+            // TODO: constraints for branch init selectors
 
             constraints
         });

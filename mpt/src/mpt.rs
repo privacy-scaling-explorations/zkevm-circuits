@@ -1735,39 +1735,39 @@ impl<F: FieldExt> MPTConfig<F> {
                                     rlp_len_rem_c,
                                     offset,
                                 )?;
-                                // sel1 is to distinguish whether the S node is empty.
-                                // sel2 is to distinguish whether the C node is empty.
-                                // Note that 128 comes from the RLP byte denoting empty leaf.
-                                // Having 128 for *_mod_node_hash_rlc means there is no node at
-                                // this position in branch - for example,
-                                // s_mode_node_hash_rlc = 128 and c_words is some other value
-                                // when new value is added to the trie
-                                // (as opposed to just updating the value).
-                                // Note that there is a potential attack if a leaf node
-                                // is found with hash [128, 0, ..., 0],
-                                // but the probability is negligible.
-                                let mut sel1 = F::zero();
-                                let mut sel2 = F::zero();
-                                if s_mod_node_hash_rlc == F::from(128 as u64) {
-                                    sel1 = F::one();
-                                }
-                                if c_mod_node_hash_rlc == F::from(128 as u64) {
-                                    sel2 = F::one();
-                                }
-
-                                region.assign_advice(
-                                    || "assign sel1".to_string(),
-                                    self.sel1,
-                                    offset,
-                                    || Ok(sel1),
-                                )?;
-                                region.assign_advice(
-                                    || "assign sel2".to_string(),
-                                    self.sel2,
-                                    offset,
-                                    || Ok(sel2),
-                                )?;
                             }
+                            // sel1 is to distinguish whether the S node is empty.
+                            // sel2 is to distinguish whether the C node is empty.
+                            // Note that 128 comes from the RLP byte denoting empty leaf.
+                            // Having 128 for *_mod_node_hash_rlc means there is no node at
+                            // this position in branch - for example,
+                            // s_mode_node_hash_rlc = 128 and c_words is some other value
+                            // when new value is added to the trie
+                            // (as opposed to just updating the value).
+                            // Note that there is a potential attack if a leaf node
+                            // is found with hash [128, 0, ..., 0],
+                            // but the probability is negligible.
+                            let mut sel1 = F::zero();
+                            let mut sel2 = F::zero();
+                            if s_mod_node_hash_rlc == F::from(128 as u64) {
+                                sel1 = F::one();
+                            }
+                            if c_mod_node_hash_rlc == F::from(128 as u64) {
+                                sel2 = F::one();
+                            }
+
+                            region.assign_advice(
+                                || "assign sel1".to_string(),
+                                self.sel1,
+                                offset,
+                                || Ok(sel1),
+                            )?;
+                            region.assign_advice(
+                                || "assign sel2".to_string(),
+                                self.sel2,
+                                offset,
+                                || Ok(sel2),
+                            )?;
 
                             // reassign (it was assigned to 0 in assign_row) branch_acc and
                             // branch_mult to proper values

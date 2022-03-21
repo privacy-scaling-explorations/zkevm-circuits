@@ -200,31 +200,10 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_account_leaf_storage_codehash_c_cur =
                 meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
 
-            let sel1 = meta.query_advice(sel1, Rotation::cur());
-            let sel2 = meta.query_advice(sel2, Rotation::cur());
-
             let is_extension_node_s_prev = meta.query_advice(is_extension_node_s, Rotation::prev());
             let is_extension_node_s_cur = meta.query_advice(is_extension_node_s, Rotation::cur());
             let is_extension_node_c_prev = meta.query_advice(is_extension_node_c, Rotation::prev());
             let is_extension_node_c_cur = meta.query_advice(is_extension_node_c, Rotation::cur());
-
-            // In branch children, it can be sel1 + sel2 = 0 too - this
-            // case is checked separately.
-
-            // TODO order: is_last_branch_child followed by is_leaf_s followed by is_leaf_c
-            // followed by is_leaf_key_nibbles
-            // is_leaf_s_value ..., is_extension_node_s, is_extension_node_c,
-            // is_leaf_in_added_branch ...
-
-            // TODO: account leaf constraints (order and also that account leaf selectors
-            // are true only in account proof part & normal leaf selectors are true only
-            // in storage part, for this we also need account proof selector and storage
-            // proof selector - bool and strictly increasing for example. Also,
-            // is_account_leaf_key_nibbles needs to be 1 in the previous row
-            // when the account/storage selector changes.
-
-            // TODO: constraints for s_advices[IS_ADD_BRANCH_S_POS - LAYOUT_OFFSET]
-            // and s_advices[IS_ADD_BRANCH_C_POS - LAYOUT_OFFSET] in branch init
 
             // Branch init can start after another branch (means after extension node S)
             // or after account leaf storage codehash (account -> storage proof)
@@ -255,6 +234,7 @@ impl<F: FieldExt> SelectorsChip<F> {
             constraints.push((
                 "account leaf key follows extension node C",
                 q_not_first.clone()
+                // if this is in the first row (leaf without branch), the constraint is still ok
                     * (is_extension_node_c_prev.clone() - is_account_leaf_key_s_cur.clone())
                     * is_account_leaf_key_s_cur.clone(),
             ));
@@ -283,9 +263,10 @@ impl<F: FieldExt> SelectorsChip<F> {
 
             // Storage leaf
             constraints.push((
-                "storage leaf key follows extension node C",
+                "storage leaf key follows extension node C or account leaf storage codehash c",
                 q_not_first.clone()
                     * (is_extension_node_c_prev - is_leaf_s_key_cur.clone())
+                    * (is_account_leaf_storage_codehash_c_prev - is_leaf_s_key_cur.clone()) // when storage leaf without branch
                     * is_leaf_s_key_cur,
             ));
             constraints.push((
@@ -304,6 +285,21 @@ impl<F: FieldExt> SelectorsChip<F> {
                 "leaf value C -> leaf in added branch",
                 q_not_first.clone() * (is_leaf_c_value_prev - is_leaf_in_added_branch_cur),
             ));
+
+            // Note that these constraints do not prevent attacks like putting account leaf
+            // rows more than once - however, doing this would lead into failure
+            // of the constraints responsible for address (or storage if storage
+            // rows are added) RLC.
+            // However, we need to ensure the account leaf and storage leaf are added for
+            // each storage modification. This is still to be implemented
+            // (TODO), it could be this way: there will be a selector (probably set to 1
+            // in an additional row right after the last storage leaf row)
+            // needed to enable lookup for each storage modification - we could
+            // add a boolean column where the sum of is_account_leaf_storage_codecash_c
+            // would be computed and it would need to be 1 when the
+            // above-mentioned selector would be enabled. In the row after this,
+            // the sum would need to be set to 0 again. Similarly, the sum of
+            // is_leaf_in_added_branch_cur would be checked to be 1.
 
             constraints
         });
