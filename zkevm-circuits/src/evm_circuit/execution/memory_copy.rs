@@ -10,10 +10,11 @@ use crate::{
             memory_gadget::BufferReaderGadget,
             Cell,
         },
-        witness::{Block, Call, ExecStep, StepAuxiliaryData, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
+use bus_mapping::circuit_input_builder::StepAuxiliaryData;
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -172,7 +173,6 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             bytes_left,
             src_addr_end,
             from_tx,
-            selectors,
         } = step.aux_data.as_ref().unwrap();
 
         self.src_addr
@@ -188,16 +188,16 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
-        // Retrieve the bytes
-        assert_eq!(selectors.len(), MAX_COPY_BYTES);
+        // Fill in selectors and bytes
         let mut rw_idx = 0;
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
-        for (idx, selector) in selectors.iter().enumerate() {
-            let addr = *src_addr as usize + idx;
-            bytes[idx] = if *selector == 1 && addr < *src_addr_end as usize {
+        let mut selectors = vec![false; MAX_COPY_BYTES];
+        for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
+            let src_addr = *src_addr as usize + idx;
+            selectors[idx] = true;
+            bytes[idx] = if selectors[idx] && src_addr < *src_addr_end as usize {
                 if *from_tx {
-                    assert!(addr < tx.call_data.len());
-                    tx.call_data[addr]
+                    tx.call_data[src_addr]
                 } else {
                     rw_idx += 1;
                     block.rws[step.rw_indices[rw_idx]].memory_value()
@@ -205,16 +205,14 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             } else {
                 0
             };
-            if *selector == 1 {
-                // increase rw_idx for writing back to memory
-                rw_idx += 1
-            }
+            // increase rw_idx for writing back to memory
+            rw_idx += 1
         }
 
         self.buffer_reader
-            .assign(region, offset, *src_addr, *src_addr_end, &bytes, selectors)?;
+            .assign(region, offset, *src_addr, *src_addr_end, &bytes, &selectors)?;
 
-        let num_bytes_copied = selectors.iter().fold(0, |acc, s| acc + (*s as u64));
+        let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
         self.finish_gadget.assign(
             region,
             offset,
@@ -233,11 +231,9 @@ pub mod test {
         step::ExecutionState,
         table::RwTableTag,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness::{
-            Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, StepAuxiliaryData, Transaction,
-        },
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    //use crate::evm_circuit::witness::RwMap;
+    use bus_mapping::circuit_input_builder::StepAuxiliaryData;
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
@@ -258,39 +254,36 @@ pub mod test {
         rws: &mut RwMap,
         bytes_map: &HashMap<u64, u8>,
     ) -> (ExecStep, usize) {
-        let mut selectors = vec![0u8; MAX_COPY_BYTES];
         let mut rw_offset: usize = 0;
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
         let rw_idx_start = memory_rws.len();
-        for (idx, selector) in selectors.iter_mut().enumerate() {
-            if idx < bytes_left {
-                *selector = 1;
-                let addr = src_addr + idx as u64;
-                let byte = if addr < src_addr_end {
-                    assert!(bytes_map.contains_key(&addr));
-                    if !from_tx {
-                        memory_rws.push(Rw::Memory {
-                            rw_counter: rw_counter + rw_offset,
-                            is_write: false,
-                            call_id,
-                            memory_address: src_addr + idx as u64,
-                            byte: bytes_map[&addr],
-                        });
-                        rw_offset += 1;
-                    }
-                    bytes_map[&addr]
-                } else {
-                    0
-                };
-                memory_rws.push(Rw::Memory {
-                    rw_counter: rw_counter + rw_offset,
-                    is_write: true,
-                    call_id,
-                    memory_address: dst_addr + idx as u64,
-                    byte,
-                });
-                rw_offset += 1;
-            }
+        for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
+            let addr = src_addr + idx as u64;
+            let byte = if addr < src_addr_end {
+                assert!(bytes_map.contains_key(&addr));
+                if !from_tx {
+                    memory_rws.push(Rw::Memory {
+                        rw_counter: rw_counter + rw_offset,
+                        is_write: false,
+                        call_id,
+                        memory_address: src_addr + idx as u64,
+                        byte: bytes_map[&addr],
+                    });
+                    rw_offset += 1;
+                }
+                bytes_map[&addr]
+            } else {
+                0
+            };
+            // write to destination memory
+            memory_rws.push(Rw::Memory {
+                rw_counter: rw_counter + rw_offset,
+                is_write: true,
+                call_id,
+                memory_address: dst_addr + idx as u64,
+                byte,
+            });
+            rw_offset += 1;
         }
         let rw_idx_end = rws.0[&RwTableTag::Memory].len();
         let aux_data = StepAuxiliaryData::CopyToMemory {
@@ -299,7 +292,6 @@ pub mod test {
             bytes_left: bytes_left as u64,
             src_addr_end,
             from_tx,
-            selectors,
         };
         let step = ExecStep {
             execution_state: ExecutionState::CopyToMemory,
