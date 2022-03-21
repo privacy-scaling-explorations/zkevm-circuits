@@ -1749,7 +1749,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06#90f0487e986a8d7a323ec78e7de5ad8bbeeebbd5"
+source = "git+https://github.com/Brechtpd/halo2/?branch=opt_poly#8912c0bd7d95731bcde5e9c18d017679f5e9b5d7"
 dependencies = [
  "blake2b_simd",
  "bumpalo",
@@ -4042,8 +4042,3 @@ dependencies = [
  "serde_json",
  "sha3 0.7.3",
 ]
-
-[[patch.unused]]
-name = "halo2_proofs"
-version = "0.1.0-beta.1"
-source = "git+https://github.com/Brechtpd/halo2/?branch=opt_poly#8912c0bd7d95731bcde5e9c18d017679f5e9b5d7"
