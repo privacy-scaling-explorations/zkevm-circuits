@@ -38,11 +38,12 @@ mod number_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx);
 
         // Add the last Stack write
         let number = block.eth_block.number.unwrap().as_u64();
         state_ref.push_stack_op(
+            &mut step,
             RW::WRITE,
             StackAddress::from(1024 - 1),
             eth_types::U256::from(number),
