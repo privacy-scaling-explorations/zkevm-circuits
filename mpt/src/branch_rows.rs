@@ -6,10 +6,7 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
-use crate::{
-    helpers::{hash_expr_into_rlc, into_words_expr},
-    param::{HASH_WIDTH, KECCAK_OUTPUT_WIDTH},
-};
+use crate::{helpers::hash_expr_into_rlc, param::HASH_WIDTH};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchRowsConfig {}
@@ -133,7 +130,7 @@ impl<F: FieldExt> BranchRowsChip<F> {
             // advices[0] = 128
             let advices0 = meta.query_advice(advices[0], Rotation::cur());
             constraints.push((
-                "branch child sel1 s_advices0",
+                "branch child sel s_advices0",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * is_modified.clone()
@@ -144,7 +141,7 @@ impl<F: FieldExt> BranchRowsChip<F> {
             for column in advices.iter().skip(1) {
                 let s = meta.query_advice(*column, Rotation::cur());
                 constraints.push((
-                    "branch child sel1 s_advices",
+                    "branch child sel s_advices",
                     q_not_first.clone()
                         * is_branch_child_cur.clone()
                         * is_modified.clone()

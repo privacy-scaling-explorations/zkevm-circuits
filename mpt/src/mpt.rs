@@ -259,7 +259,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
         SelectorsChip::<F>::configure(
             meta,
-            |meta| meta.query_selector(q_enable),
+            q_enable,
+            q_not_first,
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
