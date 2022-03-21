@@ -178,6 +178,12 @@ pub enum AccountFieldTag {
     CodeSize,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum BytecodeFieldTag {
+    Length = 1,
+    Byte,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
@@ -213,6 +219,7 @@ impl_expr!(FixedTableTag);
 impl_expr!(TxContextFieldTag);
 impl_expr!(RwTableTag);
 impl_expr!(AccountFieldTag);
+impl_expr!(BytecodeFieldTag);
 impl_expr!(CallContextFieldTag);
 impl_expr!(BlockContextFieldTag);
 
