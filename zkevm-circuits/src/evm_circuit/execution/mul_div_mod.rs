@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 /// For MOD, verify a % b = c (mod 2^256);
 /// where a, b, c are 256-bit words.
 #[derive(Clone, Debug)]
-pub(crate) struct MulGadget<F> {
+pub(crate) struct MulDivModGadget<F> {
     same_context: SameContextGadget<F>,
     /// Gadget that verifies a * b + c = d
     mul_add_words: MulAddWordsGadget<F>,
@@ -32,7 +32,7 @@ pub(crate) struct MulGadget<F> {
     lt_word: LtWordGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
+impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
     const NAME: &'static str = "MUL";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MUL;
