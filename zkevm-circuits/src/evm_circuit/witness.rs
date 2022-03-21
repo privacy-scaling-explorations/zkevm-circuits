@@ -1114,6 +1114,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
             OpcodeId::SLOAD => ExecutionState::SLOAD,
             OpcodeId::SSTORE => ExecutionState::SSTORE,
+            OpcodeId::ISZERO => ExecutionState::ISZERO,
             // TODO: Use better way to convert BeginTx and EndTx.
             OpcodeId::INVALID(_) if [19, 21].contains(&step.bus_mapping_instance.len()) => {
                 ExecutionState::BeginTx
