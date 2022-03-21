@@ -1,6 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::CircuitInputStateRef,
+    evm::opcodes::ExecStep,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp, RW,
     },
@@ -16,13 +17,19 @@ impl Opcode for Extcodehash {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
+        let mut exec_step = state.new_step(step)?;
         let stack_address = step.stack.last_filled();
 
         // Pop external address off stack
         let external_address = step.stack.last()?.to_address();
-        state.push_stack_op(RW::READ, stack_address, external_address.to_word())?;
+        state.push_stack_op(
+            &mut exec_step,
+            RW::READ,
+            stack_address,
+            external_address.to_word(),
+        )?;
 
         // Read transaction id, rw_counter_end_of_reversion, and is_persistent from call
         // context
@@ -40,6 +47,7 @@ impl Opcode for Extcodehash {
             ),
         ] {
             state.push_op(
+                &mut exec_step,
                 RW::READ,
                 CallContextOp {
                     call_id,
@@ -57,6 +65,7 @@ impl Opcode for Extcodehash {
         };
         state.sdb.add_account_to_access_list(external_address);
         state.push_op_reversible(
+            &mut exec_step,
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
@@ -75,6 +84,7 @@ impl Opcode for Extcodehash {
             ..
         } = state.sdb.get_account(&external_address).1;
         state.push_op(
+            &mut exec_step,
             RW::READ,
             AccountOp {
                 address: external_address,
@@ -84,6 +94,7 @@ impl Opcode for Extcodehash {
             },
         );
         state.push_op(
+            &mut exec_step,
             RW::READ,
             AccountOp {
                 address: external_address,
@@ -93,6 +104,7 @@ impl Opcode for Extcodehash {
             },
         );
         state.push_op(
+            &mut exec_step,
             RW::READ,
             AccountOp {
                 address: external_address,
@@ -103,15 +115,21 @@ impl Opcode for Extcodehash {
         );
 
         // Stack write of the result of EXTCODEHASH.
-        state.push_stack_op(RW::WRITE, stack_address, steps[1].stack.last()?)?;
+        state.push_stack_op(
+            &mut exec_step,
+            RW::WRITE,
+            stack_address,
+            steps[1].stack.last()?,
+        )?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod extcodehash_tests {
     use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
     use crate::operation::StackOp;
     use eth_types::{
@@ -201,7 +219,7 @@ mod extcodehash_tests {
         let indices = transaction
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::EXTCODEHASH)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
             .unwrap()
             .bus_mapping_instance
             .clone();
