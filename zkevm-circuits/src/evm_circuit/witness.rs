@@ -1077,7 +1077,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::MUL => ExecutionState::MUL,
                     OpcodeId::SUB => ExecutionState::ADD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
-            OpcodeId::SHR => ExecutionState::SHR,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
                     // TODO: Convert REVERT and RETURN to their own ExecutionState.
