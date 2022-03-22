@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::range_lookups,
+    helpers::{get_bool_constraint, range_lookups},
     mpt::FixedTableTag,
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
@@ -81,196 +81,78 @@ impl<F: FieldExt> BranchChip<F> {
             fixed_table,
         );
 
-        // Empty nodes have 0 at s_rlp2, have 128 at s_advices[0] and 0 everywhere else:
-        // [0, 0, 128, 0, ..., 0]
-        // While non-empty nodes have 160 at s_rlp2 and then any byte at *_advices:
-        // [0, 160, a0, ..., a31]
-        meta.create_gate("empty and non-empty", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let mut constraints = vec![];
+        meta.create_gate(
+            "branch S and C equal at NON modified_node position",
+            |meta| {
+                let q_enable = meta.query_selector(q_enable);
+                let mut constraints = vec![];
 
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+                let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+                let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+                let modified_node = meta.query_advice(modified_node, Rotation::cur());
+                let is_modified = meta.query_advice(is_modified, Rotation::cur());
+                let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
 
-            // Note that s_rlp1 and c_rlp1 store RLP stream length data (subtracted
-            // by the number of bytes in branch rows until that position).
+                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+                let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
 
-            let c128 = Expression::Constant(F::from(128_u64));
-            let c160 = Expression::Constant(F::from(160_u64));
-
-            // In empty nodes: s_rlp2 = 0. In non-empty nodes: s_rlp2 = 160.
-            constraints.push((
-                "s_rlp2 = 0 or s_rlp2 = 160",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * s_rlp2.clone()
-                    * (s_rlp2.clone() - c160.clone()),
-            ));
-            constraints.push((
-                "c_rlp2 = 0 or c_rlp2 = 160",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * c_rlp2.clone()
-                    * (c_rlp2.clone() - c160.clone()),
-            ));
-
-            // No further constraints needed for non-empty nodes (rlp2 needs to be 160
-            // and values need to be bytes which is constrained by the lookups
-            // on s_advices and c_advices).
-
-            let s_advice0 = meta.query_advice(s_advices[0], Rotation::cur());
-            constraints.push((
-                "s_advices[0] = 128 in empty",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp2.clone() - c160.clone())
-                    * (s_advice0 - c128.clone()), /* If s_rlp2 = 0, then s_advices[0] can be any
-                                                   * value (0-255). */
-            ));
-            let c_advice0 = meta.query_advice(c_advices[0], Rotation::cur());
-            constraints.push((
-                "c_advices[0] = 128 in empty",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (c_rlp2.clone() - c160.clone())
-                    * (c_advice0 - c128), /* If c_rlp2 = 0, then c_advices[0] can be any value
-                                           * (0-255). */
-            ));
-
-            for col in s_advices.iter().skip(1) {
-                let s = meta.query_advice(*col, Rotation::cur());
+                // We do not compare s_rlp1 = c_rlp1 because there is stored
+                // info about S and C RLP length.
                 constraints.push((
-                    "s_advices[i] = 0 for i > 0 in empty",
+                    "rlp 2",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
-                        * (s_rlp2.clone() - c160.clone())
-                        * s,
-                ));
-            }
-            for col in c_advices.iter().skip(1) {
-                let c = meta.query_advice(*col, Rotation::cur());
-                constraints.push((
-                    "c_advices[i] = 0 for i > 0 in empty",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (c_rlp2.clone() - c160.clone())
-                        * c,
-                ));
-            }
-
-            // Note that the attacker could put 160 in an empty node (the constraints
-            // above doesn't/can't prevent this) and thus try to
-            // modify the branch RLC (used for checking the hash of a branch), like:
-            // [0, 160, 128, 0, ..., 0]
-            // But then the constraints related to branch RLP would fail - first RLP bytes
-            // specifies the length of the stream and this value is checked with
-            // the actual length - the actual length being computed as 33 values in
-            // non-empty nodes and 1 value in empty node.
-
-            constraints
-        });
-
-        meta.create_gate("branch equalities", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let mut constraints = vec![];
-
-            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-            let modified_node = meta.query_advice(modified_node, Rotation::cur());
-            let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
-            let drifted_pos = meta.query_advice(drifted_pos, Rotation::cur());
-
-            // is_modified is:
-            //   0 when node_index_cur != modified_node
-            //   1 when node_index_cur == modified_node (it's checked elsewhere for
-            // booleanity)
-            constraints.push((
-                "is modified",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * is_modified.clone()
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-
-            // is_at_drifted_pos is:
-            //   0 when node_index_cur != drifted_pos
-            //   1 when node_index_cur == drifted_pos (it's checked elsewhere for
-            // booleanity)
-            constraints.push((
-                "is at drifted pos",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * is_at_drifted_pos.clone()
-                    * (node_index_cur.clone() - drifted_pos.clone()),
-            ));
-
-            let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
-            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
-
-            // We don't need to compare s_rlp1 = c_rlp1 because there is stored
-            // info about S and C RLP length
-            constraints.push((
-                "rlp 2",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (s_rlp2 - c_rlp2)
-                    * (node_index_cur.clone() - modified_node.clone()),
-            ));
-
-            for (ind, col) in s_advices.iter().enumerate() {
-                let s = meta.query_advice(*col, Rotation::cur());
-                let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                constraints.push((
-                    "s = c when NOT is_modified",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (s.clone() - c.clone())
+                        * (s_rlp2 - c_rlp2)
                         * (node_index_cur.clone() - modified_node.clone()),
                 ));
 
-                // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
-                // When it's placeholder branch, is_modified != is_at_drifted_pos.
-                // This is used instead of having is_branch_s_placeholder and
-                // is_branch_c_placeholder columns - we only have this info in
-                // branch init where we don't need additional columns.
-                // When there is a placeholder branch, there are only two nodes - one at
-                // is_modified and one at is_at_drifted_pos - at other
-                // positions there need to be nil nodes.
+                for (ind, col) in s_advices.iter().enumerate() {
+                    let s = meta.query_advice(*col, Rotation::cur());
+                    let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                    constraints.push((
+                        "s = c when NOT is_modified",
+                        q_enable.clone()
+                            * is_branch_child_cur.clone()
+                            * (s.clone() - c.clone())
+                            * (node_index_cur.clone() - modified_node.clone()),
+                    ));
 
-                // TODO: This might be optimized once the check for branch is added - check
-                // that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte
-                // is 128. So, only s_rlp2 could be checked here instead of all
-                // s and c.
-                constraints.push((
-                    "s = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
-                    q_enable.clone()
+                    // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
+                    // When it's placeholder branch, is_modified != is_at_drifted_pos.
+                    // This is used instead of having is_branch_s_placeholder and
+                    // is_branch_c_placeholder columns - we only have this info in
+                    // branch init where we don't need additional columns.
+                    // When there is a placeholder branch, there are only two nodes - one at
+                    // is_modified and one at is_at_drifted_pos - at other
+                    // positions there need to be nil nodes.
+
+                    // TODO: This might be optimized once the check for branch is added - check
+                    // that when s_rlp2 = 0, it needs to be s = 0 and c = 0, except the first byte
+                    // is 128. So, only s_rlp2 could be checked here instead of all
+                    // s and c.
+                    constraints.push((
+                        "s = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
+                        q_enable.clone()
                         * is_branch_child_cur.clone()
                         * (is_modified.clone() - is_at_drifted_pos.clone()) // this is 0 when NOT placeholder
                         * (one.clone() - is_modified.clone())
                         * (one.clone() - is_at_drifted_pos.clone())
                         * s,
-                ));
-                constraints.push((
-                    "c = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
-                    q_enable.clone()
+                    ));
+                    constraints.push((
+                        "c = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
+                        q_enable.clone()
                         * is_branch_child_cur.clone()
                         * (is_modified.clone() - is_at_drifted_pos.clone()) // this is 0 when NOT placeholder
                         * (one.clone() - is_modified.clone())
                         * (one.clone() - is_at_drifted_pos.clone())
                         * c,
-                ));
-            }
+                    ));
+                }
 
-            // TODO: use permutation argument to make sure modified_node is the same in all
-            // branch rows.
-
-            // TODO: use permutation argument to make sure drifted_pos is the same in all
-            // branch rows.
-
-            constraints
-        });
+                constraints
+            },
+        );
 
         meta.create_gate("RLP length", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -390,23 +272,13 @@ impl<F: FieldExt> BranchChip<F> {
             let is_branch_child_prev = meta.query_advice(is_branch_child, Rotation::prev());
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+            let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
             let is_last_branch_child_prev =
                 meta.query_advice(is_last_branch_child, Rotation::prev());
             let is_last_branch_child_cur = meta.query_advice(is_last_branch_child, Rotation::cur());
 
-            // TODO: is_compact_leaf + is_branch_child + is_branch_init + ... = 1
-            // It's actually more complex that just sum = 1.
-            // For example, we have to allow is_last_branch_child to have value 1 only
-            // when is_branch_child. So we need to add constraint like:
-            // (is_branch_child - is_last_branch_child) * is_last_branch_child
-            // There are already constraints "is last branch child 1 and 2" below
-            // to make sure that is_last_branch_child is 1 only when node_index = 15.
-
-            // TODO: not_first_level constraints (needs to be 0 or 1 and needs to
-            // be strictly decreasing)
-
-            // if we have branch child, we can only have branch child or branch init in the
-            // previous row
+            // If we have branch child, we can only have branch child or branch init in the
+            // previous row.
             constraints.push((
                 "before branch children",
                 q_not_first.clone()
@@ -416,7 +288,7 @@ impl<F: FieldExt> BranchChip<F> {
             ));
 
             // If we have is_branch_init in the previous row, we have
-            // is_branch_child with node_index = 0 in the current row.
+            // is_branch_child = 1 in the current row.
             constraints.push((
                 "first branch children 1",
                 q_not_first.clone()
@@ -425,8 +297,10 @@ impl<F: FieldExt> BranchChip<F> {
             ));
             // We could have only one constraint using sum, but then we would need
             // to limit node_index (to prevent values like -1). Now, node_index is
-            // limited by ensuring it's first value is 0, its last value is 15,
+            // limited by ensuring its first value is 0, its last value is 15,
             // and it's increasing by 1.
+            // If we have is_branch_init in the previous row, we have
+            // node_index = 0 in the current row.
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             constraints.push((
                 "first branch children 2",
@@ -493,6 +367,9 @@ impl<F: FieldExt> BranchChip<F> {
             // We check modified_node = drifted_pos in first branch node and then check
             // in each branch node: modified_node_prev = modified_node_cur and
             // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
+            let drifted_pos_prev = meta.query_advice(drifted_pos, Rotation::prev());
+            let drifted_pos_cur = meta.query_advice(drifted_pos, Rotation::cur());
+            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let is_branch_placeholder_s = meta.query_advice(
                 s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation::prev(),
@@ -501,11 +378,6 @@ impl<F: FieldExt> BranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation::prev(),
             );
-            let modified_node_prev = meta.query_advice(modified_node, Rotation::prev());
-            let modified_node_cur = meta.query_advice(modified_node, Rotation::cur());
-            let drifted_pos_prev = meta.query_advice(drifted_pos, Rotation::prev());
-            let drifted_pos_cur = meta.query_advice(drifted_pos, Rotation::cur());
-            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             constraints.push((
                 "drifted_pos = modified_node in node_index = 0 when NOT placeholder",
                 q_not_first.clone()
@@ -524,14 +396,67 @@ impl<F: FieldExt> BranchChip<F> {
                     * node_index_cur.clone() // ignore if node_index = 0
                     * (drifted_pos_prev.clone() - drifted_pos_cur.clone()),
             ));
+            // Constraint for modified_node being the same for all branch nodes is above.
+
+            let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
+            let is_modified = meta.query_advice(is_modified, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
+            let drifted_pos = meta.query_advice(drifted_pos, Rotation::cur());
+            // is_modified is:
+            //   0 when node_index_cur != modified_node
+            //   1 when node_index_cur == modified_node (it's checked in selectors.rs for
+            // booleanity)
             constraints.push((
-                "modified_node_prev = modified_node_cur in node_index > 0 when NOT placeholder",
+                "is_modified",
                 q_not_first.clone()
-                    * (one.clone()
-                        - is_branch_placeholder_s.clone()
-                        - is_branch_placeholder_c.clone())
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (modified_node_prev.clone() - modified_node_cur.clone()),
+                    * is_branch_child_cur.clone()
+                    * is_modified.clone()
+                    * (node_index_cur.clone() - modified_node_cur.clone()),
+            ));
+
+            // is_at_drifted_pos is:
+            //   0 when node_index_cur != drifted_pos
+            //   1 when node_index_cur == drifted_pos (it's checked in selectors.rs for
+            // booleanity)
+            constraints.push((
+                "is_at_drifted pos",
+                q_not_first.clone()
+                    * is_branch_child_cur.clone()
+                    * is_at_drifted_pos.clone()
+                    * (node_index_cur.clone() - drifted_pos.clone()),
+            ));
+
+            constraints
+        });
+
+        meta.create_gate("branch placeholder selectors", |meta| {
+            // Not merged with gate above because this needs to be checked in the first row
+            // too and we need to avoid rotation -1.
+            let mut constraints = vec![];
+            let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
+
+            let is_branch_placeholder_s = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation::cur(),
+            );
+            let is_branch_placeholder_c = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation::cur(),
+            );
+            let q_enable = meta.query_selector(q_enable);
+            constraints.push((
+                "bool check branch is_branch_placeholder_s",
+                get_bool_constraint(
+                    q_enable.clone() * is_branch_init_cur.clone(),
+                    is_branch_placeholder_s.clone(),
+                ),
+            ));
+            constraints.push((
+                "bool check branch is_branch_placeholder_c",
+                get_bool_constraint(
+                    q_enable.clone() * is_branch_init_cur,
+                    is_branch_placeholder_c.clone(),
+                ),
             ));
 
             constraints

@@ -320,9 +320,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchRowsChip::<F>::configure(
             meta,
+            q_enable,
             q_not_first,
             is_branch_child,
             s_mod_node_hash_rlc,
+            s_rlp2,
             s_advices,
             node_index,
             is_modified,
@@ -333,9 +335,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchRowsChip::<F>::configure(
             meta,
+            q_enable,
             q_not_first,
             is_branch_child,
             c_mod_node_hash_rlc,
+            c_rlp2,
             c_advices,
             node_index,
             is_modified,
