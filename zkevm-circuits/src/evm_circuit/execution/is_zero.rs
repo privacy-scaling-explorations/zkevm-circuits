@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget, Word,
+            math_gadget, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -18,6 +18,7 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroGadget<F> {
     same_context: SameContextGadget<F>,
+    value: Cell<F>,
     is_zero: math_gadget::IsZeroGadget<F>,
 }
 
@@ -29,10 +30,10 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let is_zero = math_gadget::IsZeroGadget::construct(cb, a.expr());
+        let value = cb.query_cell();
+        let is_zero = math_gadget::IsZeroGadget::construct(cb, value.expr());
 
-        cb.stack_pop(a.expr());
+        cb.stack_pop(value.expr());
         cb.stack_push(is_zero.expr());
 
         // State transition
@@ -47,6 +48,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
 
         Self {
             same_context,
+            value,
             is_zero,
         }
     }
@@ -62,9 +64,10 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let a = block.rws[step.rw_indices[0]].stack_value();
-        let a = Word::random_linear_combine(a.to_le_bytes(), block.randomness);
-        self.is_zero.assign(region, offset, a)?;
+        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = Word::random_linear_combine(value.to_le_bytes(), block.randomness);
+        self.value.assign(region, offset, Some(value))?;
+        self.is_zero.assign(region, offset, value)?;
 
         Ok(())
     }
@@ -75,9 +78,9 @@ mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, Word};
 
-    fn test_ok(a: Word) {
+    fn test_ok(value: Word) {
         let bytecode = bytecode! {
-            PUSH32(a)
+            PUSH32(value)
             ISZERO
             STOP
         };
