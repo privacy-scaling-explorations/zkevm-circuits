@@ -1,6 +1,6 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
@@ -15,6 +15,7 @@ use eth_types::{
 };
 use log::warn;
 
+mod calldatacopy;
 mod calldatasize;
 mod caller;
 mod callvalue;
@@ -27,6 +28,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+use calldatacopy::Calldatacopy;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
@@ -40,9 +42,9 @@ use stop::Stop;
 use swap::Swap;
 
 /// Generic opcode trait which defines the logic of the
-/// [`Operation`](crate::operation::Operation) that should be generated for an
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep) depending of the
-/// [`OpcodeId`] it contains.
+/// [`Operation`](crate::operation::Operation) that should be generated for one
+/// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending
+/// of the [`OpcodeId`] it contains.
 pub trait Opcode: Debug {
     /// Generate the associated [`MemoryOp`](crate::operation::MemoryOp)s,
     /// [`StackOp`](crate::operation::StackOp)s, and
@@ -50,19 +52,21 @@ pub trait Opcode: Debug {
     /// is implemented for.
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        next_steps: &[GethExecStep],
-    ) -> Result<(), Error>;
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error>;
 }
 
 fn dummy_gen_associated_ops(
-    _state: &mut CircuitInputStateRef,
-    _next_steps: &[GethExecStep],
-) -> Result<(), Error> {
-    Ok(())
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    Ok(vec![state.new_step(&geth_steps[0])?])
 }
 
-type FnGenAssociatedOps =
-    fn(state: &mut CircuitInputStateRef, next_steps: &[GethExecStep]) -> Result<(), Error>;
+type FnGenAssociatedOps = fn(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
@@ -100,7 +104,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
         OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        // OpcodeId::CALLDATACOPY => {},
+        OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
         // OpcodeId::GASPRICE => {},
@@ -224,13 +228,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 pub fn gen_associated_ops(
     opcode_id: &OpcodeId,
     state: &mut CircuitInputStateRef,
-    next_steps: &[GethExecStep],
-) -> Result<(), Error> {
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-    fn_gen_associated_ops(state, next_steps)
+    fn_gen_associated_ops(state, geth_steps)
 }
 
-pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
+pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+    let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
     for (field, value) in [
@@ -245,6 +250,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         ),
     ] {
         state.push_op(
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: call.call_id,
@@ -257,6 +263,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     let caller_address = call.caller_address;
     let nonce_prev = state.sdb.increase_nonce(&caller_address);
     state.push_op(
+        &mut exec_step,
         RW::WRITE,
         AccountOp {
             address: caller_address,
@@ -269,6 +276,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     for address in [call.caller_address, call.address] {
         state.sdb.add_account_to_access_list(address);
         state.push_op(
+            &mut exec_step,
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
@@ -289,7 +297,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     } else {
         GasCost::TX.as_u64()
     } + call_data_gas_cost;
-    state.step.gas_cost = GasCost(intrinsic_gas_cost);
+    exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
     if !found {
@@ -298,6 +306,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     let caller_balance_prev = caller_account.balance;
     let caller_balance = caller_account.balance - call.value - state.tx.gas_price * state.tx.gas;
     state.push_op_reversible(
+        &mut exec_step,
         RW::WRITE,
         AccountOp {
             address: call.caller_address,
@@ -315,6 +324,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     let callee_balance = callee_account.balance + call.value;
     let code_hash = callee_account.code_hash;
     state.push_op_reversible(
+        &mut exec_step,
         RW::WRITE,
         AccountOp {
             address: call.address,
@@ -333,6 +343,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         }
         _ => {
             state.push_op(
+                &mut exec_step,
                 RW::READ,
                 AccountOp {
                     address: call.address,
@@ -366,6 +377,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         (CallContextField::LastCalleeReturnDataLength, 0.into()),
     ] {
         state.push_op(
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: call.call_id,
@@ -375,13 +387,15 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         );
     }
 
-    Ok(())
+    Ok(exec_step)
 }
 
-pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
+pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+    let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
     state.push_op(
+        &mut exec_step,
         RW::READ,
         CallContextOp {
             call_id: call.call_id,
@@ -392,6 +406,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
 
     let refund = state.sdb.refund();
     state.push_op(
+        &mut exec_step,
         RW::READ,
         TxRefundOp {
             tx_id: state.tx_ctx.id(),
@@ -401,15 +416,16 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     );
 
     let effective_refund =
-        refund.min((state.tx.gas - state.step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
+        refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
     let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_account.balance + state.tx.gas_price * (state.step.gas_left.0 + effective_refund);
+        caller_account.balance + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
     state.push_op(
+        &mut exec_step,
         RW::WRITE,
         AccountOp {
             address: call.caller_address,
@@ -426,8 +442,9 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
-        coinbase_account.balance + effective_tip * (state.tx.gas - state.step.gas_left.0);
+        coinbase_account.balance + effective_tip * (state.tx.gas - exec_step.gas_left.0);
     state.push_op(
+        &mut exec_step,
         RW::WRITE,
         AccountOp {
             address: state.block.coinbase,
@@ -439,6 +456,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
 
     if !state.tx_ctx.is_last_tx() {
         state.push_op(
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.block_ctx.rwc.0 + 1,
@@ -448,5 +466,5 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<(), Error> {
         );
     }
 
-    Ok(())
+    Ok(exec_step)
 }
