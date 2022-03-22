@@ -15,7 +15,7 @@ use crate::{
     branch_acc::BranchAccChip,
     branch_acc_init::BranchAccInitChip,
     branch_hash_in_parent::BranchHashInParentChip,
-    branch_rows::BranchRowsChip,
+    branch_parallel::BranchParallelChip,
     extension_node::ExtensionNodeChip,
     extension_node_key::ExtensionNodeKeyChip,
     helpers::{get_is_extension_node, hash_into_rlc},
@@ -318,7 +318,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        BranchRowsChip::<F>::configure(
+        BranchParallelChip::<F>::configure(
             meta,
             q_enable,
             q_not_first,
@@ -333,7 +333,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        BranchRowsChip::<F>::configure(
+        BranchParallelChip::<F>::configure(
             meta,
             q_enable,
             q_not_first,

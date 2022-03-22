@@ -6,7 +6,7 @@ pub mod branch_acc;
 pub mod branch_acc_init;
 pub mod branch_hash_in_parent;
 pub mod branch_key;
-pub mod branch_rows;
+pub mod branch_parallel;
 pub mod extension_node;
 pub mod extension_node_key;
 pub mod helpers;

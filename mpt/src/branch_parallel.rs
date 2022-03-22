@@ -9,14 +9,16 @@ use std::marker::PhantomData;
 use crate::{helpers::hash_expr_into_rlc, param::HASH_WIDTH};
 
 #[derive(Clone, Debug)]
-pub(crate) struct BranchRowsConfig {}
+pub(crate) struct BranchParallelConfig {}
 
-pub(crate) struct BranchRowsChip<F> {
-    config: BranchRowsConfig,
+// Branch constraints that need to be applied on both parallel proofs in the
+// same way.
+pub(crate) struct BranchParallelChip<F> {
+    config: BranchParallelConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchRowsChip<F> {
+impl<F: FieldExt> BranchParallelChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
@@ -30,8 +32,8 @@ impl<F: FieldExt> BranchRowsChip<F> {
         is_at_drifted_pos: Column<Advice>,
         sel: Column<Advice>,
         acc_r: F,
-    ) -> BranchRowsConfig {
-        let config = BranchRowsConfig {};
+    ) -> BranchParallelConfig {
+        let config = BranchParallelConfig {};
 
         // Empty nodes have 0 at *_rlp2, have 128 at *_advices[0] and 0 everywhere else:
         // [0, 0, 128, 0, ..., 0]
@@ -203,7 +205,7 @@ impl<F: FieldExt> BranchRowsChip<F> {
         config
     }
 
-    pub fn construct(config: BranchRowsConfig) -> Self {
+    pub fn construct(config: BranchParallelConfig) -> Self {
         Self {
             config,
             _marker: PhantomData,
@@ -211,8 +213,8 @@ impl<F: FieldExt> BranchRowsChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for BranchRowsChip<F> {
-    type Config = BranchRowsConfig;
+impl<F: FieldExt> Chip<F> for BranchParallelChip<F> {
+    type Config = BranchParallelConfig;
     type Loaded = ();
 
     fn config(&self) -> &Self::Config {
