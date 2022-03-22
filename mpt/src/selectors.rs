@@ -40,7 +40,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         is_modified: Column<Advice>,
-        is_at_first_nibble: Column<Advice>,
+        is_at_drifted_pos: Column<Advice>,
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
 
@@ -129,7 +129,7 @@ impl<F: FieldExt> SelectorsChip<F> {
             ));
 
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_first_nibble = meta.query_advice(is_at_first_nibble, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
             let is_leaf_in_added_branch =
                 meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
             let is_extension_node_s = meta.query_advice(is_extension_node_s, Rotation::cur());
@@ -140,8 +140,8 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(q_enable.clone(), is_modified.clone()),
             ));
             constraints.push((
-                "bool check is_at_first_nibble",
-                get_bool_constraint(q_enable.clone(), is_at_first_nibble.clone()),
+                "bool check is_at_drifted_pos",
+                get_bool_constraint(q_enable.clone(), is_at_drifted_pos.clone()),
             ));
             constraints.push((
                 "bool check is_leaf_in_added_branch",

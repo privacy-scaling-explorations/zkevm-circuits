@@ -9,7 +9,10 @@ use std::marker::PhantomData;
 use crate::{
     helpers::range_lookups,
     mpt::FixedTableTag,
-    param::{BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, RLP_NUM},
+    param::{
+        BRANCH_0_C_START, BRANCH_0_S_START, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET, RLP_NUM,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -37,8 +40,8 @@ impl<F: FieldExt> BranchChip<F> {
         node_index: Column<Advice>,
         is_modified: Column<Advice>, // whether this branch node is modified
         modified_node: Column<Advice>, // index of the modified node
-        is_at_first_nibble: Column<Advice>, // needed when leaf is turned into branch
-        first_nibble: Column<Advice>, /* needed when leaf is turned into branch - first nibble of
+        is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
+        drifted_pos: Column<Advice>, /* needed when leaf is turned into branch - first nibble of
                                       * the key stored in a leaf (because the existing leaf will
                                       * jump to this position in added branch) */
         fixed_table: [Column<Fixed>; 3],
@@ -52,6 +55,15 @@ impl<F: FieldExt> BranchChip<F> {
 
             q_not_first * (one.clone() - is_branch_init)
         };
+
+        // Note: branch init row contains selectors related to drifted_pos,
+        // modified_node, branch placeholders, extension node selectors.
+        // There is no need for drifted_pos / modified_node constraints there as
+        // these are just read from there and then selectors in branch node rows are set
+        // and restricted there. Branch placeholder needs to be checked if boolean
+        // (however, if 1 is set instead of 0 or the other way around, the
+        // constraints related to address/ key RLC will fail).
+        // Extension node related selectors are checked in extension node chips.
 
         // Range check for s_advices and c_advices being bytes.
         range_lookups(
@@ -167,8 +179,8 @@ impl<F: FieldExt> BranchChip<F> {
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
             let modified_node = meta.query_advice(modified_node, Rotation::cur());
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_first_nibble = meta.query_advice(is_at_first_nibble, Rotation::cur());
-            let first_nibble = meta.query_advice(first_nibble, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
+            let drifted_pos = meta.query_advice(drifted_pos, Rotation::cur());
 
             // is_modified is:
             //   0 when node_index_cur != modified_node
@@ -182,16 +194,16 @@ impl<F: FieldExt> BranchChip<F> {
                     * (node_index_cur.clone() - modified_node.clone()),
             ));
 
-            // is_at_first_nibble is:
-            //   0 when node_index_cur != first_nibble
-            //   1 when node_index_cur == first_nibble (it's checked elsewhere for
+            // is_at_drifted_pos is:
+            //   0 when node_index_cur != drifted_pos
+            //   1 when node_index_cur == drifted_pos (it's checked elsewhere for
             // booleanity)
             constraints.push((
-                "is at first nibble",
+                "is at drifted pos",
                 q_enable.clone()
                     * is_branch_child_cur.clone()
-                    * is_at_first_nibble.clone()
-                    * (node_index_cur.clone() - first_nibble.clone()),
+                    * is_at_drifted_pos.clone()
+                    * (node_index_cur.clone() - drifted_pos.clone()),
             ));
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
@@ -218,13 +230,13 @@ impl<F: FieldExt> BranchChip<F> {
                         * (node_index_cur.clone() - modified_node.clone()),
                 ));
 
-                // When it's NOT placeholder branch, is_modified = is_at_first_nibble.
-                // When it's placeholder branch, is_modified != is_at_first_nibble.
+                // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
+                // When it's placeholder branch, is_modified != is_at_drifted_pos.
                 // This is used instead of having is_branch_s_placeholder and
                 // is_branch_c_placeholder columns - we only have this info in
                 // branch init where we don't need additional columns.
                 // When there is a placeholder branch, there are only two nodes - one at
-                // is_modified and one at is_at_first_nibble - at other
+                // is_modified and one at is_at_drifted_pos - at other
                 // positions there need to be nil nodes.
 
                 // TODO: This might be optimized once the check for branch is added - check
@@ -232,21 +244,21 @@ impl<F: FieldExt> BranchChip<F> {
                 // is 128. So, only s_rlp2 could be checked here instead of all
                 // s and c.
                 constraints.push((
-                    "s = 0 when placeholder and is neither is_modified or is_at_first_nibble",
+                    "s = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
-                        * (is_modified.clone() - is_at_first_nibble.clone()) // this is 0 when NOT placeholder
+                        * (is_modified.clone() - is_at_drifted_pos.clone()) // this is 0 when NOT placeholder
                         * (one.clone() - is_modified.clone())
-                        * (one.clone() - is_at_first_nibble.clone())
+                        * (one.clone() - is_at_drifted_pos.clone())
                         * s,
                 ));
                 constraints.push((
-                    "c = 0 when placeholder and is neither is_modified or is_at_first_nibble",
+                    "c = 0 when placeholder and is neither is_modified or is_at_drifted_pos",
                     q_enable.clone()
                         * is_branch_child_cur.clone()
-                        * (is_modified.clone() - is_at_first_nibble.clone()) // this is 0 when NOT placeholder
+                        * (is_modified.clone() - is_at_drifted_pos.clone()) // this is 0 when NOT placeholder
                         * (one.clone() - is_modified.clone())
-                        * (one.clone() - is_at_first_nibble.clone())
+                        * (one.clone() - is_at_drifted_pos.clone())
                         * c,
                 ));
             }
@@ -254,7 +266,7 @@ impl<F: FieldExt> BranchChip<F> {
             // TODO: use permutation argument to make sure modified_node is the same in all
             // branch rows.
 
-            // TODO: use permutation argument to make sure first_nibble is the same in all
+            // TODO: use permutation argument to make sure drifted_pos is the same in all
             // branch rows.
 
             constraints
@@ -475,6 +487,51 @@ impl<F: FieldExt> BranchChip<F> {
                     * is_branch_child_cur
                     * node_index_cur // ignore if node_index = 0
                     * (modified_node_cur.clone() - modified_node_prev),
+            ));
+
+            // modified_node = drifted_pos when NOT placeholder.
+            // We check modified_node = drifted_pos in first branch node and then check
+            // in each branch node: modified_node_prev = modified_node_cur and
+            // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
+            let is_branch_placeholder_s = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation::prev(),
+            );
+            let is_branch_placeholder_c = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation::prev(),
+            );
+            let modified_node_prev = meta.query_advice(modified_node, Rotation::prev());
+            let modified_node_cur = meta.query_advice(modified_node, Rotation::cur());
+            let drifted_pos_prev = meta.query_advice(drifted_pos, Rotation::prev());
+            let drifted_pos_cur = meta.query_advice(drifted_pos, Rotation::cur());
+            let node_index_cur = meta.query_advice(node_index, Rotation::cur());
+            constraints.push((
+                "drifted_pos = modified_node in node_index = 0 when NOT placeholder",
+                q_not_first.clone()
+                    * (one.clone()
+                        - is_branch_placeholder_s.clone()
+                        - is_branch_placeholder_c.clone())
+                    * is_branch_init_prev
+                    * (drifted_pos_cur.clone() - modified_node_cur.clone()),
+            ));
+            constraints.push((
+                "drifted_pos_prev = drifted_pos_cur in node_index > 0 when NOT placeholder",
+                q_not_first.clone()
+                    * (one.clone()
+                        - is_branch_placeholder_s.clone()
+                        - is_branch_placeholder_c.clone())
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (drifted_pos_prev.clone() - drifted_pos_cur.clone()),
+            ));
+            constraints.push((
+                "modified_node_prev = modified_node_cur in node_index > 0 when NOT placeholder",
+                q_not_first.clone()
+                    * (one.clone()
+                        - is_branch_placeholder_s.clone()
+                        - is_branch_placeholder_c.clone())
+                    * node_index_cur.clone() // ignore if node_index = 0
+                    * (modified_node_prev.clone() - modified_node_cur.clone()),
             ));
 
             constraints

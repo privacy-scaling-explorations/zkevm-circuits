@@ -25,7 +25,7 @@ impl<F: FieldExt> BranchRowsChip<F> {
         advices: [Column<Advice>; HASH_WIDTH],
         node_index: Column<Advice>,
         is_modified: Column<Advice>,
-        is_at_first_nibble: Column<Advice>,
+        is_at_drifted_pos: Column<Advice>,
         sel: Column<Advice>,
         acc_r: F,
     ) -> BranchRowsConfig {
@@ -38,27 +38,6 @@ impl<F: FieldExt> BranchRowsChip<F> {
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
 
             let node_index_cur = meta.query_advice(node_index, Rotation::cur());
-
-            /*
-            TODO for leaf:
-            Let's say we have a leaf n where
-                n.Key = [10,6,3,5,7,0,1,2,12,1,10,3,10,14,0,10,1,7,13,3,0,4,12,9,9,2,0,3,1,0,3,8,2,13,9,6,8,14,11,12,12,4,11,1,7,7,1,15,4,1,12,6,11,3,0,4,2,0,5,11,5,7,0,16]
-                n.Val = [2].
-            Before put in a proof, a leaf is hashed:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/proof.go#L78
-            But before being hashed, Key is put in compact form:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L110
-            Key becomes:
-                [58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112]
-            Then the node is RLP encoded:
-            https://github.com/ethereum/go-ethereum/blob/master/trie/hasher.go#L157
-            RLP:
-                [226,160,58,99,87,1,44,26,58,224,161,125,48,76,153,32,49,3,130,217,104,235,204,75,23,113,244,28,107,48,66,5,181,112,2]
-            Finally, the RLP is hashed:
-                [32,34,39,131,73,65,47,37,211,142,206,231,172,16,11,203,33,107,30,7,213,226,2,174,55,216,4,117,220,10,186,68]
-
-            In a proof (witness), we have [226, 160, ...] in columns s_rlp1, s_rlp2, ...
-            */
 
             // mod_node_hash_rlc is the same for all is_branch_child rows.
             // This is to enable easier comparison when in leaf row
@@ -80,10 +59,10 @@ impl<F: FieldExt> BranchRowsChip<F> {
             // s_mod_node_hash_rlc and c_mode_node_hash_rlc correspond to RLC of s_advices
             // and c_advices at the modified index
             let is_modified = meta.query_advice(is_modified, Rotation::cur());
-            let is_at_first_nibble = meta.query_advice(is_at_first_nibble, Rotation::cur());
+            let is_at_drifted_pos = meta.query_advice(is_at_drifted_pos, Rotation::cur());
 
-            // When it's NOT placeholder branch, is_modified = is_at_first_nibble.
-            // When it's placeholder branch, is_modified != is_at_first_nibble.
+            // When it's NOT placeholder branch, is_modified = is_at_drifted_pos.
+            // When it's placeholder branch, is_modified != is_at_drifted_pos.
             // This is used instead of having is_branch_s_placeholder and
             // is_branch_c_placeholder columns - we only have this info in
             // branch init where we don't need additional columns.
@@ -95,20 +74,20 @@ impl<F: FieldExt> BranchRowsChip<F> {
             }
             let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
 
-            // In placeholder branch (when is_modified != is_at_first_nibble) the following
-            // constraint could be satisfied by attacker by putting hash of is_modified
-            // (while it should be is_at_first_nibble), but then the attacker
+            // In placeholder branch (when is_modified != is_at_drifted_pos) the following
+            // constraint could be satisfied by the attacker by putting hash of is_modified
+            // (while it should be is_at_drifted_pos), but then the attacker
             // would need to use is_modified node for leaf_key_in_added_branch
-            // (hash of it is in keccak at is_at_first_nibble), but then the
+            // (hash of it is in keccak at is_at_drifted_pos), but then the
             // constraint of leaf_in_added_branch having the same key except for
-            // the first nibble (and extension node nibbles if extension node) will fail.
+            // the first nibble (and extension node nibbles if extension node) would fail.
             let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
-            // Needs to correspond when is_modified or is_at_first_nibble.
+            // Needs to correspond when is_modified or is_at_drifted_pos.
             constraints.push((
                 "mod_node_hash_rlc correspond to advices at the modified index",
                 q_not_first.clone()
                         * is_branch_child_cur.clone()
-                        * is_at_first_nibble.clone() // is_at_first_nibble = is_modified when NOT placeholder
+                        * is_at_drifted_pos.clone() // is_at_drifted_pos = is_modified when NOT placeholder
                         * is_modified.clone()
                         * (hash_rlc.clone() - mod_node_hash_rlc_cur),
             ));
@@ -125,7 +104,7 @@ impl<F: FieldExt> BranchRowsChip<F> {
             // advices[0] = 128
             let advices0 = meta.query_advice(advices[0], Rotation::cur());
             constraints.push((
-                "branch child sel s_advices0",
+                "branch child sel *_advices0",
                 q_not_first.clone()
                     * is_branch_child_cur.clone()
                     * is_modified.clone()
@@ -136,7 +115,7 @@ impl<F: FieldExt> BranchRowsChip<F> {
             for column in advices.iter().skip(1) {
                 let s = meta.query_advice(*column, Rotation::cur());
                 constraints.push((
-                    "branch child sel s_advices",
+                    "branch child sel *_advices",
                     q_not_first.clone()
                         * is_branch_child_cur.clone()
                         * is_modified.clone()
@@ -152,13 +131,6 @@ impl<F: FieldExt> BranchRowsChip<F> {
                     * node_index_cur.clone() // ignore if node_index = 0 (there is no previous)
                     * (sel_cur - sel_prev),
             ));
-
-            // TODO: constraint for is_modified = is_at_first_nibble, to do this
-            // we can check modified_node = first_nibble in branch init and then check
-            // in each branch node: modified_node_prev = modified_node_cur and
-            // first_nibble_prev = first_nibble_cur, this way we can use only Rotation(-1).
-
-            // TODO: constraints for branch init selectors
 
             constraints
         });
