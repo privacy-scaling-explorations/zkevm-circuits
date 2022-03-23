@@ -424,8 +424,7 @@ impl<
                     }
                     Ok(())
                 },
-            )
-            .ok();
+            )?;
 
         layouter
             .assign_region(
@@ -441,8 +440,7 @@ impl<
                     }
                     Ok(())
                 },
-            )
-            .ok();
+            )?;
 
         layouter
             .assign_region(
@@ -458,8 +456,7 @@ impl<
                     }
                     Ok(())
                 },
-            )
-            .ok();
+            )?;
 
         layouter.assign_region(
             || "stack address table with zero",

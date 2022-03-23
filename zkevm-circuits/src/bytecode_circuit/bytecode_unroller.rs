@@ -307,7 +307,7 @@ impl<F: Field> Config<F> {
         mut layouter: impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
-    ) {
+    ) -> Result<(),Error> {
         let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
 
         // Subtract the unusable rows from the size
@@ -389,7 +389,6 @@ impl<F: Field> Config<F> {
                     Ok(())
                 },
             )
-            .ok();
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -615,7 +614,7 @@ mod tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             config.load(&mut layouter, &self.bytecodes)?;
-            config.assign(layouter, self.size, &self.bytecodes);
+            config.assign(layouter, self.size, &self.bytecodes)?;
             Ok(())
         }
     }
