@@ -187,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm)))?;
 
-        let [nonce, balance, code_hash] = [3, 4, 5].map(|i| {
+        let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
             block.rws[step.rw_indices[i]]
                 .table_assignment(block.randomness)
                 .value
