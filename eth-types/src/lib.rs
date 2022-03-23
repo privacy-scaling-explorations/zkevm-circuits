@@ -21,7 +21,7 @@ pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
 
-pub use bytecode::Bytecode;
+pub use bytecode::{Bytecode, EMPTY_HASH};
 pub use error::Error;
 use pairing::group::ff::PrimeField;
 

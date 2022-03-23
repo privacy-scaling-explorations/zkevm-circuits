@@ -210,7 +210,7 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
     };
-    use eth_types::{self, address, geth_types::GethData, Word};
+    use eth_types::{self, address, bytecode, geth_types::GethData, Word};
     use mock::TestContext;
 
     fn test_ok(block: GethData) {
@@ -248,7 +248,8 @@ mod test {
                 |accs| {
                     accs[0]
                         .address(address!("0x00000000000000000000000000000000000000fe"))
-                        .balance(Word::from(10u64.pow(19)));
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode! { STOP });
                     accs[1]
                         .address(address!("0x00000000000000000000000000000000000000fd"))
                         .balance(Word::from(10u64.pow(19)));

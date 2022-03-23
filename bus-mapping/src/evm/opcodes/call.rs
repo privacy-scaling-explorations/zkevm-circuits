@@ -9,7 +9,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{eip150_gas, memory_expansion_gas_cost, GasCost},
-    GethExecStep, ToWord,
+    GethExecStep, ToWord, EMPTY_HASH,
 };
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -142,10 +142,12 @@ impl Opcode for Call {
             },
         )?;
 
-        let (_, account) = state.sdb.get_account_mut(&callee.address);
+        let (_, account) = state.sdb.get_account(&callee.address);
+        let callee_nonce = account.nonce;
+        let callee_code_hash = account.code_hash;
         for (field, value) in [
-            (AccountField::Nonce, account.nonce),
-            (AccountField::CodeHash, account.code_hash.to_word()),
+            (AccountField::Nonce, callee_nonce),
+            (AccountField::CodeHash, callee_code_hash.to_word()),
         ] {
             state.push_op(
                 &mut exec_step,
@@ -171,15 +173,16 @@ impl Opcode for Call {
         .unwrap();
         let has_value = !callee.value.is_zero();
         let gas_cost = if is_warm_access {
-            GasCost::WARM_ACCESS.0
+            GasCost::WARM_ACCESS.as_u64()
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.0
-        } + if is_account_empty {
-            GasCost::CALL_EMPTY_ACCOUNT.0
-        } else {
-            0
+            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.0
+            GasCost::CALL_WITH_VALUE.as_u64()
+                + if is_account_empty {
+                    GasCost::NEW_ACCOUNT.as_u64()
+                } else {
+                    0
+                }
         } else {
             0
         } + memory_expansion_gas_cost(
@@ -188,10 +191,37 @@ impl Opcode for Call {
         );
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, geth_step.stack.last()?);
 
+        // There are 3 branches from here.
+
+        // 1. Call to precompiled.
+        if state.is_precompiled(&call.address) {
+            // TODO:
+            return Ok(vec![exec_step]);
+        }
+
+        // 2. Call to account with empty code.
+        if callee_code_hash == EMPTY_HASH {
+            for (field, value) in [
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+            ] {
+                state.push_op(
+                    &mut exec_step,
+                    RW::WRITE,
+                    CallContextOp {
+                        call_id: call.call_id,
+                        field,
+                        value,
+                    },
+                );
+            }
+            state.handle_return()?;
+            return Ok(vec![exec_step]);
+        }
+
+        // 3. Call to account with non-empty code.
         for (field, value) in [
-            (CallContextField::IsRoot, (call.is_root as u64).into()),
-            (CallContextField::IsCreate, (call.is_create() as u64).into()),
-            (CallContextField::CodeSource, call.code_hash.to_word()),
             (
                 CallContextField::ProgramCounter,
                 (geth_step.pc.0 + 1).into(),
@@ -255,6 +285,9 @@ impl Opcode for Call {
             (CallContextField::LastCalleeId, 0.into()),
             (CallContextField::LastCalleeReturnDataOffset, 0.into()),
             (CallContextField::LastCalleeReturnDataLength, 0.into()),
+            (CallContextField::IsRoot, 0.into()),
+            (CallContextField::IsCreate, 0.into()),
+            (CallContextField::CodeSource, callee.code_hash.to_word()),
         ] {
             state.push_op(
                 &mut exec_step,

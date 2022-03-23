@@ -11,7 +11,7 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToWord,
+    GethExecStep, ToWord, EMPTY_HASH,
 };
 use log::warn;
 
@@ -339,27 +339,38 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         },
     )?;
 
-    match (call.is_create(), state.is_precompiled(&call.address)) {
-        (true, _) => {
-            // TODO: Implement creation transaction
-        }
-        (_, true) => {
-            // TODO: Implement calling to precompiled
-        }
-        _ => {
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                AccountOp {
-                    address: call.address,
-                    field: AccountField::CodeHash,
-                    value: code_hash.to_word(),
-                    value_prev: code_hash.to_word(),
-                },
-            );
-        }
+    // There are 4 branches from here.
+
+    // 1. Creation transaction.
+    if call.is_create() {
+        // TODO:
+        return Ok(exec_step);
     }
 
+    // 2. Call to precompiled.
+    if state.is_precompiled(&call.address) {
+        // TODO:
+        return Ok(exec_step);
+    }
+
+    state.push_op(
+        &mut exec_step,
+        RW::READ,
+        AccountOp {
+            address: call.address,
+            field: AccountField::CodeHash,
+            value: code_hash.to_word(),
+            value_prev: code_hash.to_word(),
+        },
+    );
+
+    // 3. Call to account with empty code.
+    if code_hash == EMPTY_HASH {
+        // TODO:
+        return Ok(exec_step);
+    }
+
+    // 4. Call to account with non-empty code.
     for (field, value) in [
         (CallContextField::Depth, call.depth.into()),
         (
@@ -380,6 +391,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (CallContextField::LastCalleeId, 0.into()),
         (CallContextField::LastCalleeReturnDataOffset, 0.into()),
         (CallContextField::LastCalleeReturnDataLength, 0.into()),
+        (CallContextField::IsRoot, 1.into()),
+        (CallContextField::IsCreate, 0.into()),
+        (CallContextField::CodeSource, code_hash.to_word()),
     ] {
         state.push_op(
             &mut exec_step,

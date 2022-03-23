@@ -152,6 +152,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (CallContextFieldTag::LastCalleeId, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+            (CallContextFieldTag::IsRoot, 1.expr()),
+            (CallContextFieldTag::IsCreate, 0.expr()),
+            (CallContextFieldTag::CodeSource, code_hash.expr()),
         ] {
             cb.call_context_lookup(false.expr(), Some(call_id.expr()), field_tag, value);
         }
@@ -177,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             //   - Read CallContext LastCalleeId
             //   - Read CallContext LastCalleeReturnDataOffset
             //   - Read CallContext LastCalleeReturnDataLength
-            rw_counter: Delta(19.expr()),
+            rw_counter: Delta(22.expr()),
             call_id: To(call_id.expr()),
             is_root: To(true.expr()),
             is_create: To(false.expr()),

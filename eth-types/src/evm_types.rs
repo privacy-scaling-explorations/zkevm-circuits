@@ -120,8 +120,8 @@ impl GasCost {
     pub const CREATION_TX: Self = Self(53000);
     /// Constant cost for calling with non-zero value
     pub const CALL_WITH_VALUE: Self = Self(9000);
-    /// Constant cost for calling empty account
-    pub const CALL_EMPTY_ACCOUNT: Self = Self(25000);
+    /// Constant cost for turning empty account into non-empty account
+    pub const NEW_ACCOUNT: Self = Self(25000);
     /// Denominator of quadratic part of memory expansion gas cost
     pub const MEMORY_EXPANSION_QUAD_DENOMINATOR: Self = Self(512);
     /// Coefficient of linear part of memory expansion gas cost
