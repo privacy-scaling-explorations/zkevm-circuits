@@ -112,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         let nonempty_witness = cb.query_cell();
         cb.require_zero(
-            "is_empty is 1 if nonce, balance, or (code_hash - empty_code_hash_rlc) are all zero",
+            "is_empty is 1 if nonce, balance, and (code_hash - empty_code_hash_rlc) are all zero",
             (1.expr() - is_empty.expr())
                 * (1.expr() - nonce.expr() * nonempty_witness.expr())
                 * (1.expr() - balance.expr() * nonempty_witness.expr())
