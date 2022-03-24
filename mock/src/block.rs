@@ -41,13 +41,13 @@ impl Default for MockBlock {
             state_root: Hash::zero(),
             transactions_root: Hash::zero(),
             receipts_root: Hash::zero(),
-            number: U64([123456u64]),
-            gas_used: Word::from(15_000_000u64),
+            number: U64([0u64]),
+            gas_used: Word::zero(),
             gas_limit: Word::from(15_000_000u64),
-            base_fee_per_gas: Word::from(97u64),
+            base_fee_per_gas: Word::zero(),
             extra_data: Bytes::default(),
             logs_bloom: None,
-            timestamp: Word::from(1633398551u64),
+            timestamp: Word::from(123456789u64),
             difficulty: Word::from(0x200000u64),
             total_difficulty: Word::zero(),
             seal_fields: Vec::new(),
@@ -233,7 +233,7 @@ impl MockBlock {
     }
 
     /// Set transactions field for the MockBlock.
-    pub fn transactions<I: Iterator<Item = MockTransaction>>(
+    pub fn transactions<I: IntoIterator<Item = MockTransaction>>(
         &mut self,
         transactions: I,
     ) -> &mut Self {
