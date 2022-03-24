@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -101,6 +101,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+        root: Column<Instance>,
         not_first_level: Column<Fixed>,
         q_not_first: Column<Fixed>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -314,7 +315,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         // Note: acc_mult is checked in extension_node_key.
 
         // Check whether branch hash is in extension node row.
-        meta.lookup_any("extension_node 1", |meta| {
+        meta.lookup_any("extension_node branch hash in extension row", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
@@ -423,9 +424,41 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         // Correspondence between nibbles in C and bytes in S is checked in
         // extension_node_key.
 
+        // TODO: prepare test
+        meta.create_gate(
+            "account first level extension node hash - compared to root",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
+
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+
+                let mut sc_hash = vec![];
+                // Note: extension node has branch hash always in c_advices.
+                for column in c_advices.iter() {
+                    sc_hash.push(meta.query_advice(*column, Rotation::cur()));
+                }
+                let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
+                let root = meta.query_instance(root, Rotation::cur());
+
+                let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+                constraints.push((
+                    "first level extension node",
+                    q_not_first
+                        * q_enable.clone()
+                        * (one.clone() - not_first_level)
+                        * (one.clone() - is_branch_init_prev.clone()) // to prevent PoisonedConstraint
+                        * (hash_rlc - root),
+                ));
+
+                constraints
+            },
+        );
+
         // Check whether extension node hash is in parent branch.
         // Don't check if it's first storage level (see storage_root_in_account_leaf).
-        meta.lookup_any("extension_node 2", |meta| {
+        meta.lookup_any("extension_node extension in parent branch", |meta| {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
 

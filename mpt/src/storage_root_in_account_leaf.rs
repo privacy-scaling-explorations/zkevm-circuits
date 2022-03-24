@@ -42,9 +42,6 @@ impl<F: FieldExt> StorageRootChip<F> {
         let config = StorageRootConfig {};
         let one = Expression::Constant(F::one());
 
-        // TODO: if added branch / extension node in first storage level (hash of leaf
-        // below placeholder to be storage root)
-
         // Storage first level branch hash - root in last account leaf (ordinary branch,
         // not extension node).
         meta.lookup_any("storage_root_in_account_leaf 1", |meta| {
