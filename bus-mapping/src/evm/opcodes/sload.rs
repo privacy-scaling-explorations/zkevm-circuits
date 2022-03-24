@@ -57,11 +57,14 @@ impl Opcode for Sload {
 #[cfg(test)]
 mod sload_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::operation::StackOp;
-    use eth_types::bytecode;
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::{Address, Word};
+    use crate::{mock::BlockData, operation::StackOp};
+    use eth_types::{
+        address, bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        Word,
+    };
+    use mock::TestContext;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -79,11 +82,28 @@ mod sload_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code);
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
 
-        let mut builder = block.new_circuit_input_builder();
+                accs
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -116,7 +136,7 @@ mod sload_tests {
             (
                 RW::READ,
                 &StorageOp::new(
-                    Address::from([0u8; 20]),
+                    address!("0x0000000000000000000000000000000000000010"),
                     Word::from(0x0u32),
                     Word::from(0x6fu32),
                     Word::from(0x6fu32),
