@@ -1680,10 +1680,10 @@ pub fn gen_state_access_trace<TX>(
         let (contract_address, code_source) = &call_stack[call_stack.len() - 1];
         let (contract_address, code_source) = (*contract_address, *code_source);
 
-        let (mut push_stack, mut pop_stack) = (false, false);
+        let (mut push_call_stack, mut pop_call_stack) = (false, false);
         if let Some(next_step) = next_step {
-            push_stack = step.depth + 1 == next_step.depth;
-            pop_stack = step.depth - 1 == next_step.depth;
+            push_call_stack = step.depth + 1 == next_step.depth;
+            pop_call_stack = step.depth - 1 == next_step.depth;
         }
 
         match step.op {
@@ -1734,7 +1734,7 @@ pub fn gen_state_access_trace<TX>(
                 accs.push(Access::new(i, WRITE, Account { address }));
             }
             OpcodeId::CREATE => {
-                if push_stack {
+                if push_call_stack {
                     // Find CREATE result
                     let address = get_call_result(&geth_trace.struct_logs[index..])
                         .unwrap_or_else(Word::zero)
@@ -1747,7 +1747,7 @@ pub fn gen_state_access_trace<TX>(
                 }
             }
             OpcodeId::CREATE2 => {
-                if push_stack {
+                if push_call_stack {
                     // Find CREATE2 result
                     let address = get_call_result(&geth_trace.struct_logs[index..])
                         .unwrap_or_else(Word::zero)
@@ -1766,7 +1766,7 @@ pub fn gen_state_access_trace<TX>(
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, WRITE, Account { address }));
                 accs.push(Access::new(i, READ, Code { address }));
-                if push_stack {
+                if push_call_stack {
                     call_stack.push((address, CodeSource::Address(address)));
                 }
             }
@@ -1777,27 +1777,27 @@ pub fn gen_state_access_trace<TX>(
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, WRITE, Account { address }));
                 accs.push(Access::new(i, READ, Code { address }));
-                if push_stack {
+                if push_call_stack {
                     call_stack.push((address, CodeSource::Address(address)));
                 }
             }
             OpcodeId::DELEGATECALL => {
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, READ, Code { address }));
-                if push_stack {
+                if push_call_stack {
                     call_stack.push((contract_address, CodeSource::Address(address)));
                 }
             }
             OpcodeId::STATICCALL => {
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, READ, Code { address }));
-                if push_stack {
+                if push_call_stack {
                     call_stack.push((address, CodeSource::Address(address)));
                 }
             }
             _ => {}
         }
-        if pop_stack {
+        if pop_call_stack {
             if call_stack.len() == 1 {
                 return Err(Error::InvalidGethExecStep(
                     "gen_state_access_trace: call stack will be empty",
@@ -3369,7 +3369,7 @@ mod tracer_tests {
     }
 
     #[test]
-    fn test_gen_access_trace_create_push_stack() {
+    fn test_gen_access_trace_create_push_call_stack() {
         use AccessValue::{Account, Code};
         use RW::{READ, WRITE};
 
