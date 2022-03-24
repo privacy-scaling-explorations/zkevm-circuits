@@ -1,13 +1,6 @@
 //! Mock types and functions to generate GethData used for tests
 
-use eth_types::{
-    address,
-    bytecode::Bytecode,
-    evm_types::Gas,
-    geth_types::{Account, BlockConstants, GethData, Transaction},
-    Address, Block, Bytes, Error, Hash, Word, U64,
-};
-use external_tracer::{trace, TraceConfig};
+use eth_types::{address, Address, Word};
 use lazy_static::lazy_static;
 mod account;
 mod block;

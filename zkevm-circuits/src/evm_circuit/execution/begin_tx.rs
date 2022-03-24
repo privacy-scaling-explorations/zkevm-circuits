@@ -286,47 +286,51 @@ mod test {
         test::{rand_bytes, rand_range, run_test_circuit_incomplete_fixed_table},
         witness::block_convert,
     };
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, address, bytecode, evm_types::GasCost, geth_types::Account, Word};
+    use bus_mapping::{evm::OpcodeId, mock::BlockData};
+    use eth_types::{self, address, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use mock::TestContext;
 
     fn test_ok(tx: eth_types::Transaction, is_success: bool) {
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(
-            mock::new(
-                vec![
-                    Account {
-                        address: tx.from,
-                        balance: Word::from(10).pow(20.into()),
-                        ..Default::default()
-                    },
-                    Account {
-                        address: tx.to.unwrap_or_default(),
-                        code: if is_success {
-                            bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                RETURN
-                            }
-                            .to_vec()
-                            .into()
-                        } else {
-                            bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                REVERT
-                            }
-                            .to_vec()
-                            .into()
-                        },
-                        ..Default::default()
-                    },
-                ],
-                vec![tx],
-            )
-            .unwrap(),
-        );
-        let mut builder = block_data.new_circuit_input_builder();
+        let code = if is_success {
+            bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                RETURN
+            }
+        } else {
+            bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                REVERT
+            }
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(tx.from)
+                    .balance(Word::from(10u64.pow(20)))
+                    .code(code);
+                accs[1]
+                    .address(tx.to.unwrap_or_default())
+                    .balance(Word::from(1u64 << 20));
+
+                accs
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+
         builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
