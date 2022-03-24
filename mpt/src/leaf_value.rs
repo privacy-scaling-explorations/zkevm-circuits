@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -24,7 +24,10 @@ pub(crate) struct LeafValueChip<F> {
 impl<F: FieldExt> LeafValueChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
+        root: Column<Instance>,
+        q_not_first: Column<Fixed>,
+        not_first_level: Column<Fixed>,
+        is_leaf_value: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -40,6 +43,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         fixed_table: [Column<Fixed>; 3],
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
+        let one = Expression::Constant(F::one());
 
         // TODO: check values are 0 after RLP stream ends (to prevent attacks on RLC)
 
@@ -60,7 +64,10 @@ impl<F: FieldExt> LeafValueChip<F> {
         // RLC is needed in lookup below and in storage_root_in_account_leaf for
         // leaf without branch.
         meta.create_gate("Leaf value RLC", |meta| {
-            let q_enable = q_enable(meta);
+            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let q_enable = not_first_level * is_leaf;
+
             let mut constraints = vec![];
 
             let mut rlc = meta.query_advice(acc, Rotation::prev());
@@ -87,13 +94,14 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints
         });
 
-        meta.lookup_any("leaf_value", |meta| {
-            let q_enable = q_enable(meta);
+        meta.lookup_any("leaf hash in parent", |meta| {
+            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let q_enable = not_first_level * is_leaf;
 
             let rlc = meta.query_advice(acc, Rotation::cur());
 
             let sel = meta.query_advice(sel, Rotation(rot));
-            let one = Expression::Constant(F::one());
 
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
@@ -131,8 +139,10 @@ impl<F: FieldExt> LeafValueChip<F> {
 
         // Lookup for case when there is a placeholder branch - in this case we need to
         // check the hash in the branch above the placeholder branch.
-        meta.lookup_any("leaf_value branch placeholder", |meta| {
-            let q_enable = q_enable(meta);
+        meta.lookup_any("leaf hash in parent (branch placeholder)", |meta| {
+            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            let q_enable = not_first_level * is_leaf;
 
             let mut rlc = meta.query_advice(acc, Rotation::prev());
             let mut mult = meta.query_advice(acc_mult, Rotation::prev());
@@ -202,16 +212,53 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints
         });
 
+        // Check hash of a storage leaf to be state root when leaf without branch -
+        // this can happen only if the circuit is used without account proof.
+        // TODO: prepare test
+        meta.lookup_any(
+            "storage (no account proof) in first level leaf without branch - compared to root",
+            |meta| {
+                let mut constraints = vec![];
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+
+                let rlc = meta.query_advice(acc, Rotation::cur());
+                let root = meta.query_instance(root, Rotation::cur());
+
+                constraints.push((
+                    q_not_first.clone()
+                        * is_leaf.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * rlc,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
+                    q_not_first * is_leaf * (one.clone() - not_first_level) * root,
+                    keccak_table_i,
+                ));
+
+                constraints
+            },
+        );
+
+        let sel = |meta: &mut VirtualCells<F>| {
+            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let mut is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+            not_first_level * is_leaf
+        };
+
         range_lookups(
             meta,
-            q_enable,
+            sel,
             s_advices.to_vec(),
             FixedTableTag::Range256,
             fixed_table,
         );
         range_lookups(
             meta,
-            q_enable,
+            sel,
             [s_rlp1, s_rlp2].to_vec(),
             FixedTableTag::Range256,
             fixed_table,

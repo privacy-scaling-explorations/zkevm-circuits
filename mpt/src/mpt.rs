@@ -149,8 +149,10 @@ pub enum FixedTableTag {
 
 impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let start_root = meta.instance_column(); // start_root
-        let end_root = meta.instance_column(); // end_root
+        let start_root = meta.instance_column(); // state root before modification - first level S hash needs to be the same as
+                                                 // start_root (works also if only storage proof, without account proof)
+        let end_root = meta.instance_column(); // state root after modification - first level C hash needs to be the same as
+                                               // end_root (works also if only storage proof, without account proof)
 
         let q_enable = meta.selector();
         let q_not_first = meta.fixed_column();
@@ -635,12 +637,10 @@ impl<F: FieldExt> MPTConfig<F> {
 
         LeafValueChip::<F>::configure(
             meta,
-            |meta| {
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
-                let is_leaf_s_value = meta.query_advice(is_leaf_s_value, Rotation::cur());
-
-                not_first_level * is_leaf_s_value
-            },
+            start_root,
+            q_not_first,
+            not_first_level,
+            is_leaf_s_value,
             s_rlp1,
             s_rlp2,
             s_advices,
@@ -658,12 +658,10 @@ impl<F: FieldExt> MPTConfig<F> {
 
         LeafValueChip::<F>::configure(
             meta,
-            |meta| {
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
-                let is_leaf_c_value = meta.query_advice(is_leaf_c_value, Rotation::cur());
-
-                not_first_level * is_leaf_c_value
-            },
+            end_root,
+            q_not_first,
+            not_first_level,
+            is_leaf_c_value,
             s_rlp1,
             s_rlp2,
             s_advices,
@@ -726,6 +724,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
+            start_root,
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
@@ -745,6 +744,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
+            end_root,
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,

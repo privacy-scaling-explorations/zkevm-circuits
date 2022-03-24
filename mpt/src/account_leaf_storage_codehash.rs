@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -24,6 +24,7 @@ pub(crate) struct AccountLeafStorageCodehashChip<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        root: Column<Instance>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Fixed>,
         is_account_leaf_storage_codehash_s: Column<Advice>,
@@ -41,6 +42,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
+        let one = Expression::Constant(F::one());
 
         // We don't need to check acc_mult because it's not used after this row.
 
@@ -107,7 +109,44 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints
         });
 
-        // TODO: check hash of a leaf to be account root when leaf without branch
+        // Check hash of a leaf to be state root when leaf without branch.
+        // TODO: prepare test
+        meta.lookup_any(
+            "account first level leaf without branch - compared to root",
+            |meta| {
+                let mut constraints = vec![];
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+
+                let mut is_account_leaf_storage_codehash =
+                    meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
+                if !is_s {
+                    is_account_leaf_storage_codehash =
+                        meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
+                }
+
+                let rlc = meta.query_advice(acc, Rotation::cur());
+                let root = meta.query_instance(root, Rotation::cur());
+
+                constraints.push((
+                    q_not_first.clone()
+                        * is_account_leaf_storage_codehash.clone()
+                        * (one.clone() - not_first_level.clone())
+                        * rlc,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
+                    q_not_first
+                        * is_account_leaf_storage_codehash
+                        * (one.clone() - not_first_level)
+                        * root,
+                    keccak_table_i,
+                ));
+
+                constraints
+            },
+        );
 
         // Check hash of a leaf.
         meta.lookup_any("account_leaf_storage_codehash: hash of a leaf", |meta| {
@@ -130,7 +169,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let acc_s = meta.query_advice(acc, Rotation::cur());
 
             let mut constraints = vec![];
-            let one = Expression::Constant(F::one());
             constraints.push((
                 not_first_level.clone()
                     * (one.clone() - leaf_without_branch.clone())
