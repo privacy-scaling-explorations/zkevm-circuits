@@ -11,7 +11,7 @@ use itertools::Itertools;
 /// TestContext is a type that contains all the information from a block
 /// required to build the circuit inputs.
 #[derive(Debug)]
-pub struct TestContext<const NACC: usize> {
+pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
     pub chain_id: Word,
     /// Account list
@@ -22,22 +22,22 @@ pub struct TestContext<const NACC: usize> {
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
-    pub geth_traces: Vec<eth_types::GethExecTrace>,
+    pub geth_traces: [eth_types::GethExecTrace; NTX],
 }
 
-impl<const NACC: usize> From<TestContext<NACC>> for GethData {
-    fn from(ctx: TestContext<NACC>) -> GethData {
+impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
+    fn from(ctx: TestContext<NACC, NTX>) -> GethData {
         GethData {
             chain_id: ctx.chain_id,
             history_hashes: ctx.history_hashes,
             eth_block: ctx.eth_block,
-            geth_traces: ctx.geth_traces,
+            geth_traces: ctx.geth_traces.to_vec(),
             accounts: ctx.accounts.into(),
         }
     }
 }
 
-impl<const NACC: usize> TestContext<NACC> {
+impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     pub fn new<FAcc, FTx, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,
@@ -45,8 +45,8 @@ impl<const NACC: usize> TestContext<NACC> {
         func_block: Fb,
     ) -> Result<Self, Error>
     where
-        FTx: FnOnce(&mut MockTransaction, [MockAccount; NACC]) -> &mut MockTransaction,
-        Fb: FnOnce(&mut MockBlock, MockTransaction) -> &mut MockBlock,
+        FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]) -> [&mut MockAccount; NACC],
     {
         let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC];
@@ -63,12 +63,15 @@ impl<const NACC: usize> TestContext<NACC> {
             .try_into()
             .expect("Mismatched acc len");
 
-        let mut tx = MockTransaction::default();
-        func_tx(&mut tx, accounts.clone()).build();
+        let mut transactions = vec![MockTransaction::default(); NTX];
+        let tx_refs = transactions.iter_mut().collect();
+        func_tx(tx_refs, accounts.clone());
+        let transactions: Vec<MockTransaction> =
+            transactions.iter_mut().map(|tx| tx.build()).collect();
 
         let mut block = MockBlock::default();
-        func_block(&mut block, tx.clone()).build();
-        block.transactions = vec![tx];
+        block.transactions.extend_from_slice(&transactions);
+        func_block(&mut block, transactions).build();
 
         let transactions: Vec<Transaction> = block
             .transactions
@@ -99,11 +102,11 @@ impl<const NACC: usize> TestContext<NACC> {
 
 /// Generates execution traces for the transactions included in the provided
 /// Block
-fn gen_geth_traces<const NACC: usize>(
+fn gen_geth_traces<const NACC: usize, const NTX: usize>(
     block: Block<Transaction>,
     accounts: [Account; NACC],
     history_hashes: Option<Vec<Word>>,
-) -> Result<Vec<GethExecTrace>, Error> {
+) -> Result<[GethExecTrace; NTX], Error> {
     let trace_config = TraceConfig {
         chain_id: block.transactions[0].chain_id.unwrap_or_default(),
         history_hashes: history_hashes.unwrap_or_default(),
@@ -118,5 +121,7 @@ fn gen_geth_traces<const NACC: usize>(
             .map(eth_types::geth_types::Transaction::from_eth_tx)
             .collect(),
     };
-    trace(&trace_config)
+    let traces = trace(&trace_config)?;
+    let result: [GethExecTrace; NTX] = traces.try_into().expect("Unexpected len mismatch");
+    Ok(result)
 }
