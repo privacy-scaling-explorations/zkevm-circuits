@@ -5,6 +5,7 @@ use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
+use eth_types::evm_types::{Gas, GasCost};
 use eth_types::{GethExecStep, ToWord, Word, U256};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -19,8 +20,11 @@ impl Opcode for Sstore {
         steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
-
+        let _next_step = &steps[1];
         let mut exec_step = state.new_step(step)?;
+
+        let _call_id = state.call()?.call_id;
+        let contract_addr = state.call()?.address;
 
         state.push_op(
             &mut exec_step,
@@ -68,16 +72,20 @@ impl Opcode for Sstore {
         state.push_stack_op(&mut exec_step, RW::READ, value_stack_position, value)?;
 
         // Storage read
-        // FIXME
+        //let storage_value_read = next_step.storage.get_or_err(&key)?;
 
-        let value_prev: U256 = unsafe {
-            let ptr = steps.as_ptr();
-            (*ptr.sub(1))
-                .storage
-                .get(&key)
-                .cloned()
-                .unwrap_or_else(|| U256::from(0i32))
+        let (warm, _) = match step.storage.get(&key) {
+            Some(v) => (true, *v),
+            None => (false, U256::from(0)),
         };
+
+        let (_, value_ptr) = state.sdb.get_storage_mut(&contract_addr, &key);
+        let value_prev = *value_ptr;
+        *value_ptr = value;
+
+        let (_, committed_value) = state.tx.sdb.get_storage(&state.call()?.address, &key);
+        let committed_value = Word::from(committed_value);
+        //assert!(found, "committed_value should be in state db");
 
         println!("value {:?} value_prev {:?}", value, value_prev);
         //let value_prev = steps[1].storage.get_or_err(&key)?;
@@ -90,7 +98,7 @@ impl Opcode for Sstore {
                 value,
                 value_prev,
                 state.tx_ctx.id(),
-                value_prev, // TODO: committed_value
+                committed_value,
             ),
         )?;
 
@@ -102,22 +110,71 @@ impl Opcode for Sstore {
                 address: state.call()?.address,
                 key,
                 value: true,
-                value_prev: false, // TODO:
+                value_prev: warm,
             },
         )?;
 
+        let last_step_refund = state.tx.steps().last().unwrap().gas_refund;
+        let cur_step_refund =
+            calc_expected_tx_refund(last_step_refund.0, value, value_prev, committed_value);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
-                value_prev: 0, //step.refund.0,
-                value: 0,      //steps[1].refund.0,
+                value_prev: last_step_refund.0,
+                value: cur_step_refund,
             },
         )?;
 
+        exec_step.gas_refund = Gas(cur_step_refund);
         Ok(vec![exec_step])
     }
+}
+
+fn calc_expected_tx_refund(
+    tx_refund_old: u64,
+    value: Word,
+    value_prev: Word,
+    committed_value: Word,
+) -> u64 {
+    let mut tx_refund_new = tx_refund_old;
+    tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+    println!("tx_refund_new {}", tx_refund_new);
+    //original_value!=value_prev, value_prev!=value, original_value!=0
+    if value_prev != value {
+        if committed_value == value_prev {
+            if (committed_value != Word::from(0)) && (value == Word::from(0)) {
+                tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+            }
+        } else {
+            if committed_value != Word::from(0) {
+                if value_prev == Word::from(0) {
+                    println!("tx_refund_new cc {}", tx_refund_new);
+                    tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+
+                    println!("tx_refund_new cc2 {}", tx_refund_new);
+                }
+                if value == Word::from(0) {
+                    tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+                }
+            }
+            if committed_value == value {
+                if committed_value == Word::from(0) {
+                    tx_refund_new += GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
+                } else {
+                    println!("tx_refund_new aa {}", tx_refund_new);
+                    tx_refund_new +=
+                        GasCost::SSTORE_RESET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
+                }
+            }
+        }
+    }
+
+    println!("tx_refund_new {}", tx_refund_new);
+    tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+
+    tx_refund_new
 }
 
 /*

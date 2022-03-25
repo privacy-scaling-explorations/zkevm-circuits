@@ -178,6 +178,8 @@ pub struct ExecStep {
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
     pub gas_cost: GasCost,
+    /// accumulated gas refund
+    pub gas_refund: Gas,
     /// Call index within the [`Transaction`]
     pub call_index: usize,
     /// The global counter when this step was executed.
@@ -208,6 +210,7 @@ impl ExecStep {
             memory_size: step.memory.0.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
+            gas_refund: Gas(0),
             call_index,
             rwc,
             swc,
@@ -227,6 +230,7 @@ impl Default for ExecStep {
             memory_size: 0,
             gas_left: Gas(0),
             gas_cost: GasCost(0),
+            gas_refund: Gas(0),
             call_index: 0,
             rwc: RWCounter(0),
             swc: 0,
@@ -611,6 +615,9 @@ pub struct Transaction {
     pub value: Word,
     /// Input / Call Data
     pub input: Vec<u8>,
+    /// storage state before tx, read only during execution. Used for gas
+    /// calculation in opcodes like sstore
+    pub sdb: StateDB,
     /// Calls made in the transaction
     calls: Vec<Call>,
     /// Execution steps
@@ -673,6 +680,7 @@ impl Transaction {
         };
 
         Ok(Self {
+            sdb: sdb.clone(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -1343,7 +1351,7 @@ impl<'a> CircuitInputStateRef<'a> {
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
 pub struct CircuitInputBuilder {
-    /// StateDB key-value DB
+    /// active StateDB key-value DB
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,

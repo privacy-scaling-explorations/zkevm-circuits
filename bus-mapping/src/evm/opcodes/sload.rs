@@ -5,7 +5,7 @@ use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
-use eth_types::{GethExecStep, ToWord, Word};
+use eth_types::{GethExecStep, ToWord, Word, U256};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD)
@@ -18,14 +18,18 @@ impl Opcode for Sload {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step)?;
+        let cur_step = &geth_steps[0];
+        let next_step = &geth_steps[1];
+        let mut exec_step = state.new_step(cur_step)?;
+
+        let call_id = state.call()?.call_id;
+        let contract_addr = state.call()?.address;
 
         state.push_op(
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call()?.call_id,
+                call_id,
                 field: CallContextField::TxId,
                 value: Word::from(state.tx_ctx.id()),
             },
@@ -34,7 +38,7 @@ impl Opcode for Sload {
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call()?.call_id,
+                call_id,
                 field: CallContextField::RwCounterEndOfReversion,
                 value: Word::from(state.call()?.rw_counter_end_of_reversion),
             },
@@ -43,7 +47,7 @@ impl Opcode for Sload {
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call()?.call_id,
+                call_id,
                 field: CallContextField::IsPersistent,
                 value: Word::from(state.call()?.is_persistent as u8),
             },
@@ -52,33 +56,43 @@ impl Opcode for Sload {
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call()?.call_id,
+                call_id,
                 field: CallContextField::CalleeAddress,
-                value: state.call()?.address.to_word(),
+                value: contract_addr.to_word(),
             },
         );
 
         // First stack read
-        let stack_value_read = geth_step.stack.last()?;
-        let stack_position = geth_step.stack.last_filled();
+        let key = cur_step.stack.last()?;
+        let stack_position = cur_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(&mut exec_step, RW::READ, stack_position, stack_value_read)?;
+        state.push_stack_op(&mut exec_step, RW::READ, stack_position, key)?;
 
         // Storage read
-        let storage_value_read = geth_step.storage.get_or_err(&stack_value_read)?;
+        let storage_value_read = next_step.storage.get_or_err(&key)?;
+        let (warm, _storage_value_prev) = match cur_step.storage.get(&key) {
+            Some(v) => (true, *v),
+            None => (false, U256::from(0)),
+        };
+        let (found, committed_value) = state.sdb.get_storage(&contract_addr, &key);
+        let committed_value = Word::from(committed_value);
+        assert!(found, "committed_value should be in state db");
+
         state.push_op(
             &mut exec_step,
             RW::READ,
             StorageOp::new(
-                state.call()?.address,
-                stack_value_read,
+                contract_addr,
+                key,
                 storage_value_read,
                 storage_value_read,
                 state.tx_ctx.id(),
-                storage_value_read, // TODO: committed_value
+                committed_value,
             ),
         );
+        //println!("sload bus map {:?} {:?} {:?} {:?} {:?} {:?}",contract_addr, key,
+        // storage_value_read, storage_value_prev, state.tx_ctx.id(), committed_value);
 
         // First stack write
         state.push_stack_op(
@@ -92,10 +106,10 @@ impl Opcode for Sload {
             RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
-                address: state.call()?.address,
-                key: stack_value_read,
+                address: contract_addr,
+                key,
                 value: true,
-                value_prev: false, // TODO:
+                value_prev: warm,
             },
         )?;
 

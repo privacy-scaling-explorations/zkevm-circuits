@@ -44,7 +44,9 @@ async fn test_evm_circuit_block_deploy_greeter() {
 #[tokio::test]
 async fn test_evm_circuit_block_greeter_calls() {
     log_init();
+    let block_num_o = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
     let block_num = GEN_DATA.blocks.get("Contract call").unwrap();
+    //println!("bb {} {}", block_num_o, block_num);
     test_evm_circuit_block(*block_num).await;
 }
 

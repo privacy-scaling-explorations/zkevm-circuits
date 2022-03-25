@@ -158,6 +158,10 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
+        println!(
+            "sload {} {} {} {} {}",
+            call.callee_address, key, value, tx.id, committed_value
+        );
         Ok(())
     }
 }

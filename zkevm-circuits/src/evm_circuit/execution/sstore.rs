@@ -103,7 +103,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             committed_value.clone(),
             is_warm.clone(),
         );
-        cb.require_equal("hahah", gas_cost.expr(), 22100.expr());
+        //cb.require_equal("hahah", gas_cost.expr(), 22100.expr());
 
         let tx_refund_prev = cb.query_cell();
         let tx_refund = SstoreTxRefundGadget::construct(
@@ -217,8 +217,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
         println!(
-            "is warm {} value_prev {} committed_value {}",
-            is_warm, value_prev, committed_value
+            "tx.id {} is warm {} key {} value_prev {} committed_value {} value {} gas cost {}",
+            tx.id, is_warm, key, value_prev, committed_value, value, step.gas_cost
         );
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
@@ -474,8 +474,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the new tx_refund
-        // self.tx_refund_new.clone()  - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr()
-        0.expr()
+        self.tx_refund_new.clone() - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr()
+        //0.expr()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -597,7 +597,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    
     use crate::{
         evm_circuit::{
             param::STACK_CAPACITY,

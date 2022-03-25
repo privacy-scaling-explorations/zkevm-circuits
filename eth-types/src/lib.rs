@@ -366,6 +366,19 @@ pub struct GethExecTrace {
     pub struct_logs: Vec<GethExecStep>,
 }
 
+/// Storage of Geth trace contains sstore/sload RESULT.
+/// Storage BEFORE every opcode is needed for opcode witness.
+/// So storage field of traces are shifted right by 1.
+pub fn fix_geth_trace_storage(trace: &mut [GethExecStep]) {
+    let opcode_of_last_step = trace.last().unwrap().op;
+    assert!(opcode_of_last_step != OpcodeId::SSTORE);
+    assert!(opcode_of_last_step != OpcodeId::SLOAD);
+    for i in (1..trace.len()).rev() {
+        trace[i].storage = trace[i - 1].storage.clone();
+    }
+    trace[0].storage = Default::default();
+}
+
 /// Truncate the memory in each step to the memory size before the step is
 /// executed (and before the memory is expanded).  This is required because geth
 /// sets the memory in each step as the memory before execution but after
@@ -406,6 +419,7 @@ impl<'de> Deserialize<'de> for GethExecTrace {
             return_value,
         } = GethExecTraceInternal::deserialize(deserializer)?;
         fix_geth_trace_memory_size(&mut struct_logs);
+        fix_geth_trace_storage(&mut struct_logs);
         Ok(Self {
             gas,
             failed,

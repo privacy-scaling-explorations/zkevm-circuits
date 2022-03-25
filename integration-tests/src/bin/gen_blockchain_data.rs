@@ -4,6 +4,10 @@ use ethers::{
     core::types::{TransactionRequest, U256},
     core::utils::WEI_IN_ETHER,
     middleware::SignerMiddleware,
+    prelude::{
+        rand::{self, Rng},
+        NonceManagerMiddleware,
+    },
     providers::Middleware,
     signers::Signer,
     solc::Solc,
@@ -129,7 +133,10 @@ async fn main() {
 
     // Deploy smart contracts
     let mut deployments = HashMap::new();
-    let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
+    let prov_wallet0 = Arc::new(NonceManagerMiddleware::new(
+        SignerMiddleware::new(get_provider(), wallet0.clone()),
+        wallet0.address(),
+    ));
     let contract = deploy(
         prov_wallet0.clone(),
         contracts.get("Greeter").expect("contract not found"),
@@ -147,58 +154,41 @@ async fn main() {
 
     cli.miner_stop().await.expect("cannot stop miner");
 
-    // Make some contract calls
+    let mut rng = rand::thread_rng();
+    let write_calls: Vec<_> = (0..10)
+        .map(|_| {
+            let value = rng.gen_range(0..5);
+            let call = contract
+                .method::<_, ()>("set_value", (U256::from(value),))
+                .unwrap();
+            call.gas(50000u64)
+        })
+        .collect();
+    let read_calls: Vec<_> = (0..10)
+        .map(|_| {
+            let call = contract.method::<_, U256>("retrieve", ()).unwrap();
+            // There seems somethings wrong with auto gas estimate
+            call.gas(50000u64)
+        })
+        .collect();
 
-    // write
-    let mut call1 = contract
-        .method::<_, U256>("set_value", (U256::from(17),))
-        .unwrap();
-    println!("tx old {:#?}", call1.tx);
+    let mut pendings = Vec::new();
+    for _ in 0..20 {
+        let is_write: bool = rng.gen();
+        let idx: usize = rng.gen_range(0..10);
+        if is_write {
+            pendings.push(write_calls[idx].send().await.unwrap());
+        } else {
+            pendings.push(read_calls[idx].send().await.unwrap());
+        }
+    }
 
-    call1.tx.set_gas(500000);
-    prov_wallet0
-        .fill_transaction(&mut call1.tx, None)
-        .await
-        .unwrap();
-    println!("tx new {:#?}", call1.tx);
-
-    let p1 = prov_wallet0
-        .send_transaction(call1.tx.clone(), None)
-        .await
-        .unwrap();
-
-    let mut call2 = contract.method::<_, U256>("retrieve", ()).unwrap();
-    call2.tx.set_gas(500000);
-    call2.tx.set_nonce(call1.tx.nonce().unwrap() + 1);
-
-    println!("tx old {:#?}", call2.tx);
-    prov_wallet0
-        .fill_transaction(&mut call2.tx, None)
-        .await
-        .unwrap();
-    println!("tx new {:#?}", call2.tx);
-
-    let p2 = prov_wallet0
-        .send_transaction(call2.tx.clone(), None)
-        .await
-        .unwrap();
-    /*
-        let mut call3 = contract
-        .method::<_, U256>("retrieve", ()).unwrap();
-
-
-        call3.tx.set_gas(500000);
-        call3.tx.set_nonce(call1.tx.nonce().unwrap() + 2);
-
-        let p3 = prov_wallet0
-        .send_transaction(call3.tx.clone(), None)
-        .await.unwrap();
-    */
     cli.miner_start().await.expect("cannot start miner");
 
-    println!("p1 {:#?}", p1.confirmations(0usize).await.unwrap());
-    println!("p2 {:#?}", p2.confirmations(0usize).await.unwrap());
-    //println!("p3 {:#?}", p3.confirmations(0usize).await.unwrap());
+    for p in pendings {
+        let receipt = p.confirmations(0usize).await.unwrap().unwrap();
+        assert_eq!(receipt.status.unwrap(), 1.into(), "call failed");
+    }
 
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Contract call".to_string(), block_num.as_u64());

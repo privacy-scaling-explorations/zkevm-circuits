@@ -1,6 +1,6 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
@@ -10,7 +10,7 @@ use crate::{
 };
 use core::fmt::Debug;
 use eth_types::{
-    evm_types::{Gas, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToWord,
 };
 use log::warn;

@@ -5,8 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{AddWordsGadget, IsZeroGadget, PairSelectGadget},
-            select, Word,
+            math_gadget::{IsZeroGadget}, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -65,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for Is0Gadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let indices = [step.rw_indices[0], step.rw_indices[1]];
-        let [a, is_0] = indices.map(|idx| block.rws[idx].stack_value());
+        let [a, _is_0] = indices.map(|idx| block.rws[idx].stack_value());
         let a = Word::random_linear_combine(a.to_le_bytes(), block.randomness);
         self.is_0.assign(region, offset, a)?;
 
