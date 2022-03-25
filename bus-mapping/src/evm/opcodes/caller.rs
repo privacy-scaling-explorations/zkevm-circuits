@@ -43,7 +43,7 @@ impl Opcode for Caller {
 #[cfg(test)]
 mod caller_tests {
     use super::*;
-    use crate::{mock::BlockData, operation::StackOp};
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},

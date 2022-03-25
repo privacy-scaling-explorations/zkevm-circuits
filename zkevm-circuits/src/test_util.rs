@@ -3,7 +3,7 @@ use crate::{
     state_circuit::StateCircuit,
 };
 use bus_mapping::mock::BlockData;
-use eth_types::{address, geth_types::GethData, Word};
+use eth_types::{address, geth_types::GethData, Bytes, Word};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use mock::TestContext;
 use pairing::bn256::Fr;
@@ -76,7 +76,8 @@ pub fn test_circuits_using_bytecode(
             txs[0]
                 .to(accs[0].address)
                 .from(accs[1].address)
-                .gas(Word::from(config.gas_limit));
+                .gas(Word::from(config.gas_limit))
+                .input(Bytes::from(call_data.unwrap_or_default()));
         },
         |block, _tx| block.number(0xcafeu64),
     )

@@ -41,6 +41,7 @@ impl Opcode for Calldatasize {
 #[cfg(test)]
 mod calldatasize_tests {
     use crate::{
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };

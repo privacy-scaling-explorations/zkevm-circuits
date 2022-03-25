@@ -61,6 +61,7 @@ impl Opcode for Mload {
 mod mload_tests {
     use super::*;
     use crate::{
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{MemoryOp, StackOp},
     };

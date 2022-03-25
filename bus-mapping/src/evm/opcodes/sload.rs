@@ -57,7 +57,7 @@ impl Opcode for Sload {
 #[cfg(test)]
 mod sload_tests {
     use super::*;
-    use crate::{mock::BlockData, operation::StackOp};
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},

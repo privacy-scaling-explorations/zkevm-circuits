@@ -63,6 +63,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 mod mstore_tests {
     use super::*;
     use crate::{
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
     };

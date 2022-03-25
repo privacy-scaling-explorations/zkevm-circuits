@@ -56,6 +56,7 @@ impl Opcode for Selfbalance {
 mod selfbalance_tests {
     use super::*;
     use crate::{
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };

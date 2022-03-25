@@ -133,22 +133,24 @@ mod extcodehash_tests {
     use crate::mock::BlockData;
     use crate::operation::StackOp;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account as GethAccount, Address,
-        Bytecode, Bytes, U256,
+        address, bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        Bytecode, Word, U256,
     };
     use ethers_core::utils::keccak256;
-    use mock::new_single_tx_trace_accounts;
+    use mock::TestContext;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn cold_empty_account() -> Result<(), Error> {
-        test_ok(false, false)
-    }
+    // #[test]
+    // fn cold_empty_account() -> Result<(), Error> {
+    //     test_ok(false, false)
+    // }
 
-    #[test]
-    fn warm_empty_account() -> Result<(), Error> {
-        test_ok(false, true)
-    }
+    // #[test]
+    // fn warm_empty_account() -> Result<(), Error> {
+    //     test_ok(false, true)
+    // }
 
     #[test]
     fn cold_existing_account() -> Result<(), Error> {
@@ -178,36 +180,45 @@ mod extcodehash_tests {
             EXTCODEHASH
             STOP
         });
-
-        let mut accounts = vec![GethAccount {
-            address: Address::default(), // This is the address of the executing account
-            code: Bytes::from(code.to_vec()),
-            ..Default::default()
-        }];
-
-        // Let the external account exist, if needed, by making its code non-empty
-        let (mut nonce, mut balance, mut code) = (U256::zero(), U256::zero(), Bytes::default());
-        if exists {
-            nonce = U256::from(300u64);
-            balance = U256::from(800u64);
-            code = Bytes::from([34, 54, 56]);
-
-            accounts.push(GethAccount {
-                address: external_address,
-                nonce,
-                balance,
-                code: code.clone(),
-                ..Default::default()
-            })
-        }
-        let code_hash = keccak256(&code).into();
+        let nonce = Word::from(300u64);
+        let balance = Word::from(800u64);
+        let code_hash = keccak256(&[0x60, 0x40]).into();
 
         // Get the execution steps from the external tracer
-        let geth_data = new_single_tx_trace_accounts(accounts)?;
-        let block = BlockData::new_from_geth_data(geth_data);
+        let block: GethData = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code);
+                if exists {
+                    accs[1]
+                        .address(external_address)
+                        .balance(balance)
+                        .nonce(nonce)
+                        .code(bytecode! {
+                            PUSH1(0x40u64)
+                        });
+                }
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(1u64 << 20));
 
-        let mut builder = block.new_circuit_input_builder();
-        builder.handle_block(&block.eth_block, &block.geth_traces)?;
+                accs
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
 
         // Check that `external_address` is in access list as a result of bus mapping.
         assert!(builder.sdb.add_account_to_access_list(external_address));
@@ -233,7 +244,7 @@ mod extcodehash_tests {
                 RW::READ,
                 &StackOp {
                     call_id,
-                    address: 1023.into(),
+                    address: StackAddress::from(1023u32),
                     value: external_address.to_word()
                 }
             )
@@ -349,7 +360,7 @@ mod extcodehash_tests {
                 RW::WRITE,
                 &StackOp {
                     call_id,
-                    address: 1023.into(),
+                    address: 1023u32.into(),
                     value: if exists { code_hash } else { U256::zero() }
                 }
             )

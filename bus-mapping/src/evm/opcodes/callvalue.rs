@@ -43,6 +43,7 @@ impl Opcode for Callvalue {
 #[cfg(test)]
 mod callvalue_tests {
     use crate::{
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };
