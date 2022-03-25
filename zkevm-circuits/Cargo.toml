@@ -26,6 +26,9 @@ itertools = "0.10.3"
 lazy_static = "1.4"
 keccak256 = { path = "../keccak256"}
 
+log = "0.4.14"
+env_logger = "0.9"
+
 [dev-dependencies]
 criterion = "0.3"
 hex = "0.4.3"

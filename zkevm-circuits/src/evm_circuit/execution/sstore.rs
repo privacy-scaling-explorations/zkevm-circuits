@@ -597,7 +597,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
 #[cfg(test)]
 mod test {
-    
+
     use crate::{
         evm_circuit::{
             param::STACK_CAPACITY,

@@ -501,7 +501,7 @@ impl<F: Field> ExecutionConfig<F> {
                                     .map(|(input, table)| (q_step.clone() * input, table))
                                     .collect::<Vec<_>>()
                             });
-                        println!(
+                        log::debug!(
                             "LOOKUP TABLE {} <=> {} {}",
                             idx,
                             stringify!($descrip),
@@ -591,7 +591,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("assign_exec_step {} {:?}", offset, step);
+        log::debug!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 

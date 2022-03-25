@@ -75,9 +75,9 @@ impl Opcode for Sload {
             Some(v) => (true, *v),
             None => (false, U256::from(0)),
         };
-        let (found, committed_value) = state.sdb.get_storage(&contract_addr, &key);
+        let (_found, committed_value) = state.sdb.get_storage(&contract_addr, &key);
         let committed_value = Word::from(committed_value);
-        assert!(found, "committed_value should be in state db");
+        //assert!(found, "committed_value should be in state db");
 
         state.push_op(
             &mut exec_step,
