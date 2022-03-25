@@ -656,14 +656,17 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
     }
 
-    fn state_write(
+    fn reversible_write(
         &mut self,
         name: &'static str,
         tag: RwTableTag,
         mut values: [Expression<F>; 8],
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        debug_assert!(tag.is_reversible(), "Only reversible tags are state write");
+        debug_assert!(
+            tag.is_reversible(),
+            "Reversible write requires reversible tag"
+        );
 
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
@@ -694,7 +697,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "TxAccessListAccount write",
             RwTableTag::TxAccessListAccount,
             [
@@ -720,7 +723,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "TxAccessListAccountStorage write",
             RwTableTag::TxAccessListAccountStorage,
             [
@@ -764,7 +767,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "TxRefund write",
             RwTableTag::TxRefund,
             [
@@ -814,7 +817,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "Account write with reversion",
             RwTableTag::Account,
             [
@@ -869,7 +872,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         committed_value: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "AccountStorage write",
             RwTableTag::AccountStorage,
             [
