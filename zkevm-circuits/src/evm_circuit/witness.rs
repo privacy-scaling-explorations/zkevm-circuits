@@ -291,8 +291,8 @@ pub struct ExecStep {
     pub gas_cost: u64,
     /// The memory size in bytes
     pub memory_size: u64,
-    /// The counter for state writes
-    pub state_write_counter: usize,
+    /// The counter for reversible writes
+    pub reversible_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
     /// Step auxiliary data
@@ -1159,7 +1159,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
             _ => None,
         },
         memory_size: step.memory_size as u64,
-        state_write_counter: step.swc,
+        reversible_write_counter: step.reversible_write_counter,
         aux_data: step.aux_data.clone().map(Into::into),
     }
 }

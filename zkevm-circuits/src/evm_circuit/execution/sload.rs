@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
-            state_write_counter: Delta(1.expr()),
+            reversible_write_counter: Delta(1.expr()),
             gas_left: Delta(-gas_cost),
             ..Default::default()
         };
@@ -279,7 +279,7 @@ mod test {
                         stack_pointer: STACK_CAPACITY,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
-                        state_write_counter: 1,
+                        reversible_write_counter: 1,
                         ..Default::default()
                     },
                 ],

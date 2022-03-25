@@ -106,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr()),
-            state_write_counter: Delta(3.expr()),
+            reversible_write_counter: Delta(3.expr()),
             gas_left: Delta(-gas_cost.expr()),
             ..Default::default()
         };
@@ -724,7 +724,7 @@ mod test {
                         stack_pointer: STACK_CAPACITY,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
-                        state_write_counter: 3,
+                        reversible_write_counter: 3,
                         ..Default::default()
                     },
                 ],
