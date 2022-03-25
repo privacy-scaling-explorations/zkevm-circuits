@@ -178,8 +178,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The global counter when this step was executed.
     pub rwc: RWCounter,
-    /// Reversible Write Counter.  Counter of write operations in the call that will need to be
-    /// undone in case of a revert.
+    /// Reversible Write Counter.  Counter of write operations in the call that
+    /// will need to be undone in case of a revert.
     pub reversible_write_counter: usize,
     /// The list of references to Operations in the container
     pub bus_mapping_instance: Vec<OperationRef>,
@@ -431,9 +431,9 @@ impl Call {
 pub struct CallContext {
     /// Index of call
     pub index: usize,
-    /// Reversible Write Counter tracks the number of write operations in the call. It is
-    /// incremented when a subcall in this call succeeds by the number of successful writes in the
-    /// subcall.
+    /// Reversible Write Counter tracks the number of write operations in the
+    /// call. It is incremented when a subcall in this call succeeds by the
+    /// number of successful writes in the subcall.
     pub reversible_write_counter: usize,
 }
 
@@ -443,9 +443,10 @@ pub struct CallContext {
 /// failure (and thus reverts).
 #[derive(Debug, Default)]
 pub struct ReversionGroup {
-    /// List of `index` and `reversible_write_counter_offset` of calls belong to this group.
-    /// `reversible_write_counter_offset` is the number of reversible operations that have
-    /// happened before the call within the same reversion group.
+    /// List of `index` and `reversible_write_counter_offset` of calls belong to
+    /// this group. `reversible_write_counter_offset` is the number of
+    /// reversible operations that have happened before the call within the
+    /// same reversion group.
     calls: Vec<(usize, usize)>,
     /// List of `step_index` and `OperationRef` that have been done in this
     /// group.
@@ -567,16 +568,21 @@ impl TransactionContext {
             })
         } else if let Some(reversion_group) = self.reversion_groups.last_mut() {
             let caller_ctx = self.calls.last().expect("calls should not be empty");
-            let caller_reversible_write_counter = self.calls.last().expect("calls should not be empty").reversible_write_counter;
+            let caller_reversible_write_counter = self
+                .calls
+                .last()
+                .expect("calls should not be empty")
+                .reversible_write_counter;
             let caller_reversible_write_counter_offset = reversion_group
                 .calls
                 .iter()
                 .find(|(call_idx, _)| *call_idx == caller_ctx.index)
                 .expect("calls should not be empty")
                 .1;
-            reversion_group
-                .calls
-                .push((call_idx, caller_reversible_write_counter + caller_reversible_write_counter_offset));
+            reversion_group.calls.push((
+                call_idx,
+                caller_reversible_write_counter + caller_reversible_write_counter_offset,
+            ));
         }
 
         self.calls.push(CallContext {
@@ -1145,7 +1151,8 @@ impl<'a> CircuitInputStateRef<'a> {
         // Set calls' `rw_counter_end_of_reversion`
         let rwc = self.block_ctx.rwc.0 - 1;
         for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
-            self.tx.calls[call_idx].rw_counter_end_of_reversion = rwc - reversible_write_counter_offset;
+            self.tx.calls[call_idx].rw_counter_end_of_reversion =
+                rwc - reversible_write_counter_offset;
         }
     }
 
