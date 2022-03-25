@@ -272,7 +272,6 @@ impl<F: FieldExt> BranchChip<F> {
             let is_branch_child_prev = meta.query_advice(is_branch_child, Rotation::prev());
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
             let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
-            let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
             let is_last_branch_child_prev =
                 meta.query_advice(is_last_branch_child, Rotation::prev());
             let is_last_branch_child_cur = meta.query_advice(is_last_branch_child, Rotation::cur());
@@ -316,7 +315,7 @@ impl<F: FieldExt> BranchChip<F> {
                 q_not_first.clone()
                     * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
                     * (is_branch_child_prev.clone()
-                        - is_branch_child_cur.clone()) // for this to work properly make sure to have constraints like is_branch_child + is_keccak_leaf + ... = 1
+                        - is_branch_child_cur.clone()) // is_branch_child changes
                     * (node_index_prev
                         - Expression::Constant(F::from(15_u64))), // node_index has to be 15
             ));

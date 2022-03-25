@@ -12,10 +12,10 @@ use crate::{
     account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
     branch::BranchChip,
-    branch_acc::BranchAccChip,
-    branch_acc_init::BranchAccInitChip,
     branch_hash_in_parent::BranchHashInParentChip,
     branch_parallel::BranchParallelChip,
+    branch_rlc::BranchRLCChip,
+    branch_rlc_init::BranchRLCInitChip,
     extension_node::ExtensionNodeChip,
     extension_node_key::ExtensionNodeKeyChip,
     helpers::{get_is_extension_node, hash_into_rlc},
@@ -125,6 +125,7 @@ pub struct MPTConfig<F> {
     acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
     // is added or deleted from trie - but no branch is added or turned into leaf)
+    // sel1 and sel2 in branch init - whether it's the first or second nibble of address/key byte
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
     sel1: Column<Advice>,
     sel2: Column<Advice>,
@@ -505,7 +506,7 @@ impl<F: FieldExt> MPTConfig<F> {
             false,
         );
 
-        BranchAccInitChip::<F>::configure(
+        BranchRLCInitChip::<F>::configure(
             meta,
             |meta| {
                 meta.query_advice(is_branch_init, Rotation::cur()) * meta.query_selector(q_enable)
@@ -520,7 +521,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_r,
         );
 
-        BranchAccChip::<F>::configure(
+        BranchRLCChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
@@ -535,7 +536,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
         );
 
-        BranchAccChip::<F>::configure(
+        BranchRLCChip::<F>::configure(
             meta,
             |meta| {
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());

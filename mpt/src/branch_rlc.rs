@@ -9,16 +9,16 @@ use std::marker::PhantomData;
 use crate::param::{HASH_WIDTH, R_TABLE_LEN};
 
 #[derive(Clone, Debug)]
-pub(crate) struct BranchAccConfig {}
+pub(crate) struct BranchRLCConfig {}
 
-// BranchAccChip verifies the random linear combination for the branch which is
+// BranchRLCChip verifies the random linear combination for the branch which is
 // then used to check the hash of a branch.
-pub(crate) struct BranchAccChip<F> {
-    config: BranchAccConfig,
+pub(crate) struct BranchRLCChip<F> {
+    config: BranchRLCConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchAccChip<F> {
+impl<F: FieldExt> BranchRLCChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -27,8 +27,8 @@ impl<F: FieldExt> BranchAccChip<F> {
         branch_acc: Column<Advice>,
         branch_mult: Column<Advice>,
         r_table: Vec<Expression<F>>,
-    ) -> BranchAccConfig {
-        let config = BranchAccConfig {};
+    ) -> BranchRLCConfig {
+        let config = BranchRLCConfig {};
 
         meta.create_gate("branch acc", |meta| {
             let q_enable = q_enable(meta);
@@ -84,7 +84,7 @@ impl<F: FieldExt> BranchAccChip<F> {
         config
     }
 
-    pub fn construct(config: BranchAccConfig) -> Self {
+    pub fn construct(config: BranchRLCConfig) -> Self {
         Self {
             config,
             _marker: PhantomData,
@@ -92,8 +92,8 @@ impl<F: FieldExt> BranchAccChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for BranchAccChip<F> {
-    type Config = BranchAccConfig;
+impl<F: FieldExt> Chip<F> for BranchRLCChip<F> {
+    type Config = BranchRLCConfig;
     type Loaded = ();
 
     fn config(&self) -> &Self::Config {
