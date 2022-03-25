@@ -125,7 +125,6 @@ pub struct MPTConfig<F> {
     acc_r: F,
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
     // is added or deleted from trie - but no branch is added or turned into leaf)
-    // sel1 and sel2 in branch init - whether it's the first or second nibble of address/key byte
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
     sel1: Column<Advice>,
     sel2: Column<Advice>,
@@ -1424,21 +1423,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 offset,
                             )?;
 
-                            // sel1 and sel2 are here to distinguish whether it's the
-                            // first or the second nibble of the key byte
-                            // If sel1 = 1 and short, we have one nibble+48 in s_advices[0].
-                            // If sel1 = 1 and long, we have nibble+48 in s_advices[1].
-                            // If sel2 = 1 and short, we have 32 in s_advices[0].
-                            // If sel2 = 1 and long, we have 32 in s_advices[1].
-
-                            // TODO: remove sel1, sel2, this is now set in witness generator.
-
                             // Note that if the last branch is placeholder,
-                            // sel1 and sel2 are still switched at this branch which
-                            // needs to be considered in leaf rows.
-                            let mut sel1 = F::zero();
-                            let mut sel2 = F::zero();
-                            // extension node:
                             is_even = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
                                 + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
                                 == 1;
@@ -1457,44 +1442,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 == 1;
                             is_extension_node = is_even == true || is_odd == true;
                             // end of extension node
-
-                            if !is_extension_node {
-                                if key_rlc_sel {
-                                    sel1 = F::one();
-                                } else {
-                                    sel2 = F::one();
-                                }
-                            } else {
-                                if key_rlc_sel {
-                                    if is_even && is_long {
-                                        sel1 = F::one();
-                                    } else if is_odd && is_long {
-                                        sel2 = F::one();
-                                    } else if is_short {
-                                        sel2 = F::one();
-                                    }
-                                } else {
-                                    if is_even && is_long {
-                                        sel2 = F::one();
-                                    } else if is_odd && is_long {
-                                        sel1 = F::one();
-                                    } else if is_short {
-                                        sel1 = F::one();
-                                    }
-                                }
-                            }
-                            region.assign_advice(
-                                || "assign sel1".to_string(),
-                                self.sel1,
-                                offset,
-                                || Ok(sel1),
-                            )?;
-                            region.assign_advice(
-                                || "assign sel2".to_string(),
-                                self.sel2,
-                                offset,
-                                || Ok(sel2),
-                            )?;
 
                             offset += 1;
                         } else if row[row.len() - 1] == 1 {
