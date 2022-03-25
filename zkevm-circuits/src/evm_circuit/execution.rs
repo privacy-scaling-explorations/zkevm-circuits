@@ -32,6 +32,7 @@ mod dup;
 mod end_block;
 mod end_tx;
 mod error_oog_static_memory;
+mod extcodehash;
 mod gas;
 mod is_zero;
 mod jump;
@@ -70,6 +71,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
+use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
 use is_zero::Is0Gadget;
 use jump::JumpGadget;
@@ -155,6 +157,7 @@ pub(crate) struct ExecutionConfig<F> {
     number_gadget: NumberGadget<F>,
     sload_gadget: SloadGadget<F>,
     sstore_gadget: SstoreGadget<F>,
+    extcodehash_gadget: ExtcodehashGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -372,6 +375,7 @@ impl<F: Field> ExecutionConfig<F> {
             number_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
             sstore_gadget: configure_gadget!(),
+            extcodehash_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -654,6 +658,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::CALLDATACOPY => {
                 assign_exec_step!(self.calldatacopy_gadget)
+            }
+            ExecutionState::EXTCODEHASH => {
+                assign_exec_step!(self.extcodehash_gadget)
             }
             ExecutionState::CopyToMemory => {
                 assign_exec_step!(self.copy_to_memory_gadget)
