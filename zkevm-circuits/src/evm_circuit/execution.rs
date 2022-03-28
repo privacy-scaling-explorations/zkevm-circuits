@@ -28,6 +28,7 @@ mod caller;
 mod callvalue;
 mod coinbase;
 mod comparator;
+mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -67,6 +68,7 @@ use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use dummy::DummpyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -139,6 +141,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    log3_gadget: DummpyGadget<F, { ExecutionState::LOG }>,
     gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
     copy_to_memory_gadget: CopyToMemoryGadget<F>,
@@ -148,6 +151,7 @@ pub(crate) struct ExecutionConfig<F> {
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     shr_gadget: ShrGadget<F>,
+    sha3_gadget: DummpyGadget<F, { ExecutionState::SHA3 }>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
@@ -357,6 +361,7 @@ impl<F: Field> ExecutionConfig<F> {
             jump_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
+            log3_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
@@ -364,6 +369,7 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            sha3_gadget: configure_gadget!(),
             shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
@@ -637,6 +643,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::JUMPDEST => {
                 assign_exec_step!(self.jumpdest_gadget)
             }
+            ExecutionState::LOG => assign_exec_step!(self.log3_gadget),
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
@@ -655,6 +662,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::CALLDATACOPY => {
                 assign_exec_step!(self.calldatacopy_gadget)

@@ -67,7 +67,7 @@ pub fn test_circuits_using_bytecode(
         .handle_block(&block_trace.eth_block, &block_trace.geth_traces)
         .unwrap();
 
-    println!("builder block {:#?}", builder.block);
+    //println!("builder block {:#?}", builder.block);
     // build a witness block from trace result
     let block = crate::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
 
