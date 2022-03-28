@@ -4,7 +4,7 @@ use eth_types::{address, Address, Word};
 use lazy_static::lazy_static;
 mod account;
 mod block;
-mod test_ctx;
+pub mod test_ctx;
 mod trace;
 mod transaction;
 

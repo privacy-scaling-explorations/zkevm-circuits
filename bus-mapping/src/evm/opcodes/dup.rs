@@ -35,9 +35,9 @@ impl<const N: usize> Opcode for Dup<N> {
 mod dup_tests {
     use super::*;
     use crate::{mock::BlockData, operation::StackOp};
-    use eth_types::{address, bytecode, evm_types::StackAddress, geth_types::GethData, word, Word};
+    use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, word};
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -55,18 +55,8 @@ mod dup_tests {
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x0000000000000000000000000000000000000010"))
-                    .balance(Word::from(1u64 << 20))
-                    .code(code);
-                accs[1]
-                    .address(address!("0x0000000000000000000000000000000000000000"))
-                    .balance(Word::from(1u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[1].address);
-            },
+            |accs| account_0_code_account_1_no_code(accs, code),
+            tx_from_0_to_1,
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()

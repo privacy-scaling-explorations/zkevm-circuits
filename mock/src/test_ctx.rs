@@ -2,8 +2,9 @@
 
 use crate::{MockAccount, MockBlock, MockTransaction};
 use eth_types::{
+    address,
     geth_types::{Account, BlockConstants, GethData},
-    Block, Error, GethExecTrace, Transaction, Word,
+    Block, Bytecode, Error, GethExecTrace, Transaction, Word,
 };
 use external_tracer::{trace, TraceConfig};
 use itertools::Itertools;
@@ -124,4 +125,30 @@ fn gen_geth_traces<const NACC: usize, const NTX: usize>(
     let traces = trace(&trace_config)?;
     let result: [GethExecTrace; NTX] = traces.try_into().expect("Unexpected len mismatch");
     Ok(result)
+}
+
+/// Collection of helper functions which contribute to specific rutines on the
+/// builder pattern used to construct [`TextContext`]s.
+pub mod helpers {
+    use super::*;
+
+    /// Generate a simple setup which adds balance to two default accounts:
+    /// - 0x0000000000000000000000000000000000cafe01
+    /// - 0x0000000000000000000000000000000000cafe02
+    /// And injects the provided bytecode into the first one.
+    pub fn account_0_code_account_1_no_code(accs: [&mut MockAccount; 2], code: Bytecode) {
+        accs[0]
+            .address(address!("0x0000000000000000000000000000000000cafe01"))
+            .balance(Word::from(1u64 << 20))
+            .code(code);
+        accs[1]
+            .address(address!("0x0000000000000000000000000000000000cafe02"))
+            .balance(Word::from(1u64 << 20));
+    }
+
+    /// Generate a single transaction from the first account of the list to the
+    /// second one.
+    pub fn tx_from_0_to_1(mut txs: Vec<&mut MockTransaction>, accs: [MockAccount; 2]) {
+        txs[0].to(accs[0].address).from(accs[1].address);
+    }
 }
