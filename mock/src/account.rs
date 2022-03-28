@@ -1,6 +1,6 @@
 //! Mock Account definition and builder related methods.
 
-use eth_types::{geth_types::Account, Address, Bytecode, Word};
+use eth_types::{geth_types::Account, Address, Bytes, Word};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -13,7 +13,7 @@ pub struct MockAccount {
     /// Balance
     pub balance: Word,
     /// EVM Code
-    pub code: Bytecode,
+    pub code: Bytes,
     /// Storage
     pub storage: HashMap<Word, Word>,
 }
@@ -24,7 +24,7 @@ impl From<MockAccount> for Account {
             address: mock.address,
             nonce: mock.nonce,
             balance: mock.balance,
-            code: mock.code.code().to_vec().into(),
+            code: mock.code,
             storage: mock.storage,
         }
     }
@@ -50,8 +50,8 @@ impl MockAccount {
     }
 
     /// Set code field for the MockAccount.
-    pub fn code(&mut self, code: Bytecode) -> &mut Self {
-        self.code = code;
+    pub fn code<T: Into<Bytes>>(&mut self, code: T) -> &mut Self {
+        self.code = code.into();
         self
     }
 
