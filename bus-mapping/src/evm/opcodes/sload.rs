@@ -59,12 +59,15 @@ mod sload_tests {
     use super::*;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
     use eth_types::{
-        address, bytecode,
+        bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
         Word,
     };
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        test_ctx::{helpers::*, TestContext},
+        MOCK_ACCOUNTS,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -124,7 +127,7 @@ mod sload_tests {
             (
                 RW::READ,
                 &StorageOp::new(
-                    address!("0x0000000000000000000000000000000000cafe01"),
+                    MOCK_ACCOUNTS[0],
                     Word::from(0x0u32),
                     Word::from(0x6fu32),
                     Word::from(0x6fu32),
