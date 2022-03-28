@@ -136,21 +136,21 @@ mod extcodehash_tests {
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        Bytecode, Word, U256,
+        Bytecode, Bytes, Word, U256,
     };
     use ethers_core::utils::keccak256;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
-    // #[test]
-    // fn cold_empty_account() -> Result<(), Error> {
-    //     test_ok(false, false)
-    // }
+    #[test]
+    fn cold_empty_account() -> Result<(), Error> {
+        test_ok(false, false)
+    }
 
-    // #[test]
-    // fn warm_empty_account() -> Result<(), Error> {
-    //     test_ok(false, true)
-    // }
+    #[test]
+    fn warm_empty_account() -> Result<(), Error> {
+        test_ok(false, true)
+    }
 
     #[test]
     fn cold_existing_account() -> Result<(), Error> {
@@ -180,9 +180,15 @@ mod extcodehash_tests {
             EXTCODEHASH
             STOP
         });
-        let nonce = Word::from(300u64);
-        let balance = Word::from(800u64);
-        let code_hash = keccak256(&[0x60, 0x40]).into();
+        let mut nonce = Word::from(300u64);
+        let mut balance = Word::from(800u64);
+        let mut code_ext = Bytes::from([34, 54, 56]);
+
+        if !exists {
+            nonce = Word::zero();
+            balance = Word::zero();
+            code_ext = Bytes::default();
+        }
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -191,18 +197,16 @@ mod extcodehash_tests {
                 accs[0]
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .balance(Word::from(1u64 << 20))
-                    .code(code);
-                if exists {
-                    accs[1]
-                        .address(external_address)
-                        .balance(balance)
-                        .nonce(nonce)
-                        .code(bytecode! {
-                            PUSH1(0x40u64)
-                        });
-                }
+                    .code(code.clone());
+
+                accs[1]
+                    .address(external_address)
+                    .balance(balance)
+                    .nonce(nonce)
+                    .code(code_ext.clone());
+
                 accs[2]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .address(address!("0x0000000000000000000000000000000000cafe01"))
                     .balance(Word::from(1u64 << 20));
             },
             |mut txs, accs| {
@@ -212,6 +216,8 @@ mod extcodehash_tests {
         )
         .unwrap()
         .into();
+
+        let code_hash = Word::from(keccak256(code_ext));
 
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder

@@ -245,7 +245,7 @@ mod test {
         if is_warm {
             code.append(&bytecode! {
                 PUSH20(external_address.to_word())
-                BALANCE
+                EXTCODEHASH // TODO: Change this to BALANCE once is implemented
                 POP
             });
         }
@@ -256,8 +256,7 @@ mod test {
             STOP
         });
 
-        // execute the bytecode and get trace
-        // Create a custom tx setting Gas to
+        // Execute the bytecode and get trace
         let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
@@ -265,10 +264,13 @@ mod test {
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(1u64 << 20))
                     .code(code);
-                if let Some(_external_account) = external_account {
+
+                accs[1].address(external_address);
+                if let Some(external_account) = external_account {
                     accs[1]
-                        .address(external_address)
-                        .balance(Word::from(1u64 << 20));
+                        .balance(external_account.balance)
+                        .nonce(external_account.nonce)
+                        .code(external_account.code);
                 }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
@@ -294,28 +296,28 @@ mod test {
         .unwrap();
     }
 
-    // #[test]
-    // fn extcodehash_warm_empty_account() {
-    //     test_ok(None, true);
-    // }
+    #[test]
+    fn extcodehash_warm_empty_account() {
+        test_ok(None, true);
+    }
 
     #[test]
     fn extcodehash_cold_empty_account() {
         test_ok(None, false);
     }
 
-    // #[test]
-    // fn extcodehash_warm_existing_account() {
-    //     test_ok(
-    //         Some(Account {
-    //             address: *EXTERNAL_ADDRESS,
-    //             nonce: U256::from(259),
-    //             code: Bytes::from([3]),
-    //             ..Default::default()
-    //         }),
-    //         true,
-    //     );
-    // }
+    #[test]
+    fn extcodehash_warm_existing_account() {
+        test_ok(
+            Some(Account {
+                address: *EXTERNAL_ADDRESS,
+                nonce: U256::from(259),
+                code: Bytes::from([3]),
+                ..Default::default()
+            }),
+            true,
+        );
+    }
 
     #[test]
     fn extcodehash_cold_existing_account() {
