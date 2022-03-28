@@ -283,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, rand_range, run_test_circuit_incomplete_fixed_table},
         witness::block_convert,
     };
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
@@ -317,8 +317,6 @@ mod test {
                     .balance(Word::from(10u64.pow(10)))
                     .code(code);
                 accs[1].address(from).balance(Word::from(10u64.pow(19)));
-
-                accs
             },
             |mut txs, _accs| {
                 txs[0]
@@ -397,15 +395,15 @@ mod test {
         );
 
         // Transfer nothing with random gas_price, successfully
-        // test_ok(
-        //     mock_tx(
-        //         None,
-        //         None,
-        //         Some(Word::from(rand_range(0..4712939160239931u64))),
-        //         vec![],
-        //     ),
-        //     true,
-        // );
+        test_ok(
+            mock_tx(
+                None,
+                None,
+                Some(Word::from(rand_range(0..476190476190476u64))),
+                vec![],
+            ),
+            true,
+        );
 
         // Transfer random ether, tx reverts
         test_ok(
@@ -419,14 +417,14 @@ mod test {
         );
 
         // Transfer nothing with random gas_price, tx reverts
-        // test_ok(
-        //     mock_tx(
-        //         None,
-        //         None,
-        //         Some(Word::from(rand_range(0..4712939160239931u64))),
-        //         vec![],
-        //     ),
-        //     false,
-        // );
+        test_ok(
+            mock_tx(
+                None,
+                None,
+                Some(Word::from(rand_range(0..476190476190476u64))),
+                vec![],
+            ),
+            false,
+        );
     }
 }

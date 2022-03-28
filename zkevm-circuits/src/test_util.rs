@@ -69,8 +69,6 @@ pub fn test_circuits_using_bytecode(
             accs[1]
                 .address(address!("0x0000000000000000000000000000000000000000"))
                 .balance(Word::from(1u64 << 30));
-
-            accs
         },
         |mut txs, accs| {
             txs[0]

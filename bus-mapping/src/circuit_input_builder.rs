@@ -2072,8 +2072,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .balance(Word::from(10u64.pow(19)));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0]
@@ -2151,7 +2149,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2264,7 +2261,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2404,7 +2400,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2511,7 +2506,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2619,7 +2613,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2716,7 +2709,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2790,8 +2782,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[1].address);
@@ -2839,7 +2829,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -2893,8 +2882,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[1].address);
@@ -2943,7 +2930,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -3005,7 +2991,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -3082,7 +3067,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -3138,8 +3122,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[1].address);
@@ -3178,8 +3160,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[1].address);
@@ -3233,7 +3213,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -3300,8 +3279,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0]
@@ -3335,8 +3312,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[1].address);
@@ -3377,8 +3352,6 @@ mod tracer_tests {
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000000"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[1].address);
@@ -3468,7 +3441,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -3573,7 +3545,6 @@ mod tracer_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000cafe002"))
                     .balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
@@ -3663,7 +3634,6 @@ mod tracer_tests {
                     .code(code_a);
                 accs[1].address(*ADDR_B).code(code_b);
                 accs[2].address(ADDR_0).balance(Word::from(1u64 << 30));
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);

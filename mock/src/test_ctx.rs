@@ -47,7 +47,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     where
         FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
-        FAcc: FnOnce([&mut MockAccount; NACC]) -> [&mut MockAccount; NACC],
+        FAcc: FnOnce([&mut MockAccount; NACC]),
     {
         let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC];
         let account_refs = accounts

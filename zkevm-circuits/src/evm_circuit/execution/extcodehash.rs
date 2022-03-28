@@ -273,8 +273,6 @@ mod test {
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);

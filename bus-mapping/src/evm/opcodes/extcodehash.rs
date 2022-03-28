@@ -204,8 +204,6 @@ mod extcodehash_tests {
                 accs[2]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(1u64 << 20));
-
-                accs
             },
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
