@@ -28,15 +28,15 @@ async fn test_evm_circuit_block(block_num: u64) {
     run_test_circuit_incomplete_fixed_table(block).expect("evm_circuit verification failed");
 }
 
-    test_evm_circuit_block(*block_num).await;
-}
-
 #[tokio::test]
 async fn test_evm_circuit_block_greeter_calls() {
     log_init();
     let block_num_o = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
     let block_num = GEN_DATA.blocks.get("Contract call").unwrap();
     //println!("bb {} {}", block_num_o, block_num);
+    test_evm_circuit_block(*block_num).await;
+}
+
 async fn test_state_circuit_block(block_num: u64) {
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;

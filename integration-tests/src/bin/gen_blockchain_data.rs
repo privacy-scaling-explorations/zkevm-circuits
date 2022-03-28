@@ -11,6 +11,7 @@ use ethers::{
         rand::{self, Rng},
         NonceManagerMiddleware,
     },
+    providers::{Middleware, PendingTransaction},
     signers::Signer,
     solc::Solc,
 };
@@ -179,10 +180,12 @@ async fn main() {
         SignerMiddleware::new(get_provider(), wallet0.clone()),
         wallet0.address(),
     ));
+
+    // Greeter
     let contract = deploy(
         prov_wallet0.clone(),
         contracts.get("Greeter").expect("contract not found"),
-        U256::from(0),
+        U256::from(42),
     )
     .await;
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
@@ -234,15 +237,29 @@ async fn main() {
 
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Contract call".to_string(), block_num.as_u64());
-    /*
-    // Non-constant methods are executed via the `send()` call on the method builder.
-    let call = contract
-        .method::<_, H256>("setValue", "hi".to_owned())?;
-    let pending_tx = call.send().await?;
 
-    // `await`ing on the pending transaction resolves to a transaction receipt
-    let receipt = pending_tx.confirmations(6).await?;
-    */
+    // OpenZeppelinERC20TestToken
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts
+            .get("OpenZeppelinERC20TestToken")
+            .expect("contract not found"),
+        wallet0.address(),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert(
+        "Deploy OpenZeppelinERC20TestToken".to_string(),
+        block_num.as_u64(),
+    );
+    deployments.insert(
+        "OpenZeppelinERC20TestToken".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    //
+    // ETH transfers: Generate a block with multiple transfers
+    //
 
     info!("Generating block with multiple transfers...");
     const NUM_TXS: usize = 4; // NUM_TXS must be >= 4 for the rest of the cases to work.
