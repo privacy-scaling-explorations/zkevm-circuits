@@ -25,7 +25,7 @@ pub(crate) struct StorageRootChip<F> {
 impl<F: FieldExt> StorageRootChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        not_first_level: Column<Fixed>,
+        not_first_level: Column<Advice>,
         is_leaf_s: Column<Advice>,
         is_leaf_c: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -45,7 +45,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         // Storage first level branch hash - root in last account leaf (ordinary branch,
         // not extension node).
         meta.lookup_any("storage_root_in_account_leaf 1", |meta| {
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             let mut rot_into_branch_init = -16;
             if !is_s {
@@ -111,7 +111,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         // Storage first level extension hash - root in last account leaf (extension
         // node).
         meta.lookup_any("storage_root_in_account_leaf 2", |meta| {
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             let mut rot_into_branch_init = -17;
             let mut rot_into_last_branch_child = -1;
@@ -181,7 +181,7 @@ impl<F: FieldExt> StorageRootChip<F> {
 
         // If there is no branch, just a leaf.
         meta.lookup_any("storage_root_in_account_leaf 3", |meta| {
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             // Check in leaf value row.
             let mut rot = -2;
@@ -228,7 +228,7 @@ impl<F: FieldExt> StorageRootChip<F> {
 
         // If there is no branch, just a leaf, but after a placeholder.
         meta.lookup_any("storage_root_in_account_leaf 4", |meta| {
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             // Check in leaf value row.
             let mut rot = -2 - 19;

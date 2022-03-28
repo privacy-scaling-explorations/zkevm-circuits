@@ -21,7 +21,7 @@ pub(crate) struct BranchParallelChip<F> {
 impl<F: FieldExt> BranchParallelChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
+        q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         is_branch_child: Column<Advice>,
         mod_node_hash_rlc: Column<Advice>,
@@ -40,7 +40,7 @@ impl<F: FieldExt> BranchParallelChip<F> {
         // While non-empty nodes have 160 at *_rlp2 and then any byte at *_advices:
         // [0, 160, a0, ..., a31]
         meta.create_gate("empty and non-empty", |meta| {
-            let q_enable = meta.query_selector(q_enable);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             let mut constraints = vec![];
 
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());

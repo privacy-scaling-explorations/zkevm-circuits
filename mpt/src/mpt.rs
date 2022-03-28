@@ -23,9 +23,9 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS,
-        IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
-        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, LAYOUT_OFFSET,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        LAYOUT_OFFSET,
     },
     storage_root_in_account_leaf::StorageRootChip,
 };
@@ -68,18 +68,9 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
-    q_enable: Selector,
-    q_not_first: Column<Fixed>, // not first row
-    not_first_level: Column<Fixed>, /* to avoid rotating back when in the first branch (for key
-                                 * rlc); note that the first level is always considered as
-                                 * the first BRANCH_ROWS_NUM rows, it could happen that there is
-                                 * a leaf in the first level (occupying less rows), but this is
-                                 * not problematic as no constraints will be left out because
-                                 * the constraints that are ignored because they are not to be
-                                 * checked in the first level are always in the last branch row
-                                 * - if account leaf is in the first level, the last branch row
-                                 *   will be outside not_first_level and these constraints will
-                                 *   be fired */
+    q_enable: Column<Fixed>,
+    q_not_first: Column<Fixed>,      // not first row
+    not_first_level: Column<Advice>, // TODO: constraints
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
@@ -150,13 +141,15 @@ pub enum FixedTableTag {
 impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let start_root = meta.instance_column(); // state root before modification - first level S hash needs to be the same as
-                                                 // start_root (works also if only storage proof, without account proof)
+                                                 // start_root (works also if only storage proof, without account proof, but if
+                                                 // this is to be allowed LeafKeyChip needs to be changed)
         let end_root = meta.instance_column(); // state root after modification - first level C hash needs to be the same as
-                                               // end_root (works also if only storage proof, without account proof)
+                                               // end_root (works also if only storage proof, without account proof, but if
+                                               // this is to be allowed LeafKeyChip needs to be changed)
 
-        let q_enable = meta.selector();
+        let q_enable = meta.fixed_column();
         let q_not_first = meta.fixed_column();
-        let not_first_level = meta.fixed_column();
+        let not_first_level = meta.advice_column();
 
         // having 2 to enable key RLC check (not using 1 to enable proper checks of mult
         // too) TODO: generate from commitments
@@ -508,7 +501,8 @@ impl<F: FieldExt> MPTConfig<F> {
         BranchRLCInitChip::<F>::configure(
             meta,
             |meta| {
-                meta.query_advice(is_branch_init, Rotation::cur()) * meta.query_selector(q_enable)
+                meta.query_advice(is_branch_init, Rotation::cur())
+                    * meta.query_fixed(q_enable, Rotation::cur())
             },
             s_rlp1,
             s_rlp2,
@@ -553,10 +547,16 @@ impl<F: FieldExt> MPTConfig<F> {
         LeafKeyChip::<F>::configure(
             meta,
             |meta| {
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let is_leaf_s = meta.query_advice(is_leaf_s, Rotation::cur());
 
-                not_first_level * is_leaf_s
+                // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
+                // be changed as currently the first row is not checked (and
+                // leaf key can appear in the first row if there is no account
+                // proof). See how it is done for account_leaf_key.rs which can appear in the
+                // first row. q_not_first is needed to avoid PoisenedConstraint.
+                q_not_first * not_first_level * is_leaf_s
             },
             s_rlp1,
             s_rlp2,
@@ -582,10 +582,16 @@ impl<F: FieldExt> MPTConfig<F> {
         LeafKeyChip::<F>::configure(
             meta,
             |meta| {
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let is_leaf_c = meta.query_advice(is_leaf_c, Rotation::cur());
 
-                not_first_level * is_leaf_c
+                // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
+                // be changed as currently the first row is not checked (and
+                // leaf key can appear in the first row if there is no account
+                // proof). See how it is done for account_leaf_key.rs which can appear in the
+                // first row. q_not_first is needed to avoid PoisenedConstraint.
+                q_not_first * not_first_level * is_leaf_c
             },
             s_rlp1,
             s_rlp2,
@@ -611,10 +617,11 @@ impl<F: FieldExt> MPTConfig<F> {
         LeafKeyInAddedBranchChip::<F>::configure(
             meta,
             |meta| {
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
                 let is_leaf = meta.query_advice(is_leaf_in_added_branch, Rotation::cur());
 
-                not_first_level * is_leaf
+                q_not_first * not_first_level * is_leaf
             },
             s_rlp1,
             s_rlp2,
@@ -680,11 +687,11 @@ impl<F: FieldExt> MPTConfig<F> {
         AccountLeafKeyChip::<F>::configure(
             meta,
             |meta| {
-                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let is_account_leaf_key_s =
                     meta.query_advice(is_account_leaf_key_s, Rotation::cur());
 
-                q_not_first * is_account_leaf_key_s
+                q_enable * is_account_leaf_key_s
             },
             s_rlp1,
             s_rlp2,
@@ -1289,8 +1296,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                         };
 
-                    // TODO: constraints for not_first_level - avoid having not_first_level
-                    // being set wrongly (further down in rows)
                     let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
@@ -1298,14 +1303,11 @@ impl<F: FieldExt> MPTConfig<F> {
                         .filter(|r| r[r.len() - 1] != 5 && r[r.len() - 1] != 4)
                         .enumerate()
                     {
-                        if ind == BRANCH_ROWS_NUM {
-                            not_first_level = F::one();
-                        }
-                        region.assign_fixed(
+                        region.assign_advice(
                             || "not first level",
                             self.not_first_level,
                             offset,
-                            || Ok(not_first_level),
+                            || Ok(F::from(row[row.len() - 2] as u64)),
                         )?;
 
                         if row[row.len() - 1] == 0 {
@@ -1355,7 +1357,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 drifted_pos = modified_node
                             }
 
-                            self.q_enable.enable(&mut region, offset)?;
+                            region.assign_fixed(
+                                || "q_enable",
+                                self.q_enable,
+                                offset,
+                                || Ok(F::one()),
+                            )?;
+
                             if ind == 0 {
                                 region.assign_fixed(
                                     || "not first",
@@ -1446,7 +1454,13 @@ impl<F: FieldExt> MPTConfig<F> {
                             offset += 1;
                         } else if row[row.len() - 1] == 1 {
                             // branch child
-                            self.q_enable.enable(&mut region, offset)?;
+                            region.assign_fixed(
+                                || "q_enable",
+                                self.q_enable,
+                                offset,
+                                || Ok(F::one()),
+                            )?;
+
                             region.assign_fixed(
                                 || "not first",
                                 self.q_not_first,
@@ -1784,7 +1798,12 @@ impl<F: FieldExt> MPTConfig<F> {
                             || row[row.len() - 1] == 17
                         {
                             // leaf s or leaf c or leaf key s or leaf key c
-                            self.q_enable.enable(&mut region, offset)?;
+                            region.assign_fixed(
+                                || "q_enable",
+                                self.q_enable,
+                                offset,
+                                || Ok(F::one()),
+                            )?;
                             region.assign_fixed(
                                 || "not first",
                                 self.q_not_first,
@@ -2512,12 +2531,12 @@ mod tests {
                     let mut mult = Fp::one();
                     for i in 0..HASH_WIDTH {
                         s_root_rlc +=
-                            Fp::from(row[l - 2 * HASH_WIDTH + i - 1] as u64) * mult.clone();
+                            Fp::from(row[l - 2 * HASH_WIDTH + i - 2] as u64) * mult.clone();
                         mult *= acc_r;
                     }
                     let mut mult = Fp::one();
                     for i in 0..HASH_WIDTH {
-                        c_root_rlc += Fp::from(row[l - HASH_WIDTH + i - 1] as u64) * mult.clone();
+                        c_root_rlc += Fp::from(row[l - HASH_WIDTH + i - 2] as u64) * mult.clone();
                         mult *= acc_r;
                     }
 

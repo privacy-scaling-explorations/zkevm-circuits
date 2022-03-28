@@ -102,7 +102,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         root: Column<Instance>,
-        not_first_level: Column<Fixed>,
+        not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_branch_init: Column<Advice>, /* to avoid ConstraintPoisened and failed lookups (when
@@ -432,7 +432,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                 let mut constraints = vec![];
 
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 let mut sc_hash = vec![];
                 // Note: extension node has branch hash always in c_advices.
@@ -460,7 +460,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         // Don't check if it's first storage level (see storage_root_in_account_leaf).
         meta.lookup_any("extension_node extension in parent branch", |meta| {
             let q_enable = q_enable(meta);
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             let is_account_leaf_storage_codehash_c = meta.query_advice(
                 is_account_leaf_storage_codehash_c,

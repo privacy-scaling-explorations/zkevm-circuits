@@ -23,7 +23,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         root: Column<Instance>,
-        not_first_level: Column<Fixed>,
+        not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_last_branch_child: Column<Advice>,
@@ -42,7 +42,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             |meta| {
                 let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
 
@@ -76,7 +76,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         // table, where hash1, hash2, hash3, hash4 are stored in the previous
         // branch and accumulated_s(c)_rlc presents the branch RLC.
         meta.lookup_any("branch_hash_in_parent", |meta| {
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             // -17 because we are in the last branch child (-16 takes us to branch init)
             let is_account_leaf_storage_codehash_prev =

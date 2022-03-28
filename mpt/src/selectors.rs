@@ -20,7 +20,7 @@ pub(crate) struct SelectorsChip<F> {
 impl<F: FieldExt> SelectorsChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
+        q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
@@ -47,7 +47,7 @@ impl<F: FieldExt> SelectorsChip<F> {
         // TODO: not_first_level constraints
 
         meta.create_gate("selectors boolean", |meta| {
-            let q_enable = meta.query_selector(q_enable);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
 
             let mut constraints = vec![];
             let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());

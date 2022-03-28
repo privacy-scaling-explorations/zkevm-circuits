@@ -26,7 +26,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         meta: &mut ConstraintSystem<F>,
         root: Column<Instance>,
         q_not_first: Column<Fixed>,
-        not_first_level: Column<Fixed>,
+        not_first_level: Column<Advice>,
         is_account_leaf_storage_codehash_s: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         s_rlp2: Column<Advice>,
@@ -116,7 +116,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             |meta| {
                 let mut constraints = vec![];
                 let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-                let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 let mut is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
@@ -150,7 +150,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
         // Check hash of a leaf.
         meta.lookup_any("account_leaf_storage_codehash: hash of a leaf", |meta| {
-            let not_first_level = meta.query_fixed(not_first_level, Rotation::cur());
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             let mut is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());

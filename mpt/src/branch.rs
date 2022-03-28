@@ -26,7 +26,7 @@ pub(crate) struct BranchChip<F> {
 impl<F: FieldExt> BranchChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Selector,
+        q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
@@ -84,7 +84,7 @@ impl<F: FieldExt> BranchChip<F> {
         meta.create_gate(
             "branch S and C equal at NON modified_node position",
             |meta| {
-                let q_enable = meta.query_selector(q_enable);
+                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
                 let mut constraints = vec![];
 
                 let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
@@ -442,7 +442,7 @@ impl<F: FieldExt> BranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation::cur(),
             );
-            let q_enable = meta.query_selector(q_enable);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             constraints.push((
                 "bool check branch is_branch_placeholder_s",
                 get_bool_constraint(

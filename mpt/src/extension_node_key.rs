@@ -30,7 +30,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_not_first: Column<Fixed>,
-        not_first_level: Column<Fixed>, // to avoid rotating back when in the first branch (for key rlc)
+        not_first_level: Column<Advice>, // to avoid rotating back when in the first branch (for key rlc)
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
         is_last_branch_child: Column<Advice>,
@@ -59,7 +59,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         meta.create_gate("extension node key", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let not_first_level =
-                meta.query_fixed(not_first_level, Rotation::cur());
+                meta.query_advice(not_first_level, Rotation::cur());
 
             let mut constraints = vec![];
 
@@ -533,7 +533,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         meta.lookup_any("extension_node_key mult_diff", |meta| {
             let mut constraints = vec![];
             let not_first_level =
-                meta.query_fixed(not_first_level, Rotation::cur());
+                meta.query_advice(not_first_level, Rotation::cur());
 
             let is_extension_c_row =
                 meta.query_advice(is_last_branch_child, Rotation(-2));
@@ -609,7 +609,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             meta.lookup_any("extension_node second nibble", |meta| {
                 let mut constraints = vec![];
                 let not_first_level =
-                    meta.query_fixed(not_first_level, Rotation::cur());
+                    meta.query_advice(not_first_level, Rotation::cur());
 
                 let sel1 =
                     meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
@@ -642,7 +642,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             meta.lookup_any("extension node first nibble", |meta| {
                 let mut constraints = vec![];
                 let not_first_level =
-                    meta.query_fixed(not_first_level, Rotation::cur());
+                    meta.query_advice(not_first_level, Rotation::cur());
 
                 let sel1 =
                     meta.query_advice( s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET], Rotation(rot_into_branch_init));
