@@ -11,6 +11,7 @@ use zkevm_circuits::evm_circuit::{
     test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
 };
 use zkevm_circuits::state_circuit::StateCircuit;
+
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
@@ -27,17 +28,6 @@ async fn test_evm_circuit_block(block_num: u64) {
     run_test_circuit_incomplete_fixed_table(block).expect("evm_circuit verification failed");
 }
 
-#[tokio::test]
-async fn test_evm_circuit_block_transfer_0() {
-    log_init();
-    let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
-    test_evm_circuit_block(*block_num).await;
-}
-
-#[tokio::test]
-async fn test_evm_circuit_block_deploy_greeter() {
-    log_init();
-    let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
     test_evm_circuit_block(*block_num).await;
 }
 
@@ -47,16 +37,6 @@ async fn test_evm_circuit_block_greeter_calls() {
     let block_num_o = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
     let block_num = GEN_DATA.blocks.get("Contract call").unwrap();
     //println!("bb {} {}", block_num_o, block_num);
-    test_evm_circuit_block(*block_num).await;
-}
-
-#[tokio::test]
-async fn test_evm_circuit_block_multiple_transfers_0() {
-    log_init();
-    let block_num = GEN_DATA.blocks.get("Multiple transfers 0").unwrap();
-    test_evm_circuit_block(*block_num).await;
-}
-
 async fn test_state_circuit_block(block_num: u64) {
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
@@ -100,23 +80,51 @@ async fn test_state_circuit_block(block_num: u64) {
     prover.verify().expect("state_circuit verification failed");
 }
 
-#[tokio::test]
-async fn test_state_circuit_block_transfer_0() {
-    log_init();
-    let block_num = GEN_DATA.blocks.get("Transfer 0").unwrap();
-    test_state_circuit_block(*block_num).await;
+macro_rules! declare_tests {
+    ($test_evm_name:ident, $test_state_name:ident, $block_tag:expr) => {
+        #[tokio::test]
+        async fn $test_evm_name() {
+            log_init();
+            let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+            test_evm_circuit_block(*block_num).await;
+        }
+
+        #[tokio::test]
+        async fn $test_state_name() {
+            log_init();
+            let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+            test_state_circuit_block(*block_num).await;
+        }
+    };
 }
 
-#[tokio::test]
-async fn test_state_circuit_block_deploy_greeter() {
-    log_init();
-    let block_num = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
-    test_state_circuit_block(*block_num).await;
-}
-
-#[tokio::test]
-async fn test_state_circuit_block_multiple_transfers_0() {
-    log_init();
-    let block_num = GEN_DATA.blocks.get("Multiple transfers 0").unwrap();
-    test_state_circuit_block(*block_num).await;
-}
+declare_tests!(
+    test_evm_circuit_block_transfer_0,
+    test_state_circuit_block_transfer_0,
+    "Transfer 0"
+);
+declare_tests!(
+    test_evm_circuit_deploy_greeter,
+    test_state_circuit_deploy_greeter,
+    "Deploy Greeter"
+);
+declare_tests!(
+    test_evm_circuit_multiple_transfers_0,
+    test_state_circuit_multiple_transfers_0,
+    "Multiple transfers 0"
+);
+declare_tests!(
+    test_evm_circuit_erc20_openzeppelin_transfer_fail,
+    test_state_circuit_erc20_openzeppelin_transfer_fail,
+    "ERC20 OpenZeppelin transfer failed"
+);
+declare_tests!(
+    test_evm_circuit_erc20_openzeppelin_transfer_succeed,
+    test_state_circuit_erc20_openzeppelin_transfer_succeed,
+    "ERC20 OpenZeppelin transfer successful"
+);
+declare_tests!(
+    test_evm_circuit_multiple_erc20_openzeppelin_transfers,
+    test_state_circuit_multiple_erc20_openzeppelin_transfers,
+    "Multiple ERC20 OpenZeppelin transfers"
+);
