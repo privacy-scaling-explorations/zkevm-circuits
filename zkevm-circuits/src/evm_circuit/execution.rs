@@ -75,7 +75,7 @@ use end_tx::EndTxGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
-use is_zero::Is0Gadget;
+use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
@@ -162,6 +162,7 @@ pub(crate) struct ExecutionConfig<F> {
     sload_gadget: SloadGadget<F>,
     sstore_gadget: SstoreGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
+    iszero_gadget: IsZeroGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -382,6 +383,7 @@ impl<F: Field> ExecutionConfig<F> {
             sload_gadget: configure_gadget!(),
             sstore_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
+            iszero_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -682,6 +684,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
+            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             _ => unimplemented!(),
         }
 
