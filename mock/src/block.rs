@@ -1,11 +1,13 @@
 //! Mock Block definition and builder related methods.
 
+use crate::MockTransaction;
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, U64};
 use ethbloom::Bloom;
 
-use crate::MockTransaction;
-
 #[derive(Clone, Debug)]
+/// Mock structure which represents an Ethereum Block and can be used for tests.
+/// It contains all the builder-pattern methods required to be able to specify
+/// any of it's details.
 pub struct MockBlock {
     hash: Option<Hash>,
     parent_hash: Hash,

@@ -4,6 +4,9 @@ use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
 use eth_types::{AccessList, Address, Bytes, Hash, Transaction, Word, U64};
 
 #[derive(Debug, Clone)]
+/// Mock structure which represents a Transaction and can be used for tests.
+/// It contains all the builder-pattern methods required to be able to specify
+/// any of it's details.
 pub struct MockTransaction {
     hash: Option<Hash>,
     nonce: Word,

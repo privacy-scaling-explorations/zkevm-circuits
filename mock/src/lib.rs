@@ -5,14 +5,12 @@ use lazy_static::lazy_static;
 mod account;
 mod block;
 pub mod test_ctx;
-mod trace;
 mod transaction;
 
-pub use account::MockAccount;
-pub use block::MockBlock;
+pub(crate) use account::MockAccount;
+pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
-pub use trace::MockTrace;
-pub use transaction::MockTransaction;
+pub(crate) use transaction::MockTransaction;
 
 lazy_static! {
     /// Mock coinbase value
@@ -24,10 +22,10 @@ lazy_static! {
     static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
     /// Mock accounts loaded with ETH to use for test cases.
     pub static ref MOCK_ACCOUNTS: Vec<Address> = vec![
-        address!("0x0000000000000000000000000000000000000111"),
-        address!("0x0000000000000000000000000000000000000222"),
-        address!("0x0000000000000000000000000000000000000333"),
-        address!("0x0000000000000000000000000000000000000444"),
-        address!("0x0000000000000000000000000000000000000555"),
+        address!("0x000000000000000000000000000000000cafe111"),
+        address!("0x000000000000000000000000000000000cafe222"),
+        address!("0x000000000000000000000000000000000cafe333"),
+        address!("0x000000000000000000000000000000000cafe444"),
+        address!("0x000000000000000000000000000000000cafe555"),
     ];
 }

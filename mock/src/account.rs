@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 /// Mock structure which represents an Account and can be used for tests.
+/// It contains all the builder-pattern methods required to be able to specify
+/// any of it's details.
 pub struct MockAccount {
     /// Address
     pub address: Address,
