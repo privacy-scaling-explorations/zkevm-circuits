@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -24,7 +24,7 @@ pub(crate) struct AccountLeafStorageCodehashChip<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        root: Column<Instance>,
+        inter_root: Column<Advice>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_account_leaf_storage_codehash_s: Column<Advice>,
@@ -126,7 +126,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 }
 
                 let rlc = meta.query_advice(acc, Rotation::cur());
-                let root = meta.query_instance(root, Rotation::cur());
+                let root = meta.query_advice(inter_root, Rotation::cur());
 
                 constraints.push((
                     q_not_first.clone()

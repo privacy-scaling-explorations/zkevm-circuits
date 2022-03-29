@@ -22,6 +22,8 @@ impl<F: FieldExt> SelectorsChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
+        not_first_level: Column<Advice>,
+        switch_proof: Column<Advice>,
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
         is_last_branch_child: Column<Advice>,
@@ -44,12 +46,12 @@ impl<F: FieldExt> SelectorsChip<F> {
     ) -> SelectorsConfig {
         let config = SelectorsConfig {};
 
-        // TODO: not_first_level constraints
-
         meta.create_gate("selectors boolean", |meta| {
             let q_enable = meta.query_fixed(q_enable, Rotation::cur());
-
             let mut constraints = vec![];
+
+            let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+            let switch_proof = meta.query_advice(switch_proof, Rotation::cur());
             let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
             let is_last_branch_child_cur = meta.query_advice(is_last_branch_child, Rotation::cur());
@@ -71,6 +73,14 @@ impl<F: FieldExt> SelectorsChip<F> {
             let sel1 = meta.query_advice(sel1, Rotation::cur());
             let sel2 = meta.query_advice(sel2, Rotation::cur());
 
+            constraints.push((
+                "bool check not_first_level",
+                get_bool_constraint(q_enable.clone(), not_first_level),
+            ));
+            constraints.push((
+                "bool check switch_proof",
+                get_bool_constraint(q_enable.clone(), switch_proof),
+            ));
             constraints.push((
                 "bool check is_branch_init",
                 get_bool_constraint(q_enable.clone(), is_branch_init_cur.clone()),
@@ -161,8 +171,8 @@ impl<F: FieldExt> SelectorsChip<F> {
 
         meta.create_gate("rows order", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-
             let mut constraints = vec![];
+
             let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
             let is_last_branch_child_prev =
                 meta.query_advice(is_last_branch_child, Rotation::prev());

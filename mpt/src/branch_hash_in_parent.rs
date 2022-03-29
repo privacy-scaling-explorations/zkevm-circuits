@@ -22,7 +22,7 @@ pub(crate) struct BranchHashInParentChip<F> {
 impl<F: FieldExt> BranchHashInParentChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        root: Column<Instance>,
+        inter_root: Column<Advice>,
         not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -52,7 +52,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 let mult = meta.query_advice(acc_mult, Rotation::cur());
                 let branch_acc = acc + c128 * mult;
 
-                let root = meta.query_instance(root, Rotation::cur());
+                let root = meta.query_advice(inter_root, Rotation::cur());
 
                 constraints.push((
                     q_not_first.clone()

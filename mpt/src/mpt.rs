@@ -27,6 +27,7 @@ use crate::{
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         LAYOUT_OFFSET,
     },
+    roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip,
 };
 use crate::{branch_key::BranchKeyChip, param::WITNESS_ROW_WIDTH};
@@ -70,7 +71,10 @@ use crate::{
 pub struct MPTConfig<F> {
     q_enable: Column<Fixed>,
     q_not_first: Column<Fixed>,      // not first row
-    not_first_level: Column<Advice>, // TODO: constraints
+    not_first_level: Column<Advice>, // TODO: constraints - must not change in the level ...
+    switch_proof: Column<Advice>,
+    inter_start_root: Column<Advice>,
+    inter_final_root: Column<Advice>,
     is_branch_init: Column<Advice>,
     is_branch_child: Column<Advice>,
     is_last_branch_child: Column<Advice>,
@@ -140,16 +144,18 @@ pub enum FixedTableTag {
 
 impl<F: FieldExt> MPTConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let start_root = meta.instance_column(); // state root before modification - first level S hash needs to be the same as
-                                                 // start_root (works also if only storage proof, without account proof, but if
-                                                 // this is to be allowed LeafKeyChip needs to be changed)
-        let end_root = meta.instance_column(); // state root after modification - first level C hash needs to be the same as
-                                               // end_root (works also if only storage proof, without account proof, but if
-                                               // this is to be allowed LeafKeyChip needs to be changed)
+        let pub_root = meta.instance_column();
+        let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
+                                                     // start_root (works also if only storage proof, without account proof, but if
+                                                     // this is to be allowed LeafKeyChip needs to be changed)
+        let inter_final_root = meta.advice_column(); // state root after modification - first level C hash needs to be the same as
+                                                     // end_root (works also if only storage proof, without account proof, but if
+                                                     // this is to be allowed LeafKeyChip needs to be changed)
 
         let q_enable = meta.fixed_column();
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.advice_column();
+        let switch_proof = meta.advice_column();
 
         // having 2 to enable key RLC check (not using 1 to enable proper checks of mult
         // too) TODO: generate from commitments
@@ -262,6 +268,8 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
+            not_first_level,
+            switch_proof,
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
@@ -281,6 +289,14 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             is_modified,
             is_at_drifted_pos,
+        );
+
+        RootsChip::<F>::configure(
+            meta,
+            q_not_first,
+            switch_proof,
+            inter_start_root,
+            inter_final_root,
         );
 
         BranchChip::<F>::configure(
@@ -351,7 +367,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchHashInParentChip::<F>::configure(
             meta,
-            start_root,
+            inter_start_root,
             not_first_level,
             q_not_first,
             is_account_leaf_storage_codehash_c,
@@ -366,7 +382,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         BranchHashInParentChip::<F>::configure(
             meta,
-            end_root,
+            inter_final_root,
             not_first_level,
             q_not_first,
             is_account_leaf_storage_codehash_c,
@@ -390,7 +406,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 is_after_last_branch_child * is_extension_node
             },
-            start_root,
+            inter_start_root,
             not_first_level,
             q_not_first,
             is_account_leaf_storage_codehash_c,
@@ -422,7 +438,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 is_after_last_branch_child * is_extension_node
             },
-            end_root,
+            inter_final_root,
             not_first_level,
             q_not_first,
             is_account_leaf_storage_codehash_c,
@@ -644,7 +660,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         LeafValueChip::<F>::configure(
             meta,
-            start_root,
+            inter_start_root,
             q_not_first,
             not_first_level,
             is_leaf_s_value,
@@ -665,7 +681,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         LeafValueChip::<F>::configure(
             meta,
-            end_root,
+            inter_final_root,
             q_not_first,
             not_first_level,
             is_leaf_c_value,
@@ -731,7 +747,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
-            start_root,
+            inter_start_root,
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
@@ -751,7 +767,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         AccountLeafStorageCodehashChip::<F>::configure(
             meta,
-            end_root,
+            inter_final_root,
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
@@ -773,6 +789,9 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
+            switch_proof,
+            inter_start_root,
+            inter_final_root,
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
@@ -1296,7 +1315,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                         };
 
-                    let mut not_first_level = F::zero();
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
                         .iter()
@@ -1307,7 +1325,41 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "not first level",
                             self.not_first_level,
                             offset,
+                            || Ok(F::from(row[row.len() - 3] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "switch proof",
+                            self.switch_proof,
+                            offset,
                             || Ok(F::from(row[row.len() - 2] as u64)),
+                        )?;
+
+                        let mut s_root_rlc = F::zero();
+                        let mut c_root_rlc = F::zero();
+                        let l = row.len();
+                        let mut mult = F::one();
+                        for i in 0..HASH_WIDTH {
+                            s_root_rlc +=
+                                F::from(row[l - 3 * HASH_WIDTH + i - 3] as u64) * mult.clone();
+                            mult *= self.acc_r;
+                        }
+                        region.assign_advice(
+                            || "inter start root",
+                            self.inter_start_root,
+                            offset,
+                            || Ok(s_root_rlc),
+                        )?;
+                        let mut mult = F::one();
+                        for i in 0..HASH_WIDTH {
+                            c_root_rlc +=
+                                F::from(row[l - 2 * HASH_WIDTH + i - 3] as u64) * mult.clone();
+                            mult *= self.acc_r;
+                        }
+                        region.assign_advice(
+                            || "inter final root",
+                            self.inter_final_root,
+                            offset,
+                            || Ok(c_root_rlc),
                         )?;
 
                         if row[row.len() - 1] == 0 {
@@ -2518,34 +2570,23 @@ mod tests {
                     witness: w.clone(),
                 };
 
-                let mut start_root = vec![];
-                let mut end_root = vec![];
+                let mut pub_root = vec![];
                 let acc_r = Fp::one() + Fp::one();
                 for row in w
                     .iter()
                     .filter(|r| r[r.len() - 1] != 5 && r[r.len() - 1] != 4)
                 {
-                    let mut s_root_rlc = Fp::zero();
-                    let mut c_root_rlc = Fp::zero();
+                    let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
                     let mut mult = Fp::one();
                     for i in 0..HASH_WIDTH {
-                        s_root_rlc +=
-                            Fp::from(row[l - 2 * HASH_WIDTH + i - 2] as u64) * mult.clone();
+                        pub_root_rlc += Fp::from(row[l - HASH_WIDTH + i - 3] as u64) * mult.clone();
                         mult *= acc_r;
                     }
-                    let mut mult = Fp::one();
-                    for i in 0..HASH_WIDTH {
-                        c_root_rlc += Fp::from(row[l - HASH_WIDTH + i - 2] as u64) * mult.clone();
-                        mult *= acc_r;
-                    }
-
-                    start_root.push(s_root_rlc);
-                    end_root.push(c_root_rlc);
+                    pub_root.push(pub_root_rlc);
                 }
 
-                let prover =
-                    MockProver::<Fp>::run(9, &circuit, vec![start_root, end_root]).unwrap();
+                let prover = MockProver::<Fp>::run(9, &circuit, vec![pub_root]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
 
                 /*

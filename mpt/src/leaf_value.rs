@@ -24,7 +24,7 @@ pub(crate) struct LeafValueChip<F> {
 impl<F: FieldExt> LeafValueChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        root: Column<Instance>,
+        inter_root: Column<Advice>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
         is_leaf_value: Column<Advice>,
@@ -226,7 +226,7 @@ impl<F: FieldExt> LeafValueChip<F> {
                 let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
 
                 let rlc = meta.query_advice(acc, Rotation::cur());
-                let root = meta.query_instance(root, Rotation::cur());
+                let root = meta.query_advice(inter_root, Rotation::cur());
 
                 constraints.push((
                     q_not_first.clone()

@@ -101,7 +101,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-        root: Column<Instance>,
+        inter_root: Column<Advice>,
         not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
@@ -440,7 +440,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     sc_hash.push(meta.query_advice(*column, Rotation::cur()));
                 }
                 let hash_rlc = hash_expr_into_rlc(&sc_hash, acc_r);
-                let root = meta.query_instance(root, Rotation::cur());
+                let root = meta.query_advice(inter_root, Rotation::cur());
 
                 let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
                 constraints.push((

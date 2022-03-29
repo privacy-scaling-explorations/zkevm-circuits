@@ -15,5 +15,6 @@ pub mod leaf_key_in_added_branch;
 pub mod leaf_value;
 pub mod mpt;
 pub mod param;
+pub mod roots;
 pub mod selectors;
 pub mod storage_root_in_account_leaf;
