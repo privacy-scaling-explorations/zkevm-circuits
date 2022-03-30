@@ -40,14 +40,25 @@ impl<F: FieldExt> RootsChip<F> {
 
             let one = Expression::Constant(F::one());
 
-            // TODO
-            // roots change only when switch_proof = 1
             constraints.push((
-                "roots switch",
+                "start_root does not change when switch_proof = 0",
+                q_not_first.clone()
+                    * (one.clone() - switch_proof.clone())
+                    * (start_root_cur.clone() - start_root_prev.clone()),
+            ));
+
+            constraints.push((
+                "final_root does not change when switch_proof = 0",
                 q_not_first.clone()
                     * (one - switch_proof.clone())
-                    * switch_proof // just for testing
                     * (final_root_cur.clone() - final_root_prev.clone()),
+            ));
+
+            constraints.push((
+                "final_root_prev = start_root_cur when switch_proof = 1",
+                q_not_first.clone()
+                    * switch_proof.clone()
+                    * (final_root_prev.clone() - start_root_cur.clone()),
             ));
 
             constraints

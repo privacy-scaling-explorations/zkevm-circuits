@@ -1,11 +1,11 @@
 use halo2_proofs::{
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
 use pairing::arithmetic::FieldExt;
-use std::{convert::TryInto, marker::PhantomData};
+use std::convert::TryInto;
 
 use crate::{
     account_leaf_key::AccountLeafKeyChip,
@@ -131,7 +131,6 @@ pub struct MPTConfig<F> {
     mult_diff: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
-    _marker: PhantomData<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -140,6 +139,78 @@ pub enum FixedTableTag {
     Range16,
     Range256,
     RangeKeyLen256,
+}
+
+struct ProofVariables<F> {
+    modified_node: u8,
+    s_mod_node_hash_rlc: F,
+    c_mod_node_hash_rlc: F,
+    node_index: u8,
+    acc_s: F,
+    acc_mult_s: F,
+    acc_nonce_balance_s: F,
+    acc_mult_nonce_balance_s: F,
+    acc_nonce_balance_c: F,
+    acc_mult_nonce_balance_c: F,
+    acc_c: F,
+    acc_mult_c: F,
+    key_rlc: F, /* used first for account address, then for storage key */
+    key_rlc_mult: F,
+    extension_node_rlc: F,
+    key_rlc_prev: F, /* for leaf after placeholder extension/branch, we need to go one level
+                      * back to get previous key_rlc */
+    key_rlc_mult_prev: F,
+    mult_diff: F,
+    key_rlc_sel: bool, /* If true, nibble is multiplied by 16, otherwise by 1. */
+    is_branch_s_placeholder: bool,
+    is_branch_c_placeholder: bool,
+    drifted_pos: u8, /* needed when leaf turned into branch and leaf moves into a branch where
+                      * it's at drifted_pos position */
+    rlp_len_rem_s: i32, /* branch RLP length remainder, in each branch children row this value
+                         * is subtracted by the number of RLP bytes in
+                         * this row (1 or 33) */
+    rlp_len_rem_c: i32,
+    is_extension_node: bool,
+    is_even: bool,
+    is_odd: bool,
+    is_short: bool,
+    is_long: bool,
+}
+
+impl<F: FieldExt> ProofVariables<F> {
+    fn new() -> ProofVariables<F> {
+        ProofVariables {
+            modified_node: 0,
+            s_mod_node_hash_rlc: F::zero(),
+            c_mod_node_hash_rlc: F::zero(),
+            node_index: 0,
+            acc_s: F::zero(),
+            acc_mult_s: F::zero(),
+            acc_nonce_balance_s: F::zero(),
+            acc_mult_nonce_balance_s: F::zero(),
+            acc_nonce_balance_c: F::zero(),
+            acc_mult_nonce_balance_c: F::zero(),
+            acc_c: F::zero(),
+            acc_mult_c: F::zero(),
+            key_rlc: F::zero(),
+            key_rlc_mult: F::one(),
+            extension_node_rlc: F::zero(),
+            key_rlc_prev: F::zero(),
+            key_rlc_mult_prev: F::one(),
+            mult_diff: F::one(),
+            key_rlc_sel: true,
+            is_branch_s_placeholder: false,
+            is_branch_c_placeholder: false,
+            drifted_pos: 0,
+            rlp_len_rem_s: 0,
+            rlp_len_rem_c: 0,
+            is_extension_node: false,
+            is_even: false,
+            is_odd: false,
+            is_short: false,
+            is_long: false,
+        }
+    }
 }
 
 impl<F: FieldExt> MPTConfig<F> {
@@ -833,7 +904,6 @@ impl<F: FieldExt> MPTConfig<F> {
             mult_diff,
             keccak_table,
             fixed_table,
-            _marker: PhantomData,
         }
     }
 
@@ -1270,42 +1340,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 |mut region| {
                     let mut offset = 0;
 
-                    let mut modified_node = 0;
-                    let mut s_mod_node_hash_rlc = F::zero();
-                    let mut c_mod_node_hash_rlc = F::zero();
-                    let mut node_index: u8 = 0;
-                    let mut acc_s = F::zero();
-                    let mut acc_mult_s = F::zero();
-                    let mut acc_nonce_balance_s = F::zero();
-                    let mut acc_mult_nonce_balance_s = F::zero();
-                    let mut acc_nonce_balance_c = F::zero();
-                    let mut acc_mult_nonce_balance_c = F::zero();
-
-                    let mut acc_c = F::zero();
-                    let mut acc_mult_c = F::zero();
-                    let mut key_rlc = F::zero(); // used first for account address, then for storage key
-                    let mut key_rlc_mult = F::one();
-                    let mut extension_node_rlc = F::zero();
-                    let mut key_rlc_prev = F::zero(); // for leaf after placeholder extension/branch, we need to go one level back to
-                                                      // get previous key_rlc
-                    let mut key_rlc_mult_prev = F::one();
-
-                    let mut mult_diff = F::one();
-                    let mut key_rlc_sel = true; // If true, nibble is multiplied by 16, otherwise by 1.
-                    let mut is_branch_s_placeholder = false;
-                    let mut is_branch_c_placeholder = false;
-
-                    let mut drifted_pos: u8 = 0; // needed when leaf turned into branch and leaf moves into a branch where it's
-                                                 // at drifted_pos position
-                    let mut rlp_len_rem_s: i32 = 0; // branch RLP length remainder, in each branch children row this value is
-                                                    // subtracted by the number of RLP bytes in this row (1 or 33)
-                    let mut rlp_len_rem_c: i32 = 0;
-
-                    let mut is_extension_node = false;
-                    let mut is_even = false;
-                    let mut is_odd = false;
-                    let mut is_short = false;
-                    let mut is_long = false;
+                    let mut pv = ProofVariables::new();
 
                     let compute_acc_and_mult =
                         |row: &Vec<u8>, acc: &mut F, mult: &mut F, start: usize, len: usize| {
@@ -1364,40 +1399,40 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         if row[row.len() - 1] == 0 {
                             // branch init
-                            modified_node = row[BRANCH_0_KEY_POS];
-                            node_index = 0;
-                            drifted_pos = row[DRIFTED_POS];
+                            pv.modified_node = row[BRANCH_0_KEY_POS];
+                            pv.node_index = 0;
+                            pv.drifted_pos = row[DRIFTED_POS];
 
                             // Get the child that is being changed and convert it to words to enable
                             // lookups:
-                            let mut s_hash = witness[ind + 1 + modified_node as usize]
+                            let mut s_hash = witness[ind + 1 + pv.modified_node as usize]
                                 [S_START..S_START + HASH_WIDTH]
                                 .to_vec();
-                            let mut c_hash = witness[ind + 1 + modified_node as usize]
+                            let mut c_hash = witness[ind + 1 + pv.modified_node as usize]
                                 [C_START..C_START + HASH_WIDTH]
                                 .to_vec();
-                            s_mod_node_hash_rlc = hash_into_rlc(&s_hash, self.acc_r);
-                            c_mod_node_hash_rlc = hash_into_rlc(&c_hash, self.acc_r);
+                            pv.s_mod_node_hash_rlc = hash_into_rlc(&s_hash, self.acc_r);
+                            pv.c_mod_node_hash_rlc = hash_into_rlc(&c_hash, self.acc_r);
 
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 1 {
                                 // We put hash of a node that moved down to the added branch.
                                 // This is needed to check the hash of leaf_in_added_branch.
-                                s_hash = witness[ind + 1 + drifted_pos as usize]
+                                s_hash = witness[ind + 1 + pv.drifted_pos as usize]
                                     [S_START..S_START + HASH_WIDTH]
                                     .to_vec();
-                                s_mod_node_hash_rlc = hash_into_rlc(&s_hash, self.acc_r);
-                                is_branch_s_placeholder = true
+                                pv.s_mod_node_hash_rlc = hash_into_rlc(&s_hash, self.acc_r);
+                                pv.is_branch_s_placeholder = true
                             } else {
-                                is_branch_s_placeholder = false
+                                pv.is_branch_s_placeholder = false
                             }
                             if row[IS_BRANCH_C_PLACEHOLDER_POS] == 1 {
-                                c_hash = witness[ind + 1 + drifted_pos as usize]
+                                c_hash = witness[ind + 1 + pv.drifted_pos as usize]
                                     [C_START..C_START + HASH_WIDTH]
                                     .to_vec();
-                                c_mod_node_hash_rlc = hash_into_rlc(&c_hash, self.acc_r);
-                                is_branch_c_placeholder = true
+                                pv.c_mod_node_hash_rlc = hash_into_rlc(&c_hash, self.acc_r);
+                                pv.is_branch_c_placeholder = true
                             } else {
-                                is_branch_c_placeholder = false
+                                pv.is_branch_c_placeholder = false
                             }
                             // If no placeholder branch, we set drifted_pos = modified_node. This
                             // is needed just to make some other constraints (s_mod_node_hash_rlc
@@ -1406,7 +1441,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             if row[IS_BRANCH_S_PLACEHOLDER_POS] == 0
                                 && row[IS_BRANCH_C_PLACEHOLDER_POS] == 0
                             {
-                                drifted_pos = modified_node
+                                pv.drifted_pos = pv.modified_node
                             }
 
                             region.assign_fixed(
@@ -1446,61 +1481,63 @@ impl<F: FieldExt> MPTConfig<F> {
                             // Branch (length 340) with three bytes of RLP meta data
                             // [249,1,81,128,16,...
 
-                            acc_s = F::from(row[BRANCH_0_S_START] as u64)
+                            pv.acc_s = F::from(row[BRANCH_0_S_START] as u64)
                                 + F::from(row[BRANCH_0_S_START + 1] as u64) * self.acc_r;
-                            acc_mult_s = self.acc_r * self.acc_r;
+                            pv.acc_mult_s = self.acc_r * self.acc_r;
 
                             if row[BRANCH_0_S_START] == 249 {
-                                acc_s += F::from(row[BRANCH_0_S_START + 2] as u64) * acc_mult_s;
-                                acc_mult_s *= self.acc_r;
+                                pv.acc_s +=
+                                    F::from(row[BRANCH_0_S_START + 2] as u64) * pv.acc_mult_s;
+                                pv.acc_mult_s *= self.acc_r;
 
-                                rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32 * 256
+                                pv.rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32 * 256
                                     + row[BRANCH_0_S_START + 2] as i32;
                             } else {
-                                rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32;
+                                pv.rlp_len_rem_s = row[BRANCH_0_S_START + 1] as i32;
                             }
 
-                            acc_c = F::from(row[BRANCH_0_C_START] as u64)
+                            pv.acc_c = F::from(row[BRANCH_0_C_START] as u64)
                                 + F::from(row[BRANCH_0_C_START + 1] as u64) * self.acc_r;
-                            acc_mult_c = self.acc_r * self.acc_r;
+                            pv.acc_mult_c = self.acc_r * self.acc_r;
 
                             if row[BRANCH_0_C_START] == 249 {
-                                acc_c += F::from(row[BRANCH_0_C_START + 2] as u64) * acc_mult_c;
-                                acc_mult_c *= self.acc_r;
+                                pv.acc_c +=
+                                    F::from(row[BRANCH_0_C_START + 2] as u64) * pv.acc_mult_c;
+                                pv.acc_mult_c *= self.acc_r;
 
-                                rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32 * 256
+                                pv.rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32 * 256
                                     + row[BRANCH_0_C_START + 2] as i32;
                             } else {
-                                rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32;
+                                pv.rlp_len_rem_c = row[BRANCH_0_C_START + 1] as i32;
                             }
 
                             self.assign_acc(
                                 &mut region,
-                                acc_s,
-                                acc_mult_s,
-                                acc_c,
-                                acc_mult_c,
+                                pv.acc_s,
+                                pv.acc_mult_s,
+                                pv.acc_c,
+                                pv.acc_mult_c,
                                 offset,
                             )?;
 
                             // Note that if the last branch is placeholder,
-                            is_even = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
+                            pv.is_even = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
                                 + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
                                 == 1;
-                            is_odd = witness[offset][IS_EXT_LONG_ODD_C16_POS]
+                            pv.is_odd = witness[offset][IS_EXT_LONG_ODD_C16_POS]
                                 + witness[offset][IS_EXT_LONG_ODD_C1_POS]
                                 + witness[offset][IS_EXT_SHORT_C16_POS]
                                 + witness[offset][IS_EXT_SHORT_C1_POS]
                                 == 1;
-                            is_short = witness[offset][IS_EXT_SHORT_C16_POS]
+                            pv.is_short = witness[offset][IS_EXT_SHORT_C16_POS]
                                 + witness[offset][IS_EXT_SHORT_C1_POS]
                                 == 1;
-                            is_long = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
+                            pv.is_long = witness[offset][IS_EXT_LONG_EVEN_C16_POS]
                                 + witness[offset][IS_EXT_LONG_EVEN_C1_POS]
                                 + witness[offset][IS_EXT_LONG_ODD_C16_POS]
                                 + witness[offset][IS_EXT_LONG_ODD_C1_POS]
                                 == 1;
-                            is_extension_node = is_even == true || is_odd == true;
+                            pv.is_extension_node = pv.is_even == true || pv.is_odd == true;
                             // end of extension node
 
                             offset += 1;
@@ -1521,25 +1558,25 @@ impl<F: FieldExt> MPTConfig<F> {
                             )?;
 
                             if row[S_RLP_START + 1] == 160 {
-                                rlp_len_rem_s -= 33;
+                                pv.rlp_len_rem_s -= 33;
                             } else {
-                                rlp_len_rem_s -= 1;
+                                pv.rlp_len_rem_s -= 1;
                             }
                             if row[C_RLP_START + 1] == 160 {
-                                rlp_len_rem_c -= 33;
+                                pv.rlp_len_rem_c -= 33;
                             } else {
-                                rlp_len_rem_c -= 1;
+                                pv.rlp_len_rem_c -= 1;
                             }
 
-                            if node_index == 0 {
+                            if pv.node_index == 0 {
                                 // If it's not extension node, rlc and rlc_mult in extension row
                                 // will be the same as for branch rlc.
-                                extension_node_rlc = key_rlc;
+                                pv.extension_node_rlc = pv.key_rlc;
 
-                                key_rlc_prev = key_rlc;
-                                key_rlc_mult_prev = key_rlc_mult;
+                                pv.key_rlc_prev = pv.key_rlc;
+                                pv.key_rlc_mult_prev = pv.key_rlc_mult;
 
-                                if is_extension_node
+                                if pv.is_extension_node
                                 // Extension node
                                 // We need nibbles here to be able to compute key RLC
                                 {
@@ -1548,41 +1585,42 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // witness[offset + 16]
                                     let ext_row = &witness[ind + 16];
 
-                                    if key_rlc_sel {
+                                    if pv.key_rlc_sel {
                                         // Note: it can't be is_even = 1 && is_short = 1.
-                                        if is_even && is_long {
+                                        if pv.is_even && pv.is_long {
                                             // extension node part:
                                             let key_len = ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
                                             compute_acc_and_mult(
                                                 ext_row,
-                                                &mut extension_node_rlc,
-                                                &mut key_rlc_mult,
+                                                &mut pv.extension_node_rlc,
+                                                &mut pv.key_rlc_mult,
                                                 3, /* first two positions are RLPs, third
                                                     * position is 0 (because is_even), we start
                                                     * with fourth */
                                                 key_len,
                                             );
-                                            mult_diff = F::one();
+                                            pv.mult_diff = F::one();
                                             for _ in 0..key_len {
-                                                mult_diff *= self.acc_r;
+                                                pv.mult_diff *= self.acc_r;
                                             }
-                                            key_rlc = extension_node_rlc;
+                                            pv.key_rlc = pv.extension_node_rlc;
                                             // branch part:
-                                            key_rlc += F::from(modified_node as u64)
+                                            pv.key_rlc += F::from(pv.modified_node as u64)
                                                 * F::from(16)
-                                                * key_rlc_mult;
+                                                * pv.key_rlc_mult;
                                             // key_rlc_mult stays the same
-                                            key_rlc_sel = !key_rlc_sel;
-                                        } else if is_odd && is_long {
+                                            pv.key_rlc_sel = !pv.key_rlc_sel;
+                                        } else if pv.is_odd && pv.is_long {
                                             // extension node part:
-                                            extension_node_rlc += F::from((ext_row[2] - 16) as u64)
-                                                * F::from(16)
-                                                * key_rlc_mult;
+                                            pv.extension_node_rlc +=
+                                                F::from((ext_row[2] - 16) as u64)
+                                                    * F::from(16)
+                                                    * pv.key_rlc_mult;
 
                                             let ext_row_c = &witness[ind + 17];
                                             let key_len = ext_row[1] as usize - 128 - 1;
 
-                                            mult_diff = F::one();
+                                            pv.mult_diff = F::one();
                                             for k in 0..key_len {
                                                 let second_nibble = ext_row_c[S_START + k];
                                                 let first_nibble =
@@ -1591,38 +1629,42 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     first_nibble * 16 + second_nibble,
                                                     ext_row[3 + k],
                                                 );
-                                                extension_node_rlc +=
-                                                    F::from(first_nibble as u64) * key_rlc_mult;
+                                                pv.extension_node_rlc +=
+                                                    F::from(first_nibble as u64) * pv.key_rlc_mult;
 
-                                                key_rlc_mult *= self.acc_r;
-                                                mult_diff *= self.acc_r;
+                                                pv.key_rlc_mult *= self.acc_r;
+                                                pv.mult_diff *= self.acc_r;
 
-                                                extension_node_rlc += F::from(second_nibble as u64)
-                                                    * F::from(16)
-                                                    * key_rlc_mult;
+                                                pv.extension_node_rlc +=
+                                                    F::from(second_nibble as u64)
+                                                        * F::from(16)
+                                                        * pv.key_rlc_mult;
                                             }
 
-                                            key_rlc = extension_node_rlc;
+                                            pv.key_rlc = pv.extension_node_rlc;
                                             // branch part:
-                                            key_rlc += F::from(modified_node as u64) * key_rlc_mult;
-                                            key_rlc_mult *= self.acc_r;
-                                        } else if is_short {
-                                            extension_node_rlc += F::from((ext_row[1] - 16) as u64)
-                                                * F::from(16)
-                                                * key_rlc_mult;
-                                            key_rlc = extension_node_rlc;
+                                            pv.key_rlc +=
+                                                F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                                            pv.key_rlc_mult *= self.acc_r;
+                                        } else if pv.is_short {
+                                            pv.extension_node_rlc +=
+                                                F::from((ext_row[1] - 16) as u64)
+                                                    * F::from(16)
+                                                    * pv.key_rlc_mult;
+                                            pv.key_rlc = pv.extension_node_rlc;
                                             // branch part:
-                                            key_rlc += F::from(modified_node as u64) * key_rlc_mult;
-                                            key_rlc_mult *= self.acc_r;
-                                            mult_diff = self.acc_r;
+                                            pv.key_rlc +=
+                                                F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                                            pv.key_rlc_mult *= self.acc_r;
+                                            pv.mult_diff = self.acc_r;
                                         }
                                     } else {
-                                        if is_even && is_long {
+                                        if pv.is_even && pv.is_long {
                                             // extension node part:
                                             let ext_row_c = &witness[ind + 17];
                                             let key_len = ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
 
-                                            mult_diff = F::one();
+                                            pv.mult_diff = F::one();
                                             for k in 0..key_len {
                                                 let second_nibble = ext_row_c[S_START + k];
                                                 let first_nibble =
@@ -1631,88 +1673,90 @@ impl<F: FieldExt> MPTConfig<F> {
                                                     first_nibble * 16 + second_nibble,
                                                     ext_row[3 + k],
                                                 );
-                                                extension_node_rlc +=
-                                                    F::from(first_nibble as u64) * key_rlc_mult;
+                                                pv.extension_node_rlc +=
+                                                    F::from(first_nibble as u64) * pv.key_rlc_mult;
 
-                                                key_rlc_mult *= self.acc_r;
-                                                mult_diff *= self.acc_r;
+                                                pv.key_rlc_mult *= self.acc_r;
+                                                pv.mult_diff *= self.acc_r;
 
-                                                extension_node_rlc += F::from(16)
+                                                pv.extension_node_rlc += F::from(16)
                                                     * F::from(second_nibble as u64)
-                                                    * key_rlc_mult;
+                                                    * pv.key_rlc_mult;
                                             }
 
-                                            key_rlc = extension_node_rlc;
+                                            pv.key_rlc = pv.extension_node_rlc;
                                             // branch part:
-                                            key_rlc += F::from(modified_node as u64) * key_rlc_mult;
-                                            key_rlc_mult *= self.acc_r;
-                                            key_rlc_sel = !key_rlc_sel;
-                                        } else if is_odd && is_long {
-                                            extension_node_rlc +=
-                                                F::from((ext_row[2] - 16) as u64) * key_rlc_mult;
+                                            pv.key_rlc +=
+                                                F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                                            pv.key_rlc_mult *= self.acc_r;
+                                            pv.key_rlc_sel = !pv.key_rlc_sel;
+                                        } else if pv.is_odd && pv.is_long {
+                                            pv.extension_node_rlc +=
+                                                F::from((ext_row[2] - 16) as u64) * pv.key_rlc_mult;
 
-                                            key_rlc_mult *= self.acc_r;
+                                            pv.key_rlc_mult *= self.acc_r;
 
                                             let key_len = ext_row[1] as usize - 128 - 1; // -1 because the first byte is 0 (is_even)
 
                                             compute_acc_and_mult(
                                                 ext_row,
-                                                &mut extension_node_rlc,
-                                                &mut key_rlc_mult,
+                                                &mut pv.extension_node_rlc,
+                                                &mut pv.key_rlc_mult,
                                                 3, /* first two positions are RLPs, third
                                                     * position is 0 (because is_even), we start
                                                     * with fourth */
                                                 key_len,
                                             );
-                                            mult_diff = F::one();
+                                            pv.mult_diff = F::one();
                                             for _ in 0..key_len {
-                                                mult_diff *= self.acc_r;
+                                                pv.mult_diff *= self.acc_r;
                                             }
-                                            key_rlc = extension_node_rlc;
+                                            pv.key_rlc = pv.extension_node_rlc;
                                             // branch part:
-                                            key_rlc += F::from(modified_node as u64)
+                                            pv.key_rlc += F::from(pv.modified_node as u64)
                                                 * F::from(16)
-                                                * key_rlc_mult;
+                                                * pv.key_rlc_mult;
                                             // key_rlc_mult stays the same
-                                        } else if is_short {
-                                            extension_node_rlc +=
-                                                F::from((ext_row[1] - 16) as u64) * key_rlc_mult;
+                                        } else if pv.is_short {
+                                            pv.extension_node_rlc +=
+                                                F::from((ext_row[1] - 16) as u64) * pv.key_rlc_mult;
 
-                                            key_rlc = extension_node_rlc;
+                                            pv.key_rlc = pv.extension_node_rlc;
 
-                                            key_rlc_mult *= self.acc_r;
+                                            pv.key_rlc_mult *= self.acc_r;
                                             // branch part:
-                                            key_rlc += F::from(modified_node as u64)
+                                            pv.key_rlc += F::from(pv.modified_node as u64)
                                                 * F::from(16)
-                                                * key_rlc_mult;
-                                            mult_diff = self.acc_r;
+                                                * pv.key_rlc_mult;
+                                            pv.mult_diff = self.acc_r;
                                         }
                                     }
                                 } else {
-                                    if key_rlc_sel {
-                                        key_rlc += F::from(modified_node as u64)
+                                    if pv.key_rlc_sel {
+                                        pv.key_rlc += F::from(pv.modified_node as u64)
                                             * F::from(16)
-                                            * key_rlc_mult;
+                                            * pv.key_rlc_mult;
                                         // key_rlc_mult stays the same
                                     } else {
-                                        key_rlc += F::from(modified_node as u64) * key_rlc_mult;
-                                        key_rlc_mult *= self.acc_r;
+                                        pv.key_rlc +=
+                                            F::from(pv.modified_node as u64) * pv.key_rlc_mult;
+                                        pv.key_rlc_mult *= self.acc_r;
                                     }
-                                    key_rlc_sel = !key_rlc_sel;
+                                    pv.key_rlc_sel = !pv.key_rlc_sel;
                                 }
                                 self.assign_branch_row(
                                     &mut region,
-                                    node_index,
-                                    modified_node,
-                                    key_rlc,
-                                    key_rlc_mult,
-                                    mult_diff,
+                                    pv.node_index,
+                                    pv.modified_node,
+                                    pv.key_rlc,
+                                    pv.key_rlc_mult,
+                                    pv.mult_diff,
                                     &row[0..row.len() - 1].to_vec(),
-                                    s_mod_node_hash_rlc,
-                                    c_mod_node_hash_rlc,
-                                    drifted_pos,
-                                    rlp_len_rem_s,
-                                    rlp_len_rem_c,
+                                    pv.s_mod_node_hash_rlc,
+                                    pv.c_mod_node_hash_rlc,
+                                    pv.drifted_pos,
+                                    pv.rlp_len_rem_s,
+                                    pv.rlp_len_rem_c,
                                     offset,
                                 )?;
                             } else {
@@ -1721,17 +1765,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // equality is in extension_node_key.
                                 self.assign_branch_row(
                                     &mut region,
-                                    node_index,
-                                    modified_node,
-                                    key_rlc,
-                                    key_rlc_mult,
-                                    mult_diff,
+                                    pv.node_index,
+                                    pv.modified_node,
+                                    pv.key_rlc,
+                                    pv.key_rlc_mult,
+                                    pv.mult_diff,
                                     &row[0..row.len() - 1].to_vec(),
-                                    s_mod_node_hash_rlc,
-                                    c_mod_node_hash_rlc,
-                                    drifted_pos,
-                                    rlp_len_rem_s,
-                                    rlp_len_rem_c,
+                                    pv.s_mod_node_hash_rlc,
+                                    pv.c_mod_node_hash_rlc,
+                                    pv.drifted_pos,
+                                    pv.rlp_len_rem_s,
+                                    pv.rlp_len_rem_c,
                                     offset,
                                 )?;
                             }
@@ -1748,10 +1792,10 @@ impl<F: FieldExt> MPTConfig<F> {
                             // but the probability is negligible.
                             let mut sel1 = F::zero();
                             let mut sel2 = F::zero();
-                            if s_mod_node_hash_rlc == F::from(128 as u64) {
+                            if pv.s_mod_node_hash_rlc == F::from(128 as u64) {
                                 sel1 = F::one();
                             }
-                            if c_mod_node_hash_rlc == F::from(128 as u64) {
+                            if pv.c_mod_node_hash_rlc == F::from(128 as u64) {
                                 sel2 = F::one();
                             }
 
@@ -1800,23 +1844,23 @@ impl<F: FieldExt> MPTConfig<F> {
                             // TODO: add branch ValueNode info
 
                             compute_branch_acc_and_mult(
-                                &mut acc_s,
-                                &mut acc_mult_s,
+                                &mut pv.acc_s,
+                                &mut pv.acc_mult_s,
                                 S_RLP_START,
                                 S_START,
                             );
                             compute_branch_acc_and_mult(
-                                &mut acc_c,
-                                &mut acc_mult_c,
+                                &mut pv.acc_c,
+                                &mut pv.acc_mult_c,
                                 C_RLP_START,
                                 C_START,
                             );
                             self.assign_acc(
                                 &mut region,
-                                acc_s,
-                                acc_mult_s,
-                                acc_c,
-                                acc_mult_c,
+                                pv.acc_s,
+                                pv.acc_mult_s,
+                                pv.acc_c,
+                                pv.acc_mult_c,
                                 offset,
                             )?;
 
@@ -1825,17 +1869,17 @@ impl<F: FieldExt> MPTConfig<F> {
                                 || "assign key_rlc".to_string(),
                                 self.key_rlc,
                                 offset,
-                                || Ok(key_rlc),
+                                || Ok(pv.key_rlc),
                             )?;
                             region.assign_advice(
                                 || "assign key_rlc_mult".to_string(),
                                 self.key_rlc_mult,
                                 offset,
-                                || Ok(key_rlc_mult),
+                                || Ok(pv.key_rlc_mult),
                             )?;
 
                             offset += 1;
-                            node_index += 1;
+                            pv.node_index += 1;
                         } else if row[row.len() - 1] == 2
                             || row[row.len() - 1] == 3
                             || row[row.len() - 1] == 6
@@ -1891,9 +1935,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_storage_codehash_s = true;
                             } else if row[row.len() - 1] == 11 {
                                 is_account_leaf_storage_codehash_c = true;
-                                key_rlc = F::zero(); // account address until here, storage key from here on
-                                key_rlc_mult = F::one();
-                                key_rlc_sel = true;
+                                pv.key_rlc = F::zero(); // account address until here, storage key from here on
+                                pv.key_rlc_mult = F::one();
+                                pv.key_rlc_sel = true;
                             } else if row[row.len() - 1] == 13 {
                                 is_leaf_s_value = true;
                             } else if row[row.len() - 1] == 14 {
@@ -1991,20 +2035,26 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // Info whether leaf rlp is long or short.
                                 assign_long_short(&mut region, witness[ind][0] == 248);
 
-                                acc_s = F::zero();
-                                acc_mult_s = F::one();
+                                pv.acc_s = F::zero();
+                                pv.acc_mult_s = F::one();
                                 let len: usize;
                                 if row[0] == 248 {
                                     len = (row[2] - 128) as usize + 3;
                                 } else {
                                     len = (row[1] - 128) as usize + 2;
                                 }
-                                compute_acc_and_mult(row, &mut acc_s, &mut acc_mult_s, 0, len);
+                                compute_acc_and_mult(
+                                    row,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
+                                    0,
+                                    len,
+                                );
 
                                 self.assign_acc(
                                     &mut region,
-                                    acc_s,
-                                    acc_mult_s,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
                                     F::zero(),
                                     F::zero(),
                                     offset,
@@ -2018,14 +2068,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
 
                                 // For leaf S and leaf C we need to start with the same rlc.
-                                let mut key_rlc_new = key_rlc;
-                                let mut key_rlc_mult_new = key_rlc_mult;
+                                let mut key_rlc_new = pv.key_rlc;
+                                let mut key_rlc_mult_new = pv.key_rlc_mult;
 
-                                if (is_branch_s_placeholder && row[row.len() - 1] == 2)
-                                    || (is_branch_c_placeholder && row[row.len() - 1] == 3)
+                                if (pv.is_branch_s_placeholder && row[row.len() - 1] == 2)
+                                    || (pv.is_branch_c_placeholder && row[row.len() - 1] == 3)
                                 {
-                                    key_rlc_new = key_rlc_prev;
-                                    key_rlc_mult_new = key_rlc_mult_prev;
+                                    key_rlc_new = pv.key_rlc_prev;
+                                    key_rlc_mult_new = pv.key_rlc_mult_prev;
                                 }
 
                                 compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, start);
@@ -2044,29 +2094,29 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || "assign key_rlc".to_string(),
                                     self.sel1,
                                     offset,
-                                    || Ok(key_rlc_prev),
+                                    || Ok(pv.key_rlc_prev),
                                 )?;
                                 region.assign_advice(
                                     || "assign key_rlc_mult".to_string(),
                                     self.sel2,
                                     offset,
-                                    || Ok(key_rlc_mult_prev),
+                                    || Ok(pv.key_rlc_mult_prev),
                                 )?;
                             }
 
                             if row[row.len() - 1] == 13 || row[row.len() - 1] == 14 {
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     0,
                                     HASH_WIDTH + 2,
                                 );
 
                                 self.assign_acc(
                                     &mut region,
-                                    acc_s,
-                                    acc_mult_s,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
                                     F::zero(),
                                     F::zero(),
                                     offset,
@@ -2075,26 +2125,26 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             if row[row.len() - 1] == 6 {
                                 // account leaf key is the same for S and C
-                                acc_s = F::zero();
-                                acc_mult_s = F::one();
+                                pv.acc_s = F::zero();
+                                pv.acc_mult_s = F::one();
                                 // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
                                 let key_len = (row[2] - 128) as usize;
                                 for b in row.iter().take(3 + key_len) {
-                                    acc_s += F::from(*b as u64) * acc_mult_s;
-                                    acc_mult_s *= self.acc_r;
+                                    pv.acc_s += F::from(*b as u64) * pv.acc_mult_s;
+                                    pv.acc_mult_s *= self.acc_r;
                                 }
                                 self.assign_acc(
                                     &mut region,
-                                    acc_s,
-                                    acc_mult_s,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
                                     F::zero(),
                                     F::zero(),
                                     offset,
                                 )?;
 
                                 // For leaf S and leaf C we need to start with the same rlc.
-                                let mut key_rlc_new = key_rlc;
-                                let mut key_rlc_mult_new = key_rlc_mult;
+                                let mut key_rlc_new = pv.key_rlc;
+                                let mut key_rlc_mult_new = pv.key_rlc_mult;
                                 compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, S_START);
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
@@ -2106,24 +2156,24 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     S_START - 2,
                                     2,
                                 );
                                 // c_rlp1, c_rlp2
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     C_START - 2,
                                     2,
                                 );
                                 // nonce
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     S_START,
                                     row[S_START] as usize - 128 + 1, /* +1 for byte with length
                                                                       * info */
@@ -2140,12 +2190,12 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // It's easier to constrain (in account_leaf_nonce_balance.rs)
                                 // the multiplier if we store acc_mult both after nonce and after
                                 // balance.
-                                let acc_mult_tmp = acc_mult_s;
+                                let acc_mult_tmp = pv.acc_mult_s;
                                 // balance
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     C_START,
                                     row[C_START] as usize - 128 + 1, /* +1 for byte with length
                                                                       * info */
@@ -2160,8 +2210,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 self.assign_acc(
                                     &mut region,
-                                    acc_s,
-                                    acc_mult_s,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
                                     F::zero(),
                                     acc_mult_tmp,
                                     offset,
@@ -2180,40 +2230,40 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || Ok(mult_diff_c),
                                 )?;
                                 if row[row.len() - 1] == 7 {
-                                    acc_nonce_balance_s = acc_s;
-                                    acc_mult_nonce_balance_s = acc_mult_s;
+                                    pv.acc_nonce_balance_s = pv.acc_s;
+                                    pv.acc_mult_nonce_balance_s = pv.acc_mult_s;
                                 } else {
-                                    acc_nonce_balance_c = acc_s;
-                                    acc_mult_nonce_balance_c = acc_mult_s;
+                                    pv.acc_nonce_balance_c = pv.acc_s;
+                                    pv.acc_mult_nonce_balance_c = pv.acc_mult_s;
                                 }
                             } else if row[row.len() - 1] == 9 || row[row.len() - 1] == 11 {
                                 if row[row.len() - 1] == 9 {
-                                    acc_s = acc_nonce_balance_s;
-                                    acc_mult_s = acc_mult_nonce_balance_s;
+                                    pv.acc_s = pv.acc_nonce_balance_s;
+                                    pv.acc_mult_s = pv.acc_mult_nonce_balance_s;
                                 } else {
-                                    acc_s = acc_nonce_balance_c;
-                                    acc_mult_s = acc_mult_nonce_balance_c;
+                                    pv.acc_s = pv.acc_nonce_balance_c;
+                                    pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
                                 }
                                 // storage
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     S_START - 1,
                                     HASH_WIDTH + 1,
                                 );
                                 // code hash
                                 compute_acc_and_mult(
                                     row,
-                                    &mut acc_s,
-                                    &mut acc_mult_s,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
                                     C_START - 1,
                                     HASH_WIDTH + 1,
                                 );
                                 self.assign_acc(
                                     &mut region,
-                                    acc_s,
-                                    acc_mult_s,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
                                     F::zero(),
                                     F::zero(),
                                     offset,
@@ -2224,30 +2274,36 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // leaf rlp is long or short.
                                 assign_long_short(&mut region, witness[ind][0] == 248);
 
-                                acc_s = F::zero();
-                                acc_mult_s = F::one();
+                                pv.acc_s = F::zero();
+                                pv.acc_mult_s = F::one();
                                 let len: usize;
                                 if row[0] == 248 {
                                     len = (row[2] - 128) as usize + 3;
                                 } else {
                                     len = (row[1] - 128) as usize + 2;
                                 }
-                                compute_acc_and_mult(row, &mut acc_s, &mut acc_mult_s, 0, len);
+                                compute_acc_and_mult(
+                                    row,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
+                                    0,
+                                    len,
+                                );
 
                                 self.assign_acc(
                                     &mut region,
-                                    acc_s,
-                                    acc_mult_s,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
                                     F::zero(),
                                     F::zero(),
                                     offset,
                                 )?;
                             } else if row[row.len() - 1] == 16 {
-                                if is_extension_node {
+                                if pv.is_extension_node {
                                     // Intermediate RLC value and mult (after key)
                                     // to know which mult we need to use in c_advices.
-                                    acc_s = F::zero();
-                                    acc_mult_s = F::one();
+                                    pv.acc_s = F::zero();
+                                    pv.acc_mult_s = F::one();
                                     let len: usize;
                                     if row[0] == 226 {
                                         // key length is 1
@@ -2255,24 +2311,30 @@ impl<F: FieldExt> MPTConfig<F> {
                                     } else {
                                         len = (row[1] - 128) as usize + 2;
                                     }
-                                    compute_acc_and_mult(row, &mut acc_s, &mut acc_mult_s, 0, len);
-
-                                    // Final RLC value.
-                                    acc_c = acc_s;
-                                    acc_mult_c = acc_mult_s;
                                     compute_acc_and_mult(
                                         row,
-                                        &mut acc_c,
-                                        &mut acc_mult_c,
+                                        &mut pv.acc_s,
+                                        &mut pv.acc_mult_s,
+                                        0,
+                                        len,
+                                    );
+
+                                    // Final RLC value.
+                                    pv.acc_c = pv.acc_s;
+                                    pv.acc_mult_c = pv.acc_mult_s;
+                                    compute_acc_and_mult(
+                                        row,
+                                        &mut pv.acc_c,
+                                        &mut pv.acc_mult_c,
                                         C_RLP_START + 1,
                                         HASH_WIDTH + 1,
                                     );
 
                                     self.assign_acc(
                                         &mut region,
-                                        acc_s,
-                                        acc_mult_s,
-                                        acc_c,
+                                        pv.acc_s,
+                                        pv.acc_mult_s,
+                                        pv.acc_c,
                                         F::zero(),
                                         offset,
                                     )?;
@@ -2281,28 +2343,28 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
                                     offset,
-                                    || Ok(extension_node_rlc),
+                                    || Ok(pv.extension_node_rlc),
                                 )?;
                             } else if row[row.len() - 1] == 17 {
-                                if is_extension_node {
+                                if pv.is_extension_node {
                                     // We use intermediate value from previous row (because
                                     // up to acc_s it's about key and this is the same
                                     // for both S and C).
-                                    acc_c = acc_s;
-                                    acc_mult_c = acc_mult_s;
+                                    pv.acc_c = pv.acc_s;
+                                    pv.acc_mult_c = pv.acc_mult_s;
                                     compute_acc_and_mult(
                                         row,
-                                        &mut acc_c,
-                                        &mut acc_mult_c,
+                                        &mut pv.acc_c,
+                                        &mut pv.acc_mult_c,
                                         C_RLP_START + 1,
                                         HASH_WIDTH + 1,
                                     );
 
                                     self.assign_acc(
                                         &mut region,
-                                        acc_s,
-                                        acc_mult_s,
-                                        acc_c,
+                                        pv.acc_s,
+                                        pv.acc_mult_s,
+                                        pv.acc_c,
                                         F::zero(),
                                         offset,
                                     )?;
@@ -2315,7 +2377,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
                                     offset,
-                                    || Ok(extension_node_rlc),
+                                    || Ok(pv.extension_node_rlc),
                                 )?;
                             }
 
