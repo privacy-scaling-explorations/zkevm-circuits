@@ -307,88 +307,87 @@ impl<F: Field> Config<F> {
         mut layouter: impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
-    ) -> Result<(),Error> {
+    ) -> Result<(), Error> {
         let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
 
         // Subtract the unusable rows from the size
         let last_row_offset = size - self.minimum_rows + 1;
 
-        layouter
-            .assign_region(
-                || "assign bytecode",
-                |mut region| {
-                    let mut offset = 0;
-                    let mut push_rindex_prev = 0;
+        layouter.assign_region(
+            || "assign bytecode",
+            |mut region| {
+                let mut offset = 0;
+                let mut push_rindex_prev = 0;
 
-                    for bytecode in witness.iter() {
-                        // Run over all the bytes
-                        let mut push_rindex = 0;
-                        let mut hash_rlc = F::zero();
-                        let hash_length = F::from(bytecode.bytes.len() as u64);
-                        for row in bytecode.rows.iter() {
-                            // Track which byte is an opcode and which is push
-                            // data
-                            let is_code = push_rindex == 0;
-                            let byte_push_size = get_push_size(row.byte.get_lower_128() as u8);
-                            push_rindex = if is_code {
-                                byte_push_size
-                            } else {
-                                push_rindex - 1
-                            };
+                for bytecode in witness.iter() {
+                    // Run over all the bytes
+                    let mut push_rindex = 0;
+                    let mut hash_rlc = F::zero();
+                    let hash_length = F::from(bytecode.bytes.len() as u64);
+                    for row in bytecode.rows.iter() {
+                        // Track which byte is an opcode and which is push
+                        // data
+                        let is_code = push_rindex == 0;
+                        let byte_push_size = get_push_size(row.byte.get_lower_128() as u8);
+                        push_rindex = if is_code {
+                            byte_push_size
+                        } else {
+                            push_rindex - 1
+                        };
 
-                            // Add the byte to the accumulator
-                            hash_rlc = hash_rlc * self.r + row.byte;
+                        // Add the byte to the accumulator
+                        hash_rlc = hash_rlc * self.r + row.byte;
 
-                            // Set the data for this row
-                            self.set_row(
-                                &mut region,
-                                &push_rindex_is_zero_chip,
-                                offset,
-                                true,
-                                offset == last_row_offset,
-                                row.hash,
-                                row.index,
-                                row.is_code,
-                                row.byte,
-                                push_rindex,
-                                hash_rlc,
-                                hash_length,
-                                F::from(byte_push_size as u64),
-                                row.index + F::one() == hash_length,
-                                false,
-                                F::from(push_rindex_prev),
-                            )?;
-                            push_rindex_prev = push_rindex;
-                            offset += 1;
-                        }
-                    }
-
-                    // Padding
-                    for idx in offset..=last_row_offset {
+                        // Set the data for this row
                         self.set_row(
                             &mut region,
                             &push_rindex_is_zero_chip,
-                            idx,
-                            idx < last_row_offset,
-                            idx == last_row_offset,
-                            F::zero(),
-                            F::zero(),
-                            F::one(),
-                            F::zero(),
-                            0,
-                            F::zero(),
-                            F::one(),
-                            F::zero(),
+                            offset,
                             true,
-                            true,
+                            offset == last_row_offset,
+                            row.hash,
+                            row.index,
+                            row.is_code,
+                            row.byte,
+                            push_rindex,
+                            hash_rlc,
+                            hash_length,
+                            F::from(byte_push_size as u64),
+                            row.index + F::one() == hash_length,
+                            false,
                             F::from(push_rindex_prev),
                         )?;
-                        push_rindex_prev = 0;
+                        push_rindex_prev = push_rindex;
+                        offset += 1;
                     }
+                }
 
-                    Ok(())
-                },
-            )
+                // Padding
+                for idx in offset..=last_row_offset {
+                    self.set_row(
+                        &mut region,
+                        &push_rindex_is_zero_chip,
+                        idx,
+                        idx < last_row_offset,
+                        idx == last_row_offset,
+                        F::zero(),
+                        F::zero(),
+                        F::one(),
+                        F::zero(),
+                        0,
+                        F::zero(),
+                        F::one(),
+                        F::zero(),
+                        true,
+                        true,
+                        F::from(push_rindex_prev),
+                    )?;
+                    push_rindex_prev = 0;
+                }
+
+                Ok(())
+            },
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -411,7 +410,6 @@ impl<F: Field> Config<F> {
         padding: bool,
         push_rindex_prev: F,
     ) -> Result<(), Error> {
-
         // q_enable
         region.assign_fixed(
             || format!("assign q_enable {}", offset),
