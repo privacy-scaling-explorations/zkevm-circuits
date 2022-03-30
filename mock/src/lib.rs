@@ -14,12 +14,12 @@ pub(crate) use transaction::MockTransaction;
 
 lazy_static! {
     /// Mock coinbase value
-    static ref MOCK_COINBASE: Address =
+    pub static ref MOCK_COINBASE: Address =
         address!("0x00000000000000000000000000000000c014ba5e");
     /// Mock gasprice value
-    static ref MOCK_GASPRICE: Word = Word::from(1u8);
+    pub static ref MOCK_GASPRICE: Word = Word::from(1u8);
     /// Mock chain ID value
-    static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
+    pub static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
     /// Mock accounts loaded with ETH to use for test cases.
     pub static ref MOCK_ACCOUNTS: Vec<Address> = vec![
         address!("0x000000000000000000000000000000000cafe111"),
