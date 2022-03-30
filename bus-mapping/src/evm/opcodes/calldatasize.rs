@@ -64,8 +64,8 @@ mod calldatasize_tests {
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            |accs| account_0_code_account_1_no_code(accs, code),
-            tx_from_0_to_1,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()

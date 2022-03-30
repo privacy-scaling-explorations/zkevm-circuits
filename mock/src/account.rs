@@ -58,12 +58,10 @@ impl MockAccount {
     }
 
     /// Add storage field for the MockAccount by passing an iterator over the
-    /// [`Word`].
+    /// key-value tuples of type [(`Word`, `Word`)].
     pub fn storage<I: Iterator<Item = (Word, Word)>>(&mut self, storage: I) -> &mut Self {
         storage.for_each(|pair| {
-            self.storage
-                .insert(pair.0, pair.1)
-                .expect("Error including storage pair");
+            assert!(self.storage.insert(pair.0, pair.1).is_none());
         });
         self
     }

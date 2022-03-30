@@ -3270,7 +3270,7 @@ mod tracer_tests {
         // Create a custom tx setting Gas to
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            |accs| account_0_code_account_1_no_code(accs, code),
+            account_0_code_account_1_no_code(code),
             |mut txs, accs| {
                 txs[0]
                     .to(accs[0].address)
@@ -3295,8 +3295,8 @@ mod tracer_tests {
         }
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            |accs| account_0_code_account_1_no_code(accs, code),
-            tx_from_0_to_1,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()
@@ -3325,8 +3325,8 @@ mod tracer_tests {
         };
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            |accs| account_0_code_account_1_no_code(accs, code),
-            tx_from_0_to_1,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()

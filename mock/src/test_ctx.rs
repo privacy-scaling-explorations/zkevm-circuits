@@ -101,6 +101,12 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
 }
 
 impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
+    /// Create a new TestContext which starts with `NACC` default accounts and
+    /// `NTX` default transactions.  Afterwards, we apply the `acc_fns`
+    /// function to the accounts, the `func_tx` to the transactions and
+    /// the `func_block` to the block, where each of these functions can
+    /// mutate their target using the builder pattern. Finally an
+    /// execution trace is generated of the resulting input block and state.
     pub fn new<FAcc, FTx, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,
@@ -200,19 +206,21 @@ pub mod helpers {
     /// - 0x000000000000000000000000000000000cafe111
     /// - 0x000000000000000000000000000000000cafe222
     /// And injects the provided bytecode into the first one.
-    pub fn account_0_code_account_1_no_code(accs: [&mut MockAccount; 2], code: Bytecode) {
-        accs[0]
-            .address(MOCK_ACCOUNTS[0])
-            .balance(Word::from(1u64 << 20))
-            .code(code);
-        accs[1]
-            .address(MOCK_ACCOUNTS[1])
-            .balance(Word::from(1u64 << 20));
+    pub fn account_0_code_account_1_no_code(code: Bytecode) -> impl FnOnce([&mut MockAccount; 2]) {
+        |accs| {
+            accs[0]
+                .address(MOCK_ACCOUNTS[0])
+                .balance(Word::from(1u64 << 20))
+                .code(code);
+            accs[1]
+                .address(MOCK_ACCOUNTS[1])
+                .balance(Word::from(1u64 << 20));
+        }
     }
 
-    /// Generate a single transaction from the first account of the list to the
-    /// second one.
-    pub fn tx_from_0_to_1(mut txs: Vec<&mut MockTransaction>, accs: [MockAccount; 2]) {
-        txs[0].to(accs[0].address).from(accs[1].address);
+    /// Generate a single transaction from the second account of the list to the
+    /// first one.
+    pub fn tx_from_1_to_0(mut txs: Vec<&mut MockTransaction>, accs: [MockAccount; 2]) {
+        txs[0].from(accs[1].address).to(accs[0].address);
     }
 }
