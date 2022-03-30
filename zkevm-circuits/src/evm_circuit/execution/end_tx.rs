@@ -243,18 +243,27 @@ mod test {
         // Multiple txs
         test_ok(
             // Get the execution steps from the external tracer
-            TestContext::<2, 1>::new(
+            TestContext::<2, 2>::new(
                 None,
                 |accs| {
                     accs[0]
                         .address(address!("0x00000000000000000000000000000000000000fe"))
-                        .balance(Word::from(1u64 << 20));
+                        .balance(Word::from(10u64.pow(19)));
                     accs[1]
                         .address(address!("0x00000000000000000000000000000000000000fd"))
-                        .balance(Word::from(1u64 << 20));
+                        .balance(Word::from(10u64.pow(19)));
                 },
                 |mut txs, accs| {
-                    txs[0].to(accs[0].address).from(accs[1].address);
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(Word::from(10u64.pow(17)));
+                    txs[1]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(Word::from(10u64.pow(17)))
+                        .transaction_idx(1u64)
+                        .nonce(Word::one());
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
