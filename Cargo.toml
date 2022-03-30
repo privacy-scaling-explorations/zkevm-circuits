@@ -20,6 +20,9 @@ members = [
 # is resolved: https://github.com/bitvecto-rs/bitvec/pull/141
 bitvec = { git = "https://github.com/ed255/bitvec.git", rev = "5cfc5fa8496c66872d21905e677120fc3e79693c" }
 
+# [patch."https://github.com/appliedzkp/halo2.git"]
+# halo2_proofs = { path = "../halo2/halo2_proofs" }
+
 # Definition of benchmarks profile to use.
 [profile.bench]
 opt-level = 3
