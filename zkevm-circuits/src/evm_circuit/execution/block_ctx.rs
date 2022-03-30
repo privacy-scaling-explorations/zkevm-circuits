@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_U64, N_BYTES_ACCOUNT_ADDRESS},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
@@ -17,8 +17,7 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::{circuit::Region, plonk::Error};
-use std::convert::{TryInto, TryFrom};
-
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU64Gadget<F> {
@@ -39,15 +38,11 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
-        let blockctx_tag =
-            BlockContextFieldTag::Coinbase.expr() + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
+        let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
+            + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
 
         // Lookup block table with TIMESTAMP/NUMBER/GASLIMIT
-        cb.block_lookup(
-            blockctx_tag,
-            None,
-            from_bytes::expr(&value_u64.cells),
-        );
+        cb.block_lookup(blockctx_tag, None, from_bytes::expr(&value_u64.cells));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -107,15 +102,11 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
-        let blockctx_tag =
-            BlockContextFieldTag::Coinbase.expr() + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
+        let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
+            + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
 
         // Lookup block table with COINBASE
-        cb.block_lookup(
-            blockctx_tag,
-            None,
-            from_bytes::expr(&value_u160.cells),
-        );
+        cb.block_lookup(blockctx_tag, None, from_bytes::expr(&value_u160.cells));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -149,10 +140,10 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
         self.value_u160.assign(
             region,
             offset,
-      Some(
+            Some(
                 value.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                .try_into()
-                .unwrap(),
+                    .try_into()
+                    .unwrap(),
             ),
         )?;
 
@@ -179,15 +170,11 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
-        let blockctx_tag =
-            BlockContextFieldTag::Coinbase.expr() + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
+        let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
+            + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
 
         // Lookup block table with DIFFICULTY/BASEFEE RLC value
-        cb.block_lookup(
-            blockctx_tag,
-            None,
-            value_u256.expr(),
-        );
+        cb.block_lookup(blockctx_tag, None, value_u256.expr());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -218,11 +205,8 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u256.assign(
-            region,
-            offset,
-            Some(value.to_le_bytes()),
-        )?;
+        self.value_u256
+            .assign(region, offset, Some(value.to_le_bytes()))?;
 
         Ok(())
     }
@@ -257,7 +241,7 @@ mod test {
         };
         test_ok(bytecode);
     }
-    
+
     #[test]
     fn blockcxt_u256_gadget_test() {
         let bytecode = bytecode! {
@@ -269,5 +253,3 @@ mod test {
         test_ok(bytecode);
     }
 }
-
-
