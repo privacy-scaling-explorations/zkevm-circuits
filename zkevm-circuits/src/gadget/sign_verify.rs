@@ -5,13 +5,13 @@ use ecdsa::maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig};
 use pairing::arithmetic::FieldExt;
 use secp256k1::Secp256k1Affine;
 
+use crate::gadget::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2_proofs::{
     arithmetic::CurveAffine,
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use crate::gadget::is_zero::{IsZeroConfig, IsZeroChip};
 
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
@@ -21,32 +21,32 @@ struct SignVerifyChip<F: FieldExt> {
 
 struct SignVerifyConfig<F: FieldExt> {
     address: Column<Advice>,
-    pub_key: [[Column<Advice>;32];2],
-    pub_key_hash: [Column<Advice>;32],
-    
-    msg_hash_rlc : Column<Advice>,
+    pub_key: [[Column<Advice>; 32]; 2],
+    pub_key_hash: [Column<Advice>; 32],
+
+    msg_hash_rlc: Column<Advice>,
     msg_hash_rlc_is_zero: IsZeroConfig<F>,
     msg_hash_rlc_inv: Column<Advice>,
-    
+
     ecdsa_config: EcdsaConfig,
-    
-    power_of_randomness : [F;32],
-    
+
+    power_of_randomness: [F; 32],
+
     keccak_is_enabled: Column<Advice>,
     keccak_input_rlc: Column<Advice>,
     keccak_input_length: Column<Advice>,
     keccak_output_rlc: Column<Advice>,
 }
 
-use crate::{
-    evm_circuit::util::{
-        and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
-    }
+use crate::evm_circuit::util::{
+    and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
 };
 
 impl<F: FieldExt> SignVerifyChip<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>, power_of_randomness: &[Expression<F>;31]) -> SignVerifyConfig<F> {
-
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        power_of_randomness: &[Expression<F>; 31],
+    ) -> SignVerifyConfig<F> {
         // create ecdsa config
         const BIT_LEN_LIMB: usize = 68;
         let (rns_base, rns_scalar) = GeneralEccChip::<Secp256k1Affine, F>::rns(BIT_LEN_LIMB);
@@ -55,16 +55,16 @@ impl<F: FieldExt> SignVerifyChip<F> {
         overflow_bit_lengths.extend(rns_base.overflow_lengths());
         overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
         let range_config = RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
-        
+
         let ecdsa_config = EcdsaConfig::new(range_config, main_gate_config);
 
         // create address, msg_hash, pub_key_hash, and msg_hash_inv, and iz_zero
 
         let address = meta.advice_column();
-        let pub_key_hash = [();32].map(|_| meta.advice_column());
+        let pub_key_hash = [(); 32].map(|_| meta.advice_column());
 
-        let msg_hash_rlc = meta.advice_column(); 
-        
+        let msg_hash_rlc = meta.advice_column();
+
         // is_enabled === msg_hash_rlc != 0
 
         let msg_hash_rlc_inv = meta.advice_column();
@@ -72,10 +72,10 @@ impl<F: FieldExt> SignVerifyChip<F> {
             meta,
             |_| Expression::Constant(F::one()), // always activate
             |virtual_cells| virtual_cells.query_advice(msg_hash_rlc, Rotation::cur()),
-            msg_hash_rlc_inv // helper column used internally?
+            msg_hash_rlc_inv, // helper column used internally?
         );
         let is_enabled = not::expr(msg_hash_rlc_is_zero.is_zero_expression);
-       
+
         // lookup keccak table
 
         let keccak_is_enabled = meta.advice_column();
@@ -85,44 +85,47 @@ impl<F: FieldExt> SignVerifyChip<F> {
 
         // keccak lookup
         meta.lookup_any("keccak", |meta| {
-     /*
-            // Conditions:
-            // - On the row with the last byte (`is_final == 1`)
-            // - Not padding
-            let enable = and::expr(vec![
-                meta.query_advice(is_final, Rotation::cur()),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
-            ]);
-            let lookup_columns = vec![hash_rlc, hash_length, hash];
-            let mut constraints = vec![];
-            for i in 0..crate::bytecode_circuit::param::KECCAK_WIDTH {
-                constraints.push((
-                    enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
-                    meta.query_advice(keccak_table[i], Rotation::cur()),
-                ))
-            }
-    */        
-           
+            /*
+                    // Conditions:
+                    // - On the row with the last byte (`is_final == 1`)
+                    // - Not padding
+                    let enable = and::expr(vec![
+                        meta.query_advice(is_final, Rotation::cur()),
+                        not::expr(meta.query_advice(padding, Rotation::cur())),
+                    ]);
+                    let lookup_columns = vec![hash_rlc, hash_length, hash];
+                    let mut constraints = vec![];
+                    for i in 0..crate::bytecode_circuit::param::KECCAK_WIDTH {
+                        constraints.push((
+                            enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
+                            meta.query_advice(keccak_table[i], Rotation::cur()),
+                        ))
+                    }
+            */
+
             let mut table_map = Vec::new();
-            
+
             let keccak_is_enabled = meta.query_advice(keccak_is_enabled, Rotation::cur());
             table_map.push((is_enabled.clone(), keccak_is_enabled));
 
             let pub_key_hash = pub_key_hash.map(|c| meta.query_advice(c, Rotation::cur()));
-            let pub_key_hash_rlc = RandomLinearCombination::random_linear_combine_expr(pub_key_hash, power_of_randomness);
+            let pub_key_hash_rlc = RandomLinearCombination::random_linear_combine_expr(
+                pub_key_hash,
+                power_of_randomness,
+            );
 
             let keccak_input_rlc = meta.query_advice(msg_hash_rlc, Rotation::cur());
             table_map.push((is_enabled.clone() * pub_key_hash_rlc, keccak_input_rlc));
-            
-            /* 
+
+            /*
             let keccak_input_rlc = meta.query_advice(keccak_input_rlc, Rotation::cur());
             table_map.push((is_enabled.clone() * pub_key_hash_rlc, keccak_input_rlc));
             */
-           
+
             table_map
         });
 
-        SignVerifyConfig{
+        SignVerifyConfig {
             address,
             msg_hash_rlc,
             pub_key_hash,
@@ -132,28 +135,26 @@ impl<F: FieldExt> SignVerifyChip<F> {
             keccak_input_rlc,
             keccak_input_length,
             keccak_output_rlc,
-            ecdsa_config
+            ecdsa_config,
         }
     }
 
-/*
-    pub fn load_tables(config: &SignVerifyConfig<F>, layouter: &mut impl Layouter<F>) {
-        use ecdsa::maingate::RangeInstructions;
-        const BIT_LEN_LIMB: usize = 68;
-        use ecdsa::integer::NUMBER_OF_LOOKUP_LIMBS;
-        
-        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
-        let range_chip = RangeChip::<F>::new(config.range_config.clone(), bit_len_lookup).unwrap();
-        range_chip.load_limb_range_table(layouter).unwrap();
-        range_chip.load_overflow_range_tables(layouter).unwrap();
-   }
-*/
+    /*
+        pub fn load_tables(config: &SignVerifyConfig<F>, layouter: &mut impl Layouter<F>) {
+            use ecdsa::maingate::RangeInstructions;
+            const BIT_LEN_LIMB: usize = 68;
+            use ecdsa::integer::NUMBER_OF_LOOKUP_LIMBS;
+
+            let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+            let range_chip = RangeChip::<F>::new(config.range_config.clone(), bit_len_lookup).unwrap();
+            range_chip.load_limb_range_table(layouter).unwrap();
+            range_chip.load_overflow_range_tables(layouter).unwrap();
+       }
+    */
 }
 
-
-
 pub trait SignVerifyInstruction<F: FieldExt> {
-    fn check(pub_key_hash : Vec<u8>, address: F, msg_hash_rlc: F, random: F ) -> Result<(), Error>;
+    fn check(pub_key_hash: Vec<u8>, address: F, msg_hash_rlc: F, random: F) -> Result<(), Error>;
 }
 /*
 impl<C: CurveAffine, N: FieldExt> SignVerifyConfig1<C, N> {
