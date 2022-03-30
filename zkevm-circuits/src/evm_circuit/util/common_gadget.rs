@@ -144,13 +144,21 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        addends: Vec<U256>,
-        sum: U256,
+        value_prev: U256,
+        updates: Vec<U256>,
+        value: U256,
     ) -> Result<(), Error> {
-        debug_assert!(addends.len() == N_ADDENDS);
+        debug_assert!(updates.len() + 1 == N_ADDENDS);
 
+        let [value, value_prev] = if INCREASE {
+            [value, value_prev]
+        } else {
+            [value_prev, value]
+        };
+        let mut addends = vec![value_prev];
+        addends.extend(updates);
         self.add_words
-            .assign(region, offset, addends.try_into().unwrap(), sum)
+            .assign(region, offset, addends.try_into().unwrap(), value)
     }
 }
 
@@ -193,13 +201,15 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         self.sender.assign(
             region,
             offset,
-            vec![sender_balance, value, gas_fee],
             sender_balance_prev,
+            vec![value, gas_fee],
+            sender_balance,
         )?;
         self.receiver.assign(
             region,
             offset,
-            vec![receiver_balance_prev, value],
+            receiver_balance_prev,
+            vec![value],
             receiver_balance,
         )?;
         Ok(())
@@ -247,13 +257,15 @@ impl<F: Field> TransferGadget<F> {
         self.sender.assign(
             region,
             offset,
-            vec![sender_balance, value],
             sender_balance_prev,
+            vec![value],
+            sender_balance,
         )?;
         self.receiver.assign(
             region,
             offset,
-            vec![receiver_balance_prev, value],
+            receiver_balance_prev,
+            vec![value],
             receiver_balance,
         )?;
         Ok(())

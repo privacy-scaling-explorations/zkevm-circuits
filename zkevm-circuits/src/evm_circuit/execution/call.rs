@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{EMPTY_HASH, N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup},
         util::{
@@ -11,7 +11,10 @@ use crate::{
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::{ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget},
+            math_gadget::{
+                BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget,
+                MinMaxGadget,
+            },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             select, sum, Cell, Word,
         },
@@ -21,7 +24,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToLittleEndian, ToScalar,
+    Field, ToLittleEndian, ToScalar, EMPTY_HASH_LE,
 };
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -48,9 +51,8 @@ pub(crate) struct CallGadget<F> {
     transfer: TransferGadget<F>,
     callee_nonce: Cell<F>,
     callee_code_hash: Cell<F>,
-    callee_is_empty: Cell<F>,
-    callee_nonempty_witness: Cell<F>,
-    callee_code_hash_is_empty: IsEqualGadget<F>,
+    is_account_empty: BatchedIsZeroGadget<F, 2>,
+    is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
@@ -63,6 +65,9 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
+
+        // We do the `ResponsibleOpcode` lookup explicitly here because we're not using
+        // the `SameContextGadget` for `CALL`.
         cb.add_lookup(
             "Responsible opcode lookup",
             Lookup::Fixed {
@@ -171,29 +176,18 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 cb.account_read(callee_address.clone(), field_tag, value.expr());
                 value
             });
-        let callee_is_empty = cb.query_bool();
-        let callee_nonempty_witness = cb.query_cell();
-        cb.require_zero(
-            "is_empty is 0 when nonce is non-zero",
-            callee_is_empty.expr() * callee_nonce.expr(),
+        let is_account_empty = BatchedIsZeroGadget::construct(
+            cb,
+            [
+                callee_nonce.expr(),
+                transfer.receiver().balance_prev().expr(),
+            ],
         );
-        cb.require_zero(
-            "is_empty is 0 when balance is non-zero",
-            callee_is_empty.expr() * sum::expr(&transfer.receiver().balance_prev().cells),
-        );
-        cb.require_zero(
-            "is_empty is 1 if nonce and balance are all zero",
-            (1.expr() - callee_is_empty.expr())
-                * (1.expr() - callee_nonce.expr() * callee_nonempty_witness.expr())
-                * (1.expr()
-                    - sum::expr(&transfer.receiver().balance_prev().cells)
-                        * callee_nonempty_witness.expr()),
-        );
-        let callee_code_hash_is_empty = IsEqualGadget::construct(
+        let is_empty_code_hash = IsEqualGadget::construct(
             cb,
             callee_code_hash.expr(),
             Word::random_linear_combine_expr(
-                EMPTY_HASH.map(|byte| byte.expr()),
+                EMPTY_HASH_LE.to_fixed_bytes().map(|byte| byte.expr()),
                 cb.power_of_randomness(),
             ),
         );
@@ -204,7 +198,9 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         ) + has_value.clone()
             * (GasCost::CALL_WITH_VALUE.expr()
-                + callee_is_empty.expr() * GasCost::NEW_ACCOUNT.expr())
+                + is_account_empty.expr()
+                    * is_empty_code_hash.expr()
+                    * GasCost::NEW_ACCOUNT.expr())
             + memory_expansion.gas_cost();
 
         // Apply EIP 150
@@ -220,7 +216,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
         // TODO: Handle precompiled
 
-        cb.condition(callee_code_hash_is_empty.expr(), |cb| {
+        cb.condition(is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -243,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             });
         });
 
-        cb.condition(1.expr() - callee_code_hash_is_empty.expr(), |cb| {
+        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for (field_tag, value) in [
                 (
@@ -331,9 +327,8 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             transfer,
             callee_nonce,
             callee_code_hash,
-            callee_is_empty,
-            callee_nonempty_witness,
-            callee_code_hash_is_empty,
+            is_account_empty,
+            is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
         }
@@ -456,27 +451,19 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 block.randomness,
             )),
         )?;
-        let callee_nonce_is_zero = callee_nonce.is_zero();
-        let callee_balance_is_zero = callee_balance_pair.1.is_zero();
-        let callee_is_empty = callee_nonce_is_zero && callee_balance_is_zero;
-        let callee_nonempty_witness = if !callee_nonce_is_zero {
-            F::from(callee_nonce.low_u64()).invert().unwrap()
-        } else if !callee_balance_is_zero {
-            sum::value::<F>(&callee_balance_pair.1.to_le_bytes())
-                .invert()
-                .unwrap()
-        } else {
-            0.into()
-        };
-        self.callee_is_empty
-            .assign(region, offset, Some(F::from(callee_is_empty as u64)))?;
-        self.callee_nonempty_witness
-            .assign(region, offset, Some(callee_nonempty_witness))?;
-        self.callee_code_hash_is_empty.assign(
+        let is_account_empty = self.is_account_empty.assign(
+            region,
+            offset,
+            [
+                F::from(callee_nonce.low_u64()),
+                Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
+            ],
+        )?;
+        self.is_empty_code_hash.assign(
             region,
             offset,
             Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(EMPTY_HASH, block.randomness),
+            Word::random_linear_combine(EMPTY_HASH_LE.to_fixed_bytes(), block.randomness),
         )?;
         let has_value = !value.is_zero();
         let gas_cost = if is_warm_access_prev {
@@ -485,7 +472,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
-                + if callee_is_empty {
+                + if is_account_empty == F::one() {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0

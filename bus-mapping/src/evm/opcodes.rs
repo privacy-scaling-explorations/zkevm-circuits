@@ -343,13 +343,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // 1. Creation transaction.
     if call.is_create() {
-        // TODO:
+        warn!("Creation transaction is left unimplemented");
         return Ok(exec_step);
     }
 
     // 2. Call to precompiled.
     if state.is_precompiled(&call.address) {
-        // TODO:
+        warn!("Call to precompiled is left unimplemented");
         return Ok(exec_step);
     }
 
@@ -366,7 +366,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // 3. Call to account with empty code.
     if code_hash == EMPTY_HASH {
-        // TODO:
+        warn!("Call to account with empty code is left unimplemented");
         return Ok(exec_step);
     }
 

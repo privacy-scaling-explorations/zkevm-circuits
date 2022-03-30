@@ -9,21 +9,16 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes, Cell, RandomLinearCombination, Word,
+            from_bytes,
+            math_gadget::BatchedIsZeroGadget,
+            Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::ToLittleEndian;
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
-use ethers_core::utils::keccak256;
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, EMPTY_HASH_LE, U256};
 use halo2_proofs::{circuit::Region, plonk::Error};
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref EMPTY_CODE_HASH_LE_BYTES: [u8; 32] = U256::from(keccak256(&[])).to_le_bytes();
-}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
@@ -35,10 +30,7 @@ pub(crate) struct ExtcodehashGadget<F> {
     nonce: Cell<F>,
     balance: Cell<F>,
     code_hash: Cell<F>,
-    is_empty: Cell<F>, // boolean for if the external account is empty
-    nonempty_witness: Cell<F>, /* if the account isn't empty, will witness that by holding
-                        * inverse of one of balance, nonce, or RLC(code hash) -
-                        * RLC(EMPTY_CODE_HASH_LE_BYTES) */
+    is_empty: BatchedIsZeroGadget<F, 3>, // boolean for if the external account is empty
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -81,33 +73,19 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             code_hash.expr(),
         );
 
-        let is_empty = cb.query_bool();
-        cb.require_zero(
-            "is_empty is 0 when nonce is non-zero",
-            is_empty.expr() * nonce.expr(),
+        let empty_code_hash_rlc = Word::random_linear_combine_expr(
+            EMPTY_HASH_LE.to_fixed_bytes().map(|x| x.expr()),
+            cb.power_of_randomness(),
         );
         // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
         // go to the work of writing out the RLC expression
-        cb.require_zero(
-            "is_empty is 0 when balance is non-zero",
-            is_empty.expr() * balance.expr(),
-        );
-        let empty_code_hash_rlc = Word::random_linear_combine_expr(
-            EMPTY_CODE_HASH_LE_BYTES.map(|x| x.expr()),
-            cb.power_of_randomness(),
-        );
-        cb.require_zero(
-            "is_empty is 0 when code_hash is non-zero",
-            is_empty.expr() * (code_hash.expr() - empty_code_hash_rlc.clone()),
-        );
-
-        let nonempty_witness = cb.query_cell();
-        cb.require_zero(
-            "is_empty is 1 if nonce, balance, and (code_hash - empty_code_hash_rlc) are all zero",
-            (1.expr() - is_empty.expr())
-                * (1.expr() - nonce.expr() * nonempty_witness.expr())
-                * (1.expr() - balance.expr() * nonempty_witness.expr())
-                * (1.expr() - (code_hash.expr() - empty_code_hash_rlc) * nonempty_witness.expr()),
+        let is_empty = BatchedIsZeroGadget::construct(
+            cb,
+            [
+                nonce.expr(),
+                balance.expr(),
+                code_hash.expr() - empty_code_hash_rlc,
+            ],
         );
 
         // The stack push is 0 if the external account is empty. Otherwise, it's the
@@ -138,7 +116,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             balance,
             code_hash,
             is_empty,
-            nonempty_witness,
         }
     }
 
@@ -181,22 +158,18 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
                 .table_assignment(block.randomness)
                 .value
         });
+
         self.nonce.assign(region, offset, Some(nonce))?;
         self.balance.assign(region, offset, Some(balance))?;
         self.code_hash.assign(region, offset, Some(code_hash))?;
 
         let empty_code_hash_rlc =
-            Word::random_linear_combine(*EMPTY_CODE_HASH_LE_BYTES, block.randomness);
-
-        if let Some(inverse) = Option::from(nonce.invert())
-            .or_else(|| balance.invert().into())
-            .or_else(|| (code_hash - empty_code_hash_rlc).invert().into())
-        {
-            self.nonempty_witness
-                .assign(region, offset, Some(inverse))?;
-        } else {
-            self.is_empty.assign(region, offset, Some(F::one()))?;
-        }
+            Word::random_linear_combine(EMPTY_HASH_LE.to_fixed_bytes(), block.randomness);
+        self.is_empty.assign(
+            region,
+            offset,
+            [nonce, balance, code_hash - empty_code_hash_rlc],
+        )?;
 
         Ok(())
     }

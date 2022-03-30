@@ -89,6 +89,61 @@ impl<F: Field> IsEqualGadget<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct BatchedIsZeroGadget<F, const N: usize> {
+    is_zero: Cell<F>,
+    nonempty_witness: Cell<F>,
+}
+
+impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
+        let is_zero = cb.query_bool();
+        let nonempty_witness = cb.query_cell();
+
+        for value in values.iter() {
+            cb.require_zero(
+                "is_zero is 0 if there is any non-zero value",
+                is_zero.expr() * value.clone(),
+            );
+        }
+
+        cb.require_zero(
+            "is_zero is 1 if values are all zero",
+            values.iter().fold(1.expr() - is_zero.expr(), |acc, value| {
+                acc * (1.expr() - value.expr() * nonempty_witness.clone().expr())
+            }),
+        );
+
+        Self {
+            is_zero,
+            nonempty_witness,
+        }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        self.is_zero.expr()
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        values: [F; N],
+    ) -> Result<F, Error> {
+        let is_zero =
+            if let Some(inverse) = values.iter().find_map(|value| Option::from(value.invert())) {
+                self.nonempty_witness
+                    .assign(region, offset, Some(inverse))?;
+                F::zero()
+            } else {
+                F::one()
+            };
+        self.is_zero.assign(region, offset, Some(is_zero))?;
+
+        Ok(is_zero)
+    }
+}
+
 /// Construction of 2 256-bit words addition and result, which is useful for
 /// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]

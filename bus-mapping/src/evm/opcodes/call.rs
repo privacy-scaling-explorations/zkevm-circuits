@@ -13,7 +13,7 @@ use eth_types::{
 };
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the `OpcodeId::DUP*` `OpcodeId`.
+/// corresponding to the `OpcodeId::CALL` `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Call;
 
@@ -29,6 +29,9 @@ impl Opcode for Call {
         let call = state.call()?.clone();
         let callee = state.parse_call(geth_step)?;
 
+        // NOTE: For `RwCounterEndOfReversion` we use the `0` value as a placeholder,
+        // and later set the proper value in
+        // `CircuitInputBuilder::set_value_ops_call_context_rwc_eor`
         for (field, value) in [
             (CallContextField::TxId, tx_id.into()),
             (CallContextField::RwCounterEndOfReversion, 0.into()),
