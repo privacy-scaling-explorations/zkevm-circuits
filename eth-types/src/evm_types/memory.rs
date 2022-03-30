@@ -272,7 +272,7 @@ impl Memory {
         ))
     }
 
-    /// Returns the size of memroy in word.
+    /// Returns the size of memory in word.
     pub fn word_size(&self) -> usize {
         self.0.len() / 32
     }

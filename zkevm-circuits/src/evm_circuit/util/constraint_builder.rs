@@ -85,10 +85,19 @@ impl<F: FieldExt> StepStateTransition<F> {
     }
 }
 
+/// ReversionInfo counts `rw_counter` of reversion for gadgets, by tracking how
+/// many reversions that have been used. Gadgets should call
+/// [`ConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
+/// `state_write_counter` initialized at current tracking one if no `call_id` is
+/// specified, then pass it as mutable reference when doing state write.
 #[derive(Clone, Debug)]
 pub(crate) struct ReversionInfo<F> {
+    /// Field [`CallContextFieldTag::RwCounterEndOfReversion`] read from call
+    /// context.
     rw_counter_end_of_reversion: Cell<F>,
+    /// Field [`CallContextFieldTag::IsPersistent`] read from call context.
     is_persistent: Cell<F>,
+    /// Current cumulative state_write_counter.
     state_write_counter: Expression<F>,
 }
 
@@ -101,6 +110,8 @@ impl<F: FieldExt> ReversionInfo<F> {
         self.is_persistent.expr()
     }
 
+    /// Returns `rw_counter_end_of_reversion - state_write_counter` and
+    /// increases `state_write_counter` by `1`.
     pub(crate) fn rw_counter_of_reversion(&mut self) -> Expression<F> {
         let rw_counter_of_reversion =
             self.rw_counter_end_of_reversion.expr() - self.state_write_counter.expr();
