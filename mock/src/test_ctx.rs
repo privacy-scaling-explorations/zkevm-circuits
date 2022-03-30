@@ -119,6 +119,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
         let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC];
+        // Build Accounts modifiers
         let account_refs = accounts
             .iter_mut()
             .collect_vec()
@@ -133,11 +134,28 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .expect("Mismatched acc len");
 
         let mut transactions = vec![MockTransaction::default(); NTX];
+        // By default, set the TxIndex and the Nonce values of the multiple transactions
+        // of the context correlative so that any Ok test passes by default.
+        // If the user decides to override these values, they'll then be set to whatever
+        // inputs were provided by the user.
+        transactions
+            .iter_mut()
+            .enumerate()
+            .skip(1)
+            .for_each(|(idx, tx)| {
+                tx.transaction_idx(u64::try_from(idx).expect("Unexpected idx conversion error"));
+                tx.nonce(Word::from(
+                    u64::try_from(idx).expect("Unexpected idx conversion error"),
+                ));
+            });
         let tx_refs = transactions.iter_mut().collect();
+
+        // Build Tx modifiers.
         func_tx(tx_refs, accounts.clone());
         let transactions: Vec<MockTransaction> =
             transactions.iter_mut().map(|tx| tx.build()).collect();
 
+        // Build Block modifiers
         let mut block = MockBlock::default();
         block.transactions.extend_from_slice(&transactions);
         func_block(&mut block, transactions).build();

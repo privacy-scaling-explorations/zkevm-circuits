@@ -261,9 +261,7 @@ mod test {
                     txs[1]
                         .to(accs[0].address)
                         .from(accs[1].address)
-                        .value(Word::from(10u64.pow(17)))
-                        .transaction_idx(1u64)
-                        .nonce(Word::one());
+                        .value(Word::from(10u64.pow(17)));
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
