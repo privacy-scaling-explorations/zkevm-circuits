@@ -1967,6 +1967,7 @@ mod tracer_tests {
     use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
     use lazy_static::lazy_static;
     use mock::test_ctx::{helpers::*, TestContext};
+    use mock::MOCK_COINBASE;
     use pretty_assertions::assert_eq;
     use std::iter::FromIterator;
 
@@ -3614,6 +3615,7 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
+
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 2>::new(
             None,
@@ -3635,6 +3637,7 @@ mod tracer_tests {
         )
         .unwrap()
         .into();
+
         let access_trace = gen_state_access_trace(
             &block.eth_block,
             &block.eth_block.transactions[0],
@@ -3712,7 +3715,6 @@ mod tracer_tests {
     fn test_gen_access_trace_call_EOA_no_new_stack_frame() {
         use AccessValue::{Account, Code, Storage};
         use RW::{READ, WRITE};
-        let ADDR_0 = address!("0x00000000000000000000000000000000c014ba5e");
 
         // code calls an EOA with not code, so it won't push new stack frame.
         let code = bytecode! {
@@ -3732,7 +3734,20 @@ mod tracer_tests {
 
             PUSH2(0xaa)
         };
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(*MOCK_COINBASE).code(code);
+                accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
+            },
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let access_trace = gen_state_access_trace(
             &block.eth_block,
             &block.eth_block.transactions[0],
@@ -3746,22 +3761,28 @@ mod tracer_tests {
                 Access {
                     step_index: None,
                     rw: WRITE,
-                    value: Account { address: ADDR_0 }
+                    value: Account { address: *ADDR_B }
                 },
                 Access {
                     step_index: None,
                     rw: WRITE,
-                    value: Account { address: *ADDR_A }
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
                 },
                 Access {
                     step_index: None,
                     rw: READ,
-                    value: Code { address: *ADDR_A }
+                    value: Code {
+                        address: *MOCK_COINBASE
+                    }
                 },
                 Access {
                     step_index: Some(7),
                     rw: WRITE,
-                    value: Account { address: *ADDR_A }
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
                 },
                 Access {
                     step_index: Some(7),
@@ -3777,16 +3798,16 @@ mod tracer_tests {
                     step_index: Some(10),
                     rw: WRITE,
                     value: Storage {
-                        address: *ADDR_A,
-                        key: Word::from(2),
+                        address: *MOCK_COINBASE,
+                        key: Word::from(2u64),
                     }
                 },
                 Access {
                     step_index: Some(12),
                     rw: READ,
                     value: Storage {
-                        address: *ADDR_A,
-                        key: Word::from(3),
+                        address: *MOCK_COINBASE,
+                        key: Word::from(3u64),
                     }
                 },
             ]
@@ -3797,11 +3818,13 @@ mod tracer_tests {
             access_set,
             AccessSet {
                 state: HashMap::from_iter([
-                    (ADDR_0, HashSet::new()),
-                    (*ADDR_A, HashSet::from_iter([Word::from(2), Word::from(3)])),
+                    (
+                        *MOCK_COINBASE,
+                        HashSet::from_iter([Word::from(2u64), Word::from(3u64)])
+                    ),
                     (*ADDR_B, HashSet::new()),
                 ]),
-                code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
+                code: HashSet::from_iter([*ADDR_B, *MOCK_COINBASE]),
             }
         );
     }
@@ -3856,8 +3879,26 @@ mod tracer_tests {
         };
         code_b.append(&code_b_end);
 
-        let ADDR_0 = address!("0x00000000000000000000000000000000c014ba5e");
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0].address(*MOCK_COINBASE).code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2].balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let access_trace = gen_state_access_trace(
             &block.eth_block,
             &block.eth_block.transactions[0],
@@ -3871,22 +3912,30 @@ mod tracer_tests {
                 Access {
                     step_index: None,
                     rw: WRITE,
-                    value: Account { address: ADDR_0 }
+                    value: Account {
+                        address: Address::zero()
+                    }
                 },
                 Access {
                     step_index: None,
                     rw: WRITE,
-                    value: Account { address: *ADDR_A }
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
                 },
                 Access {
                     step_index: None,
                     rw: READ,
-                    value: Code { address: *ADDR_A }
+                    value: Code {
+                        address: *MOCK_COINBASE
+                    }
                 },
                 Access {
                     step_index: Some(7),
                     rw: WRITE,
-                    value: Account { address: *ADDR_A }
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
                 },
                 Access {
                     step_index: Some(7),
@@ -3906,11 +3955,11 @@ mod tracer_tests {
             access_set,
             AccessSet {
                 state: HashMap::from_iter([
-                    (ADDR_0, HashSet::new()),
+                    (*MOCK_COINBASE, HashSet::new()),
                     (*ADDR_A, HashSet::new()),
                     (*ADDR_B, HashSet::new()),
                 ]),
-                code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
+                code: HashSet::from_iter([*MOCK_COINBASE, *ADDR_B]),
             }
         )
     }
