@@ -40,7 +40,7 @@ pub(crate) struct UnrolledBytecode<F: Field> {
 pub struct Config<F> {
     r: F,
     minimum_rows: usize,
-    q_enable: Selector,
+    q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
     q_last: Selector,
     hash: Column<Advice>,
@@ -61,7 +61,7 @@ pub struct Config<F> {
 
 impl<F: Field> Config<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
-        let q_enable = meta.complex_selector();
+        let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.selector();
         let hash = meta.advice_column();
@@ -85,7 +85,7 @@ impl<F: Field> Config<F> {
             |meta| {
                 // Conditions:
                 // - Not on the first row
-                meta.query_selector(q_enable)
+                meta.query_fixed(q_enable, Rotation::cur())
                     * not::expr(meta.query_fixed(q_first, Rotation::cur()))
             },
             |meta| meta.query_advice(push_rindex, Rotation::prev()),
@@ -140,7 +140,7 @@ impl<F: Field> Config<F> {
             // Conditions:
             // - Continuing
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 q_continue(meta),
             ]))
         });
@@ -164,7 +164,7 @@ impl<F: Field> Config<F> {
             // Conditions:
             // - Not continuing
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(q_continue(meta)),
             ]))
         });
@@ -180,7 +180,7 @@ impl<F: Field> Config<F> {
             // - On the row with the last byte (`is_final == 1`)
             // - Not padding
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(is_final, Rotation::cur()),
                 not::expr(meta.query_advice(padding, Rotation::cur())),
             ]))
@@ -206,7 +206,7 @@ impl<F: Field> Config<F> {
                 ),
             );
             // Conditions: Always
-            cb.gate(meta.query_selector(q_enable))
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("padding", |meta| {
@@ -219,7 +219,7 @@ impl<F: Field> Config<F> {
             // Conditions:
             // - Not on the first row
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(q_first, Rotation::cur())),
             ]))
         });
@@ -247,7 +247,7 @@ impl<F: Field> Config<F> {
         // (also indirectly range checks `byte` to be in [0, 255])
         meta.lookup_any("Range bytes", |meta| {
             // Conditions: Always
-            let q_enable = meta.query_selector(q_enable);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             let lookup_columns = vec![byte, byte_push_size];
             let mut constraints = vec![];
             for i in 0..PUSH_TABLE_WIDTH {
@@ -364,12 +364,12 @@ impl<F: Field> Config<F> {
                     }
 
                     // Padding
-                    for idx in offset..size {
+                    for idx in offset..=last_row_offset {
                         self.set_row(
                             &mut region,
                             &push_rindex_is_zero_chip,
                             idx,
-                            idx < size,
+                            idx < last_row_offset,
                             idx == last_row_offset,
                             F::zero(),
                             F::zero(),
@@ -411,10 +411,14 @@ impl<F: Field> Config<F> {
         padding: bool,
         push_rindex_prev: F,
     ) -> Result<(), Error> {
+
         // q_enable
-        if enable {
-            self.q_enable.enable(region, offset)?;
-        }
+        region.assign_fixed(
+            || format!("assign q_enable {}", offset),
+            self.q_enable,
+            offset,
+            || Ok(F::from(enable as u64)),
+        )?;
 
         // q_first
         region.assign_fixed(
@@ -714,6 +718,7 @@ mod tests {
 
     /// Tests a circuit with incomplete bytecode
     #[test]
+    #[should_panic = "called `Result::unwrap()` on an `Err` value: NotEnoughRowsAvailable { current_k: 9 }"]
     fn bytecode_incomplete() {
         let k = 9;
         let r = MyCircuit::r();
