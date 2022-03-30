@@ -29,6 +29,7 @@ impl<F: FieldExt> BranchChip<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
+        is_leaf_in_added_branch: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -479,6 +480,8 @@ impl<F: FieldExt> BranchChip<F> {
             let is_branch_child = meta.query_advice(is_branch_child, Rotation::cur());
             let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
             let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+            let is_leaf_in_added_branch_prev =
+                meta.query_advice(is_leaf_in_added_branch, Rotation::prev());
 
             constraints.push((
                 "not_first_level_cur - not_first_level_prev = 0",
@@ -495,6 +498,16 @@ impl<F: FieldExt> BranchChip<F> {
                     * is_branch_init.clone()
                     * (one.clone() - not_first_level_prev.clone())
                     * (not_first_level_cur.clone() - one.clone()),
+            ));
+
+            // If not_first_level is 0 in is_branch_init,
+            // then is_account_leaf_storage_codehash_c_prev = 1.
+            constraints.push((
+                "not_first_level = 0 follows is_account_leaf_storage_codehash_c_prev = 1",
+                q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
+                    * is_branch_init.clone()
+                    * (one.clone() - not_first_level_cur)
+                    * (one - is_leaf_in_added_branch_prev),
             ));
 
             // Constraint for

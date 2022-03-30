@@ -379,6 +379,7 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
+            is_leaf_in_added_branch,
             s_rlp1,
             s_rlp2,
             c_rlp1,

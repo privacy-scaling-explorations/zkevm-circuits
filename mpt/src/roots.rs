@@ -39,6 +39,8 @@ impl<F: FieldExt> RootsChip<F> {
             let final_root_cur = meta.query_advice(inter_final_root, Rotation::cur());
 
             let one = Expression::Constant(F::one());
+            // TODO: use not_first_level && (is_branch_init || account_leaf_key) instead
+            // of switch_proof
 
             constraints.push((
                 "start_root does not change when switch_proof = 0",
@@ -61,7 +63,8 @@ impl<F: FieldExt> RootsChip<F> {
                     * (final_root_prev.clone() - start_root_cur.clone()),
             ));
 
-            // if !not_first_level: key_rlc = 0 ...
+            // TODO:
+            // if !not_first_level: key_rlc = 0 ... -
             // proof variables have to be checked to be reset when a new proof starts
 
             constraints
