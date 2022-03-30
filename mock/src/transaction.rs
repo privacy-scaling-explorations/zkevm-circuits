@@ -14,7 +14,7 @@ pub struct MockTransaction {
     block_number: U64,
     transaction_index: U64,
     from: Address,
-    to: Address,
+    to: Option<Address>,
     value: Word,
     gas_price: Word,
     gas: Word,
@@ -38,7 +38,7 @@ impl Default for MockTransaction {
             block_number: U64::zero(),
             transaction_index: U64::zero(),
             from: MOCK_ACCOUNTS[0],
-            to: Address::zero(),
+            to: None,
             value: Word::zero(),
             gas_price: *MOCK_GASPRICE,
             gas: Word::from(1_000_000u64),
@@ -64,7 +64,7 @@ impl From<MockTransaction> for Transaction {
             block_number: Some(mock.block_number),
             transaction_index: Some(mock.transaction_index),
             from: mock.from,
-            to: Some(mock.to),
+            to: mock.to,
             value: mock.value,
             gas_price: Some(mock.gas_price),
             gas: mock.gas,
@@ -121,7 +121,7 @@ impl MockTransaction {
 
     /// Set to field for the MockBlock.
     pub fn to(&mut self, to: Address) -> &mut Self {
-        self.to = to;
+        self.to = Some(to);
         self
     }
 
