@@ -502,6 +502,29 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints
         });
 
+        meta.create_gate(
+            "not_first_level in extension node rows same as in branch rows",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
+
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
+                let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+                let is_branch_init_prev = meta.query_advice(is_branch_init, Rotation::prev());
+
+                constraints.push((
+                    "not_first_level_cur - not_first_level_prev = 0",
+                    q_not_first
+                        * q_enable.clone()
+                        * (one.clone() - is_branch_init_prev.clone()) // to prevent PoisonedConstraint
+                        * (not_first_level_cur - not_first_level_prev),
+                ));
+
+                constraints
+            },
+        );
+
         config
     }
 

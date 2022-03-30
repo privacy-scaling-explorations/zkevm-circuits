@@ -70,9 +70,9 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct MPTConfig<F> {
     q_enable: Column<Fixed>,
-    q_not_first: Column<Fixed>,      // not first row
-    not_first_level: Column<Advice>, // TODO: constraints - must not change in the level ...
-    switch_proof: Column<Advice>,
+    q_not_first: Column<Fixed>, // not first row
+    not_first_level: Column<Advice>,
+    switch_proof: Column<Advice>, // TODO: to be removed
     inter_start_root: Column<Advice>,
     inter_final_root: Column<Advice>,
     is_branch_init: Column<Advice>,
@@ -218,10 +218,14 @@ impl<F: FieldExt> MPTConfig<F> {
         let pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
                                                      // start_root (works also if only storage proof, without account proof, but if
-                                                     // this is to be allowed LeafKeyChip needs to be changed)
+                                                     // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
+                                                     // and q_not_first; not_first_level
+                                                     // constraints would need to be added there too)
         let inter_final_root = meta.advice_column(); // state root after modification - first level C hash needs to be the same as
                                                      // end_root (works also if only storage proof, without account proof, but if
-                                                     // this is to be allowed LeafKeyChip needs to be changed)
+                                                     // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
+                                                     // and q_not_first; not_first_level
+                                                     // constraints would need to be added there too)
 
         let q_enable = meta.fixed_column();
         let q_not_first = meta.fixed_column();
@@ -374,6 +378,7 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
+            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -780,6 +785,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_enable * is_account_leaf_key_s
             },
+            q_not_first,
+            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -801,6 +808,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_s
             },
+            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -1339,7 +1347,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 || "MPT",
                 |mut region| {
                     let mut offset = 0;
-
                     let mut pv = ProofVariables::new();
 
                     let compute_acc_and_mult =
@@ -1356,6 +1363,15 @@ impl<F: FieldExt> MPTConfig<F> {
                         .filter(|r| r[r.len() - 1] != 5 && r[r.len() - 1] != 4)
                         .enumerate()
                     {
+                        if offset > 0 {
+                            let row_prev = &witness[offset - 1];
+                            let not_first_level_prev = row_prev[row_prev.len() - 3];
+                            let not_first_level_cur = row[row.len() - 3];
+                            if not_first_level_cur == 0 && not_first_level_prev == 1 {
+                                pv = ProofVariables::new();
+                            }
+                        }
+
                         region.assign_advice(
                             || "not first level",
                             self.not_first_level,

@@ -26,6 +26,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
+        not_first_level: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -135,6 +136,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 q_enable.clone()
                     * (acc_mult_final.clone()
                         - acc_mult_after_nonce.clone() * mult_diff_balance.clone()),
+            ));
+
+            constraints
+        });
+
+        meta.create_gate("not_first_level in account leaf nonce balance", |meta| {
+            let mut constraints = vec![];
+            let q_enable = q_enable(meta);
+
+            let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
+            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+
+            constraints.push((
+                "not_first_level_cur - not_first_level_prev = 0",
+                q_enable.clone() * (not_first_level_cur.clone() - not_first_level_prev.clone()),
             ));
 
             constraints

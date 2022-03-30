@@ -190,6 +190,28 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints
         });
 
+        meta.create_gate("not_first_level in account leaf storage codehash", |meta| {
+            let mut constraints = vec![];
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
+            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+            let mut is_account_leaf_storage_codehash =
+                meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
+            if !is_s {
+                is_account_leaf_storage_codehash =
+                    meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
+            }
+
+            constraints.push((
+                "not_first_level_cur - not_first_level_prev = 0",
+                q_not_first.clone()
+                    * is_account_leaf_storage_codehash
+                    * (not_first_level_cur.clone() - not_first_level_prev.clone()),
+            ));
+
+            constraints
+        });
+
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut q_enable = q_not_first.clone()

@@ -25,6 +25,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
+        q_not_first: Column<Fixed>,
+        not_first_level: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -162,6 +164,20 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             // Key RLC is to be checked to verify that the proper key is used.
             constraints.push(("Account address RLC", q_enable * (key_rlc_acc - key_rlc)));
+
+            constraints
+        });
+
+        meta.create_gate("not_first_level in account leaf key", |meta| {
+            let mut constraints = vec![];
+            let q_enable = q_enable(meta);
+            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+            let one = Expression::Constant(F::one());
+            constraints.push((
+                "first row needs to have not_first_level = 0",
+                q_enable * (one.clone() - q_not_first) * not_first_level_cur,
+            ));
 
             constraints
         });
