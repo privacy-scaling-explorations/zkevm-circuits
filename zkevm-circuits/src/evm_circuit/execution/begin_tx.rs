@@ -351,12 +351,12 @@ mod test {
         let to = address!("0x00000000000000000000000000000000000000ff");
         let minimal_gas =
             Word::from(GasCost::TX.as_u64() + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64());
-        let one_ether = Word::from(10u64.pow(18));
+        let point_one_ether = Word::from(10u64.pow(17));
         let two_gwei = Word::from(2_000_000_000);
         eth_types::Transaction {
             from,
             to: Some(to),
-            value: value.unwrap_or(one_ether),
+            value: value.unwrap_or(point_one_ether),
             gas: gas.map(Word::from).unwrap_or(minimal_gas),
             gas_price: gas_price.or(Some(two_gwei)),
             input: calldata.into(),
@@ -399,7 +399,7 @@ mod test {
             mock_tx(
                 None,
                 None,
-                Some(Word::from(rand_range(0..476190476190476u64))),
+                Some(Word::from(rand_range(0..47619047619047u64))),
                 vec![],
             ),
             true,
