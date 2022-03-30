@@ -26,7 +26,7 @@ mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
-mod coinbase;
+mod block_ctx;
 mod comparator;
 mod dup;
 mod end_block;
@@ -41,7 +41,6 @@ mod memory;
 mod memory_copy;
 mod msize;
 mod mul;
-mod number;
 mod pc;
 mod pop;
 mod push;
@@ -52,7 +51,6 @@ mod sload;
 mod sstore;
 mod stop;
 mod swap;
-mod timestamp;
 
 use add::AddGadget;
 use begin_tx::BeginTxGadget;
@@ -63,7 +61,7 @@ use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
-use coinbase::CoinbaseGadget;
+use block_ctx::{BlockCtxU64Gadget, BlockCtxU160Gadget, BlockCtxU256Gadget};
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -78,7 +76,6 @@ use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
-use number::NumberGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -89,7 +86,6 @@ use sload::SloadGadget;
 use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
-use timestamp::TimestampGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -145,10 +141,10 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
-    coinbase_gadget: CoinbaseGadget<F>,
-    timestamp_gadget: TimestampGadget<F>,
+    block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
+    block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
+    block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
-    number_gadget: NumberGadget<F>,
     sload_gadget: SloadGadget<F>,
     sstore_gadget: SstoreGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
@@ -362,9 +358,9 @@ impl<F: Field> ExecutionConfig<F> {
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
-            coinbase_gadget: configure_gadget!(),
-            timestamp_gadget: configure_gadget!(),
-            number_gadget: configure_gadget!(),
+            block_ctx_u64_gadget: configure_gadget!(),
+            block_ctx_u160_gadget: configure_gadget!(),
+            block_ctx_u256_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
             sstore_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
@@ -628,13 +624,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLVALUE => {
                 assign_exec_step!(self.call_value_gadget)
             }
-            ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
-            ExecutionState::TIMESTAMP => {
-                assign_exec_step!(self.timestamp_gadget)
-            }
-            ExecutionState::NUMBER => {
-                assign_exec_step!(self.number_gadget)
-            }
+            ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
+            ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
+            ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
