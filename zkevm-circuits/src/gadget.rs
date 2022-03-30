@@ -18,3 +18,4 @@ impl<T, F: FieldExt> Variable<T, F> {
 pub(crate) mod evm_word;
 pub(crate) mod is_zero;
 pub(crate) mod monotone;
+pub(crate) mod sign_verify;
