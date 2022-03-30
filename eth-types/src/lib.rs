@@ -40,10 +40,10 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
-/// trait and it's repr.
+/// trait and its repr.
 pub trait Field: FieldExt + PrimeField<Repr = [u8; 32]> {}
 
-// Impl custom `Field` trait for BN256 Fr to be used and consistend with the
+// Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
 
@@ -71,7 +71,7 @@ pub trait ToBigEndian {
     fn to_be_bytes(&self) -> [u8; 32];
 }
 
-/// Trait uset do convert a scalar value to a 32 byte array in little endian.
+/// Trait used to convert a scalar value to a 32 byte array in little endian.
 pub trait ToLittleEndian {
     /// Convert the value to a 32 byte array in little endian.
     fn to_le_bytes(&self) -> [u8; 32];
@@ -350,11 +350,12 @@ pub struct GethExecTraceInternal {
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[doc(hidden)]
 pub struct GethExecTrace {
+    /// Used gas
     pub gas: Gas,
+    /// True when the transaction has failed.
     pub failed: bool,
-    // return_value is a hex encoded byte array
+    /// Vector of geth execution steps of the trace.
     pub struct_logs: Vec<GethExecStep>,
 }
 

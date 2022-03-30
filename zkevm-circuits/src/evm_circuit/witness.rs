@@ -1097,6 +1097,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::MSIZE => ExecutionState::MSIZE,
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
+                    OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
                     OpcodeId::COINBASE => ExecutionState::COINBASE,
                     OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
                     OpcodeId::NUMBER => ExecutionState::NUMBER,
@@ -1224,6 +1225,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
             .collect(),
     }
 }
+
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
