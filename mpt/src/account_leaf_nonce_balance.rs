@@ -16,7 +16,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafNonceBalanceConfig {}
 
-// Verifies the hash of a leaf is in the parent branch.
+// Verifies the intermediate account leaf RLC.
 pub(crate) struct AccountLeafNonceBalanceChip<F> {
     config: AccountLeafNonceBalanceConfig,
     _marker: PhantomData<F>,
@@ -39,6 +39,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         mult_diff_balance: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
+        is_s: bool,
     ) -> AccountLeafNonceBalanceConfig {
         let config = AccountLeafNonceBalanceConfig {};
 
@@ -63,9 +64,14 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             // TODO: nonce and balance compared to the input
 
+            let mut rot = -1;
+            if !is_s {
+                rot = -2;
+            }
+
             let c248 = Expression::Constant(F::from(248));
-            let acc_prev = meta.query_advice(acc, Rotation::prev());
-            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation::prev());
+            let acc_prev = meta.query_advice(acc, Rotation(rot));
+            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation(rot));
             let acc_mult_after_nonce = meta.query_advice(acc_mult_c, Rotation::cur());
             let mult_diff_nonce = meta.query_advice(mult_diff_nonce, Rotation::cur());
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());

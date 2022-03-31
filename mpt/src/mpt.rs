@@ -148,6 +148,8 @@ struct ProofVariables<F> {
     node_index: u8,
     acc_s: F,
     acc_mult_s: F,
+    acc_account_leaf: F,
+    acc_mult_account_leaf: F,
     acc_nonce_balance_s: F,
     acc_mult_nonce_balance_s: F,
     acc_nonce_balance_c: F,
@@ -186,6 +188,8 @@ impl<F: FieldExt> ProofVariables<F> {
             node_index: 0,
             acc_s: F::zero(),
             acc_mult_s: F::zero(),
+            acc_account_leaf: F::zero(),
+            acc_mult_account_leaf: F::zero(),
             acc_nonce_balance_s: F::zero(),
             acc_mult_nonce_balance_s: F::zero(),
             acc_nonce_balance_c: F::zero(),
@@ -823,6 +827,31 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             r_table.clone(),
             fixed_table.clone(),
+            true,
+        );
+
+        AccountLeafNonceBalanceChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let is_account_leaf_nonce_balance_c =
+                    meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
+                q_not_first * is_account_leaf_nonce_balance_c
+            },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            c_advices,
+            acc_s,
+            acc_mult_s,
+            acc_mult_c,
+            key_rlc,
+            key_rlc_mult,
+            r_table.clone(),
+            fixed_table.clone(),
+            false,
         );
 
         AccountLeafStorageCodehashChip::<F>::configure(
@@ -831,7 +860,6 @@ impl<F: FieldExt> MPTConfig<F> {
             q_not_first,
             not_first_level,
             is_account_leaf_storage_codehash_s,
-            is_account_leaf_storage_codehash_c,
             s_rlp2,
             c_rlp2,
             s_advices,
@@ -850,7 +878,6 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_final_root,
             q_not_first,
             not_first_level,
-            is_account_leaf_storage_codehash_s,
             is_account_leaf_storage_codehash_c,
             s_rlp2,
             c_rlp2,
@@ -2170,6 +2197,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || Ok(key_rlc_new),
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
+                                if row[row.len() - 1] == 7 {
+                                    pv.acc_account_leaf = pv.acc_s;
+                                    pv.acc_mult_account_leaf = pv.acc_mult_s;
+                                } else {
+                                    pv.acc_s = pv.acc_account_leaf;
+                                    pv.acc_mult_s = pv.acc_mult_account_leaf;
+                                }
+
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
                                     row,

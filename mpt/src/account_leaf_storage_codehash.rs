@@ -27,8 +27,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         inter_root: Column<Advice>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
-        is_account_leaf_storage_codehash_s: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_storage_codehash: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -49,11 +48,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         meta.create_gate("account leaf storage codehash", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut q_enable = q_not_first.clone()
-                * meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
-            if !is_s {
-                q_enable = q_not_first
-                    * meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
-            }
+                * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
             let mut constraints = vec![];
 
@@ -119,11 +114,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
                 let mut is_account_leaf_storage_codehash =
-                    meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
-                if !is_s {
-                    is_account_leaf_storage_codehash =
-                        meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
-                }
+                    meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
                 let rlc = meta.query_advice(acc, Rotation::cur());
                 let root = meta.query_advice(inter_root, Rotation::cur());
@@ -153,16 +144,12 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             let mut is_account_leaf_storage_codehash =
-                meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
-            if !is_s {
-                is_account_leaf_storage_codehash =
-                    meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
-            }
+                meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
             // TODO: test for account proof with only leaf (without branch)
-            let mut leaf_without_branch = meta.query_fixed(q_not_first, Rotation(-2));
+            let mut leaf_without_branch = one.clone() - meta.query_fixed(q_not_first, Rotation(-3));
             if !is_s {
-                leaf_without_branch = meta.query_fixed(q_not_first, Rotation(-3));
+                leaf_without_branch = one.clone() - meta.query_fixed(q_not_first, Rotation(-4));
             }
 
             // Note: accumulated in s (not in c) for c:
@@ -193,11 +180,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut q_enable = q_not_first.clone()
-                * meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
-            if !is_s {
-                q_enable = q_not_first
-                    * meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
-            }
+                * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
             q_enable
         };
