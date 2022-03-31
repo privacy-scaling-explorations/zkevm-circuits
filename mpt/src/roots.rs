@@ -21,7 +21,9 @@ impl<F: FieldExt> RootsChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_not_first: Column<Fixed>,
-        switch_proof: Column<Advice>,
+        not_first_level: Column<Advice>,
+        is_branch_init: Column<Advice>,
+        is_account_leaf_key_s: Column<Advice>,
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
     ) -> RootsConfig {
@@ -31,7 +33,10 @@ impl<F: FieldExt> RootsChip<F> {
             let mut constraints = vec![];
 
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let switch_proof = meta.query_advice(switch_proof, Rotation::cur());
+            let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
+            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
+            let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
+            let is_account_leaf_key_s = meta.query_advice(is_account_leaf_key_s, Rotation::cur());
 
             let start_root_prev = meta.query_advice(inter_start_root, Rotation::prev());
             let start_root_cur = meta.query_advice(inter_start_root, Rotation::cur());
@@ -39,29 +44,56 @@ impl<F: FieldExt> RootsChip<F> {
             let final_root_cur = meta.query_advice(inter_final_root, Rotation::cur());
 
             let one = Expression::Constant(F::one());
-            // TODO: use not_first_level && (is_branch_init || account_leaf_key) instead
-            // of switch_proof
 
             constraints.push((
-                "start_root does not change when switch_proof = 0",
+                "start_root does not change when not in first level",
                 q_not_first.clone()
-                    * (one.clone() - switch_proof.clone())
+                    * not_first_level_cur.clone()
                     * (start_root_cur.clone() - start_root_prev.clone()),
             ));
 
             constraints.push((
-                "final_root does not change when switch_proof = 0",
+                "start_root does not change when in first level and (not in account leaf key || not in branch init)",
                 q_not_first.clone()
-                    * (one - switch_proof.clone())
+                    * (one.clone() - not_first_level_cur.clone())
+                    * (one.clone() - is_branch_init.clone())
+                    * (one.clone() - is_account_leaf_key_s.clone())
+                    * (start_root_cur.clone() - start_root_prev.clone()),
+            ));
+
+            constraints.push((
+                "final_root does not change when not in first level",
+                q_not_first.clone()
+                    * not_first_level_cur.clone()
                     * (final_root_cur.clone() - final_root_prev.clone()),
             ));
 
             constraints.push((
-                "final_root_prev = start_root_cur when switch_proof = 1",
+                "final_root does not change when in first level and (not in account leaf key || not in branch init)",
                 q_not_first.clone()
-                    * switch_proof.clone()
+                    * (one.clone() - not_first_level_cur.clone())
+                    * (one.clone() - is_branch_init.clone())
+                    * (one.clone() - is_account_leaf_key_s.clone())
+                    * (final_root_cur.clone() - final_root_prev.clone()),
+            ));
+
+            constraints.push((
+                "final_root_prev = start_root_cur when not_first_level = 1 -> not_first_level = 0",
+                q_not_first.clone()
+                    * not_first_level_prev.clone()
+                    * (one.clone() - not_first_level_cur.clone())
                     * (final_root_prev.clone() - start_root_cur.clone()),
             ));
+
+            /*
+            constraints.push((
+                "not_first_level doesn't change except at is_branch_init or is_account_leaf",
+                q_not_first.clone()
+                    * (one.clone() - is_branch_init.clone())
+                    * (one.clone() - is_account_leaf_key_s.clone())
+                    * (not_first_level_cur.clone() - not_first_level_prev.clone()),
+            ));
+            */
 
             // TODO:
             // if !not_first_level: key_rlc = 0 ... -

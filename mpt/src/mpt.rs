@@ -369,7 +369,9 @@ impl<F: FieldExt> MPTConfig<F> {
         RootsChip::<F>::configure(
             meta,
             q_not_first,
-            switch_proof,
+            not_first_level,
+            is_branch_init,
+            is_account_leaf_key_s,
             inter_start_root,
             inter_final_root,
         );
