@@ -8,9 +8,14 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{eip150_gas, memory_expansion_gas_cost, GasCost},
-    GethExecStep, ToWord, EMPTY_HASH,
+    evm_types::{
+        gas_utils::{eip150_gas, memory_expansion_gas_cost},
+        GasCost,
+    },
+    GethExecStep, ToWord,
 };
+use keccak256::EMPTY_HASH;
+use log::warn;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` `OpcodeId`.
@@ -195,114 +200,118 @@ impl Opcode for Call {
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, geth_step.stack.last()?);
 
         // There are 3 branches from here.
-
-        // 1. Call to precompiled.
-        if state.is_precompiled(&call.address) {
-            // TODO:
-            return Ok(vec![exec_step]);
-        }
-
-        // 2. Call to account with empty code.
-        if callee_code_hash == EMPTY_HASH {
-            for (field, value) in [
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-            ] {
-                state.push_op(
-                    &mut exec_step,
-                    RW::WRITE,
-                    CallContextOp {
-                        call_id: call.call_id,
-                        field,
-                        value,
-                    },
-                );
+        match (
+            state.is_precompiled(&call.address),
+            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        ) {
+            // 1. Call to precompiled.
+            (true, _) => {
+                warn!("Call to precompiled is left unimplemented");
+                Ok(vec![exec_step])
             }
-            state.handle_return()?;
-            return Ok(vec![exec_step]);
-        }
+            // 2. Call to account with empty code.
+            (_, true) => {
+                for (field, value) in [
+                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                ] {
+                    state.push_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        CallContextOp {
+                            call_id: call.call_id,
+                            field,
+                            value,
+                        },
+                    );
+                }
+                state.handle_return()?;
+                Ok(vec![exec_step])
+            }
+            // 3. Call to account with non-empty code.
+            (_, false) => {
+                for (field, value) in [
+                    (
+                        CallContextField::ProgramCounter,
+                        (geth_step.pc.0 + 1).into(),
+                    ),
+                    (
+                        CallContextField::StackPointer,
+                        (geth_step.stack.stack_pointer().0 + 6).into(),
+                    ),
+                    (
+                        CallContextField::GasLeft,
+                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
+                    ),
+                    (CallContextField::MemorySize, next_memory_word_size.into()),
+                    (
+                        CallContextField::StateWriteCounter,
+                        (exec_step.swc + 1).into(),
+                    ),
+                ] {
+                    state.push_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        CallContextOp {
+                            call_id: call.call_id,
+                            field,
+                            value,
+                        },
+                    );
+                }
 
-        // 3. Call to account with non-empty code.
-        for (field, value) in [
-            (
-                CallContextField::ProgramCounter,
-                (geth_step.pc.0 + 1).into(),
-            ),
-            (
-                CallContextField::StackPointer,
-                (geth_step.stack.stack_pointer().0 + 6).into(),
-            ),
-            (
-                CallContextField::GasLeft,
-                (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
-            ),
-            (CallContextField::MemorySize, next_memory_word_size.into()),
-            (
-                CallContextField::StateWriteCounter,
-                (exec_step.swc + 1).into(),
-            ),
-        ] {
-            state.push_op(
-                &mut exec_step,
-                RW::WRITE,
-                CallContextOp {
-                    call_id: call.call_id,
-                    field,
-                    value,
-                },
-            );
-        }
+                for (field, value) in [
+                    (CallContextField::CallerId, call.call_id.into()),
+                    (CallContextField::TxId, tx_id.into()),
+                    (CallContextField::Depth, callee.depth.into()),
+                    (
+                        CallContextField::CallerAddress,
+                        callee.caller_address.to_word(),
+                    ),
+                    (CallContextField::CalleeAddress, callee.address.to_word()),
+                    (
+                        CallContextField::CallDataOffset,
+                        callee.call_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::CallDataLength,
+                        callee.call_data_length.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataOffset,
+                        callee.return_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataLength,
+                        callee.return_data_length.into(),
+                    ),
+                    (CallContextField::Value, callee.value),
+                    (
+                        CallContextField::IsSuccess,
+                        (callee.is_success as u64).into(),
+                    ),
+                    (CallContextField::IsStatic, (callee.is_static as u64).into()),
+                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                    (CallContextField::IsRoot, 0.into()),
+                    (CallContextField::IsCreate, 0.into()),
+                    (CallContextField::CodeSource, callee.code_hash.to_word()),
+                ] {
+                    state.push_op(
+                        &mut exec_step,
+                        RW::READ,
+                        CallContextOp {
+                            call_id: callee.call_id,
+                            field,
+                            value,
+                        },
+                    );
+                }
 
-        for (field, value) in [
-            (CallContextField::CallerId, call.call_id.into()),
-            (CallContextField::TxId, tx_id.into()),
-            (CallContextField::Depth, callee.depth.into()),
-            (
-                CallContextField::CallerAddress,
-                callee.caller_address.to_word(),
-            ),
-            (CallContextField::CalleeAddress, callee.address.to_word()),
-            (
-                CallContextField::CallDataOffset,
-                callee.call_data_offset.into(),
-            ),
-            (
-                CallContextField::CallDataLength,
-                callee.call_data_length.into(),
-            ),
-            (
-                CallContextField::ReturnDataOffset,
-                callee.return_data_offset.into(),
-            ),
-            (
-                CallContextField::ReturnDataLength,
-                callee.return_data_length.into(),
-            ),
-            (CallContextField::Value, callee.value),
-            (
-                CallContextField::IsSuccess,
-                (callee.is_success as u64).into(),
-            ),
-            (CallContextField::IsStatic, (callee.is_static as u64).into()),
-            (CallContextField::LastCalleeId, 0.into()),
-            (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-            (CallContextField::LastCalleeReturnDataLength, 0.into()),
-            (CallContextField::IsRoot, 0.into()),
-            (CallContextField::IsCreate, 0.into()),
-            (CallContextField::CodeSource, callee.code_hash.to_word()),
-        ] {
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: callee.call_id,
-                    field,
-                    value,
-                },
-            );
+                Ok(vec![exec_step])
+            }
         }
-
-        Ok(vec![exec_step])
     }
 }

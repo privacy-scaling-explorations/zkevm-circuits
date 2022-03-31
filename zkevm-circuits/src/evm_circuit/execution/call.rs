@@ -24,9 +24,10 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToLittleEndian, ToScalar, EMPTY_HASH_LE,
+    Field, ToLittleEndian, ToScalar,
 };
 use halo2_proofs::{circuit::Region, plonk::Error};
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallGadget<F> {
@@ -187,7 +188,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             cb,
             callee_code_hash.expr(),
             Word::random_linear_combine_expr(
-                EMPTY_HASH_LE.to_fixed_bytes().map(|byte| byte.expr()),
+                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
                 cb.power_of_randomness(),
             ),
         );
@@ -463,7 +464,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             region,
             offset,
             Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(EMPTY_HASH_LE.to_fixed_bytes(), block.randomness),
+            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
         let has_value = !value.is_zero();
         let gas_cost = if is_warm_access_prev {

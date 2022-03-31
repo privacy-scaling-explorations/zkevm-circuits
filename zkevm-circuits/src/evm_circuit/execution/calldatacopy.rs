@@ -237,7 +237,7 @@ mod test {
     use crate::test_util::{test_circuits_using_bytecode, BytecodeTestConfig};
     use eth_types::{
         bytecode,
-        evm_types::{memory_copier_gas_cost, GasCost, OpcodeId},
+        evm_types::{gas_utils::memory_copier_gas_cost, GasCost, OpcodeId},
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;

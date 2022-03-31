@@ -11,8 +11,9 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToWord, EMPTY_HASH,
+    GethExecStep, ToWord,
 };
+use keccak256::EMPTY_HASH;
 use log::warn;
 
 mod call;
@@ -340,73 +341,78 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // There are 4 branches from here.
+    match (
+        call.is_create(),
+        state.is_precompiled(&call.address),
+        code_hash.to_fixed_bytes() == *EMPTY_HASH,
+    ) {
+        // 1. Creation transaction.
+        (true, _, _) => {
+            warn!("Creation transaction is left unimplemented");
+            Ok(exec_step)
+        }
+        // 2. Call to precompiled.
+        (_, true, _) => {
+            warn!("Call to precompiled is left unimplemented");
+            Ok(exec_step)
+        }
+        (_, _, is_empty_code_hash) => {
+            state.push_op(
+                &mut exec_step,
+                RW::READ,
+                AccountOp {
+                    address: call.address,
+                    field: AccountField::CodeHash,
+                    value: code_hash.to_word(),
+                    value_prev: code_hash.to_word(),
+                },
+            );
 
-    // 1. Creation transaction.
-    if call.is_create() {
-        warn!("Creation transaction is left unimplemented");
-        return Ok(exec_step);
+            // 3. Call to account with empty code.
+            if is_empty_code_hash {
+                warn!("Call to account with empty code is left unimplemented");
+                return Ok(exec_step);
+            }
+
+            // 4. Call to account with non-empty code.
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    call.call_data_length.into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, 0.into()),
+                (CallContextField::CodeSource, code_hash.to_word()),
+            ] {
+                state.push_op(
+                    &mut exec_step,
+                    RW::READ,
+                    CallContextOp {
+                        call_id: call.call_id,
+                        field,
+                        value,
+                    },
+                );
+            }
+
+            Ok(exec_step)
+        }
     }
-
-    // 2. Call to precompiled.
-    if state.is_precompiled(&call.address) {
-        warn!("Call to precompiled is left unimplemented");
-        return Ok(exec_step);
-    }
-
-    state.push_op(
-        &mut exec_step,
-        RW::READ,
-        AccountOp {
-            address: call.address,
-            field: AccountField::CodeHash,
-            value: code_hash.to_word(),
-            value_prev: code_hash.to_word(),
-        },
-    );
-
-    // 3. Call to account with empty code.
-    if code_hash == EMPTY_HASH {
-        warn!("Call to account with empty code is left unimplemented");
-        return Ok(exec_step);
-    }
-
-    // 4. Call to account with non-empty code.
-    for (field, value) in [
-        (CallContextField::Depth, call.depth.into()),
-        (
-            CallContextField::CallerAddress,
-            call.caller_address.to_word(),
-        ),
-        (CallContextField::CalleeAddress, call.address.to_word()),
-        (
-            CallContextField::CallDataOffset,
-            call.call_data_offset.into(),
-        ),
-        (
-            CallContextField::CallDataLength,
-            call.call_data_length.into(),
-        ),
-        (CallContextField::Value, call.value),
-        (CallContextField::IsStatic, (call.is_static as usize).into()),
-        (CallContextField::LastCalleeId, 0.into()),
-        (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-        (CallContextField::LastCalleeReturnDataLength, 0.into()),
-        (CallContextField::IsRoot, 1.into()),
-        (CallContextField::IsCreate, 0.into()),
-        (CallContextField::CodeSource, code_hash.to_word()),
-    ] {
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: call.call_id,
-                field,
-                value,
-            },
-        );
-    }
-
-    Ok(exec_step)
 }
 
 pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
