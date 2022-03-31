@@ -28,8 +28,6 @@ impl<F: FieldExt> BranchChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
-        not_first_level: Column<Advice>,
-        is_leaf_in_added_branch: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -459,60 +457,6 @@ impl<F: FieldExt> BranchChip<F> {
                     is_branch_placeholder_c.clone(),
                 ),
             ));
-
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
-            let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
-            constraints.push((
-                "first row needs to have not_first_level = 0",
-                q_enable * (one.clone() - q_not_first) * is_branch_init * not_first_level_cur,
-            ));
-
-            constraints
-        });
-
-        meta.create_gate("not_first_level in branch", |meta| {
-            // Constraints for extension node rows not_first_level are in extension_node.rs.
-            let mut constraints = vec![];
-            let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
-
-            let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
-            let is_branch_child = meta.query_advice(is_branch_child, Rotation::cur());
-            let not_first_level_prev = meta.query_advice(not_first_level, Rotation::prev());
-            let not_first_level_cur = meta.query_advice(not_first_level, Rotation::cur());
-            let is_leaf_in_added_branch_prev =
-                meta.query_advice(is_leaf_in_added_branch, Rotation::prev());
-
-            constraints.push((
-                "not_first_level_cur - not_first_level_prev = 0",
-                q_not_first.clone()
-                    * is_branch_child
-                    * (not_first_level_cur.clone() - not_first_level_prev.clone()),
-            ));
-
-            // If not_first_level is 0 in a previous row (being in branch init),
-            // it needs to be 1 in current row.
-            constraints.push((
-                "not_first_level 0 -> 1 in branch init",
-                q_not_first.clone()
-                    * is_branch_init.clone()
-                    * (one.clone() - not_first_level_prev.clone())
-                    * (not_first_level_cur.clone() - one.clone()),
-            ));
-
-            // If not_first_level is 0 in is_branch_init,
-            // then is_account_leaf_storage_codehash_c_prev = 1.
-            constraints.push((
-                "not_first_level = 0 follows is_account_leaf_storage_codehash_c_prev = 1",
-                q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
-                    * is_branch_init.clone()
-                    * (one.clone() - not_first_level_cur)
-                    * (one - is_leaf_in_added_branch_prev),
-            ));
-
-            // Constraint for
-            // "if q_not_first is 0, not_first_level needs to be 0"
-            // is in the gate above (it needs the first row and no prev() call)
 
             constraints
         });

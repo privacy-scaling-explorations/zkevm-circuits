@@ -368,8 +368,10 @@ impl<F: FieldExt> MPTConfig<F> {
 
         RootsChip::<F>::configure(
             meta,
+            q_enable,
             q_not_first,
             not_first_level,
+            is_leaf_in_added_branch,
             is_branch_init,
             is_account_leaf_key_s,
             inter_start_root,
@@ -380,8 +382,6 @@ impl<F: FieldExt> MPTConfig<F> {
             meta,
             q_enable,
             q_not_first,
-            not_first_level,
-            is_leaf_in_added_branch,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -789,7 +789,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_leaf_key_s
             },
             q_not_first,
-            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -811,7 +810,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
                 q_not_first * is_account_leaf_nonce_balance_s
             },
-            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
