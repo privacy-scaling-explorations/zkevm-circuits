@@ -1106,6 +1106,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::ISZERO => ExecutionState::ISZERO,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
