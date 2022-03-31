@@ -17,6 +17,8 @@ use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
 
+use super::table::TxLogFieldTag;
+
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
@@ -304,6 +306,8 @@ pub struct ExecStep {
     pub memory_size: u64,
     /// The counter for reversible writes
     pub reversible_write_counter: usize,
+    /// The counter for log index within tx
+    pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
     /// Step auxiliary data
@@ -493,6 +497,19 @@ pub enum Rw {
         memory_address: u64,
         byte: u8,
     },
+    TxLog {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        log_id: u64,
+        field_tag: TxLogFieldTag,
+        // topic index if field_tag is TxLogFieldTag:Topic, byte index if field_tag is
+        // TxLogFieldTag:Data
+        index: usize,
+
+        // when it is topic field, value can be word type
+        value: Word,
+    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -614,9 +631,17 @@ impl Rw {
         }
     }
 
+    pub fn log_value(&self) -> Word {
+        match self {
+            Self::TxLog { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
+            //Self::TxLog { value, .. } => value.byte(0),
             _ => unreachable!(),
         }
     }
@@ -820,6 +845,28 @@ impl Rw {
                     committed_value.to_le_bytes(),
                     randomness,
                 ),
+            ]
+            .into(),
+            Self::TxLog {
+                rw_counter,
+                is_write,
+                tx_id,
+                log_id,
+                field_tag,
+                index,
+                value,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxLog as u64),
+                F::from(*tx_id as u64),
+                F::from(*log_id as u64),
+                F::from(*field_tag as u64),
+                F::from(*index as u64),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                F::zero(),
+                F::zero(),
+                F::zero(),
             ]
             .into(),
             _ => unimplemented!(),
@@ -1084,6 +1131,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 if op.is_swap() {
                     return ExecutionState::SWAP;
                 }
+                if op.is_log() {
+                    return ExecutionState::LOG;
+                }
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
@@ -1179,6 +1229,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        log_id: step.log_id,
         aux_data: step.aux_data.map(Into::into),
     }
 }

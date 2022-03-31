@@ -2,7 +2,7 @@
 pub(crate) const STEP_WIDTH: usize = 32;
 /// Step height
 pub const STEP_HEIGHT: usize = 16;
-pub(crate) const N_CELLS_STEP_STATE: usize = 10;
+pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.
@@ -36,3 +36,9 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
+// constant gas for logs op codes
+pub(crate) const LOG_STATIC_GAS: usize = 375;
+
+// The max number of bytes that can be copied in a step limited by the number
+// of cells in a step
+pub(crate) const MAX_COPY_BYTES: usize = 71;

@@ -203,15 +203,11 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                 if from_tx {
                     tx.call_data[src_addr]
                 } else {
-                    rw_idx += 1;
-                    block.rws[step.rw_indices[rw_idx]].memory_value()
-                }
-            } else {
-                0
-            };
-            // increase rw_idx for writing back to memory
-            rw_idx += 1
-        }
+                    0
+                };
+                // increase rw_idx for skipping log record
+                rw_idx += 1
+            }
 
         self.buffer_reader
             .assign(region, offset, src_addr, src_addr_end, &bytes, &selectors)?;
@@ -225,7 +221,6 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         )?;
 
         Ok(())
-    }
 }
 
 #[cfg(test)]
