@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::TxLogFieldTag,
         util::{
@@ -17,10 +17,6 @@ use crate::{
 use bus_mapping::circuit_input_builder::StepAuxiliaryData;
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
-
-// The max number of bytes that can be copied in a step limited by the number
-// of cells in a step
-const MAX_COPY_BYTES: usize = 71;
 
 /// Multi-step gadget for copying data from memory to RW log
 #[derive(Clone, Debug)]
@@ -424,13 +420,18 @@ pub mod test {
     fn copy_to_log_simple() {
         // is_persistent = true
         test_ok_copy_to_log(0x10, 0x30, 0x2, true);
-        // TODO: is_persistent = false
+        test_ok_copy_to_log(0x100, 0x180, 0x40, true);
+        // is_persistent = false
+        test_ok_copy_to_log(0x10, 0x30, 0x2, false);
+        test_ok_copy_to_log(0x100, 0x180, 0x40, false);
     }
 
     #[test]
     fn copy_to_log_multi_step() {
         // is_persistent = true
         test_ok_copy_to_log(0x20, 0xA0, 80, true);
-        // TODO: is_persistent = false
+        test_ok_copy_to_log(0x10, 0xA0, 160, true);
+        // is_persistent = false
+        test_ok_copy_to_log(0x20, 0xA0, 80, false);
     }
 }

@@ -356,13 +356,14 @@ mod test {
             .into(),
         );
 
-        let mut rw_counter = 7;
+        let mut rw_counter = 6;
         let mut stack_pointer = 1016;
         // append dynamic length of topic reads from stack
         let stack_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Stack).or_insert_with(Vec::new);
         let mut txlog_rws: Vec<Rw> = Vec::new();
 
         if is_persistent {
+            rw_counter += 1;
             txlog_rws.push(Rw::TxLog {
                 rw_counter,
                 is_write: true,
@@ -552,7 +553,37 @@ mod test {
         );
         // zero topic: log0
         test_ok(Word::from(0x10), Word::from(2), &[], true);
-        //  TODO: is_persistent = false cases
+        // is_persistent = false cases
+        // zero topic: log0
+        test_ok(Word::from(0x10), Word::from(2), &[], false);
+        // log1
+        test_ok(Word::from(0x10), Word::from(2), &[Word::from(0xA0)], false);
+        // log2
+        test_ok(
+            Word::from(0x10),
+            Word::from(2),
+            &[Word::from(0xA0), Word::from(0xef)],
+            false,
+        );
+        // log3
+        test_ok(
+            Word::from(0x10),
+            Word::from(2),
+            &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+            false,
+        );
+        // log4
+        test_ok(
+            Word::from(0x10),
+            Word::from(2),
+            &[
+                Word::from(0xA0),
+                Word::from(0xef),
+                Word::from(0xb0),
+                Word::from(0x37),
+            ],
+            false,
+        );
     }
 
     #[test]
@@ -576,6 +607,24 @@ mod test {
             &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
             true,
         );
-        // TODO: is_persistent = false cases
+        // is_persistent = false cases
+        test_ok(
+            Word::from(0x10),
+            Word::from(128),
+            &[Word::from(0x100)],
+            false,
+        );
+        test_ok(
+            Word::from(0x10),
+            Word::from(128),
+            &[Word::from(0xA0), Word::from(0xef)],
+            false,
+        );
+        test_ok(
+            Word::from(0x10),
+            Word::from(128),
+            &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+            false,
+        );
     }
 }
