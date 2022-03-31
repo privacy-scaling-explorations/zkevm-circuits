@@ -23,7 +23,6 @@ impl<F: FieldExt> SelectorsChip<F> {
         q_enable: Column<Fixed>,
         q_not_first: Column<Fixed>,
         not_first_level: Column<Advice>,
-        switch_proof: Column<Advice>,
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
         is_last_branch_child: Column<Advice>,
@@ -51,7 +50,6 @@ impl<F: FieldExt> SelectorsChip<F> {
             let mut constraints = vec![];
 
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
-            let switch_proof = meta.query_advice(switch_proof, Rotation::cur());
             let is_branch_init_cur = meta.query_advice(is_branch_init, Rotation::cur());
             let is_branch_child_cur = meta.query_advice(is_branch_child, Rotation::cur());
             let is_last_branch_child_cur = meta.query_advice(is_last_branch_child, Rotation::cur());
@@ -76,10 +74,6 @@ impl<F: FieldExt> SelectorsChip<F> {
             constraints.push((
                 "bool check not_first_level",
                 get_bool_constraint(q_enable.clone(), not_first_level),
-            ));
-            constraints.push((
-                "bool check switch_proof",
-                get_bool_constraint(q_enable.clone(), switch_proof),
             ));
             constraints.push((
                 "bool check is_branch_init",

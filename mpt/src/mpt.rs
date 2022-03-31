@@ -25,7 +25,7 @@ use crate::{
     param::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
         IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        LAYOUT_OFFSET,
+        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip,
@@ -72,7 +72,6 @@ pub struct MPTConfig<F> {
     q_enable: Column<Fixed>,
     q_not_first: Column<Fixed>, // not first row
     not_first_level: Column<Advice>,
-    switch_proof: Column<Advice>, // TODO: to be removed
     inter_start_root: Column<Advice>,
     inter_final_root: Column<Advice>,
     is_branch_init: Column<Advice>,
@@ -234,7 +233,6 @@ impl<F: FieldExt> MPTConfig<F> {
         let q_enable = meta.fixed_column();
         let q_not_first = meta.fixed_column();
         let not_first_level = meta.advice_column();
-        let switch_proof = meta.advice_column();
 
         // having 2 to enable key RLC check (not using 1 to enable proper checks of mult
         // too) TODO: generate from commitments
@@ -348,7 +346,6 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
-            switch_proof,
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
@@ -896,7 +893,6 @@ impl<F: FieldExt> MPTConfig<F> {
             q_enable,
             q_not_first,
             not_first_level,
-            switch_proof,
             inter_start_root,
             inter_final_root,
             is_branch_init,
@@ -1393,8 +1389,9 @@ impl<F: FieldExt> MPTConfig<F> {
                     {
                         if offset > 0 {
                             let row_prev = &witness[offset - 1];
-                            let not_first_level_prev = row_prev[row_prev.len() - 3];
-                            let not_first_level_cur = row[row.len() - 3];
+                            let not_first_level_prev =
+                                row_prev[row_prev.len() - NOT_FIRST_LEVEL_POS];
+                            let not_first_level_cur = row[row.len() - NOT_FIRST_LEVEL_POS];
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
                                 pv = ProofVariables::new();
                             }
@@ -1404,13 +1401,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || "not first level",
                             self.not_first_level,
                             offset,
-                            || Ok(F::from(row[row.len() - 3] as u64)),
-                        )?;
-                        region.assign_advice(
-                            || "switch proof",
-                            self.switch_proof,
-                            offset,
-                            || Ok(F::from(row[row.len() - 2] as u64)),
+                            || Ok(F::from(row[row.len() - NOT_FIRST_LEVEL_POS] as u64)),
                         )?;
 
                         let mut s_root_rlc = F::zero();
@@ -1419,7 +1410,8 @@ impl<F: FieldExt> MPTConfig<F> {
                         let mut mult = F::one();
                         for i in 0..HASH_WIDTH {
                             s_root_rlc +=
-                                F::from(row[l - 3 * HASH_WIDTH + i - 3] as u64) * mult.clone();
+                                F::from(row[l - 3 * HASH_WIDTH + i - NOT_FIRST_LEVEL_POS] as u64)
+                                    * mult.clone();
                             mult *= self.acc_r;
                         }
                         region.assign_advice(
@@ -1431,7 +1423,8 @@ impl<F: FieldExt> MPTConfig<F> {
                         let mut mult = F::one();
                         for i in 0..HASH_WIDTH {
                             c_root_rlc +=
-                                F::from(row[l - 2 * HASH_WIDTH + i - 3] as u64) * mult.clone();
+                                F::from(row[l - 2 * HASH_WIDTH + i - NOT_FIRST_LEVEL_POS] as u64)
+                                    * mult.clone();
                             mult *= self.acc_r;
                         }
                         region.assign_advice(
@@ -2694,7 +2687,9 @@ mod tests {
                     let l = row.len();
                     let mut mult = Fp::one();
                     for i in 0..HASH_WIDTH {
-                        pub_root_rlc += Fp::from(row[l - HASH_WIDTH + i - 3] as u64) * mult.clone();
+                        pub_root_rlc +=
+                            Fp::from(row[l - HASH_WIDTH + i - NOT_FIRST_LEVEL_POS] as u64)
+                                * mult.clone();
                         mult *= acc_r;
                     }
                     pub_root.push(pub_root_rlc);

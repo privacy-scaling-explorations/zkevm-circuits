@@ -29,3 +29,5 @@ pub const IS_EXT_LONG_EVEN_C16_POS: usize = 23;
 pub const IS_EXT_LONG_EVEN_C1_POS: usize = 24;
 pub const IS_EXT_LONG_ODD_C16_POS: usize = 25;
 pub const IS_EXT_LONG_ODD_C1_POS: usize = 26;
+
+pub const NOT_FIRST_LEVEL_POS: usize = 2;
