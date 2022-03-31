@@ -79,6 +79,12 @@ checksum = "a4c527152e37cf757a3f78aae5a06fbeefdb07ccc535c980a3208ee3060dd544"
 
 [[package]]
 name = "arrayvec"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
+
+[[package]]
+name = "arrayvec"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
@@ -251,12 +257,23 @@ dependencies = [
 
 [[package]]
 name = "blake2b_simd"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afa748e348ad3be8263be728124b24a24f268266f6f5d58af9d75f6a40b5c587"
+dependencies = [
+ "arrayref",
+ "arrayvec 0.5.2",
+ "constant_time_eq",
+]
+
+[[package]]
+name = "blake2b_simd"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72936ee4afc7f8f736d1c38383b56480b5497b4617b4a77bdbf1d2ababc76127"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.7.2",
  "constant_time_eq",
 ]
 
@@ -478,7 +495,7 @@ dependencies = [
  "bus-mapping",
  "eth-types",
  "ff 0.11.0",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06)",
  "itertools",
  "keccak256",
  "pairing_bn256",
@@ -1008,6 +1025,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecc"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 0.1.10",
+ "group 0.11.0",
+ "integer",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
+name = "ecdsa"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 0.1.10",
+ "ecc",
+ "group 0.11.0",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "secp256k1",
+ "subtle",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1235,11 +1281,11 @@ version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f15e1a2a54bc6bc3f8ea94afafbb374264f8322fcacdae06fefda80a206739ac"
 dependencies = [
- "arrayvec",
+ "arrayvec 0.7.2",
  "bytes",
  "cargo_metadata",
  "convert_case",
- "ecdsa",
+ "ecdsa 0.12.4",
  "elliptic-curve 0.11.12",
  "ethabi",
  "generic-array 0.14.5",
@@ -1719,7 +1765,9 @@ checksum = "bc5ac374b108929de78460075f3dc439fa66df9d8fc77e8f12caa5165fcf0c89"
 dependencies = [
  "byteorder",
  "ff 0.11.0",
+ "rand",
  "rand_core",
+ "rand_xorshift",
  "subtle",
 ]
 
@@ -1753,7 +1801,7 @@ name = "halo2_proofs"
 version = "0.1.0-beta.1"
 source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06#90f0487e986a8d7a323ec78e7de5ad8bbeeebbd5"
 dependencies = [
- "blake2b_simd",
+ "blake2b_simd 1.0.0",
  "bumpalo",
  "cfg-if 0.1.10",
  "ff 0.11.0",
@@ -1765,6 +1813,46 @@ dependencies = [
  "rayon",
  "subtle",
  "tabbycat",
+]
+
+[[package]]
+name = "halo2_proofs"
+version = "0.1.0-beta.1"
+source = "git+https://github.com/appliedzkp/halo2.git?rev=9d3ab0cf7be57a828df6cedb8f58476b483fdde1#9d3ab0cf7be57a828df6cedb8f58476b483fdde1"
+dependencies = [
+ "blake2b_simd 1.0.0",
+ "bumpalo",
+ "cfg-if 0.1.10",
+ "ff 0.11.0",
+ "group 0.11.0",
+ "pairing_bn256",
+ "rand",
+ "rand_core",
+ "rayon",
+ "subtle",
+]
+
+[[package]]
+name = "halo2_proofs"
+version = "0.1.0-beta.3"
+source = "git+https://github.com/zcash/halo2.git#406f622e330e23ff91d645d43725e55de665c8e3"
+dependencies = [
+ "blake2b_simd 1.0.0",
+ "bumpalo",
+ "ff 0.11.0",
+ "group 0.11.0",
+ "pasta_curves",
+ "rand_core",
+ "rayon",
+]
+
+[[package]]
+name = "halo2wrong"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 0.1.10",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?rev=9d3ab0cf7be57a828df6cedb8f58476b483fdde1)",
+ "halo2_proofs 0.1.0-beta.3",
 ]
 
 [[package]]
@@ -1991,6 +2079,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 0.1.10",
+ "group 0.11.0",
+ "maingate",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
 name = "integration-tests"
 version = "0.1.0"
 dependencies = [
@@ -1999,7 +2101,7 @@ dependencies = [
  "eth-types",
  "ethers",
  "ff 0.11.0",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06)",
  "lazy_static",
  "log",
  "pairing_bn256",
@@ -2060,7 +2162,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "903ae2481bcdfdb7b68e0a9baa4b7c9aff600b9ae2e8e5bb5833b8c91ab851ea"
 dependencies = [
  "cfg-if 1.0.0",
- "ecdsa",
+ "ecdsa 0.12.4",
  "elliptic-curve 0.10.6",
  "sha2 0.9.9",
  "sha3 0.9.1",
@@ -2077,7 +2179,7 @@ name = "keccak256"
 version = "0.1.0"
 dependencies = [
  "eth-types",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06)",
  "itertools",
  "lazy_static",
  "num-bigint",
@@ -2115,6 +2217,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c4dcd960cc540667f619483fc99102f88d6118b87730e24e8fbe8054b7445e4"
 dependencies = [
  "cfg-if 1.0.0",
+]
+
+[[package]]
+name = "maingate"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 0.1.10",
+ "group 0.11.0",
+ "halo2wrong",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
 ]
 
 [[package]]
@@ -2248,6 +2364,7 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits",
+ "rand",
 ]
 
 [[package]]
@@ -2407,7 +2524,7 @@ version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "373b1a4c1338d9cd3d1fa53b3a11bdab5ab6bd80a20f7f7becd76953ae2be909"
 dependencies = [
- "arrayvec",
+ "arrayvec 0.7.2",
  "bitvec 0.20.5",
  "byte-slice-cast",
  "impl-trait-for-tuples",
@@ -2460,6 +2577,21 @@ checksum = "77e0b28ace46c5a396546bcf443bf422b57049617433d8854227352a4a9b24e7"
 dependencies = [
  "base64ct",
  "rand_core",
+ "subtle",
+]
+
+[[package]]
+name = "pasta_curves"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82b6fc4f73033f6aa52fdde0c38f1f570e7f2c244f22e441f62a144556891b8c"
+dependencies = [
+ "blake2b_simd 1.0.0",
+ "ff 0.11.0",
+ "group 0.11.0",
+ "lazy_static",
+ "rand",
+ "static_assertions",
  "subtle",
 ]
 
@@ -2714,7 +2846,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-providers",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06)",
  "log",
  "pairing_bn256",
  "rand",
@@ -3092,6 +3224,23 @@ checksum = "d53dcdb7c9f8158937a7981b48accfd39a43af418591a5d008c7b22b5e1b7ca4"
 dependencies = [
  "ring",
  "untrusted",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.0.1"
+dependencies = [
+ "blake2b_simd 0.5.11",
+ "cfg-if 0.1.10",
+ "ff 0.11.0",
+ "group 0.11.0",
+ "halo2wrong",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "rand",
+ "static_assertions",
+ "subtle",
 ]
 
 [[package]]
@@ -4040,20 +4189,24 @@ dependencies = [
  "bus-mapping",
  "criterion",
  "digest 0.7.6",
+ "ecc",
+ "ecdsa 0.1.0",
  "eth-types",
  "ethers-core",
  "ff 0.11.0",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/appliedzkp/halo2.git?rev=9d3ab0cf7be57a828df6cedb8f58476b483fdde1)",
  "hex",
  "itertools",
  "keccak256",
  "lazy_static",
+ "maingate",
  "mock",
  "num",
  "pairing_bn256",
  "paste",
  "rand",
  "rand_xorshift",
+ "secp256k1",
  "serde_json",
  "sha3 0.7.3",
 ]

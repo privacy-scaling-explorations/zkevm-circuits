@@ -1,7 +1,11 @@
+// TODO Remove this
+#![allow(missing_docs)]
+
 use std::{marker::PhantomData, os::unix::prelude::FileTypeExt};
 
-use ecdsa::ecdsa::{EcdsaChip, EcdsaConfig, GeneralEccChip};
-use ecdsa::maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig};
+use ecc::GeneralEccChip;
+use ecdsa::ecdsa::{EcdsaChip, EcdsaConfig};
+use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig};
 use pairing::arithmetic::FieldExt;
 use secp256k1::Secp256k1Affine;
 
@@ -13,39 +17,46 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+// TODO: Move these utils outside of `evm_circuit` so that they can be used by
+// other circuits without crossing boundaries.
+use crate::evm_circuit::util::{
+    and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
+};
+
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
 struct SignVerifyChip<F: FieldExt> {
     ecdsa_chip: EcdsaChip<Secp256k1Affine, F>,
 }
 
-struct SignVerifyConfig<F: FieldExt> {
-    address: Column<Advice>,
-    pub_key: [[Column<Advice>; 32]; 2],
-    pub_key_hash: [Column<Advice>; 32],
+const KECCAK_IS_ENABLED: usize = 0;
+const KECCAK_INPUT_RLC: usize = 0;
+const KECCAK_INPUT_LEN: usize = 0;
+const KECCAK_OUTPUT_RLC: usize = 0;
 
+struct SignVerifyConfig<F: FieldExt> {
+    pub_key_hash: [Column<Advice>; 32],
+    address: Column<Advice>,
     msg_hash_rlc: Column<Advice>,
     msg_hash_rlc_is_zero: IsZeroConfig<F>,
     msg_hash_rlc_inv: Column<Advice>,
 
+    // ECDSA
     ecdsa_config: EcdsaConfig,
+    // signature: [[Column<Advice>; 32]; 2],
+    pub_key: [[Column<Advice>; 32]; 2],
+    msg_hash: [Column<Advice>; 32],
 
-    power_of_randomness: [F; 32],
+    power_of_randomness: [Expression<F>; 31],
 
-    keccak_is_enabled: Column<Advice>,
-    keccak_input_rlc: Column<Advice>,
-    keccak_input_length: Column<Advice>,
-    keccak_output_rlc: Column<Advice>,
+    // [is_enabled, input_rlc, input_len, output_rlc]
+    keccak_table: [Column<Advice>; 4],
 }
-
-use crate::evm_circuit::util::{
-    and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
-};
 
 impl<F: FieldExt> SignVerifyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: &[Expression<F>; 31],
+        power_of_randomness: [Expression<F>; 31],
     ) -> SignVerifyConfig<F> {
         // create ecdsa config
         const BIT_LEN_LIMB: usize = 68;
@@ -57,6 +68,8 @@ impl<F: FieldExt> SignVerifyChip<F> {
         let range_config = RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
         let ecdsa_config = EcdsaConfig::new(range_config, main_gate_config);
+        let pub_key = [(); 2].map(|_| [(); 32].map(|_| meta.advice_column()));
+        let msg_hash = [(); 32].map(|_| meta.advice_column());
 
         // create address, msg_hash, pub_key_hash, and msg_hash_inv, and iz_zero
 
@@ -74,14 +87,11 @@ impl<F: FieldExt> SignVerifyChip<F> {
             |virtual_cells| virtual_cells.query_advice(msg_hash_rlc, Rotation::cur()),
             msg_hash_rlc_inv, // helper column used internally?
         );
-        let is_enabled = not::expr(msg_hash_rlc_is_zero.is_zero_expression);
+        let is_enabled = not::expr(msg_hash_rlc_is_zero.is_zero_expression.clone());
 
         // lookup keccak table
 
-        let keccak_is_enabled = meta.advice_column();
-        let keccak_input_rlc = meta.advice_column();
-        let keccak_input_length = meta.advice_column();
-        let keccak_output_rlc = meta.advice_column();
+        let keccak_table = [(); 4].map(|_| meta.advice_column());
 
         // keccak lookup
         meta.lookup_any("keccak", |meta| {
@@ -105,13 +115,14 @@ impl<F: FieldExt> SignVerifyChip<F> {
 
             let mut table_map = Vec::new();
 
-            let keccak_is_enabled = meta.query_advice(keccak_is_enabled, Rotation::cur());
+            let keccak_is_enabled =
+                meta.query_advice(keccak_table[KECCAK_IS_ENABLED], Rotation::cur());
             table_map.push((is_enabled.clone(), keccak_is_enabled));
 
             let pub_key_hash = pub_key_hash.map(|c| meta.query_advice(c, Rotation::cur()));
             let pub_key_hash_rlc = RandomLinearCombination::random_linear_combine_expr(
                 pub_key_hash,
-                power_of_randomness,
+                &power_of_randomness,
             );
 
             let keccak_input_rlc = meta.query_advice(msg_hash_rlc, Rotation::cur());
@@ -126,16 +137,16 @@ impl<F: FieldExt> SignVerifyChip<F> {
         });
 
         SignVerifyConfig {
+            pub_key_hash,
             address,
             msg_hash_rlc,
-            pub_key_hash,
             msg_hash_rlc_is_zero,
             msg_hash_rlc_inv,
-            keccak_is_enabled,
-            keccak_input_rlc,
-            keccak_input_length,
-            keccak_output_rlc,
             ecdsa_config,
+            pub_key,
+            msg_hash,
+            power_of_randomness,
+            keccak_table,
         }
     }
 
