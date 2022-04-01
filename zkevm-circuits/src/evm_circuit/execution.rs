@@ -1,3 +1,4 @@
+use super::util::{CachedRegion, StoredExpression};
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_WIDTH},
@@ -16,7 +17,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{collections::HashMap, convert::TryInto, iter};
-use super::util::{CachedRegion, StoredExpression};
 
 mod add;
 mod begin_tx;
