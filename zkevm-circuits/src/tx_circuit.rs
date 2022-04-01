@@ -9,14 +9,16 @@ use std::{marker::PhantomData, os::unix::prelude::FileTypeExt};
 use ecc::{EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip, EcdsaConfig};
 use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
-use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx};
+use maingate::{
+    Assigned, MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+};
 use pairing::arithmetic::FieldExt;
 use secp256k1::Secp256k1Affine;
 
 use crate::gadget::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2_proofs::{
     arithmetic::{BaseExt, CurveAffine},
-    circuit::{Layouter, Region, SimpleFloorPlanner},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -38,6 +40,8 @@ const KECCAK_IS_ENABLED: usize = 0;
 const KECCAK_INPUT_RLC: usize = 0;
 const KECCAK_INPUT_LEN: usize = 0;
 const KECCAK_OUTPUT_RLC: usize = 0;
+
+const BIT_LEN_LIMB: usize = 72;
 
 struct SignVerifyConfig<F: FieldExt> {
     pub_key_hash: [Column<Advice>; 32],
@@ -64,7 +68,6 @@ impl<F: FieldExt> SignVerifyChip<F> {
         power_of_randomness: [Expression<F>; 63],
     ) -> SignVerifyConfig<F> {
         // create ecdsa config
-        const BIT_LEN_LIMB: usize = 68;
         let (rns_base, rns_scalar) = GeneralEccChip::<Secp256k1Affine, F>::rns(BIT_LEN_LIMB);
         let main_gate_config = MainGate::<F>::configure(meta);
         let mut overflow_bit_lengths: Vec<usize> = vec![];
@@ -203,12 +206,15 @@ mod sign_verify_tets {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    const BIT_LEN_LIMB: usize = 68;
-
     #[derive(Clone, Debug)]
     struct TestCircuitSignVerifyConfig {
         main_gate_config: MainGateConfig,
         range_config: RangeConfig,
+        sig_s_limbs: [Column<Advice>; 4],
+        sig_r_limbs: [Column<Advice>; 4],
+        pk_x_limbs: [Column<Advice>; 4],
+        pk_y_limbs: [Column<Advice>; 4],
+        msg_hash_limbs: [Column<Advice>; 4],
     }
 
     impl TestCircuitSignVerifyConfig {
@@ -220,9 +226,25 @@ mod sign_verify_tets {
             overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
             let range_config =
                 RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
+
+            let sig_s_limbs = [(); 4].map(|_| meta.advice_column());
+            sig_s_limbs.map(|c| meta.enable_equality(c));
+            let sig_r_limbs = [(); 4].map(|_| meta.advice_column());
+            sig_r_limbs.map(|c| meta.enable_equality(c));
+            let pk_x_limbs = [(); 4].map(|_| meta.advice_column());
+            pk_x_limbs.map(|c| meta.enable_equality(c));
+            let pk_y_limbs = [(); 4].map(|_| meta.advice_column());
+            pk_y_limbs.map(|c| meta.enable_equality(c));
+            let msg_hash_limbs = [(); 4].map(|_| meta.advice_column());
+            msg_hash_limbs.map(|c| meta.enable_equality(c));
             TestCircuitSignVerifyConfig {
                 main_gate_config,
                 range_config,
+                sig_s_limbs,
+                sig_r_limbs,
+                pk_x_limbs,
+                pk_y_limbs,
+                msg_hash_limbs,
             }
         }
 
@@ -278,7 +300,7 @@ mod sign_verify_tets {
                 pub_key,
                 msg_hash,
             } = self.txs[0];
-            let (sig_s, sig_r) = signature;
+            let (sig_r, sig_s) = signature;
             let pk = pub_key;
 
             layouter.assign_region(
@@ -317,7 +339,21 @@ mod sign_verify_tets {
                         point: pk_in_circuit,
                     };
                     let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
-                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
+                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
+
+                    let offset = 0;
+                    // Copy constraint between main_gate r_assigned and config.r_assigned
+                    for (i, limb) in sig.r.limbs().iter().enumerate() {
+                        let assigned_cell = region.assign_advice(
+                            || format!("sig_r limb {}", i),
+                            config.sig_r_limbs[i],
+                            0, // offset
+                            || limb.value().clone().ok_or(Error::Synthesis),
+                        )?;
+                        region.constrain_equal(assigned_cell.cell(), limb.cell())?;
+                    }
+
+                    Ok(())
                 },
             )?;
 
