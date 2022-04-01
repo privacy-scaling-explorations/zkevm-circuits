@@ -23,6 +23,7 @@ mod caller;
 mod callvalue;
 mod dup;
 mod extcodehash;
+mod gasprice;
 mod mload;
 mod mstore;
 mod number;
@@ -39,6 +40,7 @@ use caller::Caller;
 use callvalue::Callvalue;
 use dup::Dup;
 use extcodehash::Extcodehash;
+use gasprice::GasPrice;
 use mload::Mload;
 use mstore::Mstore;
 use selfbalance::Selfbalance;
@@ -113,7 +115,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
-        // OpcodeId::GASPRICE => {},
+        OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         // OpcodeId::EXTCODESIZE => {},
         // OpcodeId::EXTCODECOPY => {},
         // OpcodeId::RETURNDATASIZE => {},

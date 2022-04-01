@@ -228,11 +228,11 @@ pub mod helpers {
         |accs| {
             accs[0]
                 .address(MOCK_ACCOUNTS[0])
-                .balance(Word::from(1u64 << 20))
+                .balance(Word::from(10u64.pow(19)))
                 .code(code);
             accs[1]
                 .address(MOCK_ACCOUNTS[1])
-                .balance(Word::from(1u64 << 20));
+                .balance(Word::from(10u64.pow(19)));
         }
     }
 
