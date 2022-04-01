@@ -30,6 +30,8 @@ ecdsa = { path = "../../halo2wrong/ecdsa", features = ["kzg"] }
 secp256k1 = { path = "../../halo2wrong/ecc/secp256k1", features = ["kzg"] }
 ecc = { path = "../../halo2wrong/ecc/circuit", features = ["kzg"] }
 maingate = { path = "../../halo2wrong/maingate", features = ["kzg"] }
+integer = { path = "../../halo2wrong/integer", features = ["kzg"] }
+group = "0.11"
 
 [dev-dependencies]
 criterion = "0.3"

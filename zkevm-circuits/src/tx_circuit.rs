@@ -1,17 +1,21 @@
 // TODO Remove this
 #![allow(missing_docs)]
+// TODO Remove this
+#![allow(unused_imports)]
 
+use group::{ff::Field, prime::PrimeCurveAffine, Curve};
 use std::{marker::PhantomData, os::unix::prelude::FileTypeExt};
 
-use ecc::GeneralEccChip;
-use ecdsa::ecdsa::{EcdsaChip, EcdsaConfig};
-use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig};
+use ecc::{EccConfig, GeneralEccChip};
+use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip, EcdsaConfig};
+use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
+use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx};
 use pairing::arithmetic::FieldExt;
 use secp256k1::Secp256k1Affine;
 
 use crate::gadget::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2_proofs::{
-    arithmetic::CurveAffine,
+    arithmetic::{BaseExt, CurveAffine},
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -22,6 +26,7 @@ use halo2_proofs::{
 use crate::evm_circuit::util::{
     and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
 };
+use crate::util::Expr;
 
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
@@ -44,10 +49,10 @@ struct SignVerifyConfig<F: FieldExt> {
     // ECDSA
     ecdsa_config: EcdsaConfig,
     // signature: [[Column<Advice>; 32]; 2],
-    pub_key: [[Column<Advice>; 32]; 2],
+    pub_key: [Column<Advice>; 32 * 2],
     msg_hash: [Column<Advice>; 32],
 
-    power_of_randomness: [Expression<F>; 31],
+    power_of_randomness: [Expression<F>; 63],
 
     // [is_enabled, input_rlc, input_len, output_rlc]
     keccak_table: [Column<Advice>; 4],
@@ -56,7 +61,7 @@ struct SignVerifyConfig<F: FieldExt> {
 impl<F: FieldExt> SignVerifyChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: [Expression<F>; 31],
+        power_of_randomness: [Expression<F>; 63],
     ) -> SignVerifyConfig<F> {
         // create ecdsa config
         const BIT_LEN_LIMB: usize = 68;
@@ -68,7 +73,7 @@ impl<F: FieldExt> SignVerifyChip<F> {
         let range_config = RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
         let ecdsa_config = EcdsaConfig::new(range_config, main_gate_config);
-        let pub_key = [(); 2].map(|_| [(); 32].map(|_| meta.advice_column()));
+        let pub_key = [(); 32 * 2].map(|_| meta.advice_column());
         let msg_hash = [(); 32].map(|_| meta.advice_column());
 
         // create address, msg_hash, pub_key_hash, and msg_hash_inv, and iz_zero
@@ -95,43 +100,35 @@ impl<F: FieldExt> SignVerifyChip<F> {
 
         // keccak lookup
         meta.lookup_any("keccak", |meta| {
-            /*
-                    // Conditions:
-                    // - On the row with the last byte (`is_final == 1`)
-                    // - Not padding
-                    let enable = and::expr(vec![
-                        meta.query_advice(is_final, Rotation::cur()),
-                        not::expr(meta.query_advice(padding, Rotation::cur())),
-                    ]);
-                    let lookup_columns = vec![hash_rlc, hash_length, hash];
-                    let mut constraints = vec![];
-                    for i in 0..crate::bytecode_circuit::param::KECCAK_WIDTH {
-                        constraints.push((
-                            enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
-                            meta.query_advice(keccak_table[i], Rotation::cur()),
-                        ))
-                    }
-            */
-
             let mut table_map = Vec::new();
 
+            // Column 0: is_enabled
             let keccak_is_enabled =
                 meta.query_advice(keccak_table[KECCAK_IS_ENABLED], Rotation::cur());
             table_map.push((is_enabled.clone(), keccak_is_enabled));
 
+            // Column 1: input_rlc (pub_key_rlc)
+            let keccak_input_rlc =
+                meta.query_advice(keccak_table[KECCAK_INPUT_RLC], Rotation::cur());
+            let pub_key = pub_key.map(|c| meta.query_advice(c, Rotation::cur()));
+            let pub_key_rlc =
+                RandomLinearCombination::random_linear_combine_expr(pub_key, &power_of_randomness);
+            table_map.push((is_enabled.clone() * pub_key_rlc, keccak_input_rlc));
+
+            // Column 2: input_len (64)
+            let keccak_input_len =
+                meta.query_advice(keccak_table[KECCAK_INPUT_LEN], Rotation::cur());
+            table_map.push((is_enabled.clone() * 64usize.expr(), keccak_input_len));
+
+            // Column 3: output_rlc (pub_key_hash_rlc)
+            let keccak_output_rlc =
+                meta.query_advice(keccak_table[KECCAK_OUTPUT_RLC], Rotation::cur());
             let pub_key_hash = pub_key_hash.map(|c| meta.query_advice(c, Rotation::cur()));
             let pub_key_hash_rlc = RandomLinearCombination::random_linear_combine_expr(
                 pub_key_hash,
                 &power_of_randomness,
             );
-
-            let keccak_input_rlc = meta.query_advice(msg_hash_rlc, Rotation::cur());
-            table_map.push((is_enabled.clone() * pub_key_hash_rlc, keccak_input_rlc));
-
-            /*
-            let keccak_input_rlc = meta.query_advice(keccak_input_rlc, Rotation::cur());
-            table_map.push((is_enabled.clone() * pub_key_hash_rlc, keccak_input_rlc));
-            */
+            table_map.push((is_enabled.clone() * pub_key_hash_rlc, keccak_output_rlc));
 
             table_map
         });
@@ -151,6 +148,26 @@ impl<F: FieldExt> SignVerifyChip<F> {
     }
 
     /*
+    pub fn assign(
+        mut layouter: impl Layouter<F>,
+        config: Self::Config,
+        randomness: F,
+        txs: &[TxSignData],
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    pub fn assign_tx(
+        mut layouter: impl Layouter<F>,
+        config: Self::Config,
+        randomness: F,
+        tx: &TxSignData,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+    */
+
+    /*
         pub fn load_tables(config: &SignVerifyConfig<F>, layouter: &mut impl Layouter<F>) {
             use ecdsa::maingate::RangeInstructions;
             const BIT_LEN_LIMB: usize = 68;
@@ -164,92 +181,226 @@ impl<F: FieldExt> SignVerifyChip<F> {
     */
 }
 
+struct TxSignData {
+    signature: (secp256k1::Fq, secp256k1::Fq),
+    pub_key: Secp256k1Affine,
+    msg_hash: secp256k1::Fq,
+}
+
+/*
 pub trait SignVerifyInstruction<F: FieldExt> {
     fn check(pub_key_hash: Vec<u8>, address: F, msg_hash_rlc: F, random: F) -> Result<(), Error>;
 }
-/*
-impl<C: CurveAffine, N: FieldExt> SignVerifyConfig1<C, N> {
-    pub fn create_global_configs(meta: &mut ConstraintSystem<N>) -> (RangeConfig, MainGateConfig) {
-   }
+*/
 
-    pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
-        Self {
-            ecdsa_config: EcdsaConfig::new(range_config, main_gate_config),
-            _marker_: (PhantomData::default(), PhantomData::default()),
+#[cfg(test)]
+mod sign_verify_tets {
+    use super::*;
+    use group::Group;
+    use halo2_proofs::dev::MockProver;
+    use halo2_proofs::pairing::bn256::Fr;
+    use rand::RngCore;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+
+    const BIT_LEN_LIMB: usize = 68;
+
+    #[derive(Clone, Debug)]
+    struct TestCircuitSignVerifyConfig {
+        main_gate_config: MainGateConfig,
+        range_config: RangeConfig,
+    }
+
+    impl TestCircuitSignVerifyConfig {
+        pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+            let (rns_base, rns_scalar) = GeneralEccChip::<Secp256k1Affine, F>::rns(BIT_LEN_LIMB);
+            let main_gate_config = MainGate::<F>::configure(meta);
+            let mut overflow_bit_lengths: Vec<usize> = vec![];
+            overflow_bit_lengths.extend(rns_base.overflow_lengths());
+            overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
+            let range_config =
+                RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            TestCircuitSignVerifyConfig {
+                main_gate_config,
+                range_config,
+            }
+        }
+
+        pub fn ecc_chip_config(&self) -> EccConfig {
+            EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+        }
+
+        pub fn config_range<F: FieldExt>(
+            &self,
+            layouter: &mut impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+            let range_chip = RangeChip::<F>::new(self.range_config.clone(), bit_len_lookup);
+            range_chip.load_limb_range_table(layouter)?;
+            range_chip.load_overflow_range_tables(layouter)?;
+
+            Ok(())
         }
     }
 
+    #[derive(Default)]
+    struct TestCircuitSignVerify<F: FieldExt> {
+        aux_generator: Secp256k1Affine,
+        window_size: usize,
+        txs: Vec<TxSignData>,
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitSignVerify<F> {
+        type Config = TestCircuitSignVerifyConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            TestCircuitSignVerifyConfig::new::<F>(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let mut ecc_chip =
+                GeneralEccChip::<Secp256k1Affine, F>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
+            let scalar_chip = ecc_chip.scalar_field_chip();
+
+            // Only using 1 signature for now
+            let TxSignData {
+                signature,
+                pub_key,
+                msg_hash,
+            } = self.txs[0];
+            let (sig_s, sig_r) = signature;
+            let pk = pub_key;
+
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+                    Ok(())
+                },
+            )?;
+
+            let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
+
+            layouter.assign_region(
+                || "ecdsa chip verification",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                    let integer_r = ecc_chip.new_unassigned_scalar(Some(sig_r));
+                    let integer_s = ecc_chip.new_unassigned_scalar(Some(sig_s));
+                    let msg_hash = ecc_chip.new_unassigned_scalar(Some(msg_hash));
+
+                    let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
+                    let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                    let sig = AssignedEcdsaSig {
+                        r: r_assigned,
+                        s: s_assigned,
+                    };
+
+                    let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
+                    let pk_assigned = AssignedPublicKey {
+                        point: pk_in_circuit,
+                    };
+                    let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
+                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
+                },
+            )?;
+
+            config.config_range(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    fn run<F: FieldExt>(txs: Vec<TxSignData>) {
+        let k = 20;
+        let mut rng = XorShiftRng::seed_from_u64(2);
+        let aux_generator =
+            <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+        let circuit = TestCircuitSignVerify::<F> {
+            aux_generator,
+            window_size: 2,
+            txs,
+            _marker: PhantomData,
+        };
+
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    // Generate a test key pair
+    fn gen_key_pair(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
+        // generate a valid signature
+        let generator = <Secp256k1Affine as PrimeCurveAffine>::generator();
+        let sk = <Secp256k1Affine as CurveAffine>::ScalarExt::random(rng);
+        let pk = generator * sk;
+        let pk = pk.to_affine();
+
+        (sk, pk)
+    }
+
+    // Generate a test message hash
+    fn gen_msg_hash(rng: impl RngCore) -> secp256k1::Fq {
+        <Secp256k1Affine as CurveAffine>::ScalarExt::random(rng)
+    }
+
+    // Returns (r, s)
+    fn sign(
+        rng: impl RngCore,
+        sk: secp256k1::Fq,
+        msg_hash: secp256k1::Fq,
+    ) -> (secp256k1::Fq, secp256k1::Fq) {
+        let randomness = <Secp256k1Affine as CurveAffine>::ScalarExt::random(rng);
+        let randomness_inv = randomness.invert().unwrap();
+        let generator = <Secp256k1Affine as PrimeCurveAffine>::generator();
+        let sig_point = generator * randomness;
+        let x = sig_point.to_affine().coordinates().unwrap().x().clone();
+
+        let x_repr = &mut Vec::with_capacity(32);
+        x.write(x_repr).unwrap();
+
+        let mut x_bytes = [0u8; 64];
+        x_bytes[..32].copy_from_slice(&x_repr[..]);
+
+        let x_bytes_on_n = <Secp256k1Affine as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+        let sig_s = randomness_inv * (msg_hash + x_bytes_on_n * sk);
+        (x_bytes_on_n, sig_s)
+    }
+
+    #[test]
+    fn test_sign_verify() {
+        let mut rng = XorShiftRng::seed_from_u64(1);
+        let (sk, pk) = gen_key_pair(&mut rng);
+        let msg_hash = gen_msg_hash(&mut rng);
+        let sig = sign(&mut rng, sk, msg_hash);
+
+        let txs = vec![TxSignData {
+            signature: sig,
+            pub_key: pk,
+            msg_hash: msg_hash,
+        }];
+
+        // generate a valid signature
+
+        run::<Fr>(txs);
+    }
 }
-*/
-
-#[test]
-fn test() {}
-
-/*
-class SignVerifyGadget:
-    """
-    Auxiliary Gadget to verify a that a message hash is signed by the public
-    key corresponding to an Ethereum Address.
-    """
-
-    pub_key_hash: RLC
-    address: FQ
-    msg_hash_rlc: FQ  # Set to 0 to disable verification check
-    ecdsa_chip: ECDSAVerifyChip
-
-    def __init__(
-        self,
-        pub_key_hash: RLC,
-        address: FQ,
-        msg_hash_rlc: FQ,
-        ecdsa_chip: ECDSAVerifyChip,
-    ) -> None:
-        self.pub_key_hash = pub_key_hash
-        self.address = address
-        self.msg_hash_rlc = msg_hash_rlc
-        self.ecdsa_chip = ecdsa_chip
-
-    @classmethod
-    def assign(
-        cls, signature: KeyAPI.Signature, pub_key: KeyAPI.PublicKey, msg_hash: bytes, randomness: FQ
-    ):
-        pub_key_hash = keccak(pub_key.to_bytes())
-        self_pub_key_hash = RLC(pub_key_hash, randomness)
-        self_address = FQ(int.from_bytes(pub_key_hash[-20:], "big"))
-        self_msg_hash_rlc = RLC(int.from_bytes(msg_hash, "big"), randomness).value
-        self_ecdsa_chip = ECDSAVerifyChip.assign(signature, pub_key, msg_hash)
-        return cls(self_pub_key_hash, self_address, self_msg_hash_rlc, self_ecdsa_chip)
-
-    def verify(self, keccak_table: KeccakTable, randomness: FQ, assert_msg: str):
-        is_enabled = FQ(1 - (self.msg_hash_rlc == 0))  # 1 - is_zero(self.msg_hash_rlc)
-
-        # 0. Verify that the first 20 bytes of the pub_key_hash equal the address
-        addr_expr = FQ.linear_combine(list(reversed(self.pub_key_hash.le_bytes[-20:])), FQ(2**8))
-        assert (
-            addr_expr == self.address
-        ), f"{assert_msg}: {hex(addr_expr.n)} != {hex(self.address.n)}"
-
-        # 1. Verify that keccak(pub_key_bytes) = pub_key_hash by keccak table
-        # lookup, where pub_key_bytes is built from the pub_key in the
-        # ecdsa_chip
-        pub_key_bytes = bytes(reversed(self.ecdsa_chip.pub_key[0].limbs)) + bytes(
-            reversed(self.ecdsa_chip.pub_key[1].limbs)
-        )
-        keccak_table.lookup(
-            is_enabled,
-            RLC(bytes(reversed(pub_key_bytes)), randomness).value,
-            FQ(64) * is_enabled,
-            self.pub_key_hash.value,
-            assert_msg,
-        )
-
-        # 2. Verify that the signed message in the ecdsa_chip with RLC encoding
-        # corresponds to msg_hash_rlc
-        msg_hash_rlc_expr = FQ.linear_combine(self.ecdsa_chip.msg_hash.limbs, randomness)
-        assert (
-            msg_hash_rlc_expr == self.msg_hash_rlc
-        ), f"{assert_msg}: {hex(msg_hash_rlc_expr.n)} != {hex(self.msg_hash_rlc.n)}"
-
-        # Verify the ECDSA signature
-        self.ecdsa_chip.verify(is_enabled, assert_msg)
-*/
