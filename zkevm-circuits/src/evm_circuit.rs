@@ -137,8 +137,8 @@ pub mod test {
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
-    use std::hash::Hash;
     use std::collections::HashSet;
+    use std::hash::Hash;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -172,7 +172,6 @@ pub mod test {
         let mut uniq = HashSet::new();
         iter.into_iter().all(move |x| uniq.insert(x))
     }
-
 
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
@@ -236,14 +235,14 @@ pub mod test {
                         .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
-                    let mut rows = rws
+                    let rows = rws
                         .0
                         .values()
-                        .flat_map(|rws| rws.iter().map(|rw|rw.get_rw_counter()))
+                        .flat_map(|rws| rws.iter().map(|rw| rw.get_rw_counter()))
                         .collect::<Vec<_>>();
 
                     let is_unique = has_unique_elements(rows);
-                    assert_eq!(is_unique, true);
+                    assert!(is_unique);
 
                     for rw in rws.0.values().flat_map(|rws| rws.iter()) {
                         self.rw_table.assign(
