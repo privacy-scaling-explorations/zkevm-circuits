@@ -287,7 +287,8 @@ pub struct Block {
     pub base_fee: Word,
     /// Container of operations done in this block.
     pub container: OperationContainer,
-    txs: Vec<Transaction>,
+    /// Transactions contained in the block
+    pub txs: Vec<Transaction>,
     code: HashMap<Hash, Vec<u8>>,
 }
 
@@ -594,7 +595,7 @@ impl TransactionContext {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
     /// Nonce

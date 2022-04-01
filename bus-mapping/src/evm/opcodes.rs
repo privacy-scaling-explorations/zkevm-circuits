@@ -23,6 +23,7 @@ mod dup;
 mod extcodehash;
 mod mload;
 mod mstore;
+mod number;
 mod selfbalance;
 mod sload;
 mod stackonlyop;
