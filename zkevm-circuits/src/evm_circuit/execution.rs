@@ -1,9 +1,9 @@
 use crate::{
     evm_circuit::{
-        param::{STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         step::{ExecutionState, Preset, Step},
         table::{FixedTableTag, Lookup, LookupTable, Table},
-        util::constraint_builder::ConstraintBuilder,
+        util::constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
@@ -12,7 +12,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 use std::{collections::HashMap, iter};
@@ -113,11 +113,15 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
-    q_step: Selector,
+    q_usable: Selector,
+    q_step: Column<Advice>,
+    num_rows_until_next_step: Column<Advice>,
+    num_rows_inv: Column<Advice>,
     q_step_first: Selector,
     q_step_last: Selector,
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
+    height_map: HashMap<ExecutionState, usize>,
     add_gadget: AddGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
@@ -173,19 +177,23 @@ impl<F: Field> ExecutionConfig<F> {
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {
-        let q_step = meta.complex_selector();
+        let q_usable = meta.complex_selector();
+        let q_step = meta.advice_column();
+        let num_rows_until_next_step = meta.advice_column();
+        let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, qs_byte_lookup, advices, false);
-        let step_next = Step::new(meta, qs_byte_lookup, advices, true);
+        let step_curr = Step::new(meta, qs_byte_lookup, advices, 0);
         let mut independent_lookups = Vec::new();
         let mut presets_map = HashMap::new();
+        let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
-            let q_step = meta.query_selector(q_step);
+            let q_usable = meta.query_selector(q_usable);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
 
@@ -207,68 +215,6 @@ impl<F: Field> ExecutionConfig<F> {
                 )
             });
 
-            // ExecutionState transition should be correct.
-            let execution_state_transition = {
-                let q_step_last = q_step_last.clone();
-                iter::empty()
-                    .chain(
-                        [
-                            (
-                                "EndTx can only transit to BeginTx or EndBlock",
-                                ExecutionState::EndTx,
-                                vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
-                            ),
-                            (
-                                "EndBlock can only transit to EndBlock",
-                                ExecutionState::EndBlock,
-                                vec![ExecutionState::EndBlock],
-                            ),
-                        ]
-                        .map(|(name, from, to)| {
-                            (
-                                name,
-                                step_curr.execution_state_selector([from])
-                                    * (1.expr() - step_next.execution_state_selector(to)),
-                            )
-                        }),
-                    )
-                    .chain(
-                        [
-                            (
-                                "Only EndTx can transit to BeginTx",
-                                ExecutionState::BeginTx,
-                                vec![ExecutionState::EndTx],
-                            ),
-                            (
-                                "Only ExecutionState which halts or BeginTx can transit to EndTx",
-                                ExecutionState::EndTx,
-                                ExecutionState::iterator()
-                                    .filter(ExecutionState::halts)
-                                    .chain(iter::once(ExecutionState::BeginTx))
-                                    .collect(),
-                            ),
-                            (
-                                "Only EndTx or EndBlock can transit to EndBlock",
-                                ExecutionState::EndBlock,
-                                vec![ExecutionState::EndTx, ExecutionState::EndBlock],
-                            ),
-                            (
-                                "Only ExecutionState which copies memory to memory can transit to CopyToMemory",
-                                ExecutionState::CopyToMemory,
-                                vec![ExecutionState::CopyToMemory, ExecutionState::CALLDATACOPY],
-                            ),
-                        ]
-                        .map(|(name, to, from)| {
-                            (
-                                name,
-                                step_next.execution_state_selector([to])
-                                    * (1.expr() - step_curr.execution_state_selector(from)),
-                            )
-                        }),
-                    )
-                    .map(move |(name, poly)| (name, (1.expr() - q_step_last.clone()) * poly))
-            };
-
             let _first_step_check = {
                 let begin_tx_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginTx]);
@@ -289,11 +235,46 @@ impl<F: Field> ExecutionConfig<F> {
 
             iter::once(sum_to_one)
                 .chain(bool_checks)
-                .chain(execution_state_transition)
-                .map(move |(name, poly)| (name, q_step.clone() * poly))
-                // TODO: Enable these after test of CALLDATACOPY is complete.
-                // .chain(first_step_check)
-                // .chain(last_step_check)
+                .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
+            // TODO: Enable these after test of CALLDATACOPY is complete.
+            // .chain(first_step_check)
+            // .chain(last_step_check)
+        });
+
+        meta.create_gate("q_step", |meta| {
+            let q_usable = meta.query_selector(q_usable);
+            let q_step_first = meta.query_selector(q_step_first);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
+            let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
+            let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
+            let num_rows_left_inverse = meta.query_advice(num_rows_inv, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+            // q_step needs to be enabled on the first row
+            cb.condition(q_step_first, |cb| {
+                cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
+            });
+            // Except when step is enabled, the step counter needs to decrease by 1
+            cb.condition(1.expr() - q_step.clone(), |cb| {
+                cb.require_equal(
+                    "num_rows_left_cur := num_rows_left_next + 1",
+                    num_rows_left_cur.clone(),
+                    num_rows_left_next + 1.expr(),
+                );
+            });
+            // Enforce that q_step := num_rows_until_next_step == 0
+            let is_zero = 1.expr() - (num_rows_left_cur.clone() * num_rows_left_inverse.clone());
+            cb.require_zero(
+                "num_rows_left_cur * is_zero == 0",
+                num_rows_left_cur * is_zero.clone(),
+            );
+            cb.require_zero(
+                "num_rows_left_inverse * is_zero == 0",
+                num_rows_left_inverse * is_zero.clone(),
+            );
+            cb.require_equal("q_step == is_zero", q_step, is_zero);
+            // On each usable row
+            cb.gate(q_usable)
         });
 
         // Use qs_byte_lookup as selector to do byte range lookup on each advice
@@ -320,19 +301,27 @@ impl<F: Field> ExecutionConfig<F> {
             () => {
                 Self::configure_gadget(
                     meta,
+                    advices,
+                    q_usable,
                     q_step,
+                    num_rows_until_next_step,
                     q_step_first,
+                    q_step_last,
+                    qs_byte_lookup,
                     &power_of_randomness,
                     &step_curr,
-                    &step_next,
                     &mut independent_lookups,
                     &mut presets_map,
+                    &mut height_map,
                 )
             };
         }
 
         let config = Self {
+            q_usable,
             q_step,
+            num_rows_until_next_step,
+            num_rows_inv,
             q_step_first,
             q_step_last,
             add_gadget: configure_gadget!(),
@@ -374,10 +363,12 @@ impl<F: Field> ExecutionConfig<F> {
             iszero_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
+            height_map,
         };
 
         Self::configure_lookup(
             meta,
+            q_usable,
             q_step,
             fixed_table,
             tx_table,
@@ -390,17 +381,46 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
+    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
+        *self
+            .height_map
+            .get(&execution_state)
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
-        q_step: Selector,
+        advices: [Column<Advice>; STEP_WIDTH],
+        q_usable: Selector,
+        q_step: Column<Advice>,
+        num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
+        q_step_last: Selector,
+        qs_byte_lookup: Column<Advice>,
         power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
-        step_next: &Step<F>,
         independent_lookups: &mut Vec<Vec<Lookup<F>>>,
         presets_map: &mut HashMap<ExecutionState, Vec<Preset<F>>>,
+        height_map: &mut HashMap<ExecutionState, usize>,
     ) -> G {
+        // Configure the gadget with the max height first so we can find out the actual
+        // height
+        let height = {
+            let step_next = &Step::new(meta, qs_byte_lookup, advices, MAX_STEP_HEIGHT);
+            let mut cb = ConstraintBuilder::new(
+                step_curr,
+                step_next,
+                power_of_randomness,
+                G::EXECUTION_STATE,
+            );
+            G::configure(&mut cb);
+            let (_, _, _, _, height) = cb.build();
+            step_curr.rotation_offset + height
+        };
+
+        // Now actually configure the gadget with the correct minimal height
+        let step_next = &Step::new(meta, qs_byte_lookup, advices, height);
         let mut cb = ConstraintBuilder::new(
             step_curr,
             step_next,
@@ -410,26 +430,118 @@ impl<F: Field> ExecutionConfig<F> {
 
         let gadget = G::configure(&mut cb);
 
-        let (constraints, constraints_first_step, lookups, presets) = cb.build();
+        // Enforce the step height for this opcode
+        let mut num_rows_until_next_step_next = 0.expr();
+        meta.create_gate("query num rows", |meta| {
+            num_rows_until_next_step_next =
+                meta.query_advice(num_rows_until_next_step, Rotation::next());
+            vec![0.expr()]
+        });
+        cb.require_equal(
+            "num_rows_until_next_step_next := height - 1",
+            num_rows_until_next_step_next,
+            (height - 1).expr(),
+        );
+
+        let (constraints, constraints_first_step, lookups, presets, _) = cb.build();
+
         debug_assert!(
             presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
             "execution state already configured"
         );
+        debug_assert!(
+            height_map.insert(G::EXECUTION_STATE, height).is_none(),
+            "execution state already configured"
+        );
 
+        // Enforce the logic for this opcode
+        let q_steps: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+            &|meta| meta.query_advice(q_step, Rotation::cur());
+        let q_steps_first: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+            &|meta| meta.query_selector(q_step_first);
         for (selector, constraints) in [
-            (q_step, constraints),
-            (q_step_first, constraints_first_step),
+            (q_steps, constraints),
+            (q_steps_first, constraints_first_step),
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(G::NAME, |meta| {
-                    let selector = meta.query_selector(selector);
-
-                    constraints
-                        .into_iter()
-                        .map(move |(name, constraint)| (name, selector.clone() * constraint))
+                    let q_usable = meta.query_selector(q_usable);
+                    let selector = selector(meta);
+                    constraints.into_iter().map(move |(name, constraint)| {
+                        (name, q_usable.clone() * selector.clone() * constraint)
+                    })
                 });
             }
         }
+
+        // Enforce the state transitions for this opcode
+        meta.create_gate("Constrain state machine transitions", |meta| {
+            let q_usable = meta.query_selector(q_usable);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
+            let q_step_last = meta.query_selector(q_step_last);
+
+            // ExecutionState transition should be correct.
+            iter::empty()
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "EndTx can only transit to BeginTx or EndBlock",
+                            ExecutionState::EndTx,
+                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "EndBlock can only transit to EndBlock",
+                            ExecutionState::EndBlock,
+                            vec![ExecutionState::EndBlock],
+                        ),
+                    ])
+                    .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
+                    .map(|(_, _, to)| {
+                        1.expr() - step_next.execution_state_selector(to)
+                    }),
+                )
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "Only EndTx can transit to BeginTx",
+                            ExecutionState::BeginTx,
+                            vec![ExecutionState::EndTx],
+                        ),
+                        (
+                            "Only ExecutionState which halts or BeginTx can transit to EndTx",
+                            ExecutionState::EndTx,
+                            ExecutionState::iterator()
+                                .filter(ExecutionState::halts)
+                                .chain(iter::once(ExecutionState::BeginTx))
+                                .collect(),
+                        ),
+                        (
+                            "Only EndTx or EndBlock can transit to EndBlock",
+                            ExecutionState::EndBlock,
+                            vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "Only ExecutionState which copies memory to memory can transit to CopyToMemory",
+                            ExecutionState::CopyToMemory,
+                            vec![ExecutionState::CopyToMemory, ExecutionState::CALLDATACOPY],
+                        ),
+                    ])
+                    .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
+                    .map(|(_, to, _)| {
+                        step_next.execution_state_selector([to])
+                    }),
+                )
+                // Accumulate all state transition checks.
+                // This can be done because all summed values are enforced to be boolean.
+                .reduce(|accum, poly| accum + poly)
+                .map(move |poly| {
+                        q_usable.clone()
+                            * q_step.clone()
+                            * (1.expr() - q_step_last.clone())
+                            * step_curr.execution_state_selector([G::EXECUTION_STATE])
+                            * poly
+                })
+        });
 
         // Push lookups of this ExecutionState to independent_lookups for
         // further configuration in configure_lookup.
@@ -441,7 +553,8 @@ impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn configure_lookup<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
-        q_step: Selector,
+        q_usable: Selector,
+        q_step: Column<Advice>,
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
@@ -489,11 +602,14 @@ impl<F: Field> ExecutionConfig<F> {
                 if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
                     for input_exprs in acc_lookups {
                         meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
-                            let q_step = meta.query_selector(q_step);
+                            let q_usable = meta.query_selector(q_usable);
+                            let q_step = meta.query_advice(q_step, Rotation::cur());
                             input_exprs
                                 .into_iter()
                                 .zip($table.table_exprs(meta).to_vec().into_iter())
-                                .map(|(input, table)| (q_step.clone() * input, table))
+                                .map(|(input, table)| {
+                                    (q_usable.clone() * q_step.clone() * input, table)
+                                })
                                 .collect::<Vec<_>>()
                         });
                     }
@@ -508,10 +624,14 @@ impl<F: Field> ExecutionConfig<F> {
         lookup!(Table::Block, block_table, "Block table");
     }
 
+    /// Assign block
+    /// When exact is enabled, assign exact steps in block without padding for
+    /// unit test purpose
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        _exact: bool,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "Execution step",
@@ -520,51 +640,64 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.q_step_first.enable(&mut region, offset)?;
 
+                let mut last_height = 0;
                 for transaction in &block.txs {
                     for step in &transaction.steps {
                         let call = &transaction.calls[step.call_index];
 
-                        self.q_step.enable(&mut region, offset)?;
                         self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
 
-                        offset += STEP_HEIGHT;
+                        let height = self.get_step_height(step.execution_state);
+                        for idx in 0..height {
+                            let offset = offset + idx;
+                            self.q_usable.enable(&mut region, offset)?;
+                            region.assign_advice(
+                                || "step selector",
+                                self.q_step,
+                                offset,
+                                || Ok(if idx == 0 { F::one() } else { F::zero() }),
+                            )?;
+                            let value = if idx == 0 {
+                                F::zero()
+                            } else {
+                                F::from((height - idx) as u64)
+                            };
+                            region.assign_advice(
+                                || "step height",
+                                self.num_rows_until_next_step,
+                                offset,
+                                || Ok(value),
+                            )?;
+                            region.assign_advice(
+                                || "step height inv",
+                                self.num_rows_inv,
+                                offset,
+                                || Ok(value.invert().unwrap_or(F::zero())),
+                            )?;
+                        }
+
+                        offset += height;
+                        last_height = height;
                     }
                 }
-                Ok(())
-            },
-        )?;
+                // These are still referenced (but not used) in next rows
+                region.assign_advice(
+                    || "step height",
+                    self.num_rows_until_next_step,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+                region.assign_advice(
+                    || "step height inv",
+                    self.q_step,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
 
-        // TODO: Pad leftover region to the desired capacity
-        // TODO: Enable q_step_last
-
-        Ok(())
-    }
-
-    /// Assign exact steps in block without padding for unit test purpose
-    pub fn assign_block_exact(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "Execution step",
-            |mut region| {
-                let mut offset = 0;
-
-                self.q_step_first.enable(&mut region, offset)?;
-
-                for transaction in &block.txs {
-                    for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_index];
-
-                        self.q_step.enable(&mut region, offset)?;
-                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
-
-                        offset += STEP_HEIGHT;
-                    }
-                }
-
-                self.q_step_last.enable(&mut region, offset - STEP_HEIGHT)?;
+                // If not exact:
+                // TODO: Pad leftover region to the desired capacity
+                // TODO: Enable q_step_last
+                self.q_step_last.enable(&mut region, offset - last_height)?;
 
                 Ok(())
             },

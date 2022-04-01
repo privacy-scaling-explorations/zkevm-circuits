@@ -243,28 +243,33 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         Vec<(&'static str, Expression<F>)>,
         Vec<(&'static str, Lookup<F>)>,
         Vec<Preset<F>>,
+        usize,
     ) {
         let mut constraints = self.cb.constraints;
         let mut presets = Vec::new();
 
+        let mut height = 0;
         for (row, usage) in self.curr.rows.iter().zip(self.curr_row_usages.iter()) {
             if usage.is_byte_lookup_enabled {
                 constraints.push(("Enable byte lookup", row.qs_byte_lookup.expr() - 1.expr()));
             }
+            if usage.next_idx > 0 {
+                height += 1;
 
-            presets.extend(
-                row.cells[usage.next_idx..]
-                    .iter()
-                    .map(|cell| (cell.clone(), F::zero())),
-            );
-            presets.push((
-                row.qs_byte_lookup.clone(),
-                if usage.is_byte_lookup_enabled {
-                    F::one()
-                } else {
-                    F::zero()
-                },
-            ));
+                presets.extend(
+                    row.cells[usage.next_idx..]
+                        .iter()
+                        .map(|cell| (cell.clone(), F::zero())),
+                );
+                presets.push((
+                    row.qs_byte_lookup.clone(),
+                    if usage.is_byte_lookup_enabled {
+                        F::one()
+                    } else {
+                        F::zero()
+                    },
+                ));
+            }
         }
 
         let execution_state_selector = self.curr.execution_state_selector([self.execution_state]);
@@ -283,6 +288,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 .map(|(name, lookup)| (name, lookup.conditional(execution_state_selector.clone())))
                 .collect(),
             presets,
+            height,
         )
     }
 

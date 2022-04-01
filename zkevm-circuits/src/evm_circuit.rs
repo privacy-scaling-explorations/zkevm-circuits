@@ -16,8 +16,6 @@ use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
 
-use self::param::STEP_HEIGHT;
-
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
 pub struct EvmCircuit<F> {
@@ -83,31 +81,36 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     /// Assign block
+    /// When exact is enabled, assign exact steps in block without padding for
+    /// unit test purpose
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        exact: bool,
     ) -> Result<(), Error> {
-        self.execution.assign_block(layouter, block)
-    }
-
-    /// Assign exact steps in block without padding for unit test purpose
-    pub fn assign_block_exact(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        self.execution.assign_block_exact(layouter, block)
+        self.execution.assign_block(layouter, block, exact)
     }
 
     /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
-        let max_offset = block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT;
-        // gates are only enabled at "q_step" rows
-        let gates_row_ids = (0..max_offset).step_by(STEP_HEIGHT).collect();
+    pub fn get_active_rows(&self, block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+        let max_offset = self.get_num_rows_required(block);
+        // some gates are enabled on all rows
+        let gates_row_ids = (0..max_offset).collect();
         // lookups are enabled at "q_step" rows and byte lookup rows
         let lookup_row_ids = (0..max_offset).collect();
         (gates_row_ids, lookup_row_ids)
+    }
+
+    pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
+        // Start at 1 so we can be sure there is an unused `next` row available
+        let mut num_rows = 1;
+        for transaction in &block.txs {
+            for step in &transaction.steps {
+                num_rows += self.execution.get_step_height(step.execution_state);
+            }
+        }
+        num_rows
     }
 }
 
@@ -116,7 +119,6 @@ pub mod test {
 
     use crate::{
         evm_circuit::{
-            param::STEP_HEIGHT,
             table::FixedTableTag,
             witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
             EvmCircuit,
@@ -386,7 +388,21 @@ pub mod test {
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
             config
                 .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+                .assign_block(&mut layouter, &self.block, true)
+        }
+    }
+
+    impl<F: Field> TestCircuit<F> {
+        pub fn get_num_rows_required(block: &Block<F>) -> usize {
+            let mut cs = ConstraintSystem::default();
+            let config = TestCircuit::configure(&mut cs);
+            config.evm_circuit.get_num_rows_required(block)
+        }
+
+        pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+            let mut cs = ConstraintSystem::default();
+            let config = TestCircuit::configure(&mut cs);
+            config.evm_circuit.get_active_rows(block)
         }
     }
 
@@ -395,6 +411,8 @@ pub mod test {
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
+
+        let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -409,16 +427,12 @@ pub mod test {
                 .map(|bytecode| bytecode.bytes.len())
                 .sum::<usize>(),
         ));
+        let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
 
         let power_of_randomness = (1..32)
-            .map(|exp| {
-                vec![
-                    block.randomness.pow(&[exp, 0, 0, 0]);
-                    block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT
-                ]
-            })
+            .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); num_rows_required_for_steps])
             .collect();
-        let (active_gate_rows, active_lookup_rows) = EvmCircuit::get_active_rows(&block);
+        let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())

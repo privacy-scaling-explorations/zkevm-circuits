@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::{N_CELLS_STEP_STATE, STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_CELLS_STEP_STATE, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
         witness::{Block, Call, CodeSource, ExecStep, Transaction},
     },
@@ -482,6 +482,7 @@ pub(crate) struct StepRow<F> {
 pub(crate) struct Step<F> {
     pub(crate) state: StepState<F>,
     pub(crate) rows: Vec<StepRow<F>>,
+    pub(crate) rotation_offset: usize,
 }
 
 impl<F: FieldExt> Step<F> {
@@ -489,7 +490,7 @@ impl<F: FieldExt> Step<F> {
         meta: &mut ConstraintSystem<F>,
         qs_byte_lookup: Column<Advice>,
         advices: [Column<Advice>; STEP_WIDTH],
-        is_next_step: bool,
+        offset: usize,
     ) -> Self {
         let num_state_cells = ExecutionState::amount() + N_CELLS_STEP_STATE;
 
@@ -498,7 +499,7 @@ impl<F: FieldExt> Step<F> {
             meta.create_gate("Query state for step", |meta| {
                 for idx in 0..num_state_cells {
                     let column_idx = idx % STEP_WIDTH;
-                    let rotation = idx / STEP_WIDTH + if is_next_step { STEP_HEIGHT } else { 0 };
+                    let rotation = idx / STEP_WIDTH + offset;
                     cells.push_back(Cell::new(meta, advices[column_idx], rotation));
                 }
 
@@ -522,10 +523,10 @@ impl<F: FieldExt> Step<F> {
 
         let rotation_offset =
             num_state_cells / STEP_WIDTH + (num_state_cells % STEP_WIDTH != 0) as usize;
-        let mut rows = Vec::with_capacity(STEP_HEIGHT - rotation_offset);
+        let mut rows = Vec::with_capacity(MAX_STEP_HEIGHT - rotation_offset);
         meta.create_gate("Query rows for step", |meta| {
-            for rotation in rotation_offset..STEP_HEIGHT {
-                let rotation = rotation + if is_next_step { STEP_HEIGHT } else { 0 };
+            for rotation in rotation_offset..MAX_STEP_HEIGHT {
+                let rotation = rotation + offset;
                 rows.push(StepRow {
                     qs_byte_lookup: Cell::new(meta, qs_byte_lookup, rotation),
                     cells: advices.map(|column| Cell::new(meta, column, rotation)),
@@ -535,7 +536,11 @@ impl<F: FieldExt> Step<F> {
             vec![0.expr()]
         });
 
-        Self { state, rows }
+        Self {
+            state,
+            rows,
+            rotation_offset,
+        }
     }
 
     pub(crate) fn execution_state_selector(
