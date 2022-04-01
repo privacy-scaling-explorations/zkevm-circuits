@@ -137,6 +137,8 @@ pub mod test {
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
+    use std::hash::Hash;
+    use std::collections::HashSet;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -161,6 +163,16 @@ pub mod test {
     pub(crate) fn rand_fp() -> Fp {
         Fp::rand()
     }
+
+    fn has_unique_elements<T>(iter: T) -> bool
+    where
+        T: IntoIterator,
+        T::Item: Eq + Hash,
+    {
+        let mut uniq = HashSet::new();
+        iter.into_iter().all(move |x| uniq.insert(x))
+    }
+
 
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
@@ -227,17 +239,13 @@ pub mod test {
                     let mut rows = rws
                         .0
                         .values()
-                        .flat_map(|rws| rws.iter())
+                        .flat_map(|rws| rws.iter().map(|rw|rw.get_rw_counter()))
                         .collect::<Vec<_>>();
 
-                    rows.sort_by_key(|a| a.get_rw_counter());
-                    let mut pre_rw_counter = 0;
-                    for rw in rows {
-                        if pre_rw_counter != 0 {
-                            assert!(rw.get_rw_counter() > pre_rw_counter);
-                        }
+                    let is_unique = has_unique_elements(rows);
+                    assert_eq!(is_unique, true);
 
-                        pre_rw_counter = rw.get_rw_counter();
+                    for rw in rws.0.values().flat_map(|rws| rws.iter()) {
                         self.rw_table.assign(
                             &mut region,
                             offset,
