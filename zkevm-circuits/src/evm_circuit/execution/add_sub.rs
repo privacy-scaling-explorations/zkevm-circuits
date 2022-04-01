@@ -30,7 +30,7 @@ pub(crate) struct AddSubGadget<F> {
 impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
     const NAME: &'static str = "ADD";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD_SUB;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();

@@ -35,7 +35,7 @@ pub(crate) struct MulDivModGadget<F> {
 impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
     const NAME: &'static str = "MUL";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::MUL;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::MUL_DIV_MOD;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
