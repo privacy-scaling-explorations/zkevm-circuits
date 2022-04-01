@@ -15,7 +15,8 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{collections::HashMap, convert::TryInto, iter};
+use super::util::{CachedRegion, StoredExpression};
 
 mod add;
 mod begin_tx;
@@ -102,7 +103,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
@@ -119,9 +120,11 @@ pub(crate) struct ExecutionConfig<F> {
     num_rows_inv: Column<Advice>,
     q_step_first: Selector,
     q_step_last: Selector,
+    advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     height_map: HashMap<ExecutionState, usize>,
+    stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     add_gadget: AddGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
@@ -297,6 +300,7 @@ impl<F: Field> ExecutionConfig<F> {
             });
         }
 
+        let mut stored_expressions_map = HashMap::new();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -313,6 +317,7 @@ impl<F: Field> ExecutionConfig<F> {
                     &mut independent_lookups,
                     &mut presets_map,
                     &mut height_map,
+                    &mut stored_expressions_map,
                 )
             };
         }
@@ -324,6 +329,7 @@ impl<F: Field> ExecutionConfig<F> {
             num_rows_inv,
             q_step_first,
             q_step_last,
+            advices,
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
@@ -364,6 +370,7 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             presets_map,
             height_map,
+            stored_expressions_map,
         };
 
         Self::configure_lookup(
@@ -403,6 +410,7 @@ impl<F: Field> ExecutionConfig<F> {
         independent_lookups: &mut Vec<Vec<Lookup<F>>>,
         presets_map: &mut HashMap<ExecutionState, Vec<Preset<F>>>,
         height_map: &mut HashMap<ExecutionState, usize>,
+        stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
@@ -415,7 +423,7 @@ impl<F: Field> ExecutionConfig<F> {
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
-            let (_, _, _, _, height) = cb.build();
+            let (_, _, _, _, height, _) = cb.build();
             step_curr.rotation_offset + height
         };
 
@@ -443,7 +451,8 @@ impl<F: Field> ExecutionConfig<F> {
             (height - 1).expr(),
         );
 
-        let (constraints, constraints_first_step, lookups, presets, _) = cb.build();
+        let (constraints, constraints_first_step, lookups, presets, _, stored_expressions) =
+            cb.build();
 
         debug_assert!(
             presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
@@ -451,6 +460,12 @@ impl<F: Field> ExecutionConfig<F> {
         );
         debug_assert!(
             height_map.insert(G::EXECUTION_STATE, height).is_none(),
+            "execution state already configured"
+        );
+        debug_assert!(
+            stored_expressions_map
+                .insert(G::EXECUTION_STATE, stored_expressions)
+                .is_none(),
             "execution state already configured"
         );
 
@@ -633,6 +648,12 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         _exact: bool,
     ) -> Result<(), Error> {
+        let power_of_randomness = (1..32)
+            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
+            .collect::<Vec<F>>()
+            .try_into()
+            .unwrap();
+
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -642,12 +663,30 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let mut last_height = 0;
                 for transaction in &block.txs {
-                    for step in &transaction.steps {
+                    for (step, step_next) in transaction.steps.iter().zip(
+                        transaction
+                            .steps
+                            .iter()
+                            .map(Some)
+                            .skip(1)
+                            .chain(iter::once(None)),
+                    ) {
                         let call = &transaction.calls[step.call_index];
 
-                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
-
                         let height = self.get_step_height(step.execution_state);
+
+                        self.assign_exec_step(
+                            &mut region,
+                            offset,
+                            block,
+                            transaction,
+                            call,
+                            step,
+                            height,
+                            step_next,
+                            power_of_randomness,
+                        )?;
+
                         for idx in 0..height {
                             let offset = offset + idx;
                             self.q_usable.enable(&mut region, offset)?;
@@ -704,9 +743,50 @@ impl<F: Field> ExecutionConfig<F> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step(
         &self,
         region: &mut Region<'_, F>,
+        offset: usize,
+        block: &Block<F>,
+        transaction: &Transaction,
+        call: &Call,
+        step: &ExecStep,
+        height: usize,
+        step_next: Option<&ExecStep>,
+        power_of_randomness: [F; 31],
+    ) -> Result<(), Error> {
+        let region = &mut CachedRegion::<'_, '_, F>::new(
+            region,
+            power_of_randomness,
+            STEP_WIDTH,
+            MAX_STEP_HEIGHT * 2,
+            self.advices[0].index(),
+            offset,
+        );
+
+        // Also set the witnesses of the next step
+        // These may be used in stored expressions and
+        // so their witness values need to be known to be able
+        // to correctly calculate the intermediate value.
+        if let Some(step_next) = step_next {
+            self.assign_exec_step_int(
+                region,
+                offset + height,
+                block,
+                transaction,
+                call,
+                step_next,
+            )?;
+        }
+
+        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_exec_step_int(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
@@ -795,6 +875,15 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             _ => unimplemented!(),
+        }
+
+        // Fill in witness values for stored expressions
+        for stored_expression in self
+            .stored_expressions_map
+            .get(&step.execution_state)
+            .expect("not implemented")
+        {
+            stored_expression.assign(region, offset)?;
         }
 
         Ok(())

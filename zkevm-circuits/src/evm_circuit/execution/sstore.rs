@@ -7,17 +7,14 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            not, select, Cell, Word,
+            not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGadget<F> {
@@ -156,7 +153,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
@@ -309,7 +306,7 @@ impl<F: Field> SstoreGasGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: eth_types::Word,
         value_prev: eth_types::Word,
@@ -471,7 +468,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         tx_refund_old: u64,
         value: eth_types::Word,

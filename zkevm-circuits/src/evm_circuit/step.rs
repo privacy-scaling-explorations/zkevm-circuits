@@ -1,3 +1,4 @@
+use super::util::CachedRegion;
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, N_CELLS_STEP_STATE, STEP_WIDTH},
@@ -10,7 +11,6 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::ToLittleEndian;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
 use std::collections::VecDeque;
@@ -556,7 +556,7 @@ impl<F: FieldExt> Step<F> {
 
     pub(crate) fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

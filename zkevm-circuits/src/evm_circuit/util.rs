@@ -3,7 +3,7 @@ use eth_types::U256;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region},
-    plonk::{Advice, Column, Error, Expression, VirtualCells},
+    plonk::{Advice, Assigned, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -32,7 +32,7 @@ impl<F: FieldExt> Cell<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: Option<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -59,6 +59,104 @@ impl<F: FieldExt> Expr<F> for Cell<F> {
 impl<F: FieldExt> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
+    }
+}
+
+pub struct CachedRegion<'r, 'b, F: FieldExt> {
+    region: &'r mut Region<'b, F>,
+    advice: Vec<Vec<F>>,
+    power_of_randomness: [F; 31],
+    width_start: usize,
+    height_start: usize,
+}
+
+impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+    /// New cached region
+    pub(crate) fn new(
+        region: &'r mut Region<'b, F>,
+        power_of_randomness: [F; 31],
+        width: usize,
+        height: usize,
+        width_start: usize,
+        height_start: usize,
+    ) -> Self {
+        Self {
+            region,
+            advice: vec![vec![F::zero(); height]; width],
+            power_of_randomness,
+            width_start,
+            height_start,
+        }
+    }
+
+    /// Assign an advice column value (witness).
+    pub fn assign_advice<'v, V, VR, A, AR>(
+        &'v mut self,
+        annotation: A,
+        column: Column<Advice>,
+        offset: usize,
+        to: V,
+    ) -> Result<AssignedCell<VR, F>, Error>
+    where
+        V: FnMut() -> Result<VR, Error> + 'v,
+        for<'vr> Assigned<F>: From<&'vr VR>,
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        // Actually set the value
+        let res = self.region.assign_advice(annotation, column, offset, to);
+        // Cache the value
+        if let Result::Ok(cell) = &res {
+            let call_value = cell.value_field();
+            if let Some(value) = call_value {
+                if column.index() >= self.width_start {
+                    self.advice[column.index() - self.width_start][offset - self.height_start] =
+                        value.evaluate();
+                }
+            }
+        }
+        res
+    }
+
+    pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
+        unimplemented!("fixed column");
+    }
+
+    pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+        self.advice[column_index - self.width_start]
+            [(((row_index - self.height_start) as i32) + rotation.0) as usize]
+    }
+
+    pub fn get_instance(&self, _row_index: usize, column_index: usize, _rotation: Rotation) -> F {
+        self.power_of_randomness[column_index]
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredExpression<F> {
+    cell: Cell<F>,
+    expr: Expression<F>,
+    expr_id: String,
+}
+
+impl<F: FieldExt> StoredExpression<F> {
+    pub fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        let value = self.expr.evaluate(
+            &|scalar| scalar,
+            &|_| panic!("virtual selectors are removed during optimization"),
+            &|_, column_index, rotation| region.get_fixed(offset, column_index, rotation),
+            &|_, column_index, rotation| region.get_advice(offset, column_index, rotation),
+            &|_, column_index, rotation| region.get_instance(offset, column_index, rotation),
+            &|a| -a,
+            &|a, b| a + b,
+            &|a, b| a * b,
+            &|a, scalar| a * scalar,
+        );
+        self.cell.assign(region, offset, Some(value))
     }
 }
 
@@ -104,7 +202,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: Option<[u8; N]>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {

@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use crate::{evm_circuit::step::ExecutionState, impl_expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -331,6 +333,70 @@ impl<F: FieldExt> Lookup<F> {
                 .into_iter()
                 .map(|expr| condition.clone() * expr)
                 .collect(),
+        }
+    }
+
+    pub(crate) fn flatten(self, condition: Expression<F>) -> Self {
+        match self {
+            Lookup::Fixed { tag, values } => Lookup::Fixed {
+                tag: condition.clone() * tag,
+                values: values
+                    .iter()
+                    .map(|value| condition.clone() * value.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            },
+            Lookup::Tx {
+                id,
+                field_tag,
+                index,
+                value,
+            } => Lookup::Tx {
+                id: condition.clone() * id,
+                field_tag: condition.clone() * field_tag,
+                index: condition.clone() * index,
+                value: condition * value,
+            },
+            Lookup::Rw {
+                counter,
+                is_write,
+                tag,
+                values,
+            } => Lookup::Rw {
+                counter: condition.clone() * counter,
+                is_write: condition.clone() * is_write,
+                tag: condition.clone() * tag,
+                values: values
+                    .iter()
+                    .map(|value| condition.clone() * value.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            },
+            Lookup::Bytecode {
+                hash,
+                index,
+                value,
+                is_code,
+            } => Lookup::Bytecode {
+                hash: condition.clone() * hash,
+                index: condition.clone() * index,
+                value: condition.clone() * value,
+                is_code: condition * is_code,
+            },
+            Lookup::Block {
+                field_tag,
+                number,
+                value,
+            } => Lookup::Block {
+                field_tag: condition.clone() * field_tag,
+                number: condition.clone() * number,
+                value: condition * value,
+            },
+            Lookup::Conditional(lookup_condition, lookup) => {
+                lookup.flatten(condition * lookup_condition)
+            }
         }
     }
 

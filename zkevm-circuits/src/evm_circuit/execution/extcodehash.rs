@@ -7,7 +7,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, Cell, RandomLinearCombination, Word,
+            from_bytes, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -16,7 +16,7 @@ use crate::{
 use eth_types::ToLittleEndian;
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
 use ethers_core::utils::keccak256;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -154,7 +154,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,

@@ -13,14 +13,16 @@ use crate::{
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
+use super::StoredExpression;
+
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-// It aims to cap `extended_k` to 4, which allows constraint degree to 2^4+1,
-// but each ExecutionGadget has implicit selector degree 2, so here it only
-// allows 2^4+1-2 = 15.
-const MAX_DEGREE: usize = 15;
+// It aims to cap `extended_k` to 3, which allows constraint degree to 2^3+1,
+// but each ExecutionGadget has implicit selector degree 3, so here it only
+// allows 2^3+1-3 = 6.
+const MAX_DEGREE: usize = 6;
 // Implicit degree added to input expressions of lookups. It assumes blind
 // factors have been disabled, and table expressions with degree 1.
-const LOOKUP_DEGREE: usize = 2;
+const LOOKUP_DEGREE: usize = 3;
 
 #[derive(Clone, Debug, Default)]
 struct StepRowUsage {
@@ -98,8 +100,8 @@ impl<F: FieldExt, E1: Expr<F>, E2: Expr<F>> From<(E1, E2)> for ReversionInfo<F> 
 
 #[derive(Default)]
 pub struct BaseConstraintBuilder<F> {
-    pub constraints: Vec<(&'static str, Expression<F>)>,
-    pub max_degree: usize,
+    constraints: Vec<(&'static str, Expression<F>)>,
+    max_degree: usize,
     condition: Option<Expression<F>>,
 }
 
@@ -194,11 +196,12 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
 }
 
 pub(crate) struct ConstraintBuilder<'a, F> {
+    pub max_degree: usize,
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
     power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
-    cb: BaseConstraintBuilder<F>,
+    constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<(&'static str, Lookup<F>)>,
     curr_row_usages: Vec<StepRowUsage>,
@@ -208,6 +211,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stack_pointer_offset: i32,
     in_next_step: bool,
     condition: Option<Expression<F>>,
+    stored_expressions: Vec<StoredExpression<F>>,
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
@@ -218,11 +222,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         execution_state: ExecutionState,
     ) -> Self {
         Self {
+            max_degree: MAX_DEGREE,
             curr,
             next,
             power_of_randomness,
             execution_state,
-            cb: BaseConstraintBuilder::new(MAX_DEGREE),
+            constraints: Vec::new(),
             constraints_first_step: Vec::new(),
             lookups: Vec::new(),
             curr_row_usages: vec![StepRowUsage::default(); curr.rows.len()],
@@ -232,6 +237,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             stack_pointer_offset: 0,
             in_next_step: false,
             condition: None,
+            stored_expressions: Vec::new(),
         }
     }
 
@@ -244,8 +250,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         Vec<(&'static str, Lookup<F>)>,
         Vec<Preset<F>>,
         usize,
+        Vec<StoredExpression<F>>,
     ) {
-        let mut constraints = self.cb.constraints;
+        let mut constraints = self.constraints;
         let mut presets = Vec::new();
 
         let mut height = 0;
@@ -289,6 +296,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 .collect(),
             presets,
             height,
+            self.stored_expressions,
         )
     }
 
@@ -390,7 +398,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Common
 
     pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.cb.require_zero(name, constraint);
+        self.add_constraint(name, constraint);
     }
 
     pub(crate) fn require_equal(
@@ -399,11 +407,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) {
-        self.cb.require_equal(name, lhs, rhs);
+        self.add_constraint(name, lhs - rhs);
     }
 
     pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
-        self.cb.require_boolean(name, value);
+        self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
     pub(crate) fn require_in_set(
@@ -412,7 +420,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value: Expression<F>,
         set: Vec<Expression<F>>,
     ) {
-        self.cb.require_in_set(name, value, set);
+        self.add_constraint(
+            name,
+            set.iter()
+                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
+        );
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -615,7 +627,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             values,
         );
         self.rw_counter_offset =
-            self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
+            self.rw_counter_offset.clone() + self.condition.clone().unwrap_or_else(|| 1.expr());
     }
 
     fn state_write(
@@ -994,12 +1006,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
         debug_assert!(
-            self.cb.condition.is_none(),
+            self.condition.is_none(),
             "Nested condition is not supported"
         );
-        self.cb.condition = Some(condition);
+        self.condition = Some(condition);
         let ret = constraint(self);
-        self.cb.condition = None;
+        self.condition = None;
         ret
     }
 
@@ -1030,11 +1042,21 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        self.cb.add_constraints(constraints);
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
     }
 
     pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.cb.add_constraint(name, constraint);
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+
+        let constraint = self.split_expression(name, constraint, MAX_DEGREE - 2);
+
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
     }
 
     pub(crate) fn add_constraint_first_step(
@@ -1042,7 +1064,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         name: &'static str,
         constraint: Expression<F>,
     ) {
-        let constraint = match &self.cb.condition {
+        let constraint = match &self.condition {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
         };
@@ -1052,11 +1074,178 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &'static str, lookup: Lookup<F>) {
-        let lookup = match &self.cb.condition {
+        let lookup = match &self.condition {
             Some(condition) => lookup.conditional(condition.clone()),
             None => lookup,
         };
-        self.validate_degree(lookup.degree() + LOOKUP_DEGREE, name);
+
+        // Currently not the most efficient because the intermediate expressions are
+        // allowed to have a higher degree than the expression actually used in
+        // the lookup, but this works good enough for now because how the
+        // lookups are done will change.
+        let lookup = self.split_lookup(lookup, MAX_DEGREE - LOOKUP_DEGREE);
+        self.validate_degree(lookup.degree(), name);
+
         self.lookups.push((name, lookup));
+    }
+
+    pub(crate) fn store_expression(
+        &mut self,
+        name: &'static str,
+        expr: Expression<F>,
+    ) -> Expression<F> {
+        // Check if we already stored the expression somewhere
+        let result = self.find_stored_expression(expr.clone());
+        match result {
+            Some(cell) => cell.expr(),
+            None => {
+                // Even if we're building expressions for the next step,
+                // these cached values need to be stored for the current step.
+                let in_next_step = self.in_next_step;
+                self.in_next_step = false;
+                let cell = self.query_cell();
+                self.in_next_step = in_next_step;
+
+                // Require the stored value to equal the value of the expression
+                let name = format!("{} (stored expression)", name);
+                self.constraints
+                    .push((Box::leak(name.into_boxed_str()), cell.expr() - expr.clone()));
+
+                self.stored_expressions.push(StoredExpression {
+                    cell: cell.clone(),
+                    expr_id: expr.identifier(),
+                    expr,
+                });
+                cell.expr()
+            }
+        }
+    }
+
+    pub(crate) fn find_stored_expression(&mut self, expr: Expression<F>) -> Option<Cell<F>> {
+        let expr_id = expr.identifier();
+        for result in self.stored_expressions.iter() {
+            if result.expr_id == expr_id {
+                return Some(result.cell.clone());
+            }
+        }
+        None
+    }
+
+    fn split_expression(
+        &mut self,
+        name: &'static str,
+        expr: Expression<F>,
+        max_degree: usize,
+    ) -> Expression<F> {
+        if expr.degree() > max_degree {
+            match expr {
+                Expression::Negated(poly) => {
+                    Expression::Negated(Box::new(self.split_expression(name, *poly, max_degree)))
+                }
+                Expression::Scaled(poly, v) => {
+                    Expression::Scaled(Box::new(self.split_expression(name, *poly, max_degree)), v)
+                }
+                Expression::Sum(a, b) => {
+                    let a = if a.degree() > max_degree {
+                        self.split_expression(name, *a, max_degree)
+                    } else {
+                        *a
+                    };
+                    let b = if b.degree() > max_degree {
+                        self.split_expression(name, *b, max_degree)
+                    } else {
+                        *b
+                    };
+                    a + b
+                }
+                Expression::Product(a, b) => {
+                    let mut a = (*a).clone();
+                    let mut b = (*b).clone();
+                    while a.degree() + b.degree() > max_degree {
+                        if a.degree() >= b.degree() {
+                            a = if a.degree() > max_degree {
+                                self.split_expression(name, a.clone(), max_degree)
+                            } else {
+                                self.store_expression(name, a.clone())
+                            }
+                        } else {
+                            b = if b.degree() > max_degree {
+                                self.split_expression(name, b.clone(), max_degree)
+                            } else {
+                                self.store_expression(name, b.clone())
+                            };
+                        }
+                    }
+                    a * b
+                }
+                _ => expr.clone(),
+            }
+        } else {
+            expr.clone()
+        }
+    }
+
+    fn split_lookup(&mut self, lookup: Lookup<F>, max_degree: usize) -> Lookup<F> {
+        match lookup {
+            Lookup::Fixed { tag, values } => Lookup::Fixed {
+                tag: self.split_expression("tag", tag, max_degree),
+                values: values
+                    .iter()
+                    .map(|value| self.split_expression("values", value.clone(), max_degree))
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            },
+            Lookup::Tx {
+                id,
+                field_tag,
+                index,
+                value,
+            } => Lookup::Tx {
+                id: self.split_expression("id", id, max_degree),
+                field_tag: self.split_expression("field_tag", field_tag, max_degree),
+                index: self.split_expression("index", index, max_degree),
+                value: self.split_expression("value", value, max_degree),
+            },
+            Lookup::Rw {
+                counter,
+                is_write,
+                tag,
+                values,
+            } => Lookup::Rw {
+                counter: self.split_expression("counter", counter, max_degree),
+                is_write: self.split_expression("is_write", is_write, max_degree),
+                tag: self.split_expression("tag", tag, max_degree),
+                values: values
+                    .iter()
+                    .map(|value| self.split_expression("values", value.clone(), max_degree))
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            },
+            Lookup::Bytecode {
+                hash,
+                index,
+                value,
+                is_code,
+            } => Lookup::Bytecode {
+                hash: self.split_expression("hash", hash, max_degree),
+                index: self.split_expression("index", index, max_degree),
+                value: self.split_expression("value", value, max_degree),
+                is_code: self.split_expression("is_code", is_code, max_degree),
+            },
+            Lookup::Block {
+                field_tag,
+                number,
+                value,
+            } => Lookup::Block {
+                field_tag: self.split_expression("field_tag", field_tag, max_degree),
+                number: self.split_expression("number", number, max_degree),
+                value: self.split_expression("value", value, max_degree),
+            },
+            Lookup::Conditional(condition, lookup) => {
+                self.split_lookup(lookup.flatten(condition), max_degree)
+            }
+        }
     }
 }
