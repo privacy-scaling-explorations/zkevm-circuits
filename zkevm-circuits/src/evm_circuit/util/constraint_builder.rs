@@ -10,7 +10,10 @@ use crate::{
     },
     util::Expr,
 };
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    plonk::Expression::{self, Constant},
+};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -608,8 +611,19 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             tag,
             values,
         );
-        self.rw_counter_offset =
-            self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
+        // Manually constant folding is used here, since halo2 cannot do this
+        // automatically. Better error message will be printed during circuit
+        // debugging.
+        self.rw_counter_offset = match &self.cb.condition {
+            None => {
+                if let Constant(v) = self.rw_counter_offset {
+                    Constant(v + F::from(1u64))
+                } else {
+                    self.rw_counter_offset.clone() + 1i32.expr()
+                }
+            }
+            Some(c) => self.rw_counter_offset.clone() + c.clone(),
+        };
     }
 
     fn state_write(

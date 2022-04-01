@@ -1,6 +1,7 @@
 use super::{
-    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, StackOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
+    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter,
+    StackOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
+    RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -72,7 +73,21 @@ impl OperationContainer {
         let rwc = op.rwc();
         let rw = op.rw();
         let reversible = op.reversible();
-        match op.op.into_enum() {
+        self.insert_op_enum(rwc, rw, reversible, op.op.into_enum())
+    }
+
+    /// Inserts an [`OpEnum`] into the  container returning a lightweight
+    /// reference to it in the form of an [`OperationRef`] which points to the
+    /// location of the inserted operation inside the corresponding container
+    /// vector.
+    pub fn insert_op_enum(
+        &mut self,
+        rwc: RWCounter,
+        rw: RW,
+        reversible: bool,
+        op_enum: OpEnum,
+    ) -> OperationRef {
+        match op_enum {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::Memory, self.memory.len() - 1))
@@ -158,6 +173,35 @@ impl OperationContainer {
     /// the container.
     pub fn sorted_storage(&self) -> Vec<Operation<StorageOp>> {
         self.storage.iter().sorted().cloned().collect()
+    }
+
+    /// Returns a subset of operations given some [`OperationRef`]
+    pub fn slice(&self, indexes: &[OperationRef]) -> OperationContainer {
+        let mut result = OperationContainer::default();
+        for rw_ref in indexes {
+            match rw_ref.target() {
+                Target::Memory => result.memory.push(self.memory[rw_ref.as_usize()].clone()),
+                Target::Stack => result.stack.push(self.stack[rw_ref.as_usize()].clone()),
+                Target::Storage => result.storage.push(self.storage[rw_ref.as_usize()].clone()),
+                Target::TxAccessListAccount => result
+                    .tx_access_list_account
+                    .push(self.tx_access_list_account[rw_ref.as_usize()].clone()),
+                Target::TxAccessListAccountStorage => result
+                    .tx_access_list_account_storage
+                    .push(self.tx_access_list_account_storage[rw_ref.as_usize()].clone()),
+                Target::TxRefund => result
+                    .tx_refund
+                    .push(self.tx_refund[rw_ref.as_usize()].clone()),
+                Target::Account => result.account.push(self.account[rw_ref.as_usize()].clone()),
+                Target::AccountDestructed => result
+                    .account_destructed
+                    .push(self.account_destructed[rw_ref.as_usize()].clone()),
+                Target::CallContext => result
+                    .call_context
+                    .push(self.call_context[rw_ref.as_usize()].clone()),
+            }
+        }
+        result
     }
 }
 

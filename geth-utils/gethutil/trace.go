@@ -30,15 +30,16 @@ type ExecutionResult struct {
 // transaction in debug mode
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.StructLogRes
 type StructLogRes struct {
-	Pc      uint64             `json:"pc"`
-	Op      string             `json:"op"`
-	Gas     uint64             `json:"gas"`
-	GasCost uint64             `json:"gasCost"`
-	Depth   int                `json:"depth"`
-	Error   string             `json:"error,omitempty"`
-	Stack   *[]string          `json:"stack,omitempty"`
-	Memory  *[]string          `json:"memory,omitempty"`
-	Storage *map[string]string `json:"storage,omitempty"`
+	Pc            uint64             `json:"pc"`
+	Op            string             `json:"op"`
+	Gas           uint64             `json:"gas"`
+	GasCost       uint64             `json:"gasCost"`
+	Depth         int                `json:"depth"`
+	Error         string             `json:"error,omitempty"`
+	Stack         *[]string          `json:"stack,omitempty"`
+	Memory        *[]string          `json:"memory,omitempty"`
+	Storage       *map[string]string `json:"storage,omitempty"`
+	RefundCounter uint64             `json:"refund,omitempty"`
 }
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.FormatLogs
@@ -47,12 +48,13 @@ func FormatLogs(logs []logger.StructLog) []StructLogRes {
 	formatted := make([]StructLogRes, len(logs))
 	for index, trace := range logs {
 		formatted[index] = StructLogRes{
-			Pc:      trace.Pc,
-			Op:      trace.Op.String(),
-			Gas:     trace.Gas,
-			GasCost: trace.GasCost,
-			Depth:   trace.Depth,
-			Error:   trace.ErrorString(),
+			Pc:            trace.Pc,
+			Op:            trace.Op.String(),
+			Gas:           trace.Gas,
+			GasCost:       trace.GasCost,
+			Depth:         trace.Depth,
+			Error:         trace.ErrorString(),
+			RefundCounter: trace.RefundCounter,
 		}
 		if trace.Stack != nil {
 			stack := make([]string, len(trace.Stack))
