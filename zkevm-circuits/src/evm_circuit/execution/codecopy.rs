@@ -15,7 +15,7 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             CachedRegion, Cell, MemoryAddress,
         },
-        witness::{Block, Call, CodeSource, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -178,10 +178,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let code = block
             .bytecodes
             .iter()
-            .find(|b| {
-                let CodeSource::Account(code_hash) = &call.code_source;
-                b.hash == *code_hash
-            })
+            .find(|b| b.hash == call.code_hash)
             .expect("could not find current environment's bytecode");
         self.code_size
             .assign(region, offset, Some(F::from(code.bytes.len() as u64)))?;

@@ -180,7 +180,7 @@ impl Opcode for Call {
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
-                        CallContextField::StateWriteCounter,
+                        CallContextField::ReversibleWriteCounter,
                         (exec_step.reversible_write_counter + 1).into(),
                     ),
                 ] {
