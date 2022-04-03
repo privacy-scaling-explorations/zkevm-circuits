@@ -898,3 +898,77 @@ impl<F: Field> MulAddWordsGadget<F> {
         self.overflow.clone()
     }
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct AbsWordGadget<F> {
+    pub x: util::Word<F>,
+    pub sign_check: LtGadget<F, 1>,
+    is_zero: IsZeroGadget<F>,
+    is_x_lo_zero: IsZeroGadget<F>,
+}
+
+impl<F: Field> AbsWordGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, abs: &util::Word<F>) -> Self {
+        let x = cb.query_word();
+        let x_lo = from_bytes::expr(&x.cells[0..16]);
+        let x_hi = from_bytes::expr(&x.cells[16..32]);
+        let abs_lo = from_bytes::expr(&abs.cells[0..16]);
+        let abs_hi = from_bytes::expr(&abs.cells[16..32]);
+        let sign_check = LtGadget::construct(cb, x.cells[31].expr(), 128.expr());
+        let is_zero = IsZeroGadget::construct(cb, sum::expr(&x.cells));
+        let is_x_lo_zero = IsZeroGadget::construct(cb, sum::expr(&x.cells[0..16]));
+        let is_x_neg = 1.expr() - sign_check.expr();
+        cb.require_equal(
+            "2^128 - x_lo == abs_lo + [x_lo == 0] * 2^128 for x < 0",
+            is_x_neg.clone() * (pow_of_two_expr(128) - x_lo.clone()),
+            is_x_neg.clone() * (abs_lo.clone() + is_x_lo_zero.expr() * pow_of_two_expr(128)),
+        );
+        cb.require_equal(
+            "2^128 - x_hi + [x_lo == 0] - 1 == abs_hi + [x == 0] * 2^128 for x < 0",
+            is_x_neg.clone()
+                * (pow_of_two_expr(128) - x_hi.clone() + is_x_lo_zero.expr() - 1.expr()),
+            is_x_neg.clone() * (abs_hi.clone() + is_zero.expr() * pow_of_two_expr(128)),
+        );
+
+        cb.require_equal(
+            "x_lo == abs_lo for x >= 0",
+            (1.expr() - is_x_neg.clone()) * x_lo,
+            (1.expr() - is_x_neg.clone()) * abs_lo,
+        );
+        cb.require_equal(
+            "x_hi == abs_hi for x >= 0",
+            (1.expr() - is_x_neg.clone()) * x_hi,
+            (1.expr() - is_x_neg) * abs_hi,
+        );
+
+        Self {
+            x,
+            sign_check,
+            is_zero,
+            is_x_lo_zero,
+        }
+    }
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        x: Word,
+    ) -> Result<(), Error> {
+        self.x.assign(region, offset, Some(x.to_le_bytes()))?;
+        let x_le_bytes = x.to_le_bytes();
+        self.sign_check.assign(
+            region,
+            offset,
+            F::from(x_le_bytes[31] as u64),
+            F::from(128u64),
+        )?;
+
+        let x_sum = (0..32).fold(0, |acc, idx| acc + x.byte(idx) as u64);
+        let x_lo_sum = (0..16).fold(0, |acc, idx| acc + x.byte(idx) as u64);
+
+        self.is_zero.assign(region, offset, F::from(x_sum))?;
+        self.is_x_lo_zero
+            .assign(region, offset, F::from(x_lo_sum))?;
+        Ok(())
+    }
+}
