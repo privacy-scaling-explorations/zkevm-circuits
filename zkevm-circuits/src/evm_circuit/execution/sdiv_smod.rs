@@ -140,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
         let pop1_abs = get_word_abs(pop1);
         let pop2_abs = get_word_abs(pop2);
-	let push_abs = get_word_abs(push);
+        let push_abs = get_word_abs(push);
         let pop1_sign = get_sign(pop1);
         let pop2_sign = get_sign(pop2);
         let (a, b, c, d) = match step.opcode.unwrap() {
