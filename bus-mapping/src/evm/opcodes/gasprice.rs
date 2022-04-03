@@ -18,6 +18,8 @@ impl Opcode for GasPrice {
         let mut exec_step = state.new_step(geth_step)?;
         // Get gasprice result from next step
         let value = geth_steps[1].stack.last()?;
+        let tx_id = state.tx_ctx.id();
+
         // CallContext read of the TxId
         state.push_op(
             &mut exec_step,
@@ -25,11 +27,11 @@ impl Opcode for GasPrice {
             CallContextOp {
                 call_id: state.call()?.call_id,
                 field: CallContextField::TxId,
-                value: 1u64.into(),
+                value: tx_id.into(),
             },
         );
 
-        // Stack write of the caller_address
+        // Stack write of the gasprice value
         state.push_stack_op(
             &mut exec_step,
             RW::WRITE,
