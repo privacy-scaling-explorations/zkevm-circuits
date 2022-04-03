@@ -192,11 +192,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 mod test {
     use crate::{
         evm_circuit::test::rand_word,
-        test_util::{test_circuits_using_bytecode, BytecodeTestConfig},
+        test_util::{run_test_circuits, BytecodeTestConfig},
     };
     use eth_types::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
     use eth_types::Word;
+    use mock::TestContext;
     use std::iter;
 
     fn test_ok(opcode: OpcodeId, address: Word, value: Word, gas_cost: u64) {
@@ -217,8 +218,12 @@ mod test {
             enable_state_circuit_test: false,
             ..Default::default()
         };
+
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, None),
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config)
+            ),
             Ok(())
         );
     }

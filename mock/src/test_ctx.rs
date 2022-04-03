@@ -6,6 +6,7 @@ use eth_types::{
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
 };
 use external_tracer::{trace, TraceConfig};
+use helpers::*;
 use itertools::Itertools;
 
 /// TestContext is a type that contains all the information from a block
@@ -184,6 +185,20 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             eth_block: block,
             geth_traces,
         })
+    }
+
+    /// Returns a simple TestContext setup with a single tx executing the
+    /// bytecode passed as parameters. The balances of the 2 accounts and
+    /// addresses are the ones used in [`TestContext::
+    /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
+    /// configs are set as [`Default`].
+    pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
+        TestContext::new(
+            None,
+            account_0_code_account_1_no_code(bytecode),
+            tx_from_1_to_0,
+            |block, _txs| block,
+        )
     }
 }
 
