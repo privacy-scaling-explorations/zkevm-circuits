@@ -15,7 +15,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafKeyConfig {}
 
-// Verifies the hash of a leaf is in the parent branch.
+// Verifies the address RLC. Verified the intermediate account leaf RLC.
 pub(crate) struct AccountLeafKeyChip<F> {
     config: AccountLeafKeyConfig,
     _marker: PhantomData<F>,
@@ -49,8 +49,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             There are 112 bytes after the first two bytes.
             157 means the key is 29 (157 - 128) bytes long.
             */
-
-            // TODO: RLP properties
 
             let one = Expression::Constant(F::one());
             let c248 = Expression::Constant(F::from(248));

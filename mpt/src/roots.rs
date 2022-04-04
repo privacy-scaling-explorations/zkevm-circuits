@@ -143,10 +143,6 @@ impl<F: FieldExt> RootsChip<F> {
 
             // TODO: check public roots to match with first and last inter roots
 
-            // TODO:
-            // if !not_first_level: key_rlc = 0 ... -
-            // proof variables have to be checked to be reset when a new proof starts
-
             constraints
         });
 

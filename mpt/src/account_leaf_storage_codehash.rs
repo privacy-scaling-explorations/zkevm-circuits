@@ -52,8 +52,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
             let mut constraints = vec![];
 
-            // TODO: RLP properties
-
             // We have storage length in s_rlp2 (which is 160 presenting 128 + 32).
             // We have storage hash in s_advices.
             // We have codehash length in c_rlp2 (which is 160 presenting 128 + 32).
