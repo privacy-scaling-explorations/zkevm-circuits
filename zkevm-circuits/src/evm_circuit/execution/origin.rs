@@ -52,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
             stack_pointer: Delta((-1).expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
