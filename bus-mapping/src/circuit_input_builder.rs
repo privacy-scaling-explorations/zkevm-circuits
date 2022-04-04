@@ -174,7 +174,7 @@ pub struct ExecStep {
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
     pub gas_cost: GasCost,
-    /// accumulated gas refund
+    /// Accumulated gas refund
     pub gas_refund: Gas,
     /// Call index within the [`Transaction`]
     pub call_index: usize,
@@ -1070,7 +1070,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Apply reverted op to state and push to container.
+    /// Apply op to state and push to container.
     fn apply_op(&mut self, is_revert: bool, rw: RW, op: OpEnum) -> OperationRef {
         match &op {
             OpEnum::Storage(op) => {
