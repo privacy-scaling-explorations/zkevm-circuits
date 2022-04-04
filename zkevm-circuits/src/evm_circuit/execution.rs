@@ -416,9 +416,10 @@ impl<F: Field> ExecutionConfig<F> {
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
         debug_assert!(
-            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
+            !presets_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
+        presets_map.insert(G::EXECUTION_STATE, presets);
 
         for (selector, constraints) in [
             (q_step, constraints),
