@@ -8,7 +8,9 @@ use std::{marker::PhantomData, os::unix::prelude::FileTypeExt};
 
 use ecc::{EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip, EcdsaConfig};
-use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
+use integer::{
+    AssignedInteger, IntegerConfig, IntegerInstructions, WrongExt, NUMBER_OF_LOOKUP_LIMBS,
+};
 use maingate::{
     Assigned, MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
 };
@@ -33,7 +35,10 @@ use crate::util::Expr;
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
 struct SignVerifyChip<F: FieldExt> {
-    ecdsa_chip: EcdsaChip<Secp256k1Affine, F>,
+    aux_generator: Secp256k1Affine,
+    window_size: usize,
+    _marker: PhantomData<F>,
+    // ecdsa_chip: EcdsaChip<Secp256k1Affine, F>,
 }
 
 const KECCAK_IS_ENABLED: usize = 0;
@@ -43,6 +48,25 @@ const KECCAK_OUTPUT_RLC: usize = 0;
 
 const BIT_LEN_LIMB: usize = 72;
 
+fn copy_integer<F: FieldExt, W: WrongExt>(
+    region: &mut Region<'_, F>,
+    name: &str,
+    src: AssignedInteger<W, F>,
+    dst: &[Column<Advice>; 4],
+    offset: usize,
+) -> Result<(), Error> {
+    for (i, limb) in src.limbs().iter().enumerate() {
+        let assigned_cell = region.assign_advice(
+            || format!("{} limb {}", name, i),
+            dst[i],
+            offset,
+            || limb.value().clone().ok_or(Error::Synthesis),
+        )?;
+        region.constrain_equal(assigned_cell.cell(), limb.cell())?;
+    }
+    Ok(())
+}
+
 struct SignVerifyConfig<F: FieldExt> {
     pub_key_hash: [Column<Advice>; 32],
     address: Column<Advice>,
@@ -51,15 +75,37 @@ struct SignVerifyConfig<F: FieldExt> {
     msg_hash_rlc_inv: Column<Advice>,
 
     // ECDSA
-    ecdsa_config: EcdsaConfig,
-    // signature: [[Column<Advice>; 32]; 2],
+    main_gate_config: MainGateConfig,
+    range_config: RangeConfig,
     pub_key: [Column<Advice>; 32 * 2],
+    pk_x_limbs: [Column<Advice>; 4],
+    pk_y_limbs: [Column<Advice>; 4],
     msg_hash: [Column<Advice>; 32],
-
+    msg_hash_limbs: [Column<Advice>; 4],
+    // signature: [[Column<Advice>; 32]; 2],
     power_of_randomness: [Expression<F>; 63],
 
     // [is_enabled, input_rlc, input_len, output_rlc]
     keccak_table: [Column<Advice>; 4],
+}
+
+impl<F: FieldExt> SignVerifyConfig<F> {
+    pub fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+        let range_chip = RangeChip::<F>::new(self.range_config.clone(), bit_len_lookup);
+        range_chip.load_limb_range_table(layouter)?;
+        range_chip.load_overflow_range_tables(layouter)?;
+
+        Ok(())
+    }
+
+    pub fn ecc_chip_config(&self) -> EccConfig {
+        EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    }
+
+    pub fn integer_chip_config(&self) -> IntegerConfig {
+        IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    }
 }
 
 impl<F: FieldExt> SignVerifyChip<F> {
@@ -67,7 +113,7 @@ impl<F: FieldExt> SignVerifyChip<F> {
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 63],
     ) -> SignVerifyConfig<F> {
-        // create ecdsa config
+        // ECDSA config
         let (rns_base, rns_scalar) = GeneralEccChip::<Secp256k1Affine, F>::rns(BIT_LEN_LIMB);
         let main_gate_config = MainGate::<F>::configure(meta);
         let mut overflow_bit_lengths: Vec<usize> = vec![];
@@ -75,9 +121,14 @@ impl<F: FieldExt> SignVerifyChip<F> {
         overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
         let range_config = RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
-        let ecdsa_config = EcdsaConfig::new(range_config, main_gate_config);
         let pub_key = [(); 32 * 2].map(|_| meta.advice_column());
+        let pk_x_limbs = [(); 4].map(|_| meta.advice_column());
+        pk_x_limbs.map(|c| meta.enable_equality(c));
+        let pk_y_limbs = [(); 4].map(|_| meta.advice_column());
+        pk_y_limbs.map(|c| meta.enable_equality(c));
         let msg_hash = [(); 32].map(|_| meta.advice_column());
+        let msg_hash_limbs = [(); 4].map(|_| meta.advice_column());
+        msg_hash_limbs.map(|c| meta.enable_equality(c));
 
         // create address, msg_hash, pub_key_hash, and msg_hash_inv, and iz_zero
 
@@ -142,24 +193,112 @@ impl<F: FieldExt> SignVerifyChip<F> {
             msg_hash_rlc,
             msg_hash_rlc_is_zero,
             msg_hash_rlc_inv,
-            ecdsa_config,
+            range_config,
+            main_gate_config,
             pub_key,
+            pk_x_limbs,
+            pk_y_limbs,
             msg_hash,
+            msg_hash_limbs,
             power_of_randomness,
             keccak_table,
         }
     }
 
-    /*
     pub fn assign(
+        &self,
+        config: SignVerifyConfig<F>,
         mut layouter: impl Layouter<F>,
-        config: Self::Config,
         randomness: F,
         txs: &[TxSignData],
     ) -> Result<(), Error> {
+        let mut ecc_chip =
+            GeneralEccChip::<Secp256k1Affine, F>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
+        let scalar_chip = ecc_chip.scalar_field_chip();
+
+        // Only using 1 signature for now
+        let TxSignData {
+            signature,
+            pub_key,
+            msg_hash,
+        } = txs[0];
+        let (sig_r, sig_s) = signature;
+        let pk = pub_key;
+
+        layouter.assign_region(
+            || "assign aux values",
+            |mut region| {
+                let offset = &mut 0;
+                let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+                Ok(())
+            },
+        )?;
+
+        let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
+
+        layouter.assign_region(
+            || "ecdsa chip verification",
+            |mut region| {
+                let offset = &mut 0;
+                let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                let integer_r = ecc_chip.new_unassigned_scalar(Some(sig_r));
+                let integer_s = ecc_chip.new_unassigned_scalar(Some(sig_s));
+                let msg_hash = ecc_chip.new_unassigned_scalar(Some(msg_hash));
+
+                let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
+                let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                let sig = AssignedEcdsaSig {
+                    r: r_assigned,
+                    s: s_assigned,
+                };
+
+                let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
+                let pk_assigned = AssignedPublicKey {
+                    point: pk_in_circuit,
+                };
+                let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
+                ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
+
+                let offset = 0;
+                // Copy constraint between ecdsa verification integers and local columns
+                // copy_integer(&mut region, "sig_r", sig.r, &config.sig_r_limbs, offset)?;
+                // copy_integer(&mut region, "sig_s", sig.s, &config.sig_s_limbs, offset)?;
+                copy_integer(
+                    &mut region,
+                    "pk_x",
+                    pk_assigned.point.get_x(),
+                    &config.pk_x_limbs,
+                    offset,
+                )?;
+                copy_integer(
+                    &mut region,
+                    "pk_y",
+                    pk_assigned.point.get_y(),
+                    &config.pk_y_limbs,
+                    offset,
+                )?;
+                copy_integer(
+                    &mut region,
+                    "msg_hash",
+                    msg_hash,
+                    &config.msg_hash_limbs,
+                    offset,
+                )?;
+
+                Ok(())
+            },
+        )?;
+
+        config.load_range(&mut layouter)?;
+
         Ok(())
     }
 
+    /*
     pub fn assign_tx(
         mut layouter: impl Layouter<F>,
         config: Self::Config,
@@ -210,8 +349,8 @@ mod sign_verify_tets {
     struct TestCircuitSignVerifyConfig {
         main_gate_config: MainGateConfig,
         range_config: RangeConfig,
-        sig_s_limbs: [Column<Advice>; 4],
-        sig_r_limbs: [Column<Advice>; 4],
+        // sig_s_limbs: [Column<Advice>; 4],
+        // sig_r_limbs: [Column<Advice>; 4],
         pk_x_limbs: [Column<Advice>; 4],
         pk_y_limbs: [Column<Advice>; 4],
         msg_hash_limbs: [Column<Advice>; 4],
@@ -227,10 +366,10 @@ mod sign_verify_tets {
             let range_config =
                 RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
-            let sig_s_limbs = [(); 4].map(|_| meta.advice_column());
-            sig_s_limbs.map(|c| meta.enable_equality(c));
-            let sig_r_limbs = [(); 4].map(|_| meta.advice_column());
-            sig_r_limbs.map(|c| meta.enable_equality(c));
+            // let sig_s_limbs = [(); 4].map(|_| meta.advice_column());
+            // sig_s_limbs.map(|c| meta.enable_equality(c));
+            // let sig_r_limbs = [(); 4].map(|_| meta.advice_column());
+            // sig_r_limbs.map(|c| meta.enable_equality(c));
             let pk_x_limbs = [(); 4].map(|_| meta.advice_column());
             pk_x_limbs.map(|c| meta.enable_equality(c));
             let pk_y_limbs = [(); 4].map(|_| meta.advice_column());
@@ -240,8 +379,8 @@ mod sign_verify_tets {
             TestCircuitSignVerifyConfig {
                 main_gate_config,
                 range_config,
-                sig_s_limbs,
-                sig_r_limbs,
+                // sig_s_limbs,
+                // sig_r_limbs,
                 pk_x_limbs,
                 pk_y_limbs,
                 msg_hash_limbs,
@@ -342,16 +481,30 @@ mod sign_verify_tets {
                     ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
 
                     let offset = 0;
-                    // Copy constraint between main_gate r_assigned and config.r_assigned
-                    for (i, limb) in sig.r.limbs().iter().enumerate() {
-                        let assigned_cell = region.assign_advice(
-                            || format!("sig_r limb {}", i),
-                            config.sig_r_limbs[i],
-                            offset,
-                            || limb.value().clone().ok_or(Error::Synthesis),
-                        )?;
-                        region.constrain_equal(assigned_cell.cell(), limb.cell())?;
-                    }
+                    // Copy constraint between ecdsa verification integers and local columns
+                    // copy_integer(&mut region, "sig_r", sig.r, &config.sig_r_limbs, offset)?;
+                    // copy_integer(&mut region, "sig_s", sig.s, &config.sig_s_limbs, offset)?;
+                    copy_integer(
+                        &mut region,
+                        "pk_x",
+                        pk_assigned.point.get_x(),
+                        &config.pk_x_limbs,
+                        offset,
+                    )?;
+                    copy_integer(
+                        &mut region,
+                        "pk_y",
+                        pk_assigned.point.get_y(),
+                        &config.pk_y_limbs,
+                        offset,
+                    )?;
+                    copy_integer(
+                        &mut region,
+                        "msg_hash",
+                        msg_hash,
+                        &config.msg_hash_limbs,
+                        offset,
+                    )?;
 
                     Ok(())
                 },
@@ -361,6 +514,25 @@ mod sign_verify_tets {
 
             Ok(())
         }
+    }
+
+    fn copy_integer<F: FieldExt, W: WrongExt>(
+        region: &mut Region<'_, F>,
+        name: &str,
+        src: AssignedInteger<W, F>,
+        dst: &[Column<Advice>; 4],
+        offset: usize,
+    ) -> Result<(), Error> {
+        for (i, limb) in src.limbs().iter().enumerate() {
+            let assigned_cell = region.assign_advice(
+                || format!("{} limb {}", name, i),
+                dst[i],
+                offset,
+                || limb.value().clone().ok_or(Error::Synthesis),
+            )?;
+            region.constrain_equal(assigned_cell.cell(), limb.cell())?;
+        }
+        Ok(())
     }
 
     fn run<F: FieldExt>(txs: Vec<TxSignData>) {
