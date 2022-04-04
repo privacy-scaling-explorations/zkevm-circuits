@@ -7,21 +7,22 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, RandomLinearCombination,
+            from_bytes, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use bus_mapping::evm::OpcodeId;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct OriginGadget<F> {
-    same_context: SameContextGadget<F>,
+    tx_id: Cell<F>,
     origin: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    same_context: SameContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
@@ -31,8 +32,9 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let origin = cb.query_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
-        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
+        // Lookup in call_ctx the TxId
+        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // Lookup rw_table -> call_context with tx origin address
         cb.tx_context_lookup(
             tx_id.expr(),
@@ -47,16 +49,18 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         // State transition
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(2.expr()),
-            program_counter: Delta(1.expr()),
-            stack_pointer: Delta((-1).expr()),
+            rw_counter: Delta(2u64.expr()),
+            program_counter: Delta(1u64.expr()),
+            stack_pointer: Delta((-1i32).expr()),
+            gas_left: Delta(-OpcodeId::ORIGIN.constant_gas_cost().expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
-            same_context,
+            tx_id,
             origin,
+            same_context,
         }
     }
 
@@ -65,16 +69,17 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        tx: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("block {:?}", block);
-        self.same_context.assign_exec_step(region, offset, step)?;
-        println!("step.rw_indices[1] {:?}", step.rw_indices[1]);
+        let origin = block.rws.sorted_stack_rw()[0].stack_value();
 
-        let origin = block.rws[step.rw_indices[1]].stack_value();
+        // Assing TxId.
+        self.tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
+        // Assign Origin addr RLC.
         self.origin.assign(
             region,
             offset,
@@ -85,6 +90,8 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
             ),
         )?;
 
+        // Assign SameContextGadget witnesses.
+        self.same_context.assign_exec_step(region, offset, step)?;
         Ok(())
     }
 }
@@ -93,17 +100,25 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::bytecode;
+    //use mock::test_ctx::{helpers::*, TestContext};
 
-    fn test_ok() {
+    #[test]
+    fn origin_gadget_test() {
         let bytecode = bytecode! {
             #[start]
             ORIGIN
             STOP
         };
+
+        // assert_eq!(
+        //     run_test_circuits(
+        //         TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        //         None
+        //     ),
+        //     Ok(())
+        // );
+
+        // TODO: Update once https://github.com/appliedzkp/zkevm-circuits/pull/422 is merged with the testing-utils simplified.
         assert_eq!(run_test_circuits(bytecode), Ok(()));
-    }
-    #[test]
-    fn origin_gadget_test() {
-        test_ok();
     }
 }
