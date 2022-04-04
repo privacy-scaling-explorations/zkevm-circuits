@@ -18,6 +18,7 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct GasPriceGadget<F> {
+    tx_id: Cell<F>,
     gas_price: Cell<F>,
     same_context: SameContextGadget<F>,
 }
@@ -30,18 +31,19 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // Query gasprice value
         let gas_price = cb.query_cell();
-        // Push the value to the stack
-        cb.stack_push(gas_price.expr());
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        // Lookup in tx table the gas_price
+        // Lookup the gas_price in tx table
         cb.tx_context_lookup(
             tx_id.expr(),
             TxContextFieldTag::GasPrice,
             None,
             gas_price.expr(),
         );
+
+        // Push the value to the stack
+        cb.stack_push(gas_price.expr());
 
         // State transition
         let opcode = cb.query_cell();
@@ -55,6 +57,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
+            tx_id,
             gas_price,
             same_context,
         }
@@ -65,11 +68,14 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        tx: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_price = block.rws.sorted_stack_rw()[0].stack_value();
+
+        self.tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
         self.gas_price.assign(
             region,
