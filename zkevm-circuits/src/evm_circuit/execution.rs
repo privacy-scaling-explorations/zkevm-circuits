@@ -35,6 +35,7 @@ mod end_tx;
 mod error_oog_static_memory;
 mod extcodehash;
 mod gas;
+mod gasprice;
 mod is_zero;
 mod jump;
 mod jumpdest;
@@ -74,6 +75,7 @@ use end_tx::EndTxGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
+use gasprice::GasPriceGadget;
 use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
@@ -139,6 +141,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    gasprice_gadget: GasPriceGadget<F>,
     gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
     copy_to_memory_gadget: CopyToMemoryGadget<F>,
@@ -358,6 +361,7 @@ impl<F: Field> ExecutionConfig<F> {
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
+            gasprice_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
@@ -630,6 +634,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.jumpdest_gadget)
             }
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
+            ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
