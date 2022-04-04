@@ -13,7 +13,10 @@ use crate::{
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
-    plonk::{Error, Expression::{self, Constant}},
+    plonk::{
+        Error,
+        Expression::{self, Constant},
+    },
 };
 use std::convert::TryInto;
 

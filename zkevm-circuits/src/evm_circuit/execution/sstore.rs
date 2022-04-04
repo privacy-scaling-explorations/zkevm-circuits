@@ -393,8 +393,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         let tx_refund_new = tx_refund_old.expr()
             + case_a * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
-            + case_b * (GasCost::SSTORE_RESET_GAS.expr() - GasCost::SLOAD_GAS.expr())
-            + case_c * (GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr())
+            + case_b * (GasCost::SSTORE_RESET.expr() - GasCost::COLD_SLOAD.expr())
+            + case_c * (GasCost::SSTORE_SET.expr() - GasCost::COLD_SLOAD.expr())
             - case_d * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
 
         Self {
@@ -545,11 +545,10 @@ mod test {
             if committed_value == value {
                 if committed_value != Word::from(0) {
                     // CaseB
-                    tx_refund_new +=
-                        GasCost::SSTORE_RESET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
+                    tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::COLD_SLOAD.as_u64();
                 } else {
                     // CaseC
-                    tx_refund_new += GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
+                    tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::COLD_SLOAD.as_u64();
                 }
             }
             if committed_value != value_prev && value_prev == Word::from(0) {
