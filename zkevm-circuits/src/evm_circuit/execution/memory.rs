@@ -197,7 +197,7 @@ mod test {
     use eth_types::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
     use eth_types::Word;
-    use mock::TestContext;
+    use mock::test_ctx::{helpers::*, TestContext};
     use std::iter;
 
     fn test_ok(opcode: OpcodeId, address: Word, value: Word, gas_cost: u64) {
@@ -219,13 +219,20 @@ mod test {
             ..Default::default()
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                Some(test_config)
-            ),
-            Ok(())
-        );
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(bytecode),
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(Word::from(test_config.gas_limit));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, Some(test_config)), Ok(()));
     }
 
     #[test]

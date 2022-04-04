@@ -106,7 +106,7 @@ mod test {
         test_util::{get_fixed_table, run_test_circuits, BytecodeTestConfig, FixedTableConfig},
     };
     use eth_types::{bytecode, Word};
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::TestContext;
 
     fn test_ok(a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -128,16 +128,13 @@ mod test {
             ..Default::default()
         };
 
-        // Get the execution steps from the external tracer
-        let ctx = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(bytecode),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(ctx, Some(test_config)), Ok(()));
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config)
+            ),
+            Ok(())
+        );
     }
 
     #[test]
