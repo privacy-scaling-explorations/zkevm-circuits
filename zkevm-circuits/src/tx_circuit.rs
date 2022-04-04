@@ -347,7 +347,7 @@ mod sign_verify_tets {
                         let assigned_cell = region.assign_advice(
                             || format!("sig_r limb {}", i),
                             config.sig_r_limbs[i],
-                            0, // offset
+                            offset,
                             || limb.value().clone().ok_or(Error::Synthesis),
                         )?;
                         region.constrain_equal(assigned_cell.cell(), limb.cell())?;
