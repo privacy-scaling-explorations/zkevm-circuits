@@ -231,13 +231,13 @@ mod test {
         execution::memory_copy::test::make_memory_copy_steps,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
-        test::{calc_memory_copier_gas_cost, rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
     use crate::test_util::{test_circuits_using_bytecode, BytecodeTestConfig};
     use eth_types::{
         bytecode,
-        evm_types::{GasCost, OpcodeId},
+        evm_types::{gas_utils::memory_copier_gas_cost, GasCost, OpcodeId},
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
@@ -353,7 +353,7 @@ mod test {
             )
         };
         let gas_cost = GasCost::FASTEST.as_u64()
-            + calc_memory_copier_gas_cost(
+            + memory_copier_gas_cost(
                 curr_memory_word_size,
                 next_memory_word_size,
                 length.as_u64(),
