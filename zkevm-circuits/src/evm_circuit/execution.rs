@@ -21,6 +21,7 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
@@ -59,6 +60,7 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
@@ -128,6 +130,7 @@ pub(crate) struct ExecutionConfig<F> {
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
+    call_gadget: CallGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
@@ -345,6 +348,7 @@ impl<F: Field> ExecutionConfig<F> {
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
+            call_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
@@ -661,6 +665,9 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.calldatasize_gadget)
             }
             ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
+            ExecutionState::CALL => {
+                assign_exec_step!(self.call_gadget)
+            }
             _ => unimplemented!(),
         }
 
