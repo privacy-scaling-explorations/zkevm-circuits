@@ -69,14 +69,7 @@ pub async fn compute_proof(
         const STORAGE_ROWS_MAX: usize = 16384;
         const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
-        let circuit = StateCircuit::<
-            Fr,
-            true,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ADDRESS_MAX,
-            GLOBAL_COUNTER_MAX,
-        >::new(block.randomness, &block.rws);
+        let circuit = StateCircuit::new(block.randomness, block.rws);
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(params, &circuit)?;
