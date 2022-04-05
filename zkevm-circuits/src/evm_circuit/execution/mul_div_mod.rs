@@ -33,7 +33,7 @@ pub(crate) struct MulDivModGadget<F> {
 }
 
 impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
-    const NAME: &'static str = "MUL";
+    const NAME: &'static str = "MUL_DIV_MOD";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MUL_DIV_MOD;
 
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
-        // The second pop is multiplicand for MUL and divsor for DIV/MOD
+        // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
         cb.stack_pop(select::expr(
