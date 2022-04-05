@@ -30,6 +30,7 @@ mod gasprice;
 mod mload;
 mod mstore;
 mod number;
+mod origin;
 mod selfbalance;
 mod sload;
 mod sstore;
@@ -47,6 +48,7 @@ use extcodehash::Extcodehash;
 use gasprice::GasPrice;
 use mload::Mload;
 use mstore::Mstore;
+use origin::Origin;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -112,7 +114,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::SHA3 => {},
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
-        // OpcodeId::ORIGIN => {},
+        OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
