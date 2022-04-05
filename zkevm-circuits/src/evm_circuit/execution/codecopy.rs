@@ -210,7 +210,7 @@ mod tests {
     use std::ops::Sub;
 
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, evm_types::gas_utils::memory_copier_gas_cost, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use num::Zero;
     use pairing::bn256::Fr;
@@ -219,7 +219,7 @@ mod tests {
         execution::copy_code_to_memory::test::make_copy_code_steps,
         step::ExecutionState,
         table::RwTableTag,
-        test::{calc_memory_copier_gas_cost, run_test_circuit_incomplete_fixed_table},
+        test::run_test_circuit_incomplete_fixed_table,
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
 
@@ -302,7 +302,7 @@ mod tests {
         };
         let gas_cost_push32 = OpcodeId::PUSH32.constant_gas_cost().as_u64();
         let gas_cost_codecopy = OpcodeId::CODECOPY.constant_gas_cost().as_u64()
-            + calc_memory_copier_gas_cost(0, next_memory_word_size, size as u64);
+            + memory_copier_gas_cost(0, next_memory_word_size, size as u64);
         let total_gas_cost = (3 * gas_cost_push32) + gas_cost_codecopy;
 
         let mut steps = vec![
