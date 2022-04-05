@@ -499,10 +499,11 @@ mod test {
             test::{rand_fp, run_test_circuit_incomplete_fixed_table},
             witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
         },
-        test_util::{test_circuits_using_bytecode, BytecodeTestConfig},
+        test_util::{run_test_circuits, BytecodeTestConfig},
     };
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
+    use mock::TestContext;
     use std::convert::TryInto;
 
     fn calc_expected_gas_cost(
@@ -1048,7 +1049,10 @@ mod test {
             ..Default::default()
         };
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, None),
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config),
+            ),
             Ok(())
         );
     }
@@ -1068,7 +1072,10 @@ mod test {
             ..Default::default()
         };
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, None),
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config),
+            ),
             Ok(())
         );
     }
