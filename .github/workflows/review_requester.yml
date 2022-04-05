@@ -1,0 +1,19 @@
+name: Request review on PRs
+
+# We only run these lints on trial-merges of PRs to reduce noise.
+on:
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
+
+jobs:
+  request:
+    name: Review requester
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Select a reviewer from appliedzkp/zkevm-reviewers
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.html_url }} \
+              --add-reviewer appliedzkp/zkevm-reviewers
