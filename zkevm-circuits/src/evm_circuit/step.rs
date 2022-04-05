@@ -15,6 +15,7 @@ use halo2_proofs::{
 };
 use std::collections::VecDeque;
 
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExecutionState {
     // Internal state
@@ -24,11 +25,9 @@ pub enum ExecutionState {
     CopyToMemory,
     // Opcode successful cases
     STOP,
-    ADD, // ADD, SUB
-    MUL,
-    DIV,
+    ADD_SUB,     // ADD, SUB
+    MUL_DIV_MOD, // MUL, DIV, MOD
     SDIV,
-    MOD,
     SMOD,
     ADDMOD,
     MULMOD,
@@ -142,11 +141,9 @@ impl ExecutionState {
             Self::EndBlock,
             Self::CopyToMemory,
             Self::STOP,
-            Self::ADD,
-            Self::MUL,
-            Self::DIV,
+            Self::ADD_SUB,
+            Self::MUL_DIV_MOD,
             Self::SDIV,
-            Self::MOD,
             Self::SMOD,
             Self::ADDMOD,
             Self::MULMOD,
@@ -290,11 +287,9 @@ impl ExecutionState {
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
         match self {
             Self::STOP => vec![OpcodeId::STOP],
-            Self::ADD => vec![OpcodeId::ADD, OpcodeId::SUB],
-            Self::MUL => vec![OpcodeId::MUL],
-            Self::DIV => vec![OpcodeId::DIV],
+            Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
+            Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
             Self::SDIV => vec![OpcodeId::SDIV],
-            Self::MOD => vec![OpcodeId::MOD],
             Self::SMOD => vec![OpcodeId::SMOD],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
