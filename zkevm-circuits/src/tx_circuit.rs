@@ -209,7 +209,7 @@ impl<F: FieldExt> SignVerifyChip<F> {
         &self,
         config: SignVerifyConfig<F>,
         mut layouter: impl Layouter<F>,
-        randomness: F,
+        // randomness: F,
         txs: &[TxSignData],
     ) -> Result<(), Error> {
         let mut ecc_chip =
@@ -347,69 +347,51 @@ mod sign_verify_tets {
 
     #[derive(Clone, Debug)]
     struct TestCircuitSignVerifyConfig {
-        main_gate_config: MainGateConfig,
-        range_config: RangeConfig,
-        // sig_s_limbs: [Column<Advice>; 4],
-        // sig_r_limbs: [Column<Advice>; 4],
-        pk_x_limbs: [Column<Advice>; 4],
-        pk_y_limbs: [Column<Advice>; 4],
-        msg_hash_limbs: [Column<Advice>; 4],
+        sign_verify_config: SignVerifyConfig,
+        /* main_gate_config: MainGateConfig,
+         * range_config: RangeConfig,
+         * // sig_s_limbs: [Column<Advice>; 4],
+         * // sig_r_limbs: [Column<Advice>; 4],
+         * pk_x_limbs: [Column<Advice>; 4],
+         * pk_y_limbs: [Column<Advice>; 4],
+         * msg_hash_limbs: [Column<Advice>; 4], */
     }
 
     impl TestCircuitSignVerifyConfig {
-        pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-            let (rns_base, rns_scalar) = GeneralEccChip::<Secp256k1Affine, F>::rns(BIT_LEN_LIMB);
-            let main_gate_config = MainGate::<F>::configure(meta);
-            let mut overflow_bit_lengths: Vec<usize> = vec![];
-            overflow_bit_lengths.extend(rns_base.overflow_lengths());
-            overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
-            let range_config =
-                RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
-
-            // let sig_s_limbs = [(); 4].map(|_| meta.advice_column());
-            // sig_s_limbs.map(|c| meta.enable_equality(c));
-            // let sig_r_limbs = [(); 4].map(|_| meta.advice_column());
-            // sig_r_limbs.map(|c| meta.enable_equality(c));
-            let pk_x_limbs = [(); 4].map(|_| meta.advice_column());
-            pk_x_limbs.map(|c| meta.enable_equality(c));
-            let pk_y_limbs = [(); 4].map(|_| meta.advice_column());
-            pk_y_limbs.map(|c| meta.enable_equality(c));
-            let msg_hash_limbs = [(); 4].map(|_| meta.advice_column());
-            msg_hash_limbs.map(|c| meta.enable_equality(c));
-            TestCircuitSignVerifyConfig {
-                main_gate_config,
-                range_config,
-                // sig_s_limbs,
-                // sig_r_limbs,
-                pk_x_limbs,
-                pk_y_limbs,
-                msg_hash_limbs,
-            }
+        pub fn new<F: FieldExt>(
+            meta: &mut ConstraintSystem<F>,
+            power_of_randomness: [Expression<F>; 63],
+        ) -> Self {
+            let sign_verify_config = SignVerifyChip::configure(&mut meta, power_of_randomness);
+            TestCircuitSignVerifyConfig { sign_verify_config }
         }
 
-        pub fn ecc_chip_config(&self) -> EccConfig {
-            EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-        }
+        // pub fn ecc_chip_config(&self) -> EccConfig {
+        //     EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+        // }
 
-        pub fn config_range<F: FieldExt>(
-            &self,
-            layouter: &mut impl Layouter<F>,
-        ) -> Result<(), Error> {
-            let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
-            let range_chip = RangeChip::<F>::new(self.range_config.clone(), bit_len_lookup);
-            range_chip.load_limb_range_table(layouter)?;
-            range_chip.load_overflow_range_tables(layouter)?;
+        // pub fn config_range<F: FieldExt>(
+        //     &self,
+        //     layouter: &mut impl Layouter<F>,
+        // ) -> Result<(), Error> {
+        //     let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+        //     let range_chip = RangeChip::<F>::new(self.range_config.clone(),
+        // bit_len_lookup);     range_chip.load_limb_range_table(layouter)?;
+        //     range_chip.load_overflow_range_tables(layouter)?;
 
-            Ok(())
-        }
+        //     Ok(())
+        // }
     }
 
     #[derive(Default)]
     struct TestCircuitSignVerify<F: FieldExt> {
-        aux_generator: Secp256k1Affine,
-        window_size: usize,
+        sign_verify: SignVerifyChip<F>,
+        power_of_randomness: [Expression<F>; 63],
         txs: Vec<TxSignData>,
-        _marker: PhantomData<F>,
+        /* aux_generator: Secp256k1Affine,
+         * window_size: usize,
+         * txs: Vec<TxSignData>,
+         * _marker: PhantomData<F>, */
     }
 
     impl<F: FieldExt> Circuit<F> for TestCircuitSignVerify<F> {
@@ -421,7 +403,7 @@ mod sign_verify_tets {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            TestCircuitSignVerifyConfig::new::<F>(meta)
+            TestCircuitSignVerifyConfig::new::<F>(meta, self.power_of_randomness)
         }
 
         fn synthesize(
@@ -429,110 +411,8 @@ mod sign_verify_tets {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let mut ecc_chip =
-                GeneralEccChip::<Secp256k1Affine, F>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
-            let scalar_chip = ecc_chip.scalar_field_chip();
-
-            // Only using 1 signature for now
-            let TxSignData {
-                signature,
-                pub_key,
-                msg_hash,
-            } = self.txs[0];
-            let (sig_r, sig_s) = signature;
-            let pk = pub_key;
-
-            layouter.assign_region(
-                || "assign aux values",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
-
-                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
-                    Ok(())
-                },
-            )?;
-
-            let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
-
-            layouter.assign_region(
-                || "ecdsa chip verification",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
-
-                    let integer_r = ecc_chip.new_unassigned_scalar(Some(sig_r));
-                    let integer_s = ecc_chip.new_unassigned_scalar(Some(sig_s));
-                    let msg_hash = ecc_chip.new_unassigned_scalar(Some(msg_hash));
-
-                    let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
-                    let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
-                    let sig = AssignedEcdsaSig {
-                        r: r_assigned,
-                        s: s_assigned,
-                    };
-
-                    let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
-                    let pk_assigned = AssignedPublicKey {
-                        point: pk_in_circuit,
-                    };
-                    let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
-                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
-
-                    let offset = 0;
-                    // Copy constraint between ecdsa verification integers and local columns
-                    // copy_integer(&mut region, "sig_r", sig.r, &config.sig_r_limbs, offset)?;
-                    // copy_integer(&mut region, "sig_s", sig.s, &config.sig_s_limbs, offset)?;
-                    copy_integer(
-                        &mut region,
-                        "pk_x",
-                        pk_assigned.point.get_x(),
-                        &config.pk_x_limbs,
-                        offset,
-                    )?;
-                    copy_integer(
-                        &mut region,
-                        "pk_y",
-                        pk_assigned.point.get_y(),
-                        &config.pk_y_limbs,
-                        offset,
-                    )?;
-                    copy_integer(
-                        &mut region,
-                        "msg_hash",
-                        msg_hash,
-                        &config.msg_hash_limbs,
-                        offset,
-                    )?;
-
-                    Ok(())
-                },
-            )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            self.assign(config, layouter, self.txs)
         }
-    }
-
-    fn copy_integer<F: FieldExt, W: WrongExt>(
-        region: &mut Region<'_, F>,
-        name: &str,
-        src: AssignedInteger<W, F>,
-        dst: &[Column<Advice>; 4],
-        offset: usize,
-    ) -> Result<(), Error> {
-        for (i, limb) in src.limbs().iter().enumerate() {
-            let assigned_cell = region.assign_advice(
-                || format!("{} limb {}", name, i),
-                dst[i],
-                offset,
-                || limb.value().clone().ok_or(Error::Synthesis),
-            )?;
-            region.constrain_equal(assigned_cell.cell(), limb.cell())?;
-        }
-        Ok(())
     }
 
     fn run<F: FieldExt>(txs: Vec<TxSignData>) {
@@ -540,15 +420,27 @@ mod sign_verify_tets {
         let mut rng = XorShiftRng::seed_from_u64(2);
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+
+        let power_of_randomness = (1..61)
+            .map(|exp| {
+                vec![
+                    block.randomness.pow(&[exp, 0, 0, 0]);
+                    block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT
+                ]
+            })
+            .collect();
         let circuit = TestCircuitSignVerify::<F> {
-            aux_generator,
-            window_size: 2,
+            sign_verify: SignVerifyChip {
+                aux_generator,
+                window_size: 2,
+                _marker: PhantomData,
+            },
+            power_of_randomness,
             txs,
-            _marker: PhantomData,
         };
 
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
+        // let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, power_of_randomness) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
