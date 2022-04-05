@@ -105,7 +105,6 @@ mod test {
     #[test]
     fn origin_gadget_test() {
         let bytecode = bytecode! {
-            #[start]
             ORIGIN
             STOP
         };
