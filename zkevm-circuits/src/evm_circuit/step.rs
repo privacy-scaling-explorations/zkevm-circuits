@@ -463,8 +463,8 @@ pub(crate) struct StepState<F> {
     pub(crate) gas_left: Cell<F>,
     /// Memory size in words (32 bytes)
     pub(crate) memory_word_size: Cell<F>,
-    /// The counter for state writes
-    pub(crate) state_write_counter: Cell<F>,
+    /// The counter for reversible writes
+    pub(crate) reversible_write_counter: Cell<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -511,7 +511,7 @@ impl<F: FieldExt> Step<F> {
                 stack_pointer: cells.pop_front().unwrap(),
                 gas_left: cells.pop_front().unwrap(),
                 memory_word_size: cells.pop_front().unwrap(),
-                state_write_counter: cells.pop_front().unwrap(),
+                reversible_write_counter: cells.pop_front().unwrap(),
             }
         };
 
@@ -606,10 +606,10 @@ impl<F: FieldExt> Step<F> {
             offset,
             Some(F::from(step.memory_word_size())),
         )?;
-        self.state.state_write_counter.assign(
+        self.state.reversible_write_counter.assign(
             region,
             offset,
-            Some(F::from(step.state_write_counter as u64)),
+            Some(F::from(step.reversible_write_counter as u64)),
         )?;
         Ok(())
     }
