@@ -98,7 +98,7 @@ fn gen_memory_copy_step(
     for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
         let addr = src_addr + idx as u64;
         let byte = if addr < src_addr_end {
-            let byte = state.call()?.call_data_source[addr as usize];
+            let byte = state.call_ctx()?.call_data_source[addr as usize];
             if !is_root {
                 state.push_op(
                     exec_step,

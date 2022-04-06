@@ -443,8 +443,6 @@ pub struct Call {
     pub return_data_offset: u64,
     /// Return data length
     pub return_data_length: u64,
-    /// Call data source (copy of caller's memory or tx input)
-    pub call_data_source: Vec<u8>,
 }
 
 impl Call {
@@ -464,6 +462,8 @@ pub struct CallContext {
     /// call. It is incremented when a subcall in this call succeeds by the
     /// number of successful writes in the subcall.
     pub reversible_write_counter: usize,
+    /// Call data source (copy of caller's memory or tx input)
+    pub call_data_source: Vec<u8>,
 }
 
 /// A reversion group is the collection of calls and the operations which are
@@ -546,7 +546,7 @@ impl TransactionContext {
             calls: Vec::new(),
             reversion_groups: Vec::new(),
         };
-        tx_ctx.push_call_ctx(0);
+        tx_ctx.push_call_ctx(0, eth_tx.input.to_vec());
 
         Ok(tx_ctx)
     }
@@ -589,7 +589,7 @@ impl TransactionContext {
     }
 
     /// Push a new call context and its index into the call stack.
-    fn push_call_ctx(&mut self, call_idx: usize) {
+    fn push_call_ctx(&mut self, call_idx: usize, call_data_source: Vec<u8>) {
         if !self.call_is_success[call_idx] {
             self.reversion_groups.push(ReversionGroup {
                 calls: vec![(call_idx, 0)],
@@ -617,6 +617,7 @@ impl TransactionContext {
         self.calls.push(CallContext {
             index: call_idx,
             reversible_write_counter: 0,
+            call_data_source,
         });
     }
 
@@ -689,7 +690,6 @@ impl Transaction {
                 depth: 1,
                 value: eth_tx.value,
                 call_data_length: eth_tx.input.as_ref().len() as u64,
-                call_data_source: eth_tx.input.to_vec(),
                 ..Default::default()
             }
         } else {
@@ -921,11 +921,25 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a new [`Call`] into the [`Transaction`], and add its index and
     /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
-    pub fn push_call(&mut self, call: Call) {
-        let call_id = call.call_id;
+    pub fn push_call(&mut self, call: Call, step: &GethExecStep) {
+        let call_data_source = match call.kind {
+            CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
+                let mut memory = step.memory.0.to_vec();
+                // Expand memory to expected size as call_data_source for new call
+                if let Some(padding) = ((call.call_data_offset + call.call_data_length) as usize)
+                    .checked_sub(memory.len())
+                {
+                    memory.extend(std::iter::repeat(0).take(padding));
+                }
+                memory
+            }
+            CallKind::Create | CallKind::Create2 => Vec::new(),
+        };
 
+        let call_id = call.call_id;
         let call_idx = self.tx.calls.len();
-        self.tx_ctx.push_call_ctx(call_idx);
+
+        self.tx_ctx.push_call_ctx(call_idx, call_data_source);
         self.tx.push_call(call);
 
         self.block_ctx
@@ -1013,44 +1027,20 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         };
 
-        let (
-            call_data_offset,
-            call_data_length,
-            return_data_offset,
-            return_data_length,
-            mut call_data_source,
-        ) = match kind {
-            CallKind::Call | CallKind::CallCode => {
-                let call_data = get_call_memory_offset_length(step, 3)?;
-                let return_data = get_call_memory_offset_length(step, 5)?;
-                (
-                    call_data.0,
-                    call_data.1,
-                    return_data.0,
-                    return_data.1,
-                    step.memory.0.clone(),
-                )
-            }
-            CallKind::DelegateCall | CallKind::StaticCall => {
-                let call_data = get_call_memory_offset_length(step, 2)?;
-                let return_data = get_call_memory_offset_length(step, 4)?;
-                (
-                    call_data.0,
-                    call_data.1,
-                    return_data.0,
-                    return_data.1,
-                    step.memory.0.clone(),
-                )
-            }
-            CallKind::Create | CallKind::Create2 => (0, 0, 0, 0, Vec::new()),
-        };
-
-        // Expand memory to expected size as call_data_source for new call
-        if let Some(padding) =
-            ((call_data_offset + call_data_length) as usize).checked_sub(call_data_source.len())
-        {
-            call_data_source.extend(std::iter::repeat(0).take(padding));
-        }
+        let (call_data_offset, call_data_length, return_data_offset, return_data_length) =
+            match kind {
+                CallKind::Call | CallKind::CallCode => {
+                    let call_data = get_call_memory_offset_length(step, 3)?;
+                    let return_data = get_call_memory_offset_length(step, 5)?;
+                    (call_data.0, call_data.1, return_data.0, return_data.1)
+                }
+                CallKind::DelegateCall | CallKind::StaticCall => {
+                    let call_data = get_call_memory_offset_length(step, 2)?;
+                    let return_data = get_call_memory_offset_length(step, 4)?;
+                    (call_data.0, call_data.1, return_data.0, return_data.1)
+                }
+                CallKind::Create | CallKind::Create2 => (0, 0, 0, 0),
+            };
 
         let caller = self.call()?;
         let call = Call {
@@ -1072,7 +1062,6 @@ impl<'a> CircuitInputStateRef<'a> {
             call_data_length,
             return_data_offset,
             return_data_length,
-            call_data_source,
         };
 
         Ok(call)
@@ -1687,6 +1676,7 @@ impl From<Vec<Access>> for AccessSet {
                     }
                 },
                 AccessValue::Code { address } => {
+                    state.entry(address).or_insert_with(HashSet::new);
                     code.insert(address);
                 }
             }
@@ -2103,7 +2093,6 @@ mod tracer_tests {
             call_data_length: 0,
             return_data_offset: 0,
             return_data_length: 0,
-            call_data_source: Vec::new(),
         }
     }
 
@@ -2383,7 +2372,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at CREATE2
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         // Set up account and contract that exist during the second CREATE2
         builder.builder.sdb.set_account(
             &ADDR_B,
@@ -2510,7 +2499,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at CREATE
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::CodeStoreOutOfGas)
@@ -2616,7 +2605,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at RETURN
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::InvalidCreationCode)
@@ -2723,7 +2712,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at RETURN
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::MaxCodeSizeExceeded)
@@ -2817,7 +2806,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at STOP
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             None
@@ -3316,27 +3305,29 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(Call {
-            call_id: 0,
-            caller_id: 0,
-            kind: CallKind::StaticCall,
-            is_static: true,
-            is_root: false,
-            is_persistent: false,
-            is_success: false,
-            rw_counter_end_of_reversion: 0,
-            caller_address: *ADDR_A,
-            address: *ADDR_B,
-            code_source: CodeSource::Address(*ADDR_B),
-            code_hash: Hash::zero(),
-            depth: 2,
-            value: Word::zero(),
-            call_data_offset: 0,
-            call_data_length: 0,
-            return_data_offset: 0,
-            return_data_length: 0,
-            call_data_source: Vec::new(),
-        });
+        builder.state_ref().push_call(
+            Call {
+                call_id: 0,
+                caller_id: 0,
+                kind: CallKind::StaticCall,
+                is_static: true,
+                is_root: false,
+                is_persistent: false,
+                is_success: false,
+                rw_counter_end_of_reversion: 0,
+                caller_address: *ADDR_A,
+                address: *ADDR_B,
+                code_source: CodeSource::Address(*ADDR_B),
+                code_hash: Hash::zero(),
+                depth: 2,
+                value: Word::zero(),
+                call_data_offset: 0,
+                call_data_length: 0,
+                return_data_offset: 0,
+                return_data_length: 0,
+            },
+            step,
+        );
 
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
@@ -3529,7 +3520,9 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step_create2);
         // Set up call context at CREATE2
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder
+            .state_ref()
+            .push_call(mock_internal_create(), step_create2);
         let addr = builder.state_ref().create2_address(step_create2).unwrap();
 
         assert_eq!(addr.to_word(), addr_expect);
@@ -3635,7 +3628,9 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step_create);
         // Set up call context at CREATE
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder
+            .state_ref()
+            .push_call(mock_internal_create(), step_create);
         builder.builder.sdb.set_account(
             &ADDR_B,
             Account {

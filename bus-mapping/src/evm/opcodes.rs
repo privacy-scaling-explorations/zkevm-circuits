@@ -516,7 +516,7 @@ fn dummy_gen_call_ops(
     let (_, account) = state.sdb.get_account(&callee.address);
     let callee_code_hash = account.code_hash;
 
-    state.push_call(callee.clone());
+    state.push_call(callee.clone(), geth_step);
 
     match (
         state.is_precompiled(&call.address),
