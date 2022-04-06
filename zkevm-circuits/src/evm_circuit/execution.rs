@@ -26,6 +26,7 @@ mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod chainid;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -63,6 +64,7 @@ use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
+use chainid::ChainIdGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -152,6 +154,7 @@ pub(crate) struct ExecutionConfig<F> {
     sload_gadget: SloadGadget<F>,
     sstore_gadget: SstoreGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
+    chainid_gadget: ChainIdGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -368,6 +371,7 @@ impl<F: Field> ExecutionConfig<F> {
             sload_gadget: configure_gadget!(),
             sstore_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
+            chainid_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -655,6 +659,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
+            }
+            ExecutionState::CHAINID => {
+                assign_exec_step!(self.chainid_gadget)
             }
             _ => unimplemented!(),
         }

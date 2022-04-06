@@ -19,6 +19,7 @@ mod calldatacopy;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod chainid;
 mod dup;
 mod extcodehash;
 mod mload;
@@ -33,6 +34,7 @@ use calldatacopy::Calldatacopy;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
+use chainid::ChainId;
 use dup::Dup;
 use extcodehash::Extcodehash;
 use mload::Mload;
@@ -121,7 +123,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
-        // OpcodeId::CHAINID => {},
+        OpcodeId::CHAINID => ChainId::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         // OpcodeId::BASEFEE => {},
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
