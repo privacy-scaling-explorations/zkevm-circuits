@@ -79,6 +79,8 @@ impl<F: FieldExt> LeafValueChip<F> {
             let c248 = Expression::Constant(F::from(248));
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let is_leaf_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
+            let is_leaf_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
             let s_rlp1_prev = meta.query_advice(s_rlp1, Rotation::prev());
             let s_rlp1_cur = meta.query_advice(s_rlp1, Rotation::cur());
 
@@ -134,20 +136,39 @@ impl<F: FieldExt> LeafValueChip<F> {
             ));
 
             let s_advices0_prev = meta.query_advice(s_advices[0], Rotation::prev());
-            let short_check =
-                s_rlp1_prev - c192 - s_rlp2_prev.clone() + c128.clone() - one.clone() - one.clone();
-            let long_check1 = s_rlp2_prev - s_advices0_prev + c128.clone()
-                - one.clone()
-                - (s_rlp2_cur.clone() - c128.clone() + one.clone() + one.clone());
-            let long_check2 = s_rlp1_cur - c128.clone() - s_rlp2_cur + c128 - one.clone();
+            let short_remainder = s_rlp1_prev.clone() - c192.clone() - s_rlp2_prev.clone()
+                + c128.clone()
+                - one.clone();
+            let long_remainder = s_rlp2_prev - s_advices0_prev + c128.clone() - one.clone();
+            let long_value_len = s_rlp2_cur.clone() - c128.clone() + one.clone() + one.clone();
+
+            let short_short_check = short_remainder.clone() - one.clone();
+            let long_long_check = long_remainder - long_value_len.clone();
+            let short_long_check = short_remainder - long_value_len;
+            // Note: long short is not possible because the key has at most 32 bytes and
+            // short value means only 1 byte which (together with RLP meta
+            // bytes) cannot go over 55 bytes.
+
+            let long_value_check = s_rlp1_cur - c128.clone() - s_rlp2_cur + c128 - one.clone();
 
             // RLP constraints:
-            constraints.push(("RLP short", q_enable.clone() * short_check * is_short));
             constraints.push((
-                "RLP long 1",
-                q_enable.clone() * long_check1 * is_long.clone(),
+                "RLP leaf short value short",
+                q_enable.clone() * short_short_check * is_leaf_short.clone() * is_short.clone(),
             ));
-            constraints.push(("RLP long 2", q_enable.clone() * long_check2 * is_long));
+            constraints.push((
+                "RLP leaf long value long",
+                q_enable.clone() * long_long_check * is_leaf_long.clone() * is_long.clone(),
+            ));
+            constraints.push((
+                "RLP leaf short value long",
+                q_enable.clone() * short_long_check * is_leaf_short.clone() * is_long.clone(),
+            ));
+
+            constraints.push((
+                "RLP long value check",
+                q_enable.clone() * long_value_check * is_long.clone(),
+            ));
 
             constraints
         });
