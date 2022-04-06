@@ -4,7 +4,7 @@
 //!   [`Operation`] enum).
 //! - Define structures that interact with operations such as
 //!   [`OperationContainer`].
-pub(crate) mod container;
+pub mod container;
 
 pub use container::OperationContainer;
 pub use eth_types::evm_types::{MemoryAddress, StackAddress};
