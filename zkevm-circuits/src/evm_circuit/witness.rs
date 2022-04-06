@@ -291,8 +291,8 @@ pub struct ExecStep {
     pub gas_cost: u64,
     /// The memory size in bytes
     pub memory_size: u64,
-    /// The counter for state writes
-    pub state_write_counter: usize,
+    /// The counter for reversible writes
+    pub reversible_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
     /// Step auxiliary data
@@ -1073,9 +1073,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     return ExecutionState::SWAP;
                 }
                 match op {
-                    OpcodeId::ADD => ExecutionState::ADD,
-                    OpcodeId::MUL => ExecutionState::MUL,
-                    OpcodeId::SUB => ExecutionState::ADD,
+                    OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
+                    OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
@@ -1093,6 +1092,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
                     OpcodeId::JUMP => ExecutionState::JUMP,
                     OpcodeId::JUMPI => ExecutionState::JUMPI,
+                    OpcodeId::GASPRICE => ExecutionState::GASPRICE,
                     OpcodeId::PC => ExecutionState::PC,
                     OpcodeId::MSIZE => ExecutionState::MSIZE,
                     OpcodeId::CALLER => ExecutionState::CALLER,
@@ -1106,6 +1106,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::ISZERO => ExecutionState::ISZERO,
+                    OpcodeId::CALL => ExecutionState::CALL,
+                    OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
@@ -1156,7 +1159,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
             _ => None,
         },
         memory_size: step.memory_size as u64,
-        state_write_counter: step.swc,
+        reversible_write_counter: step.reversible_write_counter,
         aux_data: step.aux_data.clone().map(Into::into),
     }
 }
