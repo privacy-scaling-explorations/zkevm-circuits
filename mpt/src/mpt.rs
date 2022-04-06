@@ -748,9 +748,11 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp2,
             s_advices,
             s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
             keccak_table,
             acc_s,
             acc_mult_s,
+            acc_c,
             sel1,
             is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
@@ -768,10 +770,12 @@ impl<F: FieldExt> MPTConfig<F> {
             s_rlp1,
             s_rlp2,
             s_advices,
+            s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
             keccak_table,
             acc_s,
             acc_mult_s,
+            acc_c,
             sel2,
             is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
@@ -2142,6 +2146,25 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
 
                             if row[row.len() - 1] == 13 || row[row.len() - 1] == 14 {
+                                // Info whether leaf value is 1 byte or more:
+                                let mut is_long = false;
+                                let row_prev = &witness[ind - 1];
+                                if row_prev[0] == 248 {
+                                    // whole leaf is in long format (3 RLP meta bytes)
+                                    let key_len = row_prev[2] - 128;
+                                    if row_prev[1] - key_len - 1 > 1 {
+                                        is_long = true;
+                                    }
+                                } else {
+                                    let leaf_len = row_prev[0] - 192;
+                                    let key_len = row_prev[1] - 128;
+                                    if leaf_len - key_len - 1 > 1 {
+                                        is_long = true;
+                                    }
+                                }
+                                assign_long_short(&mut region, is_long);
+
+                                // Leaf RLC
                                 compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
@@ -2150,11 +2173,26 @@ impl<F: FieldExt> MPTConfig<F> {
                                     HASH_WIDTH + 2,
                                 );
 
+                                pv.acc_c = F::zero();
+                                pv.acc_mult_c = F::one();
+                                // Leaf value RLC
+                                let mut start = 0;
+                                if is_long {
+                                    start = 2;
+                                }
+                                compute_acc_and_mult(
+                                    row,
+                                    &mut pv.acc_c,
+                                    &mut pv.acc_mult_c,
+                                    start,
+                                    HASH_WIDTH + 2,
+                                );
+
                                 self.assign_acc(
                                     &mut region,
-                                    pv.acc_s,
+                                    pv.acc_s, // leaf RLC
                                     pv.acc_mult_s,
-                                    F::zero(),
+                                    pv.acc_c, // leaf value RLC
                                     F::zero(),
                                     offset,
                                 )?;

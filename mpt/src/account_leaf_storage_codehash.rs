@@ -43,6 +43,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         let config = AccountLeafStorageCodehashConfig {};
         let one = Expression::Constant(F::one());
 
+        // TODO: if address doesn't change: current S storage root = previous C storage
+        // root
+
         // We don't need to check acc_mult because it's not used after this row.
 
         meta.create_gate("account leaf storage codehash", |meta| {

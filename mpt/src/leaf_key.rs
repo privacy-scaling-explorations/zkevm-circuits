@@ -7,7 +7,7 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
+    helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET, R_TABLE_LEN},
 };
@@ -74,12 +74,21 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
-                "is long",
-                q_enable.clone() * is_long * (s_rlp1.clone() - c248),
+                "is_long",
+                q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
             ));
-
-            // TODO: is_long, is_short are booleans
-            // TODO: is_long + is_short = 1
+            constraints.push((
+                "is_long is boolean",
+                get_bool_constraint(q_enable.clone(), is_long.clone()),
+            ));
+            constraints.push((
+                "is_short is boolean",
+                get_bool_constraint(q_enable.clone(), is_long.clone()),
+            ));
+            constraints.push((
+                "is_long + is_short = 1",
+                q_enable.clone() * (is_long.clone() + is_short.clone() - one.clone()),
+            ));
 
             let mut rlc = s_rlp1;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
