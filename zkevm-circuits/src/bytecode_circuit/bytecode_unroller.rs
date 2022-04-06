@@ -338,27 +338,29 @@ impl<F: Field> Config<F> {
                         // Add the byte to the accumulator
                         hash_rlc = hash_rlc * self.r + row.byte;
 
-                        // Set the data for this row
-                        self.set_row(
-                            &mut region,
-                            &push_rindex_is_zero_chip,
-                            offset,
-                            true,
-                            offset == last_row_offset,
-                            row.hash,
-                            row.index,
-                            row.is_code,
-                            row.byte,
-                            push_rindex,
-                            hash_rlc,
-                            hash_length,
-                            F::from(byte_push_size as u64),
-                            row.index + F::one() == hash_length,
-                            false,
-                            F::from(push_rindex_prev),
-                        )?;
-                        push_rindex_prev = push_rindex;
-                        offset += 1;
+                        if offset <= last_row_offset {
+                            // Set the data for this row
+                            self.set_row(
+                                &mut region,
+                                &push_rindex_is_zero_chip,
+                                offset,
+                                true,
+                                offset == last_row_offset,
+                                row.hash,
+                                row.index,
+                                row.is_code,
+                                row.byte,
+                                push_rindex,
+                                hash_rlc,
+                                hash_length,
+                                F::from(byte_push_size as u64),
+                                row.index + F::one() == hash_length,
+                                false,
+                                F::from(push_rindex_prev),
+                            )?;
+                            push_rindex_prev = push_rindex;
+                            offset += 1;
+                        }
                     }
                 }
 
@@ -716,7 +718,6 @@ mod tests {
 
     /// Tests a circuit with incomplete bytecode
     #[test]
-    #[should_panic = "called `Result::unwrap()` on an `Err` value: NotEnoughRowsAvailable { current_k: 9 }"]
     fn bytecode_incomplete() {
         let k = 9;
         let r = MyCircuit::r();
