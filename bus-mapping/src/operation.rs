@@ -4,6 +4,7 @@
 //!   [`Operation`] enum).
 //! - Define structures that interact with operations such as
 //!   [`OperationContainer`].
+/// For external calls, usually in building `state_circuit`.
 pub mod container;
 
 pub use container::OperationContainer;
