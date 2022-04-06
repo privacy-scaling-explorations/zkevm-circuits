@@ -443,6 +443,8 @@ pub struct Call {
     pub return_data_offset: u64,
     /// Return data length
     pub return_data_length: u64,
+    /// Call data source (copy of caller's memory or tx input)
+    pub call_data_source: Vec<u8>,
 }
 
 impl Call {
@@ -687,6 +689,7 @@ impl Transaction {
                 depth: 1,
                 value: eth_tx.value,
                 call_data_length: eth_tx.input.as_ref().len() as u64,
+                call_data_source: eth_tx.input.to_vec(),
                 ..Default::default()
             }
         } else {
@@ -1010,20 +1013,44 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         };
 
-        let (call_data_offset, call_data_length, return_data_offset, return_data_length) =
-            match kind {
-                CallKind::Call | CallKind::CallCode => {
-                    let call_data = get_call_memory_offset_length(step, 3)?;
-                    let return_data = get_call_memory_offset_length(step, 5)?;
-                    (call_data.0, call_data.1, return_data.0, return_data.1)
-                }
-                CallKind::DelegateCall | CallKind::StaticCall => {
-                    let call_data = get_call_memory_offset_length(step, 2)?;
-                    let return_data = get_call_memory_offset_length(step, 4)?;
-                    (call_data.0, call_data.1, return_data.0, return_data.1)
-                }
-                CallKind::Create | CallKind::Create2 => (0, 0, 0, 0),
-            };
+        let (
+            call_data_offset,
+            call_data_length,
+            return_data_offset,
+            return_data_length,
+            mut call_data_source,
+        ) = match kind {
+            CallKind::Call | CallKind::CallCode => {
+                let call_data = get_call_memory_offset_length(step, 3)?;
+                let return_data = get_call_memory_offset_length(step, 5)?;
+                (
+                    call_data.0,
+                    call_data.1,
+                    return_data.0,
+                    return_data.1,
+                    step.memory.0.clone(),
+                )
+            }
+            CallKind::DelegateCall | CallKind::StaticCall => {
+                let call_data = get_call_memory_offset_length(step, 2)?;
+                let return_data = get_call_memory_offset_length(step, 4)?;
+                (
+                    call_data.0,
+                    call_data.1,
+                    return_data.0,
+                    return_data.1,
+                    step.memory.0.clone(),
+                )
+            }
+            CallKind::Create | CallKind::Create2 => (0, 0, 0, 0, Vec::new()),
+        };
+
+        // Expand memory to expected size as call_data_source for new call
+        if let Some(padding) =
+            ((call_data_offset + call_data_length) as usize).checked_sub(call_data_source.len())
+        {
+            call_data_source.extend(std::iter::repeat(0).take(padding));
+        }
 
         let caller = self.call()?;
         let call = Call {
@@ -1045,6 +1072,7 @@ impl<'a> CircuitInputStateRef<'a> {
             call_data_length,
             return_data_offset,
             return_data_length,
+            call_data_source,
         };
 
         Ok(call)
@@ -2075,6 +2103,7 @@ mod tracer_tests {
             call_data_length: 0,
             return_data_offset: 0,
             return_data_length: 0,
+            call_data_source: Vec::new(),
         }
     }
 
@@ -3306,6 +3335,7 @@ mod tracer_tests {
             call_data_length: 0,
             return_data_offset: 0,
             return_data_length: 0,
+            call_data_source: Vec::new(),
         });
 
         assert_eq!(
