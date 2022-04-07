@@ -1,4 +1,12 @@
-* @appliedzkp/zkevm-reviewers
+# Any PR done to the repo is always assigned to a member of @appliedzkp/zkevm-reviewers group
+# which delegates the review to one of it's members.
+* @appliedzkp/zkevm-reviewers 
 
-zkevm-circuits/src/state_circuit/ @miha-stopar
+# State circuit PRs imply always an extra review from @miha-stopar.
+zkevm-circuits/src/state_circuit/* @miha-stopar
 zkevm-circuits/src/state_circuit.rs @miha-stopar
+
+# PRs done to `zkevm-circuits` or `bus-mapping` will require an extra review
+# from @scroll-tech/zkevm-reviewers.
+zkevm-circuits/* @scroll-tech/zkevm-reviewers
+bus-mapping/* @scroll-tech/zkevm-reviewers
