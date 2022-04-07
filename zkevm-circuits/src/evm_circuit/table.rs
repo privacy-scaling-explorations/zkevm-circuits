@@ -140,6 +140,7 @@ pub enum BlockContextFieldTag {
     Difficulty,
     BaseFee,
     BlockHash,
+    ChainId,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
