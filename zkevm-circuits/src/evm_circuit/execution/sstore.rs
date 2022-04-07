@@ -191,13 +191,14 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
-        let (_, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
+        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Some(F::from(tx_refund_prev)))?;
 
         self.gas_cost.assign(
             region,
             offset,
+            step.gas_cost,
             value,
             value_prev,
             committed_value,
@@ -208,13 +209,13 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund.assign(
             region,
             offset,
+            tx_refund,
             tx_refund_prev,
             value,
             value_prev,
             committed_value,
             block.randomness,
         )?;
-
         Ok(())
     }
 }
@@ -284,6 +285,7 @@ impl<F: Field> SstoreGasGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        gas_cost: u64,
         value: eth_types::Word,
         value_prev: eth_types::Word,
         committed_value: eth_types::Word,
@@ -330,6 +332,10 @@ impl<F: Field> SstoreGasGadget<F> {
             offset,
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
         )?;
+        debug_assert_eq!(
+            calc_expected_gas_cost(value, value_prev, committed_value, is_warm),
+            gas_cost
+        );
         Ok(())
     }
 }
@@ -341,16 +347,12 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     value: Cell<F>,
     value_prev: Cell<F>,
     committed_value: Cell<F>,
-    value_prev_is_zero: IsZeroGadget<F>,
-    value_is_zero: IsZeroGadget<F>,
-    original_is_zero: IsZeroGadget<F>,
-    original_eq_value: IsEqualGadget<F>,
-    prev_eq_value: IsEqualGadget<F>,
-    original_eq_prev: IsEqualGadget<F>,
-    nz_nz_allne_case_refund: Cell<F>,
-    nz_ne_ne_case_refund: Cell<F>,
-    ez_ne_ne_case_refund: Cell<F>,
-    eq_ne_case_refund: Cell<F>,
+    value_prev_is_zero_gadget: IsZeroGadget<F>,
+    value_is_zero_gadget: IsZeroGadget<F>,
+    original_is_zero_gadget: IsZeroGadget<F>,
+    original_eq_value_gadget: IsEqualGadget<F>,
+    prev_eq_value_gadget: IsEqualGadget<F>,
+    original_eq_prev_gadget: IsEqualGadget<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -361,61 +363,45 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value_prev: Cell<F>,
         committed_value: Cell<F>,
     ) -> Self {
-        let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
-        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
-        let original_eq_value = IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
-        let prev_eq_value = IsEqualGadget::construct(cb, value_prev.expr(), value.expr());
-        let original_eq_prev =
+        let value_prev_is_zero_gadget = IsZeroGadget::construct(cb, value_prev.expr());
+        let value_is_zero_gadget = IsZeroGadget::construct(cb, value.expr());
+        let original_is_zero_gadget = IsZeroGadget::construct(cb, committed_value.expr());
+
+        let original_eq_value_gadget =
+            IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
+        let prev_eq_value_gadget = IsEqualGadget::construct(cb, value_prev.expr(), value.expr());
+        let original_eq_prev_gadget =
             IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
 
-        // original_value, value_prev, value all are different;
-        // original_value!=0&&value_prev!=0
-        let nz_nz_allne_case_refund = cb.copy(select::expr(
-            value_is_zero.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            tx_refund_old.expr(),
-        ));
-        // original_value, value_prev, value all are different; original_value!=0
-        let nz_allne_case_refund = select::expr(
-            value_prev_is_zero.expr(),
-            tx_refund_old.expr() - GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            nz_nz_allne_case_refund.expr(),
-        );
-        // original_value!=value_prev, value_prev!=value, original_value!=0
-        let nz_ne_ne_case_refund = cb.copy(select::expr(
-            not::expr(original_eq_value.expr()),
-            nz_allne_case_refund.expr(),
-            nz_allne_case_refund.expr() + GasCost::SSTORE_RESET.expr()
-                - GasCost::WARM_ACCESS.expr(),
-        ));
-        // original_value!=value_prev, value_prev!=value, original_value==0
-        let ez_ne_ne_case_refund = cb.copy(select::expr(
-            original_eq_value.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_SET.expr() - GasCost::WARM_ACCESS.expr(),
-            tx_refund_old.expr(),
-        ));
-        // original_value!=value_prev, value_prev!=value
-        let ne_ne_case_refund = select::expr(
-            not::expr(original_is_zero.expr()),
-            nz_ne_ne_case_refund.expr(),
-            ez_ne_ne_case_refund.expr(),
-        );
-        // original_value==value_prev, value_prev!=value
-        let eq_ne_case_refund = cb.copy(select::expr(
-            not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            tx_refund_old.expr(),
-        ));
-        let tx_refund_new = select::expr(
-            prev_eq_value.expr(),
-            tx_refund_old.expr(),
-            select::expr(
-                original_eq_prev.expr(),
-                eq_ne_case_refund.expr(),
-                ne_ne_case_refund.expr(),
-            ),
-        );
+        let value_prev_is_zero = value_prev_is_zero_gadget.expr();
+        let value_is_zero = value_is_zero_gadget.expr();
+        let original_is_zero = original_is_zero_gadget.expr();
+
+        let original_eq_value = original_eq_value_gadget.expr();
+        let prev_eq_value = prev_eq_value_gadget.expr();
+        let original_eq_prev = original_eq_prev_gadget.expr();
+
+        // (value_prev != value) && (committed_value != Word::from(0)) && (value ==
+        // Word::from(0))
+        let case_a =
+            not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
+        // (value_prev != value) && (committed_value == value) && (committed_value !=
+        // Word::from(0))
+        let case_b = not::expr(prev_eq_value.clone())
+            * original_eq_value.clone()
+            * not::expr(original_is_zero.clone());
+        // (value_prev != value) && (committed_value == value) && (committed_value ==
+        // Word::from(0))
+        let case_c = not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
+        // (value_prev != value) && (committed_value != value_prev) && (value_prev ==
+        // Word::from(0))
+        let case_d = not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
+
+        let tx_refund_new = tx_refund_old.expr()
+            + case_a * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
+            + case_b * (GasCost::SSTORE_RESET.expr() - GasCost::WARM_ACCESS.expr())
+            + case_c * (GasCost::SSTORE_SET.expr() - GasCost::WARM_ACCESS.expr())
+            - case_d * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
 
         Self {
             value,
@@ -423,16 +409,12 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             committed_value,
             tx_refund_old,
             tx_refund_new,
-            value_prev_is_zero,
-            value_is_zero,
-            original_is_zero,
-            original_eq_value,
-            prev_eq_value,
-            original_eq_prev,
-            nz_nz_allne_case_refund,
-            nz_ne_ne_case_refund,
-            ez_ne_ne_case_refund,
-            eq_ne_case_refund,
+            value_prev_is_zero_gadget,
+            value_is_zero_gadget,
+            original_is_zero_gadget,
+            original_eq_value_gadget,
+            prev_eq_value_gadget,
+            original_eq_prev_gadget,
         }
     }
 
@@ -446,6 +428,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        tx_refund: u64,
         tx_refund_old: u64,
         value: eth_types::Word,
         value_prev: eth_types::Word,
@@ -475,161 +458,122 @@ impl<F: Field> SstoreTxRefundGadget<F> {
                 randomness,
             )),
         )?;
-        self.value_prev_is_zero.assign(
+        self.value_prev_is_zero_gadget.assign(
             region,
             offset,
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
-        self.value_is_zero.assign(
+        self.value_is_zero_gadget.assign(
             region,
             offset,
             Word::random_linear_combine(value.to_le_bytes(), randomness),
         )?;
-        self.original_is_zero.assign(
+        self.original_is_zero_gadget.assign(
             region,
             offset,
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
         )?;
-        self.original_eq_value.assign(
+        self.original_eq_value_gadget.assign(
             region,
             offset,
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value.to_le_bytes(), randomness),
         )?;
-        self.prev_eq_value.assign(
+        self.prev_eq_value_gadget.assign(
             region,
             offset,
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
             Word::random_linear_combine(value.to_le_bytes(), randomness),
         )?;
-        self.original_eq_prev.assign(
+        self.original_eq_prev_gadget.assign(
             region,
             offset,
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
-
-        let nz_nz_allne_case_refund = if value == eth_types::Word::zero() {
-            tx_refund_old + GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
-        } else {
-            tx_refund_old
-        };
-        self.nz_nz_allne_case_refund.assign(
-            region,
-            offset,
-            Some(F::from(nz_nz_allne_case_refund)),
-        )?;
-
-        let nz_allne_case_refund = if value_prev == eth_types::Word::zero() {
-            tx_refund_old - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
-        } else {
-            nz_nz_allne_case_refund
-        };
-        let nz_ne_ne_case_refund = if committed_value != value {
-            nz_allne_case_refund
-        } else {
-            nz_allne_case_refund + GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64()
-        };
-        self.nz_ne_ne_case_refund
-            .assign(region, offset, Some(F::from(nz_ne_ne_case_refund)))?;
-
-        let ez_ne_ne_case_refund = if committed_value == value {
-            tx_refund_old + GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64()
-        } else {
-            tx_refund_old
-        };
-        self.ez_ne_ne_case_refund
-            .assign(region, offset, Some(F::from(ez_ne_ne_case_refund)))?;
-
-        let eq_ne_case_refund =
-            if (committed_value != eth_types::Word::zero()) && (value == eth_types::Word::zero()) {
-                tx_refund_old + GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
-            } else {
-                tx_refund_old
-            };
-        self.eq_ne_case_refund
-            .assign(region, offset, Some(F::from(eq_ne_case_refund)))?;
-
+        debug_assert_eq!(
+            calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value),
+            tx_refund
+        );
         Ok(())
     }
 }
 
+fn calc_expected_gas_cost(
+    value: eth_types::Word,
+    value_prev: eth_types::Word,
+    committed_value: eth_types::Word,
+    is_warm: bool,
+) -> u64 {
+    let warm_case_gas = if value_prev == value {
+        GasCost::WARM_ACCESS
+    } else if committed_value == value_prev {
+        if committed_value == eth_types::Word::from(0) {
+            GasCost::SSTORE_SET
+        } else {
+            GasCost::SSTORE_RESET
+        }
+    } else {
+        GasCost::WARM_ACCESS
+    };
+    if is_warm {
+        warm_case_gas.as_u64()
+    } else {
+        warm_case_gas.as_u64() + GasCost::COLD_SLOAD.as_u64()
+    }
+}
+
+fn calc_expected_tx_refund(
+    tx_refund_old: u64,
+    value: eth_types::Word,
+    value_prev: eth_types::Word,
+    committed_value: eth_types::Word,
+) -> u64 {
+    let mut tx_refund_new = tx_refund_old;
+
+    if value_prev != value {
+        if (committed_value != eth_types::Word::from(0)) && (value == eth_types::Word::from(0)) {
+            // CaseA
+            tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+        }
+        if committed_value == value {
+            if committed_value != eth_types::Word::from(0) {
+                // CaseB
+                tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+            } else {
+                // CaseC
+                tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+            }
+        }
+        if committed_value != value_prev && value_prev == eth_types::Word::from(0) {
+            // CaseD
+            tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+        }
+    }
+
+    tx_refund_new
+}
+
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        param::STACK_CAPACITY,
-        step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag},
-        test::{rand_fp, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
-    };
 
+    use crate::{
+        evm_circuit::{
+            execution::sstore::{calc_expected_gas_cost, calc_expected_tx_refund},
+            param::STACK_CAPACITY,
+            step::ExecutionState,
+            table::{CallContextFieldTag, RwTableTag},
+            test::{rand_fp, run_test_circuit_incomplete_fixed_table},
+            witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+        },
+        test_util::{run_test_circuits, BytecodeTestConfig},
+    };
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
+    use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
     use std::convert::TryInto;
 
-    fn calc_expected_gas_cost(
-        value: Word,
-        value_prev: Word,
-        committed_value: Word,
-        is_warm: bool,
-    ) -> u64 {
-        let warm_case_gas = if value_prev == value {
-            GasCost::WARM_ACCESS
-        } else if committed_value == value_prev {
-            if committed_value == Word::from(0) {
-                GasCost::SSTORE_SET
-            } else {
-                GasCost::SSTORE_RESET
-            }
-        } else {
-            GasCost::WARM_ACCESS
-        };
-        if is_warm {
-            warm_case_gas.as_u64()
-        } else {
-            warm_case_gas.as_u64() + GasCost::COLD_SLOAD.as_u64()
-        }
-    }
-
-    fn calc_expected_tx_refund(
-        tx_refund_old: u64,
-        value: Word,
-        value_prev: Word,
-        committed_value: Word,
-    ) -> u64 {
-        let mut tx_refund_new = tx_refund_old;
-
-        if value_prev != value {
-            if committed_value == value_prev {
-                if (committed_value != Word::from(0)) && (value == Word::from(0)) {
-                    tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
-                }
-            } else {
-                if committed_value != Word::from(0) {
-                    if value_prev == Word::from(0) {
-                        tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
-                    }
-                    if value == Word::from(0) {
-                        tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
-                    }
-                }
-                if committed_value == value {
-                    if committed_value == Word::from(0) {
-                        tx_refund_new +=
-                            GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
-                    } else {
-                        tx_refund_new +=
-                            GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
-                    }
-                }
-            }
-        }
-
-        tx_refund_new
-    }
-
-    fn test_ok(
+    fn test_ok_with_manually_constructed_trace(
         tx: eth_types::Transaction,
         key: Word,
         value: Word,
@@ -886,217 +830,92 @@ mod test {
     }
 
     #[test]
-    fn sstore_gadget_warm_persist() {
+    fn sstore_gadget1() {
         // value_prev == value
         test_ok(
-            mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
-            true,
-            true,
-        );
-        // value_prev != value, original_value == value_prev, original_value != 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060505.into(),
-            true,
-            true,
-        );
-        // value_prev != value, original_value == value_prev, original_value == 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0.into(),
-            0.into(),
-            true,
-            true,
-        );
-        // value_prev != value, original_value != value_prev, value != original_value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060506.into(),
-            true,
-            true,
-        );
-        // value_prev != value, original_value != value_prev, value == original_value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060504.into(),
-            true,
-            true,
         );
     }
-
-    fn sstore_gadget_warm_revert() {
-        // value_prev == value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060504.into(),
-            0x060504.into(),
-            true,
-            false,
-        );
-        // value_prev != value, original_value == value_prev, original_value != 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060505.into(),
-            true,
-            false,
-        );
-        // value_prev != value, original_value == value_prev, original_value == 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0.into(),
-            0.into(),
-            true,
-            false,
-        );
-        // value_prev != value, original_value != value_prev, value != original_value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060506.into(),
-            true,
-            false,
-        );
-        // value_prev != value, original_value != value_prev, value == original_value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060504.into(),
-            true,
-            false,
-        );
-    }
-
     #[test]
-    fn sstore_gadget_cold_persist() {
-        // value_prev == value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060504.into(),
-            0x060504.into(),
-            false,
-            true,
-        );
+    fn sstore_gadget2() {
         // value_prev != value, original_value == value_prev, original_value != 0
         test_ok(
-            mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060505.into(),
-            false,
-            true,
         );
+    }
+    #[test]
+    fn sstore_gadget3() {
         // value_prev != value, original_value == value_prev, original_value == 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0.into(),
-            0.into(),
-            false,
-            true,
-        );
+        test_ok(0x030201.into(), 0x060504.into(), 0.into(), 0.into());
+    }
+    #[test]
+    fn sstore_gadget4() {
         // value_prev != value, original_value != value_prev, value != original_value
         test_ok(
-            mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060506.into(),
-            false,
-            true,
         );
+    }
+    #[test]
+    fn sstore_gadget5() {
         // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
-            mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060504.into(),
-            false,
-            true,
         );
     }
 
-    #[test]
-    fn sstore_gadget_cold_revert() {
-        // value_prev == value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060504.into(),
-            0x060504.into(),
-            false,
-            false,
-        );
-        // value_prev != value, original_value == value_prev, original_value != 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060505.into(),
-            false,
-            false,
-        );
-        // value_prev != value, original_value == value_prev, original_value == 0
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0.into(),
-            0.into(),
-            false,
-            false,
-        );
-        // value_prev != value, original_value != value_prev, value != original_value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060506.into(),
-            false,
-            false,
-        );
-        // value_prev != value, original_value != value_prev, value == original_value
-        test_ok(
-            mock_tx(),
-            0x030201.into(),
-            0x060504.into(),
-            0x060505.into(),
-            0x060504.into(),
-            false,
-            false,
-        );
+    fn test_ok(key: Word, value: Word, value_prev: Word, committed_value: Word) {
+        let bytecode_success = bytecode! {
+            PUSH32(value_prev)
+            PUSH32(key)
+            SSTORE
+            PUSH32(value)
+            PUSH32(key)
+            SSTORE
+            STOP
+        };
+        let bytecode_failure = bytecode! {
+            PUSH32(value_prev)
+            PUSH32(key)
+            SSTORE
+            PUSH32(value)
+            PUSH32(key)
+            SSTORE
+            REVERT
+        };
+        for bytecode in [bytecode_success, bytecode_failure] {
+            let ctx = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(MOCK_ACCOUNTS[0])
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode)
+                        .storage(vec![(key, committed_value)].into_iter());
+                    accs[1]
+                        .address(MOCK_ACCOUNTS[1])
+                        .balance(Word::from(10u64.pow(19)));
+                },
+                tx_from_1_to_0,
+                |block, _txs| block,
+            )
+            .unwrap();
+            let test_config = BytecodeTestConfig {
+                enable_state_circuit_test: false,
+                ..Default::default()
+            };
+            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
+        }
     }
 }

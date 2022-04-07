@@ -174,6 +174,8 @@ pub struct ExecStep {
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
     pub gas_cost: GasCost,
+    /// Accumulated gas refund
+    pub gas_refund: Gas,
     /// Call index within the [`Transaction`]
     pub call_index: usize,
     /// The global counter when this step was executed.
@@ -204,6 +206,7 @@ impl ExecStep {
             memory_size: step.memory.0.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
+            gas_refund: Gas(0),
             call_index,
             rwc,
             reversible_write_counter,
@@ -223,6 +226,7 @@ impl Default for ExecStep {
             memory_size: 0,
             gas_left: Gas(0),
             gas_cost: GasCost(0),
+            gas_refund: Gas(0),
             call_index: 0,
             rwc: RWCounter(0),
             reversible_write_counter: 0,
@@ -805,11 +809,7 @@ impl<'a> CircuitInputStateRef<'a> {
         rw: RW,
         op: T,
     ) -> Result<(), Error> {
-        let op_ref = self.block.container.insert(Operation::new_reversible(
-            self.block_ctx.rwc.inc_pre(),
-            rw,
-            op,
-        ));
+        let op_ref = self.apply_op(false, rw, op.into_enum());
         step.bus_mapping_instance.push(op_ref);
 
         // Increase reversible_write_counter
@@ -1076,38 +1076,29 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Apply reverted op to state and push to container.
-    fn apply_reverted_op(&mut self, op: OpEnum) -> OperationRef {
-        match op {
+    /// Apply op to state and push to container.
+    fn apply_op(&mut self, is_revert: bool, rw: RW, op: OpEnum) -> OperationRef {
+        match &op {
             OpEnum::Storage(op) => {
-                let (_, account) = self.sdb.get_storage_mut(&op.address, &op.key);
-                *account = op.value;
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
+                self.sdb.set_storage(&op.address, &op.key, &op.value);
             }
             OpEnum::TxAccessListAccount(op) => {
-                if !op.value {
+                if !op.value_prev && op.value {
+                    self.sdb.add_account_to_access_list(op.address);
+                }
+                if op.value_prev && !op.value {
                     self.sdb.remove_account_from_access_list(&op.address);
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
             OpEnum::TxAccessListAccountStorage(op) => {
-                if !op.value {
+                if !op.value_prev && op.value {
+                    self.sdb
+                        .add_account_storage_to_access_list((op.address, op.key));
+                }
+                if op.value_prev && !op.value {
                     self.sdb
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
             OpEnum::Account(op) => {
                 let (_, account) = self.sdb.get_account_mut(&op.address);
@@ -1118,16 +1109,19 @@ impl<'a> CircuitInputStateRef<'a> {
                         account.code_hash = op.value.to_be_bytes().into();
                     }
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
-            OpEnum::TxRefund(_) => unimplemented!(),
+            OpEnum::TxRefund(op) => {
+                self.sdb.set_refund(op.value);
+            }
             OpEnum::AccountDestructed(_) => unimplemented!(),
             _ => unreachable!(),
+        };
+        if is_revert {
+            debug_assert!(rw == RW::WRITE, "revert read operation");
         }
+        self.block
+            .container
+            .insert_op_enum(self.block_ctx.rwc.inc_pre(), rw, !is_revert, op)
     }
 
     /// Handle a reversion group
@@ -1141,7 +1135,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.into_iter().rev() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                let rev_op_ref = self.apply_reverted_op(op);
+                let rev_op_ref = self.apply_op(true, RW::WRITE, op);
                 self.tx.steps[step_index]
                     .bus_mapping_instance
                     .push(rev_op_ref);
@@ -1473,6 +1467,7 @@ impl<'a> CircuitInputBuilder {
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
+            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
@@ -1488,8 +1483,8 @@ impl<'a> CircuitInputBuilder {
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps.push(end_tx_step);
 
+        self.sdb.commit_tx();
         self.block.txs.push(tx);
-        self.sdb.clear_access_list_and_refund();
 
         Ok(())
     }
@@ -2004,6 +1999,7 @@ mod tracer_tests {
                 &GethExecTrace {
                     gas: Gas(0),
                     failed: false,
+                    return_value: "".to_owned(),
                     struct_logs: vec![geth_step.clone()],
                 },
                 false,
