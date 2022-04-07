@@ -4,9 +4,9 @@ use crate::{
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
-            Cell, Word,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

@@ -1,38 +1,7 @@
-use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::RW;
-use crate::Error;
-use eth_types::GethExecStep;
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct ChainId;
-
-impl Opcode for ChainId {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        geth_steps: &[GethExecStep],
-    ) -> Result<Vec<ExecStep>, Error> {
-        let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step)?;
-
-        // Get the chain_id from next step
-        let chain_id = geth_steps[1].stack.last()?;
-
-        // Stack write of the chain_id
-        state.push_stack_op(
-            &mut exec_step,
-            RW::WRITE,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            chain_id,
-        )?;
-
-        Ok(vec![exec_step])
-    }
-}
-
 #[cfg(test)]
+
 mod chainid_tests {
-    use super::*;
+    use crate::operation::RW;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
     use eth_types::{
         bytecode,
