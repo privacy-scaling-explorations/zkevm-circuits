@@ -160,7 +160,7 @@ mod sload_tests {
             .unwrap();
 
         assert_eq!(
-            [0, 2]
+            [4, 6]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
@@ -175,7 +175,7 @@ mod sload_tests {
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[1].as_usize()];
+        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[5].as_usize()];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (

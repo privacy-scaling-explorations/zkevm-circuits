@@ -163,7 +163,7 @@ mod sstore_tests {
             .unwrap();
 
         assert_eq!(
-            [0, 1]
+            [4, 5]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
