@@ -641,7 +641,6 @@ impl Rw {
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
-            //Self::TxLog { value, .. } => value.byte(0),
             _ => unreachable!(),
         }
     }

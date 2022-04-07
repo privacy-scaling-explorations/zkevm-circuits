@@ -1090,7 +1090,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     pub(crate) fn tx_log_lookup(
         &mut self,
-        is_write: Expression<F>,
         tx_id: Expression<F>,
         tag: TxLogFieldTag,
         index: Expression<F>,
@@ -1098,7 +1097,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup(
             "log data lookup",
-            is_write,
+            1.expr(),
             RwTableTag::TxLog,
             [
                 tx_id,

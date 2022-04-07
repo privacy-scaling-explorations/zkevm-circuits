@@ -203,11 +203,15 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                 if from_tx {
                     tx.call_data[src_addr]
                 } else {
-                    0
-                };
-                // increase rw_idx for skipping log record
-                rw_idx += 1
-            }
+                    rw_idx += 1;
+                    block.rws[step.rw_indices[rw_idx]].memory_value()
+                }
+            } else {
+                0
+            };
+            // increase rw_idx for skipping log record
+            rw_idx += 1
+        }
 
         self.buffer_reader
             .assign(region, offset, src_addr, src_addr_end, &bytes, &selectors)?;
@@ -305,7 +309,7 @@ pub mod test {
             stack_pointer,
             memory_size,
             gas_cost: 0,
-            aux_data: Some(aux_data),
+            aux_data: Some(StepAuxiliaryData::CopyToMemory(aux_data)),
             ..Default::default()
         };
         (step, rw_offset)

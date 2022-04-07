@@ -191,9 +191,6 @@ pub enum TxLogFieldTag {
     Address = 1,
     Topic,
     Data,
-    BlockNumber,
-    /* TxHash,
-     * TxIndex, */
 }
 
 #[derive(Clone, Copy, Debug)]

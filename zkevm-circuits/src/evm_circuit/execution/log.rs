@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{LOG_STATIC_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
         util::{
@@ -21,7 +21,7 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::Field;
-use eth_types::{evm_types::OpcodeId, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -46,11 +46,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // check opcode is in [log0,log4], already do SameContextGadget::construct
-        let memory_offset = cb.query_cell();
+        let mstart = cb.query_cell();
         let msize = cb.query_rlc();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(memory_offset.clone().expr());
+        cb.stack_pop(mstart.clone().expr());
         cb.stack_pop(msize.expr());
 
         // read tx id
@@ -66,7 +66,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
         cb.condition(is_persistent.expr(), |cb| {
             cb.tx_log_lookup(
-                1.expr(),
                 tx_id.expr(),
                 TxLogFieldTag::Address,
                 0.expr(),
@@ -81,19 +80,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         for (idx, topic) in topics.iter().enumerate() {
             cb.condition(1.expr() - is_topic_zeros[idx].expr(), |cb| {
                 cb.stack_pop(topic.expr());
-                //cb.tx_log_lookup(1.expr(), tx_id.expr(),
-                // TxLogFieldTag::Topic, idx.expr(), topic.expr());
             });
             cb.condition(
                 (1.expr() - is_topic_zeros[idx].expr()) * is_persistent.expr(),
                 |cb| {
-                    cb.tx_log_lookup(
-                        1.expr(),
-                        tx_id.expr(),
-                        TxLogFieldTag::Topic,
-                        idx.expr(),
-                        topic.expr(),
-                    );
+                    cb.tx_log_lookup(tx_id.expr(), TxLogFieldTag::Topic, idx.expr(), topic.expr());
                 },
             );
         }
@@ -119,8 +110,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address =
-            MemoryAddressGadget::construct(cb, memory_offset.clone(), msize.clone());
+        let memory_address = MemoryAddressGadget::construct(cb, mstart.clone(), msize.clone());
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -147,7 +137,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 cb.require_equal(
                     "next_src_addr = memory_offset",
                     next_src_addr.expr(),
-                    memory_offset.expr(),
+                    mstart.expr(),
                 );
                 cb.require_equal(
                     "next_bytes_left = length",
@@ -157,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 cb.require_equal(
                     "next_src_addr_end = memory_offset + length",
                     next_src_addr_end.expr(),
-                    memory_offset.expr() + memory_address.length(),
+                    mstart.expr() + memory_address.length(),
                 );
                 cb.require_equal(
                     "next_is_persistent = is_persistent",
@@ -168,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             },
         );
 
-        let gas_cost = LOG_STATIC_GAS.expr() * topic_count.clone()
+        let gas_cost = GasCost::LOG_STATIC_GAS.as_u64().expr() * topic_count.clone()
             + 8.expr() * from_bytes::expr(&msize.cells)
             + memory_expansion.gas_cost();
         // State transition
@@ -257,7 +247,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 mod test {
     use crate::evm_circuit::{
         execution::copy_to_log::test::make_log_copy_steps,
-        param::LOG_STATIC_GAS,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
         test::{
@@ -265,7 +254,7 @@ mod test {
         },
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use eth_types::{evm_types::OpcodeId, ToBigEndian, Word};
+    use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToBigEndian, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
@@ -419,9 +408,9 @@ mod test {
             calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size);
         let topic_count = topics.len();
         // dynamic calculate topic_count
-        let gas_cost =
-            LOG_STATIC_GAS as u64 * topic_count as u64 + 8 * msize.as_u64() + memory_expension_gas;
-
+        let gas_cost = GasCost::LOG_STATIC_GAS.as_u64() * topic_count as u64
+            + 8 * msize.as_u64()
+            + memory_expension_gas;
         let codes = [
             OpcodeId::LOG0,
             OpcodeId::LOG1,

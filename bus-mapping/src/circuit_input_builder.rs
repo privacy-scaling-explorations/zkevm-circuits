@@ -159,20 +159,34 @@ pub struct CopyToMemoryAuxData {
     pub from_tx: bool,
 }
 
-/// Auxiliary data for CopyCodeToMemory internal state.
 #[derive(Clone, Copy, Debug)]
 pub struct CopyCodeToMemoryAuxData {
     /// Source start address
     pub src_addr: u64,
     /// Destination address
     pub dst_addr: u64,
-    /// Bytes left
-    pub bytes_left: u64,
-    /// Source end address
+/// Auxiliary data of Copy To Log
     pub src_addr_end: u64,
     /// Hash of the bytecode to be copied
     pub code_source: U256,
 }
+
+
+/// Auxiliary data of Copy To Log
+#[derive(Clone, Debug)]
+pub struct CopyToLogAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// current call is persistent
+    pub is_persistent: bool,
+    /// tx id of this step
+    pub tx_id: usize,
+}
+
 
 /// Auxiliary data of Execution step
 #[derive(Clone, Copy, Debug)]
@@ -181,6 +195,8 @@ pub enum StepAuxiliaryData {
     CopyToMemory(CopyToMemoryAuxData),
     /// Auxiliary data of Copy Code To Memory
     CopyCodeToMemory(CopyCodeToMemoryAuxData),
+    /// Auxiliary data of Copy To Log
+    CopyToLog(CopyToLogAuxData),
 }
 
 /// An execution step of the EVM.

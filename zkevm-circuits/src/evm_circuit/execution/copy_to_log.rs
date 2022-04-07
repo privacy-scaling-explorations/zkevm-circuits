@@ -14,7 +14,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::circuit_input_builder::StepAuxiliaryData;
+use bus_mapping::circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData};
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -66,7 +66,6 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             // Write bytes[i] to log when selectors[i] != 0 and is_persistent = true
             cb.condition(buffer_reader.has_data(i) * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(
-                    1.expr(),
                     tx_id.expr(),
                     TxLogFieldTag::Data,
                     i.expr(),
@@ -134,65 +133,56 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        if let StepAuxiliaryData::CopyToLog {
+        let CopyToLogAuxData {
             src_addr,
             bytes_left,
             src_addr_end,
             is_persistent,
             tx_id,
-        } = step.aux_data.as_ref().unwrap()
-        {
-            self.src_addr
-                .assign(region, offset, Some(F::from(*src_addr)))?;
-            self.bytes_left
-                .assign(region, offset, Some(F::from(*bytes_left)))?;
-            self.src_addr_end
-                .assign(region, offset, Some(F::from(*src_addr_end)))?;
-            self.is_persistent
-                .assign(region, offset, Some(F::from(*is_persistent as u64)))?;
-            self.tx_id
-                .assign(region, offset, Some(F::from(*tx_id as u64)))?;
+        } = match step.aux_data.as_ref().unwrap() {
+            StepAuxiliaryData::CopyToLog(aux) => aux,
+            _ => unreachable!(),
+        };
 
-            // Retrieve the bytes and selectors
+        self.src_addr
+            .assign(region, offset, Some(F::from(*src_addr)))?;
+        self.bytes_left
+            .assign(region, offset, Some(F::from(*bytes_left)))?;
+        self.src_addr_end
+            .assign(region, offset, Some(F::from(*src_addr_end)))?;
+        self.is_persistent
+            .assign(region, offset, Some(F::from(*is_persistent as u64)))?;
+        self.tx_id
+            .assign(region, offset, Some(F::from(*tx_id as u64)))?;
 
-            let mut rw_idx = 0;
-            let mut bytes = vec![0u8; MAX_COPY_BYTES];
-            let mut selectors = vec![false; MAX_COPY_BYTES];
+        // Retrieve the bytes and selectors
 
-            for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
-                let src_addr = *src_addr as usize + idx;
-                selectors[idx] = true;
-                bytes[idx] = if selectors[idx] && src_addr < *src_addr_end as usize {
-                    // rw_idx += 1;
-                    // block.rws[step.rw_indices[rw_idx]].memory_value()
-                    let indice = step.rw_indices[rw_idx];
-                    rw_idx += 1;
-                    block.rws[indice].memory_value()
-                } else {
-                    0
-                };
-                // if *is_persistent {
-                //     rw_idx += 1;
-                // }
-            }
+        let mut rw_idx = 0;
+        let mut bytes = vec![0u8; MAX_COPY_BYTES];
+        let mut selectors = vec![false; MAX_COPY_BYTES];
 
-            self.buffer_reader.assign(
-                region,
-                offset,
-                *src_addr,
-                *src_addr_end,
-                &bytes,
-                &selectors,
-            )?;
-
-            let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
-            self.finish_gadget.assign(
-                region,
-                offset,
-                F::from(num_bytes_copied),
-                F::from(*bytes_left),
-            )?;
+        for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
+            let src_addr = *src_addr as usize + idx;
+            selectors[idx] = true;
+            bytes[idx] = if selectors[idx] && src_addr < *src_addr_end as usize {
+                let indice = step.rw_indices[rw_idx];
+                rw_idx += 1;
+                block.rws[indice].memory_value()
+            } else {
+                0
+            };
         }
+
+        self.buffer_reader
+            .assign(region, offset, *src_addr, *src_addr_end, &bytes, &selectors)?;
+
+        let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
+        self.finish_gadget.assign(
+            region,
+            offset,
+            F::from(num_bytes_copied),
+            F::from(*bytes_left),
+        )?;
 
         Ok(())
     }
@@ -207,7 +197,7 @@ pub mod test {
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use bus_mapping::circuit_input_builder::StepAuxiliaryData;
+    use bus_mapping::circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData};
     use eth_types::{evm_types::OpcodeId, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
@@ -272,7 +262,7 @@ pub mod test {
         let log_rws: &mut Vec<_> = rws.0.entry(RwTableTag::TxLog).or_insert_with(Vec::new);
         let log_idx_start = log_rws.len();
         log_rws.extend(txlog_rws);
-        let aux_data = StepAuxiliaryData::CopyToLog {
+        let aux_data = CopyToLogAuxData {
             src_addr,
             bytes_left: bytes_left as u64,
             src_addr_end,
@@ -302,7 +292,7 @@ pub mod test {
             } else {
                 0
             },
-            aux_data: Some(aux_data),
+            aux_data: Some(StepAuxiliaryData::CopyToLog(aux_data)),
             ..Default::default()
         };
         (step, rw_offset)
