@@ -17,11 +17,12 @@ use halo2_proofs::{
 };
 use std::{collections::HashMap, iter};
 
-mod add;
+mod add_sub;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
 mod byte;
+mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
@@ -34,13 +35,16 @@ mod end_tx;
 mod error_oog_static_memory;
 mod extcodehash;
 mod gas;
+mod gasprice;
+mod is_zero;
 mod jump;
 mod jumpdest;
 mod jumpi;
 mod memory;
 mod memory_copy;
 mod msize;
-mod mul;
+mod mul_div_mod;
+mod origin;
 mod pc;
 mod pop;
 mod push;
@@ -52,11 +56,12 @@ mod sstore;
 mod stop;
 mod swap;
 
-use add::AddGadget;
+use add_sub::AddSubGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use byte::ByteGadget;
+use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
@@ -69,13 +74,16 @@ use end_tx::EndTxGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
+use gasprice::GasPriceGadget;
+use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
-use mul::MulGadget;
+use mul_div_mod::MulDivModGadget;
+use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -112,42 +120,49 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
-    add_gadget: AddGadget<F>,
-    mul_gadget: MulGadget<F>,
-    bitwise_gadget: BitwiseGadget<F>,
+    // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
+    copy_to_memory_gadget: CopyToMemoryGadget<F>,
+    end_block_gadget: EndBlockGadget<F>,
+    end_tx_gadget: EndTxGadget<F>,
+    // opcode gadgets
+    add_sub_gadget: AddSubGadget<F>,
+    bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
+    call_gadget: CallGadget<F>,
+    call_value_gadget: CallValueGadget<F>,
     calldatacopy_gadget: CallDataCopyGadget<F>,
     calldataload_gadget: CallDataLoadGadget<F>,
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
-    call_value_gadget: CallValueGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
-    end_block_gadget: EndBlockGadget<F>,
-    end_tx_gadget: EndTxGadget<F>,
-    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
+    extcodehash_gadget: ExtcodehashGadget<F>,
+    gas_gadget: GasGadget<F>,
+    gasprice_gadget: GasPriceGadget<F>,
+    iszero_gadget: IsZeroGadget<F>,
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
-    gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
-    copy_to_memory_gadget: CopyToMemoryGadget<F>,
+    msize_gadget: MsizeGadget<F>,
+    mul_div_mod_gadget: MulDivModGadget<F>,
+    origin_gadget: OriginGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    selfbalance_gadget: SelfbalanceGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
+    sload_gadget: SloadGadget<F>,
+    sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
-    msize_gadget: MsizeGadget<F>,
     block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
-    selfbalance_gadget: SelfbalanceGadget<F>,
-    sload_gadget: SloadGadget<F>,
-    sstore_gadget: SstoreGadget<F>,
-    extcodehash_gadget: ExtcodehashGadget<F>,
+    // error gadgets
+    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -328,42 +343,50 @@ impl<F: Field> ExecutionConfig<F> {
             q_step,
             q_step_first,
             q_step_last,
-            add_gadget: configure_gadget!(),
-            mul_gadget: configure_gadget!(),
-            bitwise_gadget: configure_gadget!(),
+            // internal states
             begin_tx_gadget: configure_gadget!(),
+            copy_to_memory_gadget: configure_gadget!(),
+            end_block_gadget: configure_gadget!(),
+            end_tx_gadget: configure_gadget!(),
+            // opcode gadgets
+            add_sub_gadget: configure_gadget!(),
+            bitwise_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
+            call_gadget: configure_gadget!(),
+            call_value_gadget: configure_gadget!(),
             calldatacopy_gadget: configure_gadget!(),
             calldataload_gadget: configure_gadget!(),
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
-            call_value_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
-            end_block_gadget: configure_gadget!(),
-            end_tx_gadget: configure_gadget!(),
-            error_oog_static_memory_gadget: configure_gadget!(),
+            extcodehash_gadget: configure_gadget!(),
+            gas_gadget: configure_gadget!(),
+            gasprice_gadget: configure_gadget!(),
+            iszero_gadget: configure_gadget!(),
             jump_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
-            gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
-            copy_to_memory_gadget: configure_gadget!(),
+            msize_gadget: configure_gadget!(),
+            mul_div_mod_gadget: configure_gadget!(),
+            origin_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
+            sload_gadget: configure_gadget!(),
+            sstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
-            msize_gadget: configure_gadget!(),
             block_ctx_u64_gadget: configure_gadget!(),
             block_ctx_u160_gadget: configure_gadget!(),
             block_ctx_u256_gadget: configure_gadget!(),
-            sload_gadget: configure_gadget!(),
-            sstore_gadget: configure_gadget!(),
-            extcodehash_gadget: configure_gadget!(),
+            // error gadgets
+            error_oog_static_memory_gadget: configure_gadget!(),
+            // step and presets
             step: step_curr,
             presets_map,
         };
@@ -404,9 +427,10 @@ impl<F: Field> ExecutionConfig<F> {
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
         debug_assert!(
-            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
+            !presets_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
+        presets_map.insert(G::EXECUTION_STATE, presets);
 
         for (selector, constraints) in [
             (q_step, constraints),
@@ -590,63 +614,50 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         match step.execution_state {
+            // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
+            ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
-            ExecutionState::EndBlock => {
-                assign_exec_step!(self.end_block_gadget)
-            }
-            ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
-            ExecutionState::ADD => assign_exec_step!(self.add_gadget),
-            ExecutionState::MUL => assign_exec_step!(self.mul_gadget),
+            ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
+            // opcode
+            ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
-            ExecutionState::SIGNEXTEND => {
-                assign_exec_step!(self.signextend_gadget)
-            }
-            ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
-            ExecutionState::SCMP => {
-                assign_exec_step!(self.signed_comparator_gadget)
-            }
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
-            ExecutionState::POP => assign_exec_step!(self.pop_gadget),
-            ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
-            ExecutionState::PC => assign_exec_step!(self.pc_gadget),
-            ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
-            ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
-            ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
-            ExecutionState::JUMPDEST => {
-                assign_exec_step!(self.jumpdest_gadget)
-            }
-            ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
-            ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
-            ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
-            ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::CALL => assign_exec_step!(self.call_gadget),
+            ExecutionState::CALLDATACOPY => assign_exec_step!(self.calldatacopy_gadget),
+            ExecutionState::CALLDATALOAD => assign_exec_step!(self.calldataload_gadget),
+            ExecutionState::CALLDATASIZE => assign_exec_step!(self.calldatasize_gadget),
             ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
-            ExecutionState::CALLVALUE => {
-                assign_exec_step!(self.call_value_gadget)
-            }
+            ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
+            ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
+            ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
+            ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
+            ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
+            ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
+            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
+            ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
+            ExecutionState::JUMPDEST => assign_exec_step!(self.jumpdest_gadget),
+            ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
+            ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
+            ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
+            ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
+            ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
+            ExecutionState::PC => assign_exec_step!(self.pc_gadget),
+            ExecutionState::POP => assign_exec_step!(self.pop_gadget),
+            ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
-            ExecutionState::CALLDATACOPY => {
-                assign_exec_step!(self.calldatacopy_gadget)
-            }
-            ExecutionState::EXTCODEHASH => {
-                assign_exec_step!(self.extcodehash_gadget)
-            }
-            ExecutionState::CopyToMemory => {
-                assign_exec_step!(self.copy_to_memory_gadget)
-            }
-            ExecutionState::CALLDATALOAD => {
-                assign_exec_step!(self.calldataload_gadget)
-            }
+            ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
+            ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            // errors
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
-            }
-            ExecutionState::CALLDATASIZE => {
-                assign_exec_step!(self.calldatasize_gadget)
             }
             _ => unimplemented!(),
         }
