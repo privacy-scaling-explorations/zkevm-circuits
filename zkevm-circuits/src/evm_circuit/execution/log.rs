@@ -167,7 +167,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
-            state_write_counter: Delta(1.expr()),
             log_id: Delta(is_persistent.expr()),
             gas_left: Delta(-gas_cost),
             ..Default::default()
@@ -249,12 +248,13 @@ mod test {
         execution::copy_to_log::test::make_log_copy_steps,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-        test::{
-            calc_memory_expension_gas_cost, rand_bytes, run_test_circuit_incomplete_fixed_table,
-        },
+        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToBigEndian, Word};
+    use eth_types::{
+        evm_types::{gas_utils::memory_expansion_gas_cost, GasCost, OpcodeId},
+        ToBigEndian, Word,
+    };
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
@@ -405,7 +405,7 @@ mod test {
         };
 
         let memory_expension_gas =
-            calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size);
+            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let topic_count = topics.len();
         // dynamic calculate topic_count
         let gas_cost = GasCost::LOG_STATIC_GAS.as_u64() * topic_count as u64
@@ -427,7 +427,6 @@ mod test {
             .map(|idx| (RwTableTag::TxLog, idx))
             .collect();
 
-        let state_write_counter: usize = 0;
         let mut steps = vec![ExecStep {
             rw_indices: [
                 stack_indices.as_slice(),
@@ -448,7 +447,6 @@ mod test {
             gas_cost,
             memory_size: curr_memory_word_size * 32,
             opcode: Some(codes[topic_count]),
-            state_write_counter,
             log_id,
             ..Default::default()
         }];
@@ -468,7 +466,6 @@ mod test {
                 &mut rws,
                 &mut steps,
                 (log_id + 1).try_into().unwrap(),
-                state_write_counter + 1,
                 is_persistent,
                 tx_id,
             );
@@ -481,7 +478,6 @@ mod test {
             stack_pointer: 1015 + (2 + topic_count),
             opcode: Some(OpcodeId::STOP),
             memory_size: next_memory_word_size * 32,
-            state_write_counter: state_write_counter + 1,
             log_id: is_persistent as usize,
             ..Default::default()
         });

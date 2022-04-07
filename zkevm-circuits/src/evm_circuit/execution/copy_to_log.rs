@@ -217,7 +217,6 @@ pub mod test {
         rws: &mut RwMap,
         bytes_map: &HashMap<u64, u8>,
         log_id: u64,
-        state_write_counter: usize,
         is_persistent: bool,
         tx_id: usize,
     ) -> (ExecStep, usize) {
@@ -286,7 +285,6 @@ pub mod test {
             stack_pointer,
             memory_size,
             gas_cost: 0,
-            state_write_counter,
             log_id: if is_persistent {
                 log_id.try_into().unwrap()
             } else {
@@ -312,7 +310,6 @@ pub mod test {
         rws: &mut RwMap,
         steps: &mut Vec<ExecStep>,
         log_id: u64,
-        state_write_counter: usize,
         is_persistent: bool,
         tx_id: usize,
     ) {
@@ -335,7 +332,6 @@ pub mod test {
                 rws,
                 &bytes_map,
                 log_id,
-                state_write_counter,
                 is_persistent,
                 tx_id,
             );
@@ -370,7 +366,6 @@ pub mod test {
             &mut rws,
             &mut steps,
             log_id,
-            0,
             is_persistent,
             tx_id,
         );
