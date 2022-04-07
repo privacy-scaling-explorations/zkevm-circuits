@@ -627,6 +627,8 @@ mod test {
             PUSH32(value)
             PUSH32(key)
             SSTORE
+            PUSH32(0)
+            PUSH32(0)
             REVERT
         };
         for bytecode in [bytecode_success, bytecode_failure] {
