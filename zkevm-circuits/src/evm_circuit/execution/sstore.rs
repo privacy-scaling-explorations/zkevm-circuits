@@ -557,13 +557,10 @@ fn calc_expected_tx_refund(
 #[cfg(test)]
 mod test {
 
-    use crate::{
-        test_util::{run_test_circuits, BytecodeTestConfig},
-    };
-    
+    use crate::test_util::{run_test_circuits, BytecodeTestConfig};
+
     use eth_types::{bytecode, Word};
     use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
-    
 
     #[test]
     fn sstore_gadget_no_refund() {
