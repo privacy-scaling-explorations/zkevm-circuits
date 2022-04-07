@@ -13,7 +13,7 @@ use crate::{
             memory_gadget::BufferReaderGadget,
             Cell, Word,
         },
-        witness::{Block, Bytecode, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -23,7 +23,7 @@ use super::ExecutionGadget;
 /// Maximum number of bytes that can be copied in one iteration of this gadget.
 /// We are bounded because of the limitation on the number of cells we can
 /// assign to in one iteration.
-const MAX_COPY_BYTES: usize = 54;
+const MAX_COPY_BYTES: usize = 32;
 
 #[derive(Clone, Debug)]
 /// This gadget is responsible for copying bytes from an account's code to
@@ -178,29 +178,28 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         // Read the auxiliary data.
-        let (src_addr, dst_addr, bytes_left, src_addr_end, code) =
+        let (src_addr, dst_addr, bytes_left, src_addr_end, code_source) =
             if let StepAuxiliaryData::CopyCodeToMemory {
                 src_addr,
                 dst_addr,
                 bytes_left,
                 src_addr_end,
-                code,
+                code_source,
             } = step
                 .aux_data
                 .as_ref()
                 .expect("could not find aux_data for COPYCODETOMEMORY")
             {
-                (
-                    src_addr,
-                    dst_addr,
-                    bytes_left,
-                    src_addr_end,
-                    Bytecode::new(code.to_vec()),
-                )
+                (src_addr, dst_addr, bytes_left, src_addr_end, code_source)
             } else {
                 panic!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY");
             };
 
+        let code = block
+            .bytecodes
+            .iter()
+            .find(|b| b.hash == *code_source)
+            .unwrap_or_else(|| panic!("could not find bytecode for source {:?}", code_source));
         // Assign to the appropriate cells.
         self.src_addr
             .assign(region, offset, Some(F::from(*src_addr)))?;
@@ -218,6 +217,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
         let is_codes = code
             .table_assignments(block.randomness)
+            .iter()
             .skip(1)
             .map(|c| c[3])
             .collect::<Vec<F>>();
@@ -282,7 +282,7 @@ pub(crate) mod test {
         rw_counter: usize,
         rws: &mut RwMap,
         bytes_map: &HashMap<u64, u8>,
-        code: &eth_types::Bytecode,
+        code: &Bytecode,
     ) -> (ExecStep, usize) {
         let mut rw_offset = 0usize;
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
@@ -312,7 +312,7 @@ pub(crate) mod test {
             dst_addr,
             bytes_left: bytes_left as u64,
             src_addr_end,
-            code: code.clone(),
+            code_source: code.hash,
         };
         let step = ExecStep {
             execution_state: ExecutionState::CopyCodeToMemory,
@@ -334,7 +334,7 @@ pub(crate) mod test {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_copy_code_steps(
         call_id: usize,
-        code: &eth_types::Bytecode,
+        code: &Bytecode,
         src_addr: u64,
         dst_addr: u64,
         length: usize,
@@ -345,8 +345,8 @@ pub(crate) mod test {
         rws: &mut RwMap,
         steps: &mut Vec<ExecStep>,
     ) {
-        let bytes_map = (0..(code.code().len() as u64))
-            .zip(code.code().iter().copied())
+        let bytes_map = (0..(code.bytes.len() as u64))
+            .zip(code.bytes.iter().copied())
             .collect();
 
         let mut copied = 0;
@@ -355,7 +355,7 @@ pub(crate) mod test {
                 call_id,
                 src_addr + copied as u64,
                 dst_addr + copied as u64,
-                code.code().len() as u64,
+                code.bytes.len() as u64,
                 length - copied,
                 program_counter,
                 stack_pointer,
@@ -381,7 +381,6 @@ pub(crate) mod test {
 
         // generate random bytecode longer than `src_addr_end`
         let code = bytecode! {
-            #[start]
             PUSH32(Word::from(0x123))
             POP
             PUSH32(Word::from(0x213))
@@ -394,6 +393,7 @@ pub(crate) mod test {
             POP
         };
 
+        let code = Bytecode::new(code.to_vec());
         let dummy_code = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
 
         let program_counter = 0;
@@ -422,7 +422,6 @@ pub(crate) mod test {
             ..Default::default()
         });
 
-        let code = Bytecode::new(code.to_vec());
         let block = Block {
             randomness,
             txs: vec![Transaction {

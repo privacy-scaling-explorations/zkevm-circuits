@@ -104,16 +104,18 @@ impl<F: Field> Config<F> {
 
         // Does the current row have bytecode field tag == Length?
         let is_row_tag_length = |meta: &mut VirtualCells<F>| {
-            let row_tag = meta.query_advice(tag, Rotation::cur());
-            row_tag.expr() * (BytecodeFieldTag::Byte.expr() - row_tag.expr())
+            and::expr(vec![
+                not::expr(meta.query_advice(padding, Rotation::cur())),
+                not::expr(meta.query_advice(tag, Rotation::cur())),
+            ])
         };
 
         // Does the current row have bytecode field tag == Byte?
         let is_row_tag_byte = |meta: &mut VirtualCells<F>| {
-            let row_tag = meta.query_advice(tag, Rotation::cur());
-            row_tag.expr()
-                * (row_tag.expr() - BytecodeFieldTag::Length.expr())
-                * F::from(2).invert().unwrap()
+            and::expr(vec![
+                not::expr(meta.query_advice(padding, Rotation::cur())),
+                meta.query_advice(tag, Rotation::cur()),
+            ])
         };
 
         // For a row tagged Length, is the length (value) zero?
@@ -141,10 +143,8 @@ impl<F: Field> Config<F> {
             let is_prev_row_tag_length = |meta: &mut VirtualCells<F>| {
                 and::expr(vec![
                     not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                    {
-                        let prev_row_tag = meta.query_advice(tag, Rotation::prev());
-                        prev_row_tag.expr() * (BytecodeFieldTag::Byte.expr() - prev_row_tag.expr())
-                    },
+                    not::expr(meta.query_advice(padding, Rotation::prev())),
+                    not::expr(meta.query_advice(tag, Rotation::prev())),
                 ])
             };
 
@@ -205,7 +205,7 @@ impl<F: Field> Config<F> {
                     length_is_zero.clone().is_zero_expression,
                     select::expr(
                         meta.query_advice(padding, Rotation::next()),
-                        0.expr(), // Padding is 0
+                        BytecodeFieldTag::Padding.expr(),
                         BytecodeFieldTag::Length.expr(),
                     ),
                     BytecodeFieldTag::Byte.expr(),
@@ -466,7 +466,7 @@ impl<F: Field> Config<F> {
                             idx < size,
                             idx == last_row_offset,
                             F::zero(),
-                            F::zero(),
+                            F::from(BytecodeFieldTag::Padding as u64),
                             F::zero(),
                             F::one(),
                             F::zero(),
@@ -736,7 +736,7 @@ mod tests {
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         let err = prover.verify();
-        let print_failures = false;
+        let print_failures = true;
         if err.is_err() && print_failures {
             for e in err.err().iter() {
                 for s in e.iter() {

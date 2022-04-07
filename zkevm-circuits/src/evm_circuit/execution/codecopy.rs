@@ -228,13 +228,13 @@ mod tests {
         let call_id = 1;
 
         let code = bytecode! {
-            #[start]
             PUSH32(Word::from(size))
             PUSH32(Word::from(src_addr))
             PUSH32(Word::from(dst_addr))
             CODECOPY
             STOP
         };
+        let code = Bytecode::new(code.to_vec());
 
         let mut rws_map = RwMap(
             [(
@@ -384,7 +384,6 @@ mod tests {
             ..Default::default()
         });
 
-        let code = Bytecode::new(code.to_vec());
         let block = Block {
             randomness,
             txs: vec![Transaction {

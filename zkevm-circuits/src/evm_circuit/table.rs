@@ -175,13 +175,13 @@ pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
     CodeHash,
-    CodeSize,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum BytecodeFieldTag {
-    Length = 1,
+    Length,
     Byte,
+    Padding,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -281,7 +281,7 @@ pub(crate) enum Lookup<F> {
         /// A boolean value to specify if the value is executable opcode or the
         /// data portion of PUSH* operations.
         is_code: Expression<F>,
-        /// Value of the index.
+        /// Value corresponding to the tag.
         value: Expression<F>,
     },
     /// Lookup to block table, which contains constants of this block.

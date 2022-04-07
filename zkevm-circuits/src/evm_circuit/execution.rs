@@ -359,6 +359,7 @@ impl<F: Field> ExecutionConfig<F> {
             q_step_last,
             // internal states
             begin_tx_gadget: configure_gadget!(),
+            copy_code_to_memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
@@ -376,7 +377,6 @@ impl<F: Field> ExecutionConfig<F> {
             codecopy_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
-            copy_code_to_memory_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),

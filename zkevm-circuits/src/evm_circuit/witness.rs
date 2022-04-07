@@ -332,65 +332,41 @@ impl Bytecode {
         Self { hash, bytes }
     }
 
-    pub fn table_assignments<'a, F: FieldExt>(
-        &'a self,
-        randomness: F,
-    ) -> impl Iterator<Item = [F; 5]> + '_ {
-        struct BytecodeIterator<'a, F> {
-            idx: usize,
-            push_data_left: usize,
-            hash: F,
-            bytes: &'a [u8],
-        }
-
-        impl<'a, F: FieldExt> Iterator for BytecodeIterator<'a, F> {
-            type Item = [F; 5];
-
-            fn next(&mut self) -> Option<Self::Item> {
-                if self.idx == 0 {
-                    self.idx += 1;
-                    return Some([
-                        self.hash,
-                        F::from(BytecodeFieldTag::Length as u64),
-                        F::from(0),
-                        F::from(0),
-                        F::from(self.bytes.len() as u64),
-                    ]);
-                }
-
-                if self.idx > self.bytes.len() {
-                    return None;
-                }
-
-                let idx = self.idx - 1;
-                let byte = self.bytes[idx];
+    pub fn table_assignments<F: FieldExt>(&self, randomness: F) -> Vec<[F; 5]> {
+        let n = 1 + self.bytes.len();
+        let mut rows = Vec::with_capacity(n);
+        let hash =
+            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), randomness);
+        let mut push_data_left = 0;
+        for idx in 0..n {
+            if idx == 0 {
+                rows.push([
+                    hash,
+                    F::from(BytecodeFieldTag::Length as u64),
+                    F::zero(),
+                    F::zero(),
+                    F::from(self.bytes.len() as u64),
+                ]);
+            } else {
+                let i = idx - 1;
+                let byte = self.bytes[i];
                 let mut is_code = true;
-                if self.push_data_left > 0 {
+                if push_data_left > 0 {
                     is_code = false;
-                    self.push_data_left -= 1;
+                    push_data_left -= 1;
                 } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(&byte) {
-                    self.push_data_left = byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
+                    push_data_left = byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
                 }
-                self.idx += 1;
-                Some([
-                    self.hash,
+                rows.push([
+                    hash,
                     F::from(BytecodeFieldTag::Byte as u64),
-                    F::from(idx as u64),
+                    F::from(i as u64),
                     F::from(is_code as u64),
                     F::from(byte as u64),
                 ])
             }
         }
-
-        BytecodeIterator {
-            idx: 0,
-            push_data_left: 0,
-            hash: RandomLinearCombination::random_linear_combine(
-                self.hash.to_le_bytes(),
-                randomness,
-            ),
-            bytes: &self.bytes,
-        }
+        rows
     }
 }
 
@@ -707,9 +683,7 @@ impl Rw {
                 value_prev,
             } => {
                 let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce | AccountFieldTag::CodeSize => {
-                        value.to_scalar().unwrap()
-                    }
+                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
                     _ => RandomLinearCombination::random_linear_combine(
                         value.to_le_bytes(),
                         randomness,

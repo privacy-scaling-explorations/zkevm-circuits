@@ -11,7 +11,9 @@ use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word};
+use eth_types::{
+    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, U256,
+};
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
@@ -165,8 +167,8 @@ pub enum StepAuxiliaryData {
         bytes_left: u64,
         /// Source end address
         src_addr_end: u64,
-        /// Bytecode to be copied
-        code: eth_types::Bytecode,
+        /// Hash of the bytecode to be copied
+        code_source: U256,
     },
 }
 
