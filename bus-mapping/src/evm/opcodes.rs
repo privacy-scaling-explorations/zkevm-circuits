@@ -130,7 +130,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
-        OpcodeId::CHAINID => StackOnlyOpcode::<0,1>::gen_associated_ops,
+        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         // OpcodeId::BASEFEE => {},
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,

@@ -76,8 +76,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::bytecode;
-    use eth_types::evm_types::{GasCost, OpcodeId};
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::test_ctx::TestContext;
 
     #[test]
     fn chainid_gadget_test() {
@@ -86,20 +85,12 @@ mod test {
             CHAINID
             STOP
         };
-        let gas = GasCost::TX.as_u64() + OpcodeId::CHAINID.as_u64();
-        let ctx = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(bytecode),
-            |mut txs, accs| {
-                txs[0]
-                    .to(accs[0].address)
-                    .from(accs[1].address)
-                    .gas(gas.into());
-            },
-            |block, _tx| block,
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 }
