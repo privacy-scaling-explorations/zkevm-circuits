@@ -27,6 +27,7 @@ mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod chainid;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -68,6 +69,7 @@ use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
+use chainid::ChainIdGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -139,6 +141,7 @@ pub(crate) struct ExecutionConfig<F> {
     calldataload_gadget: CallDataLoadGadget<F>,
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
+    chainid_gadget: ChainIdGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -165,6 +168,7 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
+
     // error gadgets
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
 }
@@ -362,6 +366,7 @@ impl<F: Field> ExecutionConfig<F> {
             calldataload_gadget: configure_gadget!(),
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
+            chainid_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -388,8 +393,10 @@ impl<F: Field> ExecutionConfig<F> {
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
+
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
+
             // step and presets
             step: step_curr,
             presets_map,
@@ -633,6 +640,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => assign_exec_step!(self.calldatasize_gadget),
             ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
+            ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
