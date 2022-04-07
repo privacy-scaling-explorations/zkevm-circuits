@@ -26,6 +26,7 @@ impl<F: FieldExt> RootsChip<F> {
         is_account_leaf_key_s: Column<Advice>,
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
+        address_rlc: Column<Advice>,
     ) -> RootsConfig {
         let config = RootsConfig {};
 
@@ -44,6 +45,9 @@ impl<F: FieldExt> RootsChip<F> {
             let start_root_cur = meta.query_advice(inter_start_root, Rotation::cur());
             let final_root_prev = meta.query_advice(inter_final_root, Rotation::prev());
             let final_root_cur = meta.query_advice(inter_final_root, Rotation::cur());
+
+            let address_rlc_prev = meta.query_advice(address_rlc, Rotation::prev());
+            let address_rlc_cur = meta.query_advice(address_rlc, Rotation::cur());
 
             let one = Expression::Constant(F::one());
 
@@ -137,8 +141,23 @@ impl<F: FieldExt> RootsChip<F> {
                 "not_first_level = 0 follows is_account_leaf_storage_codehash_c_prev = 1",
                 q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
                     * is_account_leaf_key_s.clone()
+                    * (one.clone() - not_first_level_cur.clone())
+                    * (one.clone() - is_leaf_in_added_branch_prev),
+            ));
+
+            constraints.push((
+                "account address does not change outside first level",
+                q_not_first.clone()
+                    * not_first_level_cur.clone()
+                    * (address_rlc_cur.clone() - address_rlc_prev.clone())
+            ));
+            constraints.push((
+                "account address does not change inside first level except in the first row",
+                q_not_first.clone()
                     * (one.clone() - not_first_level_cur)
-                    * (one - is_leaf_in_added_branch_prev),
+                    * (one.clone() - is_branch_init.clone())
+                    * (one.clone() - is_account_leaf_key_s.clone())
+                    * (address_rlc_cur - address_rlc_prev)
             ));
 
             // TODO: check public roots to match with first and last inter roots

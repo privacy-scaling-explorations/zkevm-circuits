@@ -37,6 +37,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         key_rlc_mult: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
+        address_rlc: Column<Advice>,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
 
@@ -158,9 +159,18 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[31].clone();
 
             let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
 
             // Key RLC is to be checked to verify that the proper key is used.
-            constraints.push(("Account address RLC", q_enable * (key_rlc_acc - key_rlc)));
+            constraints.push((
+                "Account address RLC",
+                q_enable.clone() * (key_rlc_acc - key_rlc.clone()),
+            ));
+
+            constraints.push((
+                "Computed account address RLC same as value in address_rlc column",
+                q_enable * (key_rlc - address_rlc),
+            ));
 
             constraints
         });

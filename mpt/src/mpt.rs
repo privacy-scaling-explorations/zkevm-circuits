@@ -23,9 +23,10 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
+        COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS,
+        IS_STORAGE_MOD_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip,
@@ -130,6 +131,14 @@ pub struct MPTConfig<F> {
     mult_diff: Column<Advice>,
     keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
     fixed_table: [Column<Fixed>; 3],
+    address_rlc: Column<Advice>, /* The same in all rows of a modification. The same as
+                                  * address_rlc computed in the account leaf key row. Needed to
+                                  * enable lookup for storage key/value (to have address RLC in
+                                  * the same row as storage key/value). */
+    counter: Column<Advice>,
+    is_storage_mod: Column<Advice>,
+    is_nonce_mod: Column<Advice>,
+    is_balance_mod: Column<Advice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -341,6 +350,12 @@ impl<F: FieldExt> MPTConfig<F> {
         // rlc = rlc * acc_r + row[i],
         // the rlc would be multiplied by acc_r when row[i] = 0.
 
+        let address_rlc = meta.advice_column();
+        let counter = meta.advice_column();
+        let is_storage_mod = meta.advice_column();
+        let is_nonce_mod = meta.advice_column();
+        let is_balance_mod = meta.advice_column();
+
         SelectorsChip::<F>::configure(
             meta,
             q_enable,
@@ -377,6 +392,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_account_leaf_key_s,
             inter_start_root,
             inter_final_root,
+            address_rlc,
         );
 
         BranchChip::<F>::configure(
@@ -805,6 +821,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             r_table.clone(),
             fixed_table.clone(),
+            address_rlc,
         );
 
         AccountLeafNonceBalanceChip::<F>::configure(
@@ -940,6 +957,11 @@ impl<F: FieldExt> MPTConfig<F> {
             mult_diff,
             keccak_table,
             fixed_table,
+            address_rlc,
+            counter,
+            is_storage_mod,
+            is_nonce_mod,
+            is_balance_mod,
         }
     }
 
@@ -1408,34 +1430,76 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Ok(F::from(row[row.len() - NOT_FIRST_LEVEL_POS] as u64)),
                         )?;
 
-                        let mut s_root_rlc = F::zero();
-                        let mut c_root_rlc = F::zero();
                         let l = row.len();
-                        let mut mult = F::one();
-                        for i in 0..HASH_WIDTH {
-                            s_root_rlc +=
-                                F::from(row[l - 3 * HASH_WIDTH + i - NOT_FIRST_LEVEL_POS] as u64)
-                                    * mult.clone();
-                            mult *= self.acc_r;
-                        }
+                        let s_root_rlc = hash_into_rlc(
+                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                    + HASH_WIDTH],
+                            self.acc_r,
+                        );
+                        let c_root_rlc = hash_into_rlc(
+                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                    + HASH_WIDTH],
+                            self.acc_r,
+                        );
                         region.assign_advice(
                             || "inter start root",
                             self.inter_start_root,
                             offset,
                             || Ok(s_root_rlc),
                         )?;
-                        let mut mult = F::one();
-                        for i in 0..HASH_WIDTH {
-                            c_root_rlc +=
-                                F::from(row[l - 2 * HASH_WIDTH + i - NOT_FIRST_LEVEL_POS] as u64)
-                                    * mult.clone();
-                            mult *= self.acc_r;
-                        }
                         region.assign_advice(
                             || "inter final root",
                             self.inter_final_root,
                             offset,
                             || Ok(c_root_rlc),
+                        )?;
+
+                        let address_rlc = hash_into_rlc(
+                            &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                ..l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                    + HASH_WIDTH],
+                            self.acc_r,
+                        );
+                        region.assign_advice(
+                            || "address RLC",
+                            self.address_rlc,
+                            offset,
+                            || Ok(address_rlc),
+                        )?;
+
+                        let counter_u32: u32 = u32::from_be_bytes(
+                            row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                ..l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                                    + COUNTER_WITNESS_LEN]
+                                .try_into()
+                                .expect("slice of incorrect length"),
+                        );
+                        region.assign_advice(
+                            || "counter",
+                            self.counter,
+                            offset,
+                            || Ok(F::from(counter_u32.into())),
+                        )?;
+
+                        region.assign_advice(
+                            || "is_storage_mod",
+                            self.is_storage_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_STORAGE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_nonce_mod",
+                            self.is_nonce_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_NONCE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_balance_mod",
+                            self.is_balance_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_BALANCE_MOD_POS] as u64)),
                         )?;
 
                         if row[row.len() - 1] == 0 {
@@ -2723,13 +2787,12 @@ mod tests {
                 {
                     let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
-                    let mut mult = Fp::one();
-                    for i in 0..HASH_WIDTH {
-                        pub_root_rlc +=
-                            Fp::from(row[l - HASH_WIDTH + i - NOT_FIRST_LEVEL_POS] as u64)
-                                * mult.clone();
-                        mult *= acc_r;
-                    }
+                    let pub_root_rlc = hash_into_rlc(
+                        &row[l - HASH_WIDTH - IS_BALANCE_MOD_POS
+                            ..l - HASH_WIDTH - IS_BALANCE_MOD_POS + HASH_WIDTH],
+                        acc_r,
+                    );
+
                     pub_root.push(pub_root_rlc);
                 }
 
