@@ -1,13 +1,12 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_WORD,
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
+            Cell, Word,
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,7 +19,7 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ChainIdGadget<F> {
     same_context: SameContextGadget<F>,
-    chain_id: RandomLinearCombination<F, N_BYTES_WORD>,
+    chain_id: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
@@ -29,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let chain_id = cb.query_rlc();
+        let chain_id = cb.query_cell();
 
         // Push the value to the stack
         cb.stack_push(chain_id.expr());
@@ -65,9 +64,15 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let chain_id = block.rws[step.rw_indices[0]].stack_value();
-        self.chain_id
-            .assign(region, offset, Some(chain_id.to_le_bytes()))?;
 
+        self.chain_id.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                chain_id.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
         Ok(())
     }
 }
