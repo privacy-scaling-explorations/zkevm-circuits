@@ -46,6 +46,8 @@ pub struct BlockContext {
     pub base_fee: Word,
     /// The hash of previous blocks
     pub history_hashes: Vec<Word>,
+    /// The chain id
+    pub chain_id: Word,
 }
 
 impl BlockContext {
@@ -85,6 +87,14 @@ impl BlockContext {
                     F::zero(),
                     RandomLinearCombination::random_linear_combine(
                         self.base_fee.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::ChainId as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.chain_id.to_le_bytes(),
                         randomness,
                     ),
                 ],
@@ -826,6 +836,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             difficulty: block.difficulty,
             base_fee: block.base_fee,
             history_hashes: block.history_hashes.clone(),
+            chain_id: block.chain_id,
         }
     }
 }
@@ -1106,9 +1117,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::CHAINID => ExecutionState::CHAINID,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
+
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
