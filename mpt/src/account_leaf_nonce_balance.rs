@@ -38,10 +38,15 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         mult_diff_nonce: Column<Advice>,
         mult_diff_balance: Column<Advice>,
         r_table: Vec<Expression<F>>,
+        s_mod_node_hash_rlc: Column<Advice>,
+        c_mod_node_hash_rlc: Column<Advice>,
+        sel1: Column<Advice>,
+        sel2: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> AccountLeafNonceBalanceConfig {
         let config = AccountLeafNonceBalanceConfig {};
+        let one = Expression::Constant(F::one());
 
         meta.create_gate("account leaf nonce balance", |meta| {
             let q_enable = q_enable(meta);
@@ -101,29 +106,62 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
 
-            expr = expr + s_advices0_cur.clone() * acc_mult_prev.clone() * r_table[rind].clone();
-            rind += 1;
-
-            expr = expr
+            let nonce_rlc = s_advices0_cur.clone()
                 + compute_rlc(
                     meta,
                     s_advices.iter().skip(1).map(|v| *v).collect_vec(),
-                    rind,
-                    acc_mult_prev.clone(),
+                    0,
+                    one.clone(),
                     0,
                     r_table.clone(),
                 );
 
+            let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            constraints.push((
+                "nonce RLC",
+                q_enable.clone() * (nonce_rlc.clone() - nonce_stored),
+            ));
+
+            expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
+
             let c_advices0_prev = meta.query_advice(c_advices[0], Rotation::prev());
             // balance_len + 128:
             let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
-            expr = expr + c_advices0_cur.clone() * acc_mult_after_nonce.clone();
-            rind = 0;
-            for ind in 1..HASH_WIDTH {
-                let c = meta.query_advice(c_advices[ind], Rotation::cur());
-                expr = expr + c * acc_mult_after_nonce.clone() * r_table[rind].clone();
-                rind += 1;
+
+            let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            let balance_rlc = c_advices0_cur.clone()
+                + compute_rlc(
+                    meta,
+                    c_advices.iter().skip(1).map(|v| *v).collect_vec(),
+                    0,
+                    one.clone(),
+                    0,
+                    r_table.clone(),
+                );
+
+            constraints.push((
+                "balance RLC",
+                q_enable.clone() * (balance_rlc.clone() - balance_stored),
+            ));
+
+            if !is_s {
+                let nonce_s_from_prev = meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
+                let nonce_s_from_cur = meta.query_advice(sel1, Rotation::cur());
+                let balance_s_from_prev = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
+                let balance_s_from_cur = meta.query_advice(sel2, Rotation::cur());
+                // We need correct previous nonce to enable lookup in nonce balance C row:
+                constraints.push((
+                    "nonce prev RLC",
+                    q_enable.clone() * (nonce_s_from_prev.clone() - nonce_s_from_cur),
+                ));
+                // We need correct previous balance to enable lookup in nonce balance C row:
+                constraints.push((
+                    "balance prev RLC",
+                    q_enable.clone() * (balance_s_from_prev.clone() - balance_s_from_cur),
+                ));
             }
+
+            expr = expr + balance_rlc * acc_mult_after_nonce.clone();
 
             let acc = meta.query_advice(acc, Rotation::cur());
             constraints.push(("leaf nonce balance acc", q_enable.clone() * (expr - acc)));
@@ -147,7 +185,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             ));
 
             // RLP:
-            let one = Expression::Constant(F::one());
             let c66 = Expression::Constant(F::from(66)); // the number of bytes in storage codehash row
             let c184 = Expression::Constant(F::from(184));
             let nonce_len = s_advices0_cur - c128.clone();

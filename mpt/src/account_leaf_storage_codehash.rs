@@ -36,15 +36,15 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         acc: Column<Advice>,
         acc_mult: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
-        mod_node_hash_rlc: Column<Advice>,
+        s_mod_node_hash_rlc: Column<Advice>,
+        c_mod_node_hash_rlc: Column<Advice>,
+        sel1: Column<Advice>,
+        sel2: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
         let one = Expression::Constant(F::one());
-
-        // TODO: if address doesn't change: current S storage root = previous C storage
-        // root
 
         // We don't need to check acc_mult because it's not used after this row.
 
@@ -71,7 +71,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let rot = -2;
             let acc_prev = meta.query_advice(acc, Rotation(rot));
             let acc_mult_prev = meta.query_advice(acc_mult, Rotation(rot));
-            let mut curr_r = acc_mult_prev;
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             constraints.push((
@@ -83,21 +82,61 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 q_enable.clone() * (c_rlp2.clone() - c160),
             ));
 
-            let mut expr = acc_prev + s_rlp2 * curr_r.clone();
-            curr_r = curr_r * acc_r;
+            let mut expr = acc_prev + s_rlp2 * acc_mult_prev.clone();
+
+            let mut storage_root_rlc = Expression::Constant(F::zero());
+            let mut curr_r = one.clone();
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
-                expr = expr + s * curr_r.clone();
+                storage_root_rlc = storage_root_rlc + s * curr_r.clone();
                 curr_r = curr_r * acc_r;
             }
+            let storage_root_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            constraints.push((
+                "storage root RLC",
+                q_enable.clone() * (storage_root_rlc.clone() - storage_root_stored),
+            ));
+
+            expr = expr + storage_root_rlc * acc_mult_prev.clone() * acc_r;
+
+            curr_r = curr_r * acc_mult_prev.clone() * acc_r;
 
             expr = expr + c_rlp2 * curr_r.clone();
-            curr_r = curr_r * acc_r;
+            let old_curr_r = curr_r * acc_r;
+
+            curr_r = one.clone();
+            let mut codehash_rlc = Expression::Constant(F::zero());
             for col in c_advices.iter() {
                 let c = meta.query_advice(*col, Rotation::cur());
-                expr = expr + c * curr_r.clone();
+                codehash_rlc = codehash_rlc + c * curr_r.clone();
                 curr_r = curr_r * acc_r;
             }
+            let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            constraints.push((
+                "codehash RLC",
+                q_enable.clone() * (codehash_rlc.clone() - codehash_stored),
+            ));
+
+            if !is_s {
+                let storage_root_s_from_prev =
+                    meta.query_advice(s_mod_node_hash_rlc, Rotation::prev());
+                let storage_root_s_from_cur = meta.query_advice(sel1, Rotation::cur());
+                let codehash_s_from_prev = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
+                let codehash_s_from_cur = meta.query_advice(sel2, Rotation::cur());
+                // We need correct previous storage root to enable lookup in storage codehash C
+                // row:
+                constraints.push((
+                    "storage root prev RLC",
+                    q_enable.clone() * (storage_root_s_from_prev.clone() - storage_root_s_from_cur),
+                ));
+                // We need correct previous codehash to enable lookup in storage codehash C row:
+                constraints.push((
+                    "codehash prev RLC",
+                    q_enable.clone() * (codehash_s_from_prev.clone() - codehash_s_from_cur),
+                ));
+            }
+
+            expr = expr + codehash_rlc * old_curr_r;
 
             let acc = meta.query_advice(acc, Rotation::cur());
             constraints.push(("account leaf storage codehash acc", q_enable * (expr - acc)));
@@ -165,7 +204,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             // Any rotation that lands into branch can be used instead of -17.
-            let mod_node_hash_rlc_cur = meta.query_advice(mod_node_hash_rlc, Rotation(-17));
+            let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(-17));
+            if !is_s {
+                mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(-17));
+            }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 not_first_level.clone()

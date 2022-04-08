@@ -24,9 +24,9 @@ use crate::{
     leaf_value::LeafValueChip,
     param::{
         COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS,
-        IS_STORAGE_MOD_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
+        IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip,
@@ -139,6 +139,7 @@ pub struct MPTConfig<F> {
     is_storage_mod: Column<Advice>,
     is_nonce_mod: Column<Advice>,
     is_balance_mod: Column<Advice>,
+    is_codehash_mod: Column<Advice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -185,6 +186,8 @@ struct ProofVariables<F> {
     is_odd: bool,
     is_short: bool,
     is_long: bool,
+    rlc1: F,
+    rlc2: F,
 }
 
 impl<F: FieldExt> ProofVariables<F> {
@@ -221,6 +224,8 @@ impl<F: FieldExt> ProofVariables<F> {
             is_odd: false,
             is_short: false,
             is_long: false,
+            rlc1: F::zero(),
+            rlc2: F::zero(),
         }
     }
 }
@@ -355,6 +360,7 @@ impl<F: FieldExt> MPTConfig<F> {
         let is_storage_mod = meta.advice_column();
         let is_nonce_mod = meta.advice_column();
         let is_balance_mod = meta.advice_column();
+        let is_codehash_mod = meta.advice_column();
 
         SelectorsChip::<F>::configure(
             meta,
@@ -844,6 +850,10 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             r_table.clone(),
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
+            sel1,
+            sel2,
             fixed_table.clone(),
             true,
         );
@@ -868,6 +878,10 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             r_table.clone(),
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
+            sel1,
+            sel2,
             fixed_table.clone(),
             false,
         );
@@ -887,6 +901,9 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             fixed_table.clone(),
             s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
+            sel1,
+            sel2,
             keccak_table,
             true,
         );
@@ -905,7 +922,10 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             fixed_table.clone(),
+            s_mod_node_hash_rlc,
             c_mod_node_hash_rlc,
+            sel1,
+            sel2,
             keccak_table,
             false,
         );
@@ -962,6 +982,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_storage_mod,
             is_nonce_mod,
             is_balance_mod,
+            is_codehash_mod,
         }
     }
 
@@ -1407,6 +1428,40 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                         };
 
+                    let compute_rlc_and_assign =
+                        |region: &mut Region<'_, F>,
+                         row: &Vec<u8>,
+                         pv: &mut ProofVariables<F>,
+                         offset: usize| {
+                            compute_acc_and_mult(
+                                row,
+                                &mut pv.rlc1,
+                                &mut F::one(),
+                                S_START,
+                                HASH_WIDTH,
+                            );
+                            region.assign_advice(
+                                || "assign s_mod_node_hash_rlc".to_string(),
+                                self.s_mod_node_hash_rlc,
+                                offset,
+                                || Ok(pv.rlc1),
+                            );
+
+                            compute_acc_and_mult(
+                                row,
+                                &mut pv.rlc2,
+                                &mut F::one(),
+                                C_START,
+                                HASH_WIDTH,
+                            );
+                            region.assign_advice(
+                                || "assign c_mod_node_hash_rlc".to_string(),
+                                self.c_mod_node_hash_rlc,
+                                offset,
+                                || Ok(pv.rlc2),
+                            );
+                        };
+
                     // filter out rows that are just to be hashed
                     for (ind, row) in witness
                         .iter()
@@ -1432,14 +1487,14 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         let l = row.len();
                         let s_root_rlc = hash_into_rlc(
-                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
-                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                            &row[l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
+                                ..l - 4 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
                         let c_root_rlc = hash_into_rlc(
-                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
-                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                            &row[l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
+                                ..l - 3 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
@@ -1457,8 +1512,8 @@ impl<F: FieldExt> MPTConfig<F> {
                         )?;
 
                         let address_rlc = hash_into_rlc(
-                            &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
-                                ..l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                            &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
+                                ..l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
                                     + HASH_WIDTH],
                             self.acc_r,
                         );
@@ -1470,8 +1525,8 @@ impl<F: FieldExt> MPTConfig<F> {
                         )?;
 
                         let counter_u32: u32 = u32::from_be_bytes(
-                            row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
-                                ..l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_BALANCE_MOD_POS
+                            row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
+                                ..l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
                                     + COUNTER_WITNESS_LEN]
                                 .try_into()
                                 .expect("slice of incorrect length"),
@@ -1500,6 +1555,12 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.is_balance_mod,
                             offset,
                             || Ok(F::from(row[row.len() - IS_BALANCE_MOD_POS] as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "is_codehash_mod",
+                            self.is_codehash_mod,
+                            offset,
+                            || Ok(F::from(row[row.len() - IS_CODEHASH_MOD_POS] as u64)),
                         )?;
 
                         if row[row.len() - 1] == 0 {
@@ -2295,9 +2356,32 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if row[row.len() - 1] == 7 {
                                     pv.acc_account_leaf = pv.acc_s;
                                     pv.acc_mult_account_leaf = pv.acc_mult_s;
+
+                                    // nonce RLC and balance RLC
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 } else {
                                     pv.acc_s = pv.acc_account_leaf;
                                     pv.acc_mult_s = pv.acc_mult_account_leaf;
+
+                                    // assign nonce S
+                                    region.assign_advice(
+                                        || "assign sel1".to_string(),
+                                        self.sel1,
+                                        offset,
+                                        || Ok(pv.rlc1),
+                                    )?;
+                                    // assign balance S
+                                    region.assign_advice(
+                                        || "assign sel2".to_string(),
+                                        self.sel2,
+                                        offset,
+                                        || Ok(pv.rlc2),
+                                    )?;
+
+                                    // assign nonce RLC and balance RLC for this row
+                                    pv.rlc1 = F::zero();
+                                    pv.rlc2 = F::zero();
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 }
 
                                 // s_rlp1, s_rlp2
@@ -2316,7 +2400,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     C_START - 2,
                                     2,
                                 );
-                                // nonce
+                                // nonce contribution to leaf RLC
                                 compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
@@ -2338,7 +2422,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // the multiplier if we store acc_mult both after nonce and after
                                 // balance.
                                 let acc_mult_tmp = pv.acc_mult_s;
-                                // balance
+                                // balance contribution to leaf RLC
                                 compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
@@ -2387,9 +2471,34 @@ impl<F: FieldExt> MPTConfig<F> {
                                 if row[row.len() - 1] == 9 {
                                     pv.acc_s = pv.acc_nonce_balance_s;
                                     pv.acc_mult_s = pv.acc_mult_nonce_balance_s;
+
+                                    // storage root RLC and code hash RLC
+                                    pv.rlc1 = F::zero();
+                                    pv.rlc2 = F::zero();
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 } else {
                                     pv.acc_s = pv.acc_nonce_balance_c;
                                     pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
+
+                                    // assign storage root S
+                                    region.assign_advice(
+                                        || "assign sel1".to_string(),
+                                        self.sel1,
+                                        offset,
+                                        || Ok(pv.rlc1),
+                                    )?;
+                                    // assign code hash S
+                                    region.assign_advice(
+                                        || "assign sel2".to_string(),
+                                        self.sel2,
+                                        offset,
+                                        || Ok(pv.rlc2),
+                                    )?;
+
+                                    // assign storage root RLC and code hash RLC for this row
+                                    pv.rlc1 = F::zero();
+                                    pv.rlc2 = F::zero();
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 }
                                 // storage
                                 compute_acc_and_mult(
@@ -2788,8 +2897,8 @@ mod tests {
                     let mut pub_root_rlc = Fp::zero();
                     let l = row.len();
                     let pub_root_rlc = hash_into_rlc(
-                        &row[l - HASH_WIDTH - IS_BALANCE_MOD_POS
-                            ..l - HASH_WIDTH - IS_BALANCE_MOD_POS + HASH_WIDTH],
+                        &row[l - HASH_WIDTH - IS_CODEHASH_MOD_POS
+                            ..l - HASH_WIDTH - IS_CODEHASH_MOD_POS + HASH_WIDTH],
                         acc_r,
                     );
 

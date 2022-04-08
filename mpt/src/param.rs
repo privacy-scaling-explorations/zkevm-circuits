@@ -34,5 +34,6 @@ pub const NOT_FIRST_LEVEL_POS: usize = 2;
 pub const IS_STORAGE_MOD_POS: usize = 3;
 pub const IS_NONCE_MOD_POS: usize = 4;
 pub const IS_BALANCE_MOD_POS: usize = 5;
+pub const IS_CODEHASH_MOD_POS: usize = 6;
 pub const COUNTER_WITNESS_LEN: usize = 4;
-pub const COUNTER_POS: usize = IS_BALANCE_MOD_POS + COUNTER_WITNESS_LEN;
+pub const COUNTER_POS: usize = IS_CODEHASH_MOD_POS + COUNTER_WITNESS_LEN;
