@@ -15,6 +15,7 @@ use crate::{
     },
     util::Expr,
 };
+
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{
     circuit::Region,
@@ -383,25 +384,27 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         // (value_prev != value) && (original_value != value) && (value ==
         // Word::from(0))
-        let case_a =
+        let delete_slot =
             not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
         // (value_prev != value) && (original_value == value) && (original_value !=
         // Word::from(0))
-        let case_b = not::expr(prev_eq_value.clone())
+        let reset_existing = not::expr(prev_eq_value.clone())
             * original_eq_value.clone()
             * not::expr(original_is_zero.clone());
         // (value_prev != value) && (original_value == value) && (original_value ==
         // Word::from(0))
-        let case_c = not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
+        let reset_inexistent =
+            not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
         // (value_prev != value) && (original_value != value_prev) && (value_prev ==
         // Word::from(0))
-        let case_d = not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
+        let recreate_slot =
+            not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
 
         let tx_refund_new = tx_refund_old.expr()
-            + case_a * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
-            + case_b * (GasCost::SSTORE_RESET.expr() - GasCost::WARM_ACCESS.expr())
-            + case_c * (GasCost::SSTORE_SET.expr() - GasCost::WARM_ACCESS.expr())
-            - case_d * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
+            + delete_slot * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
+            + reset_existing * (GasCost::SSTORE_RESET.expr() - GasCost::WARM_ACCESS.expr())
+            + reset_inexistent * (GasCost::SSTORE_SET.expr() - GasCost::WARM_ACCESS.expr())
+            - recreate_slot * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
 
         Self {
             value,
@@ -529,25 +532,48 @@ fn calc_expected_tx_refund(
     value_prev: eth_types::Word,
     original_value: eth_types::Word,
 ) -> u64 {
+    // Same clause tags(like "delete slot (2.1.2b)") used as [`makeGasSStoreFunc` in go-ethereum](https://github.com/ethereum/go-ethereum/blob/9fd8825d5a196edde6d8ef81382979875145b346/core/vm/operations_acl.go#L27)
+    // Control flow of this function try to follow `makeGasSStoreFunc` for better
+    // understanding and comparison.
+
     let mut tx_refund_new = tx_refund_old;
 
+    // The "clearing slot refund" and "resetting value refund" are ADDED together,
+    // they are NOT MUTUALLY EXCLUSIVE.
+    // Search "Apply both of the following clauses" in EIP-2200 for more details.
+    // There can be five total kinds of refund:
+    // 1. -SSTORE_CLEARS_SCHEDULE
+    // 2. SSTORE_CLEARS_SCHEDULE
+    // 3. SSTORE_SET - WARM_ACCESS
+    // 4. SSTORE_RESET - WARM_ACCESS
+    // 5. -SSTORE_CLEARS_SCHEDULE + SSTORE_RESET - WARM_ACCESS
+    // The last case can happen if (original_value, prev_value, value) be (v,0,v)
+    // where v != 0,
+    // then both "clearing slot refund" and "resetting value refund" are non zero.
+
     if value_prev != value {
-        if (original_value != value) && (value == eth_types::Word::from(0)) {
-            // CaseA
-            tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
-        }
-        if original_value == value {
-            if original_value != eth_types::Word::from(0) {
-                // CaseB
-                tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
-            } else {
-                // CaseC
-                tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+        // refund related to clearing slot
+        // "delete slot (2.1.2b)" can be safely merged in "delete slot (2.2.1.2)"
+        if !original_value.is_zero() {
+            if value_prev.is_zero() {
+                // recreate slot (2.2.1.1)
+                tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+            }
+            if value.is_zero() {
+                // delete slot (2.2.1.2)
+                tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
             }
         }
-        if original_value != value_prev && value_prev == eth_types::Word::from(0) {
-            // CaseD
-            tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+
+        // refund related to resetting value
+        if original_value == value {
+            if original_value.is_zero() {
+                // reset to original inexistent slot (2.2.2.1)
+                tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+            } else {
+                // reset to original existing slot (2.2.2.2)
+                tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+            }
         }
     }
 
@@ -574,7 +600,7 @@ mod test {
     }
 
     #[test]
-    fn sstore_gadget_case_a() {
+    fn sstore_gadget_delete_slot() {
         // value_prev != value, original_value != value, value == 0
         test_ok(
             0x030201.into(),
@@ -585,7 +611,7 @@ mod test {
     }
 
     #[test]
-    fn sstore_gadget_case_b() {
+    fn sstore_gadget_reset_existing() {
         // value_prev != value, original_value == value, original_value != 0
         test_ok(
             0x030201.into(),
@@ -595,13 +621,26 @@ mod test {
         );
     }
     #[test]
-    fn sstore_gadget_case_c() {
+    fn sstore_gadget_reset_inexistent() {
         // value_prev != value, original_value == value, original_value == 0
         test_ok(0x030201.into(), 0.into(), 0x060505.into(), 0.into());
     }
+
     #[test]
-    fn sstore_gadget_case_d() {
-        // value_prev != value, original_value != value_prev, value_prev == 0
+    fn sstore_gadget_recreate_slot() {
+        // value_prev != value, original_value != value_prev, original_value != value,
+        // value_prev == 0
+        test_ok(
+            0x030201.into(),
+            0x060504.into(),
+            0x0.into(),
+            0x060506.into(),
+        );
+    }
+    #[test]
+    fn sstore_gadget_recreate_slot_and_reset_inexistent() {
+        // value_prev != value, original_value != value_prev, original_value == value,
+        // value_prev == 0
         test_ok(
             0x030201.into(),
             0x060504.into(),
@@ -611,6 +650,9 @@ mod test {
     }
 
     fn test_ok(key: Word, value: Word, value_prev: Word, original_value: Word) {
+        // Here we use two bytecodes to test both is_persistent(STOP) or not(REVERT)
+        // Besides, in bytecode we use two SSTOREs,
+        // the first SSTORE is used to test cold,  and the second is used to test warm
         let bytecode_success = bytecode! {
             PUSH32(value_prev)
             PUSH32(key)

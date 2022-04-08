@@ -127,24 +127,47 @@ mod sstore_tests {
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
     use eth_types::Word;
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
+    use mock::test_ctx::helpers::tx_from_1_to_0;
     use mock::{TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn sstore_opcode_impl() {
-        let code = bytecode! {
-            // Write 0x6f to storage slot 0
-            PUSH1(0x6fu64)
-            PUSH1(0x00u64)
-            SSTORE
-            STOP
+    fn test_ok(is_warm: bool) {
+        let code = if is_warm {
+            bytecode! {
+                    // Write 0x00 to storage slot 0
+                    PUSH1(0x00u64)
+                    PUSH1(0x00u64)
+                    SSTORE
+                // Write 0x6f to storage slot 0
+                PUSH1(0x6fu64)
+                PUSH1(0x00u64)
+                SSTORE
+                STOP
+            }
+        } else {
+            bytecode! {
+                // Write 0x6f to storage slot 0
+                PUSH1(0x6fu64)
+                PUSH1(0x00u64)
+                SSTORE
+                STOP
+            }
         };
+        let expected_prev_value = if !is_warm { 0x6fu64 } else { 0x00u64 };
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            |accs| {
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(Word::from(10u64.pow(19)))
+                    .code(code)
+                    .storage(vec![(0x00u64.into(), 0x6fu64.into())].into_iter());
+                accs[1]
+                    .address(MOCK_ACCOUNTS[1])
+                    .balance(Word::from(10u64.pow(19)));
+            },
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
@@ -159,6 +182,7 @@ mod sstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
+            .rev() // find last sstore
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::SSTORE))
             .unwrap();
 
@@ -187,11 +211,33 @@ mod sstore_tests {
                     MOCK_ACCOUNTS[0],
                     Word::from(0x0u32),
                     Word::from(0x6fu32),
-                    Word::from(0x0u32),
+                    Word::from(expected_prev_value),
                     1,
-                    Word::from(0x0u32),
+                    Word::from(0x6fu32),
                 )
             )
-        )
+        );
+        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[8].as_usize()];
+        assert_eq!(
+            (refund_op.rw(), refund_op.op()),
+            (
+                RW::WRITE,
+                &TxRefundOp {
+                    tx_id: 1,
+                    value_prev: if is_warm { 0x12c0 } else { 0 },
+                    value: if is_warm { 0xaf0 } else { 0 }
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn sstore_opcode_impl_warm() {
+        test_ok(true)
+    }
+
+    #[test]
+    fn sstore_opcode_impl_cold() {
+        test_ok(false)
     }
 }

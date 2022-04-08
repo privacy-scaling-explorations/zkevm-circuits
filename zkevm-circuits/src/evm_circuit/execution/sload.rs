@@ -176,6 +176,7 @@ impl<F: Field> SloadGasGadget<F> {
 
 #[cfg(test)]
 mod test {
+
     use crate::{
         evm_circuit::test::rand_word,
         test_util::{run_test_circuits, BytecodeTestConfig},
@@ -185,8 +186,9 @@ mod test {
     use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
 
     fn test_ok(key: Word, value: Word) {
-        // use two bytecodes to test both is_persistent or not
-        // use two SLOADs to test both code and warm
+        // Here we use two bytecodes to test both is_persistent(STOP) or not(REVERT)
+        // Besides, in bytecode we use two SLOADs,
+        // the first SLOAD is used to test cold,  and the second is used to test warm
         let bytecode_success = bytecode! {
             PUSH32(key)
             SLOAD

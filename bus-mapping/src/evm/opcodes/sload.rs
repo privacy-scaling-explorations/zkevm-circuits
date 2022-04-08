@@ -124,19 +124,27 @@ mod sload_tests {
     };
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn sload_opcode_impl() {
-        let code = bytecode! {
-            // Write 0x6f to storage slot 0
-            PUSH1(0x6fu64)
-            PUSH1(0x00u64)
-            SSTORE
-
-            // Load storage slot 0
-            PUSH1(0x00u64)
-            SLOAD
-            STOP
+    fn test_ok(is_warm: bool) {
+        let code = if is_warm {
+            bytecode! {
+                // Write 0x6f to storage slot 0
+                PUSH1(0x6fu64)
+                PUSH1(0x00u64)
+                SSTORE
+                // Load storage slot 0
+                PUSH1(0x00u64)
+                SLOAD
+                STOP
+            }
+        } else {
+            bytecode! {
+                // Load storage slot 0
+                PUSH1(0x00u64)
+                SLOAD
+                STOP
+            }
         };
+        let expected_loaded_value = if is_warm { 0x6fu64 } else { 0 };
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
@@ -170,7 +178,7 @@ mod sload_tests {
                 ),
                 (
                     RW::WRITE,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x6fu32))
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(expected_loaded_value))
                 )
             ]
         );
@@ -183,12 +191,38 @@ mod sload_tests {
                 &StorageOp::new(
                     MOCK_ACCOUNTS[0],
                     Word::from(0x0u32),
-                    Word::from(0x6fu32),
-                    Word::from(0x6fu32),
+                    Word::from(expected_loaded_value),
+                    Word::from(expected_loaded_value),
                     1,
                     Word::from(0x0u32),
                 )
             )
+        );
+
+        let access_list_op = &builder.block.container.tx_access_list_account_storage
+            [step.bus_mapping_instance[7].as_usize()];
+        assert_eq!(
+            (access_list_op.rw(), access_list_op.op()),
+            (
+                RW::WRITE,
+                &TxAccessListAccountStorageOp {
+                    tx_id: 1,
+                    address: MOCK_ACCOUNTS[0],
+                    key: Word::from(0x0u32),
+                    value: true,
+                    value_prev: is_warm,
+                },
+            )
         )
+    }
+
+    #[test]
+    fn sload_opcode_impl_warm() {
+        test_ok(true)
+    }
+
+    #[test]
+    fn sload_opcode_impl_cold() {
+        test_ok(false)
     }
 }
