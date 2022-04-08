@@ -8,6 +8,12 @@ use halo2_proofs::dev::{MockProver, VerifyFailure};
 use mock::TestContext;
 use pairing::bn256::Fr;
 
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
+}
 pub enum FixedTableConfig {
     Incomplete,
     Complete,
