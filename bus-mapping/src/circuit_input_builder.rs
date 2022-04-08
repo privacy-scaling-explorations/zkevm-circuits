@@ -11,7 +11,9 @@ use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word};
+use eth_types::{
+    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, U256,
+};
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
@@ -139,22 +141,43 @@ impl ExecState {
     }
 }
 
+/// Auxiliary data for CopyToMemory internal state.
+#[derive(Clone, Copy, Debug)]
+pub struct CopyToMemoryAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Destination address
+    pub dst_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// Indicate if copy from transaction call data
+    pub from_tx: bool,
+}
+
+/// Auxiliary data for CopyCodeToMemory internal state.
+#[derive(Clone, Copy, Debug)]
+pub struct CopyCodeToMemoryAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Destination address
+    pub dst_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// Hash of the bytecode to be copied
+    pub code_source: U256,
+}
+
 /// Auxiliary data of Execution step
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum StepAuxiliaryData {
     /// Auxiliary data of Copy To Memory
-    CopyToMemory {
-        /// Source start address
-        src_addr: u64,
-        /// Destination address
-        dst_addr: u64,
-        /// Bytes left
-        bytes_left: u64,
-        /// Source end address
-        src_addr_end: u64,
-        /// Indicate if copy from transaction call data
-        from_tx: bool,
-    },
+    CopyToMemory(CopyToMemoryAuxData),
+    /// Auxiliary data of Copy Code To Memory
+    CopyCodeToMemory(CopyCodeToMemoryAuxData),
 }
 
 /// An execution step of the EVM.

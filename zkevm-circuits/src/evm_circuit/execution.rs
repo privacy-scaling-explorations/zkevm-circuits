@@ -28,8 +28,10 @@ mod calldatasize;
 mod caller;
 mod callvalue;
 mod chainid;
+mod codecopy;
 mod coinbase;
 mod comparator;
+mod copy_code_to_memory;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -70,8 +72,10 @@ use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
+use codecopy::CodeCopyGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use copy_code_to_memory::CopyCodeToMemoryGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -142,8 +146,10 @@ pub(crate) struct ExecutionConfig<F> {
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     chainid_gadget: ChainIdGadget<F>,
+    codecopy_gadget: CodeCopyGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
+    copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     dup_gadget: DupGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
@@ -353,6 +359,7 @@ impl<F: Field> ExecutionConfig<F> {
             q_step_last,
             // internal states
             begin_tx_gadget: configure_gadget!(),
+            copy_code_to_memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
@@ -367,6 +374,7 @@ impl<F: Field> ExecutionConfig<F> {
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             chainid_gadget: configure_gadget!(),
+            codecopy_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -635,6 +643,7 @@ impl<F: Field> ExecutionConfig<F> {
         match step.execution_state {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
+            ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
             ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
@@ -649,6 +658,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
             ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
+            ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
