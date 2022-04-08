@@ -1,5 +1,7 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep, StepAuxiliaryData};
+use crate::circuit_input_builder::{
+    CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+};
 use crate::operation::{CallContextField, CallContextOp, RW};
 use crate::Error;
 use eth_types::GethExecStep;
@@ -108,13 +110,13 @@ fn gen_memory_copy_step(
         state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory {
+    exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory(CopyToMemoryAuxData {
         src_addr,
         dst_addr,
         bytes_left: bytes_left as u64,
         src_addr_end,
         from_tx: is_root,
-    });
+    }));
 
     Ok(())
 }

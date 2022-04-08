@@ -14,7 +14,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::circuit_input_builder::StepAuxiliaryData;
+use bus_mapping::circuit_input_builder::{CopyToMemoryAuxData, StepAuxiliaryData};
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -167,22 +167,20 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let (src_addr, dst_addr, bytes_left, src_addr_end, from_tx) =
-            if let StepAuxiliaryData::CopyToMemory {
-                src_addr,
-                dst_addr,
-                bytes_left,
-                src_addr_end,
-                from_tx,
-            } = step
-                .aux_data
-                .as_ref()
-                .expect("could not find aux_data for COPYTOMEMORY")
-            {
-                (src_addr, dst_addr, bytes_left, src_addr_end, from_tx)
-            } else {
-                panic!("could not find CopyToMemory aux_data for COPYTOMEMORY");
-            };
+        let CopyToMemoryAuxData {
+            src_addr,
+            dst_addr,
+            bytes_left,
+            src_addr_end,
+            from_tx,
+        } = match step
+            .aux_data
+            .as_ref()
+            .expect("could not find aux_data for COPYTOMEMORY")
+        {
+            StepAuxiliaryData::CopyToMemory(aux) => aux,
+            _ => unreachable!("could not find CopyToMemory aux_data for COPYTOMEMORY"),
+        };
 
         self.src_addr
             .assign(region, offset, Some(F::from(*src_addr)))?;
@@ -242,7 +240,7 @@ pub mod test {
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use bus_mapping::circuit_input_builder::StepAuxiliaryData;
+    use bus_mapping::circuit_input_builder::{CopyToMemoryAuxData, StepAuxiliaryData};
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
@@ -295,13 +293,13 @@ pub mod test {
             rw_offset += 1;
         }
         let rw_idx_end = rws.0[&RwTableTag::Memory].len();
-        let aux_data = StepAuxiliaryData::CopyToMemory {
+        let aux_data = StepAuxiliaryData::CopyToMemory(CopyToMemoryAuxData {
             src_addr,
             dst_addr,
             bytes_left: bytes_left as u64,
             src_addr_end,
             from_tx,
-        };
+        });
         let step = ExecStep {
             execution_state: ExecutionState::CopyToMemory,
             rw_indices: (rw_idx_start..rw_idx_end)

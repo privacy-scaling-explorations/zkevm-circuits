@@ -1,5 +1,5 @@
 use array_init::array_init;
-use bus_mapping::circuit_input_builder::StepAuxiliaryData;
+use bus_mapping::circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData};
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -178,22 +178,20 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         // Read the auxiliary data.
-        let (src_addr, dst_addr, bytes_left, src_addr_end, code_source) =
-            if let StepAuxiliaryData::CopyCodeToMemory {
-                src_addr,
-                dst_addr,
-                bytes_left,
-                src_addr_end,
-                code_source,
-            } = step
-                .aux_data
-                .as_ref()
-                .expect("could not find aux_data for COPYCODETOMEMORY")
-            {
-                (src_addr, dst_addr, bytes_left, src_addr_end, code_source)
-            } else {
-                panic!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY");
-            };
+        let CopyCodeToMemoryAuxData {
+            src_addr,
+            dst_addr,
+            bytes_left,
+            src_addr_end,
+            code_source,
+        } = match step
+            .aux_data
+            .as_ref()
+            .expect("could not find aux_data for COPYCODETOMEMORY")
+        {
+            StepAuxiliaryData::CopyCodeToMemory(aux) => aux,
+            _ => unreachable!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY"),
+        };
 
         let code = block
             .bytecodes
@@ -257,7 +255,10 @@ pub(crate) mod test {
     use super::MAX_COPY_BYTES;
     use std::collections::HashMap;
 
-    use bus_mapping::{circuit_input_builder::StepAuxiliaryData, evm::OpcodeId};
+    use bus_mapping::{
+        circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData},
+        evm::OpcodeId,
+    };
     use eth_types::{bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
@@ -307,13 +308,13 @@ pub(crate) mod test {
         }
 
         let rw_idx_end = rws.0[&RwTableTag::Memory].len();
-        let aux_data = StepAuxiliaryData::CopyCodeToMemory {
+        let aux_data = StepAuxiliaryData::CopyCodeToMemory(CopyCodeToMemoryAuxData {
             src_addr,
             dst_addr,
             bytes_left: bytes_left as u64,
             src_addr_end,
             code_source: code.hash,
-        };
+        });
         let step = ExecStep {
             execution_state: ExecutionState::CopyCodeToMemory,
             rw_indices: (rw_idx_start..rw_idx_end)

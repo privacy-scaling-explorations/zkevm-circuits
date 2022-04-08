@@ -408,6 +408,7 @@ mod tests {
     #[test]
     fn codecopy_gadget_single_step() {
         test_ok(0x00, 0x00, 54);
+        test_ok(0x10, 0x05, 54);
     }
 
     #[test]
