@@ -161,12 +161,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         block.transactions.extend_from_slice(&transactions);
         func_block(&mut block, transactions).build();
 
-        let transactions: Vec<Transaction> = block
-            .transactions
-            .iter()
-            .cloned()
-            .map(Transaction::from)
-            .collect();
+        let chain_id = block.chain_id;
         let block = Block::<Transaction>::from(block);
         let accounts: [Account; NACC] = accounts
             .iter()
@@ -179,7 +174,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         let geth_traces = gen_geth_traces(block.clone(), accounts.clone(), history_hashes.clone())?;
 
         Ok(Self {
-            chain_id: transactions[0].chain_id.unwrap_or_default(),
+            chain_id,
             accounts,
             history_hashes: history_hashes.unwrap_or_default(),
             eth_block: block,
