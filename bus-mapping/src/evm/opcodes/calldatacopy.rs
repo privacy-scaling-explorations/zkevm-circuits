@@ -103,11 +103,7 @@ fn gen_memory_copy_step(
                 state.push_op(
                     exec_step,
                     RW::READ,
-                    MemoryOp::new(
-                        state.call()?.caller_id,
-                        (idx + dst_addr as usize).into(),
-                        byte,
-                    ),
+                    MemoryOp::new(state.call()?.caller_id, (addr as usize).into(), byte),
                 );
             }
             byte
