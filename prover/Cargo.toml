@@ -8,6 +8,7 @@ bus-mapping = { path = "../bus-mapping"}
 env_logger = "0.9.0"
 ethers-providers = "0.6"
 eth-types = { path = "../eth-types" }
+hyper = { version = "0.14.16", features = ["server"] }
 rand_xorshift = "0.3"
 halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_03_06" }
 log = "0.4.14"

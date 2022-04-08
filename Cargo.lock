@@ -2732,6 +2732,7 @@ dependencies = [
  "eth-types",
  "ethers-providers",
  "halo2_proofs",
+ "hyper",
  "log",
  "pairing_bn256",
  "rand",
