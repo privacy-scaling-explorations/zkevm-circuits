@@ -514,15 +514,22 @@ impl<F: Field> ExecutionConfig<F> {
         macro_rules! lookup {
             ($id:path, $table:ident, $descrip:expr) => {
                 if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
-                    for input_exprs in acc_lookups {
-                        meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
-                            let q_step = meta.query_selector(q_step);
-                            input_exprs
-                                .into_iter()
-                                .zip($table.table_exprs(meta).to_vec().into_iter())
-                                .map(|(input, table)| (q_step.clone() * input, table))
-                                .collect::<Vec<_>>()
-                        });
+                    for (lookup_idx, input_exprs) in acc_lookups.into_iter().enumerate() {
+                        let idx =
+                            meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
+                                let q_step = meta.query_selector(q_step);
+                                input_exprs
+                                    .into_iter()
+                                    .zip($table.table_exprs(meta).to_vec().into_iter())
+                                    .map(|(input, table)| (q_step.clone() * input, table))
+                                    .collect::<Vec<_>>()
+                            });
+                        log::debug!(
+                            "LOOKUP TABLE {} <=> {} {}",
+                            idx,
+                            stringify!($descrip),
+                            lookup_idx
+                        );
                     }
                 }
             };
@@ -607,6 +614,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 
