@@ -90,7 +90,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
+        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        witness::block_convert,
     };
     use eth_types::{address, bytecode, Word};
     use itertools::Itertools;
@@ -119,8 +120,8 @@ mod test {
                         txs[0]
                             .from(accs[0].address)
                             .to(accs[1].address)
-                            .input(vec![0; call_data_size].into())
-                            .gas(Word::from(30000));
+                            .input(rand_bytes(call_data_size).into())
+                            .gas(Word::from(40000));
                     },
                     |block, _tx| block.number(0xcafeu64),
                 )
