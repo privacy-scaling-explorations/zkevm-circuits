@@ -18,7 +18,7 @@ pub enum StateTestError {
     StorageMismatch {
         slot: U256,
         expected: U256,
-        found: Option<U256>,
+        found: U256,
     },
 }
 
@@ -104,7 +104,7 @@ impl StateTest {
             self.result,
         )
     }
-    pub fn run(self) -> Result<(), StateTestError> {
+    pub fn run(self, test_circuit: bool) -> Result<(), StateTestError> {
         // get the geth traces
         let (_, trace_config, post) = self.into_traceconfig();
         let builder = crate::exec::traceconfig(trace_config)
@@ -142,12 +142,12 @@ impl StateTest {
                 }
             }
             for (slot, expected_value) in expected.storage {
-                let actual_value = actual.storage.get(&slot);
-                if Some(&expected_value) != actual_value {
+                let actual_value = actual.storage.get(&slot).cloned().unwrap_or(U256::zero());
+                if expected_value != actual_value {
                     return Err(StateTestError::StorageMismatch {
                         slot,
                         expected: expected_value,
-                        found: actual_value.copied(),
+                        found: actual_value,
                     });
                 }
             }

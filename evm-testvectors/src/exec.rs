@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
 use external_tracer::TraceConfig;
@@ -7,6 +7,10 @@ use eth_types::U64;
 pub fn traceconfig(trace_config: TraceConfig) -> Result<CircuitInputBuilder> {
     // get the geth traces
     let geth_traces = external_tracer::trace(&trace_config)?;
+
+    if geth_traces[0].failed {
+        bail!(format!("external tracer error : {:#?}",geth_traces));
+    }
 
     let transactions = trace_config
         .transactions

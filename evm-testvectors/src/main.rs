@@ -3,10 +3,10 @@ mod code_cache;
 mod exec;
 mod lllc;
 mod statetest;
-mod statetest_yaml;
+mod yaml;
 
 use crate::lllc::Lllc;
-use crate::statetest_yaml::YamlStateTestBuilder;
+use crate::yaml::YamlStateTestBuilder;
 use anyhow::{bail, Result};
 
 /// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
@@ -22,7 +22,7 @@ fn run_yaml_state_tests(yaml: &str, lllc: Lllc) -> Result<()> {
     for tc in tcs {
         let id = tc.id.to_string();
 
-        if let Some(err) = tc.run().err() {
+        if let Some(err) = tc.run(false).err() {
             log::error!(target: "vmvectests", "FAILED test {} : {}",id, err);
             failed += 1;
         } else {

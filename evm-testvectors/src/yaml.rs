@@ -399,13 +399,13 @@ arith:
       balance: 1000000000000
       code: :raw {{ pre_code }}
       nonce: '0'
-      storage: {}
+      storage:
+        0 : 0x01
     a94f5374fce5edbc8e2a8697c15331677e6ebf0b:
       balance: 1000000000000
       code: '0x'
       nonce: '0'
-      storage:
-        0 : 0x01
+      storage: {}
   transaction:
     data:
     - :raw 0x00
@@ -462,10 +462,9 @@ arith:
           balance: {{ res_balance }}
           nonce: {{ res_nonce }}
           code: {{ res_code }}
-        a94f5374fce5edbc8e2a8697c15331677e6ebf0b:
           storage:
             0: {{ res_storage }}
- 
+
 
 "#;
     struct Template {
@@ -481,7 +480,7 @@ arith:
             Self {
                 pre_code: ":raw 0x6001".into(),
                 res_storage: "0x01".into(),
-                res_balance: "1000000000000".into(),
+                res_balance: "1000000000001".into(),
                 res_code: ":raw 0x6001".into(),
                 res_nonce: "0".into(),
             }
@@ -499,7 +498,7 @@ arith:
     }
 
     #[test]
-    fn test_combinations() -> Result<()> {
+    fn combinations() -> Result<()> {
         let tcs = YamlStateTestBuilder::new(Lllc::default())
             .from_yaml(&Template::default().to_string())?
             .into_iter()
@@ -518,7 +517,7 @@ arith:
             )
         };
 
-        check_ccccc_balance("arith_d0_g0_v0", 1000000000000);
+        check_ccccc_balance("arith_d0_g0_v0", 1000000000001);
         check_ccccc_balance("arith_d1(data1)_g1_v1", 10);
         check_ccccc_balance("arith_d0_g1_v0", 20);
         check_ccccc_balance("arith_d0_g0_v1", 30);
@@ -526,7 +525,7 @@ arith:
     }
 
     #[test]
-    fn test_parse() -> Result<()> {
+    fn parse() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default())
             .from_yaml(&Template::default().to_string())?;
         let current = tc.remove(0);
@@ -564,7 +563,8 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01]),
                         nonce: U256::zero(),
-                        storage: HashMap::new(),
+
+                        storage: HashMap::from([(U256::zero(), U256::one())]),
                     },
                 ),
                 (
@@ -574,7 +574,8 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::default(),
                         nonce: U256::zero(),
-                        storage: HashMap::from([(U256::zero(), U256::one())]),
+
+                        storage: HashMap::new(),
                     },
                 ),
             ]),
@@ -583,23 +584,13 @@ arith:
                     ccccc.clone(),
                     PartialAccount {
                         address: ccccc.clone(),
-                        balance: Some(U256::from(1000000000000u64)),
+                        balance: Some(U256::from(1000000000001u64)),
                         nonce: Some(U256::from(0)),
                         code: Some(Bytes::from(&[0x60, 0x01])),
-                        storage: HashMap::new(),
-                    },
-                ),
-                (
-                    a94f5.clone(),
-                    PartialAccount {
-                        address: a94f5.clone(),
-                        balance: None,
-                        nonce: None,
-                        code: None,
-                        storage: HashMap::from([(U256::zero(), U256::one())]),
-                    },
-                ),
-            ]),
+                        storage: HashMap::from([(U256::zero(), U256::one())])
+                    }
+                )
+            ] ),
         };
 
         assert_eq!(current, expected);
@@ -607,10 +598,12 @@ arith:
     }
 
     #[test]
-    fn test_result_pass() -> Result<()> {
+    fn result_pass() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default())
             .from_yaml(&Template::default().to_string())?;
-        tc.remove(0).run()?;
+        let t1 = tc.remove(0);
+        dbg!(&t1);
+        t1.run(false)?;
         Ok(())
     }
     #[test]
@@ -623,30 +616,30 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0).run(),
+            tc.remove(0).run(false),
             Err(StateTestError::StorageMismatch {
                 slot: U256::from(0u8),
                 expected: U256::from(2u8),
-                found: Some(U256::from(1u8))
+                found: U256::from(1u8)
             })
         );
 
         Ok(())
     }
     #[test]
-    fn test_result_bad_balance() -> Result<()> {
+    fn bad_balance() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &Template {
-                res_balance: "1000000000001".into(),
+                res_balance: "1000000000002".into(),
                 ..Default::default()
             }
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0).run(),
+            tc.remove(0).run(false),
             Err(StateTestError::BalanceMismatch {
-                expected: U256::from(1000000000001u64),
-                found: U256::from(1000000000000u64)
+                expected: U256::from(1000000000002u64),
+                found: U256::from(1000000000001u64)
             })
         );
 
@@ -654,7 +647,7 @@ arith:
     }
 
     #[test]
-    fn test_result_bad_code() -> Result<()> {
+    fn bad_code() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &Template {
                 res_code: ":raw 0x6002".into(),
@@ -663,7 +656,7 @@ arith:
             .to_string(),
         )?;
         assert_eq!(
-            tc.remove(0).run(),
+            tc.remove(0).run(false),
             Err(StateTestError::CodeMismatch {
                 expected: Bytes::from(&[0x60, 0x02]),
                 found: Bytes::from(&[0x60, 0x01])
@@ -674,7 +667,7 @@ arith:
     }
 
     #[test]
-    fn test_result_bad_nonce() -> Result<()> {
+    fn bad_nonce() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &Template {
                 res_nonce: "2".into(),
@@ -684,7 +677,7 @@ arith:
         )?;
 
         assert_eq!(
-            tc.remove(0).run(),
+            tc.remove(0).run(false),
             Err(StateTestError::NonceMismatch {
                 expected: U256::from(2),
                 found: U256::from(0)
@@ -695,8 +688,7 @@ arith:
     }
 
     #[test]
-    fn test_result_sstore() -> Result<()> {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    fn sstore() -> Result<()> {
 
         let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
             &Template {
@@ -707,7 +699,24 @@ arith:
             }
             .to_string(),
         )?;
-        tc.remove(0).run()?;
+        tc.remove(0).run(false)?;
+        Ok(())
+    }
+
+
+    #[test]
+    fn fail_bad_code() -> Result<()> {
+
+        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+            &Template {
+                pre_code: ":raw 0xF4".into(),
+                res_code: ":raw 0xF4".into(),
+                res_storage: "0x77".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        assert!(tc.remove(0).run(false).is_err());
         Ok(())
     }
 }
