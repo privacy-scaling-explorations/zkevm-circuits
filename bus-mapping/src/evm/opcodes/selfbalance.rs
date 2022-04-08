@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::operation::{AccountField, AccountOp, CallContextField, CallContextOp, RW};
 use crate::Error;
 use eth_types::{GethExecStep, ToWord};
@@ -10,14 +10,16 @@ pub(crate) struct Selfbalance;
 impl Opcode for Selfbalance {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        let self_balance = steps[1].stack.last()?;
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
+        let self_balance = geth_steps[1].stack.last()?;
         let callee_address = state.call()?.address;
 
         // CallContext read of the callee_address
         state.push_op(
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -28,6 +30,7 @@ impl Opcode for Selfbalance {
 
         // Account read for the balance of the callee_address
         state.push_op(
+            &mut exec_step,
             RW::READ,
             AccountOp {
                 address: callee_address,
@@ -39,20 +42,30 @@ impl Opcode for Selfbalance {
 
         // Stack write of self_balance
         state.push_stack_op(
+            &mut exec_step,
             RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
+            geth_step.stack.last_filled().map(|a| a - 1),
             self_balance,
         )?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod selfbalance_tests {
     use super::*;
-    use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
-    use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextField, CallContextOp, StackOp, RW},
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+    };
+    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -63,11 +76,16 @@ mod selfbalance_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -75,7 +93,7 @@ mod selfbalance_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::SELFBALANCE)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::SELFBALANCE))
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;

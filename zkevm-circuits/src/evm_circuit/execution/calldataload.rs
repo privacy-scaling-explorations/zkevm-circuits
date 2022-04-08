@@ -244,7 +244,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             src_addr as u64,
             src_addr_end as u64,
             &calldata_bytes,
-            &[1u8; N_BYTES_WORD],
+            &[true; N_BYTES_WORD],
         )?;
 
         Ok(())

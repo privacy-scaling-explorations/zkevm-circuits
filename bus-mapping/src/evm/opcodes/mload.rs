@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
@@ -16,23 +16,24 @@ pub(crate) struct Mload;
 impl Opcode for Mload {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
         //
         // First stack read
         //
-        let stack_value_read = step.stack.last()?;
-        let stack_position = step.stack.last_filled();
+        let stack_value_read = geth_step.stack.last()?;
+        let stack_position = geth_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
+        state.push_stack_op(&mut exec_step, RW::READ, stack_position, stack_value_read)?;
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
         // Accesses to memory that hasn't been initialized are valid, and return
         // 0.
-        let mem_read_value = steps[1]
+        let mem_read_value = geth_steps[1]
             .memory
             .read_word(mem_read_addr)
             .unwrap_or_else(|_| Word::zero());
@@ -40,30 +41,37 @@ impl Opcode for Mload {
         //
         // First stack write
         //
-        state.push_stack_op(RW::WRITE, stack_position, mem_read_value)?;
+        state.push_stack_op(&mut exec_step, RW::WRITE, stack_position, mem_read_value)?;
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
         for byte in mem_read_value.to_be_bytes() {
-            state.push_memory_op(RW::READ, mem_read_addr, byte)?;
+            state.push_memory_op(&mut exec_step, RW::READ, mem_read_addr, byte)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
         }
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod mload_tests {
     use super::*;
-    use crate::operation::{MemoryOp, StackOp};
-    use eth_types::bytecode;
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::Word;
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{MemoryOp, StackOp},
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+    };
     use itertools::Itertools;
+    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -77,11 +85,16 @@ mod mload_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -89,7 +102,7 @@ mod mload_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::MLOAD)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::MLOAD))
             .unwrap();
 
         assert_eq!(

@@ -13,7 +13,6 @@ use crate::{
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Error, Expression},
 };
@@ -25,9 +24,10 @@ pub(crate) mod address_low {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{from_bytes, Word},
     };
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
+    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
         from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
     }
 
@@ -45,13 +45,14 @@ pub(crate) mod address_high {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{sum, Word},
     };
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
+    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
         sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
     }
 
-    pub(crate) fn value<F: FieldExt>(address: [u8; 32]) -> F {
+    pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
         sum::value::<F>(&address[N_BYTES_MEMORY_ADDRESS..])
     }
 }
@@ -66,7 +67,7 @@ pub(crate) struct MemoryAddressGadget<F> {
     memory_length_is_zero: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt> MemoryAddressGadget<F> {
+impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         memory_offset: Cell<F>,
@@ -396,15 +397,17 @@ impl<F: Field> MemoryCopierGasGadget<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_MEMORY_ADDRESS: usize>
 {
-    // The bytes read from buffer
+    /// The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
-    // The selectors that indicate if bytes contain real data
+    /// The selectors that indicate if the corrsponding byte contains real data
+    /// or is padded
     selectors: [Cell<F>; MAX_BYTES],
-    // bound_dist[i] = max(addr_end - addr_start - i, 0)
+    /// `bound_dist` is defined as `max(addr_end - addr_start - i, 0)` for `i`
+    /// in 0..MAX_BYTES
     bound_dist: [Cell<F>; MAX_BYTES],
-    // Check if bound_dist is zero
+    /// Check if bound_dist is zero
     bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
-    // The min gadget to take the minimum of addr_start and addr_end
+    /// The min gadget to take the minimum of addr_start and addr_end
     min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
 
@@ -492,7 +495,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         addr_start: u64,
         addr_end: u64,
         bytes: &[u8],
-        selectors: &[u8],
+        selectors: &[bool],
     ) -> Result<(), Error> {
         self.min_gadget
             .assign(region, offset, F::from(addr_start), F::from(addr_end))?;

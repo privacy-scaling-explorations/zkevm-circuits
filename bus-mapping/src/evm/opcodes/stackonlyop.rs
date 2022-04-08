@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use eth_types::GethExecStep;
 
@@ -15,40 +15,46 @@ pub(crate) struct StackOnlyOpcode<const N_POP: usize, const N_PUSH: usize>;
 impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, N_PUSH> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
         // N_POP stack reads
         for i in 0..N_POP {
             state.push_stack_op(
+                &mut exec_step,
                 RW::READ,
-                step.stack.nth_last_filled(i),
-                step.stack.nth_last(i)?,
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
             )?;
         }
 
         // N_PUSH stack writes
         for i in 0..N_PUSH {
             state.push_stack_op(
+                &mut exec_step,
                 RW::WRITE,
-                steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
-                steps[1].stack.nth_last(N_PUSH - 1 - i)?,
+                geth_steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
+                geth_steps[1].stack.nth_last(N_PUSH - 1 - i)?,
             )?;
         }
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod stackonlyop_tests {
     use super::*;
-    use crate::operation::StackOp;
-    use eth_types::bytecode;
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::{bytecode::Bytecode, word, Word};
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        word, Bytecode, Word,
+    };
     use itertools::Itertools;
+    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     fn stack_only_opcode_impl<const N_POP: usize, const N_PUSH: usize>(
@@ -58,11 +64,16 @@ mod stackonlyop_tests {
         pushes: Vec<StackOp>,
     ) {
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -70,7 +81,7 @@ mod stackonlyop_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == opcode)
+            .find(|step| step.exec_state == ExecState::Op(opcode))
             .unwrap();
 
         assert_eq!(

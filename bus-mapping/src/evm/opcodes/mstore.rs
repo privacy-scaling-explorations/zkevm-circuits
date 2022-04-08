@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
@@ -14,18 +14,19 @@ pub(crate) struct Mstore<const IS_MSTORE8: bool>;
 impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
         // First stack read (offset)
-        let offset = step.stack.nth_last(0)?;
-        let offset_pos = step.stack.nth_last_filled(0);
-        state.push_stack_op(RW::READ, offset_pos, offset)?;
+        let offset = geth_step.stack.nth_last(0)?;
+        let offset_pos = geth_step.stack.nth_last_filled(0);
+        state.push_stack_op(&mut exec_step, RW::READ, offset_pos, offset)?;
 
         // Second stack read (value)
-        let value = step.stack.nth_last(1)?;
-        let value_pos = step.stack.nth_last_filled(1);
-        state.push_stack_op(RW::READ, value_pos, value)?;
+        let value = geth_step.stack.nth_last(1)?;
+        let value_pos = geth_step.stack.nth_last_filled(1);
+        state.push_stack_op(&mut exec_step, RW::READ, value_pos, value)?;
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
@@ -34,6 +35,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             true => {
                 // stack write operation for mstore8
                 state.push_memory_op(
+                    &mut exec_step,
                     RW::WRITE,
                     offset_addr,
                     *value.to_le_bytes().first().unwrap(),
@@ -43,23 +45,36 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte)?;
+                    state.push_memory_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        offset_addr.map(|a| a + i),
+                        *byte,
+                    )?;
                 }
             }
         }
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod mstore_tests {
     use super::*;
-    use crate::operation::{MemoryOp, StackOp};
-    use eth_types::bytecode;
-    use eth_types::evm_types::{MemoryAddress, OpcodeId, StackAddress};
-    use eth_types::Word;
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{MemoryOp, StackOp, RW},
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{MemoryAddress, OpcodeId, StackAddress},
+        geth_types::GethData,
+        Word,
+    };
     use itertools::Itertools;
+    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -73,11 +88,16 @@ mod mstore_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -85,7 +105,7 @@ mod mstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .filter(|step| step.op == OpcodeId::MSTORE)
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::MSTORE))
             .nth(1)
             .unwrap();
 
@@ -96,11 +116,11 @@ mod mstore_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1022), Word::from(0x100))
+                    &StackOp::new(1, StackAddress::from(1022u32), Word::from(0x100u64))
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x1234))
+                    &StackOp::new(1, StackAddress::from(1023u32), Word::from(0x1234u64))
                 )
             ]
         );
@@ -111,7 +131,7 @@ mod mstore_tests {
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
-            Word::from(0x1234)
+            Word::from(0x1234u64)
                 .to_be_bytes()
                 .into_iter()
                 .enumerate()
@@ -134,11 +154,16 @@ mod mstore_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -146,7 +171,7 @@ mod mstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::MSTORE8)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::MSTORE8))
             .unwrap();
 
         assert_eq!(
@@ -156,11 +181,11 @@ mod mstore_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1022), Word::from(0x100))
+                    &StackOp::new(1, StackAddress::from(1022u32), Word::from(0x100u64))
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x1234))
+                    &StackOp::new(1, StackAddress::from(1023u32), Word::from(0x1234))
                 )
             ]
         );
