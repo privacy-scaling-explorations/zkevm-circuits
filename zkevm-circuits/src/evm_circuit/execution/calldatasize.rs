@@ -102,7 +102,6 @@ mod test {
             CALLDATASIZE
             STOP
         };
-
         let block_data = if is_root {
             bus_mapping::mock::BlockData::new_from_geth_data(
                 TestContext::<2, 1>::new(
@@ -166,7 +165,7 @@ mod test {
                 .unwrap()
                 .into(),
             )
-        };
+    };
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)

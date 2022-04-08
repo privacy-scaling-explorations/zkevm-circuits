@@ -235,16 +235,22 @@ pub mod test {
                         .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
-                    let rows = rws
-                        .0
-                        .values()
-                        .flat_map(|rws| rws.iter().map(|rw| rw.get_rw_counter()))
-                        .collect::<Vec<_>>();
+                    let mut rows = rws
+                    .0
+                    .values()
+                    .flat_map(|rws| rws.iter())
+                    .collect::<Vec<_>>();
 
-                    let is_unique = has_unique_elements(rows);
-                    assert!(is_unique);
+                    rows.sort_by_key(|a| a.get_rw_counter());
+                    let mut pre_rw_counter = 0;
+                    for rw in rows {
+                        if pre_rw_counter == 0 {
+                            assert!(rw.get_rw_counter() == 1);
+                        }else{
+                            assert!(rw.get_rw_counter() == pre_rw_counter + 1);
+                        }
 
-                    for rw in rws.0.values().flat_map(|rws| rws.iter()) {
+                        pre_rw_counter = rw.get_rw_counter();
                         self.rw_table.assign(
                             &mut region,
                             offset,
