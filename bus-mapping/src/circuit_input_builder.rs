@@ -142,7 +142,7 @@ impl ExecState {
 }
 
 /// Auxiliary data for CopyToMemory internal state.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct CopyToMemoryAuxData {
     /// Source start address
     pub src_addr: u64,
@@ -157,7 +157,7 @@ pub struct CopyToMemoryAuxData {
 }
 
 /// Auxiliary data for CopyCodeToMemory internal state.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct CopyCodeToMemoryAuxData {
     /// Source start address
     pub src_addr: u64,
@@ -172,7 +172,7 @@ pub struct CopyCodeToMemoryAuxData {
 }
 
 /// Auxiliary data of Execution step
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum StepAuxiliaryData {
     /// Auxiliary data of Copy To Memory
     CopyToMemory(CopyToMemoryAuxData),

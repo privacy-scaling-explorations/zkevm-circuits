@@ -173,25 +173,21 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             bytes_left,
             src_addr_end,
             from_tx,
-        } = match step
-            .aux_data
-            .as_ref()
-            .expect("could not find aux_data for COPYTOMEMORY")
-        {
-            StepAuxiliaryData::CopyToMemory(aux) => aux,
+        } = match step.aux_data {
+            Some(StepAuxiliaryData::CopyToMemory(aux)) => aux,
             _ => unreachable!("could not find CopyToMemory aux_data for COPYTOMEMORY"),
         };
 
         self.src_addr
-            .assign(region, offset, Some(F::from(*src_addr)))?;
+            .assign(region, offset, Some(F::from(src_addr)))?;
         self.dst_addr
-            .assign(region, offset, Some(F::from(*dst_addr)))?;
+            .assign(region, offset, Some(F::from(dst_addr)))?;
         self.bytes_left
-            .assign(region, offset, Some(F::from(*bytes_left)))?;
+            .assign(region, offset, Some(F::from(bytes_left)))?;
         self.src_addr_end
-            .assign(region, offset, Some(F::from(*src_addr_end)))?;
+            .assign(region, offset, Some(F::from(src_addr_end)))?;
         self.from_tx
-            .assign(region, offset, Some(F::from(*from_tx as u64)))?;
+            .assign(region, offset, Some(F::from(from_tx as u64)))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
@@ -199,11 +195,11 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         let mut rw_idx = 0;
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
         let mut selectors = vec![false; MAX_COPY_BYTES];
-        for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
-            let src_addr = *src_addr as usize + idx;
+        for idx in 0..std::cmp::min(bytes_left as usize, MAX_COPY_BYTES) {
+            let src_addr = src_addr as usize + idx;
             selectors[idx] = true;
-            bytes[idx] = if selectors[idx] && src_addr < *src_addr_end as usize {
-                if *from_tx {
+            bytes[idx] = if selectors[idx] && src_addr < src_addr_end as usize {
+                if from_tx {
                     tx.call_data[src_addr]
                 } else {
                     rw_idx += 1;
@@ -217,14 +213,14 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         }
 
         self.buffer_reader
-            .assign(region, offset, *src_addr, *src_addr_end, &bytes, &selectors)?;
+            .assign(region, offset, src_addr, src_addr_end, &bytes, &selectors)?;
 
-        let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
+        let num_bytes_copied = std::cmp::min(bytes_left, MAX_COPY_BYTES as u64);
         self.finish_gadget.assign(
             region,
             offset,
             F::from(num_bytes_copied),
-            F::from(*bytes_left),
+            F::from(bytes_left),
         )?;
 
         Ok(())

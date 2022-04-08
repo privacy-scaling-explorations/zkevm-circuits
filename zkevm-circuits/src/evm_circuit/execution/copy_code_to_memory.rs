@@ -184,29 +184,25 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             bytes_left,
             src_addr_end,
             code_source,
-        } = match step
-            .aux_data
-            .as_ref()
-            .expect("could not find aux_data for COPYCODETOMEMORY")
-        {
-            StepAuxiliaryData::CopyCodeToMemory(aux) => aux,
+        } = match step.aux_data {
+            Some(StepAuxiliaryData::CopyCodeToMemory(aux)) => aux,
             _ => unreachable!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY"),
         };
 
         let code = block
             .bytecodes
             .iter()
-            .find(|b| b.hash == *code_source)
+            .find(|b| b.hash == code_source)
             .unwrap_or_else(|| panic!("could not find bytecode for source {:?}", code_source));
         // Assign to the appropriate cells.
         self.src_addr
-            .assign(region, offset, Some(F::from(*src_addr)))?;
+            .assign(region, offset, Some(F::from(src_addr)))?;
         self.dst_addr
-            .assign(region, offset, Some(F::from(*dst_addr)))?;
+            .assign(region, offset, Some(F::from(dst_addr)))?;
         self.bytes_left
-            .assign(region, offset, Some(F::from(*bytes_left)))?;
+            .assign(region, offset, Some(F::from(bytes_left)))?;
         self.src_addr_end
-            .assign(region, offset, Some(F::from(*src_addr_end)))?;
+            .assign(region, offset, Some(F::from(src_addr_end)))?;
         self.code_source
             .assign(region, offset, Some(code.hash.to_le_bytes()))?;
 
@@ -219,10 +215,10 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .skip(1)
             .map(|c| c[3])
             .collect::<Vec<F>>();
-        for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
+        for idx in 0..std::cmp::min(bytes_left as usize, MAX_COPY_BYTES) {
             selectors[idx] = true;
-            let addr = *src_addr as usize + idx;
-            bytes[idx] = if addr < *src_addr_end as usize {
+            let addr = src_addr as usize + idx;
+            bytes[idx] = if addr < src_addr_end as usize {
                 assert!(addr < code.bytes.len());
                 self.is_codes[idx].assign(region, offset, Some(is_codes[addr]))?;
                 code.bytes[addr]
@@ -232,18 +228,18 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         }
 
         self.buffer_reader
-            .assign(region, offset, *src_addr, *src_addr_end, &bytes, &selectors)?;
+            .assign(region, offset, src_addr, src_addr_end, &bytes, &selectors)?;
 
         // The number of bytes copied here will be the sum of 1s over the selector
         // vector.
-        let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
+        let num_bytes_copied = std::cmp::min(bytes_left, MAX_COPY_BYTES as u64);
 
         // Assign the comparison gadget.
         self.finish_gadget.assign(
             region,
             offset,
             F::from(num_bytes_copied),
-            F::from(*bytes_left),
+            F::from(bytes_left),
         )?;
 
         Ok(())
