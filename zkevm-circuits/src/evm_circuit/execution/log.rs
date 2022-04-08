@@ -158,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             },
         );
 
-        let gas_cost = GasCost::LOG_STATIC_GAS.as_u64().expr() * topic_count.clone()
+        let gas_cost = GasCost::LOG.as_u64().expr() * topic_count.clone()
             + 8.expr() * from_bytes::expr(&msize.cells)
             + memory_expansion.gas_cost();
         // State transition
@@ -408,7 +408,7 @@ mod test {
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let topic_count = topics.len();
         // dynamic calculate topic_count
-        let gas_cost = GasCost::LOG_STATIC_GAS.as_u64() * topic_count as u64
+        let gas_cost = GasCost::LOG.as_u64() * topic_count as u64
             + 8 * msize.as_u64()
             + memory_expension_gas;
         let codes = [

@@ -125,6 +125,7 @@ pub(crate) struct ExecutionConfig<F> {
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     copy_to_memory_gadget: CopyToMemoryGadget<F>,
+    copy_to_log_gadget: CopyToLogGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
