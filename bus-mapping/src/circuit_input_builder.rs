@@ -15,6 +15,7 @@ use eth_types::{
     self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use itertools::Itertools;
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
 use crate::rpc::GethClient;
@@ -462,8 +463,9 @@ pub struct CallContext {
     /// call. It is incremented when a subcall in this call succeeds by the
     /// number of successful writes in the subcall.
     pub reversible_write_counter: usize,
-    /// Call data source (copy of caller's memory or tx input)
-    pub call_data_source: Vec<u8>,
+    /// Call data (copy of tx input or caller's
+    /// memory[call_data_offset..call_data_offset + call_data_length])
+    pub call_data: Vec<u8>,
 }
 
 /// A reversion group is the collection of calls and the operations which are
@@ -589,7 +591,7 @@ impl TransactionContext {
     }
 
     /// Push a new call context and its index into the call stack.
-    fn push_call_ctx(&mut self, call_idx: usize, call_data_source: Vec<u8>) {
+    fn push_call_ctx(&mut self, call_idx: usize, call_data: Vec<u8>) {
         if !self.call_is_success[call_idx] {
             self.reversion_groups.push(ReversionGroup {
                 calls: vec![(call_idx, 0)],
@@ -617,7 +619,7 @@ impl TransactionContext {
         self.calls.push(CallContext {
             index: call_idx,
             reversible_write_counter: 0,
-            call_data_source,
+            call_data,
         });
     }
 
@@ -922,16 +924,23 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Push a new [`Call`] into the [`Transaction`], and add its index and
     /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
     pub fn push_call(&mut self, call: Call, step: &GethExecStep) {
-        let call_data_source = match call.kind {
+        let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                let mut memory = step.memory.0.to_vec();
-                // Expand memory to expected size as call_data_source for new call
-                if let Some(padding) = ((call.call_data_offset + call.call_data_length) as usize)
-                    .checked_sub(memory.len())
-                {
-                    memory.extend(std::iter::repeat(0).take(padding));
+                let call_data = if step.memory.0.len() < call.call_data_offset as usize {
+                    &[]
+                } else {
+                    &step.memory.0[call.call_data_offset as usize..]
+                };
+                if call_data.len() < call.call_data_length as usize {
+                    // Expand call_data to expected size
+                    call_data
+                        .iter()
+                        .cloned()
+                        .pad_using(call.call_data_length as usize, |_| 0)
+                        .collect()
+                } else {
+                    call_data[..call.call_data_length as usize].to_vec()
                 }
-                memory
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
@@ -939,7 +948,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_id = call.call_id;
         let call_idx = self.tx.calls.len();
 
-        self.tx_ctx.push_call_ctx(call_idx, call_data_source);
+        self.tx_ctx.push_call_ctx(call_idx, call_data);
         self.tx.push_call(call);
 
         self.block_ctx
