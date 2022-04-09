@@ -1,13 +1,13 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, RandomLinearCombination, Word,
+            from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,29 +20,31 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, Debug)]
-pub(crate) struct BlockCtxU64Gadget<F> {
+pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
     same_context: SameContextGadget<F>,
-    value_u64: RandomLinearCombination<F, N_BYTES_U64>,
+    value: RandomLinearCombination<F, N_BYTES>,
 }
 
-impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
-    const NAME: &'static str = "BlockCTXU64";
-
-    const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU64;
-
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value_u64 = cb.query_rlc();
+impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
+    fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+        let value = cb.query_rlc();
 
         // Push the u64 value to the stack
-        cb.stack_push(value_u64.expr());
+        cb.stack_push(value.expr());
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
         let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
             + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
 
-        // Lookup block table with TIMESTAMP/NUMBER/GASLIMIT
-        cb.block_lookup(blockctx_tag, None, from_bytes::expr(&value_u64.cells));
+        // Lookup block table with block context ops
+        // TIMESTAMP/NUMBER/GASLIMIT, COINBASE and DIFFICULTY/BASEFEE
+        let value_expr = if N_BYTES == N_BYTES_WORD {
+            value.expr()
+        } else {
+            from_bytes::expr(&value.cells)
+        };
+        cb.block_lookup(blockctx_tag, None, value_expr);
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -56,8 +58,25 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
         Self {
             same_context,
-            value_u64,
+            value,
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BlockCtxU64Gadget<F> {
+    value_u64: BlockCtxGadget<F, N_BYTES_U64>,
+}
+
+impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
+    const NAME: &'static str = "BlockCTXU64";
+
+    const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU64;
+
+    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        let value_u64 = BlockCtxGadget::construct(cb);
+
+        Self { value_u64 }
     }
 
     fn assign_exec_step(
@@ -69,11 +88,13 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.value_u64
+            .same_context
+            .assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u64.assign(
+        self.value_u64.value.assign(
             region,
             offset,
             Some(u64::try_from(value).unwrap().to_le_bytes()),
@@ -85,8 +106,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU160Gadget<F> {
-    same_context: SameContextGadget<F>,
-    value_u160: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    value_u160: BlockCtxGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
@@ -95,33 +115,9 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU160;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value_u160 = cb.query_rlc();
+        let value_u160 = BlockCtxGadget::construct(cb);
 
-        // Push the u64 value to the stack
-        cb.stack_push(value_u160.expr());
-
-        // Get op's FieldTag
-        let opcode = cb.query_cell();
-        let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
-            + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
-
-        // Lookup block table with COINBASE
-        cb.block_lookup(blockctx_tag, None, from_bytes::expr(&value_u160.cells));
-
-        // State transition
-        let step_state_transition = StepStateTransition {
-            rw_counter: Delta(1.expr()),
-            program_counter: Delta(1.expr()),
-            stack_pointer: Delta((-1).expr()),
-            gas_left: Delta(-OpcodeId::COINBASE.constant_gas_cost().expr()),
-            ..Default::default()
-        };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
-
-        Self {
-            same_context,
-            value_u160,
-        }
+        Self { value_u160 }
     }
 
     fn assign_exec_step(
@@ -133,11 +129,13 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.value_u160
+            .same_context
+            .assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u160.assign(
+        self.value_u160.value.assign(
             region,
             offset,
             Some(
@@ -153,8 +151,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU256Gadget<F> {
-    same_context: SameContextGadget<F>,
-    value_u256: Word<F>,
+    value_u256: BlockCtxGadget<F, N_BYTES_WORD>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
@@ -163,33 +160,9 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU256;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value_u256 = cb.query_rlc();
+        let value_u256 = BlockCtxGadget::construct(cb);
 
-        // Push the u64 value to the stack
-        cb.stack_push(value_u256.expr());
-
-        // Get op's FieldTag
-        let opcode = cb.query_cell();
-        let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
-            + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
-
-        // Lookup block table with DIFFICULTY/BASEFEE RLC value
-        cb.block_lookup(blockctx_tag, None, value_u256.expr());
-
-        // State transition
-        let step_state_transition = StepStateTransition {
-            rw_counter: Delta(1.expr()),
-            program_counter: Delta(1.expr()),
-            stack_pointer: Delta((-1).expr()),
-            gas_left: Delta(-OpcodeId::TIMESTAMP.constant_gas_cost().expr()),
-            ..Default::default()
-        };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
-
-        Self {
-            same_context,
-            value_u256,
-        }
+        Self { value_u256 }
     }
 
     fn assign_exec_step(
@@ -201,11 +174,14 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        self.value_u256
+            .same_context
+            .assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
         self.value_u256
+            .value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
         Ok(())
