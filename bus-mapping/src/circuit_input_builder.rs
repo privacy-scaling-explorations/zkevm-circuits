@@ -21,6 +21,10 @@ use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 use crate::rpc::GethClient;
 use ethers_providers::JsonRpcClient;
 
+/// Maximum number of bytes copied in a single iteration of internal steps like
+/// CopyToMemory and CopyCodeToMemory.
+pub const MAX_COPY_BYTES: usize = 32usize;
+
 /// Out of Gas errors by opcode
 #[derive(Clone, Debug, PartialEq)]
 pub enum OogError {
@@ -111,6 +115,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step Copy To Memory
     CopyToMemory,
+    /// Virtal step Copy Code To Memory
+    CopyCodeToMemory,
 }
 
 impl ExecState {
