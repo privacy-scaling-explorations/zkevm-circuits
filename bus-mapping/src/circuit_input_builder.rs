@@ -11,7 +11,9 @@ use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word};
+use eth_types::{
+    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, U256,
+};
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
@@ -139,22 +141,43 @@ impl ExecState {
     }
 }
 
+/// Auxiliary data for CopyToMemory internal state.
+#[derive(Clone, Copy, Debug)]
+pub struct CopyToMemoryAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Destination address
+    pub dst_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// Indicate if copy from transaction call data
+    pub from_tx: bool,
+}
+
+/// Auxiliary data for CopyCodeToMemory internal state.
+#[derive(Clone, Copy, Debug)]
+pub struct CopyCodeToMemoryAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Destination address
+    pub dst_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// Hash of the bytecode to be copied
+    pub code_source: U256,
+}
+
 /// Auxiliary data of Execution step
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum StepAuxiliaryData {
     /// Auxiliary data of Copy To Memory
-    CopyToMemory {
-        /// Source start address
-        src_addr: u64,
-        /// Destination address
-        dst_addr: u64,
-        /// Bytes left
-        bytes_left: u64,
-        /// Source end address
-        src_addr_end: u64,
-        /// Indicate if copy from transaction call data
-        from_tx: bool,
-    },
+    CopyToMemory(CopyToMemoryAuxData),
+    /// Auxiliary data of Copy Code To Memory
+    CopyCodeToMemory(CopyCodeToMemoryAuxData),
 }
 
 /// An execution step of the EVM.
@@ -174,6 +197,8 @@ pub struct ExecStep {
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
     pub gas_cost: GasCost,
+    /// Accumulated gas refund
+    pub gas_refund: Gas,
     /// Call index within the [`Transaction`]
     pub call_index: usize,
     /// The global counter when this step was executed.
@@ -204,6 +229,7 @@ impl ExecStep {
             memory_size: step.memory.0.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
+            gas_refund: Gas(0),
             call_index,
             rwc,
             reversible_write_counter,
@@ -223,6 +249,7 @@ impl Default for ExecStep {
             memory_size: 0,
             gas_left: Gas(0),
             gas_cost: GasCost(0),
+            gas_refund: Gas(0),
             call_index: 0,
             rwc: RWCounter(0),
             reversible_write_counter: 0,
@@ -805,6 +832,9 @@ impl<'a> CircuitInputStateRef<'a> {
         rw: RW,
         op: T,
     ) -> Result<(), Error> {
+        if matches!(rw, RW::WRITE) {
+            self.apply_op(&op.clone().into_enum());
+        }
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
             rw,
@@ -1076,38 +1106,29 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Apply reverted op to state and push to container.
-    fn apply_reverted_op(&mut self, op: OpEnum) -> OperationRef {
-        match op {
+    /// Apply op to state.
+    fn apply_op(&mut self, op: &OpEnum) {
+        match &op {
             OpEnum::Storage(op) => {
-                let (_, account) = self.sdb.get_storage_mut(&op.address, &op.key);
-                *account = op.value;
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
+                self.sdb.set_storage(&op.address, &op.key, &op.value);
             }
             OpEnum::TxAccessListAccount(op) => {
-                if !op.value {
+                if !op.value_prev && op.value {
+                    self.sdb.add_account_to_access_list(op.address);
+                }
+                if op.value_prev && !op.value {
                     self.sdb.remove_account_from_access_list(&op.address);
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
             OpEnum::TxAccessListAccountStorage(op) => {
-                if !op.value {
+                if !op.value_prev && op.value {
+                    self.sdb
+                        .add_account_storage_to_access_list((op.address, op.key));
+                }
+                if op.value_prev && !op.value {
                     self.sdb
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
             OpEnum::Account(op) => {
                 let (_, account) = self.sdb.get_account_mut(&op.address);
@@ -1118,16 +1139,13 @@ impl<'a> CircuitInputStateRef<'a> {
                         account.code_hash = op.value.to_be_bytes().into();
                     }
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
-            OpEnum::TxRefund(_) => unimplemented!(),
+            OpEnum::TxRefund(op) => {
+                self.sdb.set_refund(op.value);
+            }
             OpEnum::AccountDestructed(_) => unimplemented!(),
             _ => unreachable!(),
-        }
+        };
     }
 
     /// Handle a reversion group
@@ -1141,7 +1159,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.into_iter().rev() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                let rev_op_ref = self.apply_reverted_op(op);
+                self.apply_op(&op);
+                let rev_op_ref = self.block.container.insert_op_enum(
+                    self.block_ctx.rwc.inc_pre(),
+                    RW::WRITE,
+                    false,
+                    op,
+                );
                 self.tx.steps[step_index]
                     .bus_mapping_instance
                     .push(rev_op_ref);
@@ -1473,6 +1497,7 @@ impl<'a> CircuitInputBuilder {
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
+            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
@@ -1488,8 +1513,8 @@ impl<'a> CircuitInputBuilder {
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps.push(end_tx_step);
 
+        self.sdb.commit_tx();
         self.block.txs.push(tx);
-        self.sdb.clear_access_list_and_refund();
 
         Ok(())
     }
@@ -2004,6 +2029,7 @@ mod tracer_tests {
                 &GethExecTrace {
                     gas: Gas(0),
                     failed: false,
+                    return_value: "".to_owned(),
                     struct_logs: vec![geth_step.clone()],
                 },
                 false,

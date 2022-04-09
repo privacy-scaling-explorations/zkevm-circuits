@@ -3,8 +3,8 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Preset, Step},
         table::{
-            AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
-            TxContextFieldTag,
+            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
+            RwTableTag, TxContextFieldTag,
         },
         util::{Cell, RandomLinearCombination, Word},
     },
@@ -13,7 +13,10 @@ use crate::{
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
-    plonk::{Error, Expression},
+    plonk::{
+        Error,
+        Expression::{self, Constant},
+    },
 };
 use std::convert::TryInto;
 
@@ -546,12 +549,49 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "Opcode lookup",
             Lookup::Bytecode {
                 hash: self.curr.state.code_source.expr(),
+                tag: BytecodeFieldTag::Byte.expr(),
                 index,
-                value: opcode,
                 is_code,
+                value: opcode,
             }
             .conditional(1.expr() - is_root_create),
         );
+    }
+
+    // Bytecode table
+
+    pub(crate) fn bytecode_lookup(
+        &mut self,
+        code_hash: Expression<F>,
+        index: Expression<F>,
+        is_code: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.add_lookup(
+            "Bytecode (byte) lookup",
+            Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Byte.expr(),
+                index,
+                is_code,
+                value,
+            },
+        )
+    }
+
+    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>) -> Cell<F> {
+        let cell = self.query_cell();
+        self.add_lookup(
+            "Bytecode (length)",
+            Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Length.expr(),
+                index: 0.expr(),
+                is_code: 0.expr(),
+                value: cell.expr(),
+            },
+        );
+        cell
     }
 
     // Tx context
@@ -652,8 +692,19 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             tag,
             values,
         );
-        self.rw_counter_offset =
-            self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
+        // Manually constant folding is used here, since halo2 cannot do this
+        // automatically. Better error message will be printed during circuit
+        // debugging.
+        self.rw_counter_offset = match &self.cb.condition {
+            None => {
+                if let Constant(v) = self.rw_counter_offset {
+                    Constant(v + F::from(1u64))
+                } else {
+                    self.rw_counter_offset.clone() + 1i32.expr()
+                }
+            }
+            Some(c) => self.rw_counter_offset.clone() + c.clone(),
+        };
     }
 
     fn reversible_write(

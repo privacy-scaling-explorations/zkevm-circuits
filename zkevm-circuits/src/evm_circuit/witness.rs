@@ -3,7 +3,8 @@ use crate::evm_circuit::{
     param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
+        TxContextFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -46,6 +47,8 @@ pub struct BlockContext {
     pub base_fee: Word,
     /// The hash of previous blocks
     pub history_hashes: Vec<Word>,
+    /// The chain id
+    pub chain_id: Word,
 }
 
 impl BlockContext {
@@ -85,6 +88,14 @@ impl BlockContext {
                     F::zero(),
                     RandomLinearCombination::random_linear_combine(
                         self.base_fee.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::ChainId as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.chain_id.to_le_bytes(),
                         randomness,
                     ),
                 ],
@@ -309,7 +320,7 @@ impl ExecStep {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Bytecode {
     pub hash: Word,
     pub bytes: Vec<u8>,
@@ -321,56 +332,38 @@ impl Bytecode {
         Self { hash, bytes }
     }
 
-    pub fn table_assignments<'a, F: FieldExt>(
-        &'a self,
-        randomness: F,
-    ) -> impl Iterator<Item = [F; 4]> + '_ {
-        struct BytecodeIterator<'a, F> {
-            idx: usize,
-            push_data_left: usize,
-            hash: F,
-            bytes: &'a [u8],
-        }
+    pub fn table_assignments<F: FieldExt>(&self, randomness: F) -> Vec<[F; 5]> {
+        let n = 1 + self.bytes.len();
+        let mut rows = Vec::with_capacity(n);
+        let hash =
+            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), randomness);
 
-        impl<'a, F: FieldExt> Iterator for BytecodeIterator<'a, F> {
-            type Item = [F; 4];
+        rows.push([
+            hash,
+            F::from(BytecodeFieldTag::Length as u64),
+            F::zero(),
+            F::zero(),
+            F::from(self.bytes.len() as u64),
+        ]);
 
-            fn next(&mut self) -> Option<Self::Item> {
-                if self.idx == self.bytes.len() {
-                    return None;
-                }
-
-                let idx = self.idx;
-                let byte = self.bytes[self.idx];
-                let mut is_code = true;
-
-                if self.push_data_left > 0 {
-                    is_code = false;
-                    self.push_data_left -= 1;
-                } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(&byte) {
-                    self.push_data_left = byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
-                }
-
-                self.idx += 1;
-
-                Some([
-                    self.hash,
-                    F::from(idx as u64),
-                    F::from(byte as u64),
-                    F::from(is_code as u64),
-                ])
+        let mut push_data_left = 0;
+        for (idx, byte) in self.bytes.iter().enumerate() {
+            let mut is_code = true;
+            if push_data_left > 0 {
+                is_code = false;
+                push_data_left -= 1;
+            } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
+                push_data_left = *byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
             }
+            rows.push([
+                hash,
+                F::from(BytecodeFieldTag::Byte as u64),
+                F::from(idx as u64),
+                F::from(is_code as u64),
+                F::from(*byte as u64),
+            ])
         }
-
-        BytecodeIterator {
-            idx: 0,
-            push_data_left: 0,
-            hash: RandomLinearCombination::random_linear_combine(
-                self.hash.to_le_bytes(),
-                randomness,
-            ),
-            bytes: &self.bytes,
-        }
+        rows
     }
 }
 
@@ -826,6 +819,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             difficulty: block.difficulty,
             base_fee: block.base_fee,
             history_hashes: block.history_hashes.clone(),
+            chain_id: block.chain_id,
         }
     }
 }
@@ -1108,9 +1102,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::CHAINID => ExecutionState::CHAINID,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
+
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
@@ -1162,7 +1158,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
-        aux_data: step.aux_data.clone().map(Into::into),
+        aux_data: step.aux_data.map(Into::into),
     }
 }
 

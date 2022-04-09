@@ -21,6 +21,7 @@ mod calldatacopy;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod chainid;
 mod dup;
 mod extcodehash;
 mod gasprice;
@@ -30,6 +31,7 @@ mod number;
 mod origin;
 mod selfbalance;
 mod sload;
+mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
@@ -47,6 +49,7 @@ use mstore::Mstore;
 use origin::Origin;
 use selfbalance::Selfbalance;
 use sload::Sload;
+use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
@@ -129,7 +132,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        // OpcodeId::CHAINID => {},
+        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
@@ -137,7 +140,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
         OpcodeId::SLOAD => Sload::gen_associated_ops,
-        // OpcodeId::SSTORE => {},
+        OpcodeId::SSTORE => Sstore::gen_associated_ops,
         OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
