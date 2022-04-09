@@ -29,7 +29,7 @@ pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
     data_offset: MemoryAddress<F>,
-    tx_id: Cell<F>,
+    src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -54,15 +54,16 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         cb.stack_pop(length.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
-        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
 
         // Lookup the calldata_length and caller_address in Tx context table or
         // Call context table
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, src_id.expr());
             cb.tx_context_lookup(
-                tx_id.expr(),
+                src_id.expr(),
                 TxContextFieldTag::CallDataLength,
                 None,
                 call_data_length.expr(),
@@ -70,9 +71,15 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             cb.require_zero(
                 "call_data_offset == 0 in the root call",
                 call_data_offset.expr(),
-            )
+            );
         });
         cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::CallerId,
+                src_id.expr(),
+            );
             cb.call_context_lookup(
                 false.expr(),
                 None,
@@ -84,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 None,
                 CallContextFieldTag::CallDataOffset,
                 call_data_offset.expr(),
-            )
+            );
         });
 
         // Calculate the next memory size and the gas cost for this memory
@@ -110,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 let next_bytes_left = cb.query_cell();
                 let next_src_addr_end = cb.query_cell();
                 let next_from_tx = cb.query_cell();
-                let next_tx_id = cb.query_cell();
+                let next_src_id = cb.query_cell();
                 cb.require_equal(
                     "next_src_addr = data_offset + call_data_offset",
                     next_src_addr.expr(),
@@ -136,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     next_from_tx.expr(),
                     cb.curr.state.is_root.expr(),
                 );
-                cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
+                cb.require_equal("next_src_id = src_id", next_src_id.expr(), src_id.expr());
             },
         );
 
@@ -158,7 +165,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             same_context,
             memory_address,
             data_offset,
-            tx_id,
+            src_id,
             call_data_length,
             call_data_offset,
             memory_expansion,
@@ -192,8 +199,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     .unwrap(),
             ),
         )?;
-        self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        let src_id = if call.is_root { tx.id } else { call.caller_id };
+        self.src_id
+            .assign(region, offset, Some(F::from(src_id as u64)))?;
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
@@ -228,7 +236,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::memory_copy::test::make_memory_copy_steps,
+        execution::memory_copy::test::{make_memory_copy_steps, CALLER_ID, CALL_ID, TX_ID},
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
@@ -292,7 +300,6 @@ mod test {
             ]
             .concat(),
         );
-        let call_id = 1;
         let call_data = rand_bytes(call_data_length.as_usize());
 
         let mut rws = RwMap(
@@ -303,21 +310,21 @@ mod test {
                         Rw::Stack {
                             rw_counter: 1,
                             is_write: false,
-                            call_id,
+                            call_id: CALL_ID,
                             stack_pointer: 1021,
                             value: memory_offset,
                         },
                         Rw::Stack {
                             rw_counter: 2,
                             is_write: false,
-                            call_id,
+                            call_id: CALL_ID,
                             stack_pointer: 1022,
                             value: data_offset,
                         },
                         Rw::Stack {
                             rw_counter: 3,
                             is_write: false,
-                            call_id,
+                            call_id: CALL_ID,
                             stack_pointer: 1023,
                             value: length,
                         },
@@ -329,21 +336,21 @@ mod test {
                         Rw::CallContext {
                             rw_counter: 4,
                             is_write: false,
-                            call_id,
-                            field_tag: CallContextFieldTag::TxId,
-                            value: Word::one(),
+                            call_id: CALL_ID,
+                            field_tag: CallContextFieldTag::CallerId,
+                            value: Word::from(CALLER_ID),
                         },
                         Rw::CallContext {
                             rw_counter: 5,
                             is_write: false,
-                            call_id,
+                            call_id: CALL_ID,
                             field_tag: CallContextFieldTag::CallDataLength,
                             value: call_data_length,
                         },
                         Rw::CallContext {
                             rw_counter: 6,
                             is_write: false,
-                            call_id,
+                            call_id: CALL_ID,
                             field_tag: CallContextFieldTag::CallDataOffset,
                             value: call_data_offset,
                         },
@@ -392,7 +399,6 @@ mod test {
 
         if !length.is_zero() {
             make_memory_copy_steps(
-                call_id,
                 &call_data,
                 call_data_offset.as_u64(),
                 call_data_offset.as_u64() + data_offset.as_u64(),
@@ -421,14 +427,15 @@ mod test {
         let block = Block {
             randomness,
             txs: vec![Transaction {
-                id: 1,
+                id: TX_ID,
                 calls: vec![Call {
-                    id: call_id,
+                    id: CALL_ID,
                     is_root: false,
                     is_create: false,
                     call_data_length: call_data_length.as_u64(),
                     call_data_offset: call_data_offset.as_u64(),
                     code_source: CodeSource::Account(bytecode.hash),
+                    caller_id: CALLER_ID,
                     ..Default::default()
                 }],
                 steps,
