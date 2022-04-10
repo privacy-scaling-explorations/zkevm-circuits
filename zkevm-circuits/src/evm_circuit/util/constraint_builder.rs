@@ -543,7 +543,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_constraint(
             "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
-            is_root_create.clone(),
+            is_root_create.clone() * self.curr.state.code_source.expr(),
         );
         self.add_lookup(
             "Opcode lookup",
