@@ -6,7 +6,7 @@ use crate::{
     operation::RW,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord};
+use eth_types::{GethExecStep, ToWord};
 
 use super::Opcode;
 
@@ -62,20 +62,20 @@ fn gen_memory_copy_step(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
     aux_data: CopyCodeToMemoryAuxData,
-    code: &eth_types::Bytecode,
+    code: &[u8],
 ) -> Result<(), Error> {
     let CopyCodeToMemoryAuxData {
         src_addr,
         dst_addr,
         bytes_left,
         src_addr_end,
-        code_source,
+        code_source: _,
     } = aux_data;
 
     for idx in 0..std::cmp::min(bytes_left as usize, MAX_COPY_BYTES) {
         let addr = (src_addr as usize) + idx;
         let byte = if addr < (src_addr_end as usize) {
-            code.code()[addr]
+            code[addr]
         } else {
             0
         };
@@ -87,15 +87,7 @@ fn gen_memory_copy_step(
         )?;
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::CopyCodeToMemory(
-        CopyCodeToMemoryAuxData {
-            src_addr: src_addr as u64,
-            dst_addr: dst_addr as u64,
-            bytes_left: bytes_left as u64,
-            src_addr_end: src_addr_end as u64,
-            code_source,
-        },
-    ));
+    exec_step.aux_data = Some(StepAuxiliaryData::CopyCodeToMemory(aux_data));
 
     Ok(())
 }
@@ -109,9 +101,8 @@ fn gen_memory_copy_steps(
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
     let code_source = state.call()?.code_hash;
-    let code = state.code_db.0.get(&code_source).unwrap();
-    let code = Bytecode::try_from(code.clone()).unwrap();
-    let src_addr_end = code.code().len() as u64;
+    let code = state.code_db.0.get(&code_source).cloned().unwrap();
+    let src_addr_end = code.len() as u64;
 
     let code_source = code_source.to_word();
     let mut copied = 0;
