@@ -168,7 +168,7 @@ pub struct CopyCodeToMemoryAuxData {
     pub dst_addr: u64,
     /// Bytes left
     pub bytes_left: u64,
-    /// Auxiliary data of Copy To Log
+    /// Source end address
     pub src_addr_end: u64,
     /// Hash of the bytecode to be copied
     pub code_source: U256,
