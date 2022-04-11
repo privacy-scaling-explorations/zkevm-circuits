@@ -20,7 +20,7 @@ It's up to the mantainers to decide whether more than one review is required.
 
 - When working on an opcode implementation, please make sure to follow this order
     1. If the spec is not written, write it and submit a PR in `zkevm-specs`
-    2. After the spec is merged, implement the opcode and submit a PR in `zkevm-specs`
+    2. After the spec is merged, implement the opcode and submit a PR in `zkevm-circuits`
         - It's OK to work on the circuit and spec at the same time and have the implementation PR submitted before the spec is merged, but in such case, please set the implementation PR as draft until the spec is merged.
 
 - Try to include `bus-mapping` + `zkevm-circuits` opcode implementations in the same PR, but never mixing more than one Opcode at a time.
