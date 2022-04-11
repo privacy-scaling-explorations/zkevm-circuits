@@ -165,7 +165,7 @@ mod test {
                 .unwrap()
                 .into(),
             )
-    };
+        };
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)

@@ -236,17 +236,17 @@ pub mod test {
                     offset += 1;
 
                     let mut rows = rws
-                    .0
-                    .values()
-                    .flat_map(|rws| rws.iter())
-                    .collect::<Vec<_>>();
+                        .0
+                        .values()
+                        .flat_map(|rws| rws.iter())
+                        .collect::<Vec<_>>();
 
                     rows.sort_by_key(|a| a.get_rw_counter());
                     let mut pre_rw_counter = 0;
                     for rw in rows {
                         if pre_rw_counter == 0 {
                             assert!(rw.get_rw_counter() == 1);
-                        }else{
+                        } else {
                             assert!(rw.get_rw_counter() == pre_rw_counter + 1);
                         }
 
