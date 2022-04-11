@@ -162,7 +162,6 @@ pub mod test {
         Fp::rand()
     }
 
-
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
