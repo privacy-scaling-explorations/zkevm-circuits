@@ -524,10 +524,50 @@ mod test {
         );
     }
 
+    fn test_busmapping_internal() {
+        let contract_code: Vec<u8> = hex::decode("626000356000526003601DF3").unwrap();
+        let create_and_call = bytecode! {
+            // 1. Store the following bytes to memory
+            PUSH12(Word::from_big_endian(&contract_code))
+            PUSH1(0x00)
+            MSTORE
+            // 2. Create a contract with code: 60 00 35
+            PUSH1(0x0c) // size
+            PUSH1(0x14) // offset
+            PUSH1(0x00) // value
+            CREATE
+            // 3. Call created contract, i.e. CALLDATALOAD is in internal call
+            PUSH1(0x00)   // retSize
+            PUSH1(0x00)   // retOffset
+            PUSH1(0x20)   // argsSize
+            PUSH1(0x00)   // argsOffset
+            PUSH1(0x00)   // value
+            DUP6          // address
+            PUSH2(0xFFFF) // gas
+            CALL
+        };
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(create_and_call).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
+
     #[test]
-    fn calldataload_gadget_busmapping() {
+    fn calldataload_gadget_busmapping_root() {
         test_busmapping_root(Word::from(0));
         test_busmapping_root(Word::from(8));
         test_busmapping_root(Word::from(16));
+    }
+
+    // This test must be enabled and should pass once `CREATE` is handled in
+    // bus-mapping.
+    #[test]
+    #[ignore]
+    fn calldataload_gadget_busmapping_internal() {
+        test_busmapping_internal();
     }
 }

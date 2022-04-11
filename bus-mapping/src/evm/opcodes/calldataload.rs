@@ -119,7 +119,10 @@ mod calldataload_tests {
         geth_types::GethData,
         Word,
     };
-    use mock::{test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0}, TestContext};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
     use rand::random;
 
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
@@ -151,8 +154,8 @@ mod calldataload_tests {
         );
     }
 
-    // This test must be enabled and should pass once `CREATE` is handled with a dummy gen
-    // associated ops.
+    // This test must be enabled and should pass once `CREATE` is handled with a
+    // dummy gen associated ops.
     #[test]
     #[ignore]
     fn calldataload_internal_opcode_impl() {
