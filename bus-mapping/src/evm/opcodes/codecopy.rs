@@ -101,7 +101,7 @@ fn gen_memory_copy_steps(
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
     let code_source = state.call()?.code_hash;
-    let code = state.code_db.0.get(&code_source).cloned().unwrap();
+    let code = state.code(code_source)?;
     let src_addr_end = code.len() as u64;
 
     let code_source = code_source.to_word();
