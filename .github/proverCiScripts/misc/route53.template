@@ -1,0 +1,11 @@
+{
+            "Comment": "UPSERT prover record ",
+            "Changes": [{
+            "Action": "UPSERT",
+                        "ResourceRecordSet": {
+                                    "Name": "prover.cirunners.internal",
+                                    "Type": "A",
+                                    "TTL": 60,
+                                 "ResourceRecords": [{ "Value": "CHANGEME"}]
+}}]
+}
