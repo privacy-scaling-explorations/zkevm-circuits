@@ -102,6 +102,7 @@ mod test {
             CALLDATASIZE
             STOP
         };
+        
         let block_data = if is_root {
             bus_mapping::mock::BlockData::new_from_geth_data(
                 TestContext::<2, 1>::new(

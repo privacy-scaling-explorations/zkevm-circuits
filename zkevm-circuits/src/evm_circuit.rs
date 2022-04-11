@@ -137,8 +137,6 @@ pub mod test {
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
-    use std::collections::HashSet;
-    use std::hash::Hash;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -164,14 +162,6 @@ pub mod test {
         Fp::rand()
     }
 
-    fn has_unique_elements<T>(iter: T) -> bool
-    where
-        T: IntoIterator,
-        T::Item: Eq + Hash,
-    {
-        let mut uniq = HashSet::new();
-        iter.into_iter().all(move |x| uniq.insert(x))
-    }
 
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
