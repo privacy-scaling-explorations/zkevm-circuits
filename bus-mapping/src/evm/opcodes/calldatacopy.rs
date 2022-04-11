@@ -1,10 +1,12 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
-    MAX_COPY_BYTES,
-};
 use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
 use crate::Error;
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+    },
+    constants::MAX_COPY_BYTES,
+};
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]

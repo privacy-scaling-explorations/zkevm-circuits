@@ -1,6 +1,7 @@
 use array_init::array_init;
-use bus_mapping::circuit_input_builder::{
-    CopyCodeToMemoryAuxData, StepAuxiliaryData, MAX_COPY_BYTES,
+use bus_mapping::{
+    circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData},
+    constants::MAX_COPY_BYTES,
 };
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};

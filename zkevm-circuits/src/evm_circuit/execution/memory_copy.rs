@@ -14,7 +14,10 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::circuit_input_builder::{CopyToMemoryAuxData, StepAuxiliaryData, MAX_COPY_BYTES};
+use bus_mapping::{
+    circuit_input_builder::{CopyToMemoryAuxData, StepAuxiliaryData},
+    constants::MAX_COPY_BYTES,
+};
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 

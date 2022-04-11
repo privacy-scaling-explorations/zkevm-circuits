@@ -1,8 +1,8 @@
 use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyCodeToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
-        MAX_COPY_BYTES,
     },
+    constants::MAX_COPY_BYTES,
     operation::RW,
     Error,
 };
