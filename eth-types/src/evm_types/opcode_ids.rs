@@ -783,7 +783,7 @@ impl TryFrom<u8> for OpcodeId {
             0xf4u8 => OpcodeId::DELEGATECALL,
             0xfau8 => OpcodeId::STATICCALL,
             0xffu8 => OpcodeId::SELFDESTRUCT,
-            _ => return Err(Error::OpcodeParsing),
+            b => return Err(Error::InvalidOpcodeIdByte(b)),
         })
     }
 }
