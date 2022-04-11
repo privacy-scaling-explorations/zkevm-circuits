@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::{CallContextFieldTag, TxContextFieldTag},
+        table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -62,10 +62,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // Call context table
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, src_id.expr());
-            cb.tx_context_lookup(
-                src_id.expr(),
-                TxContextFieldTag::CallDataLength,
+            cb.call_context_lookup(
+                false.expr(),
                 None,
+                CallContextFieldTag::CallDataLength,
                 call_data_length.expr(),
             );
             cb.require_zero(
@@ -494,5 +494,43 @@ mod test {
             Word::from(16),
             Word::from(0),
         );
+    }
+
+    // This test must be enabled and should pass once `CREATE` is handled in
+    // bus-mapping.
+    #[test]
+    #[ignore]
+    fn calldatacopy_gadget_busmapping_internal() {
+        let creator_code: Vec<u8> = hex::decode("666020600060003760005260076019F3").unwrap();
+        let nested_code = bytecode! {
+            // 1. Store the following bytes to memory
+            PUSH16(Word::from_big_endian(&creator_code))
+            PUSH1(0x00) // offset
+            MSTORE
+            // 2. Create a contract with code: 6020 6000 6000 37
+            PUSH1(0x10) // size
+            PUSH1(0x10) // offset
+            PUSH1(0x00) // value
+            CREATE
+            // 3. Call created contract, i.e. CALLDATACOPY (37) is in internal call
+            PUSH1(0x00)   // retSize
+            PUSH1(0x00)   // retOffset
+            PUSH1(0x20)   // argsSize
+            PUSH1(0x00)   // argsOffset
+            PUSH1(0x00)   // value
+            DUP6          // address
+            PUSH2(0xFFFF) // gas
+            CALL
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(nested_code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
     }
 }
