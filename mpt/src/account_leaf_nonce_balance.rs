@@ -42,6 +42,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         c_mod_node_hash_rlc: Column<Advice>,
         sel1: Column<Advice>,
         sel2: Column<Advice>,
+        is_storage_mod: Column<Advice>,
+        is_nonce_mod: Column<Advice>,
+        is_balance_mod: Column<Advice>,
+        is_codehash_mod: Column<Advice>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
     ) -> AccountLeafNonceBalanceConfig {
@@ -119,7 +123,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
                 "nonce RLC",
-                q_enable.clone() * (nonce_rlc.clone() - nonce_stored),
+                q_enable.clone() * (nonce_rlc.clone() - nonce_stored.clone()),
             ));
 
             expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
@@ -141,7 +145,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             constraints.push((
                 "balance RLC",
-                q_enable.clone() * (balance_rlc.clone() - balance_stored),
+                q_enable.clone() * (balance_rlc.clone() - balance_stored.clone()),
             ));
 
             if !is_s {
@@ -152,12 +156,33 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 // We need correct previous nonce to enable lookup in nonce balance C row:
                 constraints.push((
                     "nonce prev RLC",
-                    q_enable.clone() * (nonce_s_from_prev.clone() - nonce_s_from_cur),
+                    q_enable.clone() * (nonce_s_from_prev.clone() - nonce_s_from_cur.clone()),
                 ));
                 // We need correct previous balance to enable lookup in nonce balance C row:
                 constraints.push((
                     "balance prev RLC",
-                    q_enable.clone() * (balance_s_from_prev.clone() - balance_s_from_cur),
+                    q_enable.clone() * (balance_s_from_prev.clone() - balance_s_from_cur.clone()),
+                ));
+
+                // Check there is only one modification at once:
+                let is_storage_mod = meta.query_advice(is_storage_mod, Rotation::cur());
+                let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
+                let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
+                let is_codehash_mod = meta.query_advice(is_codehash_mod, Rotation::cur());
+
+                constraints.push((
+                    "if storage / codehash / balance mod: nonce_s = nonce_c",
+                    q_enable.clone()
+                        * (is_storage_mod.clone()
+                            + is_codehash_mod.clone()
+                            + is_balance_mod.clone())
+                        * (nonce_s_from_cur.clone() - nonce_stored.clone()),
+                ));
+                constraints.push((
+                    "if storage / codehash / nonce mod: balance_s = balance_c",
+                    q_enable.clone()
+                        * (is_storage_mod.clone() + is_codehash_mod.clone() + is_nonce_mod.clone())
+                        * (balance_s_from_cur.clone() - balance_stored.clone()),
                 ));
             }
 

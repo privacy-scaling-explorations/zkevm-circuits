@@ -41,6 +41,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
+        is_storage_mod: Column<Advice>,
+        is_nonce_mod: Column<Advice>,
+        is_balance_mod: Column<Advice>,
+        is_codehash_mod: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
@@ -94,7 +98,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let storage_root_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
                 "storage root RLC",
-                q_enable.clone() * (storage_root_rlc.clone() - storage_root_stored),
+                q_enable.clone() * (storage_root_rlc.clone() - storage_root_stored.clone()),
             ));
 
             expr = expr + storage_root_rlc * acc_mult_prev.clone() * acc_r;
@@ -114,7 +118,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
                 "codehash RLC",
-                q_enable.clone() * (codehash_rlc.clone() - codehash_stored),
+                q_enable.clone() * (codehash_rlc.clone() - codehash_stored.clone()),
             ));
 
             if !is_s {
@@ -127,12 +131,32 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 // row:
                 constraints.push((
                     "storage root prev RLC",
-                    q_enable.clone() * (storage_root_s_from_prev.clone() - storage_root_s_from_cur),
+                    q_enable.clone()
+                        * (storage_root_s_from_prev.clone() - storage_root_s_from_cur.clone()),
                 ));
                 // We need correct previous codehash to enable lookup in storage codehash C row:
                 constraints.push((
                     "codehash prev RLC",
-                    q_enable.clone() * (codehash_s_from_prev.clone() - codehash_s_from_cur),
+                    q_enable.clone() * (codehash_s_from_prev.clone() - codehash_s_from_cur.clone()),
+                ));
+
+                // Check there is only one modification at once:
+                let is_storage_mod = meta.query_advice(is_storage_mod, Rotation::cur());
+                let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
+                let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
+                let is_codehash_mod = meta.query_advice(is_codehash_mod, Rotation::cur());
+
+                constraints.push((
+                    "if nonce / balance / codehash mod: storage_root_s = storage_root_c",
+                    q_enable.clone()
+                        * (is_nonce_mod.clone() + is_balance_mod.clone() + is_codehash_mod.clone())
+                        * (storage_root_s_from_cur.clone() - storage_root_stored.clone()),
+                ));
+                constraints.push((
+                    "if nonce / balance / storage mod: codehash_s = codehash_c",
+                    q_enable.clone()
+                        * (is_nonce_mod.clone() + is_balance_mod.clone() + is_storage_mod.clone())
+                        * (codehash_s_from_cur.clone() - codehash_stored.clone()),
                 ));
             }
 

@@ -386,6 +386,10 @@ impl<F: FieldExt> MPTConfig<F> {
             sel2,
             is_modified,
             is_at_drifted_pos,
+            is_storage_mod,
+            is_nonce_mod,
+            is_balance_mod,
+            is_codehash_mod,
         );
 
         RootsChip::<F>::configure(
@@ -854,6 +858,10 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             sel1,
             sel2,
+            is_storage_mod,
+            is_nonce_mod,
+            is_balance_mod,
+            is_codehash_mod,
             fixed_table.clone(),
             true,
         );
@@ -882,6 +890,10 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             sel1,
             sel2,
+            is_storage_mod,
+            is_nonce_mod,
+            is_balance_mod,
+            is_codehash_mod,
             fixed_table.clone(),
             false,
         );
@@ -905,6 +917,10 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             keccak_table,
+            is_storage_mod,
+            is_nonce_mod,
+            is_balance_mod,
+            is_codehash_mod,
             true,
         );
 
@@ -927,6 +943,10 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             keccak_table,
+            is_storage_mod,
+            is_nonce_mod,
+            is_balance_mod,
+            is_codehash_mod,
             false,
         );
 
