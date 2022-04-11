@@ -1,14 +1,13 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
-};
-use crate::operation::{CallContextField, CallContextOp, RW};
+use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
 use crate::Error;
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+    },
+    constants::MAX_COPY_BYTES,
+};
 use eth_types::GethExecStep;
-
-// The max number of bytes that can be copied in a step limited by the number
-// of cells in a step
-const MAX_COPY_BYTES: usize = 71;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
@@ -98,12 +97,16 @@ fn gen_memory_copy_step(
     for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
         let addr = src_addr + idx as u64;
         let byte = if addr < src_addr_end {
-            if is_root {
-                state.tx.input[addr as usize]
-            } else {
-                // TODO: read caller memory
-                unimplemented!()
+            let byte =
+                state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
+            if !is_root {
+                state.push_op(
+                    exec_step,
+                    RW::READ,
+                    MemoryOp::new(state.call()?.caller_id, (addr as usize).into(), byte),
+                );
             }
+            byte
         } else {
             0
         };
