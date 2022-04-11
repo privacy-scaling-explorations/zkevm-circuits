@@ -143,7 +143,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 
 	var txsGasLimit uint64
-	blockGasLimit := config.Block.GasLimit.ToInt().Uint64()
+	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]types.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
 		// If gas price is specified directly, the tx is treated as legacy type.
