@@ -1,31 +1,35 @@
 # Add CI label for any CI changes
 CI:
-  - .github/**/*
+  - ".github/**/*"
 # Add crate-respective labels
-crate:bus-mapping:
+crate-bus-mapping:
   - bus-mapping/**/*
-crate:circuit-benchmarks:
+crate-circuit-benchmarks:
   - circuit-benchmarks/**/*
-crate:eth-types:
+crate-eth-types:
   - eth-types/**/*
-crate:external-tracer:
+crate-external-tracer:
   - external-tracer/**/*
-crate:geth-utils:
+crate-geth-utils:
   - geth-utils/**/*
-crate:integration-tests:
+crate-integration-tests:
   - integration-tests/**/*
-crate:keccak:
+crate-keccak:
   - keccak256/**/*
-crate:mock:
+crate-mock:
   - mock/**/*
-crate:prover:
+crate-prover:
   - prover/**/*
-crate:zkevm-circuits:
+crate-zkevm-circuits:
   - zkevm-circuits/src/**/*
 
 # Add 'T-opcode' to any changes related to opcodes in `bus-mapping` or `zkevm-circuits`.
 T-opcode:
-  - any['zkevm-circuits/src/evm_circuit/execution/**/*', 'bus-mapping/src/evm/opcodes/**/*']
+  - any:
+      [
+        "zkevm-circuits/src/evm_circuit/execution/**/*",
+        "bus-mapping/src/evm/opcodes/**/*",
+      ]
 # Add 'T-bench' to any changes related to benchmarks in `circuit-benchmarks`.
 T-bench:
   - circuit-benchmarks/**/*
