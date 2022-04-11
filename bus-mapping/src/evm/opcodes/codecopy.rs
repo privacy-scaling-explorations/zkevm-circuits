@@ -32,7 +32,7 @@ fn gen_codecopy_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let memory_offset = geth_step.stack.nth_last(0)?;
+    let dest_offset = geth_step.stack.nth_last(0)?;
     let code_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
@@ -41,7 +41,7 @@ fn gen_codecopy_step(
         &mut exec_step,
         RW::READ,
         geth_step.stack.nth_last_filled(0),
-        memory_offset,
+        dest_offset,
     )?;
     state.push_stack_op(
         &mut exec_step,
@@ -96,7 +96,7 @@ fn gen_memory_copy_steps(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let memory_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
+    let dest_offset = geth_steps[0].stack.nth_last(0)?.as_u64();
     let code_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
@@ -115,7 +115,7 @@ fn gen_memory_copy_steps(
             &mut exec_step,
             CopyCodeToMemoryAuxData {
                 src_addr: code_offset + copied,
-                dst_addr: memory_offset + copied,
+                dst_addr: dest_offset + copied,
                 src_addr_end,
                 bytes_left: length - copied,
                 code_source,
@@ -155,11 +155,11 @@ mod codecopy_tests {
         test_ok(0x20, 0x40, 0xA0);
     }
 
-    fn test_ok(memory_offset: usize, code_offset: usize, size: usize) {
+    fn test_ok(dest_offset: usize, code_offset: usize, size: usize) {
         let code = bytecode! {
             PUSH32(size)
             PUSH32(code_offset)
-            PUSH32(memory_offset)
+            PUSH32(dest_offset)
             CODECOPY
             STOP
         };
@@ -191,7 +191,7 @@ mod codecopy_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1021), Word::from(memory_offset)),
+                    &StackOp::new(1, StackAddress::from(1021), Word::from(dest_offset)),
                 ),
                 (
                     RW::READ,
@@ -214,7 +214,7 @@ mod codecopy_tests {
                         RW::WRITE,
                         MemoryOp::new(
                             1,
-                            MemoryAddress::from(memory_offset + idx),
+                            MemoryAddress::from(dest_offset + idx),
                             if code_offset + idx < code.code().len() {
                                 code.code()[code_offset + idx]
                             } else {
