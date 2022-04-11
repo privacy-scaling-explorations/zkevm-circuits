@@ -43,6 +43,7 @@ mod is_zero;
 mod jump;
 mod jumpdest;
 mod jumpi;
+mod logs;
 mod memory;
 mod memory_copy;
 mod msize;
@@ -85,6 +86,7 @@ use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
+use logs::LogGadget;
 use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
@@ -125,7 +127,6 @@ pub(crate) struct ExecutionConfig<F> {
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     copy_to_memory_gadget: CopyToMemoryGadget<F>,
-    copy_to_log_gadget: CopyToLogGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
@@ -639,8 +640,8 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
-            ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::CopyToLog => assign_exec_step!(self.copy_to_log_gadget),
+            ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             // opcode

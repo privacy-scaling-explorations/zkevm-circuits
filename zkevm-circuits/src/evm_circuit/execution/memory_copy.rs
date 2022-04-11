@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::TxContextFieldTag,
         util::{
@@ -20,6 +20,10 @@ use bus_mapping::{
 };
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
+
+// The max number of bytes that can be copied in a step limited by the number
+// of cells in a step
+const MAX_COPY_BYTES: usize = 71;
 
 /// Multi-step gadget for copying data from memory or Tx calldata to memory
 #[derive(Clone, Debug)]
@@ -209,7 +213,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             } else {
                 0
             };
-            // increase rw_idx for skipping log record
+            // increase rw_idx for writing back to memory
             rw_idx += 1
         }
 
@@ -225,6 +229,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         )?;
 
         Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -309,7 +314,7 @@ pub mod test {
             stack_pointer,
             memory_size,
             gas_cost: 0,
-            aux_data: Some(StepAuxiliaryData::CopyToMemory(aux_data)),
+            aux_data: Some(aux_data),
             ..Default::default()
         };
         (step, rw_offset)

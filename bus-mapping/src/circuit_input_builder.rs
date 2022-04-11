@@ -159,21 +159,23 @@ pub struct CopyToMemoryAuxData {
     pub from_tx: bool,
 }
 
+/// Auxiliary data for CopyCodeToMemory internal state.
 #[derive(Clone, Copy, Debug)]
 pub struct CopyCodeToMemoryAuxData {
     /// Source start address
     pub src_addr: u64,
     /// Destination address
     pub dst_addr: u64,
-/// Auxiliary data of Copy To Log
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Auxiliary data of Copy To Log
     pub src_addr_end: u64,
     /// Hash of the bytecode to be copied
     pub code_source: U256,
 }
 
-
 /// Auxiliary data of Copy To Log
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct CopyToLogAuxData {
     /// Source start address
     pub src_addr: u64,
@@ -186,7 +188,6 @@ pub struct CopyToLogAuxData {
     /// tx id of this step
     pub tx_id: usize,
 }
-
 
 /// Auxiliary data of Execution step
 #[derive(Clone, Copy, Debug)]
