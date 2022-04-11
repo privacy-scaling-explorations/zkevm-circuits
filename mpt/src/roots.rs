@@ -27,6 +27,7 @@ impl<F: FieldExt> RootsChip<F> {
         inter_start_root: Column<Advice>,
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,
+        counter: Column<Advice>,
     ) -> RootsConfig {
         let config = RootsConfig {};
 
@@ -102,8 +103,8 @@ impl<F: FieldExt> RootsChip<F> {
             ));
 
             // If not_first_level is 0 in a previous row (being in branch init),
-            // it needs to be 1 in current row (preventing two consecutive blocks to
-            // be not_first_level).
+            // then not_first_level needs to be 1 in the current row (preventing two consecutive
+            // blocks to be not_first_level = 0).
             constraints.push((
                 "not_first_level 0 -> 1 in branch init",
                 q_not_first.clone()
@@ -154,11 +155,45 @@ impl<F: FieldExt> RootsChip<F> {
             constraints.push((
                 "account address does not change inside first level except in the first row",
                 q_not_first.clone()
-                    * (one.clone() - not_first_level_cur)
+                    * (one.clone() - not_first_level_cur.clone())
                     * (one.clone() - is_branch_init.clone())
                     * (one.clone() - is_account_leaf_key_s.clone())
                     * (address_rlc_cur - address_rlc_prev)
             ));
+
+            // counter does not change except when a new modification proof starts
+            let counter_prev = meta.query_advice(counter, Rotation::prev());
+            let counter_cur = meta.query_advice(counter, Rotation::cur());
+            constraints.push((
+                "counter does not change outside first level",
+                q_not_first.clone()
+                    * not_first_level_cur.clone()
+                    * (counter_cur.clone() - counter_prev.clone())
+            ));
+            constraints.push((
+                "counter does not change inside first level except in the first row",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level_cur.clone())
+                    * (one.clone() - is_branch_init.clone())
+                    * (one.clone() - is_account_leaf_key_s.clone())
+                    * (counter_cur.clone() - counter_prev.clone())
+            ));
+
+            constraints.push((
+                "counter increases by 1 in first row in first level (branch)",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level_cur.clone())
+                    * is_branch_init.clone()
+                    * (counter_cur.clone() - counter_prev.clone() - one.clone())
+            ));
+            constraints.push((
+                "counter increases by 1 in first row in first level (account leaf)",
+                q_not_first.clone()
+                    * (one.clone() - not_first_level_cur.clone())
+                    * is_account_leaf_key_s.clone()
+                    * (counter_cur.clone() - counter_prev.clone() - one)
+            ));
+
 
             // TODO: check public roots to match with first and last inter roots
 

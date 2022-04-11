@@ -403,6 +403,7 @@ impl<F: FieldExt> MPTConfig<F> {
             inter_start_root,
             inter_final_root,
             address_rlc,
+            counter,
         );
 
         BranchChip::<F>::configure(
