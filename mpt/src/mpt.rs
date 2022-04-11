@@ -188,6 +188,7 @@ struct ProofVariables<F> {
     is_long: bool,
     rlc1: F,
     rlc2: F,
+    before_account_leaf: bool,
 }
 
 impl<F: FieldExt> ProofVariables<F> {
@@ -226,6 +227,7 @@ impl<F: FieldExt> ProofVariables<F> {
             is_long: false,
             rlc1: F::zero(),
             rlc2: F::zero(),
+            before_account_leaf: true,
         }
     }
 }
@@ -1498,6 +1500,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv = ProofVariables::new();
                             }
                         }
+                        if row[row.len() - 1] == 6 {
+                            // account leaf key
+                            pv.before_account_leaf = false;
+                        }
 
                         region.assign_advice(
                             || "not first level",
@@ -1532,18 +1538,32 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Ok(c_root_rlc),
                         )?;
 
-                        let address_rlc = hash_into_rlc(
-                            &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
-                                ..l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
-                                    + HASH_WIDTH],
-                            self.acc_r,
-                        );
-                        region.assign_advice(
-                            || "address RLC",
-                            self.address_rlc,
-                            offset,
-                            || Ok(address_rlc),
-                        )?;
+                        if pv.before_account_leaf {
+                            region.assign_advice(
+                                || "address RLC",
+                                self.address_rlc,
+                                offset,
+                                || Ok(F::zero()),
+                            )?;
+                        } else {
+                            // address_rlc can be set only in account leaf row - this is to
+                            // prevent omitting account proof (and having only storage proof
+                            // with the appropriate address_rlc)
+                            let address_rlc = hash_into_rlc(
+                                &row[l - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS
+                                    ..l - 2 * HASH_WIDTH
+                                        - COUNTER_WITNESS_LEN
+                                        - IS_CODEHASH_MOD_POS
+                                        + HASH_WIDTH],
+                                self.acc_r,
+                            );
+                            region.assign_advice(
+                                || "address RLC",
+                                self.address_rlc,
+                                offset,
+                                || Ok(address_rlc),
+                            )?;
+                        }
 
                         let counter_u32: u32 = u32::from_be_bytes(
                             row[l - HASH_WIDTH - COUNTER_WITNESS_LEN - IS_CODEHASH_MOD_POS

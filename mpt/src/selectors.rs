@@ -335,6 +335,9 @@ impl<F: FieldExt> SelectorsChip<F> {
                 // rows more than once - however, doing this would lead into failure
                 // of the constraints responsible for address (or storage if storage
                 // rows are added) RLC.
+                // Also, these constraints do not guarantee there is an account proof before
+                // storage proof - constraints for this are implemented using address_rlc column
+                // to be changed to the proper value only in the account leaf key row.
 
                 let is_storage_mod_prev = meta.query_advice(is_storage_mod, Rotation::prev());
                 let is_storage_mod_cur = meta.query_advice(is_storage_mod, Rotation::cur());

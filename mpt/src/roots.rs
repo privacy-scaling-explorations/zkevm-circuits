@@ -145,20 +145,24 @@ impl<F: FieldExt> RootsChip<F> {
                     * (one.clone() - not_first_level_cur.clone())
                     * (one.clone() - is_leaf_in_added_branch_prev),
             ));
-
+ 
+            // These two address_rlc constraints are to ensure there is account proof before the
+            // storage proof.
             constraints.push((
-                "account address does not change outside first level",
-                q_not_first.clone()
-                    * not_first_level_cur.clone()
-                    * (address_rlc_cur.clone() - address_rlc_prev.clone())
-            ));
-            constraints.push((
-                "account address does not change inside first level except in the first row",
+                // First row of first level can be (besides branch_init) also is_account_leaf_key_s,
+                // but in this case the constraint in account_leaf_key.rs is triggered.
+                "address_rlc is 0 in first row of first level",
                 q_not_first.clone()
                     * (one.clone() - not_first_level_cur.clone())
-                    * (one.clone() - is_branch_init.clone())
+                    * is_branch_init.clone()
+                    * address_rlc_cur.clone()
+            ));
+            constraints.push((
+                "address_rlc does not change except at is_account_leaf_key_s or branch init in first level",
+                q_not_first.clone()
                     * (one.clone() - is_account_leaf_key_s.clone())
-                    * (address_rlc_cur - address_rlc_prev)
+                    * (is_branch_init.clone() - not_first_level_cur.clone() - one.clone()) // address_rlc goes back to 0 in branch init in first level
+                    * (address_rlc_cur.clone() - address_rlc_prev.clone())
             ));
 
             // counter does not change except when a new modification proof starts
