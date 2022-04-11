@@ -208,9 +208,9 @@ mod test {
     fn blockcxt_u64_gadget_test() {
         let bytecode = bytecode! {
             TIMESTAMP
-            STOP
+            POP
             NUMBER
-            STOP
+            POP
             GASLIMIT
             STOP
         };
@@ -229,7 +229,7 @@ mod test {
     fn blockcxt_u256_gadget_test() {
         let bytecode = bytecode! {
             DIFFICULTY
-            STOP
+            POP
             BASEFEE
             STOP
         };
