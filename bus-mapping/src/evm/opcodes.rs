@@ -300,8 +300,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
-                value: true,
-                value_prev: false,
+                is_warm: true,
+                is_warm_prev: false,
             },
         );
     }
