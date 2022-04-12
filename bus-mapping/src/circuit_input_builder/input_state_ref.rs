@@ -19,7 +19,6 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use itertools::Itertools;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -304,21 +303,8 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn push_call(&mut self, call: Call, step: &GethExecStep) {
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                let call_data = if step.memory.0.len() < call.call_data_offset as usize {
-                    &[]
-                } else {
-                    &step.memory.0[call.call_data_offset as usize..]
-                };
-                if call_data.len() < call.call_data_length as usize {
-                    // Expand call_data to expected size
-                    call_data
-                        .iter()
-                        .cloned()
-                        .pad_using(call.call_data_length as usize, |_| 0)
-                        .collect()
-                } else {
-                    call_data[..call.call_data_length as usize].to_vec()
-                }
+                step.memory
+                    .read_chunk(call.call_data_offset.into(), call.call_data_length.into())
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
@@ -587,7 +573,24 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Handle a return step caused by any opcode that causes a return to the
     /// previous call context.
-    pub fn handle_return(&mut self) -> Result<(), Error> {
+    pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
+        let call = self.call()?.clone();
+
+        // Store deployed code if it's a successful create
+        if call.is_create() && call.is_success {
+            let offset = step.stack.nth_last(0)?;
+            let length = step.stack.nth_last(1)?;
+            let code = step
+                .memory
+                .read_chunk(offset.low_u64().into(), length.low_u64().into());
+            let code_hash = self.code_db.insert(code);
+            let (found, callee_account) = self.sdb.get_account_mut(&call.address);
+            if !found {
+                return Err(Error::AccountNotFound(call.address));
+            }
+            callee_account.code_hash = code_hash;
+        }
+
         // Handle reversion if this call doens't end successfully
         if !self.call()?.is_success {
             self.handle_reversion();

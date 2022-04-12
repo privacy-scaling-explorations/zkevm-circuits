@@ -189,7 +189,8 @@ impl StateDB {
 
     /// Remove `addr` from account access list.
     pub fn remove_account_from_access_list(&mut self, addr: &Address) {
-        debug_assert!(self.access_list_account.remove(addr));
+        let exist = self.access_list_account.remove(addr);
+        debug_assert!(exist);
     }
 
     /// Add `(addr, key)` into account storage access list. Returns `true` if
@@ -200,12 +201,8 @@ impl StateDB {
 
     /// Remove `(addr, key)` from account storage access list.
     pub fn remove_account_storage_from_access_list(&mut self, pair: &(Address, Word)) {
-        debug_assert!(self.access_list_account_storage.remove(pair));
-    }
-
-    /// Check whether `(addr, key)` exists in account storage access list.
-    pub fn check_account_storage_in_access_list(&self, pair: &(Address, Word)) -> bool {
-        self.access_list_account_storage.contains(pair)
+        let exist = self.access_list_account_storage.remove(pair);
+        debug_assert!(exist);
     }
 
     /// Retrieve refund.

@@ -208,6 +208,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             dummy_gen_call_ops
         }
+        OpcodeId::CREATE | OpcodeId::CREATE2 => {
+            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            dummy_gen_create_ops
+        }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             dummy_gen_associated_ops
@@ -261,7 +265,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             address: caller_address,
             field: AccountField::Nonce,
             value: (nonce_prev + 1).into(),
-            value_prev: (nonce_prev).into(),
+            value_prev: nonce_prev.into(),
         },
     );
 
@@ -547,15 +551,27 @@ fn dummy_gen_call_ops(
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];
-    let exec_step = state.new_step(geth_step)?;
+    let mut exec_step = state.new_step(geth_step)?;
 
-    let call = state.call()?.clone();
-    let callee = state.parse_call(geth_step)?;
+    let tx_id = state.tx_ctx.id();
+    let call = state.parse_call(geth_step)?;
 
-    let (_, account) = state.sdb.get_account(&callee.address);
+    let (_, account) = state.sdb.get_account(&call.address);
     let callee_code_hash = account.code_hash;
 
-    state.push_call(callee.clone(), geth_step);
+    let is_warm_prev = !state.sdb.add_account_to_access_list(call.address);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        TxAccessListAccountOp {
+            tx_id,
+            address: call.address,
+            is_warm: true,
+            is_warm_prev,
+        },
+    )?;
+
+    state.push_call(call.clone(), geth_step);
 
     match (
         state.is_precompiled(&call.address),
@@ -565,10 +581,108 @@ fn dummy_gen_call_ops(
         (true, _) => Ok(vec![exec_step]),
         // 2. Call to account with empty code.
         (_, true) => {
-            state.handle_return()?;
+            state.handle_return(geth_step)?;
             Ok(vec![exec_step])
         }
         // 3. Call to account with non-empty code.
         (_, false) => Ok(vec![exec_step]),
+    }
+}
+
+fn dummy_gen_create_ops(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    let geth_step = &geth_steps[0];
+    let mut exec_step = state.new_step(geth_step)?;
+
+    let tx_id = state.tx_ctx.id();
+    let call = state.parse_call(geth_step)?;
+
+    // Increase caller's nonce
+    let nonce_prev = state.sdb.increase_nonce(&call.caller_address);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        AccountOp {
+            address: call.caller_address,
+            field: AccountField::Nonce,
+            value: (nonce_prev + 1).into(),
+            value_prev: nonce_prev.into(),
+        },
+    )?;
+
+    // Add callee into access list
+    let is_warm_prev = !state.sdb.add_account_to_access_list(call.address);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        TxAccessListAccountOp {
+            tx_id,
+            address: call.address,
+            is_warm: true,
+            is_warm_prev,
+        },
+    )?;
+
+    state.push_call(call.clone(), geth_step);
+
+    // Increase callee's nonce
+    let nonce_prev = state.sdb.increase_nonce(&call.address);
+    debug_assert!(nonce_prev == 0);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        AccountOp {
+            address: call.address,
+            field: AccountField::Nonce,
+            value: 1.into(),
+            value_prev: 0.into(),
+        },
+    )?;
+
+    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+    if !found {
+        return Err(Error::AccountNotFound(call.caller_address));
+    }
+    let caller_balance_prev = caller_account.balance;
+    let caller_balance = caller_account.balance - call.value;
+    caller_account.balance = caller_balance;
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        AccountOp {
+            address: call.caller_address,
+            field: AccountField::Balance,
+            value: caller_balance,
+            value_prev: caller_balance_prev,
+        },
+    )?;
+
+    let (found, callee_account) = state.sdb.get_account_mut(&call.address);
+    if !found {
+        return Err(Error::AccountNotFound(call.address));
+    }
+    let callee_balance_prev = callee_account.balance;
+    let callee_balance = callee_account.balance + call.value;
+    callee_account.balance = callee_balance;
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        AccountOp {
+            address: call.address,
+            field: AccountField::Balance,
+            value: callee_balance,
+            value_prev: callee_balance_prev,
+        },
+    )?;
+
+    if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
+        // 1. Create with empty initcode.
+        state.handle_return(geth_step)?;
+        Ok(vec![exec_step])
+    } else {
+        // 2. Create with non-empty initcode.
+        Ok(vec![exec_step])
     }
 }

@@ -62,9 +62,9 @@ impl Opcode for Sload {
         // Storage read
         let value = geth_step.storage.get_or_err(&key)?;
 
-        let is_warm = state
+        let is_warm_prev = !state
             .sdb
-            .check_account_storage_in_access_list(&(contract_addr, key));
+            .add_account_storage_to_access_list((contract_addr, key));
 
         let (_, committed_value) = state.sdb.get_committed_storage(&contract_addr, &key);
         let committed_value = *committed_value;
@@ -91,7 +91,7 @@ impl Opcode for Sload {
                 address: contract_addr,
                 key,
                 is_warm: true,
-                is_warm_prev: is_warm,
+                is_warm_prev,
             },
         )?;
 
