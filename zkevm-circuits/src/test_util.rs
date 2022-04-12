@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use crate::{
     evm_circuit::{table::FixedTableTag, witness::Block},
     state_circuit::StateCircuit,

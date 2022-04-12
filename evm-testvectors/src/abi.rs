@@ -23,8 +23,14 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         _ => unimplemented!(),
     };
 
-    let encode_type = |t, v| match t {
-        &ParamType::Uint(256) => U256::from_str_radix(v, 10).map(Token::Uint),
+    let encode_type = |t, v: &str| match t {
+        &ParamType::Uint(256) => {
+            if v.starts_with("0x") {
+                U256::from_str_radix(&v[2..], 16).map(Token::Uint)
+            } else {
+                U256::from_str_radix(v, 10).map(Token::Uint)
+            }
+        }
         _ => unimplemented!(),
     };
 
@@ -68,6 +74,10 @@ mod test {
         // https://github.com/ethereum/tests/blob/0e8d25bb613cab7f9e99430f970e1e6cbffdbf1a/GeneralStateTests/VMTests/vmArithmeticTest/add.json#L244
         assert_eq!(
             hex::encode(encode_funccall("f(uint) 4")?),
+            "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
+        );
+        assert_eq!(
+            hex::encode(encode_funccall("f(uint) 0x04")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
         );
         Ok(())

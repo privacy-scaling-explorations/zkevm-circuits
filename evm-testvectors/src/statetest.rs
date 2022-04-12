@@ -1,5 +1,12 @@
 use anyhow::Context;
-use eth_types::{geth_types, geth_types::Account, Address, Bytes, H256, U256, U64};
+use bus_mapping::circuit_input_builder::CircuitInputBuilder;
+use bus_mapping::mock::BlockData;
+use eth_types::{
+    evm_types::{Gas, OpcodeId},
+    geth_types,
+    geth_types::Account,
+    Address, Bytes, GethExecTrace, H256, U256, U64,
+};
 use external_tracer::TraceConfig;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -20,6 +27,23 @@ pub enum StateTestError {
         expected: U256,
         found: U256,
     },
+    #[error("test skipped due {0} > max gas")]
+    TestMaxGasLimit(u64),
+    #[error("test skipped unimplemented opcode {0}")]
+    UnimplementedOpcode(String),
+}
+
+pub struct StateTestConfig {
+    pub max_gas: Gas,
+    pub unimplemented_opcodes: Vec<OpcodeId>,
+}
+impl Default for StateTestConfig {
+    fn default() -> Self {
+        Self {
+            max_gas: Gas(1000000),
+            unimplemented_opcodes: Vec::new(),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -33,7 +57,7 @@ pub struct Env {
 }
 
 #[derive(PartialEq, Eq, Default, Debug, Clone)]
-pub struct PartialAccount {
+pub struct AccountMatch {
     pub address: Address,
     pub balance: Option<U256>,
     pub code: Option<Bytes>,
@@ -41,7 +65,7 @@ pub struct PartialAccount {
     pub storage: HashMap<U256, U256>,
 }
 
-impl TryInto<Account> for PartialAccount {
+impl TryInto<Account> for AccountMatch {
     type Error = anyhow::Error;
     fn try_into(self) -> Result<Account, Self::Error> {
         Ok(Account {
@@ -54,9 +78,9 @@ impl TryInto<Account> for PartialAccount {
     }
 }
 
-type StateTestResult = HashMap<Address, PartialAccount>;
+type StateTestResult = HashMap<Address, AccountMatch>;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Clone, Eq, Debug)]
 pub struct StateTest {
     pub id: String,
     pub env: Env,
@@ -104,12 +128,10 @@ impl StateTest {
             self.result,
         )
     }
-    pub fn run(self, test_circuit: bool) -> Result<(), StateTestError> {
-        // get the geth traces
-        let (_, trace_config, post) = self.into_traceconfig();
-        let builder = crate::exec::traceconfig(trace_config)
-            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
-
+    pub fn check_post(
+        builder: &CircuitInputBuilder,
+        post: &HashMap<Address, AccountMatch>,
+    ) -> Result<(), StateTestError> {
         // check if the generated account data is the expected one
         for (address, expected) in post {
             let (_, actual) = builder.sdb.get_account(&address);
@@ -128,7 +150,7 @@ impl StateTest {
                 });
             }
 
-            if let Some(expected_code) = expected.code {
+            if let Some(expected_code) = &expected.code {
                 let actual_code = if actual.code_hash.is_zero() {
                     std::borrow::Cow::Owned(Vec::new())
                 } else {
@@ -136,22 +158,117 @@ impl StateTest {
                 };
                 if &actual_code as &[u8] != expected_code.0 {
                     return Err(StateTestError::CodeMismatch {
-                        expected: expected_code,
+                        expected: expected_code.clone(),
                         found: Bytes::from(actual_code.to_vec()),
                     });
                 }
             }
-            for (slot, expected_value) in expected.storage {
+            for (slot, expected_value) in &expected.storage {
                 let actual_value = actual.storage.get(&slot).cloned().unwrap_or(U256::zero());
-                if expected_value != actual_value {
+                if expected_value != &actual_value {
                     return Err(StateTestError::StorageMismatch {
-                        slot,
-                        expected: expected_value,
+                        slot: slot.clone(),
+                        expected: expected_value.clone(),
                         found: actual_value,
                     });
                 }
             }
         }
         Ok(())
+    }
+
+    pub fn test_circuit(self, builder: &CircuitInputBuilder) {
+        // build a witness block from trace result
+        let block =
+            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
+
+        // finish requiered tests according to config using this witness block
+        zkevm_circuits::evm_circuit::test::run_test_circuit_incomplete_fixed_table(block)
+            .expect("circuit should pass");
+    }
+
+    pub fn run(self, config: &StateTestConfig) -> Result<(), StateTestError> {
+        // get the geth traces
+        let (_, trace_config, post) = self.clone().into_traceconfig();
+
+        let geth_traces = external_tracer::trace(&trace_config)
+            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+
+        // we are not checking here geth_traces[0].failed, since
+        // there are some tests that makes the tx failing
+        // (eg memory filler tests)
+        
+        if geth_traces[0].gas > config.max_gas {
+            return Err(StateTestError::TestMaxGasLimit(geth_traces[0].gas.0));
+        }
+
+        if let Some(step) = geth_traces[0]
+            .struct_logs
+            .iter()
+            .find(|step| config.unimplemented_opcodes.contains(&step.op))
+        {
+            return Err(StateTestError::UnimplementedOpcode(format!(
+                "{:?}",
+                step.op
+            )));
+        }
+
+        let builder = Self::create_input_builder(trace_config, geth_traces)?;
+
+        Self::check_post(&builder, &post)?;
+        Self::test_circuit(self, &builder);
+
+        Ok(())
+    }
+
+    fn create_input_builder(
+        trace_config: TraceConfig,
+        geth_traces: Vec<GethExecTrace>,
+    ) -> Result<CircuitInputBuilder, StateTestError> {
+        let transactions = trace_config
+            .transactions
+            .into_iter()
+            .enumerate()
+            .map(|(index, tx)| eth_types::Transaction {
+                from: tx.from,
+                to: tx.to,
+                value: tx.value,
+                input: tx.call_data,
+                gas_price: Some(tx.gas_price),
+                access_list: tx.access_list,
+                nonce: tx.nonce,
+                gas: tx.gas_limit,
+                transaction_index: Some(U64::from(index)),
+                ..eth_types::Transaction::default()
+            })
+            .collect();
+
+        let eth_block = eth_types::Block {
+            author: trace_config.block_constants.coinbase,
+            timestamp: trace_config.block_constants.timestamp,
+            number: Some(U64::from(trace_config.block_constants.timestamp.as_u64())),
+            difficulty: trace_config.block_constants.difficulty,
+            gas_limit: trace_config.block_constants.gas_limit,
+            base_fee_per_gas: Some(trace_config.block_constants.base_fee),
+            transactions,
+            ..eth_types::Block::default()
+        };
+
+        // process the transaction
+        let geth_data = eth_types::geth_types::GethData {
+            chain_id: trace_config.chain_id,
+            history_hashes: trace_config.history_hashes.clone(),
+            geth_traces: geth_traces.clone(),
+            accounts: trace_config.accounts.values().cloned().collect(),
+            eth_block: eth_block.clone(),
+        };
+
+        let block_data = BlockData::new_from_geth_data(geth_data);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&eth_block, &geth_traces)
+            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+
+        Ok(builder)
     }
 }

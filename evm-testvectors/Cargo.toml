@@ -8,6 +8,7 @@ edition = "2021"
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path="../eth-types" }
 external-tracer = { path="../external-tracer" }
+zkevm-circuits = { path="../zkevm-circuits" }
 keccak256 = { path = "../keccak256" }
 ethers-core = "0.6"
 serde = { version = "1.0", features = ["derive"] }
@@ -21,6 +22,9 @@ k256 = "0.9"
 log = "0.4"
 thiserror = "1.0"
 env_logger = "0.9"
+pairing_bn256 = { git = "https://github.com/appliedzkp/pairing" }
+mock = { path = "../mock" }
+
 
 [features]
 docker-lllc = []

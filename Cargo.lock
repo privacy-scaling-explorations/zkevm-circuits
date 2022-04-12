@@ -1421,16 +1421,20 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "external-tracer",
+ "glob",
  "hex",
  "k256",
  "keccak256",
  "log",
+ "mock",
  "once_cell",
+ "pairing_bn256",
  "regex",
  "serde",
  "serde_json",
  "thiserror",
  "yaml-rust",
+ "zkevm-circuits",
 ]
 
 [[package]]

@@ -69,11 +69,10 @@ impl Lllc {
 
             let bytecode = if output.status.success() {
                 let raw_output = String::from_utf8(output.stdout)?;
-                log::trace!(target:"evmvectests", "lllc out={}",raw_output);
                 Bytes::from(hex::decode(raw_output.trim())?)
             } else {
                 let err = String::from_utf8(output.stderr)?;
-                bail!("lllc command failed {:?}", err)
+                bail!("lllc command failed {:?} when compiling {:?}", err, src)
             };
             log::info!(target: "lllc","{}=> {}",src,hex::encode(&bytecode));
 
