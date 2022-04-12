@@ -531,6 +531,7 @@ mod test {
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
             CALL
+            STOP
         };
 
         let ctx = TestContext::<3, 1>::new(

@@ -236,6 +236,7 @@ mod calldatacopy_tests {
             PUSH32(ADDR_B.to_word()) // addr
             PUSH32(0x1_0000) // gas
             CALL
+            STOP
         };
 
         // Get the execution steps from the external tracer
