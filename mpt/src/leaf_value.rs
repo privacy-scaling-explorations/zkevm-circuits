@@ -38,7 +38,9 @@ impl<F: FieldExt> LeafValueChip<F> {
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>,
-        sel: Column<Advice>,
+        sel1: Column<Advice>,
+        sel2: Column<Advice>,
+        key_rlc: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         is_s: bool,
@@ -47,8 +49,6 @@ impl<F: FieldExt> LeafValueChip<F> {
     ) -> LeafValueConfig {
         let config = LeafValueConfig {};
         let one = Expression::Constant(F::one());
-
-        // TODO: check values are 0 after RLP stream ends (to prevent attacks on RLC)
 
         // TODO: use r_table
 
@@ -127,14 +127,64 @@ impl<F: FieldExt> LeafValueChip<F> {
                 + (leaf_rlc_prev + s_rlp1_cur.clone() * leaf_mult_prev) * is_short.clone();
 
             let acc_s = meta.query_advice(acc_s, Rotation::cur());
-            let acc_c = meta.query_advice(acc_c, Rotation::cur());
+            let acc_c_cur = meta.query_advice(acc_c, Rotation::cur());
 
             constraints.push(("Leaf RLC", q_enable.clone() * (acc_s - leaf_rlc)));
             constraints.push((
                 "Leaf value RLC",
-                q_enable.clone() * (acc_c - leaf_value_rlc),
+                q_enable.clone() * (acc_c_cur - leaf_value_rlc),
             ));
 
+            // Constraints to enable lookup:
+            // key RLC is in sel1, leaf value S RLC is in sel2 (for lookup it's needed also
+            // leaf value C RLC, whic is in acc_c)
+            if !is_s {
+                let key_c_rlc_from_prev = meta.query_advice(key_rlc, Rotation(-1));
+                let key_c_rlc_from_cur = meta.query_advice(sel1, Rotation::cur());
+                let leaf_value_s_rlc_from_prev = meta.query_advice(acc_c, Rotation(-2));
+                let leaf_value_s_rlc_from_cur = meta.query_advice(sel2, Rotation::cur());
+                constraints.push((
+                    "key C RLC",
+                    q_enable.clone() * (key_c_rlc_from_prev - key_c_rlc_from_cur),
+                ));
+                constraints.push((
+                    "leaf value S RLC",
+                    q_enable.clone() * (leaf_value_s_rlc_from_prev - leaf_value_s_rlc_from_cur),
+                ));
+            }
+
+            // If sel = 1, value = 0:
+            // This is to prevent attacks where sel would be set to 1 to avoid
+            // hash in parent constraints.
+            let mut sel = meta.query_advice(sel1, Rotation(rot));
+            if !is_s {
+                sel = meta.query_advice(sel2, Rotation(rot));
+            }
+            /*
+            // TODO: what when leaf without branch, sel into rotated row doesn't give us the
+            // info we need
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+            */
+            constraints.push((
+                "Placeholder leaf (no value set) needs to have value = 0 (s_rlp1)",
+                q_enable.clone() * sel.clone() * s_rlp1_cur.clone(),
+            ));
+            constraints.push((
+                "Placeholder leaf (no value set) needs to have value = 0 (s_rlp2)",
+                q_enable.clone() * sel.clone() * s_rlp2_cur.clone(),
+            ));
+            for col in s_advices.iter() {
+                let s = meta.query_advice(*col, Rotation::cur());
+                constraints.push((
+                    "Placeholder leaf (no value set) needs to have value = 0",
+                    q_enable.clone() * sel.clone() * s.clone(),
+                ));
+            }
+
+            // RLP constraints:
             let s_advices0_prev = meta.query_advice(s_advices[0], Rotation::prev());
             let short_remainder = s_rlp1_prev.clone() - c192.clone() - s_rlp2_prev.clone()
                 + c128.clone()
@@ -151,7 +201,6 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let long_value_check = s_rlp1_cur - c128.clone() - s_rlp2_cur + c128 - one.clone();
 
-            // RLP constraints:
             constraints.push((
                 "RLP leaf short value short",
                 q_enable.clone() * short_short_check * is_leaf_short.clone() * is_short.clone(),
@@ -181,7 +230,10 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let rlc = meta.query_advice(acc_s, Rotation::cur());
 
-            let sel = meta.query_advice(sel, Rotation(rot));
+            let mut sel = meta.query_advice(sel1, Rotation(rot));
+            if !is_s {
+                sel = meta.query_advice(sel2, Rotation(rot));
+            }
 
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
@@ -245,7 +297,10 @@ impl<F: FieldExt> LeafValueChip<F> {
                 mult = mult * acc_r;
             }
 
-            let sel = meta.query_advice(sel, Rotation(rot));
+            let mut sel = meta.query_advice(sel1, Rotation(rot));
+            if !is_s {
+                sel = meta.query_advice(sel2, Rotation(rot));
+            }
 
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));

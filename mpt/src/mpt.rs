@@ -783,6 +783,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             acc_c,
             sel1,
+            sel2,
+            key_rlc,
             is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             true,
@@ -805,7 +807,9 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_c,
+            sel1,
             sel2,
+            key_rlc,
             is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             false,
@@ -2294,6 +2298,10 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || Ok(key_rlc_new),
                                 )?;
 
+                                // Store key_rlc into rlc2 to be later set in
+                                // leaf value C row (to enable lookups):
+                                pv.rlc2 = key_rlc_new;
+
                                 // Assign previous key RLC -
                                 // needed in case of placeholder branch/extension.
                                 // Constraint for this is in leaf_key.
@@ -2353,6 +2361,25 @@ impl<F: FieldExt> MPTConfig<F> {
                                     start,
                                     HASH_WIDTH + 2,
                                 );
+
+                                if row[row.len() - 1] == 13 {
+                                    // Store leaf value RLC into rlc1 to be later set in
+                                    // leaf value C row (to enable lookups):
+                                    pv.rlc1 = pv.acc_c;
+                                } else if row[row.len() - 1] == 14 {
+                                    region.assign_advice(
+                                        || "assign key_rlc into sel1".to_string(),
+                                        self.sel1,
+                                        offset,
+                                        || Ok(pv.rlc2),
+                                    )?;
+                                    region.assign_advice(
+                                        || "assign leaf value S into sel1".to_string(),
+                                        self.sel2,
+                                        offset,
+                                        || Ok(pv.rlc1),
+                                    )?;
+                                }
 
                                 self.assign_acc(
                                     &mut region,
