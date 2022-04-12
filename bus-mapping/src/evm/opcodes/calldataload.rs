@@ -79,21 +79,18 @@ impl Opcode for Calldataload {
             );
         }
 
-        let (offset, src_addr, src_addr_end, caller_id, call_data) = {
-            let call = state.call()?;
-            (
-                offset.as_usize(),
-                call.call_data_offset as usize + offset.as_usize(),
-                call.call_data_offset as usize + call.call_data_length as usize,
-                call.caller_id,
-                state.call_ctx()?.call_data.to_vec(),
-            )
-        };
+        let call = state.call()?.clone();
+        let (src_addr, src_addr_end, caller_id, call_data) = (
+            call.call_data_offset as usize + offset.as_usize(),
+            call.call_data_offset as usize + call.call_data_length as usize,
+            call.caller_id,
+            state.call_ctx()?.call_data.to_vec(),
+        );
         let calldata_word = (0..32)
             .map(|idx| {
-                let addr = offset + idx;
+                let addr = src_addr + idx;
                 if addr < src_addr_end {
-                    let byte = call_data[addr];
+                    let byte = call_data[addr - call.call_data_offset as usize];
                     if !is_root {
                         state.push_op(
                             &mut exec_step,
