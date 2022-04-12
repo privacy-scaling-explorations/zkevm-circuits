@@ -528,7 +528,7 @@ impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
 }
 
 impl Rw {
-    pub fn get_rw_counter(&self) -> usize {
+    pub fn rw_counter(&self) -> usize {
         match self {
             Self::TxAccessListAccount { rw_counter, .. } => (*rw_counter),
             Self::TxAccessListAccountStorage { rw_counter, .. } => (*rw_counter),

@@ -230,16 +230,12 @@ pub mod test {
                         .flat_map(|rws| rws.iter())
                         .collect::<Vec<_>>();
 
-                    rows.sort_by_key(|a| a.get_rw_counter());
-                    let mut pre_rw_counter = 0;
+                    rows.sort_by_key(|a| a.rw_counter());
+                    let mut expected_rw_counter = 1;
                     for rw in rows {
-                        if pre_rw_counter == 0 {
-                            assert!(rw.get_rw_counter() == 1);
-                        } else {
-                            assert!(rw.get_rw_counter() == pre_rw_counter + 1);
-                        }
+                        assert!(rw.rw_counter() == expected_rw_counter);
+                        expected_rw_counter += 1;
 
-                        pre_rw_counter = rw.get_rw_counter();
                         self.rw_table.assign(
                             &mut region,
                             offset,
