@@ -185,49 +185,72 @@ mod calldatacopy_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, StackOp, RW},
+        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
     };
     use eth_types::{
-        bytecode,
+        address, bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        Word,
+        Address, ToWord, Word,
     };
 
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
-    // Test must be enabled and should pass once `CREATE` is handled.
     #[test]
-    #[ignore]
     fn calldatacopy_opcode_internal() {
-        let creator_code: Vec<u8> = hex::decode("666020600060003760005260076019F3").unwrap();
-        let code = bytecode! {
-            // 1. Store the following bytes to memory
-            PUSH16(Word::from_big_endian(&creator_code))
+        let ADDR_A = address!("0x000000000000000000000000000000000cafe00a");
+        let ADDR_B = address!("0x000000000000000000000000000000000cafe00b");
+
+        // code B gets called by code A, so the call is an internal call.
+        let dst_offset = 0x00usize;
+        let offset = 0x00usize;
+        let copy_size = 0x10usize;
+        let code_b = bytecode! {
+            PUSH32(copy_size)  // size
+            PUSH32(offset)     // offset
+            PUSH32(dst_offset) // dst_offset
+            CALLDATACOPY
+            STOP
+        };
+
+        // code A calls code B.
+        let pushdata = hex::decode("1234567890abcdef").unwrap();
+        let memory_a = std::iter::repeat(0)
+            .take(24)
+            .chain(pushdata.clone())
+            .collect::<Vec<u8>>();
+        let call_data_length = 0x20usize;
+        let call_data_offset = 0x10usize;
+        let code_a = bytecode! {
+            // populate memory in A's context.
+            PUSH8(Word::from_big_endian(&pushdata))
             PUSH1(0x00) // offset
             MSTORE
-            // 2. Create a contract with code: 6020 6000 6000 37
-            PUSH1(0x10) // size
-            PUSH1(0x10) // offset
+            // call ADDR_B.
+            PUSH1(0x00) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH1(call_data_length) // argsLength
+            PUSH1(call_data_offset) // argsOffset
             PUSH1(0x00) // value
-            CREATE
-            // 3. Call created contract, i.e. CALLDATACOPY (37) is in internal call
-            PUSH1(0x00)   // retSize
-            PUSH1(0x00)   // retOffset
-            PUSH1(0x20)   // argsSize
-            PUSH1(0x00)   // argsOffset
-            PUSH1(0x00)   // value
-            DUP6          // address
-            PUSH2(0xFFFF) // gas
+            PUSH32(ADDR_B.to_word()) // addr
+            PUSH32(0x1_0000) // gas
             CALL
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
+            |accs| {
+                accs[0].address(ADDR_B).code(code_b);
+                accs[1].address(ADDR_A).code(code_a);
+                accs[2]
+                    .address(Address::random())
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[1].address).from(accs[2].address);
+            },
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()
@@ -244,7 +267,105 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        println!("{:#?}", step);
+        let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+
+        // 3 stack reads + 3 call context reads.
+        assert_eq!(step.bus_mapping_instance.len(), 6);
+
+        // 3 stack reads.
+        assert_eq!(
+            [0, 1, 2]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &StackOp::new(expected_call_id, StackAddress::from(1021), Word::from(dst_offset))
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(expected_call_id, StackAddress::from(1022), Word::from(offset))
+                ),
+                (
+                    RW::READ,
+                    &StackOp::new(expected_call_id, StackAddress::from(1023), Word::from(copy_size))
+                ),
+            ]
+        );
+
+        // 3 call context reads.
+        assert_eq!(
+            [3, 4, 5]
+                .map(|idx| &builder.block.container.call_context
+                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &CallContextOp {
+                        call_id: expected_call_id,
+                        field: CallContextField::CallerId,
+                        value: Word::from(1),
+                    }
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp {
+                        call_id: expected_call_id,
+                        field: CallContextField::CallDataLength,
+                        value: Word::from(call_data_length),
+                    },
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp {
+                        call_id: expected_call_id,
+                        field: CallContextField::CallDataOffset,
+                        value: Word::from(call_data_offset),
+                    },
+                ),
+            ]
+        );
+
+        // memory writes.
+        // 1. First `call_data_length` memory ops are RW::WRITE and come from the `CALL`
+        // opcode.    (we skip checking those)
+        // 2. Following that, we should have tuples of (RW::READ and RW::WRITE) where
+        // the caller    memory is read and the current call's memory is written
+        // to.
+        assert_eq!(
+            builder.block.container.memory.len(),
+            call_data_length + 2 * copy_size
+        );
+        assert_eq!(
+            (call_data_length..(call_data_length + (2 * copy_size)))
+                .map(|idx| &builder.block.container.memory[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryOp)>>(),
+            {
+                let mut memory_ops = Vec::with_capacity(2 * copy_size);
+                (0..copy_size).for_each(|idx| {
+                    memory_ops.push((
+                        RW::READ,
+                        MemoryOp::new(
+                            caller_id,
+                            (call_data_offset + offset + idx).into(),
+                            memory_a[call_data_offset + idx],
+                        ),
+                    ));
+                    memory_ops.push((
+                        RW::WRITE,
+                        MemoryOp::new(
+                            expected_call_id,
+                            (dst_offset + idx).into(),
+                            memory_a[call_data_offset + idx],
+                        ),
+                    ));
+                });
+                memory_ops
+            },
+        );
     }
 
     #[test]

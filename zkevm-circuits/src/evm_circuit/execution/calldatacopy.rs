@@ -244,9 +244,9 @@ mod test {
     };
     use crate::test_util::run_test_circuits;
     use eth_types::{
-        bytecode,
+        address, bytecode,
         evm_types::{gas_utils::memory_copier_gas_cost, GasCost, OpcodeId},
-        ToBigEndian, Word,
+        Address, ToBigEndian, ToWord, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
     use mock::test_ctx::{helpers::*, TestContext};
@@ -496,37 +496,55 @@ mod test {
         );
     }
 
-    // This test must be enabled and should pass once `CREATE` is handled in
-    // bus-mapping.
     #[test]
-    #[ignore]
     fn calldatacopy_gadget_busmapping_internal() {
-        let creator_code: Vec<u8> = hex::decode("666020600060003760005260076019F3").unwrap();
-        let nested_code = bytecode! {
-            // 1. Store the following bytes to memory
-            PUSH16(Word::from_big_endian(&creator_code))
+        let addr_a = address!("0x000000000000000000000000000000000cafe00a");
+        let addr_b = address!("0x000000000000000000000000000000000cafe00b");
+
+        // code B gets called by code A, so the call is an internal call.
+        let dst_offset = 0x00usize;
+        let offset = 0x00usize;
+        let copy_size = 0x10usize;
+        let code_b = bytecode! {
+            PUSH32(copy_size)  // size
+            PUSH32(offset)     // offset
+            PUSH32(dst_offset) // dst_offset
+            CALLDATACOPY
+            STOP
+        };
+
+        // code A calls code B.
+        let pushdata = hex::decode("1234567890abcdef").unwrap();
+        let call_data_length = 0x20usize;
+        let call_data_offset = 0x10usize;
+        let code_a = bytecode! {
+            // populate memory in A's context.
+            PUSH8(Word::from_big_endian(&pushdata))
             PUSH1(0x00) // offset
             MSTORE
-            // 2. Create a contract with code: 6020 6000 6000 37
-            PUSH1(0x10) // size
-            PUSH1(0x10) // offset
+            // call ADDR_B.
+            PUSH1(0x00) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH1(call_data_length) // argsLength
+            PUSH1(call_data_offset) // argsOffset
             PUSH1(0x00) // value
-            CREATE
-            // 3. Call created contract, i.e. CALLDATACOPY (37) is in internal call
-            PUSH1(0x00)   // retSize
-            PUSH1(0x00)   // retOffset
-            PUSH1(0x20)   // argsSize
-            PUSH1(0x00)   // argsOffset
-            PUSH1(0x00)   // value
-            DUP6          // address
-            PUSH2(0xFFFF) // gas
+            PUSH32(addr_b.to_word()) // addr
+            PUSH32(0x1_0000) // gas
             CALL
         };
 
-        let ctx = TestContext::<2, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
-            account_0_code_account_1_no_code(nested_code),
-            tx_from_1_to_0,
+            |accs| {
+                accs[0].address(addr_b).code(code_b);
+                accs[1].address(addr_a).code(code_a);
+                accs[2]
+                    .address(Address::random())
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[1].address).from(accs[2].address);
+            },
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap();
