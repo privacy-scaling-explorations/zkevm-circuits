@@ -245,7 +245,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use eth_types::{address, bytecode, Address, ToWord, Word};
+    use eth_types::{bytecode, ToWord, Word};
     use mock::TestContext;
 
     use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
@@ -267,8 +267,7 @@ mod test {
     }
 
     fn test_internal_ok(call_data_length: usize, call_data_offset: usize, offset: usize) {
-        let addr_a = address!("0x000000000000000000000000000000000cafe00a");
-        let addr_b = address!("0x000000000000000000000000000000000cafe00b");
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
@@ -301,13 +300,13 @@ mod test {
                 accs[0].address(addr_b).code(code_b);
                 accs[1].address(addr_a).code(code_a);
                 accs[2]
-                    .address(Address::random())
+                    .address(mock::MOCK_ACCOUNTS[2])
                     .balance(Word::from(1u64 << 30));
             },
             |mut txs, accs| {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block,
         )
         .unwrap();
 
