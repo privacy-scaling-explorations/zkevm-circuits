@@ -18,6 +18,7 @@ use log::warn;
 
 mod call;
 mod calldatacopy;
+mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
@@ -39,6 +40,7 @@ mod swap;
 
 use call::Call;
 use calldatacopy::Calldatacopy;
+use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
@@ -118,7 +120,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
-        OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
@@ -298,8 +300,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
-                value: true,
-                value_prev: false,
+                is_warm: true,
+                is_warm_prev: false,
             },
         );
     }
