@@ -199,8 +199,8 @@ mod calldatacopy_tests {
 
     #[test]
     fn calldatacopy_opcode_internal() {
-        let ADDR_A = address!("0x000000000000000000000000000000000cafe00a");
-        let ADDR_B = address!("0x000000000000000000000000000000000cafe00b");
+        let addr_a = address!("0x000000000000000000000000000000000cafe00a");
+        let addr_b = address!("0x000000000000000000000000000000000cafe00b");
 
         // code B gets called by code A, so the call is an internal call.
         let dst_offset = 0x00usize;
@@ -227,13 +227,13 @@ mod calldatacopy_tests {
             PUSH8(Word::from_big_endian(&pushdata))
             PUSH1(0x00) // offset
             MSTORE
-            // call ADDR_B.
+            // call addr_b.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
             PUSH1(call_data_length) // argsLength
             PUSH1(call_data_offset) // argsOffset
             PUSH1(0x00) // value
-            PUSH32(ADDR_B.to_word()) // addr
+            PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
             CALL
             STOP
@@ -243,8 +243,8 @@ mod calldatacopy_tests {
         let block: GethData = TestContext::<3, 1>::new(
             None,
             |accs| {
-                accs[0].address(ADDR_B).code(code_b);
-                accs[1].address(ADDR_A).code(code_a);
+                accs[0].address(addr_b).code(code_b);
+                accs[1].address(addr_a).code(code_a);
                 accs[2]
                     .address(Address::random())
                     .balance(Word::from(1u64 << 30));
