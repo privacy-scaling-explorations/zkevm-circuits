@@ -11,7 +11,6 @@ use crate::{
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::IsZeroGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             sum, Cell, Word,
         },
@@ -30,7 +29,7 @@ pub(crate) struct LogGadget<F> {
     // memory address
     memory_address: MemoryAddressGadget<F>,
     topics: [Cell<F>; 4],
-    is_topic_zeros: [IsZeroGadget<F>; 4],
+    topic_selectors: [Cell<F>; 4],
 
     contract_address: Cell<F>,
     is_static_call: Cell<F>,
@@ -75,38 +74,37 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         // constrain topics in logs
         let topics = array_init(|_| cb.query_cell());
-        let is_topic_zeros: [IsZeroGadget<F>; 4] =
-            array_init(|idx| IsZeroGadget::construct(cb, topics[idx].expr()));
+        let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in topics.iter().enumerate() {
-            cb.condition(1.expr() - is_topic_zeros[idx].expr(), |cb| {
+            cb.condition(topic_selectors[idx].expr(), |cb| {
                 cb.stack_pop(topic.expr());
             });
-            cb.condition(
-                (1.expr() - is_topic_zeros[idx].expr()) * is_persistent.expr(),
-                |cb| {
-                    cb.tx_log_lookup(tx_id.expr(), TxLogFieldTag::Topic, idx.expr(), topic.expr());
-                },
-            );
+            cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
+                cb.tx_log_lookup(tx_id.expr(), TxLogFieldTag::Topic, idx.expr(), topic.expr());
+            });
         }
 
         let opcode = cb.query_cell();
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
-        let selector_exprs = is_topic_zeros.clone().map(|idx| idx.expr());
+        let selector_exprs = topic_selectors.clone().map(|idx| idx.expr());
 
         // TOPIC_COUNT == Non zero topic count
         cb.require_equal(
             " sum of topic selectors = topic_count ",
-            4.expr() - topic_count.clone(),
+            topic_count.clone(),
             sum::expr(selector_exprs),
         );
-        // `is_topic_zeros` order must be from 0 --> 1
-        for idx in 1..4 {
-            let selector_prev = is_topic_zeros[idx - 1].expr();
-            // selector can transit from 0 to 1 only once as [0, ..., 1]
-            cb.require_boolean(
-                "Constrain topic selectors can only transit from 0 to 1",
-                is_topic_zeros[idx].expr() - selector_prev,
-            );
+        // `is_topic_zeros` order must be from 1 --> 0
+        for idx in 0..4 {
+            cb.require_boolean("topic selector is bool ", topic_selectors[idx].expr());
+            if idx > 0 {
+                let selector_prev = topic_selectors[idx - 1].expr();
+                // selector can transit from 1 to 0 only once as [1, 1 ..., 0]
+                cb.require_boolean(
+                    "Constrain topic selectors can only transit from 1 to 0",
+                    selector_prev - topic_selectors[idx].expr(),
+                );
+            }
         }
 
         // check memory copy
@@ -178,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             same_context,
             memory_address,
             topics,
-            is_topic_zeros,
+            topic_selectors,
             contract_address,
             is_static_call,
             is_persistent,
@@ -223,9 +221,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                         .to_le_bytes(),
                     block.randomness,
                 );
+                self.topic_selectors[i].assign(region, offset, Some(F::one()))?;
+            } else {
+                self.topic_selectors[i].assign(region, offset, Some(F::zero()))?;
             }
             self.topics[i].assign(region, offset, Some(topic))?;
-            self.is_topic_zeros[i].assign(region, offset, topic)?;
         }
 
         self.contract_address
