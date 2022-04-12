@@ -393,7 +393,7 @@ impl fmt::Debug for TxAccessListAccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
+            "tx_id: {:?}, addr: {:?}, is_warm_prev: {:?}, is_warm: {:?}",
             self.tx_id, self.address, self.is_warm_prev, self.is_warm
         ))?;
         f.write_str(" }")
@@ -444,7 +444,7 @@ impl fmt::Debug for TxAccessListAccountStorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountStorageOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, val_prev: {:?}, val: {:?}",
+            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, is_warm_prev: {:?}, is_warm: {:?}",
             self.tx_id, self.address, self.key, self.is_warm_prev, self.is_warm
         ))?;
         f.write_str(" }")
@@ -603,7 +603,7 @@ impl fmt::Debug for AccountDestructedOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountDestructedOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
+            "tx_id: {:?}, addr: {:?}, is_destructed_prev: {:?}, is_destructed: {:?}",
             self.tx_id, self.address, self.is_destructed_prev, self.is_destructed
         ))?;
         f.write_str(" }")
