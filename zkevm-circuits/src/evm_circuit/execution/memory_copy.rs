@@ -21,10 +21,6 @@ use bus_mapping::{
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
-// The max number of bytes that can be copied in a step limited by the number
-// of cells in a step
-const MAX_COPY_BYTES: usize = 71;
-
 /// Multi-step gadget for copying data from memory or Tx calldata to memory
 #[derive(Clone, Debug)]
 pub(crate) struct CopyToMemoryGadget<F> {

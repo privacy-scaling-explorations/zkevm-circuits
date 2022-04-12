@@ -556,6 +556,7 @@ impl Rw {
             Self::CallContext { rw_counter, .. } => (*rw_counter),
             Self::AccountStorage { rw_counter, .. } => (*rw_counter),
             Self::TxRefund { rw_counter, .. } => (*rw_counter),
+            Self::TxLog { rw_counter, .. } => (*rw_counter),
         }
     }
 
