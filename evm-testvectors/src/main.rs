@@ -9,12 +9,12 @@ use crate::yaml::YamlStateTestBuilder;
 use anyhow::{bail, Result};
 use eth_types::evm_types::{Gas, OpcodeId};
 use statetest::StateTestConfig;
+use rayon::prelude::*;
 
 /// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
 
 /// # Errors
 fn run_yaml_state_tests(yaml: &str, config: &StateTestConfig, lllc: Lllc) -> Result<()> {
-    let mut failed = 0;
 
     // generate all combinations of tests specified in the yaml
     let tcs = match YamlStateTestBuilder::new(lllc).from_yaml(yaml) {
@@ -25,21 +25,20 @@ fn run_yaml_state_tests(yaml: &str, config: &StateTestConfig, lllc: Lllc) -> Res
         Ok(tcs) => tcs,
     };
 
-    let skip = ["mul_d8(stack_underflow)_g0_v0", "pop_d1(pop2)_g0_v0"];
+    // let skip = ["mul_d8(stack_underflow)_g0_v0", "pop_d1(pop2)_g0_v0"];
+    let skip = Vec::new();
 
     // for each test
-    for tc in tcs {
+    let _ : Vec<_> = tcs.into_par_iter().map(|tc| {
         let id = tc.id.to_string();
-        if skip.contains(&id.as_str()) {
-            continue;
-        }
+        if !skip.contains(&id.as_str()) {
         if let Err(err) = tc.run(config) {
             log::warn!(target: "vmvectests", "FAILED test {} : {:?}",id, err);
-            failed += 1;
         } else {
             log::info!(target: "vmvectests", "SUCCESS test {}",id);
-        }
-    }
+        }}
+
+    }).collect();
     Ok(())
 }
 
@@ -48,11 +47,9 @@ fn main() -> Result<()> {
         max_gas: Gas(1000000),
         unimplemented_opcodes: vec![
             OpcodeId::EXP,
-//            OpcodeId::CALLDATALOAD,
             OpcodeId::DELEGATECALL,
             OpcodeId::CODECOPY,
             OpcodeId::CODESIZE,
-//            OpcodeId::CALLDATACOPY,
             OpcodeId::ADDMOD,
             OpcodeId::SDIV,
             OpcodeId::SMOD,
