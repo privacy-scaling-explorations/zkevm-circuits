@@ -242,10 +242,16 @@ impl<F: FieldExt> StorageRootChip<F> {
                 is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
             }
 
-            let is_branch_placeholder = meta.query_advice(
+            let mut is_branch_placeholder = meta.query_advice(
                 s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(rot + 1),
             );
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(rot + 1),
+                );
+            }
 
             let is_account_leaf_storage_codehash_prev =
                 meta.query_advice(is_account_leaf_storage_codehash_c, Rotation(rot));

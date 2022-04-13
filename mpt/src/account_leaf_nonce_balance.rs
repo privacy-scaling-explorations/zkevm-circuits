@@ -71,8 +71,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
             // 184     80      248     78      nonce      balance
 
-            // TODO: nonce and balance compared to the input
-
             let mut rot = -1;
             if !is_s {
                 rot = -2;
