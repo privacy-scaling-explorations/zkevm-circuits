@@ -29,7 +29,7 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
     fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
         let value = cb.query_rlc();
 
-        // Push the u64 value to the stack
+        // Push the const generic parameter N_BYTES value to the stack
         cb.stack_push(value.expr());
 
         // Get op's FieldTag
