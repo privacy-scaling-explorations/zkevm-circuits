@@ -1,5 +1,6 @@
 //! This module contains the CircuitInputBuilder, which is an object that takes
 //! types from geth / web3 and outputs the circuit inputs.
+use crate::error::{Error, ExecError, OogError};
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
 use crate::exec_trace::OperationRef;
 use crate::geth_errors::*;
@@ -8,7 +9,6 @@ use crate::operation::{
     AccountField, CallContextField, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, Target, RW,
 };
 use crate::state_db::{self, CodeDB, StateDB};
-use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
 use eth_types::{
@@ -20,85 +20,6 @@ use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
 use crate::rpc::GethClient;
 use ethers_providers::JsonRpcClient;
-
-/// Out of Gas errors by opcode
-#[derive(Clone, Debug, PartialEq)]
-pub enum OogError {
-    /// Out of Gas for opcodes which have non-zero constant gas cost
-    Constant,
-    /// Out of Gas for MLOAD, MSTORE, MSTORE8, which have static memory
-    /// expansion gas cost
-    StaticMemoryExpansion,
-    /// Out of Gas for CREATE, RETURN, REVERT, which have dynamic memory
-    /// expansion gas cost
-    DynamicMemoryExpansion,
-    /// Out of Gas for CALLDATACOPY, CODECOPY, RETURNDATACOPY, which copy a
-    /// specified chunk of memory
-    MemoryCopy,
-    /// Out of Gas for BALANCE, EXTCODESIZE, EXTCODEHASH, which possibly touch
-    /// an extra account
-    AccountAccess,
-    /// Out of Gas for RETURN which has code storing gas cost when it's is
-    /// creation
-    CodeStore,
-    /// Out of Gas for LOG0, LOG1, LOG2, LOG3, LOG4
-    Log,
-    /// Out of Gas for EXP
-    Exp,
-    /// Out of Gas for SHA3
-    Sha3,
-    /// Out of Gas for EXTCODECOPY
-    ExtCodeCopy,
-    /// Out of Gas for SLOAD
-    Sload,
-    /// Out of Gas for SSTORE
-    Sstore,
-    /// Out of Gas for CALL
-    Call,
-    /// Out of Gas for CALLCODE
-    CallCode,
-    /// Out of Gas for DELEGATECALL
-    DelegateCall,
-    /// Out of Gas for CREATE2
-    Create2,
-    /// Out of Gas for STATICCALL
-    StaticCall,
-    /// Out of Gas for SELFDESTRUCT
-    SelfDestruct,
-}
-
-/// EVM Execution Error
-#[derive(Clone, Debug, PartialEq)]
-pub enum ExecError {
-    /// Invalid Opcode
-    InvalidOpcode,
-    /// For opcodes who push more than pop
-    StackOverflow,
-    /// For opcodes which pop, DUP and SWAP, which peek deeper element directly
-    StackUnderflow,
-    /// Out of Gas
-    OutOfGas(OogError),
-    /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
-    /// SELFDESTRUCT
-    WriteProtection,
-    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
-    /// For CREATE, CREATE2
-    ContractAddressCollision,
-    /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
-    /// (EOF)
-    InvalidCreationCode,
-    /// For JUMP, JUMPI
-    InvalidJump,
-    /// For RETURNDATACOPY
-    ReturnDataOutOfBounds,
-    /// For RETURN in a CREATE, CREATE2
-    CodeStoreOutOfGas,
-    /// For RETURN in a CREATE, CREATE2
-    MaxCodeSizeExceeded,
-}
 
 /// Execution state
 #[derive(Clone, Debug, Eq, PartialEq)]
