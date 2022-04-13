@@ -3,7 +3,8 @@ use crate::evm_circuit::{
     param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
+        TxContextFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -60,19 +61,14 @@ impl BlockContext {
                     self.coinbase.to_scalar().unwrap(),
                 ],
                 [
-                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::from(BlockContextFieldTag::Timestamp as u64),
                     F::zero(),
-                    F::from(self.gas_limit),
+                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     F::zero(),
                     self.number.to_scalar().unwrap(),
-                ],
-                [
-                    F::from(BlockContextFieldTag::Timestamp as u64),
-                    F::zero(),
-                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
@@ -81,6 +77,11 @@ impl BlockContext {
                         self.difficulty.to_le_bytes(),
                         randomness,
                     ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::zero(),
+                    F::from(self.gas_limit),
                 ],
                 [
                     F::from(BlockContextFieldTag::BaseFee as u64),
@@ -319,7 +320,7 @@ impl ExecStep {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Bytecode {
     pub hash: Word,
     pub bytes: Vec<u8>,
@@ -331,56 +332,38 @@ impl Bytecode {
         Self { hash, bytes }
     }
 
-    pub fn table_assignments<'a, F: FieldExt>(
-        &'a self,
-        randomness: F,
-    ) -> impl Iterator<Item = [F; 4]> + '_ {
-        struct BytecodeIterator<'a, F> {
-            idx: usize,
-            push_data_left: usize,
-            hash: F,
-            bytes: &'a [u8],
-        }
+    pub fn table_assignments<F: FieldExt>(&self, randomness: F) -> Vec<[F; 5]> {
+        let n = 1 + self.bytes.len();
+        let mut rows = Vec::with_capacity(n);
+        let hash =
+            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), randomness);
 
-        impl<'a, F: FieldExt> Iterator for BytecodeIterator<'a, F> {
-            type Item = [F; 4];
+        rows.push([
+            hash,
+            F::from(BytecodeFieldTag::Length as u64),
+            F::zero(),
+            F::zero(),
+            F::from(self.bytes.len() as u64),
+        ]);
 
-            fn next(&mut self) -> Option<Self::Item> {
-                if self.idx == self.bytes.len() {
-                    return None;
-                }
-
-                let idx = self.idx;
-                let byte = self.bytes[self.idx];
-                let mut is_code = true;
-
-                if self.push_data_left > 0 {
-                    is_code = false;
-                    self.push_data_left -= 1;
-                } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(&byte) {
-                    self.push_data_left = byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
-                }
-
-                self.idx += 1;
-
-                Some([
-                    self.hash,
-                    F::from(idx as u64),
-                    F::from(byte as u64),
-                    F::from(is_code as u64),
-                ])
+        let mut push_data_left = 0;
+        for (idx, byte) in self.bytes.iter().enumerate() {
+            let mut is_code = true;
+            if push_data_left > 0 {
+                is_code = false;
+                push_data_left -= 1;
+            } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
+                push_data_left = *byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
             }
+            rows.push([
+                hash,
+                F::from(BytecodeFieldTag::Byte as u64),
+                F::from(idx as u64),
+                F::from(is_code as u64),
+                F::from(*byte as u64),
+            ])
         }
-
-        BytecodeIterator {
-            idx: 0,
-            push_data_left: 0,
-            hash: RandomLinearCombination::random_linear_combine(
-                self.hash.to_le_bytes(),
-                randomness,
-            ),
-            bytes: &self.bytes,
-        }
+        rows
     }
 }
 
@@ -444,8 +427,8 @@ pub enum Rw {
         is_write: bool,
         tx_id: usize,
         account_address: Address,
-        value: bool,
-        value_prev: bool,
+        is_warm: bool,
+        is_warm_prev: bool,
     },
     TxAccessListAccountStorage {
         rw_counter: usize,
@@ -453,8 +436,8 @@ pub enum Rw {
         tx_id: usize,
         account_address: Address,
         storage_key: Word,
-        value: bool,
-        value_prev: bool,
+        is_warm: bool,
+        is_warm_prev: bool,
     },
     TxRefund {
         rw_counter: usize,
@@ -486,8 +469,8 @@ pub enum Rw {
         is_write: bool,
         tx_id: usize,
         account_address: Address,
-        value: bool,
-        value_prev: bool,
+        is_destructed: bool,
+        is_destructed_prev: bool,
     },
     CallContext {
         rw_counter: usize,
@@ -545,14 +528,32 @@ impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
 }
 
 impl Rw {
+    pub fn rw_counter(&self) -> usize {
+        match self {
+            Self::TxAccessListAccount { rw_counter, .. } => (*rw_counter),
+            Self::TxAccessListAccountStorage { rw_counter, .. } => (*rw_counter),
+            Self::Stack { rw_counter, .. } => (*rw_counter),
+            Self::Memory { rw_counter, .. } => (*rw_counter),
+            Self::Account { rw_counter, .. } => (*rw_counter),
+            Self::AccountDestructed { rw_counter, .. } => (*rw_counter),
+            Self::CallContext { rw_counter, .. } => (*rw_counter),
+            Self::AccountStorage { rw_counter, .. } => (*rw_counter),
+            Self::TxRefund { rw_counter, .. } => (*rw_counter),
+        }
+    }
+
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
-                value, value_prev, ..
-            } => (*value, *value_prev),
+                is_warm,
+                is_warm_prev,
+                ..
+            } => (*is_warm, *is_warm_prev),
             Self::TxAccessListAccountStorage {
-                value, value_prev, ..
-            } => (*value, *value_prev),
+                is_warm,
+                is_warm_prev,
+                ..
+            } => (*is_warm, *is_warm_prev),
             _ => unreachable!(),
         }
     }
@@ -627,8 +628,8 @@ impl Rw {
                 is_write,
                 tx_id,
                 account_address,
-                value,
-                value_prev,
+                is_warm,
+                is_warm_prev,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -637,8 +638,8 @@ impl Rw {
                 account_address.to_scalar().unwrap(),
                 F::zero(),
                 F::zero(),
-                F::from(*value as u64),
-                F::from(*value_prev as u64),
+                F::from(*is_warm as u64),
+                F::from(*is_warm_prev as u64),
                 F::zero(),
                 F::zero(),
             ]
@@ -649,8 +650,8 @@ impl Rw {
                 tx_id,
                 account_address,
                 storage_key,
-                value,
-                value_prev,
+                is_warm,
+                is_warm_prev,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -662,8 +663,8 @@ impl Rw {
                     storage_key.to_le_bytes(),
                     randomness,
                 ),
-                F::from(*value as u64),
-                F::from(*value_prev as u64),
+                F::from(*is_warm as u64),
+                F::from(*is_warm_prev as u64),
                 F::zero(),
                 F::zero(),
             ]
@@ -855,8 +856,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     is_write: true,
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
-                    value: op.op().value,
-                    value_prev: op.op().value_prev,
+                    is_warm: op.op().is_warm,
+                    is_warm_prev: op.op().is_warm_prev,
                 })
                 .collect(),
         );
@@ -871,8 +872,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     storage_key: op.op().key,
-                    value: op.op().value,
-                    value_prev: op.op().value_prev,
+                    is_warm: op.op().is_warm,
+                    is_warm_prev: op.op().is_warm_prev,
                 })
                 .collect(),
         );
@@ -936,8 +937,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     is_write: true,
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
-                    value: op.op().value,
-                    value_prev: op.op().value_prev,
+                    is_destructed: op.op().is_destructed,
+                    is_destructed_prev: op.op().is_destructed_prev,
                 })
                 .collect(),
         );
@@ -1109,25 +1110,30 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
-                    OpcodeId::COINBASE => ExecutionState::COINBASE,
-                    OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
-                    OpcodeId::NUMBER => ExecutionState::NUMBER,
+                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
+                        ExecutionState::BLOCKCTXU64
+                    }
+                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
+                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
-
+                    OpcodeId::CODECOPY => ExecutionState::CODECOPY,
+                    OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
+            circuit_input_builder::ExecState::CopyCodeToMemory => ExecutionState::CopyCodeToMemory,
         }
     }
 }
@@ -1173,7 +1179,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
-        aux_data: step.aux_data.clone().map(Into::into),
+        aux_data: step.aux_data.map(Into::into),
     }
 }
 

@@ -20,6 +20,7 @@ use std::{collections::HashMap, iter};
 mod add_sub;
 mod begin_tx;
 mod bitwise;
+mod block_ctx;
 mod byte;
 mod call;
 mod calldatacopy;
@@ -28,8 +29,9 @@ mod calldatasize;
 mod caller;
 mod callvalue;
 mod chainid;
-mod coinbase;
+mod codecopy;
 mod comparator;
+mod copy_code_to_memory;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -45,7 +47,6 @@ mod memory;
 mod memory_copy;
 mod msize;
 mod mul_div_mod;
-mod number;
 mod origin;
 mod pc;
 mod pop;
@@ -57,11 +58,11 @@ mod sload;
 mod sstore;
 mod stop;
 mod swap;
-mod timestamp;
 
 use add_sub::AddSubGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
+use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use byte::ByteGadget;
 use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -70,8 +71,9 @@ use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
-use coinbase::CoinbaseGadget;
+use codecopy::CodeCopyGadget;
 use comparator::ComparatorGadget;
+use copy_code_to_memory::CopyCodeToMemoryGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -87,7 +89,6 @@ use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
-use number::NumberGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
@@ -99,7 +100,6 @@ use sload::SloadGadget;
 use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
-use timestamp::TimestampGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -142,8 +142,9 @@ pub(crate) struct ExecutionConfig<F> {
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     chainid_gadget: ChainIdGadget<F>,
-    coinbase_gadget: CoinbaseGadget<F>,
+    codecopy_gadget: CodeCopyGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
+    copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     dup_gadget: DupGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
@@ -155,7 +156,6 @@ pub(crate) struct ExecutionConfig<F> {
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,
-    number_gadget: NumberGadget<F>,
     origin_gadget: OriginGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
@@ -167,8 +167,9 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
-    timestamp_gadget: TimestampGadget<F>,
-
+    block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
+    block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
+    block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     // error gadgets
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
 }
@@ -353,6 +354,7 @@ impl<F: Field> ExecutionConfig<F> {
             q_step_last,
             // internal states
             begin_tx_gadget: configure_gadget!(),
+            copy_code_to_memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
@@ -367,7 +369,7 @@ impl<F: Field> ExecutionConfig<F> {
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             chainid_gadget: configure_gadget!(),
-            coinbase_gadget: configure_gadget!(),
+            codecopy_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
@@ -380,7 +382,6 @@ impl<F: Field> ExecutionConfig<F> {
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             mul_div_mod_gadget: configure_gadget!(),
-            number_gadget: configure_gadget!(),
             origin_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
@@ -392,8 +393,9 @@ impl<F: Field> ExecutionConfig<F> {
             sstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
-            timestamp_gadget: configure_gadget!(),
-
+            block_ctx_u64_gadget: configure_gadget!(),
+            block_ctx_u160_gadget: configure_gadget!(),
+            block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
 
@@ -635,6 +637,7 @@ impl<F: Field> ExecutionConfig<F> {
         match step.execution_state {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
+            ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
             ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
@@ -649,7 +652,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
             ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
-            ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
+            ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
@@ -662,19 +665,20 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
-            ExecutionState::NUMBER => assign_exec_step!(self.number_gadget),
             ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
+            ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
+            ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
+            ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
-            ExecutionState::TIMESTAMP => assign_exec_step!(self.timestamp_gadget),
             // errors
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
