@@ -4,7 +4,7 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag,
+        TxContextFieldTag, TxLogFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -16,8 +16,6 @@ use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
-
-use super::table::TxLogFieldTag;
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -503,8 +501,9 @@ pub enum Rw {
         tx_id: usize,
         log_id: u64,
         field_tag: TxLogFieldTag,
-        // topic index if field_tag is TxLogFieldTag:Topic, byte index if field_tag is
-        // TxLogFieldTag:Data
+        // topic index if field_tag is TxLogFieldTag:Topic
+        // byte index if field_tag is TxLogFieldTag:Data
+        // it would be zero for other field tags
         index: usize,
 
         // when it is topic field, value can be word type

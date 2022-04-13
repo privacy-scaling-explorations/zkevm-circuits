@@ -44,7 +44,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        // check opcode is in [log0,log4], already do SameContextGadget::construct
         let mstart = cb.query_cell();
         let msize = cb.query_rlc();
 
@@ -86,15 +85,15 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let opcode = cb.query_cell();
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
-        let selector_exprs = topic_selectors.clone().map(|idx| idx.expr());
 
-        // TOPIC_COUNT == Non zero topic count
+        // TOPIC_COUNT == Non zero topic selector count
         cb.require_equal(
             " sum of topic selectors = topic_count ",
             topic_count.clone(),
-            sum::expr(selector_exprs),
+            sum::expr(topic_selectors.clone()),
         );
-        // `is_topic_zeros` order must be from 1 --> 0
+        
+        // `topic_selectors` order must be from 1 --> 0
         for idx in 0..4 {
             cb.require_boolean("topic selector is bool ", topic_selectors[idx].expr());
             if idx > 0 {
