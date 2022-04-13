@@ -26,8 +26,8 @@ impl<F: FieldExt> StorageRootChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         not_first_level: Column<Advice>,
-        is_leaf_s: Column<Advice>,
-        is_leaf_c: Column<Advice>,
+        is_leaf_s_value: Column<Advice>,
+        is_leaf_c_value: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -35,6 +35,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         acc_mult_s: Column<Advice>,
         acc_c: Column<Advice>,
         acc_mult_c: Column<Advice>,
+        sel: Column<Advice>,
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
         acc_r: F,
         is_s: bool,
@@ -185,11 +186,12 @@ impl<F: FieldExt> StorageRootChip<F> {
 
             // Check in leaf value row.
             let mut rot = -2;
-            let mut is_leaf = meta.query_advice(is_leaf_s, Rotation::cur());
+            let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
             if !is_s {
                 rot = -4;
-                is_leaf = meta.query_advice(is_leaf_c, Rotation::cur());
+                is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
             }
+            let is_placeholder = meta.query_advice(sel, Rotation::cur());
 
             let is_account_leaf_storage_codehash_prev =
                 meta.query_advice(is_account_leaf_storage_codehash_c, Rotation(rot));
@@ -211,6 +213,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_leaf.clone()
+                    * (one.clone() - is_placeholder.clone())
                     * is_account_leaf_storage_codehash_prev.clone()
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -218,6 +221,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_leaf.clone()
+                    * (one.clone() - is_placeholder)
                     * is_account_leaf_storage_codehash_prev.clone()
                     * hash_rlc.clone(),
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
@@ -232,10 +236,10 @@ impl<F: FieldExt> StorageRootChip<F> {
 
             // Check in leaf value row.
             let mut rot = -2 - 19;
-            let mut is_leaf = meta.query_advice(is_leaf_s, Rotation::cur());
+            let mut is_leaf = meta.query_advice(is_leaf_s_value, Rotation::cur());
             if !is_s {
                 rot = -4 - 19;
-                is_leaf = meta.query_advice(is_leaf_c, Rotation::cur());
+                is_leaf = meta.query_advice(is_leaf_c_value, Rotation::cur());
             }
 
             let is_branch_placeholder = meta.query_advice(

@@ -41,6 +41,9 @@ impl<F: FieldExt> LeafValueChip<F> {
         sel1: Column<Advice>,
         sel2: Column<Advice>,
         key_rlc: Column<Advice>,
+        key_rlc_mult: Column<Advice>, // to store key_rlc from previous row (to enable lookup)
+        mult_diff: Column<Advice>,    /* to store leaf value S RLC from two rows above (to
+                                       * enable lookup) */
         is_account_leaf_storage_codehash_c: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         is_s: bool,
@@ -140,9 +143,9 @@ impl<F: FieldExt> LeafValueChip<F> {
             // leaf value C RLC, whic is in acc_c)
             if !is_s {
                 let key_c_rlc_from_prev = meta.query_advice(key_rlc, Rotation(-1));
-                let key_c_rlc_from_cur = meta.query_advice(sel1, Rotation::cur());
+                let key_c_rlc_from_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
                 let leaf_value_s_rlc_from_prev = meta.query_advice(acc_c, Rotation(-2));
-                let leaf_value_s_rlc_from_cur = meta.query_advice(sel2, Rotation::cur());
+                let leaf_value_s_rlc_from_cur = meta.query_advice(mult_diff, Rotation::cur());
                 constraints.push((
                     "key C RLC",
                     q_enable.clone() * (key_c_rlc_from_prev - key_c_rlc_from_cur),
@@ -160,27 +163,33 @@ impl<F: FieldExt> LeafValueChip<F> {
             if !is_s {
                 sel = meta.query_advice(sel2, Rotation(rot));
             }
-            /*
-            // TODO: what when leaf without branch, sel into rotated row doesn't give us the
-            // info we need
             let is_leaf_without_branch = meta.query_advice(
                 is_account_leaf_storage_codehash_c,
                 Rotation(rot_into_account),
             );
-            */
+            // For leaf without branch the constraint is in storage_root_in_account_leaf
             constraints.push((
                 "Placeholder leaf (no value set) needs to have value = 0 (s_rlp1)",
-                q_enable.clone() * sel.clone() * s_rlp1_cur.clone(),
+                q_enable.clone()
+                    * sel.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * s_rlp1_cur.clone(),
             ));
             constraints.push((
                 "Placeholder leaf (no value set) needs to have value = 0 (s_rlp2)",
-                q_enable.clone() * sel.clone() * s_rlp2_cur.clone(),
+                q_enable.clone()
+                    * sel.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * s_rlp2_cur.clone(),
             ));
             for col in s_advices.iter() {
                 let s = meta.query_advice(*col, Rotation::cur());
                 constraints.push((
                     "Placeholder leaf (no value set) needs to have value = 0",
-                    q_enable.clone() * sel.clone() * s.clone(),
+                    q_enable.clone()
+                        * sel.clone()
+                        * (one.clone() - is_leaf_without_branch.clone())
+                        * s.clone(),
                 ));
             }
 
@@ -218,6 +227,35 @@ impl<F: FieldExt> LeafValueChip<F> {
                 "RLP long value check",
                 q_enable.clone() * long_value_check * is_long.clone(),
             ));
+
+            // sel is set to 1 in leaf value row when leaf is without branch and it is a
+            // placeholder - this appears when a first leaf is added to an empty
+            // trie or when the only leaf is deleted from the trie.
+            // This selector is used only to prevent checking the leaf hash being the
+            // storage trie root (because leaf is just a placeholder) in
+            // storage_root_in_account_leaf.
+            // To prevent setting sel = 1 in cases when storage trie is not empty, the
+            // constraints below are added.
+            let empty_trie_hash: Vec<u8> = vec![
+                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72,
+                224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+            ];
+            let mut sel = meta.query_advice(sel1, Rotation::cur());
+            let mut rot_into_storage_root = -3;
+            if !is_s {
+                sel = meta.query_advice(sel2, Rotation::cur());
+                rot_into_storage_root = -4;
+            }
+            for (ind, col) in s_advices.iter().enumerate() {
+                let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
+                constraints.push((
+                    "If placeholder leaf without branch (sel = 1), then storage trie is empty",
+                    q_enable.clone()
+                        * sel.clone()
+                        * is_leaf_without_branch.clone()
+                        * (s.clone() - Expression::Constant(F::from(empty_trie_hash[ind].into()))),
+                ));
+            }
 
             constraints
         });

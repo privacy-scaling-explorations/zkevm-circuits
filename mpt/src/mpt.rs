@@ -121,6 +121,8 @@ pub struct MPTConfig<F> {
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
     // is added or deleted from trie - but no branch is added or turned into leaf)
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
+    // sel1 and sel2 in storage leaf value (only when leaf without branch as otherwise this info is
+    // in the branch above): whether leaf is just a placeholder
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
@@ -592,8 +594,8 @@ impl<F: FieldExt> MPTConfig<F> {
         StorageRootChip::<F>::configure(
             meta,
             not_first_level,
-            is_leaf_s,
-            is_leaf_c,
+            is_leaf_s_value,
+            is_leaf_c_value,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices,
@@ -601,6 +603,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             acc_c,
             acc_mult_c,
+            sel1,
             keccak_table,
             acc_r,
             true,
@@ -609,8 +612,8 @@ impl<F: FieldExt> MPTConfig<F> {
         StorageRootChip::<F>::configure(
             meta,
             not_first_level,
-            is_leaf_s,
-            is_leaf_c,
+            is_leaf_s_value,
+            is_leaf_c_value,
             is_account_leaf_storage_codehash_c,
             is_last_branch_child,
             s_advices, // s_advices (and not c_advices) is correct
@@ -618,6 +621,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             acc_c,
             acc_mult_c,
+            sel2,
             keccak_table,
             acc_r,
             false,
@@ -785,6 +789,8 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             key_rlc,
+            key_rlc_mult,
+            mult_diff,
             is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             true,
@@ -810,6 +816,8 @@ impl<F: FieldExt> MPTConfig<F> {
             sel1,
             sel2,
             key_rlc,
+            key_rlc_mult,
+            mult_diff,
             is_account_leaf_storage_codehash_c,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             false,
@@ -2362,23 +2370,56 @@ impl<F: FieldExt> MPTConfig<F> {
                                     HASH_WIDTH + 2,
                                 );
 
+                                let empty_trie_hash: Vec<u8> = vec![
+                                    86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192,
+                                    248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181,
+                                    227, 99, 180, 33,
+                                ];
                                 if row[row.len() - 1] == 13 {
                                     // Store leaf value RLC into rlc1 to be later set in
                                     // leaf value C row (to enable lookups):
                                     pv.rlc1 = pv.acc_c;
+
+                                    let row_prev = &witness[offset - 3];
+                                    if row_prev[row_prev.len() - 1] == 9
+                                        && row_prev[S_START..S_START + HASH_WIDTH]
+                                            == empty_trie_hash
+                                    {
+                                        // Leaf is without branch and it is just a placeholder.
+                                        region.assign_advice(
+                                            || "assign sel1".to_string(),
+                                            self.sel1,
+                                            offset,
+                                            || Ok(F::one()),
+                                        )?;
+                                    }
                                 } else if row[row.len() - 1] == 14 {
                                     region.assign_advice(
-                                        || "assign key_rlc into sel1".to_string(),
-                                        self.sel1,
+                                        || "assign key_rlc into key_rlc_mult".to_string(),
+                                        self.key_rlc_mult,
                                         offset,
                                         || Ok(pv.rlc2),
                                     )?;
                                     region.assign_advice(
-                                        || "assign leaf value S into sel1".to_string(),
-                                        self.sel2,
+                                        || "assign leaf value S into mult_diff".to_string(),
+                                        self.mult_diff,
                                         offset,
                                         || Ok(pv.rlc1),
                                     )?;
+
+                                    let row_prev = &witness[offset - 4];
+                                    if row_prev[row_prev.len() - 1] == 11
+                                        && row_prev[S_START..S_START + HASH_WIDTH]
+                                            == empty_trie_hash
+                                    {
+                                        // Leaf is without branch and it is just a placeholder.
+                                        region.assign_advice(
+                                            || "assign sel2".to_string(),
+                                            self.sel2,
+                                            offset,
+                                            || Ok(F::one()),
+                                        )?;
+                                    }
                                 }
 
                                 self.assign_acc(
