@@ -6,14 +6,14 @@ use crate::{
             RandomLinearCombination,
         },
     },
-    gadget::{
-        evm_word::encode,
-        is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-    },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
+use gadgets::{
+    evm_word::encode,
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+};
 use halo2_proofs::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},

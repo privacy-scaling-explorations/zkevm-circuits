@@ -1630,6 +1630,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gadgets"
+version = "0.1.0"
+dependencies = [
+ "digest 0.7.6",
+ "eth-types",
+ "ff 0.11.0",
+ "halo2_proofs",
+ "pairing_bn256",
+ "rand",
+ "rand_xorshift",
+ "sha3 0.7.3",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4062,6 +4076,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ff 0.11.0",
+ "gadgets",
  "halo2_proofs",
  "hex",
  "itertools",
