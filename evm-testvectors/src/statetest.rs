@@ -198,11 +198,7 @@ impl StateTest {
         // there are some tests that makes the tx failing
         // (eg memory filler tests)
         
-        if geth_traces[0].gas > config.max_gas {
-            return Err(StateTestError::TestMaxGasLimit(geth_traces[0].gas.0));
-        }
-
-        if let Some(step) = geth_traces[0]
+       if let Some(step) = geth_traces[0]
             .struct_logs
             .iter()
             .find(|step| config.unimplemented_opcodes.contains(&step.op))
@@ -211,6 +207,10 @@ impl StateTest {
                 "{:?}",
                 step.op
             )));
+        }
+
+        if geth_traces[0].gas > config.max_gas {
+            return Err(StateTestError::TestMaxGasLimit(geth_traces[0].gas.0));
         }
 
         let builder = Self::create_input_builder(trace_config, geth_traces)?;

@@ -48,11 +48,16 @@ fn main() -> Result<()> {
         max_gas: Gas(1000000),
         unimplemented_opcodes: vec![
             OpcodeId::EXP,
-            OpcodeId::CALLDATALOAD,
+//            OpcodeId::CALLDATALOAD,
             OpcodeId::DELEGATECALL,
             OpcodeId::CODECOPY,
             OpcodeId::CODESIZE,
-            OpcodeId::CALLDATACOPY,
+//            OpcodeId::CALLDATACOPY,
+            OpcodeId::ADDMOD,
+            OpcodeId::SDIV,
+            OpcodeId::SMOD,
+            OpcodeId::MULMOD,
+            OpcodeId::NOT,
             OpcodeId::LOG1,
             OpcodeId::LOG2,
             OpcodeId::LOG3,
@@ -63,7 +68,7 @@ fn main() -> Result<()> {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let files = glob::glob("tests/src/GeneralStateTestsFiller/**/*.yml")
+    let files = glob::glob("tests/src/GeneralStateTestsFiller/VMTests/vmArithmeticTest/**/*.yml")
         .expect("Failed to read glob pattern");
     for file in files {
         run_yaml_state_tests(

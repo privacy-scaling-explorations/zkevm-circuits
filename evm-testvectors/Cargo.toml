@@ -24,7 +24,7 @@ thiserror = "1.0"
 env_logger = "0.9"
 pairing_bn256 = { git = "https://github.com/appliedzkp/pairing" }
 mock = { path = "../mock" }
-
+glob = "0.3"
 
 [features]
 docker-lllc = []
