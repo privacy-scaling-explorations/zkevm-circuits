@@ -87,13 +87,13 @@ impl Opcode for Call {
             TxAccessListAccountOp {
                 tx_id,
                 address: callee.address,
-                value: true,
-                value_prev: is_warm_access,
+                is_warm: true,
+                is_warm_prev: is_warm_access,
             },
         )?;
 
         // Switch to callee's call context
-        state.push_call(callee.clone());
+        state.push_call(callee.clone(), geth_step);
 
         for (field, value) in [
             (CallContextField::RwCounterEndOfReversion, 0.into()),
