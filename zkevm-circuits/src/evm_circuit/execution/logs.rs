@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             topic_count.clone(),
             sum::expr(topic_selectors.clone()),
         );
-        
+
         // `topic_selectors` order must be from 1 --> 0
         for idx in 0..4 {
             cb.require_boolean("topic selector is bool ", topic_selectors[idx].expr());
