@@ -61,19 +61,14 @@ impl BlockContext {
                     self.coinbase.to_scalar().unwrap(),
                 ],
                 [
-                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::from(BlockContextFieldTag::Timestamp as u64),
                     F::zero(),
-                    F::from(self.gas_limit),
+                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     F::zero(),
                     self.number.to_scalar().unwrap(),
-                ],
-                [
-                    F::from(BlockContextFieldTag::Timestamp as u64),
-                    F::zero(),
-                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
@@ -82,6 +77,11 @@ impl BlockContext {
                         self.difficulty.to_le_bytes(),
                         randomness,
                     ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::zero(),
+                    F::from(self.gas_limit),
                 ],
                 [
                     F::from(BlockContextFieldTag::BaseFee as u64),
@@ -1110,9 +1110,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
-                    OpcodeId::COINBASE => ExecutionState::COINBASE,
-                    OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
-                    OpcodeId::NUMBER => ExecutionState::NUMBER,
+                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
+                        ExecutionState::BLOCKCTXU64
+                    }
+                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
+                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
