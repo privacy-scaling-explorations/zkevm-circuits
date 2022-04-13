@@ -1,18 +1,15 @@
-use crate::{
-    evm_circuit::{
-        table::RwTableTag,
-        util::{
-            constraint_builder::BaseConstraintBuilder,
-            math_gadget::generate_lagrange_base_polynomial,
-        },
-        witness::{RwMap, RwRow},
+use crate::evm_circuit::{
+    table::RwTableTag,
+    util::{
+        constraint_builder::BaseConstraintBuilder, math_gadget::generate_lagrange_base_polynomial,
     },
-    gadget::{
-        is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-        Variable,
-    },
+    witness::{RwMap, RwRow},
 };
 use eth_types::Field;
+use gadgets::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    Variable,
+};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
