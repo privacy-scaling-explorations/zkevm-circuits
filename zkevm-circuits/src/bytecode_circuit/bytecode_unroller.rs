@@ -121,7 +121,7 @@ impl<F: Field> Config<F> {
         // For a row tagged Length, is the length (value) zero?
         let length_is_zero = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(q_enable) * is_row_tag_length(meta),
+            |meta| meta.query_fixed(q_enable, Rotation::cur()) * is_row_tag_length(meta),
             |meta| meta.query_advice(value, Rotation::cur()),
             length_inv,
         );
@@ -244,7 +244,7 @@ impl<F: Field> Config<F> {
             // - Not Continuing
             // - This is not the start of a new bytecode
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(is_row_tag_length(meta)),
                 not::expr(q_continue(meta)),
             ]))
@@ -334,7 +334,7 @@ impl<F: Field> Config<F> {
         meta.lookup_any("Range bytes", |meta| {
             // Conditions: Always
             let q_enable = meta.query_fixed(q_enable, Rotation::cur()) * is_row_tag_byte(meta);
-            let lookup_columns = vec![byte, byte_push_size];
+            let lookup_columns = vec![value, byte_push_size];
             let mut constraints = vec![];
             for i in 0..PUSH_TABLE_WIDTH {
                 constraints.push((
@@ -403,34 +403,34 @@ impl<F: Field> Config<F> {
         // Subtract the unusable rows from the size
         let last_row_offset = size - self.minimum_rows + 1;
 
-        layouter
-            .assign_region(
-                || "assign bytecode",
-                |mut region| {
-                    let mut offset = 0;
-                    let mut push_rindex_prev = 0;
+        layouter.assign_region(
+            || "assign bytecode",
+            |mut region| {
+                let mut offset = 0;
+                let mut push_rindex_prev = 0;
 
-                    for bytecode in witness.iter() {
-                        // Run over all the bytes
-                        let mut push_rindex = 0;
-                        let mut byte_push_size = 0;
-                        let mut hash_rlc = F::zero();
-                        let hash_length = F::from(bytecode.bytes.len() as u64);
-                        for (idx, row) in bytecode.rows.iter().enumerate() {
-                            // Track which byte is an opcode and which is push
-                            // data
-                            let is_code = push_rindex == 0;
-                            if idx > 0 {
-                                byte_push_size = get_push_size(row.value.get_lower_128() as u8);
-                                push_rindex = if is_code {
-                                    byte_push_size
-                                } else {
-                                    push_rindex - 1
-                                };
-                                hash_rlc = hash_rlc * self.r + row.value;
-                            }
+                for bytecode in witness.iter() {
+                    // Run over all the bytes
+                    let mut push_rindex = 0;
+                    let mut byte_push_size = 0;
+                    let mut hash_rlc = F::zero();
+                    let hash_length = F::from(bytecode.bytes.len() as u64);
+                    for (idx, row) in bytecode.rows.iter().enumerate() {
+                        // Track which byte is an opcode and which is push
+                        // data
+                        let is_code = push_rindex == 0;
+                        if idx > 0 {
+                            byte_push_size = get_push_size(row.value.get_lower_128() as u8);
+                            push_rindex = if is_code {
+                                byte_push_size
+                            } else {
+                                push_rindex - 1
+                            };
+                            hash_rlc = hash_rlc * self.r + row.value;
+                        }
 
-                            // Set the data for this row
+                        // Set the data for this row
+                        if offset <= last_row_offset {
                             self.set_row(
                                 &mut region,
                                 &push_rindex_is_zero_chip,
@@ -462,6 +462,7 @@ impl<F: Field> Config<F> {
                     self.set_row(
                         &mut region,
                         &push_rindex_is_zero_chip,
+                        &length_is_zero_chip,
                         idx,
                         idx < last_row_offset,
                         idx == last_row_offset,
@@ -480,7 +481,6 @@ impl<F: Field> Config<F> {
                     )?;
                     push_rindex_prev = 0;
                 }
-
                 Ok(())
             },
         )
