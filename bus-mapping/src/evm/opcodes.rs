@@ -127,6 +127,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         // OpcodeId::DIFFICULTY => {},
         // OpcodeId::GASLIMIT => {},
         // OpcodeId::CHAINID => {},

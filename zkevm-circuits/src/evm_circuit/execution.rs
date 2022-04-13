@@ -57,6 +57,7 @@ mod sstore;
 mod stop;
 mod swap;
 mod timestamp;
+mod difficulty;
 
 use add_sub::AddSubGadget;
 use begin_tx::BeginTxGadget;
@@ -98,6 +99,7 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 use timestamp::TimestampGadget;
+use difficulty::DifficultyGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -165,6 +167,7 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
+    difficulty_gadget: DifficultyGadget<F>,
     // error gadgets
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
 }
@@ -388,6 +391,7 @@ impl<F: Field> ExecutionConfig<F> {
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
+            difficulty_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
             // step and presets
@@ -659,6 +663,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
             ExecutionState::TIMESTAMP => assign_exec_step!(self.timestamp_gadget),
+            ExecutionState::DIFFICULTY => assign_exec_step!(self.difficulty_gadget),
             // errors
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)

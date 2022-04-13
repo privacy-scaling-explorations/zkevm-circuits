@@ -75,10 +75,7 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.difficulty.to_le_bytes(),
-                        randomness,
-                    ),
+                    self.difficulty.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::BaseFee as u64),
@@ -1109,6 +1106,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
+                    OpcodeId::DIFFICULTY => ExecutionState::DIFFICULTY,
+
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

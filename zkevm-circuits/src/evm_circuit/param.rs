@@ -36,3 +36,6 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
+
+// Number of bytes that will be used for block difficulty.
+pub(crate) const N_BYTES_DIFFICULTY: usize = N_BYTES_U64;
