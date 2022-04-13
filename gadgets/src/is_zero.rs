@@ -42,24 +42,20 @@ pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
 
+#[rustfmt::skip]
 impl<F: FieldExt> IsZeroChip<F> {
-    #[rustfmt::skip]
     /// Sets up the configuration of the chip by creating the required columns
     /// and defining the constraints that take part when using `is_zero` gate.
     ///
     /// Truth table of iz_zero gate:
     /// +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
-    /// | ok | value | value_inv | 1 - value ⋅ value_inv | value ⋅ (1 - value ⋅
-    /// value_inv) | value_inv ⋅ (1 - value ⋅ value_inv) |
+    /// | ok | value | value_inv | 1 - value ⋅ value_inv | value ⋅ (1 - value ⋅ value_inv) | value_inv ⋅ (1 - value ⋅ value_inv) |
     /// +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
-    /// | V  | 0     | 0         | 1                     | 0
-    /// | 0                                   | |    | 0     | x         | 1
-    /// | 0                               | x                                   |
-    /// |    | x     | 0         | 1                     | x
-    /// | 0                                   | | V  | x     | 1/x       | 0
-    /// | 0                               | 0                                   |
-    /// |    | x     | y         | 1 - xy                | x(1 - xy)
-    /// | y(1 - xy)                           |
+    /// | V  | 0     | 0         | 1                     | 0                               | 0                                   |
+    /// |    | 0     | x         | 1                     | 0                               | x                                   |
+    /// |    | x     | 0         | 1                     | x                               | 0                                   |
+    /// | V  | x     | 1/x       | 0                     | 0                               | 0                                   |
+    /// |    | x     | y         | 1 - xy                | x(1 - xy)                       | y(1 - xy)                           |
     /// +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
