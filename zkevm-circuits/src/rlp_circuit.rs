@@ -6,83 +6,18 @@ use gadgets::{
     less_than::{LtChip, LtConfig},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 
 use crate::{
     evm_circuit::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
-        witness::Transaction,
+        witness::rlp_witness::{RlpReceiptTag, RlpTxTag, RlpWitnessGen, N_RECEIPT_TAGS, N_TX_TAGS},
     },
-    impl_expr,
     util::Expr,
 };
-
-#[derive(Debug)]
-/// Inputs to the RLP circuit.
-pub enum RlpInput {
-    /// Witness to a legacy transaction.
-    Transaction(Transaction),
-    // TODO: receipt
-}
-
-#[derive(Clone, Copy, Debug)]
-/// Data types that are supported by the RLP circuit.
-pub enum RlpDataType {
-    /// Data type for an RLP-encoded legacy transaction.
-    Transaction,
-    /// Data type for an RLP-encoded transaction receipt.
-    Receipt,
-}
-
-#[derive(Clone, Copy, Debug)]
-/// Tags used to tag rows in the RLP circuit for a transaction.
-pub enum RlpTxTag {
-    /// Denotes the prefix bytes indicating the “length of length” and/or
-    /// “length” of the tx’s RLP-encoding.
-    TxPrefix,
-    /// Denotes the byte(s) for the tx’s nonce.
-    TxNonce,
-    /// Denotes the byte(s) for the tx’s gas price.
-    TxGasPrice,
-    /// Denotes the byte(s) for the tx’s gas.
-    TxGas,
-    /// Denotes the prefix byte indicating the “length” of the tx’s to.
-    TxToPrefix,
-    /// Denotes the bytes for the tx’s to.
-    TxTo,
-    /// Denotes the byte(s) for the tx’s value.
-    TxValue,
-    /// Denotes the prefix byte(s) indicating the “length of length” and/or
-    /// “length” of the tx’s data.
-    TxDataPrefix,
-    /// Denotes the bytes for the tx’s data.
-    TxData,
-}
-
-/// Denotes the number of possible tag values for a tx row.
-const N_TX_TAGS: usize = 9;
-
-#[derive(Clone, Copy, Debug)]
-/// Tags used to tags rows in the RLP circuit for a tx receipt.
-pub enum RlpReceiptTag {
-    /// Denotes the prefix bytes indicating the "length of length" and/or
-    /// "length" of the tx receipt's RLP-encoding.
-    ReceiptPrefix,
-    /// Denotes the byte for the receipt's status.
-    ReceiptStatus,
-    // TODO: other receipt tags
-}
-
-/// Denotes the number of possible tag values for a tx receipt row.
-const N_RECEIPT_TAGS: usize = 2;
-
-impl_expr!(RlpDataType);
-impl_expr!(RlpTxTag);
-impl_expr!(RlpReceiptTag);
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
@@ -270,15 +205,15 @@ impl<F: Field> Config<F> {
                 };
             }
 
-            is_tx_tag!(is_prefix, TxPrefix);
-            is_tx_tag!(is_nonce, TxNonce);
-            is_tx_tag!(is_gas_price, TxGasPrice);
-            is_tx_tag!(is_gas, TxGas);
-            is_tx_tag!(is_to_prefix, TxToPrefix);
-            is_tx_tag!(is_to, TxTo);
-            is_tx_tag!(is_value, TxValue);
-            is_tx_tag!(is_data_prefix, TxDataPrefix);
-            is_tx_tag!(is_data, TxData);
+            is_tx_tag!(is_prefix, Prefix);
+            is_tx_tag!(is_nonce, Nonce);
+            is_tx_tag!(is_gas_price, GasPrice);
+            is_tx_tag!(is_gas, Gas);
+            is_tx_tag!(is_to_prefix, ToPrefix);
+            is_tx_tag!(is_to, To);
+            is_tx_tag!(is_value, Value);
+            is_tx_tag!(is_data_prefix, DataPrefix);
+            is_tx_tag!(is_data, Data);
 
             cb.condition(is_prefix(meta), |cb| {
                 let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
@@ -303,7 +238,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxPrefix",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxPrefix.expr(),
+                        RlpTxTag::Prefix.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -322,7 +257,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxNonce",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxNonce.expr(),
+                        RlpTxTag::Nonce.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_length::next",
@@ -402,7 +337,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxNonce",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxNonce.expr(),
+                        RlpTxTag::Nonce.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -421,7 +356,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxGasPrice",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxGasPrice.expr(),
+                        RlpTxTag::GasPrice.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_length::next",
@@ -452,7 +387,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxGasPrice",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxGasPrice.expr(),
+                        RlpTxTag::GasPrice.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -471,7 +406,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxGas",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxGas.expr(),
+                        RlpTxTag::Gas.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_length::next",
@@ -498,7 +433,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxGas",
                         meta.query_advice(tag, Rotation::cur()),
-                        RlpTxTag::TxGas.expr(),
+                        RlpTxTag::Gas.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -517,7 +452,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxToPrefix",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxToPrefix.expr(),
+                        RlpTxTag::ToPrefix.expr(),
                     );
                 });
             });
@@ -541,7 +476,7 @@ impl<F: Field> Config<F> {
                 cb.require_equal(
                     "tag::next == RlpTxTag::TxTo",
                     meta.query_advice(tag, Rotation::next()),
-                    RlpTxTag::TxTo.expr(),
+                    RlpTxTag::To.expr(),
                 );
                 cb.require_equal(
                     "tag_index::next == 20",
@@ -576,7 +511,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxTo",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxTo.expr(),
+                        RlpTxTag::To.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -595,7 +530,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxValue",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxValue.expr(),
+                        RlpTxTag::Value.expr(),
                     );
                     cb.require_equal(
                         "tag_index:next == tag_length::next",
@@ -626,7 +561,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxValue",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxValue.expr(),
+                        RlpTxTag::Value.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -645,7 +580,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag:TxDataPrefix",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxDataPrefix.expr(),
+                        RlpTxTag::DataPrefix.expr(),
                     );
                 });
             });
@@ -673,7 +608,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxDataPrefix",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxDataPrefix.expr(),
+                        RlpTxTag::DataPrefix.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -692,7 +627,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxData",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxData.expr(),
+                        RlpTxTag::Data.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_length::next",
@@ -769,7 +704,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal(
                         "tag::next == RlpTxTag::TxData",
                         meta.query_advice(tag, Rotation::next()),
-                        RlpTxTag::TxData.expr(),
+                        RlpTxTag::Data.expr(),
                     );
                     cb.require_equal(
                         "tag_index::next == tag_index - 1",
@@ -818,8 +753,8 @@ impl<F: Field> Config<F> {
                 };
             }
 
-            is_receipt_tag!(is_prefix, ReceiptPrefix);
-            is_receipt_tag!(is_status, ReceiptStatus);
+            is_receipt_tag!(is_prefix, Prefix);
+            is_receipt_tag!(is_status, Status);
 
             cb.condition(is_prefix(meta), |_cb| {});
 
@@ -983,7 +918,12 @@ impl<F: Field> Config<F> {
         }
     }
 
-    pub(crate) fn assign(&self, _layouter: impl Layouter<F>, _size: usize, _witness: RlpInput) {
+    pub(crate) fn assign<RLP: RlpWitnessGen<F>>(
+        &self,
+        _layouter: impl Layouter<F>,
+        _size: usize,
+        _witness: RLP,
+    ) {
         unimplemented!();
     }
 }

@@ -19,6 +19,8 @@ use rlp::Encodable;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
 
+pub mod rlp_witness;
+
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
     /// The randomness for random linear combination
