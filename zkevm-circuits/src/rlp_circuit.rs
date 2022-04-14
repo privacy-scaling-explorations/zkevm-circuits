@@ -26,7 +26,7 @@ use crate::{
 pub enum RlpInput {
     /// Witness to a legacy transaction.
     Transaction(Transaction),
-    // TODO(rohit): receipt
+    // TODO: receipt
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -74,7 +74,7 @@ pub enum RlpReceiptTag {
     ReceiptPrefix,
     /// Denotes the byte for the receipt's status.
     ReceiptStatus,
-    // TODO(rohit): other receipt tags
+    // TODO: other receipt tags
 }
 
 /// Denotes the number of possible tag values for a tx receipt row.
@@ -145,6 +145,15 @@ pub struct Config<F> {
     tag_index_lt_21: LtConfig<F, 1>,
     /// Lt chip to check: tag_index < 33.
     tag_index_lt_33: LtConfig<F, 1>,
+
+    /// Lt chip to check: 127 < value.
+    value_gt_127: LtConfig<F, 1>,
+    /// Lt chip to check: 183 < value.
+    value_gt_183: LtConfig<F, 1>,
+    /// Lt chip to check: value < 184.
+    value_lt_184: LtConfig<F, 1>,
+    /// Lt chip to check: value < 192.
+    value_lt_192: LtConfig<F, 1>,
 }
 
 impl<F: Field> Config<F> {
@@ -217,6 +226,31 @@ impl<F: Field> Config<F> {
             cmp_lt_enabled,
             |meta| meta.query_advice(tag_index, Rotation::cur()),
             |_meta| 33.expr(),
+        );
+
+        let value_gt_127 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |_meta| 127.expr(),
+            |meta| meta.query_advice(value, Rotation::cur()),
+        );
+        let value_gt_183 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |_meta| 183.expr(),
+            |meta| meta.query_advice(value, Rotation::cur()),
+        );
+        let value_lt_184 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |meta| meta.query_advice(value, Rotation::cur()),
+            |_meta| 184.expr(),
+        );
+        let value_lt_192 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |meta| meta.query_advice(value, Rotation::cur()),
+            |_meta| 192.expr(),
         );
 
         meta.create_gate("DataType::Transaction", |meta| {
@@ -299,7 +333,13 @@ impl<F: Field> Config<F> {
 
                 // if tag_index == tag_length && tag_length > 1
                 cb.condition(tindex_eq_tlength.clone() * tlength_lt.clone(), |cb| {
-                    // TODO: 0xb8 <= value <= 0xbf
+                    cb.require_zero(
+                        "183 < value < 192",
+                        not::expr(and::expr(vec![
+                            value_gt_183.is_lt(meta, None),
+                            value_lt_192.is_lt(meta, None),
+                        ])),
+                    );
                     cb.require_equal(
                         "tag_index == value - 0xb7 + 1",
                         meta.query_advice(tag_index, Rotation::cur()),
@@ -313,7 +353,13 @@ impl<F: Field> Config<F> {
 
                 // if tag_index == tag_length && tag_length == 1
                 cb.condition(tindex_eq_tlength * tlength_eq, |cb| {
-                    // TODO: 0x80 <= value <= 0xb7
+                    cb.require_zero(
+                        "127 < value < 184",
+                        not::expr(and::expr(vec![
+                            value_gt_127.is_lt(meta, None),
+                            value_lt_184.is_lt(meta, None),
+                        ])),
+                    );
                     cb.require_equal(
                         "tag_length::next == value - 0x80",
                         meta.query_advice(tag_length, Rotation::next()),
@@ -657,7 +703,13 @@ impl<F: Field> Config<F> {
 
                 // if tag_index == tag_length && tag_length > 1
                 cb.condition(tindex_eq_tlength.clone() * tlength_lt.clone(), |cb| {
-                    // TODO: 0xb8 <= value <= 0xbf
+                    cb.require_zero(
+                        "183 < value < 192",
+                        not::expr(and::expr(vec![
+                            value_gt_183.is_lt(meta, None),
+                            value_lt_192.is_lt(meta, None),
+                        ])),
+                    );
                     cb.require_equal(
                         "tag_index == (value - 0xb7) + 1",
                         meta.query_advice(tag_index, Rotation::cur()),
@@ -688,7 +740,13 @@ impl<F: Field> Config<F> {
 
                 // if tag_index == tag_legth && tag_length == 1
                 cb.condition(tindex_eq_tlength * tlength_eq, |cb| {
-                    // TODO: 0x80 <= value <= 0xb7
+                    cb.require_zero(
+                        "127 < value < 184",
+                        not::expr(and::expr(vec![
+                            value_gt_127.is_lt(meta, None),
+                            value_lt_184.is_lt(meta, None),
+                        ])),
+                    );
                     cb.require_equal(
                         "tag_length::next == value - 0x80",
                         meta.query_advice(tag_length, Rotation::next()),
@@ -917,6 +975,11 @@ impl<F: Field> Config<F> {
             tag_index_lt_10,
             tag_index_lt_21,
             tag_index_lt_33,
+
+            value_gt_127,
+            value_gt_183,
+            value_lt_184,
+            value_lt_192,
         }
     }
 
