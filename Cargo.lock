@@ -2750,6 +2750,7 @@ dependencies = [
  "rand_xorshift",
  "serde",
  "serde_json",
+ "strum",
  "tokio",
  "zkevm-circuits",
 ]

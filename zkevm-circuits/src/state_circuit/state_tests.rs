@@ -235,12 +235,14 @@ mod tests {
     }
 
     fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
+        let n_rows = rows.len();
+
         let randomness = Fr::rand();
         let circuit = StateCircuit { randomness, rows };
         let power_of_randomness = circuit.instance();
 
-        MockProver::<Fr>::run(19, &circuit, power_of_randomness)
+        MockProver::<Fr>::run(17, &circuit, power_of_randomness)
             .unwrap()
-            .verify()
+            .verify_at_rows(0..n_rows, 0..n_rows)
     }
 }

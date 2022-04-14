@@ -84,6 +84,15 @@ impl<F: Field> StateCircuit<F> {
             .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len()])
             .collect()
     }
+
+    // /// Calculate which rows are "actually" used in the circuit
+    // pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+    //     let max_offset = block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
+    // * STEP_HEIGHT;     // gates are only enabled at "q_step" rows let
+    //   gates_row_ids = (0..max_offset).step_by(STEP_HEIGHT).collect(); // lookups
+    //   are enabled at "q_step" rows and byte lookup rows let lookup_row_ids =
+    //   (0..max_offset).collect(); (gates_row_ids, lookup_row_ids)
+    // }
 }
 
 impl<F: Field> Circuit<F> for StateCircuit<F> {

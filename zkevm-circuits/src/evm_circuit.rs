@@ -165,6 +165,7 @@ pub mod test {
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
+    use strum::IntoEnumIterator;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
