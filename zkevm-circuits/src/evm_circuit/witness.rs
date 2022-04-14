@@ -8,12 +8,14 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
-use bus_mapping::operation::{self, AccountField, CallContextField};
-use eth_types::evm_types::OpcodeId;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use bus_mapping::{
+    circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData},
+    operation::{self, AccountField, CallContextField},
+};
+use eth_types::{evm_types::OpcodeId, Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
+use rlp::Encodable;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
 
@@ -149,7 +151,25 @@ pub struct Transaction {
     pub steps: Vec<ExecStep>,
 }
 
+impl Encodable for Transaction {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.begin_list(Self::num_rlp_fields());
+        s.append(&Word::from(self.nonce));
+        s.append(&self.gas_price);
+        s.append(&Word::from(self.gas));
+        s.append(&self.callee_address);
+        s.append(&self.value);
+        s.append(&self.call_data);
+    }
+}
+
 impl Transaction {
+    pub const fn num_rlp_fields() -> usize {
+        // unsigned tx has 6 fields, namely, nonce, gas_price, gas, to, value,
+        // data.
+        6
+    }
+
     pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 4]> {
         [
             vec![
