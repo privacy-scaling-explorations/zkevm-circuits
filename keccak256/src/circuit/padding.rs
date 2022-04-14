@@ -1,5 +1,6 @@
 use crate::permutation::tables::RangeCheckConfig;
 use eth_types::Field;
+use gadgets::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -7,7 +8,6 @@ use halo2_proofs::{
 };
 use std::convert::TryInto;
 use std::iter;
-use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PaddingConfig<F> {
@@ -20,10 +20,10 @@ pub(crate) struct PaddingConfig<F> {
     input_len: Column<Advice>,
     acc_len: Column<Advice>,
     condition_80_inv: Column<Advice>,
+    condition_80_is_zero: IsZeroConfig<F>,
     is_pad_zone: Column<Advice>,
     padded_byte: Column<Advice>,
     byte_RLC: Column<Advice>,
-    _marker: PhantomData<F>,
 }
 
 impl<F: Field> PaddingConfig<F> {
@@ -42,6 +42,16 @@ impl<F: Field> PaddingConfig<F> {
         let byte_RLC = meta.advice_column();
         let one = Expression::Constant(F::one());
         let two_inv = Expression::Constant(F::from(2).invert().unwrap());
+        let condition_80_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_advice(flag_enable, Rotation::cur()),
+            |meta| {
+                meta.query_advice(input_len, Rotation::cur())
+                    - meta.query_advice(acc_len, Rotation::cur())
+            },
+            condition_80_inv,
+        );
+
         meta.create_gate("first", |meta| {
             let q_first = meta.query_selector(q_first);
             let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
@@ -85,11 +95,9 @@ impl<F: Field> PaddingConfig<F> {
             let padded_byte_cur = meta.query_advice(padded_byte, Rotation::cur());
             let byte_cur = meta.query_advice(byte, Rotation::cur());
             let input_len_cur = meta.query_advice(input_len, Rotation::cur());
-            let condition_80_inv_cur = meta.query_advice(condition_80_inv, Rotation::cur());
             let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
             let is_pad_zone_next = meta.query_advice(is_pad_zone, Rotation::next());
-            let pad_zone_start =
-                one.clone() - (input_len_cur - acc_len_cur.clone()) * condition_80_inv_cur;
+            let pad_zone_start = one.clone() - condition_80_is_zero.clone().is_zero_expression;
             iter::empty()
                 .chain(Some((
                     "copy flag",
@@ -114,10 +122,9 @@ impl<F: Field> PaddingConfig<F> {
             let byte_cur = meta.query_advice(byte, Rotation::cur());
             let input_len_cur = meta.query_advice(input_len, Rotation::cur());
             let acc_len_cur = meta.query_advice(acc_len, Rotation::cur());
-            let condition_80_inv_cur = meta.query_advice(condition_80_inv, Rotation::cur());
             let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
             let one = Expression::Constant(F::one());
-            let pad_zone_start = one.clone() - (input_len_cur - acc_len_cur) * condition_80_inv_cur;
+            let pad_zone_start = one.clone() - condition_80_is_zero.clone().is_zero_expression;
             vec![
                 q_last
                     * flag_enable_cur
@@ -137,10 +144,10 @@ impl<F: Field> PaddingConfig<F> {
             input_len,
             acc_len,
             condition_80_inv,
+            condition_80_is_zero,
             is_pad_zone,
             padded_byte,
             byte_RLC,
-            _marker: PhantomData,
         }
     }
     pub fn assign_region(

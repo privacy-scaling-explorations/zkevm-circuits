@@ -2095,6 +2095,7 @@ name = "keccak256"
 version = "0.1.0"
 dependencies = [
  "eth-types",
+ "gadgets",
  "halo2_proofs",
  "itertools",
  "lazy_static",
