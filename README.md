@@ -21,3 +21,9 @@ For state circuit, `MEMORY_ADDRESS_MAX` and `STACK_ADDRESS_MAX` do not need to b
 By default will take values: 2000 and 1300.
 
 You can also run both benchmarks by running: `make circuit_benches DEGREE=18`.
+
+# ToDo
+
+zkEVM is the core topic I am most interested in.
+
+I need to study the zk proof and the circuit in detail, then I'll dirty my hands.
