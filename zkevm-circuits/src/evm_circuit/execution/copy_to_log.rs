@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::TxLogFieldTag,
         util::{
@@ -14,7 +14,10 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData};
+use bus_mapping::{
+    circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData},
+    constants::MAX_COPY_BYTES,
+};
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -191,13 +194,15 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
 #[cfg(test)]
 pub mod test {
     use crate::evm_circuit::{
-        param::MAX_COPY_BYTES,
         step::ExecutionState,
         table::{RwTableTag, TxLogFieldTag},
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use bus_mapping::circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData};
+    use bus_mapping::{
+        circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData},
+        constants::MAX_COPY_BYTES,
+    };
     use eth_types::{evm_types::OpcodeId, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;

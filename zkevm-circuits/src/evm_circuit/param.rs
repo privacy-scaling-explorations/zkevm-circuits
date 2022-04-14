@@ -36,7 +36,3 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
-
-// The max number of bytes that can be copied in a step limited by the number
-// of cells in a step
-pub(crate) const MAX_COPY_BYTES: usize = 71;
