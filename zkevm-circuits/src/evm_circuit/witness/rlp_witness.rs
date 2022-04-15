@@ -14,9 +14,12 @@ pub enum RlpDataType {
 
 impl_expr!(RlpDataType);
 
+/// Index of rows starts here.
+pub const START_IDX: usize = 1;
+
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
-pub struct RlpWitnessRow {
+pub struct RlpWitnessRow<F> {
     /// Denotes the index of this row, starting from 0 and ending at n-1 where n
     /// is the byte length of the RLP-encoded data.
     pub index: usize,
@@ -35,6 +38,8 @@ pub struct RlpWitnessRow {
     /// Denotes an accumulator for the length of data, in the case where len >
     /// 55 and the length is represented in its big-endian form.
     pub length_acc: u64,
+    /// Denotes the hash of the RLP-encoded data.
+    pub hash: F,
 }
 
 /// The RlpWitnessGen trait is implemented by data types who's RLP encoding can
@@ -42,5 +47,5 @@ pub struct RlpWitnessRow {
 pub trait RlpWitnessGen<F>: Encodable {
     /// Generate witness to the RLP-encoding verifier circuit, as a vector of
     /// RlpWitnessRow.
-    fn gen_witness(&self) -> Vec<RlpWitnessRow>;
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>>;
 }

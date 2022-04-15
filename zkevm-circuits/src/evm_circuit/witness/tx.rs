@@ -1,12 +1,18 @@
-use eth_types::{Address, U256};
+use digest::Digest;
+use eth_types::{Address, ToLittleEndian, Word, U256};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use num::Zero;
+use sha3::Keccak256;
 
-use crate::impl_expr;
-
-use super::{
-    rlp_witness::{RlpDataType, RlpWitnessGen, RlpWitnessRow},
-    Transaction,
+use crate::{
+    evm_circuit::{
+        util::RandomLinearCombination,
+        witness::{
+            rlp_witness::{RlpDataType, RlpWitnessGen, RlpWitnessRow, START_IDX},
+            Transaction,
+        },
+    },
+    impl_expr,
 };
 
 /// Tags used to tag rows in the RLP circuit for a transaction.
@@ -40,14 +46,17 @@ impl_expr!(RlpTxTag);
 pub const N_TX_TAGS: usize = 9;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
-    fn gen_witness(&self) -> Vec<RlpWitnessRow> {
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {
         let rlp_data = rlp::encode(self);
+        let hash = Word::from_big_endian(Keccak256::digest(&rlp_data).as_slice());
+        let hash = RandomLinearCombination::random_linear_combine(hash.to_le_bytes(), randomness);
 
         let mut rows = Vec::with_capacity(rlp_data.len());
 
-        let idx = handle_prefix(rlp_data.as_ref(), &mut rows, 0);
+        let idx = handle_prefix(rlp_data.as_ref(), hash, &mut rows, START_IDX);
         let idx = handle_u256(
             rlp_data.as_ref(),
+            hash,
             &mut rows,
             RlpTxTag::Nonce,
             self.nonce.into(),
@@ -55,6 +64,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
         );
         let idx = handle_u256(
             rlp_data.as_ref(),
+            hash,
             &mut rows,
             RlpTxTag::GasPrice,
             self.gas_price,
@@ -62,20 +72,22 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
         );
         let idx = handle_u256(
             rlp_data.as_ref(),
+            hash,
             &mut rows,
             RlpTxTag::Gas,
             self.gas.into(),
             idx,
         );
-        let idx = handle_address(rlp_data.as_ref(), &mut rows, self.callee_address, idx);
+        let idx = handle_address(rlp_data.as_ref(), hash, &mut rows, self.callee_address, idx);
         let idx = handle_u256(
             rlp_data.as_ref(),
+            hash,
             &mut rows,
             RlpTxTag::Value,
             self.value,
             idx,
         );
-        let idx = handle_bytes(rlp_data.as_ref(), &mut rows, &self.call_data, idx);
+        let idx = handle_bytes(rlp_data.as_ref(), hash, &mut rows, &self.call_data, idx);
 
         assert!(
             idx == rlp_data.len(),
@@ -85,7 +97,12 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
     }
 }
 
-fn handle_prefix(rlp_data: &[u8], rows: &mut Vec<RlpWitnessRow>, mut idx: usize) -> usize {
+fn handle_prefix<F: FieldExt>(
+    rlp_data: &[u8],
+    hash: F,
+    rows: &mut Vec<RlpWitnessRow<F>>,
+    mut idx: usize,
+) -> usize {
     if rlp_data[idx] > 183 && rlp_data[idx] < 192 {
         // length of length
         let length_of_length = (rlp_data[idx] - 183) as usize;
@@ -98,6 +115,7 @@ fn handle_prefix(rlp_data: &[u8], rows: &mut Vec<RlpWitnessRow>, mut idx: usize)
             tag_length,
             tag_index: tag_length,
             length_acc: 0,
+            hash,
         });
         idx += 1;
         let mut length_acc = 0;
@@ -111,6 +129,7 @@ fn handle_prefix(rlp_data: &[u8], rows: &mut Vec<RlpWitnessRow>, mut idx: usize)
                 tag_length,
                 tag_index: tag_length - (idx + k),
                 length_acc,
+                hash,
             });
             idx += 1;
         }
@@ -129,15 +148,17 @@ fn handle_prefix(rlp_data: &[u8], rows: &mut Vec<RlpWitnessRow>, mut idx: usize)
             tag_length: 1,
             tag_index: 1,
             length_acc: (rlp_data[idx] - 127) as u64,
+            hash,
         });
         idx += 1;
     }
     idx
 }
 
-fn handle_u256(
+fn handle_u256<F: FieldExt>(
     rlp_data: &[u8],
-    rows: &mut Vec<RlpWitnessRow>,
+    hash: F,
+    rows: &mut Vec<RlpWitnessRow<F>>,
     tag: RlpTxTag,
     value: U256,
     mut idx: usize,
@@ -164,6 +185,7 @@ fn handle_u256(
             tag_length: 1,
             tag_index: 1,
             length_acc: 0,
+            hash,
         });
         idx += 1;
     } else if value_bytes.len() == 1 && value_bytes[0] < 128 {
@@ -180,6 +202,7 @@ fn handle_u256(
             tag_length: 1,
             tag_index: 1,
             length_acc: 0,
+            hash,
         });
         idx += 1;
     } else {
@@ -197,6 +220,7 @@ fn handle_u256(
             tag_length,
             tag_index: tag_length,
             length_acc: 1,
+            hash,
         });
         idx += 1;
 
@@ -215,6 +239,7 @@ fn handle_u256(
                 tag_length,
                 tag_index: tag_length - (1 + i),
                 length_acc: 0,
+                hash,
             });
             idx += 1;
         }
@@ -223,9 +248,10 @@ fn handle_u256(
     idx
 }
 
-fn handle_address(
+fn handle_address<F: FieldExt>(
     rlp_data: &[u8],
-    rows: &mut Vec<RlpWitnessRow>,
+    hash: F,
+    rows: &mut Vec<RlpWitnessRow<F>>,
     value: Address,
     mut idx: usize,
 ) -> usize {
@@ -244,6 +270,7 @@ fn handle_address(
         tag_length: 1,
         tag_index: 1,
         length_acc: 20,
+        hash,
     });
     idx += 1;
 
@@ -262,6 +289,7 @@ fn handle_address(
             tag_length: 20,
             tag_index: 20 - i,
             length_acc: 0,
+            hash,
         });
         idx += 1;
     }
@@ -269,9 +297,10 @@ fn handle_address(
     idx
 }
 
-fn handle_bytes(
+fn handle_bytes<F: FieldExt>(
     rlp_data: &[u8],
-    rows: &mut Vec<RlpWitnessRow>,
+    hash: F,
+    rows: &mut Vec<RlpWitnessRow<F>>,
     call_data: &[u8],
     mut idx: usize,
 ) -> usize {
@@ -291,6 +320,7 @@ fn handle_bytes(
             tag_length: 1,
             tag_index: 1,
             length_acc: 0,
+            hash,
         });
         idx += 1;
         return idx;
@@ -310,6 +340,7 @@ fn handle_bytes(
             tag_length: 1,
             tag_index: 1,
             length_acc: length as u64,
+            hash,
         });
         idx += 1;
 
@@ -328,6 +359,7 @@ fn handle_bytes(
                 tag_length: length,
                 tag_index: length - i,
                 length_acc: 0,
+                hash,
             });
             idx += 1;
         }
@@ -350,6 +382,7 @@ fn handle_bytes(
         tag_length,
         tag_index: tag_length,
         length_acc: 0,
+        hash,
     });
     idx += 1;
 
@@ -376,6 +409,7 @@ fn handle_bytes(
             tag_length,
             tag_index: tag_length - (1 + i),
             length_acc,
+            hash,
         });
         idx += 1;
     }
@@ -396,6 +430,7 @@ fn handle_bytes(
             tag_length,
             tag_index: tag_length - (1 + i),
             length_acc: 0,
+            hash,
         });
         idx += 1;
     }

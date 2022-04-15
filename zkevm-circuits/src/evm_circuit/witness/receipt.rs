@@ -24,7 +24,7 @@ impl_expr!(RlpReceiptTag);
 pub const N_RECEIPT_TAGS: usize = 2;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
-    fn gen_witness(&self) -> Vec<RlpWitnessRow> {
+    fn gen_witness(&self, _randomness: F) -> Vec<RlpWitnessRow<F>> {
         let rlp_data = rlp::encode(self);
 
         // TODO: receipt witness gen
