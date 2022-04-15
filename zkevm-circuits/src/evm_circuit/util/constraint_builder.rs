@@ -4,7 +4,7 @@ use crate::{
         step::{ExecutionState, Preset, Step},
         table::{
             AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, TxContextFieldTag,
+            RwTableTag, TxContextFieldTag, TxLogFieldTag,
         },
         util::{Cell, RandomLinearCombination, Word},
     },
@@ -60,6 +60,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) gas_left: Transition<Expression<F>>,
     pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) reversible_write_counter: Transition<Expression<F>>,
+    pub(crate) log_id: Transition<Expression<F>>,
 }
 
 impl<F: FieldExt> StepStateTransition<F> {
@@ -84,6 +85,7 @@ impl<F: FieldExt> StepStateTransition<F> {
             gas_left: Transition::Any,
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
+            log_id: Transition::Any,
         }
     }
 }
@@ -251,6 +253,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
+    log_id_offset: usize,
     in_next_step: bool,
     condition: Option<Expression<F>>,
 }
@@ -275,6 +278,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0,
+            log_id_offset: 0,
             in_next_step: false,
             condition: None,
         }
@@ -349,6 +353,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     pub(crate) fn stack_pointer_offset(&self) -> i32 {
         self.stack_pointer_offset
+    }
+
+    pub(crate) fn log_id_offset(&self) -> usize {
+        self.log_id_offset
     }
 
     // Query
@@ -499,6 +507,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         constrain!(gas_left);
         constrain!(memory_word_size);
         constrain!(reversible_write_counter);
+        constrain!(log_id);
     }
 
     // Fixed
@@ -1079,6 +1088,29 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn tx_log_lookup(
+        &mut self,
+        tx_id: Expression<F>,
+        tag: TxLogFieldTag,
+        index: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "log data lookup",
+            1.expr(),
+            RwTableTag::TxLog,
+            [
+                tx_id,
+                self.curr.state.log_id.expr(),
+                tag.expr(),
+                index,
+                value,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ],
+        );
+    }
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {

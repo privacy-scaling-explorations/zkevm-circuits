@@ -127,6 +127,8 @@ impl GasCost {
     pub const MEMORY_EXPANSION_QUAD_DENOMINATOR: Self = Self(512);
     /// Coefficient of linear part of memory expansion gas cost
     pub const MEMORY_EXPANSION_LINEAR_COEFF: Self = Self(3);
+    /// constant gas for logs op codes
+    pub const LOG: Self = Self(375);
 }
 
 impl GasCost {

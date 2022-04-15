@@ -4,7 +4,7 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag,
+        TxContextFieldTag, TxLogFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -304,6 +304,8 @@ pub struct ExecStep {
     pub memory_size: u64,
     /// The counter for reversible writes
     pub reversible_write_counter: usize,
+    /// The counter for log index within tx
+    pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
     /// Step auxiliary data
@@ -493,6 +495,20 @@ pub enum Rw {
         memory_address: u64,
         byte: u8,
     },
+    TxLog {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        log_id: u64,
+        field_tag: TxLogFieldTag,
+        // topic index if field_tag is TxLogFieldTag:Topic
+        // byte index if field_tag is TxLogFieldTag:Data
+        // it would be zero for other field tags
+        index: usize,
+
+        // when it is topic field, value can be word type
+        value: Word,
+    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -539,6 +555,7 @@ impl Rw {
             Self::CallContext { rw_counter, .. } => (*rw_counter),
             Self::AccountStorage { rw_counter, .. } => (*rw_counter),
             Self::TxRefund { rw_counter, .. } => (*rw_counter),
+            Self::TxLog { rw_counter, .. } => (*rw_counter),
         }
     }
 
@@ -610,6 +627,13 @@ impl Rw {
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn log_value(&self) -> Word {
+        match self {
+            Self::TxLog { value, .. } => *value,
             _ => unreachable!(),
         }
     }
@@ -820,6 +844,28 @@ impl Rw {
                     committed_value.to_le_bytes(),
                     randomness,
                 ),
+            ]
+            .into(),
+            Self::TxLog {
+                rw_counter,
+                is_write,
+                tx_id,
+                log_id,
+                field_tag,
+                index,
+                value,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxLog as u64),
+                F::from(*tx_id as u64),
+                F::from(*log_id as u64),
+                F::from(*field_tag as u64),
+                F::from(*index as u64),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                F::zero(),
+                F::zero(),
+                F::zero(),
             ]
             .into(),
             _ => unimplemented!(),
@@ -1084,6 +1130,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 if op.is_swap() {
                     return ExecutionState::SWAP;
                 }
+                if op.is_log() {
+                    return ExecutionState::LOG;
+                }
                 match op {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
@@ -1179,6 +1228,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        log_id: step.log_id,
         aux_data: step.aux_data.map(Into::into),
     }
 }

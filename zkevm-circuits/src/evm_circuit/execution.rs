@@ -32,6 +32,7 @@ mod chainid;
 mod codecopy;
 mod comparator;
 mod copy_code_to_memory;
+mod copy_to_log;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -43,6 +44,7 @@ mod is_zero;
 mod jump;
 mod jumpdest;
 mod jumpi;
+mod logs;
 mod memory;
 mod memory_copy;
 mod msize;
@@ -74,6 +76,7 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use comparator::ComparatorGadget;
 use copy_code_to_memory::CopyCodeToMemoryGadget;
+use copy_to_log::CopyToLogGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -85,6 +88,7 @@ use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
+use logs::LogGadget;
 use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
@@ -145,6 +149,7 @@ pub(crate) struct ExecutionConfig<F> {
     codecopy_gadget: CodeCopyGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
+    copy_to_log_gadget: CopyToLogGadget<F>,
     dup_gadget: DupGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
@@ -153,6 +158,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    log_gadget: LogGadget<F>,
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,
@@ -356,6 +362,7 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             copy_code_to_memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
+            copy_to_log_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
             // opcode gadgets
@@ -379,6 +386,7 @@ impl<F: Field> ExecutionConfig<F> {
             jump_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
+            log_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             mul_div_mod_gadget: configure_gadget!(),
@@ -638,6 +646,7 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
+            ExecutionState::CopyToLog => assign_exec_step!(self.copy_to_log_gadget),
             ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
@@ -662,6 +671,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
             ExecutionState::JUMPDEST => assign_exec_step!(self.jumpdest_gadget),
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
+            ExecutionState::LOG => assign_exec_step!(self.log_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),

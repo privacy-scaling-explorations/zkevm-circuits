@@ -24,6 +24,7 @@ pub enum ExecutionState {
     EndBlock,
     CopyCodeToMemory,
     CopyToMemory,
+    CopyToLog,
     // Opcode successful cases
     STOP,
     ADD_SUB,     // ADD, SUB
@@ -139,6 +140,7 @@ impl ExecutionState {
             Self::EndBlock,
             Self::CopyCodeToMemory,
             Self::CopyToMemory,
+            Self::CopyToLog,
             Self::STOP,
             Self::ADD_SUB,
             Self::MUL_DIV_MOD,
@@ -458,6 +460,8 @@ pub(crate) struct StepState<F> {
     pub(crate) memory_word_size: Cell<F>,
     /// The counter for reversible writes
     pub(crate) reversible_write_counter: Cell<F>,
+    /// The counter for log index
+    pub(crate) log_id: Cell<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -505,6 +509,7 @@ impl<F: FieldExt> Step<F> {
                 gas_left: cells.pop_front().unwrap(),
                 memory_word_size: cells.pop_front().unwrap(),
                 reversible_write_counter: cells.pop_front().unwrap(),
+                log_id: cells.pop_front().unwrap(),
             }
         };
 
@@ -604,6 +609,9 @@ impl<F: FieldExt> Step<F> {
             offset,
             Some(F::from(step.reversible_write_counter as u64)),
         )?;
+        self.state
+            .log_id
+            .assign(region, offset, Some(F::from(step.log_id as u64)))?;
         Ok(())
     }
 }

@@ -155,6 +155,7 @@ pub enum RwTableTag {
     Account,
     AccountDestructed,
     CallContext,
+    TxLog,
 }
 
 impl RwTableTag {
@@ -186,6 +187,13 @@ pub enum BytecodeFieldTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TxLogFieldTag {
+    Address = 1,
+    Topic,
+    Data,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,
@@ -223,6 +231,7 @@ impl_expr!(AccountFieldTag);
 impl_expr!(BytecodeFieldTag);
 impl_expr!(CallContextFieldTag);
 impl_expr!(BlockContextFieldTag);
+impl_expr!(TxLogFieldTag);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Table {
