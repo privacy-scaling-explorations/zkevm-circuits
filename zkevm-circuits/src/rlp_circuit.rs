@@ -14,7 +14,11 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
-        witness::rlp_witness::{RlpReceiptTag, RlpTxTag, RlpWitnessGen, N_RECEIPT_TAGS, N_TX_TAGS},
+        witness::{
+            receipt::{RlpReceiptTag, N_RECEIPT_TAGS},
+            rlp_witness::RlpWitnessGen,
+            tx::{RlpTxTag, N_TX_TAGS},
+        },
     },
     util::Expr,
 };

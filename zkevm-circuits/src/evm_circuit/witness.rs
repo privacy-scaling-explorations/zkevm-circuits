@@ -19,7 +19,9 @@ use rlp::Encodable;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
 
+pub mod receipt;
 pub mod rlp_witness;
+pub mod tx;
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -120,6 +122,17 @@ impl BlockContext {
                 .collect(),
         ]
         .concat()
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+// TODO: receipt struct.
+pub struct Receipt;
+
+impl Encodable for Receipt {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.begin_list(0);
+        // TODO: rlp encoding for receipts.
     }
 }
 
