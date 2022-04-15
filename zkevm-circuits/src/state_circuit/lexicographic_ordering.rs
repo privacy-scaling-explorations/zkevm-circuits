@@ -13,11 +13,49 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::ops::Mul;
 
-// 2 limbs for tag, field_tag and id.
-// 10 limbs for address,
-// 16 limbs for storage key
-// 2 limbs for rw_counter
-// 30 limbs in total -> can fit into two field elements
+// We use this chip to show that the rows of the rw table are in lexicographic
+// order, i.e. ordered by (tag, field_tag, id, address, storage_key, and
+// rw_counter). We do this by packing these 6 fields into a 480 bit value X, and
+// then showing that X_cur > X_prev. Let A0, A1, ..., A29 be the 30 16-bit limbs
+// of X_cur and B0, B1, ..., B29 be 30 16-bit limbs of X_prev, in big endian
+// order.
+
+// Let
+// C0 = A0 - B0,
+// C1 = C0 << 16 + A1 - B1,
+// ...
+// C14 = C13 << 16 + A14 - B14,
+// and
+// C15 = A15 - B15,
+// C16 = C15 << 16 + A16 - B16,
+// ...
+// C29 = C28 << 16 + A29 - B29.
+
+// X_prev > X_prev iff one of the following is true:
+// 1. one of C0, ..., C14 is non-zero and fits into 16 bits.
+// 2. all of C0, ..., C14 are 0 and one of C15, ..., C29 is non-zero and fits
+//    into 16 bits. (note that "all of C0, ..., C14 are 0" is equivalent to
+//    "C14 is 0".)
+
+// We show that one of these is true with the following constraints:
+//  - diff_1 is (at least) 1 of the 15 values C0, ..., C14.
+//  - diff_2 is (at least) 1 of the 15 values C15, ..., C29.
+//  - diff_1 fits into 16 bits.
+//  - if diff_1 is 0, then diff_2 fits into 16 bits.
+//  - if diff_1 is 0, then C14 is 0.
+//  - diff_2 is not 0. (there is always a valid assignment for this because the
+//                      rw_counter is increasing.)
+
+// Packing the field into 480 bits:
+//   4 bits for tag,
+// + 4 bits for field_tag // TODO: this actually needs 5 bits. Either reduce id
+// + 24 bits for id       // to 23 bits, or add diff_3 etc.
+// + 160 bits for address,
+// + 256 bits for storage key
+// + 32  bits for rw_counter
+// -----------------------------------
+// = 480 bits
+
 #[derive(Clone)]
 pub struct Config<F: Field> {
     diff_1: Column<Advice>,
