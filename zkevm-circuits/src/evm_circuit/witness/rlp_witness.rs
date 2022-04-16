@@ -17,9 +17,6 @@ pub enum RlpDataType {
 
 impl_expr!(RlpDataType);
 
-/// Index of rows starts here.
-pub const START_IDX: usize = 1;
-
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpWitnessRow<F> {
