@@ -147,7 +147,7 @@ fn handle_prefix<F: FieldExt>(
             tag: RlpTxTag::Prefix as u8,
             tag_length: 1,
             tag_index: 1,
-            length_acc: (rlp_data[idx] - 127) as u64,
+            length_acc: (rlp_data[idx] - 192) as u64,
             hash,
         });
         idx += 1;

@@ -88,12 +88,20 @@ pub struct Config<F> {
     value_gt_127: LtConfig<F, 1>,
     /// Lt chip to check: 183 < value.
     value_gt_183: LtConfig<F, 1>,
+    /// Lt chip to check: 191 < value.
+    value_gt_191: LtConfig<F, 1>,
+    /// Lt chip to check: 247 < value.
+    value_gt_247: LtConfig<F, 1>,
     /// Lt chip to check: value < 128.
     value_lt_128: LtConfig<F, 1>,
     /// Lt chip to check: value < 184.
     value_lt_184: LtConfig<F, 1>,
     /// Lt chip to check: value < 192.
     value_lt_192: LtConfig<F, 1>,
+    /// Lt chip to check: value < 248.
+    value_lt_248: LtConfig<F, 1>,
+    /// Lt chip to check: value < 256.
+    value_lt_256: LtConfig<F, 2>,
 
     /// Comparison chip to check: 0 <= length_acc.
     length_acc_cmp_0: ComparatorConfig<F, 1>,
@@ -174,6 +182,18 @@ impl<F: Field> Config<F> {
             |_meta| 183.expr(),
             |meta| meta.query_advice(value, Rotation::cur()),
         );
+        let value_gt_191 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |_meta| 191.expr(),
+            |meta| meta.query_advice(value, Rotation::cur()),
+        );
+        let value_gt_247 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |_meta| 247.expr(),
+            |meta| meta.query_advice(value, Rotation::cur()),
+        );
         let value_lt_128 = LtChip::configure(
             meta,
             cmp_lt_enabled,
@@ -191,6 +211,18 @@ impl<F: Field> Config<F> {
             cmp_lt_enabled,
             |meta| meta.query_advice(value, Rotation::cur()),
             |_meta| 192.expr(),
+        );
+        let value_lt_248 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |meta| meta.query_advice(value, Rotation::cur()),
+            |_meta| 248.expr(),
+        );
+        let value_lt_256 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |meta| meta.query_advice(value, Rotation::cur()),
+            |_meta| 256.expr(),
         );
 
         let length_acc_cmp_0 = ComparatorChip::configure(
@@ -287,17 +319,12 @@ impl<F: Field> Config<F> {
 
                 // if tag_index == tag_length && tag_length > 1
                 cb.condition(tindex_eq_tlength.clone() * tlength_lt.clone(), |cb| {
-                    cb.require_zero(
-                        "183 < value < 192",
-                        not::expr(and::expr(vec![
-                            value_gt_183.is_lt(meta, None),
-                            value_lt_192.is_lt(meta, None),
-                        ])),
-                    );
+                    cb.require_equal("247 < value", value_gt_247.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 256", value_lt_256.is_lt(meta, None), 1.expr());
                     cb.require_equal(
-                        "tag_index == value - 0xb7 + 1",
-                        meta.query_advice(tag_index, Rotation::cur()),
-                        meta.query_advice(value, Rotation::cur()) - 182.expr(),
+                        "tag_index::next == value - 0xf7",
+                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(value, Rotation::cur()) - 247.expr(),
                     );
                     cb.require_zero(
                         "length_acc == 0",
@@ -307,17 +334,12 @@ impl<F: Field> Config<F> {
 
                 // if tag_index == tag_length && tag_length == 1
                 cb.condition(tindex_eq_tlength * tlength_eq, |cb| {
-                    cb.require_zero(
-                        "127 < value < 184",
-                        not::expr(and::expr(vec![
-                            value_gt_127.is_lt(meta, None),
-                            value_lt_184.is_lt(meta, None),
-                        ])),
-                    );
+                    cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
                     cb.require_equal(
-                        "length_acc == value - 0x80",
+                        "length_acc == value - 0xc0",
                         meta.query_advice(length_acc, Rotation::cur()),
-                        meta.query_advice(value, Rotation::cur()) - 128.expr(),
+                        meta.query_advice(value, Rotation::cur()) - 192.expr(),
                     );
                 });
 
@@ -1017,9 +1039,13 @@ impl<F: Field> Config<F> {
 
             value_gt_127,
             value_gt_183,
+            value_gt_191,
+            value_gt_247,
             value_lt_128,
             value_lt_184,
             value_lt_192,
+            value_lt_248,
+            value_lt_256,
 
             length_acc_cmp_0,
         }
@@ -1046,9 +1072,13 @@ impl<F: Field> Config<F> {
 
         let value_gt_127_chip = LtChip::construct(self.value_gt_127.clone());
         let value_gt_183_chip = LtChip::construct(self.value_gt_183.clone());
+        let value_gt_191_chip = LtChip::construct(self.value_gt_191.clone());
+        let value_gt_247_chip = LtChip::construct(self.value_gt_247.clone());
         let value_lt_128_chip = LtChip::construct(self.value_lt_128.clone());
         let value_lt_184_chip = LtChip::construct(self.value_lt_184.clone());
         let value_lt_192_chip = LtChip::construct(self.value_lt_192.clone());
+        let value_lt_248_chip = LtChip::construct(self.value_lt_248.clone());
+        let value_lt_256_chip = LtChip::construct(self.value_lt_256.clone());
 
         let length_acc_cmp_0_chip = ComparatorChip::construct(self.length_acc_cmp_0.clone());
 
@@ -1161,23 +1191,47 @@ impl<F: Field> Config<F> {
                         F::from(183u64),
                         F::from(row.value as u64),
                     )?;
+                    value_gt_191_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(191u64),
+                        F::from(row.value as u64),
+                    )?;
+                    value_gt_247_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(247u64),
+                        F::from(row.value as u64),
+                    )?;
                     value_lt_128_chip.assign(
                         &mut region,
                         offset,
-                        F::from(128u64),
                         F::from(row.value as u64),
+                        F::from(128u64),
                     )?;
                     value_lt_184_chip.assign(
                         &mut region,
                         offset,
-                        F::from(184u64),
                         F::from(row.value as u64),
+                        F::from(184u64),
                     )?;
                     value_lt_192_chip.assign(
                         &mut region,
                         offset,
-                        F::from(192u64),
                         F::from(row.value as u64),
+                        F::from(192u64),
+                    )?;
+                    value_lt_248_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(row.value as u64),
+                        F::from(248u64),
+                    )?;
+                    value_lt_256_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(row.value as u64),
+                        F::from(256u64),
                     )?;
                     length_acc_cmp_0_chip.assign(
                         &mut region,
