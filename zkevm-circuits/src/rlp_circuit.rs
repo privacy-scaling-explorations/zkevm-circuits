@@ -1149,4 +1149,39 @@ impl<F: Field> Config<F> {
             },
         )
     }
+
+    pub(crate) fn load<RLP: RlpWitnessGen<F>>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        witness: RLP,
+    ) -> Result<(), Error> {
+        let rows = witness.gen_witness(self.r);
+        let hash_rlc = witness.hash(self.r);
+        let value_rlc = rows.iter().fold(F::zero(), |acc, row| {
+            acc * F::from(256u64) + F::from(row.value as u64)
+        });
+
+        layouter.assign_region(
+            || "keccak table",
+            |mut region| {
+                let offset = 0;
+                for (name, column, value) in &[
+                    ("value_rlc", self.keccak_tuple[0], value_rlc),
+                    ("index", self.keccak_tuple[1], F::from(rows.len() as u64)),
+                    ("rindex", self.keccak_tuple[2], F::one()),
+                    ("hash_rlc", self.keccak_tuple[3], hash_rlc),
+                ] {
+                    region.assign_advice(
+                        || format!("keccak table assign {} {}", name, offset),
+                        *column,
+                        offset,
+                        || Ok(*value),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
+
+        Ok(())
+    }
 }
