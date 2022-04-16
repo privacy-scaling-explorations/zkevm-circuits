@@ -3,12 +3,26 @@
 
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::Chip,
-    plonk::{ConstraintSystem, Expression, VirtualCells},
+    circuit::{Chip, Region},
+    plonk::{ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
+use crate::{is_equal::IsEqualInstruction, less_than::LtInstruction};
+
 use super::{is_equal::IsEqualChip, less_than::LtChip};
+
+/// Instruction that the Comparator chip needs to implement.
+pub trait ComparatorInstruction<F: FieldExt> {
+    /// Assign the lhs and rhs witnesses to the Comparator chip's region.
+    fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        lhs: F,
+        rhs: F,
+    ) -> Result<(), Error>;
+}
 
 /// Config for the Comparator chip.
 #[derive(Clone, Debug)]
@@ -59,6 +73,23 @@ impl<F: FieldExt, const N_BYTES: usize> ComparatorChip<F, N_BYTES> {
     /// Constructs a comparator chip given its config.
     pub fn construct(config: ComparatorConfig<F, N_BYTES>) -> ComparatorChip<F, N_BYTES> {
         ComparatorChip { config }
+    }
+}
+
+impl<F: FieldExt, const N_BYTES: usize> ComparatorInstruction<F> for ComparatorChip<F, N_BYTES> {
+    fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        lhs: F,
+        rhs: F,
+    ) -> Result<(), Error> {
+        self.config().lt_chip.assign(region, offset, lhs, rhs)?;
+        self.config()
+            .eq_chip
+            .assign(region, offset, Some(lhs), Some(rhs))?;
+
+        Ok(())
     }
 }
 

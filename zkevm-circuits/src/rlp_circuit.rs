@@ -2,8 +2,8 @@
 
 use eth_types::Field;
 use gadgets::{
-    comparator::{ComparatorChip, ComparatorConfig},
-    less_than::{LtChip, LtConfig},
+    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    less_than::{LtChip, LtConfig, LtInstruction},
 };
 use halo2_proofs::{
     circuit::Layouter,
@@ -1036,6 +1036,22 @@ impl<F: Field> Config<F> {
         let rows = witness.gen_witness(self.r);
         let n_rows = rows.len();
 
+        let tag_index_cmp_1_chip = ComparatorChip::construct(self.tag_index_cmp_1.clone());
+        let tag_index_length_cmp_chip =
+            ComparatorChip::construct(self.tag_index_length_cmp.clone());
+        let tag_length_cmp_1_chip = ComparatorChip::construct(self.tag_length_cmp_1.clone());
+
+        let tag_index_lt_10_chip = LtChip::construct(self.tag_index_lt_10.clone());
+        let tag_index_lt_34_chip = LtChip::construct(self.tag_index_lt_34.clone());
+
+        let value_gt_127_chip = LtChip::construct(self.value_gt_127.clone());
+        let value_gt_183_chip = LtChip::construct(self.value_gt_183.clone());
+        let value_lt_128_chip = LtChip::construct(self.value_lt_128.clone());
+        let value_lt_184_chip = LtChip::construct(self.value_lt_184.clone());
+        let value_lt_192_chip = LtChip::construct(self.value_lt_192.clone());
+
+        let length_acc_cmp_0_chip = ComparatorChip::construct(self.length_acc_cmp_0.clone());
+
         let mut value_rlc = F::zero();
         layouter.assign_region(
             || "assign RLP-encoded data",
@@ -1102,6 +1118,73 @@ impl<F: Field> Config<F> {
                             || Ok(value),
                         )?;
                     }
+
+                    tag_index_cmp_1_chip.assign(
+                        &mut region,
+                        offset,
+                        F::one(),
+                        F::from(row.tag_index as u64),
+                    )?;
+                    tag_index_length_cmp_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(row.tag_index as u64),
+                        F::from(row.tag_length as u64),
+                    )?;
+                    tag_length_cmp_1_chip.assign(
+                        &mut region,
+                        offset,
+                        F::one(),
+                        F::from(row.tag_length as u64),
+                    )?;
+                    tag_index_lt_10_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(row.tag_index as u64),
+                        F::from(10u64),
+                    )?;
+                    tag_index_lt_34_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(row.tag_index as u64),
+                        F::from(34u64),
+                    )?;
+                    value_gt_127_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(127u64),
+                        F::from(row.value as u64),
+                    )?;
+                    value_gt_183_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(183u64),
+                        F::from(row.value as u64),
+                    )?;
+                    value_lt_128_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(128u64),
+                        F::from(row.value as u64),
+                    )?;
+                    value_lt_184_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(184u64),
+                        F::from(row.value as u64),
+                    )?;
+                    value_lt_192_chip.assign(
+                        &mut region,
+                        offset,
+                        F::from(192u64),
+                        F::from(row.value as u64),
+                    )?;
+                    length_acc_cmp_0_chip.assign(
+                        &mut region,
+                        offset,
+                        F::zero(),
+                        F::from(row.length_acc as u64),
+                    )?;
                 }
 
                 for offset in n_rows..=last_row_offset {
