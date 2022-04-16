@@ -16,7 +16,7 @@ use crate::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
         witness::{
             receipt::{RlpReceiptTag, N_RECEIPT_TAGS},
-            rlp_witness::RlpWitnessGen,
+            rlp_witness::{RlpDataType, RlpWitnessGen},
             tx::{RlpTxTag, N_TX_TAGS},
         },
     },
@@ -1063,39 +1063,43 @@ impl<F: Field> Config<F> {
                         self.q_last.enable(&mut region, offset)?;
                     }
                     // advices
-                    for (name, column, value) in &[
-                        (
-                            "is_final",
-                            self.is_final,
-                            F::from((row.index == n_rows) as u64),
-                        ),
-                        ("index", self.index, F::from(row.index as u64)),
-                        (
-                            "rindex",
-                            self.rindex,
-                            F::from((n_rows + 1 - row.index) as u64),
-                        ),
-                        ("data_type", self.data_type, F::from(row.data_type as u64)),
-                        ("value", self.value, F::from(row.value as u64)),
-                        ("tag", self.tag, F::from(row.tag as u64)),
-                        // TODO: tx_tags
-                        // TODO: receipt_tags
-                        ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
-                        (
-                            "tag_length",
-                            self.tag_length,
-                            F::from(row.tag_length as u64),
-                        ),
-                        ("length_acc", self.length_acc, F::from(row.length_acc)),
-                        ("value_rlc", self.value_rlc, value_rlc),
-                        ("hash", self.hash, row.hash),
-                        ("padding", self.padding, F::zero()),
-                    ] {
+                    for (name, column, value) in [
+                        [
+                            (
+                                "is_final",
+                                self.is_final,
+                                F::from((row.index == n_rows) as u64),
+                            ),
+                            ("index", self.index, F::from(row.index as u64)),
+                            (
+                                "rindex",
+                                self.rindex,
+                                F::from((n_rows + 1 - row.index) as u64),
+                            ),
+                            ("data_type", self.data_type, F::from(row.data_type as u64)),
+                            ("value", self.value, F::from(row.value as u64)),
+                            ("tag", self.tag, F::from(row.tag as u64)),
+                        ],
+                        [
+                            ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
+                            (
+                                "tag_length",
+                                self.tag_length,
+                                F::from(row.tag_length as u64),
+                            ),
+                            ("length_acc", self.length_acc, F::from(row.length_acc)),
+                            ("value_rlc", self.value_rlc, value_rlc),
+                            ("hash", self.hash, row.hash),
+                            ("padding", self.padding, F::zero()),
+                        ],
+                    ]
+                    .join(self.tag_invs(Some(row.data_type), Some(row.tag)).as_slice())
+                    {
                         region.assign_advice(
                             || format!("assign {} {}", name, offset),
-                            *column,
+                            column,
                             offset,
-                            || Ok(*value),
+                            || Ok(value),
                         )?;
                     }
                 }
@@ -1120,32 +1124,135 @@ impl<F: Field> Config<F> {
                         self.q_last.enable(&mut region, offset)?;
                     }
                     // advices
-                    for (name, column, value) in &[
-                        ("is_final", self.is_final, F::zero()),
-                        ("index", self.index, F::zero()),
-                        ("rindex", self.rindex, F::zero()),
-                        ("data_type", self.data_type, F::zero()),
-                        ("value", self.value, F::zero()),
-                        ("tag", self.tag, F::zero()),
-                        // TODO: tx_tags
-                        // TODO: receipt_tags
-                        ("tag_index", self.tag_index, F::zero()),
-                        ("tag_length", self.tag_length, F::zero()),
-                        ("length_acc", self.length_acc, F::zero()),
-                        ("value_rlc", self.value_rlc, F::zero()),
-                        ("hash", self.hash, F::zero()),
-                        ("padding", self.padding, F::one()),
-                    ] {
+                    for (name, column, value) in [
+                        [
+                            ("is_final", self.is_final, F::zero()),
+                            ("index", self.index, F::zero()),
+                            ("rindex", self.rindex, F::zero()),
+                            ("data_type", self.data_type, F::zero()),
+                            ("value", self.value, F::zero()),
+                            ("tag", self.tag, F::zero()),
+                        ],
+                        [
+                            ("tag_index", self.tag_index, F::zero()),
+                            ("tag_length", self.tag_length, F::zero()),
+                            ("length_acc", self.length_acc, F::zero()),
+                            ("value_rlc", self.value_rlc, F::zero()),
+                            ("hash", self.hash, F::zero()),
+                            ("padding", self.padding, F::one()),
+                        ],
+                    ]
+                    .join(self.tag_invs(None, None).as_slice())
+                    {
                         region.assign_advice(
                             || format!("assign {} {}", name, offset),
-                            *column,
+                            column,
                             offset,
-                            || Ok(*value),
+                            || Ok(value),
                         )?;
                     }
                 }
 
                 Ok(())
+            },
+        )
+    }
+
+    fn tag_invs(
+        &self,
+        data_type: Option<RlpDataType>,
+        tag: Option<u8>,
+    ) -> Vec<(&str, Column<Advice>, F)> {
+        match data_type {
+            Some(RlpDataType::Transaction) => self
+                .tx_tag_invs(tag)
+                .iter()
+                .chain(self.receipt_tag_invs(None).iter())
+                .cloned()
+                .collect(),
+            Some(RlpDataType::Receipt) => self
+                .tx_tag_invs(None)
+                .iter()
+                .chain(self.receipt_tag_invs(tag).iter())
+                .cloned()
+                .collect(),
+            None => self
+                .tx_tag_invs(None)
+                .iter()
+                .chain(self.receipt_tag_invs(None).iter())
+                .cloned()
+                .collect(),
+        }
+    }
+
+    fn tx_tag_invs(&self, tag: Option<u8>) -> Vec<(&str, Column<Advice>, F)> {
+        macro_rules! tx_tag_inv {
+            ($tag:expr, $tag_variant:ident) => {
+                (F::from($tag as u64) - F::from(RlpTxTag::$tag_variant as u64))
+                    .invert()
+                    .unwrap_or(F::zero())
+            };
+        }
+
+        tag.map_or_else(
+            || {
+                vec![
+                    ("prefix", self.tx_tags[0], F::one()),
+                    ("nonce", self.tx_tags[1], F::one()),
+                    ("gas_price", self.tx_tags[2], F::one()),
+                    ("gas", self.tx_tags[3], F::one()),
+                    ("to_prefix", self.tx_tags[4], F::one()),
+                    ("to", self.tx_tags[5], F::one()),
+                    ("value", self.tx_tags[6], F::one()),
+                    ("data_prefix", self.tx_tags[7], F::one()),
+                    ("data", self.tx_tags[8], F::one()),
+                ]
+            },
+            |tag| {
+                vec![
+                    ("prefix", self.tx_tags[0], tx_tag_inv!(tag, Prefix)),
+                    ("nonce", self.tx_tags[1], tx_tag_inv!(tag, Nonce)),
+                    ("gas_price", self.tx_tags[1], tx_tag_inv!(tag, GasPrice)),
+                    ("gas", self.tx_tags[1], tx_tag_inv!(tag, Gas)),
+                    ("to_prefix", self.tx_tags[1], tx_tag_inv!(tag, ToPrefix)),
+                    ("to", self.tx_tags[1], tx_tag_inv!(tag, To)),
+                    ("value", self.tx_tags[1], tx_tag_inv!(tag, Value)),
+                    ("data_prefix", self.tx_tags[1], tx_tag_inv!(tag, DataPrefix)),
+                    ("data", self.tx_tags[1], tx_tag_inv!(tag, Data)),
+                ]
+            },
+        )
+    }
+
+    fn receipt_tag_invs(&self, tag: Option<u8>) -> Vec<(&str, Column<Advice>, F)> {
+        macro_rules! receipt_tag_inv {
+            ($tag:expr, $tag_variant:ident) => {
+                (F::from($tag as u64) - F::from(RlpReceiptTag::$tag_variant as u64))
+                    .invert()
+                    .unwrap_or(F::zero())
+            };
+        }
+
+        tag.map_or_else(
+            || {
+                vec![
+                    ("prefix", self.receipt_tags[0], F::one()),
+                    ("status", self.receipt_tags[1], F::one()),
+                ]
+            },
+            |tag| {
+                vec![
+                    (
+                        "prefix",
+                        self.receipt_tags[0],
+                        receipt_tag_inv!(tag, Prefix),
+                    ),
+                    (
+                        "status",
+                        self.receipt_tags[1],
+                        receipt_tag_inv!(tag, Status),
+                    ),
+                ]
             },
         )
     }
