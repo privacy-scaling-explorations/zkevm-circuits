@@ -20,7 +20,7 @@ use crate::{
 pub enum RlpTxTag {
     /// Denotes the prefix bytes indicating the “length of length” and/or
     /// “length” of the tx’s RLP-encoding.
-    Prefix,
+    Prefix = 1,
     /// Denotes the byte(s) for the tx’s nonce.
     Nonce,
     /// Denotes the byte(s) for the tx’s gas price.
@@ -173,14 +173,14 @@ fn handle_u256<F: FieldExt>(
 
     if value_bytes.is_empty() {
         assert!(
-            rlp_data[idx] == 0,
-            "RLP data mismatch({:?}): value == 0",
+            rlp_data[idx] == 128,
+            "RLP data mismatch({:?}): value == 128",
             tag,
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
             data_type: RlpDataType::Transaction,
-            value: 0,
+            value: 128,
             tag: tag as u8,
             tag_length: 1,
             tag_index: 1,

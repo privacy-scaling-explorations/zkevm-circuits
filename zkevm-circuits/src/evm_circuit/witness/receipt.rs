@@ -12,7 +12,7 @@ use super::{
 pub enum RlpReceiptTag {
     /// Denotes the prefix bytes indicating the "length of length" and/or
     /// "length" of the tx receipt's RLP-encoding.
-    Prefix,
+    Prefix = 1,
     /// Denotes the byte for the receipt's status.
     Status,
     // TODO: other receipt tags
