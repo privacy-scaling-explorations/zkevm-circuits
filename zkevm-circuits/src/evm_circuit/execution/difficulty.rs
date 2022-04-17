@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_U64,
+        param::N_BYTES_DIFFICULTY,
         step::ExecutionState,
         table::BlockContextFieldTag,
         util::{
@@ -14,14 +14,14 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
-use std::convert::TryFrom;
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DifficultyGadget<F> {
     same_context: SameContextGadget<F>,
-    difficulty: RandomLinearCombination<F, N_BYTES_U64>,
+    difficulty: RandomLinearCombination<F, N_BYTES_DIFFICULTY>,
 }
 
 impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::DIFFICULTY;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let difficulty = cb.query_rlc();
+        let difficulty = cb.query_rlc::<N_BYTES_DIFFICULTY>();
         cb.stack_push(difficulty.expr());
 
         // Lookup block table with difficulty
@@ -73,7 +73,11 @@ impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
         self.difficulty.assign(
             region,
             offset,
-            Some(u64::try_from(difficulty).unwrap().to_le_bytes()),
+            Some(
+                difficulty.to_le_bytes()[..N_BYTES_DIFFICULTY]
+                    .try_into()
+                    .unwrap(),
+            ),
         )?;
 
         Ok(())

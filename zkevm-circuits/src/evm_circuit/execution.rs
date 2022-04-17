@@ -29,6 +29,7 @@ mod caller;
 mod callvalue;
 mod coinbase;
 mod comparator;
+mod difficulty;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -57,7 +58,6 @@ mod sstore;
 mod stop;
 mod swap;
 mod timestamp;
-mod difficulty;
 
 use add_sub::AddSubGadget;
 use begin_tx::BeginTxGadget;
@@ -71,6 +71,7 @@ use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use difficulty::DifficultyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -99,7 +100,6 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 use timestamp::TimestampGadget;
-use difficulty::DifficultyGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
