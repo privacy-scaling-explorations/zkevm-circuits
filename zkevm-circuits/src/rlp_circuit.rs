@@ -1063,7 +1063,79 @@ impl<F: Field> Config<F> {
                 // TODO: value == 1 or value == 128.
             });
 
-            cb.condition(is_cumulative_gas_used(meta), |_cb| {});
+            //////////////////////////////////////////////////////////////////////////////////////
+            /////////////////////////// RlpReceiptTag::CumulativeGasUsed /////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_cumulative_gas_used(meta), |cb| {
+                // tag_index < 10
+                cb.require_equal(
+                    "tag_index < 10",
+                    tag_index_lt_10.is_lt(meta, None),
+                    1.expr(),
+                );
+
+                // tag_index >= 1
+                cb.require_zero(
+                    "1 <= tag_index",
+                    not::expr(or::expr([tindex_lt.clone(), tindex_eq.clone()])),
+                );
+            });
+
+            // if tag_index == tag_length && tag_length == 1
+            cb.condition(
+                is_cumulative_gas_used(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
+                |cb| {
+                    cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
+                },
+            );
+
+            // if tag_index == tag_length && tag_length > 1
+            cb.condition(
+                is_cumulative_gas_used(meta) * tindex_eq_tlength.clone() * tlength_lt.clone(),
+                |cb| {
+                    cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "length_acc == value - 0x80",
+                        meta.query_advice(length_acc, Rotation::cur()),
+                        meta.query_advice(value, Rotation::cur()) - 128.expr(),
+                    );
+                    cb.require_equal(
+                        "tag_index::next == length_acc",
+                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                },
+            );
+
+            // if tag_index > 1
+            cb.condition(is_cumulative_gas_used(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::CumulativeGasUsed",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::CumulativeGasUsed.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            // if tag_index == 1
+            cb.condition(is_cumulative_gas_used(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::BloomPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::BloomPrefix.expr(),
+                );
+            });
+
             cb.condition(is_bloom_prefix(meta), |_cb| {});
             cb.condition(is_bloom(meta), |_cb| {});
             cb.condition(is_logs_prefix(meta), |_cb| {});
