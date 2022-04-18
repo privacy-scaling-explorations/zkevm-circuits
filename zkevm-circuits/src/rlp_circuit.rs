@@ -938,7 +938,7 @@ impl<F: Field> Config<F> {
             let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
             let (tlength_lt, tlength_eq) = tag_length_cmp_1.expr(meta, None);
             let (tindex_lt_tlength, tindex_eq_tlength) = tag_index_length_cmp.expr(meta, None);
-            let (length_acc_gt_0, length_acc_eq_0) = length_acc_cmp_0.expr(meta, None);
+            let (_length_acc_gt_0, _length_acc_eq_0) = length_acc_cmp_0.expr(meta, None);
 
             //////////////////////////////////////////////////////////////////////////////////////
             //////////////////////////////// RlpReceiptTag::Prefix ///////////////////////////////
@@ -1030,7 +1030,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index < tag_length && tag_length > 1
             cb.condition(
-                is_prefix(meta) * tindex_lt_tlength.clone() * tlength_lt.clone(),
+                is_prefix(meta) * tindex_lt_tlength * tlength_lt.clone(),
                 |cb| {
                     cb.require_equal(
                         "length_acc == (length_acc::prev * 256) + value",
@@ -1083,7 +1083,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index == tag_length && tag_length == 1
             cb.condition(
-                is_cumulative_gas_used(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
+                is_cumulative_gas_used(meta) * tindex_eq_tlength.clone() * tlength_eq,
                 |cb| {
                     cb.require_equal("value < 129", value_lt_129.is_lt(meta, None), 1.expr());
                 },
@@ -1091,7 +1091,7 @@ impl<F: Field> Config<F> {
 
             // if tag_index == tag_length && tag_length > 1
             cb.condition(
-                is_cumulative_gas_used(meta) * tindex_eq_tlength.clone() * tlength_lt.clone(),
+                is_cumulative_gas_used(meta) * tindex_eq_tlength.clone() * tlength_lt,
                 |cb| {
                     cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
                     cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
@@ -1134,10 +1134,120 @@ impl<F: Field> Config<F> {
                     meta.query_advice(tag, Rotation::next()),
                     RlpReceiptTag::BloomPrefix.expr(),
                 );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
             });
 
-            cb.condition(is_bloom_prefix(meta), |_cb| {});
-            cb.condition(is_bloom(meta), |_cb| {});
+            //////////////////////////////////////////////////////////////////////////////////////
+            ////////////////////////////// RlpReceiptTag::BloomPrefix ////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_bloom_prefix(meta), |cb| {
+                cb.require_equal(
+                    "tag_length == 3",
+                    meta.query_advice(tag_length, Rotation::cur()),
+                    3.expr(),
+                );
+            });
+
+            // if tag_index == tag_length
+            cb.condition(is_bloom_prefix(meta) * tindex_eq_tlength, |cb| {
+                cb.require_equal(
+                    "value == 0xf9",
+                    meta.query_advice(value, Rotation::cur()),
+                    249.expr(),
+                );
+            });
+
+            // if tag_index > 1
+            cb.condition(is_bloom_prefix(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::BloomPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::BloomPrefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            // if tag_index == 1
+            cb.condition(is_bloom_prefix(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "value::prev == 1",
+                    meta.query_advice(value, Rotation::prev()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "value == 0",
+                    meta.query_advice(value, Rotation::cur()),
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "length_acc::prev == 1",
+                    meta.query_advice(length_acc, Rotation::prev()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "length_acc == 256",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    256.expr(),
+                );
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::Bloom",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::Bloom.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == 256",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    256.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == 256",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    256.expr(),
+                );
+            });
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            ///////////////////////////////// RlpReceiptTag::Bloom ///////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_bloom(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::Bloom",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::Bloom.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_bloom(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogsPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogsPrefix.expr(),
+                );
+            });
+
             cb.condition(is_logs_prefix(meta), |_cb| {});
             cb.condition(is_log_prefix(meta), |_cb| {});
             cb.condition(is_log_address_prefix(meta), |_cb| {});
