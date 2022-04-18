@@ -935,8 +935,134 @@ impl<F: Field> Config<F> {
             is_receipt_tag!(is_log_data_prefix, LogDataPrefix);
             is_receipt_tag!(is_log_data, LogData);
 
-            cb.condition(is_prefix(meta), |_cb| {});
-            cb.condition(is_status(meta), |_cb| {});
+            let (tindex_lt, tindex_eq) = tag_index_cmp_1.expr(meta, None);
+            let (tlength_lt, tlength_eq) = tag_length_cmp_1.expr(meta, None);
+            let (tindex_lt_tlength, tindex_eq_tlength) = tag_index_length_cmp.expr(meta, None);
+            let (length_acc_gt_0, length_acc_eq_0) = length_acc_cmp_0.expr(meta, None);
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            //////////////////////////////// RlpReceiptTag::Prefix ///////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_prefix(meta), |cb| {
+                // tag_index < 10
+                cb.require_equal(
+                    "tag_index < 10",
+                    tag_index_lt_10.is_lt(meta, None),
+                    1.expr(),
+                );
+
+                // tag_index >= 1
+                cb.require_zero(
+                    "tag_index >= 1",
+                    not::expr(or::expr([tindex_lt.clone(), tindex_eq.clone()])),
+                );
+            });
+
+            // if tag_index > 1
+            cb.condition(is_prefix(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTagTag::Prefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::Prefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            // if tag_index == 1
+            cb.condition(is_prefix(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::Status",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::Status.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+                cb.require_equal(
+                    "rindex::next == length_acc",
+                    meta.query_advice(rindex, Rotation::next()),
+                    meta.query_advice(length_acc, Rotation::cur()),
+                );
+            });
+
+            // if tag_index == tag_length && tag_length > 1
+            cb.condition(
+                is_prefix(meta) * tindex_eq_tlength.clone() * tlength_lt.clone(),
+                |cb| {
+                    cb.require_equal("247 < value", value_gt_247.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 256", value_lt_256.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "tag_index::next == value - 0xf7",
+                        meta.query_advice(tag_index, Rotation::next()),
+                        meta.query_advice(value, Rotation::cur()) - 247.expr(),
+                    );
+                    cb.require_zero(
+                        "length_acc == 0",
+                        meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                },
+            );
+
+            // if tag_index == tag_length && tag_length == 1
+            cb.condition(
+                is_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
+                |cb| {
+                    cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
+                    cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
+                    cb.require_equal(
+                        "length_acc == value - 0xc0",
+                        meta.query_advice(length_acc, Rotation::cur()),
+                        meta.query_advice(value, Rotation::cur()) - 192.expr(),
+                    );
+                },
+            );
+
+            // if tag_index < tag_length && tag_length > 1
+            cb.condition(
+                is_prefix(meta) * tindex_lt_tlength.clone() * tlength_lt.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "length_acc == (length_acc::prev * 256) + value",
+                        meta.query_advice(length_acc, Rotation::cur()),
+                        meta.query_advice(length_acc, Rotation::prev()) * 256.expr()
+                            + meta.query_advice(value, Rotation::cur()),
+                    );
+                },
+            );
+
+            //////////////////////////////////////////////////////////////////////////////////////
+            //////////////////////////////// RlpReceiptTag::Status ///////////////////////////////
+            //////////////////////////////////////////////////////////////////////////////////////
+            cb.condition(is_status(meta), |cb| {
+                cb.require_equal(
+                    "tag_length == 1",
+                    meta.query_advice(tag_length, Rotation::cur()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::CumulativeGasUsed",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::CumulativeGasUsed.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_index::next",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::next()),
+                );
+                // TODO: value == 1 or value == 128.
+            });
+
             cb.condition(is_cumulative_gas_used(meta), |_cb| {});
             cb.condition(is_bloom_prefix(meta), |_cb| {});
             cb.condition(is_bloom(meta), |_cb| {});
