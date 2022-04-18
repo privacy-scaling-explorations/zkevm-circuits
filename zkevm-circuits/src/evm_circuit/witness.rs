@@ -144,16 +144,11 @@ impl Encodable for Receipt {
         s.append(&self.status);
         s.append(&self.cumulative_gas_used);
         s.append(&self.bloom);
-
-        // manually append logs.
         s.begin_list(self.logs.len());
         for log in self.logs.iter() {
+            s.begin_list(3);
             s.append(&log.address);
-            // manually append log.topics.
-            s.begin_list(log.topics.len());
-            for topic in log.topics.iter() {
-                s.append(topic);
-            }
+            s.append_list(&log.topics);
             s.append(&log.data.0);
         }
     }
