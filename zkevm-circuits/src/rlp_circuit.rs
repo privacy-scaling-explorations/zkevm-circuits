@@ -903,7 +903,6 @@ impl<F: Field> Config<F> {
             ]))
         });
 
-        /*
         meta.create_gate("DataType::Receipt", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -914,8 +913,8 @@ impl<F: Field> Config<F> {
                         1.expr()
                             - meta.query_advice(tag, Rotation::cur())
                                 * meta.query_advice(
-                                  receipt_tags[RlpReceiptTag::$tag_variant as usize],
-                                  Rotation::cur(),
+                                    receipt_tags[RlpReceiptTag::$tag_variant as usize - 1],
+                                    Rotation::cur(),
                                 )
                     };
                 };
@@ -923,9 +922,33 @@ impl<F: Field> Config<F> {
 
             is_receipt_tag!(is_prefix, Prefix);
             is_receipt_tag!(is_status, Status);
+            is_receipt_tag!(is_cumulative_gas_used, CumulativeGasUsed);
+            is_receipt_tag!(is_bloom_prefix, BloomPrefix);
+            is_receipt_tag!(is_bloom, Bloom);
+            is_receipt_tag!(is_logs_prefix, LogsPrefix);
+            is_receipt_tag!(is_log_prefix, LogPrefix);
+            is_receipt_tag!(is_log_address_prefix, LogAddressPrefix);
+            is_receipt_tag!(is_log_address, LogAddress);
+            is_receipt_tag!(is_log_topics_prefix, LogTopicsPrefix);
+            is_receipt_tag!(is_log_topic_prefix, LogTopicPrefix);
+            is_receipt_tag!(is_log_topic, LogTopic);
+            is_receipt_tag!(is_log_data_prefix, LogDataPrefix);
+            is_receipt_tag!(is_log_data, LogData);
 
             cb.condition(is_prefix(meta), |_cb| {});
             cb.condition(is_status(meta), |_cb| {});
+            cb.condition(is_cumulative_gas_used(meta), |_cb| {});
+            cb.condition(is_bloom_prefix(meta), |_cb| {});
+            cb.condition(is_bloom(meta), |_cb| {});
+            cb.condition(is_logs_prefix(meta), |_cb| {});
+            cb.condition(is_log_prefix(meta), |_cb| {});
+            cb.condition(is_log_address_prefix(meta), |_cb| {});
+            cb.condition(is_log_address(meta), |_cb| {});
+            cb.condition(is_log_topics_prefix(meta), |_cb| {});
+            cb.condition(is_log_topic_prefix(meta), |_cb| {});
+            cb.condition(is_log_topic(meta), |_cb| {});
+            cb.condition(is_log_data_prefix(meta), |_cb| {});
+            cb.condition(is_log_data(meta), |_cb| {});
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -934,7 +957,6 @@ impl<F: Field> Config<F> {
                 not::expr(meta.query_advice(padding, Rotation::cur())),
             ]))
         });
-        */
 
         // Constraints that always need to be satisfied.
         meta.create_gate("always", |meta| {
@@ -1451,9 +1473,11 @@ impl<F: Field> Config<F> {
     fn receipt_tag_invs(&self, tag: Option<u8>) -> Vec<(&str, Column<Advice>, F)> {
         macro_rules! receipt_tag_inv {
             ($tag:expr, $tag_variant:ident) => {
-                (F::from($tag as u64) - F::from(RlpReceiptTag::$tag_variant as u64))
-                    .invert()
-                    .unwrap_or(F::zero())
+                if $tag == (RlpReceiptTag::$tag_variant as u8) {
+                    F::zero()
+                } else {
+                    F::from($tag as u64).invert().unwrap_or(F::zero())
+                }
             };
         }
 
@@ -1462,6 +1486,18 @@ impl<F: Field> Config<F> {
                 vec![
                     ("prefix", self.receipt_tags[0], F::one()),
                     ("status", self.receipt_tags[1], F::one()),
+                    ("cumulative_gas_used", self.receipt_tags[2], F::one()),
+                    ("bloom_prefix", self.receipt_tags[3], F::one()),
+                    ("bloom", self.receipt_tags[4], F::one()),
+                    ("logs_prefix", self.receipt_tags[5], F::one()),
+                    ("log_prefix", self.receipt_tags[6], F::one()),
+                    ("log_address_prefix", self.receipt_tags[7], F::one()),
+                    ("log_address", self.receipt_tags[8], F::one()),
+                    ("log_topics_prefix", self.receipt_tags[9], F::one()),
+                    ("log_topic_prefix", self.receipt_tags[10], F::one()),
+                    ("log_topic", self.receipt_tags[11], F::one()),
+                    ("log_data_prefix", self.receipt_tags[12], F::one()),
+                    ("log_data", self.receipt_tags[13], F::one()),
                 ]
             },
             |tag| {
@@ -1475,6 +1511,62 @@ impl<F: Field> Config<F> {
                         "status",
                         self.receipt_tags[1],
                         receipt_tag_inv!(tag, Status),
+                    ),
+                    (
+                        "cumulative_gas_used",
+                        self.receipt_tags[2],
+                        receipt_tag_inv!(tag, CumulativeGasUsed),
+                    ),
+                    (
+                        "bloom_prefix",
+                        self.receipt_tags[3],
+                        receipt_tag_inv!(tag, BloomPrefix),
+                    ),
+                    ("bloom", self.receipt_tags[4], receipt_tag_inv!(tag, Bloom)),
+                    (
+                        "logs_prefix",
+                        self.receipt_tags[5],
+                        receipt_tag_inv!(tag, LogsPrefix),
+                    ),
+                    (
+                        "log_prefix",
+                        self.receipt_tags[6],
+                        receipt_tag_inv!(tag, LogPrefix),
+                    ),
+                    (
+                        "log_address_prefix",
+                        self.receipt_tags[7],
+                        receipt_tag_inv!(tag, LogAddressPrefix),
+                    ),
+                    (
+                        "log_address",
+                        self.receipt_tags[8],
+                        receipt_tag_inv!(tag, LogAddress),
+                    ),
+                    (
+                        "log_topics_prefix",
+                        self.receipt_tags[9],
+                        receipt_tag_inv!(tag, LogTopicsPrefix),
+                    ),
+                    (
+                        "log_topic_prefix",
+                        self.receipt_tags[10],
+                        receipt_tag_inv!(tag, LogTopicPrefix),
+                    ),
+                    (
+                        "log_topic",
+                        self.receipt_tags[11],
+                        receipt_tag_inv!(tag, LogTopic),
+                    ),
+                    (
+                        "log_data_prefix",
+                        self.receipt_tags[12],
+                        receipt_tag_inv!(tag, LogDataPrefix),
+                    ),
+                    (
+                        "log_data",
+                        self.receipt_tags[13],
+                        receipt_tag_inv!(tag, LogData),
                     ),
                 ]
             },
