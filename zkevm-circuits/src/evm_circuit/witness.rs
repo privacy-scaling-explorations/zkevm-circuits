@@ -4,7 +4,7 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag, TxLogFieldTag,
+        TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -512,6 +512,13 @@ pub enum Rw {
         // when it is topic field, value can be word type
         value: Word,
     },
+    TxReceipt {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        field_tag: TxReceiptFieldTag,
+        value: Word,
+    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -559,6 +566,7 @@ impl Rw {
             Self::AccountStorage { rw_counter, .. } => (*rw_counter),
             Self::TxRefund { rw_counter, .. } => (*rw_counter),
             Self::TxLog { rw_counter, .. } => (*rw_counter),
+            Self::TxReceipt { rw_counter, .. } => (*rw_counter),
         }
     }
 
@@ -865,6 +873,26 @@ impl Rw {
                 F::from(*log_id as u64),
                 F::from(*field_tag as u64),
                 F::from(*index as u64),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                F::zero(),
+                F::zero(),
+                F::zero(),
+            ]
+            .into(),
+            Self::TxReceipt {
+                rw_counter,
+                is_write,
+                tx_id,
+                field_tag,
+                value,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxReceipt as u64),
+                F::from(*tx_id as u64),
+                F::zero(),
+                F::from(*field_tag as u64),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
                 F::zero(),
                 F::zero(),

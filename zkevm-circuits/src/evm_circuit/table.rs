@@ -156,6 +156,7 @@ pub enum RwTableTag {
     AccountDestructed,
     CallContext,
     TxLog,
+    TxReceipt,
 }
 
 impl RwTableTag {
@@ -191,6 +192,13 @@ pub enum TxLogFieldTag {
     Address = 1,
     Topic,
     Data,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TxReceiptFieldTag {
+    PostStateOrStatus = 1,
+    CumulativeGasUsed,
+    LogLength,
 }
 
 #[derive(Clone, Copy, Debug)]
