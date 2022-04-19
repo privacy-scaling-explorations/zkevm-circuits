@@ -607,9 +607,9 @@ impl<F: Field> ExecutionConfig<F> {
                         offset += STEP_HEIGHT;
                     }
                 }
-
-                self.q_step_last.enable(&mut region, offset - STEP_HEIGHT)?;
-
+                if offset >= STEP_HEIGHT {
+                    self.q_step_last.enable(&mut region, offset - STEP_HEIGHT)?;
+                }
                 Ok(())
             },
         )
