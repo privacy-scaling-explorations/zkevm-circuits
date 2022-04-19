@@ -18,6 +18,7 @@ use halo2_proofs::{
 use std::{collections::HashMap, iter};
 
 mod add;
+mod addmod;
 mod begin_tx;
 mod bitwise;
 mod byte;
@@ -55,6 +56,7 @@ mod swap;
 mod timestamp;
 
 use add::AddGadget;
+use addmod::AddModGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
@@ -117,6 +119,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     add_gadget: AddGadget<F>,
+    addmod_gadget: AddModGadget<F>,
     mul_gadget: MulGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     begin_tx_gadget: BeginTxGadget<F>,
@@ -333,6 +336,7 @@ impl<F: Field> ExecutionConfig<F> {
             q_step_first,
             q_step_last,
             add_gadget: configure_gadget!(),
+            addmod_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
             begin_tx_gadget: configure_gadget!(),
@@ -601,6 +605,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::ADD => assign_exec_step!(self.add_gadget),
+            ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
             ExecutionState::MUL => assign_exec_step!(self.mul_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::SIGNEXTEND => {
