@@ -38,6 +38,15 @@ impl Opcode for Sstore {
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
+                field: CallContextField::IsStatic,
+                value: Word::from(state.call()?.is_static as u8),
+            },
+        );
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            CallContextOp {
+                call_id: state.call()?.call_id,
                 field: CallContextField::RwCounterEndOfReversion,
                 value: Word::from(state.call()?.rw_counter_end_of_reversion),
             },
@@ -187,7 +196,7 @@ mod sstore_tests {
             .unwrap();
 
         assert_eq!(
-            [4, 5]
+            [5, 6]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
@@ -202,7 +211,7 @@ mod sstore_tests {
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[6].as_usize()];
+        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[7].as_usize()];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (
@@ -217,7 +226,7 @@ mod sstore_tests {
                 )
             )
         );
-        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[8].as_usize()];
+        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[9].as_usize()];
         assert_eq!(
             (refund_op.rw(), refund_op.op()),
             (
