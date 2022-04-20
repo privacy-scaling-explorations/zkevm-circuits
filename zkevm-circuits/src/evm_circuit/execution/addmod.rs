@@ -7,7 +7,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{AddWordsGadget, IsZeroGadget, MulWordsGadget},
+            math_gadget::{AddWordsGadget, IsZeroGadget, MulWordsGadget, PairSelectGadget},
             not, select, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -23,6 +23,7 @@ pub(crate) struct AddModGadget<F> {
     same_context: SameContextGadget<F>,
     mul_gadget: MulWordsGadget<F>,
     sum_gadget: AddWordsGadget<F, 3, false>,
+    n_is_zero_gadget: IsZeroGadget<F>,
     minus_d: RandomLinearCombination<F, 32>,
 }
 
@@ -34,23 +35,32 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // [ -d * n ] + [ a ] + [ b ]  = r
-
         let a = cb.query_word();
         let b = cb.query_word();
         let n = cb.query_word();
         let minus_d = cb.query_word();
         let r = cb.query_word();
 
-        // let n_is_zero_gadget = IsZeroGadget::construct(cb, n.clone().expr());
-        // let n_is_not_zero_gadget = not::expr(n_is_zero_gadget.expr());
+        let n_is_zero_gadget = IsZeroGadget::construct(cb, n.clone().expr());
+
+        // r == [ -d * n ] + [ a ] + [ b ]  iff n != 0  
 
         let mul_gadget = MulWordsGadget::construct(cb, n.clone(), minus_d.clone());
         let sum_gadget = AddWordsGadget::construct(
             cb,
             [a.clone(), b.clone(), mul_gadget.product().clone()],
             r.clone(),
+            not::expr(n_is_zero_gadget.expr())
         );
+
+        // r == 0 iff n == 0
+        
+        //   if n is not zero
+        //     PASS, the expression is always zero
+        //   if n is zero
+        //     if r is zero PASS, r-n will be be zero
+        //     if r is non-zero FAIL, r-n will be a non-zero 
+        cb.require_zero("if n is zero, r-n should be zero", (r.expr()-n.expr()) * n_is_zero_gadget.expr());
 
         cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
@@ -72,6 +82,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
             mul_gadget,
             sum_gadget,
             minus_d,
+            n_is_zero_gadget,
         }
     }
 
@@ -90,19 +101,29 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
             .map(|idx| step.rw_indices[idx])
             .map(|idx| block.rws[idx].stack_value());
 
-        let d = (a + b) / n;
+        let d = if n.is_zero() {
+            U256::zero()
+        } else {
+            (a + b) / n
+        };
+
         let minus_d = U256::zero().overflowing_sub(d).0;
         let minus_d_mul_n = n.overflowing_mul(minus_d).0;
 
-        // sanity check r == a + b + (n * -d)
-        assert_eq!(a.overflowing_add(b).0.overflowing_add(minus_d_mul_n).0, r);
-
         self.minus_d
             .assign(region, offset, Some(minus_d.to_le_bytes()))?;
+
         self.mul_gadget
             .assign(region, offset, n, minus_d, minus_d_mul_n)?;
+        
         self.sum_gadget
-            .assign(region, offset, [a, b, minus_d_mul_n], r)?;
+            .assign(region, offset, [a , b , minus_d_mul_n], r )?;
+
+        self.n_is_zero_gadget.assign(
+            region,
+            offset,
+            Word::random_linear_combine(n.to_le_bytes(), block.randomness),
+        )?;
         Ok(())
     }
 }
@@ -130,4 +151,10 @@ mod test {
         test_ok(7.into(), 18.into(), 10.into());
         test_ok(7.into(), 1.into(), 10.into());
     }
+
+    #[test]
+    fn addmod_division_by_zero() {
+        test_ok(7.into(), 1.into(), 0.into());
+    }
+
 }

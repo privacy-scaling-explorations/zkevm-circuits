@@ -104,6 +104,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
         cb: &mut ConstraintBuilder<F>,
         addends: [util::Word<F>; N_ADDENDS],
         sum: util::Word<F>,
+        enable: Expression<F>
     ) -> Self {
         let carry_lo = cb.query_cell();
         let carry_hi = if CHECK_OVREFLOW {
@@ -125,8 +126,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",
-            sum::expr(addends_lo),
-            sum_lo + carry_lo.expr() * pow_of_two_expr(128),
+            enable.clone() * sum::expr(addends_lo),
+            enable.clone() * (sum_lo + carry_lo.expr() * pow_of_two_expr(128)),
         );
         cb.require_equal(
             if CHECK_OVREFLOW {
@@ -134,8 +135,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
             } else {
                 "sum(addends_hi) + carry_lo == sum_hi + carry_hi ⋅ 2^128"
             },
-            sum::expr(addends_hi) + carry_lo.expr(),
-            if CHECK_OVREFLOW {
+            enable.clone() * (sum::expr(addends_hi) + carry_lo.expr()),
+            enable.clone() * if CHECK_OVREFLOW {
                 sum_hi
             } else {
                 sum_hi + carry_hi.as_ref().unwrap().expr() * pow_of_two_expr(128)
@@ -169,6 +170,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
         addends: [Word; N_ADDENDS],
         sum: Word,
     ) -> Result<(), Error> {
+       
         for (word, value) in self.addends.iter().zip(addends.iter()) {
             word.assign(region, offset, Some(value.to_le_bytes()))?;
         }
