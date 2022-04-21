@@ -4,17 +4,19 @@ use crate::{
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
-        TxRefundOp, RW,
+        TxRefundOp, RW, TxReceiptField, TxReceiptOp,
     },
     Error,
 };
 use core::fmt::Debug;
+use std::ops::RangeBounds;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToWord,
+    GethExecStep, ToWord, Word,
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
+use std::collections::HashMap;
 
 mod call;
 mod calldatacopy;
@@ -400,7 +402,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     }
 }
 
-pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut HashMap<usize, u64>) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
@@ -411,6 +413,17 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             call_id: call.call_id,
             field: CallContextField::TxId,
             value: state.tx_ctx.id().into(),
+        },
+    );
+    state.push_op(
+        &mut exec_step,
+        RW::READ,
+        CallContextOp {
+            call_id: call.call_id,
+            field: CallContextField::IsPersistent,
+            //value: Word::from(state.call()?.is_persistent as u8),
+            value: Word::from(call.is_persistent as u8),
+
         },
     );
 
@@ -463,6 +476,58 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             value_prev: coinbase_balance_prev,
         },
     );
+
+    // handle tx receipt tag
+    state.push_op(
+        &mut exec_step,
+        RW::READ,
+        TxReceiptOp {
+            tx_id: state.tx_ctx.id(),
+            field: TxReceiptField::PostStateOrStatus,
+            value: Word::from(call.is_persistent as u8),
+        },
+    );
+
+    let log_id = exec_step.log_id;
+    state.push_op(
+        &mut exec_step,
+        RW::READ,
+        TxReceiptOp {
+            tx_id: state.tx_ctx.id(),
+            field: TxReceiptField::LogLength,
+            //value: exec_step.log_id.into(),
+            value: Word::from(log_id),
+        },
+    );
+    
+
+    let gas_used = state.tx.gas - exec_step.gas_left.0;
+    let mut last_tx_cumulative_gas=0 as u64; 
+    if state.tx_ctx.id() > 1 {
+        last_tx_cumulative_gas = *tx_cumulative_gas.get(&(state.tx_ctx.id() - 1)).unwrap();
+        // query pre tx cumulative gas
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxReceiptOp {
+                tx_id: state.tx_ctx.id() - 1 ,
+                field: TxReceiptField::CumulativeGasUsed,
+                value: (last_tx_cumulative_gas as u64).into(),
+            },
+        );
+    }
+
+    state.push_op(
+        &mut exec_step,
+        RW::READ,
+        TxReceiptOp {
+            tx_id: state.tx_ctx.id(),
+            field: TxReceiptField::CumulativeGasUsed,
+            value: (last_tx_cumulative_gas + gas_used as u64).into(),
+        },
+    );
+
+    tx_cumulative_gas.insert(state.tx_ctx.id(), last_tx_cumulative_gas + gas_used );
 
     if !state.tx_ctx.is_last_tx() {
         state.push_op(

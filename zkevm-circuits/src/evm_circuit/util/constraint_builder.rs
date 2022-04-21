@@ -4,7 +4,7 @@ use crate::{
         step::{ExecutionState, Preset, Step},
         table::{
             AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
-            RwTableTag, TxContextFieldTag, TxLogFieldTag,
+            RwTableTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
         },
         util::{Cell, RandomLinearCombination, Word},
     },
@@ -1111,7 +1111,42 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ],
         );
     }
-    // Validation
+
+
+    pub(crate) fn tx_receipt(
+        &mut self,
+        tx_id: Expression<F>,
+        field_tag: TxReceiptFieldTag,
+    ) -> Cell<F> {
+        let cell = self.query_cell();
+        self.tx_receipt_lookup(false.expr(),  field_tag, cell.expr());
+        cell
+    }
+
+    pub(crate) fn tx_receipt_lookup(
+        &mut self,
+        tx_id: Expression<F>,
+        tag: TxReceiptFieldTag,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "tx receipt lookup",
+            0.expr(),
+            RwTableTag::TxReceipt,
+            [
+                tx_id,
+                0.expr(),
+                tag.expr(),
+                0.expr(),
+                value,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ],
+        );
+    }
+
+  // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract 2 from MAX_DEGREE because all expressions will be

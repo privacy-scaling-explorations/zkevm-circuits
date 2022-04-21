@@ -8,11 +8,13 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
+
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
     operation::{self, AccountField, CallContextField},
 };
+
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
@@ -649,6 +651,13 @@ impl Rw {
         }
     }
 
+    pub fn receipt_value(&self) -> Word {
+        match self {
+            Self::TxReceipt { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
@@ -1097,6 +1106,27 @@ impl From<&operation::OperationContainer> for RwMap {
                 })
                 .collect(),
         );
+        rws.insert(
+            RwTableTag::TxReceipt,
+            container
+                .tx_receipt
+                .iter()
+                .map(|op| Rw::TxReceipt { 
+                    //rw_counter: (), is_write: (), tx_id: (), field_tag: (), value: () } {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    field_tag: match op.op().field {
+                        TxReceiptField::PostStateOrStatus => {
+                            TxReceiptFieldTag::PostStateOrStatus
+                        }
+                        TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
+                        TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
 
         Self(rws)
     }
@@ -1243,6 +1273,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::Account => RwTableTag::Account,
                     operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
+                    operation::Target::TxReceipt => RwTableTag::TxReceipt,
                 };
                 (tag, x.as_usize())
             })

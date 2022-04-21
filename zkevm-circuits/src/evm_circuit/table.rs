@@ -240,6 +240,8 @@ impl_expr!(BytecodeFieldTag);
 impl_expr!(CallContextFieldTag);
 impl_expr!(BlockContextFieldTag);
 impl_expr!(TxLogFieldTag);
+impl_expr!(TxReceiptFieldTag);
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Table {

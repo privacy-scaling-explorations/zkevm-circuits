@@ -3,12 +3,12 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
+        table::{RwTableTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, MinMaxGadget, MulWordByU64Gadget,
+                AddWordsGadget, ConstantDivisionGadget, MinMaxGadget, MulWordByU64Gadget, IsEqualGadget,
             },
             Cell,
         },
@@ -33,6 +33,8 @@ pub(crate) struct EndTxGadget<F> {
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
     coinbase_reward: UpdateBalanceGadget<F, 2, true>,
+    pre_tx_gas_cumulate: Cell<F>,
+    is_first_tx: IsEqualGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -42,6 +44,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let is_tx_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
+
 
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
@@ -85,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
-            MulWordByU64Gadget::construct(cb, effective_tip, gas_used);
+            MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let coinbase_reward = UpdateBalanceGadget::construct(
             cb,
             coinbase.expr(),
@@ -93,6 +97,31 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             None,
         );
 
+        // constrain tx receipt fields
+        cb.tx_receipt_lookup(tx_id.expr(), TxReceiptFieldTag::PostStateOrStatus, is_tx_persistent.expr());
+        cb.tx_receipt_lookup(tx_id.expr(), TxReceiptFieldTag::LogLength, cb.curr.state.log_id.expr());
+        // gas_used = tx_gas - instruction.curr.gas_left = tx_gas.expr() - cb.curr.state.gas_left.expr();
+        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr()); 
+        //let tx_gas_cumulate = cb.tx_receipt(tx_id.expr(), TxReceiptFieldTag::CumulativeGasUsed);
+        // TODO constrain gas used
+        // non first tx end, get pre tx gas used
+        let pre_tx_gas_cumulate = cb.query_cell();
+        cb.condition(is_first_tx.expr(), |cb|{
+            cb.require_zero("pre_tx_gas_cumulate is zero when tx is first tx", pre_tx_gas_cumulate.expr() );
+        });
+
+        cb.condition(1.expr() - is_first_tx.expr(), |cb|{
+            cb.tx_receipt_lookup(tx_id.expr() - 1.expr(), TxReceiptFieldTag::CumulativeGasUsed, pre_tx_gas_cumulate.expr());
+        });
+
+        cb.tx_receipt_lookup(tx_id.expr(), TxReceiptFieldTag::CumulativeGasUsed, gas_used + pre_tx_gas_cumulate.expr());
+
+    //     cb.require_equal("CumulativeGasUsed = pre_tx_gas_cumulate + gas used of current tx  ",
+    //     gas_used + pre_tx_gas_cumulate.expr(), 
+    //     tx_gas_cumulate.expr(),
+    //    );
+        // first tx end, 
+       
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
@@ -104,11 +133,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(5.expr()),
+                    rw_counter: Delta(9.expr() + 1.expr() - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
         );
+    
 
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
@@ -133,6 +163,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             mul_effective_tip_by_gas_used,
             coinbase,
             coinbase_reward,
+            pre_tx_gas_cumulate,
+            is_first_tx,
         }
     }
 
@@ -146,9 +178,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
-        let (refund, _) = block.rws[step.rw_indices[1]].tx_refund_value_pair();
+        let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [step.rw_indices[2], step.rw_indices[3]].map(|idx| block.rws[idx].account_value_pair());
+            [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
@@ -201,6 +233,22 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_balance_prev,
             vec![effective_tip * gas_used],
             coinbase_balance,
+        )?;
+
+        // let index = step.rw_indices[5];
+        // let value = block.rws[idx].account_value_pair());
+        let pre_gas_used:u64 = if tx.id == 1 {
+            0
+        }else{
+            //let rw = &block.rws[step.rw_indices[8]];
+            let rw = &block.rws[(RwTableTag::TxReceipt, (tx.id - 1) * 3 - 1)];
+            let value = rw.receipt_value();
+            value.as_u64()
+        };
+
+        self.pre_tx_gas_cumulate.assign(region, offset, Some(F::from(pre_gas_used)))?;
+        self.is_first_tx.assign(
+            region, offset, F::from(tx.id as u64), F::from(1 as u64),
         )?;
 
         Ok(())
