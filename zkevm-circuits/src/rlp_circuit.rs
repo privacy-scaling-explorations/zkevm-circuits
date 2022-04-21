@@ -1271,7 +1271,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_logs_prefix(meta) * tindex_lt, |cb| {
+            cb.condition(is_logs_prefix(meta) * tindex_lt.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpReceiptTag::LogsPrefix",
                     meta.query_advice(tag, Rotation::next()),
@@ -1289,7 +1289,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_logs_prefix(meta) * tindex_eq.clone() * length_acc_eq_0, |cb| {
+            cb.condition(is_logs_prefix(meta) * tindex_eq.clone() * length_acc_eq_0.clone(), |cb| {
                 cb.require_equal(
                     "is_final == 1",
                     meta.query_advice(is_final, Rotation::cur()),
@@ -1297,7 +1297,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_logs_prefix(meta) * tindex_eq * length_acc_gt_0, |cb| {
+            cb.condition(is_logs_prefix(meta) * tindex_eq.clone() * length_acc_gt_0.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpReceiptTag::LogPrefix",
                     meta.query_advice(tag, Rotation::next()),
@@ -1337,7 +1337,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_logs_prefix(meta) * tindex_lt_tlength * tlength_lt, |cb| {
+            cb.condition(is_logs_prefix(meta) * tindex_lt_tlength.clone() * tlength_lt.clone(), |cb| {
                 cb.require_equal(
                     "length_acc == (length_acc::prev * 256) + value",
                     meta.query_advice(length_acc, Rotation::cur()),
@@ -1346,7 +1346,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_logs_prefix(meta) * tindex_eq_tlength * tlength_eq, |cb| {
+            cb.condition(is_logs_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(), |cb| {
                 cb.require_equal(
                     "191 < value",
                     value_gt_191.is_lt(meta, None),
@@ -1367,7 +1367,90 @@ impl<F: Field> Config<F> {
             //////////////////////////////////////////////////////////////////////////////////////
             /////////////////////////////// RlpReceiptTag::LogPrefix /////////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_prefix(meta), |_cb| {});
+            cb.condition(is_log_prefix(meta), |cb| {
+                cb.require_equal(
+                    "tag_index < 10",
+                    tag_index_lt_10.is_lt(meta, None),
+                    1.expr(),
+                );
+            });
+
+            cb.condition(is_log_prefix(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogPrefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_log_prefix(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogAddressPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogAddressPrefix.expr(),
+                );
+                cb.require_equal(
+                    "length_acc == aux_tag_length::next",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    meta.query_advice(aux_tag_length, Rotation::next()),
+                );
+                cb.require_equal(
+                    "aux_tag_length::next == aux_tag_index::next",
+                    meta.query_advice(aux_tag_length, Rotation::next()),
+                    meta.query_advice(aux_tag_index, Rotation::next()),
+                );
+            });
+
+            cb.condition(is_log_prefix(meta) * tindex_eq_tlength.clone() * tlength_lt.clone(), |cb| {
+                cb.require_equal(
+                    "247 < value",
+                    value_gt_247.is_lt(meta, None),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "value < 256",
+                    value_lt_256.is_lt(meta, None),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == value - 0xf7",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(value, Rotation::cur()) - 247.expr(),
+                );
+                cb.require_zero("length_acc == 0", meta.query_advice(length_acc, Rotation::cur()));
+            });
+
+            cb.condition(is_log_prefix(meta) * tindex_lt_tlength.clone() * tlength_lt.clone(), |cb| {
+                cb.require_equal(
+                    "length_acc == length_acc::prev * 256 + value",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    meta.query_advice(length_acc, Rotation::prev()) * 256.expr() +
+                        meta.query_advice(value, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_log_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(), |cb| {
+                cb.require_equal(
+                    "191 < value",
+                    value_gt_191.is_lt(meta, None),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "value < 248",
+                    value_lt_248.is_lt(meta, None),
+                    1.expr(),
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             //////////////////////////// RlpReceiptTag::LogAddressPrefix /////////////////////////
