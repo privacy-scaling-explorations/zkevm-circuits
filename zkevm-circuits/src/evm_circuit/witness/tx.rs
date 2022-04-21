@@ -114,6 +114,8 @@ fn handle_prefix<F: FieldExt>(
             tag: RlpTxTag::Prefix as u8,
             tag_length,
             tag_index: tag_length,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: 0,
             hash,
         });
@@ -128,6 +130,8 @@ fn handle_prefix<F: FieldExt>(
                 tag: RlpTxTag::Prefix as u8,
                 tag_length,
                 tag_index: tag_length - (1 + k),
+                aux_tag_index: 0,
+                aux_tag_length: 0,
                 length_acc,
                 hash,
             });
@@ -147,6 +151,8 @@ fn handle_prefix<F: FieldExt>(
             tag: RlpTxTag::Prefix as u8,
             tag_length: 1,
             tag_index: 1,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: (rlp_data[idx] - 192) as u64,
             hash,
         });
@@ -184,6 +190,8 @@ fn handle_u256<F: FieldExt>(
             tag: tag as u8,
             tag_length: 1,
             tag_index: 1,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: 0,
             hash,
         });
@@ -201,6 +209,8 @@ fn handle_u256<F: FieldExt>(
             tag: tag as u8,
             tag_length: 1,
             tag_index: 1,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: 0,
             hash,
         });
@@ -218,6 +228,8 @@ fn handle_u256<F: FieldExt>(
             value: rlp_data[idx],
             tag: tag as u8,
             tag_length,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             tag_index: tag_length,
             length_acc: value_bytes.len() as u64,
             hash,
@@ -238,6 +250,8 @@ fn handle_u256<F: FieldExt>(
                 tag: tag as u8,
                 tag_length,
                 tag_index: tag_length - (1 + i),
+                aux_tag_index: 0,
+                aux_tag_length: 0,
                 length_acc: 0,
                 hash,
             });
@@ -269,6 +283,8 @@ fn handle_address<F: FieldExt>(
         tag: RlpTxTag::ToPrefix as u8,
         tag_length: 1,
         tag_index: 1,
+        aux_tag_index: 0,
+        aux_tag_length: 0,
         length_acc: 20,
         hash,
     });
@@ -288,6 +304,8 @@ fn handle_address<F: FieldExt>(
             tag: RlpTxTag::To as u8,
             tag_length: 20,
             tag_index: 20 - i,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: 0,
             hash,
         });
@@ -319,6 +337,8 @@ fn handle_bytes<F: FieldExt>(
             tag: RlpTxTag::DataPrefix as u8,
             tag_length: 1,
             tag_index: 1,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: 0,
             hash,
         });
@@ -339,6 +359,8 @@ fn handle_bytes<F: FieldExt>(
             tag: RlpTxTag::DataPrefix as u8,
             tag_length: 1,
             tag_index: 1,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: length as u64,
             hash,
         });
@@ -358,6 +380,8 @@ fn handle_bytes<F: FieldExt>(
                 tag: RlpTxTag::Data as u8,
                 tag_length: length,
                 tag_index: length - i,
+                aux_tag_index: 0,
+                aux_tag_length: 0,
                 length_acc: 0,
                 hash,
             });
@@ -381,6 +405,8 @@ fn handle_bytes<F: FieldExt>(
         tag: RlpTxTag::DataPrefix as u8,
         tag_length,
         tag_index: tag_length,
+        aux_tag_index: 0,
+        aux_tag_length: 0,
         length_acc: 0,
         hash,
     });
@@ -408,6 +434,8 @@ fn handle_bytes<F: FieldExt>(
             tag: RlpTxTag::DataPrefix as u8,
             tag_length,
             tag_index: tag_length - (1 + i),
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc,
             hash,
         });
@@ -429,6 +457,8 @@ fn handle_bytes<F: FieldExt>(
             tag: RlpTxTag::Data as u8,
             tag_length,
             tag_index: tag_length - i,
+            aux_tag_index: 0,
+            aux_tag_length: 0,
             length_acc: 0,
             hash,
         });

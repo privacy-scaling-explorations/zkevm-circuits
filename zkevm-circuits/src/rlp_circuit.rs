@@ -60,6 +60,11 @@ pub struct Config<F> {
     tag_index: Column<Advice>,
     /// Denotes the current tag's span in bytes.
     tag_length: Column<Advice>,
+    /// Denotes a decrementing index over all nested tags within a parent tag,
+    /// specifically used in the case of Receipt.Log.
+    aux_tag_index: Column<Advice>,
+    /// Denotes the aux tag's length in bytes.
+    aux_tag_length: Column<Advice>,
     /// Denotes an accumulator for the length of data, in the case where len >
     /// 55 and the length is represented in its big-endian form.
     length_acc: Column<Advice>,
@@ -120,10 +125,12 @@ impl<F: Field> Config<F> {
         let data_type = meta.advice_column();
         let value = meta.advice_column();
         let tag = meta.advice_column();
+        let aux_tag_index = meta.advice_column();
         let tx_tags = array_init::array_init(|_| meta.advice_column());
         let receipt_tags = array_init::array_init(|_| meta.advice_column());
         let tag_index = meta.advice_column();
         let tag_length = meta.advice_column();
+        let aux_tag_length = meta.advice_column();
         let length_acc = meta.advice_column();
         let value_rlc = meta.advice_column();
         let hash = meta.advice_column();
@@ -1544,6 +1551,8 @@ impl<F: Field> Config<F> {
             receipt_tags,
             tag_index,
             tag_length,
+            aux_tag_index,
+            aux_tag_length,
             length_acc,
             value_rlc,
             hash,
@@ -1644,6 +1653,11 @@ impl<F: Field> Config<F> {
                             ("data_type", self.data_type, F::from(row.data_type as u64)),
                             ("value", self.value, F::from(row.value as u64)),
                             ("tag", self.tag, F::from(row.tag as u64)),
+                            (
+                                "aux_tag_index",
+                                self.aux_tag_index,
+                                F::from(row.aux_tag_index as u64),
+                            ),
                         ],
                         [
                             ("tag_index", self.tag_index, F::from(row.tag_index as u64)),
@@ -1651,6 +1665,11 @@ impl<F: Field> Config<F> {
                                 "tag_length",
                                 self.tag_length,
                                 F::from(row.tag_length as u64),
+                            ),
+                            (
+                                "aux_tag_length",
+                                self.aux_tag_length,
+                                F::from(row.aux_tag_length as u64),
                             ),
                             ("length_acc", self.length_acc, F::from(row.length_acc)),
                             ("value_rlc", self.value_rlc, value_rlc),
