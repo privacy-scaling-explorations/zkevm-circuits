@@ -1455,12 +1455,80 @@ impl<F: Field> Config<F> {
             //////////////////////////////////////////////////////////////////////////////////////
             //////////////////////////// RlpReceiptTag::LogAddressPrefix /////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_address_prefix(meta), |_cb| {});
+            cb.condition(is_log_address_prefix(meta), |cb| {
+                cb.require_equal(
+                    "tag_length == 1",
+                    meta.query_advice(tag_length, Rotation::cur()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "tag_index == 1",
+                    meta.query_advice(tag_index, Rotation::cur()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogAddress",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogAddress.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+                cb.require_equal(
+                    "tag_length::next == 20",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    20.expr(),
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             /////////////////////////////// RlpReceiptTag::LogAddress ////////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_address(meta), |_cb| {});
+            cb.condition(is_log_address(meta), |cb| {
+                cb.require_equal(
+                    "aux_tag_length == aux_tag_length::prev",
+                    meta.query_advice(aux_tag_length, Rotation::cur()),
+                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "aux_tag_index == aux_tag_index::prev - 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                );
+            });
+
+            cb.condition(is_log_address(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogAddress",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogAddress.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_log_prefix(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogTopicsPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogTopicsPrefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::next()),
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             //////////////////////////// RlpReceiptTag::LogTopicsPrefix //////////////////////////
