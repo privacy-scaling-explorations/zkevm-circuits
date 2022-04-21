@@ -110,6 +110,9 @@ pub struct Config<F> {
     /// Comparison chip to check: 0 <= length_acc.
     length_acc_cmp_0: ComparatorConfig<F, 1>,
 
+    /// Lt chip to check: rindex > 1.
+    rindex_gt_1: LtConfig<F, 1>,
+
     /// Denotes a tuple (value_rlc, n, 1, keccak256(rlp_encode(input))).
     keccak_tuple: [Column<Advice>; 4],
 }
@@ -236,6 +239,13 @@ impl<F: Field> Config<F> {
             cmp_lt_enabled,
             |_meta| 0.expr(),
             |meta| meta.query_advice(length_acc, Rotation::cur()),
+        );
+
+        let rindex_gt_1 = LtChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |_meta| 1.expr(),
+            |meta| meta.query_advice(rindex, Rotation::cur()),
         );
 
         let keccak_tuple = array_init::array_init(|_| meta.advice_column());
@@ -1594,7 +1604,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_log_topics_prefix(meta) * tindex_eq.clone() * length_acc_eq_0, |cb| {
+            cb.condition(is_log_topics_prefix(meta) * tindex_eq.clone() * length_acc_eq_0.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpReceiptTag::LogDataPrefix",
                     meta.query_advice(tag, Rotation::next()),
@@ -1607,7 +1617,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_log_topics_prefix(meta) * tindex_eq.clone() * length_acc_gt_0, |cb| {
+            cb.condition(is_log_topics_prefix(meta) * tindex_eq.clone() * length_acc_gt_0.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpReceiptTag::LogTopicPrefix",
                     meta.query_advice(tag, Rotation::next()),
@@ -1706,12 +1716,150 @@ impl<F: Field> Config<F> {
             //////////////////////////////////////////////////////////////////////////////////////
             ///////////////////////////// RlpReceiptTag::LogDataPrefix ///////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_data_prefix(meta), |_cb| {});
+            cb.condition(is_log_data_prefix(meta), |cb| {
+                cb.require_equal(
+                    "aux_tag_length == aux_tag_length::prev",
+                    meta.query_advice(aux_tag_length, Rotation::cur()),
+                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "aux_tag_index == aux_tag_index::prev - 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                );
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_eq_tlength.clone() * tlength_lt.clone(), |cb| {
+                cb.require_equal("247 < value", value_gt_247.is_lt(meta, None), 1.expr());
+                cb.require_equal("value < 256", value_lt_256.is_lt(meta, None), 1.expr());
+                cb.require_equal(
+                    "tag_index::next == value -  247",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(value, Rotation::cur()) - 247.expr(),
+                );
+                cb.require_zero("length_acc == 0", meta.query_advice(length_acc, Rotation::cur()));
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_lt_tlength * tlength_lt, |cb| {
+                cb.require_equal(
+                    "length_acc == length_acc::prev * 256 + value",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    meta.query_advice(length_acc, Rotation::prev()) * 256.expr()
+                        + meta.query_advice(value, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_eq_tlength * tlength_eq, |cb| {
+                cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
+                cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
+                cb.require_equal(
+                    "length_acc == value - 0xc0",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    meta.query_advice(value, Rotation::cur()) - 192.expr(),
+                );
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogDataPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogDataPrefix.expr(),
+                );
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_eq.clone() * length_acc_eq_0.clone(), |cb| {
+                cb.require_equal(
+                    "aux_tag_index == 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    1.expr(),
+                );
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_eq.clone() * length_acc_eq_0 * rindex_gt_1.is_lt(meta, None), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogPrefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+            });
+
+            cb.condition(is_log_data_prefix(meta) * tindex_eq.clone() * length_acc_gt_0, |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogData",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogData.expr(),
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             //////////////////////////////// RlpReceiptTag::LogData //////////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_data(meta), |_cb| {});
+            cb.condition(is_log_data(meta), |cb| {
+                cb.require_equal(
+                    "aux_tag_length == aux_tag_length::prev",
+                    meta.query_advice(aux_tag_length, Rotation::cur()),
+                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "aux_tag_index == aux_tag_index::prev - 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                );
+            });
+
+            cb.condition(is_log_data(meta) * tindex_lt, |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag:LogData",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogData.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_log_data(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "aux_tag_index == 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    1.expr(),
+                );
+            });
+
+            cb.condition(is_log_data(meta) * tindex_eq * rindex_gt_1.is_lt(meta, None), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogPrefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+            });
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1886,6 +2034,8 @@ impl<F: Field> Config<F> {
             value_lt_256,
 
             length_acc_cmp_0,
+
+            rindex_gt_1,
         }
     }
 
@@ -1920,6 +2070,8 @@ impl<F: Field> Config<F> {
 
         let length_acc_cmp_0_chip = ComparatorChip::construct(self.length_acc_cmp_0.clone());
 
+        let rindex_gt_1_chip = LtChip::construct(self.rindex_gt_1.clone());
+
         layouter.assign_region(
             || "assign RLP-encoded data",
             |mut region| {
@@ -1946,6 +2098,7 @@ impl<F: Field> Config<F> {
                         self.q_last.enable(&mut region, offset)?;
                     }
                     // advices
+                    let rindex = (n_rows + 1 - row.index) as u64;
                     for (name, column, value) in [
                         [
                             (
@@ -1954,11 +2107,7 @@ impl<F: Field> Config<F> {
                                 F::from((row.index == n_rows) as u64),
                             ),
                             ("index", self.index, F::from(row.index as u64)),
-                            (
-                                "rindex",
-                                self.rindex,
-                                F::from((n_rows + 1 - row.index) as u64),
-                            ),
+                            ("rindex", self.rindex, F::from(rindex)),
                             ("data_type", self.data_type, F::from(row.data_type as u64)),
                             ("value", self.value, F::from(row.value as u64)),
                             ("tag", self.tag, F::from(row.tag as u64)),
@@ -2086,6 +2235,7 @@ impl<F: Field> Config<F> {
                         F::zero(),
                         F::from(row.length_acc as u64),
                     )?;
+                    rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
                 }
 
                 for offset in n_rows..=last_row_offset {
