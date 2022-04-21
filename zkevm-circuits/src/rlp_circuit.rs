@@ -1538,12 +1538,90 @@ impl<F: Field> Config<F> {
             //////////////////////////////////////////////////////////////////////////////////////
             ////////////////////////////// RlpReceiptTag::LogTopicPrefix /////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_topic_prefix(meta), |_cb| {});
+            cb.condition(is_log_topic_prefix(meta), |cb| {
+                cb.require_equal(
+                    "aux_tag_length == aux_tag_length::prev",
+                    meta.query_advice(aux_tag_length, Rotation::cur()),
+                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "aux_tag_index == aux_tag_index::prev - 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length == 1",
+                    meta.query_advice(tag_length, Rotation::cur()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "tag_index == 1",
+                    meta.query_advice(tag_index, Rotation::cur()),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "value == 160",
+                    meta.query_advice(value, Rotation::cur()),
+                    160.expr(),
+                );
+                cb.require_equal(
+                    "tag_length::next == tag_index::next",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::next()),
+                );
+                cb.require_equal(
+                    "tag_lengt::next == 32",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    32.expr(),
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             /////////////////////////////// RlpReceiptTag::LogTopic //////////////////////////////
             //////////////////////////////////////////////////////////////////////////////////////
-            cb.condition(is_log_topic(meta), |_cb| {});
+            cb.condition(is_log_topic(meta), |cb| {
+                cb.require_equal(
+                    "aux_tag_length == aux_tag_length::prev",
+                    meta.query_advice(aux_tag_length, Rotation::cur()),
+                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "aux_tag_index == aux_tag_index::prev - 1",
+                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                );
+            });
+
+            cb.condition(is_log_topic(meta) * tindex_lt.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogTopic",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogTopic.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_index - 1",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_index, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "tag_length:::next == tag_length",
+                    meta.query_advice(tag_length, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_log_topic(meta) * tindex_eq.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogDataPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogDataPrefix.expr(),
+                );
+                cb.require_equal(
+                    "tag_index::next == tag_length::next",
+                    meta.query_advice(tag_index, Rotation::next()),
+                    meta.query_advice(tag_length, Rotation::next()),
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             ///////////////////////////// RlpReceiptTag::LogDataPrefix ///////////////////////////
