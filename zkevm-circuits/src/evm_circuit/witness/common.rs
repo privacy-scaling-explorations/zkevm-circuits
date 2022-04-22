@@ -8,6 +8,7 @@ pub fn handle_prefix<F: FieldExt>(
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
+    data_type: RlpDataType,
     tag: u8,
     mut idx: usize,
 ) -> usize {
@@ -17,7 +18,7 @@ pub fn handle_prefix<F: FieldExt>(
         let tag_length = length_of_length + 1;
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: rlp_data[idx],
             tag,
             tag_length,
@@ -33,7 +34,7 @@ pub fn handle_prefix<F: FieldExt>(
             length_acc = (length_acc * 256) + (*rlp_byte as u64);
             rows.push(RlpWitnessRow {
                 index: idx + 1,
-                data_type: RlpDataType::Transaction,
+                data_type,
                 value: *rlp_byte,
                 tag,
                 tag_length,
@@ -54,7 +55,7 @@ pub fn handle_prefix<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: rlp_data[idx],
             tag,
             tag_length: 1,
@@ -73,6 +74,7 @@ pub fn handle_u256<F: FieldExt>(
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
+    data_type: RlpDataType,
     tag: u8,
     value: U256,
     mut idx: usize,
@@ -93,7 +95,7 @@ pub fn handle_u256<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: 128,
             tag,
             tag_length: 1,
@@ -112,7 +114,7 @@ pub fn handle_u256<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: value_bytes[0],
             tag,
             tag_length: 1,
@@ -132,7 +134,7 @@ pub fn handle_u256<F: FieldExt>(
         let tag_length = 1 + value_bytes.len();
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: rlp_data[idx],
             tag,
             tag_length,
@@ -153,7 +155,7 @@ pub fn handle_u256<F: FieldExt>(
             );
             rows.push(RlpWitnessRow {
                 index: idx + 1,
-                data_type: RlpDataType::Transaction,
+                data_type,
                 value: *value_byte,
                 tag,
                 tag_length,
@@ -174,6 +176,7 @@ pub fn handle_address<F: FieldExt>(
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
+    data_type: RlpDataType,
     prefix_tag: u8,
     tag: u8,
     value: Address,
@@ -188,7 +191,7 @@ pub fn handle_address<F: FieldExt>(
     );
     rows.push(RlpWitnessRow {
         index: idx + 1,
-        data_type: RlpDataType::Transaction,
+        data_type,
         value: 148,
         tag: prefix_tag,
         tag_length: 1,
@@ -209,7 +212,7 @@ pub fn handle_address<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: *value_byte,
             tag,
             tag_length: 20,
@@ -229,6 +232,7 @@ pub fn handle_bytes<F: FieldExt>(
     rlp_data: &[u8],
     hash: F,
     rows: &mut Vec<RlpWitnessRow<F>>,
+    data_type: RlpDataType,
     prefix_tag: u8,
     tag: u8,
     call_data: &[u8],
@@ -244,7 +248,7 @@ pub fn handle_bytes<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: 128,
             tag: prefix_tag,
             tag_length: 1,
@@ -266,7 +270,7 @@ pub fn handle_bytes<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: (128 + length) as u8,
             tag: prefix_tag,
             tag_length: 1,
@@ -287,7 +291,7 @@ pub fn handle_bytes<F: FieldExt>(
             );
             rows.push(RlpWitnessRow {
                 index: idx + 1,
-                data_type: RlpDataType::Transaction,
+                data_type,
                 value: *data_byte,
                 tag,
                 tag_length: length,
@@ -312,7 +316,7 @@ pub fn handle_bytes<F: FieldExt>(
     let tag_length = 1 + length_of_length;
     rows.push(RlpWitnessRow {
         index: idx + 1,
-        data_type: RlpDataType::Transaction,
+        data_type,
         value: (183 + length_of_length) as u8,
         tag: prefix_tag,
         tag_length,
@@ -341,7 +345,7 @@ pub fn handle_bytes<F: FieldExt>(
         length_acc = length_acc * 256 + (*length_byte as u64);
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: *length_byte,
             tag: prefix_tag,
             tag_length,
@@ -364,7 +368,7 @@ pub fn handle_bytes<F: FieldExt>(
         );
         rows.push(RlpWitnessRow {
             index: idx + 1,
-            data_type: RlpDataType::Transaction,
+            data_type,
             value: *data_byte,
             tag,
             tag_length,

@@ -7,7 +7,7 @@ use crate::{evm_circuit::util::RandomLinearCombination, impl_expr};
 
 use super::{
     common::{handle_address, handle_bytes, handle_prefix, handle_u256},
-    rlp_witness::{RlpWitnessGen, RlpWitnessRow},
+    rlp_witness::{RlpDataType, RlpWitnessGen, RlpWitnessRow},
     Transaction,
 };
 
@@ -53,6 +53,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::Prefix as u8,
             0,
         );
@@ -60,6 +61,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::Nonce as u8,
             self.nonce.into(),
             idx,
@@ -68,6 +70,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::GasPrice as u8,
             self.gas_price,
             idx,
@@ -76,6 +79,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::Gas as u8,
             self.gas.into(),
             idx,
@@ -84,6 +88,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::ToPrefix as u8,
             RlpTxTag::To as u8,
             self.callee_address,
@@ -93,6 +98,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::Value as u8,
             self.value,
             idx,
@@ -101,6 +107,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Transaction,
             RlpTxTag::DataPrefix as u8,
             RlpTxTag::Data as u8,
             &self.call_data,

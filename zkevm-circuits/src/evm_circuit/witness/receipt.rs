@@ -6,8 +6,8 @@ use sha3::Keccak256;
 use crate::{evm_circuit::util::RandomLinearCombination, impl_expr};
 
 use super::{
-    common::{handle_prefix, handle_u256},
-    rlp_witness::{RlpWitnessGen, RlpWitnessRow},
+    common::{handle_bytes, handle_prefix, handle_u256},
+    rlp_witness::{RlpDataType, RlpWitnessGen, RlpWitnessRow},
     Receipt,
 };
 
@@ -62,18 +62,54 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Receipt,
             RlpReceiptTag::Prefix as u8,
             0,
         );
-        let _idx = handle_u256(
+        let idx = handle_u256(
             rlp_data.as_ref(),
             hash,
             &mut rows,
+            RlpDataType::Receipt,
             RlpReceiptTag::Status as u8,
             self.status.into(),
             idx,
         );
+        let idx = handle_u256(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpDataType::Receipt,
+            RlpReceiptTag::CumulativeGasUsed as u8,
+            self.cumulative_gas_used.into(),
+            idx,
+        );
+        let idx = handle_bytes(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpDataType::Receipt,
+            RlpReceiptTag::BloomPrefix as u8,
+            RlpReceiptTag::Bloom as u8,
+            self.bloom.as_bytes(),
+            idx,
+        );
+        let idx = handle_logs(rlp_data.as_ref(), hash, &mut rows, idx);
 
+        assert!(
+            idx == rlp_data.len(),
+            "RLP data mismatch: idx != len(rlp_data)"
+        );
         rows
     }
+}
+
+#[allow(unused_variables)]
+fn handle_logs<F: FieldExt>(
+    rlp_data: &[u8],
+    hash: F,
+    rows: &mut Vec<RlpWitnessRow<F>>,
+    idx: usize,
+) -> usize {
+    unimplemented!()
 }
