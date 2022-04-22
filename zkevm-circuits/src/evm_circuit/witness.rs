@@ -20,6 +20,7 @@ use rlp::Encodable;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
 
+pub mod common;
 pub mod receipt;
 pub mod rlp_witness;
 pub mod tx;

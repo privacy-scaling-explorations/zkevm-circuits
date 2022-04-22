@@ -1,8 +1,12 @@
+use digest::Digest;
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use sha3::Keccak256;
 
-use crate::impl_expr;
+use crate::{evm_circuit::util::RandomLinearCombination, impl_expr};
 
 use super::{
+    common::{handle_prefix, handle_u256},
     rlp_witness::{RlpWitnessGen, RlpWitnessRow},
     Receipt,
 };
@@ -47,7 +51,29 @@ impl_expr!(RlpReceiptTag);
 pub const N_RECEIPT_TAGS: usize = 14;
 
 impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
-    fn gen_witness(&self, _randomness: F) -> Vec<RlpWitnessRow<F>> {
-        unimplemented!()
+    fn gen_witness(&self, randomness: F) -> Vec<RlpWitnessRow<F>> {
+        let rlp_data = rlp::encode(self);
+        let hash = Word::from_big_endian(Keccak256::digest(&rlp_data).as_slice());
+        let hash = RandomLinearCombination::random_linear_combine(hash.to_le_bytes(), randomness);
+
+        let mut rows = Vec::with_capacity(rlp_data.len());
+
+        let idx = handle_prefix(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpReceiptTag::Prefix as u8,
+            0,
+        );
+        let _idx = handle_u256(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpReceiptTag::Status as u8,
+            self.status.into(),
+            idx,
+        );
+
+        rows
     }
 }

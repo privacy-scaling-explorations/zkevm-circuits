@@ -1,18 +1,14 @@
 use digest::Digest;
-use eth_types::{Address, ToLittleEndian, Word, U256};
+use eth_types::{ToLittleEndian, Word};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
-use num::Zero;
 use sha3::Keccak256;
 
-use crate::{
-    evm_circuit::{
-        util::RandomLinearCombination,
-        witness::{
-            rlp_witness::{RlpDataType, RlpWitnessGen, RlpWitnessRow},
-            Transaction,
-        },
-    },
-    impl_expr,
+use crate::{evm_circuit::util::RandomLinearCombination, impl_expr};
+
+use super::{
+    common::{handle_address, handle_bytes, handle_prefix, handle_u256},
+    rlp_witness::{RlpWitnessGen, RlpWitnessRow},
+    Transaction,
 };
 
 /// Tags used to tag rows in the RLP circuit for a transaction.
@@ -53,12 +49,18 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
 
         let mut rows = Vec::with_capacity(rlp_data.len());
 
-        let idx = handle_prefix(rlp_data.as_ref(), hash, &mut rows, 0);
+        let idx = handle_prefix(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpTxTag::Prefix as u8,
+            0,
+        );
         let idx = handle_u256(
             rlp_data.as_ref(),
             hash,
             &mut rows,
-            RlpTxTag::Nonce,
+            RlpTxTag::Nonce as u8,
             self.nonce.into(),
             idx,
         );
@@ -66,7 +68,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
-            RlpTxTag::GasPrice,
+            RlpTxTag::GasPrice as u8,
             self.gas_price,
             idx,
         );
@@ -74,20 +76,36 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
             rlp_data.as_ref(),
             hash,
             &mut rows,
-            RlpTxTag::Gas,
+            RlpTxTag::Gas as u8,
             self.gas.into(),
             idx,
         );
-        let idx = handle_address(rlp_data.as_ref(), hash, &mut rows, self.callee_address, idx);
+        let idx = handle_address(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpTxTag::ToPrefix as u8,
+            RlpTxTag::To as u8,
+            self.callee_address,
+            idx,
+        );
         let idx = handle_u256(
             rlp_data.as_ref(),
             hash,
             &mut rows,
-            RlpTxTag::Value,
+            RlpTxTag::Value as u8,
             self.value,
             idx,
         );
-        let idx = handle_bytes(rlp_data.as_ref(), hash, &mut rows, &self.call_data, idx);
+        let idx = handle_bytes(
+            rlp_data.as_ref(),
+            hash,
+            &mut rows,
+            RlpTxTag::DataPrefix as u8,
+            RlpTxTag::Data as u8,
+            &self.call_data,
+            idx,
+        );
 
         assert!(
             idx == rlp_data.len(),
@@ -95,376 +113,6 @@ impl<F: FieldExt> RlpWitnessGen<F> for Transaction {
         );
         rows
     }
-}
-
-fn handle_prefix<F: FieldExt>(
-    rlp_data: &[u8],
-    hash: F,
-    rows: &mut Vec<RlpWitnessRow<F>>,
-    mut idx: usize,
-) -> usize {
-    if rlp_data[idx] > 247 {
-        // length of length
-        let length_of_length = (rlp_data[idx] - 247) as usize;
-        let tag_length = length_of_length + 1;
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: rlp_data[idx],
-            tag: RlpTxTag::Prefix as u8,
-            tag_length,
-            tag_index: tag_length,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: 0,
-            hash,
-        });
-        idx += 1;
-        let mut length_acc = 0;
-        for (k, rlp_byte) in rlp_data.iter().skip(idx).take(length_of_length).enumerate() {
-            length_acc = (length_acc * 256) + (*rlp_byte as u64);
-            rows.push(RlpWitnessRow {
-                index: idx + 1,
-                data_type: RlpDataType::Transaction,
-                value: *rlp_byte,
-                tag: RlpTxTag::Prefix as u8,
-                tag_length,
-                tag_index: tag_length - (1 + k),
-                aux_tag_index: 0,
-                aux_tag_length: 0,
-                length_acc,
-                hash,
-            });
-            idx += 1;
-        }
-    } else {
-        // length
-        assert!(
-            rlp_data[idx] > 191 && rlp_data[idx] < 248,
-            "RLP data mismatch({:?}): 191 < value < 248",
-            RlpTxTag::Prefix,
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: rlp_data[idx],
-            tag: RlpTxTag::Prefix as u8,
-            tag_length: 1,
-            tag_index: 1,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: (rlp_data[idx] - 192) as u64,
-            hash,
-        });
-        idx += 1;
-    }
-    idx
-}
-
-fn handle_u256<F: FieldExt>(
-    rlp_data: &[u8],
-    hash: F,
-    rows: &mut Vec<RlpWitnessRow<F>>,
-    tag: RlpTxTag,
-    value: U256,
-    mut idx: usize,
-) -> usize {
-    let mut value_bytes = vec![0u8; 32];
-    value.to_big_endian(&mut value_bytes);
-    let value_bytes = value_bytes
-        .iter()
-        .skip_while(|b| b.is_zero())
-        .cloned()
-        .collect::<Vec<u8>>();
-
-    if value_bytes.is_empty() {
-        assert!(
-            rlp_data[idx] == 128,
-            "RLP data mismatch({:?}): value == 128",
-            tag,
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: 128,
-            tag: tag as u8,
-            tag_length: 1,
-            tag_index: 1,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: 0,
-            hash,
-        });
-        idx += 1;
-    } else if value_bytes.len() == 1 && value_bytes[0] < 128 {
-        assert!(
-            rlp_data[idx] == value_bytes[0],
-            "RLP data mismatch({:?}): value < 128",
-            tag,
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: value_bytes[0],
-            tag: tag as u8,
-            tag_length: 1,
-            tag_index: 1,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: 0,
-            hash,
-        });
-        idx += 1;
-    } else {
-        assert!(
-            rlp_data[idx] as usize == 128 + value_bytes.len(),
-            "RLP data mismatch({:?}): len(value)",
-            tag,
-        );
-        let tag_length = 1 + value_bytes.len();
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: rlp_data[idx],
-            tag: tag as u8,
-            tag_length,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            tag_index: tag_length,
-            length_acc: value_bytes.len() as u64,
-            hash,
-        });
-        idx += 1;
-
-        for (i, value_byte) in value_bytes.iter().enumerate() {
-            assert!(
-                rlp_data[idx] == *value_byte,
-                "RLP data mismatch({:?}): value[{}]",
-                tag,
-                i,
-            );
-            rows.push(RlpWitnessRow {
-                index: idx + 1,
-                data_type: RlpDataType::Transaction,
-                value: *value_byte,
-                tag: tag as u8,
-                tag_length,
-                tag_index: tag_length - (1 + i),
-                aux_tag_index: 0,
-                aux_tag_length: 0,
-                length_acc: 0,
-                hash,
-            });
-            idx += 1;
-        }
-    }
-
-    idx
-}
-
-fn handle_address<F: FieldExt>(
-    rlp_data: &[u8],
-    hash: F,
-    rows: &mut Vec<RlpWitnessRow<F>>,
-    value: Address,
-    mut idx: usize,
-) -> usize {
-    let value_bytes = value.as_fixed_bytes();
-
-    assert!(
-        rlp_data[idx] == 148,
-        "RLP data mismatch({:?}): value",
-        RlpTxTag::ToPrefix,
-    );
-    rows.push(RlpWitnessRow {
-        index: idx + 1,
-        data_type: RlpDataType::Transaction,
-        value: 148,
-        tag: RlpTxTag::ToPrefix as u8,
-        tag_length: 1,
-        tag_index: 1,
-        aux_tag_index: 0,
-        aux_tag_length: 0,
-        length_acc: 20,
-        hash,
-    });
-    idx += 1;
-
-    for (i, value_byte) in value_bytes.iter().enumerate() {
-        assert!(
-            rlp_data[idx] == *value_byte,
-            "RLP data mismatch({:?}): value[{}]",
-            RlpTxTag::To,
-            i,
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: *value_byte,
-            tag: RlpTxTag::To as u8,
-            tag_length: 20,
-            tag_index: 20 - i,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: 0,
-            hash,
-        });
-        idx += 1;
-    }
-
-    idx
-}
-
-fn handle_bytes<F: FieldExt>(
-    rlp_data: &[u8],
-    hash: F,
-    rows: &mut Vec<RlpWitnessRow<F>>,
-    call_data: &[u8],
-    mut idx: usize,
-) -> usize {
-    let length = call_data.len();
-
-    if length == 0 {
-        assert!(
-            rlp_data[idx] == 128,
-            "RLP data mismatch({:?}): len(call_data) == 0",
-            RlpTxTag::DataPrefix
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: 128,
-            tag: RlpTxTag::DataPrefix as u8,
-            tag_length: 1,
-            tag_index: 1,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: 0,
-            hash,
-        });
-        idx += 1;
-        return idx;
-    }
-
-    if length < 56 {
-        assert!(
-            rlp_data[idx] as usize == 128 + length,
-            "RLP data mismatch({:?}): len(call_data) + 128",
-            RlpTxTag::DataPrefix,
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: (128 + length) as u8,
-            tag: RlpTxTag::DataPrefix as u8,
-            tag_length: 1,
-            tag_index: 1,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: length as u64,
-            hash,
-        });
-        idx += 1;
-
-        for (i, data_byte) in call_data.iter().enumerate() {
-            assert!(
-                rlp_data[idx] == *data_byte,
-                "RLP data mismatch({:?}): value[{}]",
-                RlpTxTag::Data,
-                i,
-            );
-            rows.push(RlpWitnessRow {
-                index: idx + 1,
-                data_type: RlpDataType::Transaction,
-                value: *data_byte,
-                tag: RlpTxTag::Data as u8,
-                tag_length: length,
-                tag_index: length - i,
-                aux_tag_index: 0,
-                aux_tag_length: 0,
-                length_acc: 0,
-                hash,
-            });
-            idx += 1;
-        }
-        return idx;
-    }
-
-    // length > 55.
-    let length_of_length = 8 - length.leading_zeros() as usize / 8;
-    assert!(
-        rlp_data[idx] as usize == 183 + length_of_length,
-        "RLP data mismatch({:?}): len_of_len(call_data) + 183",
-        RlpTxTag::DataPrefix,
-    );
-    let tag_length = 1 + length_of_length;
-    rows.push(RlpWitnessRow {
-        index: idx + 1,
-        data_type: RlpDataType::Transaction,
-        value: (183 + length_of_length) as u8,
-        tag: RlpTxTag::DataPrefix as u8,
-        tag_length,
-        tag_index: tag_length,
-        aux_tag_index: 0,
-        aux_tag_length: 0,
-        length_acc: 0,
-        hash,
-    });
-    idx += 1;
-
-    let length_bytes = length.to_be_bytes();
-    let length_bytes = length_bytes
-        .iter()
-        .skip_while(|b| b.is_zero())
-        .cloned()
-        .collect::<Vec<u8>>();
-    let mut length_acc = 0;
-    for (i, length_byte) in length_bytes.iter().enumerate() {
-        assert!(
-            rlp_data[idx] == *length_byte,
-            "RLP data mismatch({:?}): length[{}]",
-            RlpTxTag::DataPrefix,
-            i,
-        );
-        length_acc = length_acc * 256 + (*length_byte as u64);
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: *length_byte,
-            tag: RlpTxTag::DataPrefix as u8,
-            tag_length,
-            tag_index: tag_length - (1 + i),
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc,
-            hash,
-        });
-        idx += 1;
-    }
-
-    let tag_length = call_data.len();
-    for (i, data_byte) in call_data.iter().enumerate() {
-        assert!(
-            rlp_data[idx] == *data_byte,
-            "RLP data mismatch({:?}): data[{}]",
-            RlpTxTag::Data,
-            i,
-        );
-        rows.push(RlpWitnessRow {
-            index: idx + 1,
-            data_type: RlpDataType::Transaction,
-            value: *data_byte,
-            tag: RlpTxTag::Data as u8,
-            tag_length,
-            tag_index: tag_length - i,
-            aux_tag_index: 0,
-            aux_tag_length: 0,
-            length_acc: 0,
-            hash,
-        });
-        idx += 1;
-    }
-    idx
 }
 
 #[cfg(test)]
