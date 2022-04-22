@@ -6,7 +6,7 @@ use sha3::Keccak256;
 use crate::{evm_circuit::util::RandomLinearCombination, impl_expr};
 
 use super::{
-    common::{handle_bytes, handle_prefix, handle_u256},
+    common::{handle_address, handle_bytes, handle_prefix, handle_u256},
     rlp_witness::{RlpDataType, RlpWitnessGen, RlpWitnessRow},
     Receipt,
 };
@@ -94,7 +94,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
             self.bloom.as_bytes(),
             idx,
         );
-        let idx = handle_logs(rlp_data.as_ref(), hash, &mut rows, idx);
+        let idx = self.handle_logs(rlp_data.as_ref(), hash, &mut rows, idx);
 
         assert!(
             idx == rlp_data.len(),
@@ -104,12 +104,72 @@ impl<F: FieldExt> RlpWitnessGen<F> for Receipt {
     }
 }
 
-#[allow(unused_variables)]
-fn handle_logs<F: FieldExt>(
-    rlp_data: &[u8],
-    hash: F,
-    rows: &mut Vec<RlpWitnessRow<F>>,
-    idx: usize,
-) -> usize {
-    unimplemented!()
+impl Receipt {
+    fn handle_logs<F: FieldExt>(
+        &self,
+        rlp_data: &[u8],
+        hash: F,
+        rows: &mut Vec<RlpWitnessRow<F>>,
+        mut idx: usize,
+    ) -> usize {
+        idx = handle_prefix(
+            rlp_data,
+            hash,
+            rows,
+            RlpDataType::Receipt,
+            RlpReceiptTag::LogsPrefix as u8,
+            idx,
+        );
+        for log in self.logs.iter() {
+            idx = handle_prefix(
+                rlp_data,
+                hash,
+                rows,
+                RlpDataType::Receipt,
+                RlpReceiptTag::LogPrefix as u8,
+                idx,
+            );
+            idx = handle_address(
+                rlp_data,
+                hash,
+                rows,
+                RlpDataType::Receipt,
+                RlpReceiptTag::LogAddressPrefix as u8,
+                RlpReceiptTag::LogAddress as u8,
+                log.address,
+                idx,
+            );
+            for topic in log.topics.iter() {
+                idx = handle_prefix(
+                    rlp_data,
+                    hash,
+                    rows,
+                    RlpDataType::Receipt,
+                    RlpReceiptTag::LogTopicsPrefix as u8,
+                    idx,
+                );
+                idx = handle_bytes(
+                    rlp_data,
+                    hash,
+                    rows,
+                    RlpDataType::Receipt,
+                    RlpReceiptTag::LogTopicPrefix as u8,
+                    RlpReceiptTag::LogTopic as u8,
+                    topic.as_bytes(),
+                    idx,
+                );
+            }
+            idx = handle_bytes(
+                rlp_data,
+                hash,
+                rows,
+                RlpDataType::Receipt,
+                RlpReceiptTag::LogDataPrefix as u8,
+                RlpReceiptTag::LogData as u8,
+                log.data.as_ref(),
+                idx,
+            );
+        }
+        idx
+    }
 }

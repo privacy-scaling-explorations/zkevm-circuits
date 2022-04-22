@@ -172,6 +172,7 @@ pub fn handle_u256<F: FieldExt>(
     idx
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_address<F: FieldExt>(
     rlp_data: &[u8],
     hash: F,
@@ -228,6 +229,7 @@ pub fn handle_address<F: FieldExt>(
     idx
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_bytes<F: FieldExt>(
     rlp_data: &[u8],
     hash: F,
