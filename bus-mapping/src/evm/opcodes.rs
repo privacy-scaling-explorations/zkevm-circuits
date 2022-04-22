@@ -4,12 +4,11 @@ use crate::{
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp,
-        TxRefundOp, RW, TxReceiptField, TxReceiptOp,
+        TxReceiptField, TxReceiptOp, TxRefundOp, RW,
     },
     Error,
 };
 use core::fmt::Debug;
-use std::ops::RangeBounds;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToWord, Word,
@@ -402,7 +401,10 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     }
 }
 
-pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut HashMap<usize, u64>) -> Result<ExecStep, Error> {
+pub fn gen_end_tx_ops(
+    state: &mut CircuitInputStateRef,
+    tx_cumulative_gas: &mut HashMap<usize, u64>,
+) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
 
@@ -423,7 +425,6 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut 
             field: CallContextField::IsPersistent,
             //value: Word::from(state.call()?.is_persistent as u8),
             value: Word::from(call.is_persistent as u8),
-
         },
     );
 
@@ -484,7 +485,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut 
         TxReceiptOp {
             tx_id: state.tx_ctx.id(),
             field: TxReceiptField::PostStateOrStatus,
-            value: Word::from(call.is_persistent as u8),
+            value: call.is_persistent as u64,
         },
     );
 
@@ -495,14 +496,12 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut 
         TxReceiptOp {
             tx_id: state.tx_ctx.id(),
             field: TxReceiptField::LogLength,
-            //value: exec_step.log_id.into(),
-            value: Word::from(log_id),
+            value: log_id as u64,
         },
     );
-    
 
     let gas_used = state.tx.gas - exec_step.gas_left.0;
-    let mut last_tx_cumulative_gas=0 as u64; 
+    let mut last_tx_cumulative_gas: u64 = 0;
     if state.tx_ctx.id() > 1 {
         last_tx_cumulative_gas = *tx_cumulative_gas.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
@@ -510,9 +509,9 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut 
             &mut exec_step,
             RW::READ,
             TxReceiptOp {
-                tx_id: state.tx_ctx.id() - 1 ,
+                tx_id: state.tx_ctx.id() - 1,
                 field: TxReceiptField::CumulativeGasUsed,
-                value: (last_tx_cumulative_gas as u64).into(),
+                value: last_tx_cumulative_gas,
             },
         );
     }
@@ -523,11 +522,11 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef, tx_cumulative_gas: &mut 
         TxReceiptOp {
             tx_id: state.tx_ctx.id(),
             field: TxReceiptField::CumulativeGasUsed,
-            value: (last_tx_cumulative_gas + gas_used as u64).into(),
+            value: last_tx_cumulative_gas + gas_used,
         },
     );
 
-    tx_cumulative_gas.insert(state.tx_ctx.id(), last_tx_cumulative_gas + gas_used );
+    tx_cumulative_gas.insert(state.tx_ctx.id(), last_tx_cumulative_gas + gas_used);
 
     if !state.tx_ctx.is_last_tx() {
         state.push_op(

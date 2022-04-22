@@ -3,12 +3,16 @@ use crate::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
-        table::{RwTableTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
+        table::{
+            BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+            TxReceiptFieldTag,
+        },
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, MinMaxGadget, MulWordByU64Gadget, IsEqualGadget,
+                AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
+                MulWordByU64Gadget,
             },
             Cell,
         },
@@ -35,6 +39,7 @@ pub(crate) struct EndTxGadget<F> {
     coinbase_reward: UpdateBalanceGadget<F, 2, true>,
     pre_tx_gas_cumulate: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
+    is_tx_persistent: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -45,7 +50,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_tx_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
-
 
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
@@ -98,30 +102,44 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         // constrain tx receipt fields
-        cb.tx_receipt_lookup(tx_id.expr(), TxReceiptFieldTag::PostStateOrStatus, is_tx_persistent.expr());
-        cb.tx_receipt_lookup(tx_id.expr(), TxReceiptFieldTag::LogLength, cb.curr.state.log_id.expr());
-        // gas_used = tx_gas - instruction.curr.gas_left = tx_gas.expr() - cb.curr.state.gas_left.expr();
-        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr()); 
-        //let tx_gas_cumulate = cb.tx_receipt(tx_id.expr(), TxReceiptFieldTag::CumulativeGasUsed);
-        // TODO constrain gas used
+        cb.tx_receipt_lookup(
+            tx_id.expr(),
+            TxReceiptFieldTag::PostStateOrStatus,
+            is_tx_persistent.expr(),
+        );
+        cb.tx_receipt_lookup(
+            tx_id.expr(),
+            TxReceiptFieldTag::LogLength,
+            cb.curr.state.log_id.expr(),
+        );
+        // gas_used = tx_gas - instruction.curr.gas_left = tx_gas.expr() -
+        // cb.curr.state.gas_left.expr();
+        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
+        //let tx_gas_cumulate = cb.tx_receipt(tx_id.expr(),
+        // TxReceiptFieldTag::CumulativeGasUsed); TODO constrain gas used
         // non first tx end, get pre tx gas used
         let pre_tx_gas_cumulate = cb.query_cell();
-        cb.condition(is_first_tx.expr(), |cb|{
-            cb.require_zero("pre_tx_gas_cumulate is zero when tx is first tx", pre_tx_gas_cumulate.expr() );
+        cb.condition(is_first_tx.expr(), |cb| {
+            cb.require_zero(
+                "pre_tx_gas_cumulate is zero when tx is first tx",
+                pre_tx_gas_cumulate.expr(),
+            );
         });
 
-        cb.condition(1.expr() - is_first_tx.expr(), |cb|{
-            cb.tx_receipt_lookup(tx_id.expr() - 1.expr(), TxReceiptFieldTag::CumulativeGasUsed, pre_tx_gas_cumulate.expr());
+        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+            cb.tx_receipt_lookup(
+                tx_id.expr() - 1.expr(),
+                TxReceiptFieldTag::CumulativeGasUsed,
+                pre_tx_gas_cumulate.expr(),
+            );
         });
 
-        cb.tx_receipt_lookup(tx_id.expr(), TxReceiptFieldTag::CumulativeGasUsed, gas_used + pre_tx_gas_cumulate.expr());
+        cb.tx_receipt_lookup(
+            tx_id.expr(),
+            TxReceiptFieldTag::CumulativeGasUsed,
+            gas_used + pre_tx_gas_cumulate.expr(),
+        );
 
-    //     cb.require_equal("CumulativeGasUsed = pre_tx_gas_cumulate + gas used of current tx  ",
-    //     gas_used + pre_tx_gas_cumulate.expr(), 
-    //     tx_gas_cumulate.expr(),
-    //    );
-        // first tx end, 
-       
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
@@ -138,7 +156,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 });
             },
         );
-    
 
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
@@ -165,6 +182,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_reward,
             pre_tx_gas_cumulate,
             is_first_tx,
+            is_tx_persistent,
         }
     }
 
@@ -174,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
@@ -235,21 +253,19 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_balance,
         )?;
 
-        // let index = step.rw_indices[5];
-        // let value = block.rws[idx].account_value_pair());
-        let pre_gas_used:u64 = if tx.id == 1 {
+        let pre_gas_used: u64 = if tx.id == 1 {
             0
-        }else{
-            //let rw = &block.rws[step.rw_indices[8]];
+        } else {
             let rw = &block.rws[(RwTableTag::TxReceipt, (tx.id - 1) * 3 - 1)];
-            let value = rw.receipt_value();
-            value.as_u64()
+            rw.receipt_value()
         };
 
-        self.pre_tx_gas_cumulate.assign(region, offset, Some(F::from(pre_gas_used)))?;
-        self.is_first_tx.assign(
-            region, offset, F::from(tx.id as u64), F::from(1 as u64),
-        )?;
+        self.pre_tx_gas_cumulate
+            .assign(region, offset, Some(F::from(pre_gas_used)))?;
+        self.is_first_tx
+            .assign(region, offset, F::from(tx.id as u64), F::one())?;
+        self.is_tx_persistent
+            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
 
         Ok(())
     }

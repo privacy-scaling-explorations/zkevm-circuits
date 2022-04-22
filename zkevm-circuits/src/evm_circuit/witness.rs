@@ -12,7 +12,7 @@ use crate::evm_circuit::{
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
-    operation::{self, AccountField, CallContextField},
+    operation::{self, AccountField, CallContextField, TxReceiptField},
 };
 
 use eth_types::evm_types::OpcodeId;
@@ -519,7 +519,7 @@ pub enum Rw {
         is_write: bool,
         tx_id: usize,
         field_tag: TxReceiptFieldTag,
-        value: Word,
+        value: u64,
     },
 }
 #[derive(Default, Clone, Copy)]
@@ -651,7 +651,7 @@ impl Rw {
         }
     }
 
-    pub fn receipt_value(&self) -> Word {
+    pub fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
             _ => unreachable!(),
@@ -902,7 +902,7 @@ impl Rw {
                 F::zero(),
                 F::from(*field_tag as u64),
                 F::zero(),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                F::from(*value),
                 F::zero(),
                 F::zero(),
                 F::zero(),
@@ -1111,15 +1111,13 @@ impl From<&operation::OperationContainer> for RwMap {
             container
                 .tx_receipt
                 .iter()
-                .map(|op| Rw::TxReceipt { 
+                .map(|op| Rw::TxReceipt {
                     //rw_counter: (), is_write: (), tx_id: (), field_tag: (), value: () } {
                     rw_counter: op.rwc().into(),
                     is_write: op.rw().is_write(),
                     tx_id: op.op().tx_id,
                     field_tag: match op.op().field {
-                        TxReceiptField::PostStateOrStatus => {
-                            TxReceiptFieldTag::PostStateOrStatus
-                        }
+                        TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
                         TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
                         TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
                     },

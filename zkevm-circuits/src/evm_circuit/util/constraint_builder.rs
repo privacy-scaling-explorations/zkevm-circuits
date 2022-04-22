@@ -1112,6 +1112,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // Tx Receipt
 
     pub(crate) fn tx_receipt(
         &mut self,
@@ -1119,7 +1120,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         field_tag: TxReceiptFieldTag,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.tx_receipt_lookup(false.expr(),  field_tag, cell.expr());
+        self.tx_receipt_lookup(tx_id, field_tag, cell.expr());
         cell
     }
 
@@ -1146,7 +1147,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-  // Validation
+    // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract 2 from MAX_DEGREE because all expressions will be

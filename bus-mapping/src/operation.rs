@@ -768,22 +768,22 @@ impl CallContextOp {
 pub enum TxReceiptField {
     /// flag indicates whether if a tx succeed or not
     PostStateOrStatus,
-    /// the cumulative gas used in the block containing the transaction receipt as of immediately
-    /// after the transaction has happened.
+    /// the cumulative gas used in the block containing the transaction receipt
+    /// as of immediately after the transaction has happened.
     CumulativeGasUsed,
     /// record how many log entries in the receipt/tx , 0 if tx fails
     LogLength,
-   }
+}
 
 /// Represents TxReceipt read/write operation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxReceiptOp {
-    /// call_id of TxReceipt
+    /// tx_id of TxReceipt
     pub tx_id: usize,
     /// field of TxReceipt
     pub field: TxReceiptField,
     /// value of TxReceipt
-    pub value: Word,
+    pub value: u64,
 }
 
 impl fmt::Debug for TxReceiptOp {
