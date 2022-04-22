@@ -155,6 +155,39 @@ impl Encodable for Receipt {
     }
 }
 
+#[cfg(test)]
+mod rlp_tests {
+    use eth_types::{Address, H256};
+    use ethers_core::types::{Bloom, Log};
+
+    use super::Receipt;
+
+    #[test]
+    fn rlp_receipt() {
+        let receipt = Receipt {
+            status: 1,
+            cumulative_gas_used: 2,
+            bloom: Bloom([3u8; 256]),
+            logs: vec![Log {
+                address: Address::from_slice(&[4u8; 20]),
+                topics: vec![H256::from_slice(&[5u8; 32])],
+                data: vec![6u8; 66].into(),
+                block_hash: None,
+                block_number: None,
+                transaction_hash: None,
+                transaction_index: None,
+                transaction_log_index: None,
+                log_type: None,
+                log_index: None,
+                removed: None,
+            }],
+        };
+        let out = rlp::encode(&receipt);
+        println!("len = {:?}", out.len());
+        println!("{:?}", out.to_vec());
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Transaction {
     /// The transaction identifier in the block

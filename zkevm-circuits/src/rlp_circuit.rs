@@ -3,6 +3,7 @@
 use eth_types::Field;
 use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
 };
 use halo2_proofs::{
@@ -62,9 +63,9 @@ pub struct Config<F> {
     tag_length: Column<Advice>,
     /// Denotes a decrementing index over all nested tags within a parent tag,
     /// specifically used in the case of Receipt.Log.
-    aux_tag_index: Column<Advice>,
+    aux_tag_index: [Column<Advice>; 2],
     /// Denotes the aux tag's length in bytes.
-    aux_tag_length: Column<Advice>,
+    aux_tag_length: [Column<Advice>; 2],
     /// Denotes an accumulator for the length of data, in the case where len >
     /// 55 and the length is represented in its big-endian form.
     length_acc: Column<Advice>,
@@ -113,6 +114,9 @@ pub struct Config<F> {
     /// Lt chip to check: rindex > 1.
     rindex_gt_1: LtConfig<F, 1>,
 
+    /// Eq chip to check: aux_tag_index[1] == 1.
+    aux_tag_index_eq_1: IsEqualConfig<F>,
+
     /// Denotes a tuple (value_rlc, n, 1, keccak256(rlp_encode(input))).
     keccak_tuple: [Column<Advice>; 4],
 }
@@ -128,12 +132,12 @@ impl<F: Field> Config<F> {
         let data_type = meta.advice_column();
         let value = meta.advice_column();
         let tag = meta.advice_column();
-        let aux_tag_index = meta.advice_column();
+        let aux_tag_index = array_init::array_init(|_| meta.advice_column());
         let tx_tags = array_init::array_init(|_| meta.advice_column());
         let receipt_tags = array_init::array_init(|_| meta.advice_column());
         let tag_index = meta.advice_column();
         let tag_length = meta.advice_column();
-        let aux_tag_length = meta.advice_column();
+        let aux_tag_length = array_init::array_init(|_| meta.advice_column());
         let length_acc = meta.advice_column();
         let value_rlc = meta.advice_column();
         let hash = meta.advice_column();
@@ -246,6 +250,13 @@ impl<F: Field> Config<F> {
             cmp_lt_enabled,
             |_meta| 1.expr(),
             |meta| meta.query_advice(rindex, Rotation::cur()),
+        );
+
+        let aux_tag_index_eq_1 = IsEqualChip::configure(
+            meta,
+            cmp_lt_enabled,
+            |meta| meta.query_advice(aux_tag_index[1], Rotation::cur()),
+            |_meta| 1.expr(),
         );
 
         let keccak_tuple = array_init::array_init(|_| meta.advice_column());
@@ -363,7 +374,7 @@ impl<F: Field> Config<F> {
                     cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
                     cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
                     cb.require_equal(
-                        "length_acc == value - 0xc0",
+                        "length_acc == value - 0xc0 (1)",
                         meta.query_advice(length_acc, Rotation::cur()),
                         meta.query_advice(value, Rotation::cur()) - 192.expr(),
                     );
@@ -1035,10 +1046,10 @@ impl<F: Field> Config<F> {
             cb.condition(
                 is_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(),
                 |cb| {
-                    cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
+                    cb.require_equal("191 < value (1)", value_gt_191.is_lt(meta, None), 1.expr());
                     cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
                     cb.require_equal(
-                        "length_acc == value - 0xc0",
+                        "length_acc == value - 0xc0 (2)",
                         meta.query_advice(length_acc, Rotation::cur()),
                         meta.query_advice(value, Rotation::cur()) - 192.expr(),
                     );
@@ -1172,9 +1183,9 @@ impl<F: Field> Config<F> {
             // if tag_index == tag_length
             cb.condition(is_bloom_prefix(meta) * tindex_eq_tlength.clone(), |cb| {
                 cb.require_equal(
-                    "value == 0xf9",
+                    "value == 0xb9",
                     meta.query_advice(value, Rotation::cur()),
-                    249.expr(),
+                    185.expr(),
                 );
             });
 
@@ -1358,7 +1369,7 @@ impl<F: Field> Config<F> {
 
             cb.condition(is_logs_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(), |cb| {
                 cb.require_equal(
-                    "191 < value",
+                    "191 < value (2)",
                     value_gt_191.is_lt(meta, None),
                     1.expr(),
                 );
@@ -1412,12 +1423,12 @@ impl<F: Field> Config<F> {
                 cb.require_equal(
                     "length_acc == aux_tag_length::next",
                     meta.query_advice(length_acc, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::next()),
+                    meta.query_advice(aux_tag_length[0], Rotation::next()),
                 );
                 cb.require_equal(
                     "aux_tag_length::next == aux_tag_index::next",
-                    meta.query_advice(aux_tag_length, Rotation::next()),
-                    meta.query_advice(aux_tag_index, Rotation::next()),
+                    meta.query_advice(aux_tag_length[0], Rotation::next()),
+                    meta.query_advice(aux_tag_index[0], Rotation::next()),
                 );
             });
 
@@ -1451,7 +1462,7 @@ impl<F: Field> Config<F> {
 
             cb.condition(is_log_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(), |cb| {
                 cb.require_equal(
-                    "191 < value",
+                    "191 < value (3)",
                     value_gt_191.is_lt(meta, None),
                     1.expr(),
                 );
@@ -1499,13 +1510,13 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_address(meta), |cb| {
                 cb.require_equal(
                     "aux_tag_length == aux_tag_length::prev",
-                    meta.query_advice(aux_tag_length, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                    meta.query_advice(aux_tag_length[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[0], Rotation::prev()),
                 );
                 cb.require_equal(
                     "aux_tag_index == aux_tag_index::prev - 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
-                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::prev()) - 1.expr(),
                 );
             });
 
@@ -1527,7 +1538,7 @@ impl<F: Field> Config<F> {
                 );
             });
 
-            cb.condition(is_log_prefix(meta) * tindex_eq.clone(), |cb| {
+            cb.condition(is_log_address(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "tag::next == RlpReceiptTag::LogTopicsPrefix",
                     meta.query_advice(tag, Rotation::next()),
@@ -1546,13 +1557,13 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_topics_prefix(meta), |cb| {
                 cb.require_equal(
                     "aux_tag_length == aux_tag_length::prev",
-                    meta.query_advice(aux_tag_length, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                    meta.query_advice(aux_tag_length[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[0], Rotation::prev()),
                 );
                 cb.require_equal(
                     "aux_tag_index == aux_tag_index::prev - 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
-                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::prev()) - 1.expr(),
                 );
             });
 
@@ -1577,10 +1588,10 @@ impl<F: Field> Config<F> {
             });
 
             cb.condition(is_log_topics_prefix(meta) * tindex_eq_tlength.clone() * tlength_eq.clone(), |cb| {
-                cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
+                cb.require_equal("191 < value (4)", value_gt_191.is_lt(meta, None), 1.expr());
                 cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
                 cb.require_equal(
-                    "length_acc == value - 0xc0",
+                    "length_acc == value - 0xc0 (3)",
                     meta.query_advice(length_acc, Rotation::cur()),
                     meta.query_advice(value, Rotation::cur()) - 192.expr(),
                 );
@@ -1623,6 +1634,16 @@ impl<F: Field> Config<F> {
                     meta.query_advice(tag, Rotation::next()),
                     RlpReceiptTag::LogTopicPrefix.expr(),
                 );
+                cb.require_equal(
+                    "aux_tag_length[1]::next == length_acc",
+                    meta.query_advice(aux_tag_length[1], Rotation::next()),
+                    meta.query_advice(length_acc, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "aux_tag_length[1]::next == aux_tag_index[1]::next",
+                    meta.query_advice(aux_tag_length[1], Rotation::next()),
+                    meta.query_advice(aux_tag_index[1], Rotation::next()),
+                );
             });
 
             //////////////////////////////////////////////////////////////////////////////////////
@@ -1631,13 +1652,13 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_topic_prefix(meta), |cb| {
                 cb.require_equal(
                     "aux_tag_length == aux_tag_length::prev",
-                    meta.query_advice(aux_tag_length, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                    meta.query_advice(aux_tag_length[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[0], Rotation::prev()),
                 );
                 cb.require_equal(
                     "aux_tag_index == aux_tag_index::prev - 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
-                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::prev()) - 1.expr(),
                 );
                 cb.require_equal(
                     "tag_length == 1",
@@ -1672,14 +1693,24 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_topic(meta), |cb| {
                 cb.require_equal(
                     "aux_tag_length == aux_tag_length::prev",
-                    meta.query_advice(aux_tag_length, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                    meta.query_advice(aux_tag_length[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[0], Rotation::prev()),
                 );
                 cb.require_equal(
                     "aux_tag_index == aux_tag_index::prev - 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
-                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::prev()) - 1.expr(),
                 );
+                cb.require_equal(
+                    "aux_tag_length[1] == aux_tag_length[1]::prev",
+                    meta.query_advice(aux_tag_length[1], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[1], Rotation::prev()),
+                );
+                cb.require_equal(
+                    "aux_tag_index[1] == aux_tag_index[1]::prev - 1",
+                    meta.query_advice(aux_tag_index[1], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[1], Rotation::prev()) - 1.expr(),
+                )
             });
 
             cb.condition(is_log_topic(meta) * tindex_lt.clone(), |cb| {
@@ -1702,14 +1733,25 @@ impl<F: Field> Config<F> {
 
             cb.condition(is_log_topic(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
-                    "tag::next == RlpReceiptTag::LogDataPrefix",
-                    meta.query_advice(tag, Rotation::next()),
-                    RlpReceiptTag::LogDataPrefix.expr(),
-                );
-                cb.require_equal(
                     "tag_index::next == tag_length::next",
                     meta.query_advice(tag_index, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::next()),
+                );
+            });
+
+            cb.condition(is_log_topic(meta) * tindex_eq.clone() * not::expr(aux_tag_index_eq_1.is_equal_expression.clone()), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogTopicPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogTopicPrefix.expr(),
+                );
+            });
+
+            cb.condition(is_log_topic(meta) * tindex_eq.clone() * aux_tag_index_eq_1.is_equal_expression.clone(), |cb| {
+                cb.require_equal(
+                    "tag::next == RlpReceiptTag::LogDataPrefix",
+                    meta.query_advice(tag, Rotation::next()),
+                    RlpReceiptTag::LogDataPrefix.expr(),
                 );
             });
 
@@ -1719,13 +1761,13 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_data_prefix(meta), |cb| {
                 cb.require_equal(
                     "aux_tag_length == aux_tag_length::prev",
-                    meta.query_advice(aux_tag_length, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                    meta.query_advice(aux_tag_length[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[0], Rotation::prev()),
                 );
                 cb.require_equal(
                     "aux_tag_index == aux_tag_index::prev - 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
-                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::prev()) - 1.expr(),
                 );
             });
 
@@ -1750,12 +1792,12 @@ impl<F: Field> Config<F> {
             });
 
             cb.condition(is_log_data_prefix(meta) * tindex_eq_tlength * tlength_eq, |cb| {
-                cb.require_equal("191 < value", value_gt_191.is_lt(meta, None), 1.expr());
-                cb.require_equal("value < 248", value_lt_248.is_lt(meta, None), 1.expr());
+                cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
+                cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
                 cb.require_equal(
-                    "length_acc == value - 0xc0",
+                    "length_acc == value - 0x80",
                     meta.query_advice(length_acc, Rotation::cur()),
-                    meta.query_advice(value, Rotation::cur()) - 192.expr(),
+                    meta.query_advice(value, Rotation::cur()) - 128.expr(),
                 );
             });
 
@@ -1771,7 +1813,7 @@ impl<F: Field> Config<F> {
                     meta.query_advice(tag_length, Rotation::cur()),
                 );
                 cb.require_equal(
-                    "tag::next == RlpReceiptTag::LogDataPrefix",
+                    "tag::next == RlpReceiptTag::LogDataPrefix (3)",
                     meta.query_advice(tag, Rotation::next()),
                     RlpReceiptTag::LogDataPrefix.expr(),
                 );
@@ -1780,7 +1822,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_data_prefix(meta) * tindex_eq.clone() * length_acc_eq_0.clone(), |cb| {
                 cb.require_equal(
                     "aux_tag_index == 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
                     1.expr(),
                 );
             });
@@ -1812,13 +1854,13 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_data(meta), |cb| {
                 cb.require_equal(
                     "aux_tag_length == aux_tag_length::prev",
-                    meta.query_advice(aux_tag_length, Rotation::cur()),
-                    meta.query_advice(aux_tag_length, Rotation::prev()),
+                    meta.query_advice(aux_tag_length[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_length[0], Rotation::prev()),
                 );
                 cb.require_equal(
                     "aux_tag_index == aux_tag_index::prev - 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
-                    meta.query_advice(aux_tag_index, Rotation::prev()) - 1.expr(),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::prev()) - 1.expr(),
                 );
             });
 
@@ -1843,7 +1885,7 @@ impl<F: Field> Config<F> {
             cb.condition(is_log_data(meta) * tindex_eq.clone(), |cb| {
                 cb.require_equal(
                     "aux_tag_index == 1",
-                    meta.query_advice(aux_tag_index, Rotation::cur()),
+                    meta.query_advice(aux_tag_index[0], Rotation::cur()),
                     1.expr(),
                 );
             });
@@ -2036,6 +2078,8 @@ impl<F: Field> Config<F> {
             length_acc_cmp_0,
 
             rindex_gt_1,
+
+            aux_tag_index_eq_1,
         }
     }
 
@@ -2071,6 +2115,8 @@ impl<F: Field> Config<F> {
         let length_acc_cmp_0_chip = ComparatorChip::construct(self.length_acc_cmp_0.clone());
 
         let rindex_gt_1_chip = LtChip::construct(self.rindex_gt_1.clone());
+
+        let aux_tag_index_eq_1_chip = IsEqualChip::construct(self.aux_tag_index_eq_1.clone());
 
         layouter.assign_region(
             || "assign RLP-encoded data",
@@ -2112,9 +2158,14 @@ impl<F: Field> Config<F> {
                             ("value", self.value, F::from(row.value as u64)),
                             ("tag", self.tag, F::from(row.tag as u64)),
                             (
-                                "aux_tag_index",
-                                self.aux_tag_index,
-                                F::from(row.aux_tag_index as u64),
+                                "aux_tag_index[0]",
+                                self.aux_tag_index[0],
+                                F::from(row.aux_tag_index[0] as u64),
+                            ),
+                            (
+                                "aux_tag_index[1]",
+                                self.aux_tag_index[1],
+                                F::from(row.aux_tag_index[1] as u64),
                             ),
                         ],
                         [
@@ -2125,9 +2176,14 @@ impl<F: Field> Config<F> {
                                 F::from(row.tag_length as u64),
                             ),
                             (
-                                "aux_tag_length",
-                                self.aux_tag_length,
-                                F::from(row.aux_tag_length as u64),
+                                "aux_tag_length[0]",
+                                self.aux_tag_length[0],
+                                F::from(row.aux_tag_length[0] as u64),
+                            ),
+                            (
+                                "aux_tag_length[1]",
+                                self.aux_tag_length[1],
+                                F::from(row.aux_tag_length[1] as u64),
                             ),
                             ("length_acc", self.length_acc, F::from(row.length_acc)),
                             ("value_rlc", self.value_rlc, value_rlc),
@@ -2236,6 +2292,12 @@ impl<F: Field> Config<F> {
                         F::from(row.length_acc as u64),
                     )?;
                     rindex_gt_1_chip.assign(&mut region, offset, F::one(), F::from(rindex))?;
+                    aux_tag_index_eq_1_chip.assign(
+                        &mut region,
+                        offset,
+                        Some(F::from(row.aux_tag_index[1] as u64)),
+                        Some(F::one()),
+                    )?;
                 }
 
                 for offset in n_rows..=last_row_offset {
@@ -2501,9 +2563,10 @@ impl<F: Field> Config<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::marker::PhantomData;
+    use std::{convert::TryInto, marker::PhantomData};
 
-    use eth_types::{Field, U256};
+    use eth_types::{Address, Field, H256, U256};
+    use ethers_core::types::{Bloom, Log};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
@@ -2513,7 +2576,7 @@ mod tests {
 
     use crate::evm_circuit::{
         test::rand_bytes,
-        witness::{rlp_witness::RlpWitnessGen, Transaction},
+        witness::{rlp_witness::RlpWitnessGen, Receipt, Transaction},
     };
 
     use super::Config;
@@ -2633,5 +2696,48 @@ mod tests {
             ..Default::default()
         };
         verify::<Fr, Transaction>(20, tx, true);
+    }
+
+    #[test]
+    fn rlp_circuit_receipt_1() {
+        let status = 1;
+        let cumulative_gas_used = 2u64;
+        let bloom = Bloom(rand_bytes(256)[..].try_into().unwrap());
+        let rand_log = || Log {
+            address: Address::random(),
+            topics: vec![H256::random(), H256::random()],
+            data: rand_bytes(54).into(),
+            block_hash: None,
+            block_number: None,
+            transaction_hash: None,
+            transaction_index: None,
+            transaction_log_index: None,
+            log_type: None,
+            log_index: None,
+            removed: None,
+        };
+        let logs = vec![rand_log()];
+        let receipt = Receipt {
+            status,
+            cumulative_gas_used,
+            bloom,
+            logs,
+        };
+        verify::<Fr, Receipt>(9, receipt, true);
+    }
+
+    #[test]
+    fn rlp_circuit_receipt_2() {
+        let status = 0;
+        let cumulative_gas_used = 200_000u64;
+        let bloom = Bloom(rand_bytes(256)[..].try_into().unwrap());
+        let logs = vec![];
+        let receipt = Receipt {
+            status,
+            cumulative_gas_used,
+            bloom,
+            logs,
+        };
+        verify::<Fr, Receipt>(9, receipt, true);
     }
 }

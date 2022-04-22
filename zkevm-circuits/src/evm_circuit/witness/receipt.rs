@@ -129,6 +129,9 @@ impl Receipt {
                 RlpReceiptTag::LogPrefix as u8,
                 idx,
             );
+
+            // start of aux tag index and length assignment (0).
+            let aux_tag_start0 = idx;
             idx = handle_address(
                 rlp_data,
                 hash,
@@ -139,15 +142,18 @@ impl Receipt {
                 log.address,
                 idx,
             );
+            idx = handle_prefix(
+                rlp_data,
+                hash,
+                rows,
+                RlpDataType::Receipt,
+                RlpReceiptTag::LogTopicsPrefix as u8,
+                idx,
+            );
+
+            // start of aux tag index and length assignment (1).
+            let aux_tag_start1 = idx;
             for topic in log.topics.iter() {
-                idx = handle_prefix(
-                    rlp_data,
-                    hash,
-                    rows,
-                    RlpDataType::Receipt,
-                    RlpReceiptTag::LogTopicsPrefix as u8,
-                    idx,
-                );
                 idx = handle_bytes(
                     rlp_data,
                     hash,
@@ -159,6 +165,18 @@ impl Receipt {
                     idx,
                 );
             }
+            // assign aux tag index and length (1).
+            let aux_tag_length1 = idx - aux_tag_start1;
+            for (aux_idx, row) in rows
+                .iter_mut()
+                .skip(aux_tag_start1)
+                .take(aux_tag_length1)
+                .enumerate()
+            {
+                row.aux_tag_length[1] = aux_tag_length1;
+                row.aux_tag_index[1] = aux_tag_length1 - aux_idx;
+            }
+
             idx = handle_bytes(
                 rlp_data,
                 hash,
@@ -169,6 +187,18 @@ impl Receipt {
                 log.data.as_ref(),
                 idx,
             );
+
+            // assign aux tag index and length (0).
+            let aux_tag_length0 = idx - aux_tag_start0;
+            for (aux_idx, row) in rows
+                .iter_mut()
+                .skip(aux_tag_start0)
+                .take(aux_tag_length0)
+                .enumerate()
+            {
+                row.aux_tag_length[0] = aux_tag_length0;
+                row.aux_tag_index[0] = aux_tag_length0 - aux_idx;
+            }
         }
         idx
     }

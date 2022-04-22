@@ -36,9 +36,9 @@ pub struct RlpWitnessRow<F> {
     /// of bytes.
     pub tag_index: usize,
     /// Denotes the aux tag's index.
-    pub aux_tag_index: usize,
+    pub aux_tag_index: [usize; 2],
     /// Denotes the aux tag's length.
-    pub aux_tag_length: usize,
+    pub aux_tag_length: [usize; 2],
     /// Denotes an accumulator for the length of data, in the case where len >
     /// 55 and the length is represented in its big-endian form.
     pub length_acc: u64,
