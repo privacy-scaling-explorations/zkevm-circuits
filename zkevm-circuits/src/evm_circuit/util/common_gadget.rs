@@ -111,7 +111,6 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
                 .try_into()
                 .unwrap(),
             balance_sum,
-            1.expr()
         );
 
         cb.account_write(

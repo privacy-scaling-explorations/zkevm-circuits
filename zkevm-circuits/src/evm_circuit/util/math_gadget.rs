@@ -104,7 +104,6 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
         cb: &mut ConstraintBuilder<F>,
         addends: [util::Word<F>; N_ADDENDS],
         sum: util::Word<F>,
-        enable: Expression<F>
     ) -> Self {
         let carry_lo = cb.query_cell();
         let carry_hi = if CHECK_OVREFLOW {
@@ -126,8 +125,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",
-            enable.clone() * sum::expr(addends_lo),
-            enable.clone() * (sum_lo + carry_lo.expr() * pow_of_two_expr(128)),
+            sum::expr(addends_lo),
+            sum_lo + carry_lo.expr() * pow_of_two_expr(128),
         );
         cb.require_equal(
             if CHECK_OVREFLOW {
@@ -135,8 +134,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
             } else {
                 "sum(addends_hi) + carry_lo == sum_hi + carry_hi ⋅ 2^128"
             },
-            enable.clone() * (sum::expr(addends_hi) + carry_lo.expr()),
-            enable.clone() * if CHECK_OVREFLOW {
+            sum::expr(addends_hi) + carry_lo.expr(),
+            if CHECK_OVREFLOW {
                 sum_hi
             } else {
                 sum_hi + carry_hi.as_ref().unwrap().expr() * pow_of_two_expr(128)
@@ -170,7 +169,6 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
         addends: [Word; N_ADDENDS],
         sum: Word,
     ) -> Result<(), Error> {
-       
         for (word, value) in self.addends.iter().zip(addends.iter()) {
             word.assign(region, offset, Some(value.to_le_bytes()))?;
         }
@@ -388,6 +386,80 @@ impl<F: FieldExt> MulWordsGadget<F> {
                 assignee.assign(region, offset, Some(F::from(bt as u64)))?;
                 Ok(())
             })?;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CmpWordsGadget<F> {
+    comparison_lo: ComparisonGadget<F, 16>,
+    comparison_hi: ComparisonGadget<F, 16>,
+    pub eq: Expression<F>,
+    pub lt: Expression<F>,
+}
+
+impl<F: Field> CmpWordsGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        a: &util::Word<F>,
+        b: &util::Word<F>,
+    ) -> Self {
+        // `a[0..16] <= b[0..16]`
+        let comparison_lo = ComparisonGadget::construct(
+            cb,
+            from_bytes::expr(&a.cells[0..16]),
+            from_bytes::expr(&b.cells[0..16]),
+        );
+
+        let (lt_lo, eq_lo) = comparison_lo.expr();
+
+        // `a[16..32] <= b[16..32]`
+        let comparison_hi = ComparisonGadget::construct(
+            cb,
+            from_bytes::expr(&a.cells[16..32]),
+            from_bytes::expr(&b.cells[16..32]),
+        );
+        let (lt_hi, eq_hi) = comparison_hi.expr();
+
+        // `a < b` when:
+        // - `a[16..32] < b[16..32]` OR
+        // - `a[16..32] == b[16..32]` AND `a[0..16] < b[0..16]`
+        let lt = select::expr(lt_hi, 1.expr(), eq_hi.clone() * lt_lo);
+
+        // `a == b` when both parts are equal
+        let eq = eq_hi * eq_lo;
+
+        Self {
+            comparison_lo,
+            comparison_hi,
+            lt,
+            eq,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        a: Word,
+        b: Word,
+    ) -> Result<(), Error> {
+        // `a[0..1] <= b[0..16]`
+        self.comparison_lo.assign(
+            region,
+            offset,
+            from_bytes::value(&a.to_le_bytes()[0..16]),
+            from_bytes::value(&b.to_le_bytes()[0..16]),
+        )?;
+
+        // `a[16..32] <= b[16..32]`
+        self.comparison_hi.assign(
+            region,
+            offset,
+            from_bytes::value(&a.to_le_bytes()[16..32]),
+            from_bytes::value(&b.to_le_bytes()[16..32]),
+        )?;
 
         Ok(())
     }

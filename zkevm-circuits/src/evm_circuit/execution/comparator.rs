@@ -5,8 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes,
-            math_gadget::{ComparisonGadget, IsEqualGadget},
+            math_gadget::{CmpWordsGadget, IsEqualGadget},
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -22,8 +21,7 @@ pub(crate) struct ComparatorGadget<F> {
     a: Word<F>,
     b: Word<F>,
     result: Cell<F>,
-    comparison_lo: ComparisonGadget<F, 16>,
-    comparison_hi: ComparisonGadget<F, 16>,
+    cmp: CmpWordsGadget<F>,
     is_eq: IsEqualGadget<F>,
     is_gt: IsEqualGadget<F>,
 }
@@ -45,37 +43,16 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         // actually do greater than instead of smaller than.
         let is_gt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::GT.expr());
 
-        // `a[0..16] <= b[0..16]`
-        let comparison_lo = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[0..16]),
-            from_bytes::expr(&b.cells[0..16]),
-        );
-        let (lt_lo, eq_lo) = comparison_lo.expr();
-
-        // `a[16..32] <= b[16..32]`
-        let comparison_hi = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[16..32]),
-            from_bytes::expr(&b.cells[16..32]),
-        );
-        let (lt_hi, eq_hi) = comparison_hi.expr();
-
-        // `a < b` when:
-        // - `a[16..32] < b[16..32]` OR
-        // - `a[16..32] == b[16..32]` AND `a[0..16] < b[0..16]`
-        let lt = select::expr(lt_hi, 1.expr(), eq_hi.clone() * lt_lo);
-        // `a == b` when both parts are equal
-        let eq = eq_hi * eq_lo;
+        let cmp = CmpWordsGadget::construct(cb, &a, &b);
 
         // The result is:
         // - `lt` when LT or GT
         // - `eq` when EQ
         // Use copy to avoid degree too high for stack_push below.
-        let result = cb.copy(select::expr(is_eq.expr(), eq, lt));
+        let result = cb.copy(select::expr(is_eq.expr(), cmp.eq.clone(), cmp.lt.clone()));
 
         // Pop a and b from the stack, push the result on the stack.
-        // When swap is enabled we swap stack places between a and b.
+        // When swap is eabled we swap stack places between a and b.
         // We can push result here directly because
         // it only uses the LSB of a word.
         cb.stack_pop(select::expr(is_gt.expr(), b.expr(), a.expr()));
@@ -97,8 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
             a,
             b,
             result,
-            comparison_lo,
-            comparison_hi,
+            cmp,
             is_eq,
             is_gt,
         }
@@ -138,27 +114,13 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         } else {
             [step.rw_indices[0], step.rw_indices[1]]
         };
-        let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
+        let [a, b] = indices.map(|idx| block.rws[idx].stack_value());
         let result = block.rws[step.rw_indices[2]].stack_value();
 
-        // `a[0..16] <= b[0..16]`
-        self.comparison_lo.assign(
-            region,
-            offset,
-            from_bytes::value(&a[0..16]),
-            from_bytes::value(&b[0..16]),
-        )?;
+        self.cmp.assign(region, offset, a, b)?;
 
-        // `a[16..32] <= b[16..32]`
-        self.comparison_hi.assign(
-            region,
-            offset,
-            from_bytes::value(&a[16..32]),
-            from_bytes::value(&b[16..32]),
-        )?;
-
-        self.a.assign(region, offset, Some(a))?;
-        self.b.assign(region, offset, Some(b))?;
+        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
         self.result
             .assign(region, offset, Some(F::from(result.low_u64())))?;
 
