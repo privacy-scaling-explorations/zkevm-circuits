@@ -1112,7 +1112,6 @@ impl From<&operation::OperationContainer> for RwMap {
                 .tx_receipt
                 .iter()
                 .map(|op| Rw::TxReceipt {
-                    //rw_counter: (), is_write: (), tx_id: (), field_tag: (), value: () } {
                     rw_counter: op.rwc().into(),
                     is_write: op.rw().is_write(),
                     tx_id: op.op().tx_id,

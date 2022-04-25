@@ -47,8 +47,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
-        // constrain log id is zero in begin tx
-        cb.require_zero("log is is zero in begin tx", cb.curr.state.log_id.expr());
 
         let tx_id = cb.call_context(Some(call_id.expr()), CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info(None);
@@ -189,6 +187,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_source: To(code_hash.expr()),
             gas_left: To(gas_left),
             reversible_write_counter: To(2.expr()),
+            log_id: To(0.expr()),
             ..StepStateTransition::new_context()
         });
 

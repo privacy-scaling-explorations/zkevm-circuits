@@ -423,7 +423,6 @@ pub fn gen_end_tx_ops(
         CallContextOp {
             call_id: call.call_id,
             field: CallContextField::IsPersistent,
-            //value: Word::from(state.call()?.is_persistent as u8),
             value: Word::from(call.is_persistent as u8),
         },
     );
@@ -501,9 +500,9 @@ pub fn gen_end_tx_ops(
     );
 
     let gas_used = state.tx.gas - exec_step.gas_left.0;
-    let mut last_tx_cumulative_gas: u64 = 0;
+    let mut current_cumulative_gas_used: u64 = 0;
     if state.tx_ctx.id() > 1 {
-        last_tx_cumulative_gas = *tx_cumulative_gas.get(&(state.tx_ctx.id() - 1)).unwrap();
+        current_cumulative_gas_used = *tx_cumulative_gas.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
         state.push_op(
             &mut exec_step,
@@ -511,7 +510,7 @@ pub fn gen_end_tx_ops(
             TxReceiptOp {
                 tx_id: state.tx_ctx.id() - 1,
                 field: TxReceiptField::CumulativeGasUsed,
-                value: last_tx_cumulative_gas,
+                value: current_cumulative_gas_used,
             },
         );
     }
@@ -522,11 +521,11 @@ pub fn gen_end_tx_ops(
         TxReceiptOp {
             tx_id: state.tx_ctx.id(),
             field: TxReceiptField::CumulativeGasUsed,
-            value: last_tx_cumulative_gas + gas_used,
+            value: current_cumulative_gas_used + gas_used,
         },
     );
 
-    tx_cumulative_gas.insert(state.tx_ctx.id(), last_tx_cumulative_gas + gas_used);
+    tx_cumulative_gas.insert(state.tx_ctx.id(), current_cumulative_gas_used + gas_used);
 
     if !state.tx_ctx.is_last_tx() {
         state.push_op(
