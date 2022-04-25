@@ -1343,7 +1343,8 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
             .chain(
                 (if is_last_tx {
                     Some(iter::once(ExecStep {
-                        rw_counter: tx.steps().last().unwrap().rwc.0 + 4,
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        rw_counter: tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize,
                         execution_state: ExecutionState::EndBlock,
                         ..Default::default()
                     }))

@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(9.expr() + 1.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(10.expr() - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
@@ -158,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(4.expr()),
+                    rw_counter: Delta(9.expr() - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
