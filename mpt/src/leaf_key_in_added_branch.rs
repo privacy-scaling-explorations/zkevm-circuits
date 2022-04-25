@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 use crate::{
     helpers::{
-        compute_rlc, get_is_extension_node_one_nibble, key_len_lookup, mult_diff_lookup,
-        range_lookups,
+        compute_rlc, get_bool_constraint, get_is_extension_node_one_nibble, key_len_lookup,
+        mult_diff_lookup, range_lookups,
     },
     mpt::FixedTableTag,
     param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS},
@@ -59,6 +59,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         let rot_branch_init = -23;
         let rot_into_account = -5;
 
+        // NOTE: the leaf value is not stored in this row, it needs to be the same
+        // as for the leaf before it drifted down to the new branch, thus, it is
+        // retrieved from the row of a leaf before a drift - to check that the hash
+        // of a drifted leaf is in the new branch.
+
         // Checking leaf RLC is ok - RLC is then taken and value (from leaf_value row)
         // is added to RLC, finally lookup is used to check the hash that
         // corresponds to this RLC is in the parent branch at drifted_pos position.
@@ -69,16 +74,41 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            // TODO: is_long, is_short are booleans
-            // TODO: is_long + is_short = 1
-
-            // TODO: check there is 248 in long
-
+            let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
-
-            // TODO: check that from some point on (depends on the rlp meta data)
-            // the values are zero (as in key_compr) - but take into account it can be long
-            // or short RLP
+            let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
+            let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
+            constraints.push((
+                "is_long",
+                q_enable.clone() * is_long.clone() * (s_rlp1.clone() - c248),
+            ));
+            constraints.push((
+                "is_long is boolean",
+                get_bool_constraint(q_enable.clone(), is_long.clone()),
+            ));
+            constraints.push((
+                "is_short is boolean",
+                get_bool_constraint(q_enable.clone(), is_long.clone()),
+            ));
+            let is_branch_s_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let is_branch_c_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let is_leaf_without_branch = meta.query_advice(
+                is_account_leaf_storage_codehash_c,
+                Rotation(rot_into_account),
+            );
+            constraints.push((
+                "is_long + is_short = 1 when leaf drifts",
+                q_enable.clone()
+                    * (is_branch_s_placeholder + is_branch_c_placeholder)
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (is_long.clone() + is_short.clone() - one.clone()),
+            ));
 
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
             let mut rlc = s_rlp1 + s_rlp2 * r_table[0].clone();

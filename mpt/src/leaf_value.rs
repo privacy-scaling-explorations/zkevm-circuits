@@ -141,6 +141,9 @@ impl<F: FieldExt> LeafValueChip<F> {
             // Constraints to enable lookup:
             // key RLC is in sel1, leaf value S RLC is in sel2 (for lookup it's needed also
             // leaf value C RLC, whic is in acc_c)
+            // NOTE: when placeholder leaf, prev value needs to be set to 0 - the witness
+            // generator add all 0s as a placeholder leaf for this reason; no constraint
+            // is needed for this 0s as the lookup will fail if otherwise.
             if !is_s {
                 let key_c_rlc_from_prev = meta.query_advice(key_rlc, Rotation(-1));
                 let key_c_rlc_from_cur = meta.query_advice(key_rlc_mult, Rotation::cur());
