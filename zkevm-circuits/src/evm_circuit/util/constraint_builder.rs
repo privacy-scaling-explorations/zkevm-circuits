@@ -1162,12 +1162,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             rlc::expr(&lookup.input_exprs(), self.power_of_randomness),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
-        self.store_expression(
-            name,
-            compressed_expr,
-            CellType::Lookup(lookup.table()),
-            true,
-        );
+        self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
     }
 
     pub(crate) fn store_expression(
@@ -1175,19 +1170,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         name: &'static str,
         expr: Expression<F>,
         cell_type: CellType,
-        allow_reuse: bool,
     ) -> Expression<F> {
         // Check if we already stored the expression somewhere
-        let stored_expression = if allow_reuse {
-            self.find_stored_expression(expr.clone(), cell_type)
-        } else {
-            None
-        };
+        let stored_expression = self.find_stored_expression(expr.clone(), cell_type);
         match stored_expression {
-            Some(stored_expression) => stored_expression.cell.expr(),
+            Some(stored_expression) => {
+                debug_assert!(
+                    !matches!(cell_type, CellType::Lookup(_)),
+                    "The same lookup is done multiple times",
+                );
+                stored_expression.cell.expr()
+            }
             None => {
                 // Even if we're building expressions for the next step,
-                // these intermediate values need to be stored for the current step.
+                // these intermediate values need to be stored in the current step.
                 let in_next_step = self.in_next_step;
                 self.in_next_step = false;
                 let cell = self.query_cell_with_type(cell_type);
@@ -1249,7 +1245,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                             if expr.degree() > max_degree {
                                 self.split_expression(name, expr, max_degree)
                             } else {
-                                self.store_expression(name, expr, CellType::Storage, true)
+                                self.store_expression(name, expr, CellType::Storage)
                             }
                         };
                         if a.degree() >= b.degree() {
