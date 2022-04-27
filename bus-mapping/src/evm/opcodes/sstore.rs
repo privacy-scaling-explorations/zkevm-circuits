@@ -196,6 +196,43 @@ mod sstore_tests {
             .unwrap();
 
         assert_eq!(
+            [0, 1, 2, 3, 4]
+                .map(|idx| &builder.block.container.call_context
+                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &CallContextOp::new(1, CallContextField::TxId, Word::from(0x01)),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(1, CallContextField::IsStatic, Word::from(0x00)),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(
+                        1,
+                        CallContextField::RwCounterEndOfReversion,
+                        Word::from(0x00)
+                    ),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(1, CallContextField::IsPersistent, Word::from(0x01)),
+                ),
+                (
+                    RW::READ,
+                    &CallContextOp::new(
+                        1,
+                        CallContextField::CalleeAddress,
+                        MOCK_ACCOUNTS[0].to_word(),
+                    ),
+                ),
+            ]
+        );
+
+        assert_eq!(
             [5, 6]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
