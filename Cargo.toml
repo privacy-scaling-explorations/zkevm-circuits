@@ -13,6 +13,9 @@ members = [
     "prover"
 ]
 
+[patch."https://github.com/appliedzkp/halo2.git"]
+halo2_proofs = { git = "https://github.com/Brechtpd/halo2/", branch = "lazy-eval" }
+
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_03_06" }
 # This fork makes bitvec 0.20.x work with funty 1.1 and funty 1.2.  Without

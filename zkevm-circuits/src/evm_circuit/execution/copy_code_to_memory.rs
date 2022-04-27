@@ -4,7 +4,7 @@ use bus_mapping::{
     constants::MAX_COPY_BYTES,
 };
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 use crate::{
     evm_circuit::{
@@ -14,7 +14,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             math_gadget::ComparisonGadget,
             memory_gadget::BufferReaderGadget,
-            Cell, Word,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -168,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
