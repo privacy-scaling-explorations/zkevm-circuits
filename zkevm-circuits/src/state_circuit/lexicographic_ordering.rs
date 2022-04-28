@@ -1,10 +1,10 @@
 use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, witness::Rw},
-    gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
+use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -31,7 +31,7 @@ use std::ops::Mul;
 // ...
 // C29 = C28 << 16 + A29 - B29.
 
-// X_prev > X_prev iff one of the following is true:
+// X_cur > X_prev iff one of the following is true:
 // 1. one of C0, ..., C14 is non-zero and fits into 16 bits.
 // 2. all of C0, ..., C14 are 0 and one of C15, ..., C29 is non-zero and fits
 //    into 16 bits. (note that "all of C0, ..., C14 are 0" is equivalent to
@@ -44,7 +44,7 @@ use std::ops::Mul;
 //  - if diff_1 is 0, then diff_2 fits into 16 bits.
 //  - if diff_1 is 0, then C14 is 0.
 //  - diff_2 is not 0. (there is always a valid assignment for this because the
-//                      rw_counter is increasing.)
+//    rw_counter is increasing.)
 
 // Packing the field into 480 bits:
 //   4 bits for tag,
