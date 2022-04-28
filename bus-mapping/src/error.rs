@@ -53,39 +53,6 @@ impl Display for Error {
 
 impl StdError for Error {}
 
-/// EVM Execution Error
-#[derive(Clone, Debug, PartialEq)]
-pub enum ExecError {
-    /// Invalid Opcode
-    InvalidOpcode,
-    /// For opcodes who push more than pop
-    StackOverflow,
-    /// For opcodes which pop, DUP and SWAP, which peek deeper element directly
-    StackUnderflow,
-    /// Out of Gas
-    OutOfGas(OogError),
-    /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
-    /// SELFDESTRUCT
-    WriteProtection,
-    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
-    /// For CREATE, CREATE2
-    ContractAddressCollision,
-    /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
-    /// (EOF)
-    InvalidCreationCode,
-    /// For JUMP, JUMPI
-    InvalidJump,
-    /// For RETURNDATACOPY
-    ReturnDataOutOfBounds,
-    /// For RETURN in a CREATE, CREATE2
-    CodeStoreOutOfGas,
-    /// For RETURN in a CREATE, CREATE2
-    MaxCodeSizeExceeded,
-}
-
 /// Out of Gas errors by opcode
 #[derive(Clone, Debug, PartialEq)]
 pub enum OogError {
@@ -130,4 +97,80 @@ pub enum OogError {
     StaticCall,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
+}
+
+/// EVM Execution Error
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExecError {
+    /// Invalid Opcode
+    InvalidOpcode,
+    /// For opcodes who push more than pop
+    StackOverflow,
+    /// For opcodes which pop, DUP and SWAP, which peek deeper element directly
+    StackUnderflow,
+    /// Out of Gas
+    OutOfGas(OogError),
+    /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
+    /// SELFDESTRUCT
+    WriteProtection,
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
+    Depth,
+    /// For CALL, CALLCODE
+    InsufficientBalance,
+    /// For CREATE, CREATE2
+    ContractAddressCollision,
+    /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
+    /// (EOF)
+    InvalidCreationCode,
+    /// For JUMP, JUMPI
+    InvalidJump,
+    /// For RETURNDATACOPY
+    ReturnDataOutOfBounds,
+    /// For RETURN in a CREATE, CREATE2
+    CodeStoreOutOfGas,
+    /// For RETURN in a CREATE, CREATE2
+    MaxCodeSizeExceeded,
+}
+
+// TODO: Move to impl block.
+fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
+    if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
+        // NOTE: We report a GasUintOverflow error as an OutOfGas error
+        let oog_err = match op {
+            OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
+                OogError::StaticMemoryExpansion
+            }
+            OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
+                OogError::DynamicMemoryExpansion
+            }
+            OpcodeId::CALLDATACOPY | OpcodeId::CODECOPY | OpcodeId::RETURNDATACOPY => {
+                OogError::MemoryCopy
+            }
+            OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
+                OogError::AccountAccess
+            }
+            OpcodeId::LOG0 | OpcodeId::LOG1 | OpcodeId::LOG2 | OpcodeId::LOG3 | OpcodeId::LOG4 => {
+                OogError::Log
+            }
+            OpcodeId::EXP => OogError::Exp,
+            OpcodeId::SHA3 => OogError::Sha3,
+            OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
+            OpcodeId::SLOAD => OogError::Sload,
+            OpcodeId::SSTORE => OogError::Sstore,
+            OpcodeId::CALL => OogError::Call,
+            OpcodeId::CALLCODE => OogError::CallCode,
+            OpcodeId::DELEGATECALL => OogError::DelegateCall,
+            OpcodeId::CREATE2 => OogError::Create2,
+            OpcodeId::STATICCALL => OogError::StaticCall,
+            OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
+            _ => OogError::Constant,
+        };
+        ExecError::OutOfGas(oog_err)
+    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
+        ExecError::StackOverflow
+    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
+        ExecError::StackUnderflow
+    } else {
+        panic!("Unknown GethExecStep.error: {}", error);
+    }
 }
