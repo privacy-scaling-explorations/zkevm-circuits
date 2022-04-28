@@ -127,41 +127,17 @@ pub struct ReversionGroup {
     /// group.
     op_refs: Vec<(usize, OperationRef)>,
 }
-/// Auxiliary data for CopyToMemory internal state.
-#[derive(Clone, Copy, Debug)]
-pub struct CopyToMemoryAuxData {
-    /// Source start address
-    pub src_addr: u64,
-    /// Destination address
-    pub dst_addr: u64,
-    /// Bytes left
-    pub bytes_left: u64,
-    /// Source end address
-    pub src_addr_end: u64,
-    /// Indicate if copy from transaction call data
-    pub from_tx: bool,
-}
 
-/// Auxiliary data for CopyCodeToMemory internal state.
-#[derive(Clone, Copy, Debug)]
-pub struct CopyCodeToMemoryAuxData {
-    /// Source start address
-    pub src_addr: u64,
-    /// Destination address
-    pub dst_addr: u64,
-    /// Bytes left
-    pub bytes_left: u64,
-    /// Source end address
-    pub src_addr_end: u64,
-    /// Hash of the bytecode to be copied
-    pub code_source: U256,
-}
+impl ReversionGroup {
+    /// Returns the list of `index` and `reversible_write_counter_offset` of
+    /// calls belong to this group.
+    pub fn calls(&self) -> &Vec<(usize, usize)> {
+        &self.calls
+    }
 
-/// Auxiliary data of Execution step
-#[derive(Clone, Copy, Debug)]
-pub enum StepAuxiliaryData {
-    /// Auxiliary data of Copy To Memory
-    CopyToMemory(CopyToMemoryAuxData),
-    /// Auxiliary data of Copy Code To Memory
-    CopyCodeToMemory(CopyCodeToMemoryAuxData),
+    /// Returns a list of `step_index` and `OperationRef` that have been
+    /// performed in this group.
+    pub fn op_refs(&self) -> &Vec<(usize, OperationRef)> {
+        &self.op_refs
+    }
 }

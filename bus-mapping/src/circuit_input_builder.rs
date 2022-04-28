@@ -21,14 +21,14 @@ use crate::operation::{
 use crate::state_db::{self, CodeDB, StateDB};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
-pub use call::{Call, CallContext, CallKind, CopyCodeToMemoryAuxData, CopyToMemoryAuxData};
+pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
 use eth_types::{
     self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-pub use execution::{ExecState, ExecStep};
+pub use execution::{ExecState, ExecStep, StepAuxiliaryData};
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};

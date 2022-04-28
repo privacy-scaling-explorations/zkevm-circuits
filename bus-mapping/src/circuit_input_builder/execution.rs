@@ -1,10 +1,9 @@
 //! Execution step related module.
 
-use super::call::StepAuxiliaryData;
 use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter};
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep,
+    GethExecStep, U256,
 };
 
 /// An execution step of the EVM.
@@ -128,5 +127,52 @@ impl ExecState {
         } else {
             false
         }
+    }
+}
+
+/// Auxiliary data of Execution step
+#[derive(Clone, Copy, Debug)]
+pub enum CopyOrigin {
+    /// Origin of the copied bytes is or not the Tx CallData.
+    TxCallData(bool),
+    /// Origin of the copied bytes is bytecode. For which it's hash is provided.
+    Code(U256),
+}
+
+/// Auxiliary data of Execution step
+#[derive(Clone, Copy, Debug)]
+pub struct StepAuxiliaryData {
+    /// Source start address
+    src_addr: u64,
+    /// Destination address
+    dst_addr: u64,
+    /// Bytes left
+    bytes_left: u64,
+    /// Source end address
+    src_addr_end: u64,
+    /// Origin of the copied data.
+    copy_origin: CopyOrigin,
+}
+
+impl StepAuxiliaryData {
+    /// Source start address
+    fn src_addr(&self) -> u64 {
+        self.src_addr
+    }
+    /// Destination address
+    fn dst_addr(&self) -> u64 {
+        self.dst_addr
+    }
+    /// Bytes left
+    fn bytes_left(&self) -> u64 {
+        self.bytes_left
+    }
+    /// Source end address
+    fn src_addr_end(&self) -> u64 {
+        self.src_addr_end
+    }
+    /// Indicate origin of the data to copy
+    fn copy_origin(&self) -> CopyOrigin {
+        self.copy_origin
     }
 }
