@@ -13,6 +13,7 @@ pub mod witness;
 
 use eth_types::Field;
 use execution::ExecutionConfig;
+use itertools::Itertools;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
 
@@ -38,7 +39,7 @@ impl<F: Field> EvmCircuit<F> {
     where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 11>,
-        BytecodeTable: LookupTable<F, 4>,
+        BytecodeTable: LookupTable<F, 5>,
         BlockTable: LookupTable<F, 3>,
     {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -72,7 +73,7 @@ impl<F: Field> EvmCircuit<F> {
                     .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
                     .enumerate()
                 {
-                    for (column, value) in self.fixed_table.iter().zip(row) {
+                    for (column, value) in self.fixed_table.iter().zip_eq(row) {
                         region.assign_fixed(|| "", *column, offset, || Ok(value))?;
                     }
                 }
@@ -132,6 +133,7 @@ pub mod test {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
     };
+    use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
@@ -166,7 +168,7 @@ pub mod test {
     pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
         rw_table: RwTable,
-        bytecode_table: [Column<Advice>; 4],
+        bytecode_table: [Column<Advice>; 5],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
     }
@@ -194,7 +196,7 @@ pub mod test {
 
                     for tx in txs.iter() {
                         for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip(row) {
+                            for (column, value) in self.tx_table.iter().zip_eq(row) {
                                 region.assign_advice(
                                     || format!("tx table row {}", offset),
                                     *column,
@@ -270,7 +272,7 @@ pub mod test {
 
                     for bytecode in bytecodes.iter() {
                         for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.iter().zip(row) {
+                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
                                 region.assign_advice(
                                     || format!("bytecode table row {}", offset),
                                     *column,
@@ -307,7 +309,7 @@ pub mod test {
                     offset += 1;
 
                     for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.iter().zip(row) {
+                        for (column, value) in self.block_table.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
@@ -350,7 +352,7 @@ pub mod test {
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
             let rw_table = RwTable::construct(meta);
-            let bytecode_table = [(); 4].map(|_| meta.advice_column());
+            let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
             let power_of_randomness = {
