@@ -12,7 +12,7 @@ fn main() {
         .expect("Cannot parse DEGREE env var as usize");
 
     // Add state_circuit module to `lib.rs`
-    let consts = format!("pub(crate) const DEGREE: usize = {};", degree);
+    let consts = format!("pub(crate) const DEGREE: usize = {};\n", degree);
 
     let mut state_file =
         File::create("src/bench_params.rs").expect("Error generating bench_params.rs file");
