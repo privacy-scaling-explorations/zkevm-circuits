@@ -1,11 +1,11 @@
 //! CircuitInput builder tooling module.
 
 use super::{
-    Block, BlockContext, Call, CallContext, CallKind, ExecState, ExecStep, Transaction,
-    TransactionContext,
+    get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
+    CallKind, CodeSource, ExecState, ExecStep, Transaction, TransactionContext,
 };
 use crate::{
-    error::ExecError,
+    error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
     operation::{AccountField, MemoryOp, Op, OpEnum, Operation, StackOp, Target, RW},
     state_db::{CodeDB, StateDB},
@@ -13,8 +13,9 @@ use crate::{
 };
 use eth_types::{
     evm_types::{Gas, MemoryAddress, OpcodeId, StackAddress},
-    Address, GethExecStep, ToAddress, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
 };
+use ethers_core::utils::{get_contract_address, get_create2_address};
 use itertools::Itertools;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -41,7 +42,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(ExecStep::new(
             geth_step,
             call_ctx.index,
-            self.block_ctx.rwc,
+            self.block_ctx.rwc(),
             call_ctx.reversible_write_counter,
         ))
     }
@@ -51,7 +52,7 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::BeginTx,
             gas_left: Gas(self.tx.gas),
-            rwc: self.block_ctx.rwc,
+            rwc: self.block_ctx.rwc(),
             ..Default::default()
         }
     }
@@ -66,7 +67,7 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::EndTx,
             gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
-            rwc: self.block_ctx.rwc,
+            rwc: self.block_ctx.rwc(),
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
                 call_ctx.reversible_write_counter
@@ -85,7 +86,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let op_ref =
             self.block
                 .container
-                .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
+                .insert(Operation::new(self.block_ctx.rwc().inc_pre(), rw, op));
         step.bus_mapping_instance.push(op_ref);
     }
 
@@ -107,7 +108,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.apply_op(&op.clone().into_enum());
         }
         let op_ref = self.block.container.insert(Operation::new_reversible(
-            self.block_ctx.rwc.inc_pre(),
+            self.block_ctx.rwc().inc_pre(),
             rw,
             op,
         ));
@@ -122,8 +123,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 .reversion_groups()
                 .last_mut()
                 .expect("reversion_groups should not be empty for non-persistent call")
-                .op_refs
-                .push((self.tx.steps.len(), op_ref));
+                .op_refs()
+                .push((self.tx.steps().len(), op_ref));
         }
 
         Ok(())
@@ -176,14 +177,14 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn call(&self) -> Result<&Call, Error> {
         self.tx_ctx
             .call_index()
-            .map(|call_idx| &self.tx.calls[call_idx])
+            .map(|call_idx| &self.tx.calls()[call_idx])
     }
 
     /// Mutable reference to the current Call
     pub fn call_mut(&mut self) -> Result<&mut Call, Error> {
         self.tx_ctx
             .call_index()
-            .map(|call_idx| &mut self.tx.calls[call_idx])
+            .map(|call_idx| &mut self.tx.calls()[call_idx])
     }
 
     /// Reference to the current CallContext
@@ -221,19 +222,19 @@ impl<'a> CircuitInputStateRef<'a> {
         };
 
         let call_id = call.call_id;
-        let call_idx = self.tx.calls.len();
+        let call_idx = self.tx.calls().len();
 
         self.tx_ctx.push_call_ctx(call_idx, call_data);
         self.tx.push_call(call);
 
         self.block_ctx
-            .call_map
+            .call_map_mut()
             .insert(call_id, (self.block.txs.len(), call_idx));
     }
 
     /// Return the contract address of a CREATE step.  This is calculated by
     /// inspecting the current address and its nonce from the StateDB.
-    fn create_address(&self) -> Result<Address, Error> {
+    pub(crate) fn create_address(&self) -> Result<Address, Error> {
         let sender = self.call()?.address;
         let (found, account) = self.sdb.get_account(&sender);
         if !found {
@@ -244,7 +245,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Return the contract address of a CREATE2 step.  This is calculated
     /// deterministically from the arguments in the stack.
-    fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
+    pub(crate) fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
         let salt = step.stack.nth_last(3)?;
         let init_code = get_create_init_code(step)?;
         Ok(get_create2_address(
@@ -259,11 +260,12 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
+    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
             .tx_ctx
-            .call_is_success
+            .call_is_success()
             .get(self.tx.calls().len())
             .unwrap();
         let kind = CallKind::try_from(step.op)?;
@@ -276,7 +278,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.stack.nth_last(2)?,
             ),
             CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
-            CallKind::DelegateCall => (caller.caller_address, caller.address, 0.into()),
+            CallKind::DelegateCall => (caller.caller_address, caller.address, Word::zero()),
             CallKind::StaticCall => (
                 caller.address,
                 step.stack.nth_last(1)?.to_address(),
@@ -328,7 +330,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let caller = self.call()?;
         let call = Call {
-            call_id: self.block_ctx.rwc.0,
+            call_id: self.block_ctx.rwc().0,
             caller_id: caller.call_id,
             kind,
             is_static: kind == CallKind::StaticCall || caller.is_static,
@@ -453,30 +455,30 @@ impl<'a> CircuitInputStateRef<'a> {
     fn handle_reversion(&mut self) {
         let reversion_group = self
             .tx_ctx
-            .reversion_groups
+            .reversion_groups_mut()
             .pop()
             .expect("reversion_groups should not be empty for non-persistent call");
 
         // Apply reversions
-        for (step_index, op_ref) in reversion_group.op_refs.into_iter().rev() {
+        for (step_index, op_ref) in reversion_group.op_refs().into_iter().rev().copied() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
                 self.apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
-                    self.block_ctx.rwc.inc_pre(),
+                    self.block_ctx.rwc().inc_pre(),
                     RW::WRITE,
                     false,
                     op,
                 );
-                self.tx.steps[step_index]
+                self.tx.steps()[step_index]
                     .bus_mapping_instance
                     .push(rev_op_ref);
             }
         }
 
         // Set calls' `rw_counter_end_of_reversion`
-        let rwc = self.block_ctx.rwc.0 - 1;
-        for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
-            self.tx.calls[call_idx].rw_counter_end_of_reversion =
+        let rwc = self.block_ctx.rwc().0 - 1;
+        for (call_idx, reversible_write_counter_offset) in reversion_group.calls() {
+            self.tx.calls()[*call_idx].rw_counter_end_of_reversion =
                 rwc - reversible_write_counter_offset;
         }
     }
@@ -494,7 +496,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    fn get_step_err(
+    pub(crate) fn get_step_err(
         &self,
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,

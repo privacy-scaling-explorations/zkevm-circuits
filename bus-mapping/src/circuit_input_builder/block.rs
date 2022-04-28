@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
-    pub rwc: RWCounter,
+    rwc: RWCounter,
     /// Map call_id to (tx_index, call_index) (where tx_index is the index used
     /// in Block.txs and call_index is the index used in Transaction.
     /// calls).
@@ -33,6 +33,21 @@ impl BlockContext {
             rwc: RWCounter::new(),
             call_map: HashMap::new(),
         }
+    }
+
+    /// Return the RWCounter
+    pub fn rwc(&self) -> RWCounter {
+        self.rwc
+    }
+
+    /// Return the call_map of the entire block
+    pub fn call_map(&self) -> &HashMap<usize, (usize, usize)> {
+        &self.call_map
+    }
+
+    /// Return a mutable reference to the call_map of the entire block
+    pub fn call_map_mut(&mut self) -> &mut HashMap<usize, (usize, usize)> {
+        &mut self.call_map
     }
 }
 

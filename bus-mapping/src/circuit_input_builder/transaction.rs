@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use eth_types::{Address, GethExecTrace, Word};
+use ethers_core::utils::get_contract_address;
 
 use crate::{
     state_db::{CodeDB, StateDB},
@@ -95,10 +96,28 @@ impl TransactionContext {
         &self.calls
     }
 
+    /// Return a collection of all of the Call `is_success` field results
+    /// indexed by `call_index`.
+    pub fn call_is_success(&self) -> &[bool] {
+        &self.call_is_success
+    }
+
+    /// Return a mutable collection of all of the Call `is_success` field
+    /// results indexed by `call_index`.
+    pub fn call_is_success_mut(&mut self) -> &mut Vec<bool> {
+        &mut self.call_is_success
+    }
+
     /// Return a collection of all of the [`ReversionGroup`]s inside of the Tx
     /// Context.
-    pub fn reversion_groups(&self) -> &Vec<ReversionGroup> {
+    pub fn reversion_groups(&self) -> &[ReversionGroup] {
         &self.reversion_groups
+    }
+
+    /// Return a mutable reference to a collection containing all of the
+    /// [`ReversionGroup`]s inside of the Tx Context.
+    pub fn reversion_groups_mut(&mut self) -> &mut Vec<ReversionGroup> {
+        &mut self.reversion_groups
     }
 
     /// Return the index of the current call (the last call in the call stack).
@@ -138,12 +157,12 @@ impl TransactionContext {
                 .expect("calls should not be empty")
                 .reversible_write_counter;
             let caller_reversible_write_counter_offset = reversion_group
-                .calls
+                .calls()
                 .iter()
                 .find(|(call_idx, _)| *call_idx == caller_ctx.index)
                 .expect("calls should not be empty")
                 .1;
-            reversion_group.calls.push((
+            reversion_group.calls().push((
                 call_idx,
                 caller_reversible_write_counter + caller_reversible_write_counter_offset,
             ));
@@ -269,7 +288,8 @@ impl Transaction {
         &self.steps
     }
 
-    #[cfg(test)]
+    /// Return a mutable reference to the list of execution steps of this
+    /// transaction.
     pub fn steps_mut(&mut self) -> &mut Vec<ExecStep> {
         &mut self.steps
     }
@@ -279,7 +299,7 @@ impl Transaction {
         &self.calls
     }
 
-    fn push_call(&mut self, call: Call) {
+    pub(crate) fn push_call(&mut self, call: Call) {
         self.calls.push(call);
     }
 }

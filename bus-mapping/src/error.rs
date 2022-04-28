@@ -1,9 +1,14 @@
 //! Error module for the bus-mapping crate
 
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use eth_types::{Address, GethExecStep, Word, H256};
+use eth_types::{evm_types::OpcodeId, Address, GethExecStep, Word, H256};
 use ethers_providers::ProviderError;
 use std::error::Error as StdError;
+
+use crate::geth_errors::{
+    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
+    GETH_ERR_STACK_UNDERFLOW,
+};
 
 /// Error type for any BusMapping related failure.
 #[derive(Debug)]
@@ -133,7 +138,7 @@ pub enum ExecError {
 }
 
 // TODO: Move to impl block.
-fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
+pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
     if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
         // NOTE: We report a GasUintOverflow error as an OutOfGas error
         let oog_err = match op {

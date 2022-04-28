@@ -10,34 +10,23 @@ mod input_state_ref;
 mod tracer_tests;
 mod transaction;
 
-use crate::error::{Error, ExecError, OogError};
+use self::access::gen_state_access_trace;
+use crate::error::Error;
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::exec_trace::OperationRef;
-use crate::geth_errors::*;
-use crate::operation::container::OperationContainer;
-use crate::operation::{
-    AccountField, CallContextField, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, Target, RW,
-};
+use crate::operation::{CallContextField, RW};
+use crate::rpc::GethClient;
 use crate::state_db::{self, CodeDB, StateDB};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{
-    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, H256, U256,
-};
-use ethers_core::utils::{get_contract_address, get_create2_address};
+use eth_types::{self, Address, GethExecStep, GethExecTrace, Word};
+use ethers_providers::JsonRpcClient;
 pub use execution::{ExecState, ExecStep, StepAuxiliaryData};
 pub use input_state_ref::CircuitInputStateRef;
-use itertools::Itertools;
-use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
-use crate::rpc::GethClient;
-use ethers_providers::JsonRpcClient;
-
-#[derive(Debug)]
 /// Builder to generate a complete circuit input from data gathered from a geth
 /// instance. This structure is the centre of the crate and is intended to be
 /// the only entry point to it. The `CircuitInputBuilder` works in several
@@ -56,6 +45,7 @@ use ethers_providers::JsonRpcClient;
 /// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
+#[derive(Debug)]
 pub struct CircuitInputBuilder {
     /// StateDB key-value DB
     pub sdb: StateDB,
@@ -103,9 +93,9 @@ impl<'a> CircuitInputBuilder {
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Transaction, Error> {
-        let call_id = self.block_ctx.rwc.0;
+        let call_id = self.block_ctx.rwc().0;
 
-        self.block_ctx.call_map.insert(
+        self.block_ctx.call_map_mut().insert(
             call_id,
             (
                 eth_tx
@@ -130,10 +120,10 @@ impl<'a> CircuitInputBuilder {
             if matches!(op.field, CallContextField::RwCounterEndOfReversion) {
                 let (tx_idx, call_idx) = self
                     .block_ctx
-                    .call_map
+                    .call_map()
                     .get(&op.call_id)
                     .expect("call_id not found in call_map");
-                op.value = self.block.txs[*tx_idx].calls[*call_idx]
+                op.value = self.block.txs[*tx_idx].calls()[*call_idx]
                     .rw_counter_end_of_reversion
                     .into();
             }
@@ -173,7 +163,7 @@ impl<'a> CircuitInputBuilder {
         // - op: None
         // Generate BeginTx step
         let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
-        tx.steps.push(begin_tx_step);
+        tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
@@ -183,7 +173,7 @@ impl<'a> CircuitInputBuilder {
                 &mut state_ref,
                 &geth_trace.struct_logs[index..],
             )?;
-            tx.steps.extend(exec_steps);
+            tx.steps_mut().extend(exec_steps);
         }
 
         // TODO: Move into gen_associated_steps with
@@ -191,7 +181,7 @@ impl<'a> CircuitInputBuilder {
         // - op: None
         // Generate EndTx step
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
-        tx.steps.push(end_tx_step);
+        tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
         self.block.txs.push(tx);
