@@ -120,10 +120,10 @@ impl<'a> CircuitInputStateRef<'a> {
         // Add the operation into reversible_ops if this call is not persistent
         if !self.call()?.is_persistent {
             self.tx_ctx
-                .reversion_groups()
+                .reversion_groups_mut()
                 .last_mut()
                 .expect("reversion_groups should not be empty for non-persistent call")
-                .op_refs()
+                .op_refs_mut()
                 .push((self.tx.steps().len(), op_ref));
         }
 
@@ -184,7 +184,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn call_mut(&mut self) -> Result<&mut Call, Error> {
         self.tx_ctx
             .call_index()
-            .map(|call_idx| &mut self.tx.calls()[call_idx])
+            .map(|call_idx| &mut self.tx.calls_mut()[call_idx])
     }
 
     /// Reference to the current CallContext
@@ -469,7 +469,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                self.tx.steps()[step_index]
+                self.tx.steps_mut()[step_index]
                     .bus_mapping_instance
                     .push(rev_op_ref);
             }
@@ -478,7 +478,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Set calls' `rw_counter_end_of_reversion`
         let rwc = self.block_ctx.rwc().0 - 1;
         for (call_idx, reversible_write_counter_offset) in reversion_group.calls() {
-            self.tx.calls()[*call_idx].rw_counter_end_of_reversion =
+            self.tx.calls_mut()[*call_idx].rw_counter_end_of_reversion =
                 rwc - reversible_write_counter_offset;
         }
     }

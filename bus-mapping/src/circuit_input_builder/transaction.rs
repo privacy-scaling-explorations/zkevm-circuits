@@ -145,10 +145,8 @@ impl TransactionContext {
     /// Push a new call context and its index into the call stack.
     pub(crate) fn push_call_ctx(&mut self, call_idx: usize, call_data: Vec<u8>) {
         if !self.call_is_success[call_idx] {
-            self.reversion_groups.push(ReversionGroup {
-                calls: vec![(call_idx, 0)],
-                op_refs: Vec::new(),
-            })
+            self.reversion_groups
+                .push(ReversionGroup::new(vec![(call_idx, 0)], Vec::new()))
         } else if let Some(reversion_group) = self.reversion_groups.last_mut() {
             let caller_ctx = self.calls.last().expect("calls should not be empty");
             let caller_reversible_write_counter = self
@@ -162,7 +160,7 @@ impl TransactionContext {
                 .find(|(call_idx, _)| *call_idx == caller_ctx.index)
                 .expect("calls should not be empty")
                 .1;
-            reversion_group.calls().push((
+            reversion_group.calls_mut().push((
                 call_idx,
                 caller_reversible_write_counter + caller_reversible_write_counter_offset,
             ));
@@ -297,6 +295,12 @@ impl Transaction {
     /// Return the list of calls of this transaction.
     pub fn calls(&self) -> &[Call] {
         &self.calls
+    }
+
+    /// Return a mutable reference to the list containing the calls of this
+    /// transaction.
+    pub fn calls_mut(&mut self) -> &mut Vec<Call> {
+        &mut self.calls
     }
 
     pub(crate) fn push_call(&mut self, call: Call) {

@@ -469,7 +469,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.block_ctx.rwc.0 + 1,
+                call_id: state.block_ctx.rwc().0 + 1,
                 field: CallContextField::TxId,
                 value: (state.tx_ctx.id() + 1).into(),
             },

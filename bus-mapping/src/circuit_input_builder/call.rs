@@ -1,8 +1,6 @@
-use eth_types::{evm_types::OpcodeId, Address, Hash, Word, U256};
-
-use crate::{exec_trace::OperationRef, Error};
-
 use super::CodeSource;
+use crate::{exec_trace::OperationRef, Error};
+use eth_types::{evm_types::OpcodeId, Address, Hash, Word};
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -129,15 +127,32 @@ pub struct ReversionGroup {
 }
 
 impl ReversionGroup {
+    /// Creates a new `ReversionGroup` instance from the calls and operation
+    /// references lists.
+    pub fn new(calls: Vec<(usize, usize)>, op_refs: Vec<(usize, OperationRef)>) -> Self {
+        Self { calls, op_refs }
+    }
     /// Returns the list of `index` and `reversible_write_counter_offset` of
     /// calls belong to this group.
-    pub fn calls(&self) -> &Vec<(usize, usize)> {
+    pub fn calls(&self) -> &[(usize, usize)] {
         &self.calls
+    }
+
+    /// Returns a mutable reference to the list containing `index` and
+    /// `reversible_write_counter_offset` of calls belong to this group.
+    pub fn calls_mut(&mut self) -> &mut Vec<(usize, usize)> {
+        &mut self.calls
     }
 
     /// Returns a list of `step_index` and `OperationRef` that have been
     /// performed in this group.
-    pub fn op_refs(&self) -> &Vec<(usize, OperationRef)> {
+    pub fn op_refs(&self) -> &[(usize, OperationRef)] {
         &self.op_refs
+    }
+
+    /// Returns mutable reference to a list containing the `step_index` and
+    /// `OperationRef` that have been performed in this group.
+    pub fn op_refs_mut(&mut self) -> &mut Vec<(usize, OperationRef)> {
+        &mut self.op_refs
     }
 }
