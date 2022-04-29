@@ -3,7 +3,7 @@ use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
 use crate::Error;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+        CircuitInputStateRef, CopyOrigin, ExecState, ExecStep, StepAuxiliaryData,
     },
     constants::MAX_COPY_BYTES,
 };
@@ -133,13 +133,13 @@ fn gen_memory_copy_step(
         state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory(CopyToMemoryAuxData {
+    exec_step.aux_data = Some(StepAuxiliaryData::new(
         src_addr,
         dst_addr,
-        bytes_left: bytes_left as u64,
+        bytes_left as u64,
         src_addr_end,
-        from_tx: is_root,
-    }));
+        CopyOrigin::TxCallData(is_root),
+    ));
 
     Ok(())
 }

@@ -155,24 +155,48 @@ pub struct StepAuxiliaryData {
 }
 
 impl StepAuxiliaryData {
+    /// Generates a new `StepAuxiliaryData` instance.
+    pub fn new(
+        src_addr: u64,
+        dst_addr: u64,
+        bytes_left: u64,
+        src_addr_end: u64,
+        copy_origin: CopyOrigin,
+    ) -> Self {
+        Self {
+            src_addr,
+            dst_addr,
+            bytes_left,
+            src_addr_end,
+            copy_origin,
+        }
+    }
+
     /// Source start address
-    fn src_addr(&self) -> u64 {
+    pub fn src_addr(&self) -> u64 {
         self.src_addr
     }
     /// Destination address
-    fn dst_addr(&self) -> u64 {
+    pub fn dst_addr(&self) -> u64 {
         self.dst_addr
     }
     /// Bytes left
-    fn bytes_left(&self) -> u64 {
+    pub fn bytes_left(&self) -> u64 {
         self.bytes_left
     }
     /// Source end address
-    fn src_addr_end(&self) -> u64 {
+    pub fn src_addr_end(&self) -> u64 {
         self.src_addr_end
     }
     /// Indicate origin of the data to copy
-    fn copy_origin(&self) -> CopyOrigin {
+    pub fn copy_origin(&self) -> CopyOrigin {
         self.copy_origin
+    }
+    /// Returns true if the data origin is Code.
+    pub fn is_code_originated(&self) -> bool {
+        match self.copy_origin {
+            CopyOrigin::Code(_) => true,
+            _ => false,
+        }
     }
 }

@@ -1,8 +1,5 @@
 use array_init::array_init;
-use bus_mapping::{
-    circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData},
-    constants::MAX_COPY_BYTES,
-};
+use bus_mapping::{circuit_input_builder::CopyOrigin, constants::MAX_COPY_BYTES};
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -176,15 +173,16 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         // Read the auxiliary data.
-        let CopyCodeToMemoryAuxData {
-            src_addr,
-            dst_addr,
-            bytes_left,
-            src_addr_end,
-            code_source,
-        } = match step.aux_data {
-            Some(StepAuxiliaryData::CopyCodeToMemory(aux)) => aux,
-            _ => unreachable!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY"),
+        let aux = if step.aux_data.is_none() {
+            // TODO: Handle error correctly returning err
+            unreachable!("could not find aux_data for this step")
+        } else {
+            step.aux_data.unwrap()
+        };
+
+        let code_source = match aux.copy_origin() {
+            CopyOrigin::Code(code) => code,
+            _ => unreachable!("the source has to come from code not calldata"),
         };
 
         let code = block
@@ -194,13 +192,13 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .unwrap_or_else(|| panic!("could not find bytecode for source {:?}", code_source));
         // Assign to the appropriate cells.
         self.src_addr
-            .assign(region, offset, Some(F::from(src_addr)))?;
+            .assign(region, offset, Some(F::from(aux.src_addr())))?;
         self.dst_addr
-            .assign(region, offset, Some(F::from(dst_addr)))?;
+            .assign(region, offset, Some(F::from(aux.dst_addr())))?;
         self.bytes_left
-            .assign(region, offset, Some(F::from(bytes_left)))?;
+            .assign(region, offset, Some(F::from(aux.bytes_left())))?;
         self.src_addr_end
-            .assign(region, offset, Some(F::from(src_addr_end)))?;
+            .assign(region, offset, Some(F::from(aux.src_addr_end())))?;
         self.code_source
             .assign(region, offset, Some(code.hash.to_le_bytes()))?;
 
@@ -213,10 +211,10 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .skip(1)
             .map(|c| c[3])
             .collect::<Vec<F>>();
-        for idx in 0..std::cmp::min(bytes_left as usize, MAX_COPY_BYTES) {
+        for idx in 0..std::cmp::min(aux.bytes_left() as usize, MAX_COPY_BYTES) {
             selectors[idx] = true;
-            let addr = src_addr as usize + idx;
-            bytes[idx] = if addr < src_addr_end as usize {
+            let addr = aux.src_addr() as usize + idx;
+            bytes[idx] = if addr < aux.src_addr_end() as usize {
                 assert!(addr < code.bytes.len());
                 self.is_codes[idx].assign(region, offset, Some(is_codes[addr]))?;
                 code.bytes[addr]
@@ -225,19 +223,25 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             };
         }
 
-        self.buffer_reader
-            .assign(region, offset, src_addr, src_addr_end, &bytes, &selectors)?;
+        self.buffer_reader.assign(
+            region,
+            offset,
+            aux.src_addr(),
+            aux.src_addr_end(),
+            &bytes,
+            &selectors,
+        )?;
 
         // The number of bytes copied here will be the sum of 1s over the selector
         // vector.
-        let num_bytes_copied = std::cmp::min(bytes_left, MAX_COPY_BYTES as u64);
+        let num_bytes_copied = std::cmp::min(aux.bytes_left(), MAX_COPY_BYTES as u64);
 
         // Assign the comparison gadget.
         self.finish_gadget.assign(
             region,
             offset,
             F::from(num_bytes_copied),
-            F::from(bytes_left),
+            F::from(aux.bytes_left()),
         )?;
 
         Ok(())
@@ -250,7 +254,7 @@ pub(crate) mod test {
     use std::collections::HashMap;
 
     use bus_mapping::{
-        circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData},
+        circuit_input_builder::{CopyOrigin, StepAuxiliaryData},
         evm::OpcodeId,
     };
     use eth_types::{bytecode, Word};
@@ -302,13 +306,13 @@ pub(crate) mod test {
         }
 
         let rw_idx_end = rws.0[&RwTableTag::Memory].len();
-        let aux_data = StepAuxiliaryData::CopyCodeToMemory(CopyCodeToMemoryAuxData {
+        let aux_data = StepAuxiliaryData::new(
             src_addr,
             dst_addr,
-            bytes_left: bytes_left as u64,
+            bytes_left as u64,
             src_addr_end,
-            code_source: code.hash,
-        });
+            CopyOrigin::Code(code.hash),
+        );
         let step = ExecStep {
             execution_state: ExecutionState::CopyCodeToMemory,
             rw_indices: (rw_idx_start..rw_idx_end)

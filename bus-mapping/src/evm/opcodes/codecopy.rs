@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyCodeToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+        CircuitInputStateRef, CopyOrigin, ExecState, ExecStep, StepAuxiliaryData,
     },
     constants::MAX_COPY_BYTES,
     operation::RW,
@@ -61,20 +61,12 @@ fn gen_codecopy_step(
 fn gen_memory_copy_step(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
-    aux_data: CopyCodeToMemoryAuxData,
+    aux_data: StepAuxiliaryData,
     code: &[u8],
 ) -> Result<(), Error> {
-    let CopyCodeToMemoryAuxData {
-        src_addr,
-        dst_addr,
-        bytes_left,
-        src_addr_end,
-        code_source: _,
-    } = aux_data;
-
-    for idx in 0..std::cmp::min(bytes_left as usize, MAX_COPY_BYTES) {
-        let addr = (src_addr as usize) + idx;
-        let byte = if addr < (src_addr_end as usize) {
+    for idx in 0..std::cmp::min(aux_data.bytes_left() as usize, MAX_COPY_BYTES) {
+        let addr = (aux_data.src_addr() as usize) + idx;
+        let byte = if addr < (aux_data.src_addr_end() as usize) {
             code[addr]
         } else {
             0
@@ -82,12 +74,12 @@ fn gen_memory_copy_step(
         state.push_memory_op(
             exec_step,
             RW::WRITE,
-            ((dst_addr as usize) + idx).into(),
+            ((aux_data.dst_addr() as usize) + idx).into(),
             byte,
         )?;
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::CopyCodeToMemory(aux_data));
+    exec_step.aux_data = Some(aux_data);
 
     Ok(())
 }
@@ -113,13 +105,13 @@ fn gen_memory_copy_steps(
         gen_memory_copy_step(
             state,
             &mut exec_step,
-            CopyCodeToMemoryAuxData {
-                src_addr: code_offset + copied,
-                dst_addr: dest_offset + copied,
+            StepAuxiliaryData::new(
+                code_offset + copied,
+                dest_offset + copied,
                 src_addr_end,
-                bytes_left: length - copied,
-                code_source,
-            },
+                length - copied,
+                CopyOrigin::Code(code_source),
+            ),
             &code,
         )?;
         steps.push(exec_step);
