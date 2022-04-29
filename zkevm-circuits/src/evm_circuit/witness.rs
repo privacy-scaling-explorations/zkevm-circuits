@@ -508,10 +508,10 @@ pub enum Rw {
         tx_id: usize,
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
-        // topic index if field_tag is TxLogFieldTag:Topic 0-3
-        // byte index if field_tag is TxLogFieldTag:Data 0-255?
-        // it would be zero for other field tags
-        index: usize,
+        // topic index (0..4) if field_tag is TxLogFieldTag:Topic
+        // byte index (0..32) if field_tag is TxLogFieldTag:Data
+        // 0 for other field tags
+        index: u8,
 
         // when it is topic field, value can be word type
         value: Word,
@@ -651,19 +651,6 @@ impl Rw {
         }
     }
 
-    // for tx log.....
-    // rw_Counter,
-    // is_Write,
-    // tag, //
-    // tx_id, // key1
-    // log_id, // key2
-    // field_tag, // key3
-    // index, // key4 this has to be rlced/////
-    // rlc(value)
-    // 0,
-    // 0
-    // 0
-
     pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
@@ -766,7 +753,7 @@ impl Rw {
                 Some(U256::from(*stack_pointer as u64).to_address())
             }
             Self::TxLog { log_id, index, .. } => {
-                Some(U256([*log_id, *index as u64, 0, 0]).to_address())
+                Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
             }
             Self::CallContext { .. } | Self::TxRefund { .. } => None,
         }
