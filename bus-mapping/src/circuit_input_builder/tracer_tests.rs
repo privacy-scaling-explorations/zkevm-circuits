@@ -1701,52 +1701,28 @@ fn test_gen_access_trace() {
     assert_eq!(
         access_trace,
         vec![
-            Access {
-                step_index: None,
-                rw: WRITE,
-                value: Account { address: ADDR_0 }
-            },
-            Access {
-                step_index: None,
-                rw: WRITE,
-                value: Account { address: *ADDR_A }
-            },
-            Access {
-                step_index: None,
-                rw: READ,
-                value: Code { address: *ADDR_A }
-            },
-            Access {
-                step_index: Some(7),
-                rw: WRITE,
-                value: Account { address: *ADDR_A }
-            },
-            Access {
-                step_index: Some(7),
-                rw: WRITE,
-                value: Account { address: *ADDR_B }
-            },
-            Access {
-                step_index: Some(7),
-                rw: READ,
-                value: Code { address: *ADDR_B }
-            },
-            Access {
-                step_index: Some(13),
-                rw: WRITE,
-                value: Storage {
+            Access::new(None, WRITE, Account { address: ADDR_0 }),
+            Access::new(None, WRITE, Account { address: *ADDR_A }),
+            Access::new(None, READ, Code { address: *ADDR_A }),
+            Access::new(Some(7), WRITE, Account { address: *ADDR_A }),
+            Access::new(Some(7), WRITE, Account { address: *ADDR_B }),
+            Access::new(Some(7), READ, Code { address: *ADDR_B }),
+            Access::new(
+                Some(13),
+                WRITE,
+                Storage {
                     address: *ADDR_B,
                     key: Word::from(2),
                 }
-            },
-            Access {
-                step_index: Some(15),
-                rw: READ,
-                value: Storage {
+            ),
+            Access::new(
+                Some(15),
+                READ,
+                Storage {
                     address: *ADDR_B,
                     key: Word::from(3),
                 }
-            },
+            ),
         ]
     );
 
@@ -1811,58 +1787,46 @@ fn test_gen_access_trace_call_EOA_no_new_stack_frame() {
     assert_eq!(
         access_trace,
         vec![
-            Access {
-                step_index: None,
-                rw: WRITE,
-                value: Account { address: *ADDR_B }
-            },
-            Access {
-                step_index: None,
-                rw: WRITE,
-                value: Account {
+            Access::new(None, WRITE, Account { address: *ADDR_B }),
+            Access::new(
+                None,
+                WRITE,
+                Account {
                     address: *MOCK_COINBASE
                 }
-            },
-            Access {
-                step_index: None,
-                rw: READ,
-                value: Code {
+            ),
+            Access::new(
+                None,
+                READ,
+                Code {
                     address: *MOCK_COINBASE
                 }
-            },
-            Access {
-                step_index: Some(7),
-                rw: WRITE,
-                value: Account {
+            ),
+            Access::new(
+                Some(7),
+                WRITE,
+                Account {
                     address: *MOCK_COINBASE
                 }
-            },
-            Access {
-                step_index: Some(7),
-                rw: WRITE,
-                value: Account { address: *ADDR_B }
-            },
-            Access {
-                step_index: Some(7),
-                rw: READ,
-                value: Code { address: *ADDR_B }
-            },
-            Access {
-                step_index: Some(10),
-                rw: WRITE,
-                value: Storage {
+            ),
+            Access::new(Some(7), WRITE, Account { address: *ADDR_B }),
+            Access::new(Some(7), READ, Code { address: *ADDR_B }),
+            Access::new(
+                Some(10),
+                WRITE,
+                Storage {
                     address: *MOCK_COINBASE,
                     key: Word::from(2u64),
                 }
-            },
-            Access {
-                step_index: Some(12),
-                rw: READ,
-                value: Storage {
+            ),
+            Access::new(
+                Some(12),
+                READ,
+                Storage {
                     address: *MOCK_COINBASE,
                     key: Word::from(3u64),
                 }
-            },
+            ),
         ]
     );
 
@@ -1962,44 +1926,36 @@ fn test_gen_access_trace_create_push_call_stack() {
     assert_eq!(
         access_trace,
         vec![
-            Access {
-                step_index: None,
-                rw: WRITE,
-                value: Account {
+            Access::new(
+                None,
+                WRITE,
+                Account {
                     address: Address::zero()
                 }
-            },
-            Access {
-                step_index: None,
-                rw: WRITE,
-                value: Account {
+            ),
+            Access::new(
+                None,
+                WRITE,
+                Account {
                     address: *MOCK_COINBASE
                 }
-            },
-            Access {
-                step_index: None,
-                rw: READ,
-                value: Code {
+            ),
+            Access::new(
+                None,
+                READ,
+                Code {
                     address: *MOCK_COINBASE
                 }
-            },
-            Access {
-                step_index: Some(7),
-                rw: WRITE,
-                value: Account {
+            ),
+            Access::new(
+                Some(7),
+                WRITE,
+                Account {
                     address: *MOCK_COINBASE
                 }
-            },
-            Access {
-                step_index: Some(7),
-                rw: WRITE,
-                value: Account { address: *ADDR_B }
-            },
-            Access {
-                step_index: Some(7),
-                rw: READ,
-                value: Code { address: *ADDR_B }
-            },
+            ),
+            Access::new(Some(7), WRITE, Account { address: *ADDR_B }),
+            Access::new(Some(7), READ, Code { address: *ADDR_B }),
         ]
     );
 

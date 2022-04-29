@@ -22,7 +22,7 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{self, Address, GethExecStep, GethExecTrace, Word};
 use ethers_providers::JsonRpcClient;
-pub use execution::{ExecState, ExecStep, StepAuxiliaryData};
+pub use execution::{CopyOrigin, ExecState, ExecStep, StepAuxiliaryData};
 pub use input_state_ref::CircuitInputStateRef;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
@@ -248,13 +248,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<AccessSet, Error> {
-        let mut block_access_trace = vec![Access {
-            step_index: None,
-            rw: RW::WRITE,
-            value: AccessValue::Account {
+        let mut block_access_trace = vec![Access::new(
+            None,
+            RW::WRITE,
+            AccessValue::Account {
                 address: eth_block.author,
             },
-        }];
+        )];
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
             let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
