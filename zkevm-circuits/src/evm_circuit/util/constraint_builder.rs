@@ -1052,9 +1052,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             [
                 tx_id,
-                self.curr.state.log_id.expr(),
+                self.curr.state.log_id.expr() + (1u64 << 32).expr() * (1u64 << 32).expr() * index,
                 tag.expr(),
-                index,
+                0.expr(),
                 value,
                 0.expr(),
                 0.expr(),

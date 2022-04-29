@@ -42,7 +42,7 @@ mod tests {
         let mut meta = ConstraintSystem::<Fr>::default();
         StateCircuit::configure(&mut meta);
 
-        assert_eq!(meta.degree(), 17);
+        assert_eq!(meta.degree(), 18);
     }
 
     #[test]
