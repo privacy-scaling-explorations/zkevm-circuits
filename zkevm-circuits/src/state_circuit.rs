@@ -261,9 +261,9 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
         is_storage_key_unchanged: c.is_storage_key_unchanged.is_zero_expression.clone(),
-        lexicographic_ordering_diff_1_is_zero: c
+        lexicographic_ordering_upper_limb_difference_is_zero: c
             .lexicographic_ordering
-            .diff_1_is_zero
+            .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
     }
