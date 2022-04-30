@@ -26,6 +26,7 @@ rand = "0.8"
 itertools = "0.10.3"
 lazy_static = "1.4"
 keccak256 = { path = "../keccak256"}
+rlp = "0.5.1"
 log = "0.4.14"
 env_logger = "0.9"
 

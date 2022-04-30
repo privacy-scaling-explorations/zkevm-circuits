@@ -38,6 +38,7 @@ pub struct IsZeroConfig<F> {
 }
 
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
+#[derive(Clone, Debug)]
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }

@@ -1633,6 +1633,7 @@ dependencies = [
 name = "gadgets"
 version = "0.1.0"
 dependencies = [
+ "array-init",
  "digest 0.7.6",
  "eth-types",
  "ff 0.11.0",
@@ -4090,6 +4091,7 @@ dependencies = [
  "paste",
  "rand",
  "rand_xorshift",
+ "rlp",
  "serde_json",
  "sha3 0.7.3",
 ]
