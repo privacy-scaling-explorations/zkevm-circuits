@@ -30,19 +30,7 @@ impl fmt::Debug for OperationRef {
 
 impl From<(Target, usize)> for OperationRef {
     fn from(op_ref_data: (Target, usize)) -> Self {
-        match op_ref_data.0 {
-            Target::Memory => Self(Target::Memory, op_ref_data.1),
-            Target::Stack => Self(Target::Stack, op_ref_data.1),
-            Target::Storage => Self(Target::Storage, op_ref_data.1),
-            Target::TxAccessListAccount => Self(Target::TxAccessListAccount, op_ref_data.1),
-            Target::TxAccessListAccountStorage => {
-                Self(Target::TxAccessListAccountStorage, op_ref_data.1)
-            }
-            Target::TxRefund => Self(Target::TxRefund, op_ref_data.1),
-            Target::Account => Self(Target::Account, op_ref_data.1),
-            Target::AccountDestructed => Self(Target::AccountDestructed, op_ref_data.1),
-            Target::CallContext => Self(Target::CallContext, op_ref_data.1),
-        }
+        Self(op_ref_data.0, op_ref_data.1)
     }
 }
 
