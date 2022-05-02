@@ -78,10 +78,12 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Push an [`Operation`] into the [`OperationContainer`] with the next
-    /// [`RWCounter`] and then adds a reference to the stored operation
-    /// ([`OperationRef`]) inside the bus-mapping instance of the current
-    /// [`ExecStep`].  Then increase the block_ctx [`RWCounter`] by one.
+    /// Push an [`Operation`](crate::operation::Operation) into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
+    /// reference to the stored operation ([`OperationRef`]) inside the
+    /// bus-mapping instance of the current [`ExecStep`].  Then increase the
+    /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
         let op_ref =
             self.block
@@ -90,14 +92,17 @@ impl<'a> CircuitInputStateRef<'a> {
         step.bus_mapping_instance.push(op_ref);
     }
 
-    /// Push an [`Operation`] with reversible to be true into the
-    /// [`OperationContainer`] with the next [`RWCounter`] and then adds a
-    /// reference to the stored operation ([`OperationRef`]) inside the
+    /// Push an [`Operation`](crate::operation::Operation) with reversible to be
+    /// true into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
+    /// reference to the stored operation
+    /// ([`OperationRef`]) inside the
     /// bus-mapping instance of the current [`ExecStep`]. Then increase the
-    /// block_ctx [`RWCounter`] by one.
+    /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     /// This method should be used in `Opcode::gen_associated_ops` instead of
     /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
-    /// example, a write `StorageOp`).
+    /// example, a write [`StorageOp`](crate::operation::StorageOp)).
     pub fn push_op_reversible<T: Op>(
         &mut self,
         step: &mut ExecStep,
@@ -130,11 +135,13 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    /// Push a [`MemoryOp`] into the [`OperationContainer`] with the next
-    /// [`RWCounter`] and `call_id`, and then adds a reference to
-    /// the stored operation ([`OperationRef`]) inside the bus-mapping
-    /// instance of the current [`ExecStep`].  Then increase the `block_ctx`
-    /// [`RWCounter`] by one.
+    /// Push a [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and
+    /// then adds a reference to the stored operation ([`OperationRef`])
+    /// inside the bus-mapping instance of the current [`ExecStep`].  Then
+    /// increase the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by
+    /// one.
     pub fn push_memory_op(
         &mut self,
         step: &mut ExecStep,
@@ -147,11 +154,13 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    /// Push a [`StackOp`] into the [`OperationContainer`] with the next
-    /// [`RWCounter`] and `call_id`, and then adds a reference to
-    /// the stored operation ([`OperationRef`]) inside the bus-mapping
-    /// instance of the current [`ExecStep`].  Then increase the `block_ctx`
-    /// [`RWCounter`] by one.
+    /// Push a [`StackOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and
+    /// then adds a reference to the stored operation ([`OperationRef`])
+    /// inside the bus-mapping instance of the current [`ExecStep`].  Then
+    /// increase the `block_ctx` [`RWCounter`](crate::operation::RWCounter)
+    /// by one.
     pub fn push_stack_op(
         &mut self,
         step: &mut ExecStep,
@@ -460,7 +469,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .expect("reversion_groups should not be empty for non-persistent call");
 
         // Apply reversions
-        for (step_index, op_ref) in reversion_group.op_refs().into_iter().rev().copied() {
+        for (step_index, op_ref) in reversion_group.op_refs().iter().rev().copied() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
                 self.apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(

@@ -147,8 +147,9 @@ impl<'a> CircuitInputBuilder {
 
     /// Handle a transaction with its corresponding execution trace to generate
     /// all the associated operations.  Each operation is registered in
-    /// `self.block.container`, and each step stores the [`OperationRef`] to
-    /// each of the generated operations.
+    /// `self.block.container`, and each step stores the
+    /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
+    /// generated operations.
     fn handle_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,

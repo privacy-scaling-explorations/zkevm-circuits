@@ -25,7 +25,7 @@ pub struct ExecStep {
     pub gas_cost: GasCost,
     /// Accumulated gas refund
     pub gas_refund: Gas,
-    /// Call index within the [`Transaction`]
+    /// Call index within the Transaction.
     pub call_index: usize,
     /// The global counter when this step was executed.
     pub rwc: RWCounter,
@@ -207,25 +207,16 @@ impl StepAuxiliaryData {
 
     /// Returns true if the data origin is Code.
     pub fn is_code_originated(&self) -> bool {
-        match self.copy_details {
-            CopyDetails::Code(_) => true,
-            _ => false,
-        }
+        matches!(self.copy_details, CopyDetails::Code(_))
     }
 
     /// Returns true if the data origin is a Tx.
     pub fn is_tx_originated(&self) -> bool {
-        match self.copy_details {
-            CopyDetails::TxCallData(_) => true,
-            _ => false,
-        }
+        matches!(self.copy_details, CopyDetails::TxCallData(_))
     }
 
     /// Returns true if the data is copied to Logs.
     pub fn is_log_destinated(&self) -> bool {
-        match self.copy_details {
-            CopyDetails::Log(_) => true,
-            _ => false,
-        }
+        matches!(self.copy_details, CopyDetails::Log(_))
     }
 }

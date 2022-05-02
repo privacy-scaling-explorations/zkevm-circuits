@@ -111,9 +111,9 @@ pub struct CallContext {
 }
 
 /// A reversion group is the collection of calls and the operations which are
-/// [`Operation::reversible`] that happened in them, that will be reverted at
-/// once when the call that initiated this reversion group eventually ends with
-/// failure (and thus reverts).
+/// [`Operation::reversible`](crate::operation::Operation::reversible) that
+/// happened in them, that will be reverted at once when the call that initiated
+/// this reversion group eventually ends with failure (and thus reverts).
 #[derive(Debug, Default)]
 pub struct ReversionGroup {
     /// List of `index` and `reversible_write_counter_offset` of calls belong to
@@ -121,7 +121,7 @@ pub struct ReversionGroup {
     /// reversible operations that have happened before the call within the
     /// same reversion group.
     calls: Vec<(usize, usize)>,
-    /// List of `step_index` and `OperationRef` that have been done in this
+    /// List of `step_index` and [`OperationRef`] that have been done in this
     /// group.
     op_refs: Vec<(usize, OperationRef)>,
 }
@@ -144,7 +144,7 @@ impl ReversionGroup {
         &mut self.calls
     }
 
-    /// Returns a list of `step_index` and `OperationRef` that have been
+    /// Returns a list of `step_index` and [`OperationRef`] that have been
     /// performed in this group.
     pub fn op_refs(&self) -> &[(usize, OperationRef)] {
         &self.op_refs

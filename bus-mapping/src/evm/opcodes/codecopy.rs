@@ -108,8 +108,8 @@ fn gen_memory_copy_steps(
             StepAuxiliaryData::new(
                 code_offset + copied,
                 dest_offset + copied,
-                src_addr_end,
                 length - copied,
+                src_addr_end,
                 CopyDetails::Code(code_source),
             ),
             &code,
