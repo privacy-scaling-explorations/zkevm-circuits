@@ -40,14 +40,23 @@ use std::ops::Mul;
 //    "C14 is 0".)
 
 // We show that one of these is true with the following constraints:
-//  - upper_limb_difference is (at least) 1 of the 15 values C0, ..., C14.
-//  - lower_limb_difference is (at least) 1 of the 15 values C15, ..., C29.
-//  - upper_limb_difference fits into 16 bits.
-//  - if upper_limb_difference is 0, then lower_limb_difference fits into 16
+//  1. upper_limb_difference is (at least) 1 of the 15 values C0, ..., C14.
+//  2. lower_limb_difference is (at least) 1 of the 15 values C15, ..., C29.
+//  3. upper_limb_difference fits into 16 bits.
+//  4. if upper_limb_difference is 0, then lower_limb_difference fits into 16
 //    bits.
-//  - if upper_limb_difference is 0, then C14 is 0.
-//  - lower_limb_difference is not 0. (there is always a valid assignment for
-//    this because the rw_counter is increasing.)
+//  5. if upper_limb_difference is 0, then C14 is 0.
+//  6. at least one of upper_limb_difference or lower_limb_difference is not 0.
+
+// We satisfy these constraints by assigning upper_limb_difference
+// to be the first non-zero difference between the first 15 big-endian limbs of
+// X_cur and X_prev or 0 if the the limbs are all equal. E.g. if X_curr = (2, 1,
+// 6, ...) and X_prev = (2, 1, 2, ...), then upper_limb_difference = C2 = 6 - 2
+// = 4. If there is no difference between the first 15 pairs of limbs, then
+// lower_limb_difference is assigned to be the first non-zero difference between
+// the last 15 pairs of limbs. This non-zero difference will exist because there
+// are no duplicate entries in the rw table. If upper_limb_difference has a
+// non-zero value, then we assign lower_limb_difference to be the value of C29.
 
 // Packing the field into 480 bits:
 //   4 bits for tag,
