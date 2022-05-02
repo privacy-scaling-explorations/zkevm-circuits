@@ -13,6 +13,7 @@ pub mod witness;
 
 use eth_types::Field;
 use execution::ExecutionConfig;
+use itertools::Itertools;
 use table::{FixedTableTag, LookupTable};
 use witness::Block;
 
@@ -38,7 +39,7 @@ impl<F: Field> EvmCircuit<F> {
     where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 11>,
-        BytecodeTable: LookupTable<F, 4>,
+        BytecodeTable: LookupTable<F, 5>,
         BlockTable: LookupTable<F, 3>,
     {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -72,7 +73,7 @@ impl<F: Field> EvmCircuit<F> {
                     .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
                     .enumerate()
                 {
-                    for (column, value) in self.fixed_table.iter().zip(row) {
+                    for (column, value) in self.fixed_table.iter().zip_eq(row) {
                         region.assign_fixed(|| "", *column, offset, || Ok(value))?;
                     }
                 }
@@ -124,7 +125,7 @@ pub mod test {
         rw_table::RwTable,
         util::Expr,
     };
-    use eth_types::{evm_types::GasCost, Field, Word};
+    use eth_types::{Field, Word};
     use halo2_proofs::{
         arithmetic::BaseExt,
         circuit::{Layouter, SimpleFloorPlanner},
@@ -132,6 +133,7 @@ pub mod test {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
     };
+    use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
@@ -166,7 +168,7 @@ pub mod test {
     pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
         rw_table: RwTable,
-        bytecode_table: [Column<Advice>; 4],
+        bytecode_table: [Column<Advice>; 5],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
     }
@@ -194,7 +196,7 @@ pub mod test {
 
                     for tx in txs.iter() {
                         for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip(row) {
+                            for (column, value) in self.tx_table.iter().zip_eq(row) {
                                 region.assign_advice(
                                     || format!("tx table row {}", offset),
                                     *column,
@@ -224,7 +226,18 @@ pub mod test {
                         .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
-                    for rw in rws.0.values().flat_map(|rws| rws.iter()) {
+                    let mut rows = rws
+                        .0
+                        .values()
+                        .flat_map(|rws| rws.iter())
+                        .collect::<Vec<_>>();
+
+                    rows.sort_by_key(|a| a.rw_counter());
+                    let mut expected_rw_counter = 1;
+                    for rw in rows {
+                        assert!(rw.rw_counter() == expected_rw_counter);
+                        expected_rw_counter += 1;
+
                         self.rw_table.assign(
                             &mut region,
                             offset,
@@ -259,7 +272,7 @@ pub mod test {
 
                     for bytecode in bytecodes.iter() {
                         for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in self.bytecode_table.iter().zip(row) {
+                            for (column, value) in self.bytecode_table.iter().zip_eq(row) {
                                 region.assign_advice(
                                     || format!("bytecode table row {}", offset),
                                     *column,
@@ -296,7 +309,7 @@ pub mod test {
                     offset += 1;
 
                     for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.iter().zip(row) {
+                        for (column, value) in self.block_table.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
@@ -339,7 +352,7 @@ pub mod test {
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
             let rw_table = RwTable::construct(meta);
-            let bytecode_table = [(); 4].map(|_| meta.advice_column());
+            let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
             let power_of_randomness = {
@@ -409,6 +422,10 @@ pub mod test {
                 .map(|bytecode| bytecode.bytes.len())
                 .sum::<usize>(),
         ));
+        let k = k.max(log2_ceil(
+            64 + block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT,
+        ));
+        log::debug!("evm circuit uses k = {}", k);
 
         let power_of_randomness = (1..32)
             .map(|exp| {
@@ -433,8 +450,10 @@ pub mod test {
                 FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,
+                FixedTableTag::Range64,
                 FixedTableTag::Range256,
                 FixedTableTag::Range512,
+                FixedTableTag::Range1024,
                 FixedTableTag::SignByte,
                 FixedTableTag::ResponsibleOpcode,
             ],
@@ -445,29 +464,5 @@ pub mod test {
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
-    }
-
-    pub(crate) fn calc_memory_expension_gas_cost(
-        curr_memory_word_size: u64,
-        next_memory_word_size: u64,
-    ) -> u64 {
-        if next_memory_word_size <= curr_memory_word_size {
-            0
-        } else {
-            let total_cost = |mem_word_size| {
-                mem_word_size * GasCost::MEMORY.as_u64() + mem_word_size * mem_word_size / 512
-            };
-            total_cost(next_memory_word_size) - total_cost(curr_memory_word_size)
-        }
-    }
-
-    pub(crate) fn calc_memory_copier_gas_cost(
-        curr_memory_word_size: u64,
-        next_memory_word_size: u64,
-        num_copy_bytes: u64,
-    ) -> u64 {
-        let num_words = (num_copy_bytes + 31) / 32;
-        num_words * GasCost::COPY.as_u64()
-            + calc_memory_expension_gas_cost(curr_memory_word_size, next_memory_word_size)
     }
 }

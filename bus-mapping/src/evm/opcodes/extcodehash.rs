@@ -59,8 +59,8 @@ impl Opcode for Extcodehash {
 
         // Update transaction access list for external_address
         let is_warm = match step.gas_cost {
-            GasCost::WARM_STORAGE_READ_COST => true,
-            GasCost::COLD_ACCOUNT_ACCESS_COST => false,
+            GasCost::WARM_ACCESS => true,
+            GasCost::COLD_ACCOUNT_ACCESS => false,
             _ => unreachable!(),
         };
         state.sdb.add_account_to_access_list(external_address);
@@ -70,8 +70,8 @@ impl Opcode for Extcodehash {
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address: external_address,
-                value: true,
-                value_prev: is_warm,
+                is_warm: true,
+                is_warm_prev: is_warm,
             },
         )?;
 
@@ -305,8 +305,8 @@ mod extcodehash_tests {
                 &TxAccessListAccountOp {
                     tx_id,
                     address: external_address,
-                    value: true,
-                    value_prev: is_warm
+                    is_warm: true,
+                    is_warm_prev: is_warm
                 }
             )
         );

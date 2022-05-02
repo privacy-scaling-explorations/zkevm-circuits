@@ -13,32 +13,47 @@ use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToWord,
 };
+use keccak256::EMPTY_HASH;
 use log::warn;
 
+mod call;
 mod calldatacopy;
+mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod chainid;
+mod codecopy;
 mod dup;
 mod extcodehash;
+mod gasprice;
 mod mload;
 mod mstore;
+mod number;
+mod origin;
 mod selfbalance;
 mod sload;
+mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
 
+use call::Call;
 use calldatacopy::Calldatacopy;
+use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
+use codecopy::Codecopy;
 use dup::Dup;
 use extcodehash::Extcodehash;
+use gasprice::GasPrice;
 use mload::Mload;
 use mstore::Mstore;
+use origin::Origin;
 use selfbalance::Selfbalance;
 use sload::Sload;
+use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
@@ -71,6 +86,10 @@ type FnGenAssociatedOps = fn(
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
+    if opcode_id.is_push() {
+        return StackOnlyOpcode::<0, 1>::gen_associated_ops;
+    }
+
     match opcode_id {
         OpcodeId::STOP => Stop::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -101,15 +120,15 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::SHA3 => {},
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
-        // OpcodeId::ORIGIN => {},
+        OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
-        OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
-        // OpcodeId::CODECOPY => {},
-        // OpcodeId::GASPRICE => {},
+        OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
+        OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         // OpcodeId::EXTCODESIZE => {},
         // OpcodeId::EXTCODECOPY => {},
         // OpcodeId::RETURNDATASIZE => {},
@@ -119,55 +138,23 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        // OpcodeId::DIFFICULTY => {},
-        // OpcodeId::GASLIMIT => {},
-        // OpcodeId::CHAINID => {},
+        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        // OpcodeId::BASEFEE => {},
+        OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
         OpcodeId::SLOAD => Sload::gen_associated_ops,
-        // OpcodeId::SSTORE => {},
+        OpcodeId::SSTORE => Sstore::gen_associated_ops,
         OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::JUMPDEST => dummy_gen_associated_ops,
-        OpcodeId::PUSH1 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH2 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH3 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH4 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH5 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH6 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH7 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH8 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH9 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH10 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH11 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH12 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH13 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH14 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH15 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH16 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH17 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH18 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH19 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH20 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH21 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH22 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH23 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH24 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH25 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH26 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH27 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH28 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH29 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH30 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH31 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH32 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
@@ -206,7 +193,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::LOG3 => {},
         // OpcodeId::LOG4 => {},
         // OpcodeId::CREATE => {},
-        // OpcodeId::CALL => {},
+        OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},
         // TODO: Handle RETURN by its own gen_associated_ops.
         OpcodeId::RETURN => Stop::gen_associated_ops,
@@ -216,8 +203,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // TODO: Handle REVERT by its own gen_associated_ops.
         OpcodeId::REVERT => Stop::gen_associated_ops,
         // OpcodeId::SELFDESTRUCT => {},
-        // _ => panic!("Opcode {:?} gen_associated_ops not implemented",
-        // self),
+        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
+            dummy_gen_call_ops
+        }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             dummy_gen_associated_ops
@@ -283,8 +272,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
-                value: true,
-                value_prev: false,
+                is_warm: true,
+                is_warm_prev: false,
             },
         );
     }
@@ -336,14 +325,23 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         },
     )?;
 
-    match (call.is_create(), state.is_precompiled(&call.address)) {
-        (true, _) => {
-            // TODO: Implement creation transaction
+    // There are 4 branches from here.
+    match (
+        call.is_create(),
+        state.is_precompiled(&call.address),
+        code_hash.to_fixed_bytes() == *EMPTY_HASH,
+    ) {
+        // 1. Creation transaction.
+        (true, _, _) => {
+            warn!("Creation transaction is left unimplemented");
+            Ok(exec_step)
         }
-        (_, true) => {
-            // TODO: Implement calling to precompiled
+        // 2. Call to precompiled.
+        (_, true, _) => {
+            warn!("Call to precompiled is left unimplemented");
+            Ok(exec_step)
         }
-        _ => {
+        (_, _, is_empty_code_hash) => {
             state.push_op(
                 &mut exec_step,
                 RW::READ,
@@ -354,42 +352,52 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                     value_prev: code_hash.to_word(),
                 },
             );
+
+            // 3. Call to account with empty code.
+            if is_empty_code_hash {
+                warn!("Call to account with empty code is left unimplemented");
+                return Ok(exec_step);
+            }
+
+            // 4. Call to account with non-empty code.
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    call.call_data_length.into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, 0.into()),
+                (CallContextField::CodeSource, code_hash.to_word()),
+            ] {
+                state.push_op(
+                    &mut exec_step,
+                    RW::READ,
+                    CallContextOp {
+                        call_id: call.call_id,
+                        field,
+                        value,
+                    },
+                );
+            }
+
+            Ok(exec_step)
         }
     }
-
-    for (field, value) in [
-        (CallContextField::Depth, call.depth.into()),
-        (
-            CallContextField::CallerAddress,
-            call.caller_address.to_word(),
-        ),
-        (CallContextField::CalleeAddress, call.address.to_word()),
-        (
-            CallContextField::CallDataOffset,
-            call.call_data_offset.into(),
-        ),
-        (
-            CallContextField::CallDataLength,
-            call.call_data_length.into(),
-        ),
-        (CallContextField::Value, call.value),
-        (CallContextField::IsStatic, (call.is_static as usize).into()),
-        (CallContextField::LastCalleeId, 0.into()),
-        (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-        (CallContextField::LastCalleeReturnDataLength, 0.into()),
-    ] {
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: call.call_id,
-                field,
-                value,
-            },
-        );
-    }
-
-    Ok(exec_step)
 }
 
 pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
@@ -469,4 +477,35 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     Ok(exec_step)
+}
+
+fn dummy_gen_call_ops(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    let geth_step = &geth_steps[0];
+    let exec_step = state.new_step(geth_step)?;
+
+    let call = state.call()?.clone();
+    let callee = state.parse_call(geth_step)?;
+
+    let (_, account) = state.sdb.get_account(&callee.address);
+    let callee_code_hash = account.code_hash;
+
+    state.push_call(callee.clone(), geth_step);
+
+    match (
+        state.is_precompiled(&call.address),
+        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+    ) {
+        // 1. Call to precompiled.
+        (true, _) => Ok(vec![exec_step]),
+        // 2. Call to account with empty code.
+        (_, true) => {
+            state.handle_return()?;
+            Ok(vec![exec_step])
+        }
+        // 3. Call to account with non-empty code.
+        (_, false) => Ok(vec![exec_step]),
+    }
 }
