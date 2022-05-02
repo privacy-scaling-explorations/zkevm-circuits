@@ -93,7 +93,7 @@ impl<'a> CircuitInputBuilder {
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Transaction, Error> {
-        let call_id = self.block_ctx.rwc().0;
+        let call_id = self.block_ctx.rwc.0;
 
         self.block_ctx.call_map_mut().insert(
             call_id,

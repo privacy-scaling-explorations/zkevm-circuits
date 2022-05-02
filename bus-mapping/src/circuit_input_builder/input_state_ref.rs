@@ -42,7 +42,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(ExecStep::new(
             geth_step,
             call_ctx.index,
-            self.block_ctx.rwc(),
+            self.block_ctx.rwc,
             call_ctx.reversible_write_counter,
         ))
     }
@@ -52,7 +52,7 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::BeginTx,
             gas_left: Gas(self.tx.gas),
-            rwc: self.block_ctx.rwc(),
+            rwc: self.block_ctx.rwc,
             ..Default::default()
         }
     }
@@ -67,7 +67,7 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::EndTx,
             gas_left: Gas(prev_step.gas_left.0 - prev_step.gas_cost.0),
-            rwc: self.block_ctx.rwc(),
+            rwc: self.block_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
                 call_ctx.reversible_write_counter
@@ -88,7 +88,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let op_ref =
             self.block
                 .container
-                .insert(Operation::new(self.block_ctx.rwc().inc_pre(), rw, op));
+                .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
         step.bus_mapping_instance.push(op_ref);
     }
 
@@ -113,7 +113,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.apply_op(&op.clone().into_enum());
         }
         let op_ref = self.block.container.insert(Operation::new_reversible(
-            self.block_ctx.rwc().inc_pre(),
+            self.block_ctx.rwc.inc_pre(),
             rw,
             op,
         ));
@@ -339,7 +339,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let caller = self.call()?;
         let call = Call {
-            call_id: self.block_ctx.rwc().0,
+            call_id: self.block_ctx.rwc.0,
             caller_id: caller.call_id,
             kind,
             is_static: kind == CallKind::StaticCall || caller.is_static,
@@ -473,7 +473,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
                 self.apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
-                    self.block_ctx.rwc().inc_pre(),
+                    self.block_ctx.rwc.inc_pre(),
                     RW::WRITE,
                     false,
                     op,
@@ -485,7 +485,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // Set calls' `rw_counter_end_of_reversion`
-        let rwc = self.block_ctx.rwc().0 - 1;
+        let rwc = self.block_ctx.rwc.0 - 1;
         for (call_idx, reversible_write_counter_offset) in reversion_group.calls() {
             self.tx.calls_mut()[*call_idx].rw_counter_end_of_reversion =
                 rwc - reversible_write_counter_offset;
