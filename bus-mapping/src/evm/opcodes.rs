@@ -86,6 +86,10 @@ type FnGenAssociatedOps = fn(
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
+    if opcode_id.is_push() {
+        return StackOnlyOpcode::<0, 1>::gen_associated_ops;
+    }
+
     match opcode_id {
         OpcodeId::STOP => Stop::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -151,38 +155,6 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::JUMPDEST => dummy_gen_associated_ops,
-        OpcodeId::PUSH1 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH2 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH3 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH4 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH5 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH6 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH7 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH8 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH9 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH10 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH11 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH12 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH13 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH14 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH15 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH16 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH17 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH18 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH19 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH20 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH21 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH22 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH23 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH24 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH25 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH26 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH27 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH28 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH29 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH30 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH31 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::PUSH32 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
