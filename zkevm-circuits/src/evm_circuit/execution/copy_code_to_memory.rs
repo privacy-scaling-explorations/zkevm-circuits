@@ -1,5 +1,5 @@
 use array_init::array_init;
-use bus_mapping::{circuit_input_builder::CopyOrigin, constants::MAX_COPY_BYTES};
+use bus_mapping::{circuit_input_builder::CopyDetails, constants::MAX_COPY_BYTES};
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -180,8 +180,8 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             step.aux_data.unwrap()
         };
 
-        let code_source = match aux.copy_origin() {
-            CopyOrigin::Code(code) => code,
+        let code_source = match aux.copy_details() {
+            CopyDetails::Code(code) => code,
             _ => unreachable!("the source has to come from code not calldata"),
         };
 
@@ -254,7 +254,7 @@ pub(crate) mod test {
     use std::collections::HashMap;
 
     use bus_mapping::{
-        circuit_input_builder::{CopyOrigin, StepAuxiliaryData},
+        circuit_input_builder::{CopyDetails, StepAuxiliaryData},
         evm::OpcodeId,
     };
     use eth_types::{bytecode, Word};
@@ -311,7 +311,7 @@ pub(crate) mod test {
             dst_addr,
             bytes_left as u64,
             src_addr_end,
-            CopyOrigin::Code(code.hash),
+            CopyDetails::Code(code.hash),
         );
         let step = ExecStep {
             execution_state: ExecutionState::CopyCodeToMemory,

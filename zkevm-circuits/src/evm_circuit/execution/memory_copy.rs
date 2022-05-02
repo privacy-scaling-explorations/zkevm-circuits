@@ -14,7 +14,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyOrigin, constants::MAX_COPY_BYTES};
+use bus_mapping::{circuit_input_builder::CopyDetails, constants::MAX_COPY_BYTES};
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -172,8 +172,8 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             step.aux_data.unwrap()
         };
 
-        let from_tx = match aux.copy_origin() {
-            CopyOrigin::TxCallData(root_call) => root_call,
+        let from_tx = match aux.copy_details() {
+            CopyDetails::TxCallData(root_call) => root_call,
             _ => unreachable!("the source has to come from calldata and not code"),
         };
 
@@ -242,7 +242,7 @@ pub mod test {
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use bus_mapping::circuit_input_builder::{CopyOrigin, StepAuxiliaryData};
+    use bus_mapping::circuit_input_builder::{CopyDetails, StepAuxiliaryData};
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
@@ -303,7 +303,7 @@ pub mod test {
             dst_addr,
             bytes_left as u64,
             src_addr_end,
-            CopyOrigin::TxCallData(from_tx),
+            CopyDetails::TxCallData(from_tx),
         );
         let step = ExecStep {
             execution_state: ExecutionState::CopyToMemory,

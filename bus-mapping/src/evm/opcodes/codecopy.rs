@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyOrigin, ExecState, ExecStep, StepAuxiliaryData,
+        CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
     },
     constants::MAX_COPY_BYTES,
     operation::RW,
@@ -110,7 +110,7 @@ fn gen_memory_copy_steps(
                 dest_offset + copied,
                 src_addr_end,
                 length - copied,
-                CopyOrigin::Code(code_source),
+                CopyDetails::Code(code_source),
             ),
             &code,
         )?;

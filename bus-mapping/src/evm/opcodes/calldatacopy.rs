@@ -3,7 +3,7 @@ use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
 use crate::Error;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyOrigin, ExecState, ExecStep, StepAuxiliaryData,
+        CircuitInputStateRef, CopyDetails, ExecState, ExecStep, StepAuxiliaryData,
     },
     constants::MAX_COPY_BYTES,
 };
@@ -138,7 +138,7 @@ fn gen_memory_copy_step(
         dst_addr,
         bytes_left as u64,
         src_addr_end,
-        CopyOrigin::TxCallData(is_root),
+        CopyDetails::TxCallData(is_root),
     ));
 
     Ok(())
