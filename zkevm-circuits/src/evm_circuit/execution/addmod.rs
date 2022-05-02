@@ -132,10 +132,11 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 mod test {
     use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::OpcodeId;
+    use eth_types::evm_types::{OpcodeId, Stack};
     use eth_types::{bytecode, Word};
+    use mock::TestContext;
 
-    fn test_ok(a: Word, b: Word, n: Word) {
+    fn test(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -143,17 +144,47 @@ mod test {
             ADDMOD
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+        if let Some(r) = r {
+            let mut last = ctx
+                .geth_traces
+                .first_mut()
+                .unwrap()
+                .struct_logs
+                .last_mut()
+                .unwrap();
+            last.stack = Stack::from_vec(vec![r.into()]);
+        }
+        run_test_circuits(ctx, None).is_ok()
     }
 
     #[test]
     fn addmod_simple() {
-        test_ok(7.into(), 18.into(), 10.into());
-        test_ok(7.into(), 1.into(), 10.into());
+        assert_eq!(true, test(7, 18, 10, None));
+        assert_eq!(true, test(7, 1, 10, None));
     }
 
     #[test]
     fn addmod_division_by_zero() {
-        test_ok(7.into(), 1.into(), 0.into());
+        assert_eq!(true, test(7, 1, 0, None));
+    }
+
+    #[test]
+    fn addmod_bad_r_on_nonzero_n() {
+        assert_eq!(true, test(7, 18, 10, Some(5)));
+        assert_eq!(false, test(7, 18, 10, Some(6)));
+    }
+
+    #[test]
+    fn addmod_bad_r_on_zero_n() {
+        assert_eq!(true, test(2, 3, 0, Some(0)));
+        assert_eq!(false, test(2, 3, 0, Some(1)));
+    }
+
+    #[test]
+    fn addmod_bad_r_bigger_n() {
+        assert_eq!(true, test(2, 3, 4, Some(1)));
+        assert_eq!(false, test(2, 3, 4, Some(5)));
     }
 }

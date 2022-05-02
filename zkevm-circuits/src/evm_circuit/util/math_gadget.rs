@@ -10,6 +10,7 @@ use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression},
 };
+use pairing::arithmetic::FieldExt;
 use std::convert::TryFrom;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
