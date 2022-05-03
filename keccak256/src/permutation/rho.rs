@@ -123,10 +123,10 @@ mod tests {
     use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
 
     #[test]

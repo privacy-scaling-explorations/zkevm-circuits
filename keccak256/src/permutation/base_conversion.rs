@@ -168,10 +168,10 @@ mod tests {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use num_bigint::BigUint;
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
     fn test_base_conversion_from_b2() {

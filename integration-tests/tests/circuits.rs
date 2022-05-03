@@ -27,7 +27,7 @@ async fn test_evm_circuit_block(block_num: u64) {
 
 async fn test_state_circuit_block(block_num: u64) {
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr;
+    use halo2_proofs::pairing::bn256::Fr;
 
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
@@ -63,7 +63,7 @@ async fn test_state_circuit_block(block_num: u64) {
         ROWS_MAX,
     >::new(Fr::rand(), &rw_map);
 
-    use pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }

@@ -23,6 +23,7 @@ pub mod geth_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
+use halo2_proofs::pairing;
 use pairing::group::ff::PrimeField;
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};

@@ -16,7 +16,7 @@ pub mod is_zero;
 pub mod monotone;
 
 use halo2_proofs::circuit::AssignedCell;
-use pairing::arithmetic::FieldExt;
+use halo2_proofs::pairing::arithmetic::FieldExt;
 
 #[allow(dead_code)]
 /// An assigned cell in the circuit.

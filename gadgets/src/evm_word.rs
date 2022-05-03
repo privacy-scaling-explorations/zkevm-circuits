@@ -159,12 +159,12 @@ mod tests {
     use super::*;
     use ff::PrimeField;
     use halo2_proofs::arithmetic::Field as HaloField;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::{
         circuit::SimpleFloorPlanner,
         dev::{FailureLocation, MockProver, VerifyFailure},
         plonk::{Circuit, Instance},
     };
-    use pairing::bn256::Fr as Fp;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::marker::PhantomData;

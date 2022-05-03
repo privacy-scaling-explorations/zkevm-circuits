@@ -130,11 +130,11 @@ pub mod test {
         arithmetic::BaseExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
+        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
         poly::Rotation,
     };
     use itertools::Itertools;
-    use pairing::bn256::Fr as Fp;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,

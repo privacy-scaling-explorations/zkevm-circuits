@@ -6,10 +6,11 @@
 
 use halo2_proofs::{
     circuit::{Chip, Region},
+    pairing::arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
+
 use std::array;
 
 /// Trait that needs to be implemented for any gadget or circuit that wants to
@@ -139,10 +140,10 @@ mod test {
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
-    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     macro_rules! try_test_circuit {

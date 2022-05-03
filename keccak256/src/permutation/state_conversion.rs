@@ -61,12 +61,12 @@ mod tests {
     use crate::arith_helpers::convert_b2_to_b13;
     use crate::gate_helpers::biguint_to_f;
     use crate::permutation::tables::FromBinaryTableConfig;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
     fn test_state_base_conversion() {

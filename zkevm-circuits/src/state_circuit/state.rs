@@ -12,11 +12,10 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
+    pairing::arithmetic::FieldExt,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-
-use pairing::arithmetic::FieldExt;
 
 /*
 (FIXME) Example state table:
@@ -681,8 +680,8 @@ mod tests {
     };
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::dev::MockProver;
+    use halo2_proofs::pairing::bn256::Fr;
     use mock::TestContext;
-    use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit_ok {
         ($k:expr, $rw_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
