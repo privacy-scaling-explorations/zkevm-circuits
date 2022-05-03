@@ -26,6 +26,7 @@ use halo2_proofs::{
 pub(crate) struct SstoreGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
+    is_static: Cell<F>,
     reversion_info: ReversionInfo<F>,
     callee_address: Cell<F>,
     key: Cell<F>,
@@ -47,6 +48,11 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+
+        // constrain not in static call
+        let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
+        cb.require_zero("is_static is false", is_static.expr());
+
         let mut reversion_info = cb.reversion_info(None);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
@@ -104,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(9.expr()),
+            rw_counter: Delta(10.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr()),
             reversible_write_counter: Delta(3.expr()),
@@ -116,6 +122,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         Self {
             same_context,
             tx_id,
+            is_static,
             reversion_info,
             callee_address,
             key,
@@ -142,6 +149,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.is_static
+            .assign(region, offset, Some(F::from(call.is_static as u64)))?;
         self.reversion_info.assign(
             region,
             offset,
@@ -152,7 +161,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             .assign(region, offset, call.callee_address.to_scalar())?;
 
         let [key, value] =
-            [step.rw_indices[4], step.rw_indices[5]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[5], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(
             region,
             offset,
@@ -170,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             )),
         )?;
 
-        let (_, value_prev, _, original_value) = block.rws[step.rw_indices[6]].storage_value_aux();
+        let (_, value_prev, _, original_value) = block.rws[step.rw_indices[7]].storage_value_aux();
         self.value_prev.assign(
             region,
             offset,
@@ -188,11 +197,11 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             )),
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
+        let (_, is_warm) = block.rws[step.rw_indices[8]].tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
-        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
+        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Some(F::from(tx_refund_prev)))?;
 
