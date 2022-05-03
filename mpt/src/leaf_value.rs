@@ -140,7 +140,7 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             // Constraints to enable lookup:
             // key RLC is in sel1, leaf value S RLC is in sel2 (for lookup it's needed also
-            // leaf value C RLC, whic is in acc_c)
+            // leaf value C RLC, which is in acc_c)
             // NOTE: when placeholder leaf, prev value needs to be set to 0 - the witness
             // generator add all 0s as a placeholder leaf for this reason; no constraint
             // is needed for this 0s as the lookup will fail if otherwise.
@@ -271,9 +271,9 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             let rlc = meta.query_advice(acc_s, Rotation::cur());
 
-            let mut sel = meta.query_advice(sel1, Rotation(rot));
+            let mut placeholder_leaf = meta.query_advice(sel1, Rotation(rot));
             if !is_s {
-                sel = meta.query_advice(sel2, Rotation(rot));
+                placeholder_leaf = meta.query_advice(sel2, Rotation(rot));
             }
 
             let is_branch_placeholder =
@@ -291,7 +291,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints.push((
                 q_enable.clone()
                     * rlc
-                    * (one.clone() - sel.clone())
+                    * (one.clone() - placeholder_leaf.clone())
                     * (one.clone() - is_leaf_without_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -304,7 +304,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             constraints.push((
                 q_enable.clone()
                     * mod_node_hash_rlc_cur
-                    * (one.clone() - sel.clone())
+                    * (one.clone() - placeholder_leaf.clone())
                     * (one.clone() - is_leaf_without_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone()),
                 keccak_table_i,

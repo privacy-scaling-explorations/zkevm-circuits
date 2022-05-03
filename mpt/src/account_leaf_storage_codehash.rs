@@ -216,6 +216,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 leaf_without_branch = one.clone() - meta.query_fixed(q_not_first, Rotation(-4));
             }
 
+            // Rotate into one of the branch rows (make sure the rotation will bring into
+            // branch rows S as well as C row):
+            let mut placeholder_leaf = meta.query_advice(sel1, Rotation(-7));
+            if !is_s {
+                placeholder_leaf = meta.query_advice(sel2, Rotation(-7));
+            }
+
             // Note: accumulated in s (not in c) for c:
             let acc_s = meta.query_advice(acc, Rotation::cur());
 
@@ -223,6 +230,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * (one.clone() - leaf_without_branch.clone())
+                    * (one.clone() - placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * acc_s,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -236,6 +244,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * (one.clone() - leaf_without_branch.clone())
+                    * (one.clone() - placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * mod_node_hash_rlc_cur,
                 keccak_table_i,
