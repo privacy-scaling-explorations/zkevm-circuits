@@ -106,7 +106,7 @@ impl<F: Field> WordBuilderConfig<F> {
                     .iter()
                     .enumerate()
                     .map(|(idx, byte_cell)| {
-                        F::from(1u64 << (idx * 8)) * byte_cell.value().cloned().unwrap_or_default()
+                        F::from(1u64 << (idx * 8)) * byte_cell.value().copied().unwrap_or_default()
                     })
                     .reduce(|acc, byte_shifted| acc + byte_shifted)
                     // Unwrapping is safe here as we recieve an array that contails all elements.
