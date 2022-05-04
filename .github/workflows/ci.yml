@@ -11,9 +11,7 @@ on:
 ## `rust-toolchain` is always used and the only source of truth.
 
 env:
-  RUSTC_WRAPPER: sccache
   SCCACHE_CACHE_SIZE: 2G
-  SCCACHE_DIR: /home/runner/.cache/sccache
   # SCCACHE_RECACHE: 1 # Uncomment this to clear cache, then comment it back out
 
 jobs:
@@ -68,7 +66,7 @@ jobs:
           mv -f $SCCACHE_FILE/sccache $HOME/.local/bin/sccache
           chmod +x $HOME/.local/bin/sccache
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          printf "[build]\nrustc-wrapper = \"/home/runner/.cargo/bin/sccache\"" >> ~/.cargo/config
+          printf "[build]\nrustc-wrapper = \"/home/runner/.local/bin/sccache\"" >> $HOME/.cargo/config
           sccache --start-server
       - name: Restore sccache
         uses: actions/cache@v2
