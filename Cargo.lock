@@ -2103,6 +2103,7 @@ dependencies = [
  "num-traits",
  "plotters",
  "pretty_assertions",
+ "rand",
 ]
 
 [[package]]

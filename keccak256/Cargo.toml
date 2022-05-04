@@ -18,3 +18,4 @@ gadgets = { path = "../gadgets" }
 
 [dev-dependencies]
 pretty_assertions = "1.0"
+rand = "0.8"
