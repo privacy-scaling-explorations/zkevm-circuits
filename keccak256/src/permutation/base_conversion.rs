@@ -99,7 +99,7 @@ impl<F: Field> BaseConversionConfig<F> {
     ) -> Result<AssignedCell<F, F>, Error> {
         let (input_coefs, output_coefs, _) = self
             .base_info
-            .compute_coefs(*input.value().unwrap_or(&F::zero()))?;
+            .compute_coefs(input.value().copied().unwrap_or_default())?;
 
         layouter.assign_region(
             || "Base conversion",

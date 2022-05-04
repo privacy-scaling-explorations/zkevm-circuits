@@ -106,7 +106,7 @@ impl<F: Field> WordBuilderConfig<F> {
                     .iter()
                     .enumerate()
                     .map(|(idx, byte_cell)| {
-                        F::from(1u64 << (idx * 8)) * byte_cell.value().unwrap_or(&F::zero())
+                        F::from(1u64 << (idx * 8)) * byte_cell.value().copied().unwrap_or_default()
                     })
                     .reduce(|acc, byte_shifted| acc + byte_shifted)
                     // Unwrapping is safe here as we recieve an array that contails all elements.
@@ -135,7 +135,7 @@ mod tests {
         plonk::{Advice, Any, Circuit},
     };
     use pairing::bn256::Fr;
-    //use pretty_assertions::assert_eq;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_word_construction_gate() {
