@@ -10,6 +10,12 @@ on:
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
 
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_CACHE_SIZE: 2G
+  SCCACHE_DIR: /home/runner/.cache/sccache
+  # SCCACHE_RECACHE: 1 # Uncomment this to clear cache, then comment it back out
+
 jobs:
   test:
     if: github.event.pull_request.draft == false
@@ -21,6 +27,9 @@ jobs:
         # We don't need to test across multiple platforms yet
         # os: [ubuntu-latest, windows-latest, macOS-latest]
         os: [ubuntu-latest]
+        include:
+          - os: ubuntu-latest
+            sccache-path: /home/runner/.cache/sccache
 
     steps:
       - uses: actions/checkout@v2
@@ -47,11 +56,37 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install and run sccache
+        env:
+          LINK: https://github.com/mozilla/sccache/releases/download
+          SCCACHE_VERSION: 0.2.13
+        run: |
+          cd $RUNNER_TEMP
+          SCCACHE_FILE=sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl
+          mkdir -p $HOME/.local/bin
+          curl -L "$LINK/$SCCACHE_VERSION/$SCCACHE_FILE.tar.gz" | tar xz
+          mv -f $SCCACHE_FILE/sccache $HOME/.local/bin/sccache
+          chmod +x $HOME/.local/bin/sccache
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          printf "[build]\nrustc-wrapper = \"/home/runner/.cargo/bin/sccache\"" >> ~/.cargo/config
+          sccache --start-server
+      - name: Restore sccache
+        uses: actions/cache@v2
+        continue-on-error: false
+        with:
+          path: ${{ matrix.sccache-path }}
+          key: ${{ runner.os }}-sccache-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+                        ${{ runner.os }}-sccache-
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
+      - name: Print sccache stats
+        run: sccache --show-stats
+      - name: Stop sccache server
+        run: sccache --stop-server || true
 
   build:
     if: github.event.pull_request.draft == false
