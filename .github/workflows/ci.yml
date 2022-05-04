@@ -29,7 +29,7 @@ jobs:
           override: false
       # Go cache for building geth-utils
       - name: Go cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cache/go-build
@@ -38,7 +38,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -73,7 +73,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
       # Go cache for building geth-utils
       - name: Go cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cache/go-build
@@ -82,7 +82,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -116,7 +116,7 @@ jobs:
           override: false
       # Go cache for building geth-utils
       - name: Go cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cache/go-build
@@ -125,7 +125,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -154,7 +154,7 @@ jobs:
           override: false
       # Go cache for building geth-utils
       - name: Go cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cache/go-build
@@ -163,7 +163,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -198,7 +198,7 @@ jobs:
           override: false
       # Go cache for building geth-utils
       - name: Go cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cache/go-build
@@ -207,7 +207,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
