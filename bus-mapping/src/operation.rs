@@ -220,7 +220,7 @@ impl fmt::Debug for StackOp {
 }
 
 impl StackOp {
-    /// Create a new instance of a `MemoryOp` from it's components.
+    /// Create a new instance of a `StackOp` from it's components.
     pub const fn new(call_id: usize, address: StackAddress, value: Word) -> StackOp {
         StackOp {
             call_id,
@@ -731,6 +731,32 @@ impl Op for CallContextOp {
 
     fn reverse(&self) -> Self {
         unreachable!("CallContextOp can't be reverted")
+    }
+}
+
+impl CallContextOp {
+    /// Create a new instance of a `CallContextOp` from it's components.
+    pub const fn new(call_id: usize, field: CallContextField, value: Word) -> CallContextOp {
+        CallContextOp {
+            call_id,
+            field,
+            value,
+        }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::CallContext
+    }
+
+    /// Returns the call id associated to this Operation.
+    pub const fn call_id(&self) -> usize {
+        self.call_id
+    }
+
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
+        &self.value
     }
 }
 
