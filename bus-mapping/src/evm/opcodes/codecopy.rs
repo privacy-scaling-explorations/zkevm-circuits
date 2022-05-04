@@ -64,9 +64,9 @@ fn gen_memory_copy_step(
     aux_data: StepAuxiliaryData,
     code: &[u8],
 ) -> Result<(), Error> {
-    for idx in 0..std::cmp::min(aux_data.bytes_left() as usize, MAX_COPY_BYTES) {
-        let addr = (aux_data.src_addr() as usize) + idx;
-        let byte = if addr < (aux_data.src_addr_end() as usize) {
+    for idx in 0..std::cmp::min(aux_data.bytes_left as usize, MAX_COPY_BYTES) {
+        let addr = (aux_data.src_addr as usize) + idx;
+        let byte = if addr < (aux_data.src_addr_end as usize) {
             code[addr]
         } else {
             0
@@ -74,7 +74,7 @@ fn gen_memory_copy_step(
         state.push_memory_op(
             exec_step,
             RW::WRITE,
-            ((aux_data.dst_addr() as usize) + idx).into(),
+            ((aux_data.dst_addr as usize) + idx).into(),
             byte,
         )?;
     }

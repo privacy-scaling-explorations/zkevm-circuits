@@ -125,10 +125,10 @@ impl<'a> CircuitInputStateRef<'a> {
         // Add the operation into reversible_ops if this call is not persistent
         if !self.call()?.is_persistent {
             self.tx_ctx
-                .reversion_groups_mut()
+                .reversion_groups
                 .last_mut()
                 .expect("reversion_groups should not be empty for non-persistent call")
-                .op_refs_mut()
+                .op_refs
                 .push((self.tx.steps().len(), op_ref));
         }
 
@@ -237,7 +237,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.tx.push_call(call);
 
         self.block_ctx
-            .call_map_mut()
+            .call_map
             .insert(call_id, (self.block.txs.len(), call_idx));
     }
 
@@ -274,7 +274,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
             .tx_ctx
-            .call_is_success()
+            .call_is_success
             .get(self.tx.calls().len())
             .unwrap();
         let kind = CallKind::try_from(step.op)?;
@@ -464,12 +464,12 @@ impl<'a> CircuitInputStateRef<'a> {
     fn handle_reversion(&mut self) {
         let reversion_group = self
             .tx_ctx
-            .reversion_groups_mut()
+            .reversion_groups
             .pop()
             .expect("reversion_groups should not be empty for non-persistent call");
 
         // Apply reversions
-        for (step_index, op_ref) in reversion_group.op_refs().iter().rev().copied() {
+        for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
                 self.apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
@@ -486,8 +486,8 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Set calls' `rw_counter_end_of_reversion`
         let rwc = self.block_ctx.rwc.0 - 1;
-        for (call_idx, reversible_write_counter_offset) in reversion_group.calls() {
-            self.tx.calls_mut()[*call_idx].rw_counter_end_of_reversion =
+        for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
+            self.tx.calls_mut()[call_idx].rw_counter_end_of_reversion =
                 rwc - reversible_write_counter_offset;
         }
     }

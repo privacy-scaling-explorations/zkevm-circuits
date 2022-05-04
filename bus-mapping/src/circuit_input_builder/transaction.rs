@@ -20,15 +20,15 @@ pub struct TransactionContext {
     /// Identifier if this transaction is last one of the block or not.
     is_last_tx: bool,
     /// Call stack.
-    calls: Vec<CallContext>,
+    pub(crate) calls: Vec<CallContext>,
     /// Call `is_success` indexed by `call_index`.
-    call_is_success: Vec<bool>,
+    pub(crate) call_is_success: Vec<bool>,
     /// Reversion groups by failure calls. We keep the reversion groups in a
     /// stack because it's possible to encounter a revert within a revert,
     /// and in such case, we must only process the reverted operation once:
     /// in the inner most revert (which we track with the last element in
     /// the reversion groups stack), and skip it in the outer revert.
-    reversion_groups: Vec<ReversionGroup>,
+    pub(crate) reversion_groups: Vec<ReversionGroup>,
 }
 
 impl TransactionContext {
@@ -96,30 +96,6 @@ impl TransactionContext {
         &self.calls
     }
 
-    /// Return a collection of all of the Call `is_success` field results
-    /// indexed by `call_index`.
-    pub fn call_is_success(&self) -> &[bool] {
-        &self.call_is_success
-    }
-
-    /// Return a mutable collection of all of the Call `is_success` field
-    /// results indexed by `call_index`.
-    pub fn call_is_success_mut(&mut self) -> &mut Vec<bool> {
-        &mut self.call_is_success
-    }
-
-    /// Return a collection of all of the [`ReversionGroup`]s inside of the Tx
-    /// Context.
-    pub fn reversion_groups(&self) -> &[ReversionGroup] {
-        &self.reversion_groups
-    }
-
-    /// Return a mutable reference to a collection containing all of the
-    /// [`ReversionGroup`]s inside of the Tx Context.
-    pub fn reversion_groups_mut(&mut self) -> &mut Vec<ReversionGroup> {
-        &mut self.reversion_groups
-    }
-
     /// Return the index of the current call (the last call in the call stack).
     pub(crate) fn call_index(&self) -> Result<usize, Error> {
         self.calls
@@ -155,12 +131,12 @@ impl TransactionContext {
                 .expect("calls should not be empty")
                 .reversible_write_counter;
             let caller_reversible_write_counter_offset = reversion_group
-                .calls()
+                .calls
                 .iter()
                 .find(|(call_idx, _)| *call_idx == caller_ctx.index)
                 .expect("calls should not be empty")
                 .1;
-            reversion_group.calls_mut().push((
+            reversion_group.calls.push((
                 call_idx,
                 caller_reversible_write_counter + caller_reversible_write_counter_offset,
             ));

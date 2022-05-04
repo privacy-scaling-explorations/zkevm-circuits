@@ -151,15 +151,15 @@ pub enum CopyDetails {
 #[derive(Clone, Copy, Debug)]
 pub struct StepAuxiliaryData {
     /// Source start address
-    src_addr: u64,
+    pub(crate) src_addr: u64,
     /// Destination address. (0x00..00 for Log related aux data).
-    dst_addr: u64,
+    pub(crate) dst_addr: u64,
     /// Bytes left
-    bytes_left: u64,
+    pub(crate) bytes_left: u64,
     /// Source end address
-    src_addr_end: u64,
+    pub(crate) src_addr_end: u64,
     /// Detail info about the copied data.
-    copy_details: CopyDetails,
+    pub(crate) copy_details: CopyDetails,
 }
 
 impl StepAuxiliaryData {

@@ -25,7 +25,7 @@ use std::iter::FromIterator;
 struct CircuitInputBuilderTx {
     builder: CircuitInputBuilder,
     tx: Transaction,
-    tx_ctx: TransactionContext,
+    pub(crate) tx_ctx: TransactionContext,
     step: ExecStep,
 }
 
@@ -53,10 +53,6 @@ impl CircuitInputBuilderTx {
             tx_ctx,
             step: ExecStep::new(geth_step, 0, RWCounter::new(), 0),
         }
-    }
-
-    pub(crate) fn tx_ctx_mut(&mut self) -> &mut TransactionContext {
-        &mut self.tx_ctx
     }
 
     fn state_ref(&mut self) -> CircuitInputStateRef {
@@ -369,7 +365,7 @@ fn tracer_err_address_collision() {
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     // Set up call context at CREATE2
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create(), step);
     // Set up account and contract that exist during the second CREATE2
     builder.builder.sdb.set_account(
@@ -493,7 +489,7 @@ fn tracer_err_code_store_out_of_gas() {
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     // Set up call context at CREATE
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create(), step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
@@ -599,7 +595,7 @@ fn tracer_err_invalid_code() {
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     // Set up call context at RETURN
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create(), step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
@@ -703,7 +699,7 @@ fn tracer_err_max_code_size_exceeded() {
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     // Set up call context at RETURN
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create(), step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
@@ -797,7 +793,7 @@ fn tracer_create_stop() {
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     // Set up call context at STOP
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create(), step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
@@ -1296,7 +1292,7 @@ fn tracer_err_write_protection() {
     assert_eq!(step.op, OpcodeId::SSTORE);
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(
         Call {
             call_id: 0,
@@ -1511,7 +1507,7 @@ fn create2_address() {
         .unwrap();
     let mut builder = CircuitInputBuilderTx::new(&block, step_create2);
     // Set up call context at CREATE2
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder
         .state_ref()
         .push_call(mock_internal_create(), step_create2);
@@ -1619,7 +1615,7 @@ fn create_address() {
         .unwrap();
     let mut builder = CircuitInputBuilderTx::new(&block, step_create);
     // Set up call context at CREATE
-    builder.tx_ctx_mut().call_is_success_mut().push(false);
+    builder.tx_ctx.call_is_success.push(false);
     builder
         .state_ref()
         .push_call(mock_internal_create(), step_create);

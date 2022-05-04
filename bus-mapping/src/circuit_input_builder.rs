@@ -95,7 +95,7 @@ impl<'a> CircuitInputBuilder {
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
 
-        self.block_ctx.call_map_mut().insert(
+        self.block_ctx.call_map.insert(
             call_id,
             (
                 eth_tx
@@ -120,7 +120,7 @@ impl<'a> CircuitInputBuilder {
             if matches!(op.field, CallContextField::RwCounterEndOfReversion) {
                 let (tx_idx, call_idx) = self
                     .block_ctx
-                    .call_map()
+                    .call_map
                     .get(&op.call_id)
                     .expect("call_id not found in call_map");
                 op.value = self.block.txs[*tx_idx].calls()[*call_idx]

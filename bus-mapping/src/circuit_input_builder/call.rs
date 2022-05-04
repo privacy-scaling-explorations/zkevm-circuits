@@ -120,10 +120,10 @@ pub struct ReversionGroup {
     /// this group. `reversible_write_counter_offset` is the number of
     /// reversible operations that have happened before the call within the
     /// same reversion group.
-    calls: Vec<(usize, usize)>,
+    pub(crate) calls: Vec<(usize, usize)>,
     /// List of `step_index` and [`OperationRef`] that have been done in this
     /// group.
-    op_refs: Vec<(usize, OperationRef)>,
+    pub(crate) op_refs: Vec<(usize, OperationRef)>,
 }
 
 impl ReversionGroup {
@@ -131,28 +131,5 @@ impl ReversionGroup {
     /// references lists.
     pub fn new(calls: Vec<(usize, usize)>, op_refs: Vec<(usize, OperationRef)>) -> Self {
         Self { calls, op_refs }
-    }
-    /// Returns the list of `index` and `reversible_write_counter_offset` of
-    /// calls belong to this group.
-    pub fn calls(&self) -> &[(usize, usize)] {
-        &self.calls
-    }
-
-    /// Returns a mutable reference to the list containing `index` and
-    /// `reversible_write_counter_offset` of calls belong to this group.
-    pub fn calls_mut(&mut self) -> &mut Vec<(usize, usize)> {
-        &mut self.calls
-    }
-
-    /// Returns a list of `step_index` and [`OperationRef`] that have been
-    /// performed in this group.
-    pub fn op_refs(&self) -> &[(usize, OperationRef)] {
-        &self.op_refs
-    }
-
-    /// Returns mutable reference to a list containing the `step_index` and
-    /// `OperationRef` that have been performed in this group.
-    pub fn op_refs_mut(&mut self) -> &mut Vec<(usize, OperationRef)> {
-        &mut self.op_refs
     }
 }
