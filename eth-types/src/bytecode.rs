@@ -1,7 +1,7 @@
 //! EVM byte code generator
 
 use crate::{evm_types::OpcodeId, Bytes, Word};
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 /// EVM Bytecode
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -139,6 +139,43 @@ impl Bytecode {
             CALL
         });
         self
+    }
+
+    /// Generate the diassembly
+    pub fn disasm(&self) -> String {
+        let mut asm = String::new();
+        let mut code_iter = self.code.iter();
+        while let Some(byte) = code_iter.next() {
+            let op = OpcodeId::try_from(*byte).unwrap();
+            if op.is_push() {
+                let n = (op.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
+                let mut value = vec![0u8; n];
+                for value_byte in value.iter_mut() {
+                    *value_byte = code_iter.next().cloned().unwrap();
+                }
+                asm.push_str(&format!("PUSH{}({:?})\n", n, Word::from(value.as_slice())));
+            } else {
+                asm.push_str(&format!("{:?}\n", op));
+            }
+        }
+        asm
+    }
+
+    /// Append asm
+    pub fn append_asm(&mut self, op: &str) {
+        if op.starts_with("PUSH") {
+            let n_value: Vec<_> = op[4..].splitn(3, ['(', ')']).collect();
+            let n = usize::from_str_radix(&n_value[0], 10).unwrap();
+            let value = if n_value[1].starts_with("0x") {
+                Word::from_str_radix(&n_value[1][2..], 16).unwrap()
+            } else {
+                Word::from_str_radix(&n_value[1], 10).unwrap()
+            };
+            self.push(n, value);
+        } else {
+            let opcode = OpcodeId::from_str(op).expect("unable to parse opcode");
+            self.write_op(opcode);
+        }
     }
 }
 

@@ -1,6 +1,8 @@
 //! Types needed for generating Ethereum traces
 
-use crate::{AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, Word, U64, ToBigEndian};
+use crate::{
+    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, Word, U64,
+};
 use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use std::collections::HashMap;

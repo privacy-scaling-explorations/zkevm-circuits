@@ -42,17 +42,17 @@ impl Refs {
     }
 }
 
-pub struct YamlStateTestBuilder {
-    lllc: Lllc,
+pub struct YamlStateTestBuilder<'a> {
+    lllc: &'a mut Lllc,
 }
 
-impl YamlStateTestBuilder {
-    pub fn new(lllc: Lllc) -> Self {
+impl<'a> YamlStateTestBuilder<'a> {
+    pub fn new(lllc: &'a mut Lllc) -> Self {
         Self { lllc }
     }
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
-    pub fn from_yaml(&mut self, source: &str) -> Result<Vec<StateTest>> {
+    pub fn from_yaml(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         // get the yaml root element
         let doc = yaml_rust::YamlLoader::load_from_str(source)?
             .into_iter()
@@ -150,6 +150,7 @@ impl YamlStateTestBuilder {
 
                             // add the test
                             tests.push(StateTest {
+                                path: path.to_string(),
                                 id: format!(
                                     "{}_d{}{}_g{}_v{}",
                                     test_name, idx_data, data_label, idx_gas, idx_value
@@ -277,7 +278,7 @@ impl YamlStateTestBuilder {
         } else if let Some(abi) = tags.get(":abi") {
             Ok((abi::encode_funccall(abi)?, label))
         } else {
-            bail!("do not know what to do with calldata: '{:?}'",yaml)
+            bail!("do not know what to do with calldata: '{:?}'", yaml)
         }
     }
 
@@ -295,7 +296,7 @@ impl YamlStateTestBuilder {
             }
         } else if let Some(raw) = tags.get(":raw") {
             Ok(Bytes::from(hex::decode(&raw[2..])?))
-         } else if let Some(_yul) = tags.get(":yul") {
+        } else if let Some(_yul) = tags.get(":yul") {
             bail!("yul not supported yet")
         } else {
             bail!("do not know what to do with code '{:?}'", yaml);
@@ -507,8 +508,8 @@ arith:
 
     #[test]
     fn combinations() -> Result<()> {
-        let tcs = YamlStateTestBuilder::new(Lllc::default())
-            .from_yaml(&Template::default().to_string())?
+        let tcs = YamlStateTestBuilder::new(&mut Lllc::default())
+            .from_yaml("", &Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
             .collect::<HashMap<_, _>>();
@@ -534,14 +535,15 @@ arith:
 
     #[test]
     fn parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default())
-            .from_yaml(&Template::default().to_string())?;
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default())
+            .from_yaml("", &Template::default().to_string())?;
         let current = tc.remove(0);
 
         let a94f5 = address!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
 
         let expected = StateTest {
+            path: "".into(),
             id: "arith_d0_g0_v0".into(),
             env: Env {
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
@@ -607,15 +609,16 @@ arith:
     fn result_pass() -> Result<()> {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-        let mut tc = YamlStateTestBuilder::new(Lllc::default())
-            .from_yaml(&Template::default().to_string())?;
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default())
+            .from_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
         t1.run(&StateTestConfig::default())?;
         Ok(())
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+            "",
             &Template {
                 res_storage: "2".into(),
                 ..Default::default()
@@ -635,7 +638,8 @@ arith:
     }
     #[test]
     fn bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+            "",
             &Template {
                 res_balance: "1000000000002".into(),
                 ..Default::default()
@@ -655,7 +659,8 @@ arith:
 
     #[test]
     fn bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+            "",
             &Template {
                 res_code: ":raw 0x600200".into(),
                 ..Default::default()
@@ -675,7 +680,8 @@ arith:
 
     #[test]
     fn bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+            "",
             &Template {
                 res_nonce: "2".into(),
                 ..Default::default()
@@ -696,7 +702,8 @@ arith:
 
     #[test]
     fn sstore() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+            "",
             &Template {
                 pre_code: ":raw 0x607760005500".into(),
                 res_code: ":raw 0x607760005500".into(),
@@ -711,7 +718,8 @@ arith:
 
     #[test]
     fn fail_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+            "",
             &Template {
                 pre_code: ":raw 0xF4".into(),
                 res_code: ":raw 0xF4".into(),

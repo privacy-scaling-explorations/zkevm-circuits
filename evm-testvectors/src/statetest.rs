@@ -28,20 +28,22 @@ pub enum StateTestError {
         found: U256,
     },
     #[error("test skipped due {0} > max gas")]
-    TestMaxGasLimit(u64),
+    SkipTestMaxGasLimit(u64),
     #[error("test skipped unimplemented opcode {0}")]
-    UnimplementedOpcode(String),
+    SkipUnimplementedOpcode(String),
 }
 
 pub struct StateTestConfig {
     pub max_gas: Gas,
     pub unimplemented_opcodes: Vec<OpcodeId>,
+    pub run_circuit: bool,
 }
 impl Default for StateTestConfig {
     fn default() -> Self {
         Self {
             max_gas: Gas(1000000),
             unimplemented_opcodes: Vec::new(),
+            run_circuit: true,
         }
     }
 }
@@ -82,6 +84,7 @@ type StateTestResult = HashMap<Address, AccountMatch>;
 
 #[derive(PartialEq, Clone, Eq, Debug)]
 pub struct StateTest {
+    pub path: String,
     pub id: String,
     pub env: Env,
     pub secret_key: Bytes,
@@ -94,6 +97,96 @@ pub struct StateTest {
     pub data: Bytes,
     pub pre: HashMap<Address, Account>,
     pub result: StateTestResult,
+}
+
+impl std::fmt::Display for StateTest {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use prettytable::Table;
+        let mut table = Table::new();
+        table.add_row(row!["id", self.id]);
+        table.add_row(row!["path", self.path]);
+        table.add_row(row!["coinbase", format!("{:?}", self.env.current_coinbase)]);
+
+        table.add_row(row![
+            "difficulty",
+            format!("{}", self.env.current_difficulty)
+        ]);
+        table.add_row(row!["number", format!("{}", self.env.current_number)]);
+        table.add_row(row!["timestamp", format!("{}", self.env.current_timestamp)]);
+        table.add_row(row!["prev_hash", format!("{:?}", self.env.previous_hash)]);
+        table.add_row(row!["sk", format!("{}", hex::encode(&self.secret_key))]);
+        table.add_row(row!["from", format!("{:?}", self.from)]);
+        table.add_row(row!["to", format!("{:?}", self.to)]);
+        table.add_row(row!["gas_limit", format!("{}", self.gas_limit)]);
+        table.add_row(row!["gas_price", format!("{}", self.gas_price)]);
+        table.add_row(row!["nonce", format!("{}", self.nonce)]);
+        table.add_row(row!["value", format!("{}", self.value)]);
+        table.add_row(row!["data", format!("{}", hex::encode(&self.data))]);
+
+        let mut addrs: Vec<_> = self.pre.keys().collect();
+        addrs.extend(self.result.keys());
+        addrs.sort();
+        addrs.dedup();
+        for addr in addrs {
+            let mut state = HashMap::new();
+            if let Some(pre) = self.pre.get(addr) {
+                state.insert("balance".to_string(), format!("{}", pre.balance));
+                state.insert("nonce".to_string(), format!("{}", pre.nonce));
+                state.insert("code".to_string(), format!("{}", hex::encode(&pre.code)));
+                for (key, value) in &pre.storage {
+                    let (k, v) = (format!("slot {}", key), format!("{}", value));
+                    state.insert(k, v);
+                }
+            }
+            if let Some(result) = self.result.get(addr) {
+                let none = String::from("∅");
+                if let Some(balance) = result.balance {
+                    let pre = state.get("balance").unwrap_or(&none);
+                    let text = format!("{} → {}", pre, balance);
+                    state.insert("balance".to_string(), text);
+                }
+                if let Some(code) = &result.code {
+                    let pre = state.get("code").unwrap_or(&none);
+                    let text = format!("{} → {}", pre, code);
+                    state.insert("code".to_string(), text);
+                }
+                if let Some(nonce) = &result.nonce {
+                    let pre = state.get("nonce").unwrap_or(&none);
+                    let text = format!("{} → {}", pre, nonce);
+                    state.insert("nonce".to_string(), text);
+                }
+                for (key, value) in &result.storage {
+                    let (k, v) = (format!("slot {}", key), format!("{}", value));
+                    let pre = state.get(&k).unwrap_or(&none);
+                    let text = format!("{} → {}", pre, v);
+                    state.insert(k, text);
+                }
+            }
+            let mut text = String::new();
+            let max_len = 100;
+            let mut keys: Vec<_> = state.keys().collect();
+            keys.sort();
+            for k in keys {
+                let v = state.get(k).unwrap();
+                let max_len = max_len - k.len();
+                for i in 0..=v.len() / max_len {
+                    if i == 0 {
+                        text.push_str(&k);
+                        text.push_str(": ");
+                    } else {
+                        let padding: String = std::iter::repeat(" ").take(k.len() + 2).collect();
+                        text.push_str(&padding);
+                    }
+                    text.push_str(&v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]);
+                    text.push_str("\n");
+                }
+            }
+            table.add_row(row![format!("{:?}", addr), text]);
+        }
+        write!(f, "{}", table.to_string())?;
+
+        Ok(())
+    }
 }
 
 impl StateTest {
@@ -187,6 +280,15 @@ impl StateTest {
             .expect("circuit should pass");
     }
 
+    pub fn geth_trace(self) -> Result<GethExecTrace, StateTestError> {
+        let (_, trace_config, _) = self.clone().into_traceconfig();
+
+        let mut geth_traces = external_tracer::trace(&trace_config)
+            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+
+        Ok(geth_traces.remove(0))
+    }
+
     pub fn run(self, config: &StateTestConfig) -> Result<(), StateTestError> {
         // get the geth traces
         let (_, trace_config, post) = self.clone().into_traceconfig();
@@ -197,27 +299,29 @@ impl StateTest {
         // we are not checking here geth_traces[0].failed, since
         // there are some tests that makes the tx failing
         // (eg memory filler tests)
-        
-       if let Some(step) = geth_traces[0]
+
+        if let Some(step) = geth_traces[0]
             .struct_logs
             .iter()
             .find(|step| config.unimplemented_opcodes.contains(&step.op))
         {
-            return Err(StateTestError::UnimplementedOpcode(format!(
+            return Err(StateTestError::SkipUnimplementedOpcode(format!(
                 "{:?}",
                 step.op
             )));
         }
 
         if geth_traces[0].gas > config.max_gas {
-            return Err(StateTestError::TestMaxGasLimit(geth_traces[0].gas.0));
+            return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }
 
         let builder = Self::create_input_builder(trace_config, geth_traces)?;
 
         Self::check_post(&builder, &post)?;
-        Self::test_circuit(self, &builder);
 
+        if config.run_circuit {
+            Self::test_circuit(self, &builder);
+        }
         Ok(())
     }
 
