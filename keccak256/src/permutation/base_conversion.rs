@@ -381,7 +381,7 @@ mod tests {
             input_lane: biguint_to_f::<Fp>(&input),
             output_lane: biguint_to_f::<Fp>(&convert_b9_lane_to_b13(input)),
         };
-        let k = 17;
+        let k = 16;
         let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
