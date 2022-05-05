@@ -15,6 +15,7 @@ Before starting, we encourage you to take a look to the following documentation 
 It's up to the mantainers to decide whether more than one review is required.
 - Avoid requesting reviews of a PR in `zkevm-circuits` when the implementation follows a spec that is not yet in `master` at `zkevm-specs`.  In such case, set the `zkevm-circuits` PR as draft to signal you're working on it but it's not yet ready for review.
 - Provide clear title and description of any PR and/or Issue you raise. That helps a lot to the reviewers/mantainers and other contributors to understand it's scope and purpose.
+- The author of the PR should be the one to merge their own PR after the required approvals.  Only when the author has no merge permission will a reviewer perform the merge.
 
 ## Opcodes
 
