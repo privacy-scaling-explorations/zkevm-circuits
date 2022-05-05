@@ -201,6 +201,22 @@ pub enum TxReceiptFieldTag {
     LogLength,
 }
 
+impl TxReceiptFieldTag {
+    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
+        [
+            Self::PostStateOrStatus,
+            Self::CumulativeGasUsed,
+            Self::LogLength,
+        ]
+        .iter()
+        .copied()
+    }
+
+    pub(crate) fn amount() -> usize {
+        Self::iterator().count()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,

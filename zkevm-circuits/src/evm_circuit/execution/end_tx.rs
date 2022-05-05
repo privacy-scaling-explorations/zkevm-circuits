@@ -253,7 +253,10 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
         } else {
-            let rw = &block.rws[(RwTableTag::TxReceipt, (tx.id - 1) * 3 - 1)];
+            let rw = &block.rws[(
+                RwTableTag::TxReceipt,
+                (tx.id - 1) * TxReceiptFieldTag::amount() - 1,
+            )];
             rw.receipt_value()
         };
 

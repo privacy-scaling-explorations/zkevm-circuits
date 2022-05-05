@@ -403,7 +403,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
 pub fn gen_end_tx_ops(
     state: &mut CircuitInputStateRef,
-    tx_cumulative_gas: &mut HashMap<usize, u64>,
+    cumulative_gas_used: &mut HashMap<usize, u64>,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();
@@ -502,7 +502,7 @@ pub fn gen_end_tx_ops(
     let gas_used = state.tx.gas - exec_step.gas_left.0;
     let mut current_cumulative_gas_used: u64 = 0;
     if state.tx_ctx.id() > 1 {
-        current_cumulative_gas_used = *tx_cumulative_gas.get(&(state.tx_ctx.id() - 1)).unwrap();
+        current_cumulative_gas_used = *cumulative_gas_used.get(&(state.tx_ctx.id() - 1)).unwrap();
         // query pre tx cumulative gas
         state.push_op(
             &mut exec_step,
@@ -525,7 +525,7 @@ pub fn gen_end_tx_ops(
         },
     );
 
-    tx_cumulative_gas.insert(state.tx_ctx.id(), current_cumulative_gas_used + gas_used);
+    cumulative_gas_used.insert(state.tx_ctx.id(), current_cumulative_gas_used + gas_used);
 
     if !state.tx_ctx.is_last_tx() {
         state.push_op(
