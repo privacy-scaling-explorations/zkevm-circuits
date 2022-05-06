@@ -43,7 +43,7 @@ impl<F: Field> PaddingConfig<F> {
         let one = Expression::Constant(F::one());
         let diff_is_zero = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(q_all) * meta.query_advice(flag_enable, Rotation::cur()),
+            |meta| meta.query_selector(q_all),
             |meta| {
                 meta.query_advice(input_len, Rotation::cur())
                     - meta.query_advice(acc_len, Rotation::cur())
@@ -54,7 +54,7 @@ impl<F: Field> PaddingConfig<F> {
             let q_all = meta.query_selector(q_all);
             let flag_enable = meta.query_advice(flag_enable, Rotation::cur());
             let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
-            let byte_cur = meta.query_advice(byte, Rotation::next());
+            let byte_cur = meta.query_advice(byte, Rotation::cur());
 
             vec![q_all * flag_enable * (is_pad_zone_cur * byte_cur)]
         });
@@ -124,8 +124,9 @@ impl<F: Field> PaddingConfig<F> {
             |mut region| {
                 let last = BYTES_LEN_17_WORDS - 1;
                 self.q_last.enable(&mut region, last)?;
-                let mut acc_len = F::zero();
+                let mut acc_len = acc_len_cell.value().cloned().unwrap_or_default();
                 let mut is_pad_zone = F::zero();
+                let mut padded_byte = [0u8; BYTES_LEN_17_WORDS];
                 for (offset, &byte) in bytes.iter().enumerate().take(BYTES_LEN_17_WORDS) {
                     self.q_all.enable(&mut region, offset)?;
                     if offset != last {
@@ -143,36 +144,22 @@ impl<F: Field> PaddingConfig<F> {
                         self.input_len,
                         offset,
                     )?;
-                    acc_len = {
-                        if offset == 0 {
-                            acc_len_cell.copy_advice(
-                                || "acc_len_first",
-                                &mut region,
-                                self.acc_len,
-                                offset,
-                            )?;
-                            acc_len_cell.value().cloned().unwrap_or_default()
-                        } else {
-                            region.assign_advice(
-                                || "acc_len_rest",
-                                self.acc_len,
-                                offset,
-                                || Ok(acc_len),
-                            )?;
-                            acc_len.add(F::one())
-                        }
-                    };
-                    let diff_value = Some(
-                        input_len_cell.value().cloned().unwrap_or_default()
-                            - acc_len_cell.value().cloned().unwrap_or_default(),
-                    );
+
+                    region.assign_advice(
+                        || "acc_len_rest",
+                        self.acc_len,
+                        offset,
+                        || Ok(acc_len),
+                    )?;
+                    let diff_value =
+                        Some(input_len_cell.value().cloned().unwrap_or_default() - acc_len);
                     let is_zero = diff_value
                         .map(|diff_value| F::from(diff_value == F::zero()))
                         .unwrap_or_default();
                     diff_is_zero_chip.assign(&mut region, offset, diff_value)?;
 
-                    let byte = F::from(byte as u64);
-                    region.assign_advice(|| "byte", self.byte, offset, || Ok(byte))?;
+                    let byte_f = F::from(byte as u64);
+                    region.assign_advice(|| "byte", self.byte, offset, || Ok(byte_f))?;
                     is_pad_zone += is_zero;
                     region.assign_advice(
                         || "is pad zone",
@@ -180,19 +167,28 @@ impl<F: Field> PaddingConfig<F> {
                         offset,
                         || Ok(is_pad_zone),
                     )?;
+                    padded_byte[offset] = byte
+                        + diff_value
+                            .map(|diff_value| (diff_value == F::zero()) as u8)
+                            .unwrap_or_default()
+                            * 0x80u8
+                        + ((offset == last) as u8);
                     region.assign_advice(
                         || "padded byte",
                         self.padded_byte,
                         offset,
                         || {
-                            Ok(byte
+                            Ok(byte_f
                                 // pad head
                                 + is_zero * F::from(0x80)
                                 // pad tail
                                 + F::from(offset == last))
                         },
                     )?;
+                    acc_len += F::one();
                 }
+                println!("bytes {:?}", bytes);
+                println!("padded bytes {:?}", padded_byte);
 
                 Ok(())
             },
@@ -209,8 +205,10 @@ mod tests {
         plonk::{Advice, Circuit},
     };
     use pairing::bn256::Fr;
+    use pretty_assertions::assert_eq;
     use rand::{thread_rng, Fill};
     use std::marker::PhantomData;
+
     struct MyCircuit<F> {
         bytes: [u8; BYTES_LEN_17_WORDS],
         parent_flag: bool,
@@ -296,8 +294,8 @@ mod tests {
             config.padding_conf.assign_region(
                 &mut layouter,
                 parent_flag,
-                acc_len,
                 input_len,
+                acc_len,
                 self.bytes,
             )?;
 
