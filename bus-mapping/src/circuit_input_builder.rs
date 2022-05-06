@@ -13,7 +13,7 @@ mod transaction;
 use self::access::gen_state_access_trace;
 use crate::error::Error;
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, CallContextOp, RW};
+use crate::operation::{CallContextField, RW};
 use crate::rpc::GethClient;
 use crate::state_db::{self, CodeDB, StateDB};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
