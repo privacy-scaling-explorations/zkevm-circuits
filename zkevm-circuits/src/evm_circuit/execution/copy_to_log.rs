@@ -210,7 +210,7 @@ pub mod test {
     };
     use eth_types::{evm_types::OpcodeId, Word};
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use std::collections::HashMap;
     use std::convert::TryInto;
 

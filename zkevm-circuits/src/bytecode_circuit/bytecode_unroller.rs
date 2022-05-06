@@ -691,9 +691,9 @@ mod tests {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        pairing::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
     };
-    use pairing::bn256::Fr;
 
     #[derive(Default)]
     struct MyCircuit<F: Field> {

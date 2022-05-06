@@ -287,9 +287,9 @@ mod tests {
     use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 

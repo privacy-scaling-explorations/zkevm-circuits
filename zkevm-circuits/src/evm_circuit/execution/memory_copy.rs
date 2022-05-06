@@ -245,7 +245,7 @@ pub mod test {
     use bus_mapping::circuit_input_builder::{CopyDetails, StepAuxiliaryData};
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use std::collections::HashMap;
 
     pub(crate) const CALL_ID: usize = 1;

@@ -1,11 +1,11 @@
 use env_logger::Env;
+use halo2_proofs::pairing::bn256::G1Affine;
 use halo2_proofs::poly::commitment::Params;
 use hyper::body::Buf;
 use hyper::body::HttpBody;
 use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use pairing::bn256::G1Affine;
 use std::env::var;
 use std::fs::File;
 use std::sync::Arc;

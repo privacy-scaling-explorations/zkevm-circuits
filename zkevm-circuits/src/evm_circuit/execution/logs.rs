@@ -255,7 +255,7 @@ mod test {
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
 
     // make dynamic byte code sequence base on topics
