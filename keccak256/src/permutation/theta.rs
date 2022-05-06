@@ -103,6 +103,7 @@ mod tests {
     use crate::common::*;
     use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
+    use eth_types::Field;
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},

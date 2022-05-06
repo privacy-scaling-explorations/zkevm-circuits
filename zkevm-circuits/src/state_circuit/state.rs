@@ -12,7 +12,6 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    pairing::arithmetic::FieldExt,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -53,7 +52,7 @@ const MAX_DEGREE: usize = 15;
 
 /// A mapping derived from witnessed operations.
 #[derive(Clone, Debug)]
-pub(crate) struct BusMapping<F: FieldExt> {
+pub(crate) struct BusMapping<F: Field> {
     rw_counter: Variable<F, F>,
     target: Variable<F, F>,
     is_write: Variable<F, F>,
@@ -64,7 +63,7 @@ pub(crate) struct BusMapping<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub struct Config<
-    F: FieldExt,
+    F: Field,
     // When SANITY_CHECK is true, max_address/rw_counter/stack_address are
     // required to be in the range of
     // MEMORY_ADDRESS_MAX/RW_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
@@ -593,7 +592,7 @@ impl<
 /// State Circuit struct.
 #[derive(Default)]
 pub struct StateCircuit<
-    F: FieldExt,
+    F: Field,
     const SANITY_CHECK: bool,
     const RW_COUNTER_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
@@ -607,7 +606,7 @@ pub struct StateCircuit<
 }
 
 impl<
-        F: FieldExt,
+        F: Field,
         const SANITY_CHECK: bool,
         const RW_COUNTER_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
