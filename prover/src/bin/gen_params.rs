@@ -1,5 +1,5 @@
+use halo2_proofs::pairing::bn256::{Bn256, G1Affine};
 use halo2_proofs::poly::commitment::Params;
-use pairing::bn256::{Bn256, G1Affine};
 use std::env;
 use std::fs::File;
 use std::io::Write;

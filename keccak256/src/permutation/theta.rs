@@ -103,13 +103,13 @@ mod tests {
     use crate::common::*;
     use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 

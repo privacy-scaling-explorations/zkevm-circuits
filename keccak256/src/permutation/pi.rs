@@ -1,6 +1,6 @@
 use halo2_proofs::circuit::AssignedCell;
+use halo2_proofs::pairing::arithmetic::FieldExt;
 use itertools::Itertools;
-use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
 /// The Keccak Pi step

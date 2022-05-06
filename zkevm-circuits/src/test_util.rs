@@ -5,8 +5,8 @@ use crate::{
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
+use halo2_proofs::pairing::bn256::Fr;
 use mock::TestContext;
-use pairing::bn256::Fr;
 
 #[cfg(test)]
 #[ctor::ctor]

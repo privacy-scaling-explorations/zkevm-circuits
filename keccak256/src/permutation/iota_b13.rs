@@ -199,9 +199,9 @@ mod tests {
     use crate::common::{PERMUTATION, ROUND_CONSTANTS};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
     use std::marker::PhantomData;
