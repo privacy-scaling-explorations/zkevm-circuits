@@ -132,9 +132,9 @@ mod tests {
             metadata::{Column as MetaColumn, Region},
             FailureLocation, MockProver, VerifyFailure,
         },
+        pairing::bn256::Fr,
         plonk::{Advice, Any, Circuit},
     };
-    use pairing::bn256::Fr;
     use pretty_assertions::assert_eq;
 
     #[test]

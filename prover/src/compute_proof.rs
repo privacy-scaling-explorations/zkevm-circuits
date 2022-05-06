@@ -2,11 +2,11 @@ use bus_mapping::circuit_input_builder::BuilderClient;
 use bus_mapping::rpc::GethClient;
 use ethers_providers::Http;
 use halo2_proofs::{
+    pairing::bn256::{Fr, G1Affine},
     plonk::*,
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
-use pairing::bn256::{Fr, G1Affine};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use std::str::FromStr;

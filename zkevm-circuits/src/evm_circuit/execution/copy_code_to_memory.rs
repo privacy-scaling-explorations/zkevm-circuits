@@ -259,7 +259,7 @@ pub(crate) mod test {
     };
     use eth_types::{bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr;
+    use halo2_proofs::pairing::bn256::Fr;
 
     use crate::evm_circuit::{
         step::ExecutionState,
