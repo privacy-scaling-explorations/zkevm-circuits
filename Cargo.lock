@@ -478,7 +478,7 @@ dependencies = [
  "ark-std",
  "bus-mapping",
  "eth-types",
- "ff 0.11.0",
+ "ff 0.11.1",
  "halo2_proofs",
  "itertools",
  "keccak256",
@@ -1422,9 +1422,9 @@ dependencies = [
 
 [[package]]
 name = "ff"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2958d04124b9f27f175eaeb9a9f383d026098aa837eadd8ba22c11f13a05b9e"
+checksum = "131655483be284720a17d74ff97592b8e76576dc25563148601df2d7c9080924"
 dependencies = [
  "bitvec 0.22.3",
  "rand_core",
@@ -1633,7 +1633,6 @@ version = "0.1.0"
 dependencies = [
  "digest 0.7.6",
  "eth-types",
- "ff 0.11.0",
  "halo2_proofs",
  "rand",
  "rand_xorshift",
@@ -1731,7 +1730,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5ac374b108929de78460075f3dc439fa66df9d8fc77e8f12caa5165fcf0c89"
 dependencies = [
  "byteorder",
- "ff 0.11.0",
+ "ff 0.11.1",
  "rand_core",
  "subtle",
 ]
@@ -1764,12 +1763,12 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_05_03#cfea08dd621fb7ac424b8aac5d5a947fe8307fab"
+source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_05_06#9992785dca35926ded74f6ec7c8dfbac507317d0"
 dependencies = [
  "blake2b_simd",
  "bumpalo",
  "cfg-if 0.1.10",
- "ff 0.11.0",
+ "ff 0.11.1",
  "group 0.11.0",
  "pairing_bn256",
  "plotters",
@@ -1894,7 +1893,7 @@ dependencies = [
  "hyper",
  "rustls 0.20.4",
  "tokio",
- "tokio-rustls 0.23.3",
+ "tokio-rustls 0.23.4",
 ]
 
 [[package]]
@@ -2011,7 +2010,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers",
- "ff 0.11.0",
+ "ff 0.11.1",
  "halo2_proofs",
  "lazy_static",
  "log",
@@ -2360,9 +2359,9 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "openssl"
-version = "0.10.39"
+version = "0.10.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28f3916d46d9d813a62d7b7d2724d7b14785ac999fb623d990ee4603f9122742"
+checksum = "fb81a6430ac911acb25fe5ac8f1d2af1b4ea8a4fdfda0f1ee4292af2e2d8eb0e"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -2414,10 +2413,10 @@ dependencies = [
 
 [[package]]
 name = "pairing_bn256"
-version = "0.1.0"
-source = "git+https://github.com/appliedzkp/pairing#37218794db1ad2e4ce58d29ec22c68238ad556a7"
+version = "0.1.1"
+source = "git+https://github.com/appliedzkp/pairing?tag=v0.1.1#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
 dependencies = [
- "ff 0.11.0",
+ "ff 0.11.1",
  "group 0.11.0",
  "rand",
  "rand_core",
@@ -2723,9 +2722,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.37"
+version = "1.0.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec757218438d5fda206afc041538b2f6d889286160d649a86a24d37e1235afd1"
+checksum = "9027b48e9d4c9175fa2218adf3557f91c1137021739951d4932f5f8268ac48aa"
 dependencies = [
  "unicode-xid",
 ]
@@ -2917,7 +2916,7 @@ dependencies = [
  "serde_urlencoded",
  "tokio",
  "tokio-native-tls",
- "tokio-rustls 0.23.3",
+ "tokio-rustls 0.23.4",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -3215,9 +3214,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.80"
+version = "1.0.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f972498cf015f7c0746cac89ebe1d6ef10c293b94175a243a2d9442c163d9944"
+checksum = "9b7ce2b32a1aed03c558dc61a5cd328f15aff2dbc17daad8fb8af04d2100e15c"
 dependencies = [
  "itoa 1.0.1",
  "ryu",
@@ -3571,9 +3570,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.23.3"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4151fda0cf2798550ad0b34bcfc9b9dcc2a9d2471c895c68f3a8818e54f2389e"
+checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
  "rustls 0.20.4",
  "tokio",
@@ -4082,7 +4081,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-core",
- "ff 0.11.0",
+ "ff 0.11.1",
  "gadgets",
  "halo2_proofs",
  "hex",

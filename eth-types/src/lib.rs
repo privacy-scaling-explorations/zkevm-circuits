@@ -23,8 +23,13 @@ pub mod geth_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::pairing;
-use pairing::group::ff::PrimeField;
+use halo2_proofs::{
+    arithmetic::{Field as Halo2Field, FieldExt},
+    pairing::{
+        bn256::{Fq, Fr},
+        group::ff::PrimeField,
+    },
+};
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
@@ -33,8 +38,7 @@ pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},
     Address, Block, Bytes, H160, H256, U256, U64,
 };
-use pairing::arithmetic::FieldExt;
-use pairing::bn256::Fr;
+
 use serde::{de, Deserialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -42,11 +46,15 @@ use std::str::FromStr;
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
-pub trait Field: FieldExt + PrimeField<Repr = [u8; 32]> {}
+pub trait Field: FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> {}
 
 // Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
+
+// Impl custom `Field` trait for BN256 Frq to be used and consistent with the
+// rest of the workspace.
+impl Field for Fq {}
 
 /// Trait used to define types that can be converted to a 256 bit scalar value.
 pub trait ToScalar<F> {
