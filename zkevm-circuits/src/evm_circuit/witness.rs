@@ -8,8 +8,11 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
-use bus_mapping::operation::{self, AccountField, CallContextField};
+use bus_mapping::{
+    circuit_input_builder::{self, StepAuxiliaryData},
+    error::{ExecError, OogError},
+    operation::{self, AccountField, CallContextField},
+};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};

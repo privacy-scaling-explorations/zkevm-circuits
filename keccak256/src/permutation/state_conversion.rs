@@ -135,7 +135,7 @@ mod tests {
                 let output_state = self.conversion.assign_region(layouter, &state, flag)?;
                 let output_state: [F; 25] = output_state
                     .iter()
-                    .map(|cell| *cell.value().unwrap())
+                    .map(|cell| cell.value().copied().unwrap_or_default())
                     .collect::<Vec<F>>()
                     .try_into()
                     .unwrap();
