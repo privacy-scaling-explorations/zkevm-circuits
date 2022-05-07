@@ -33,4 +33,4 @@ cd $target_dir;
 logfile=$_date--${circuit}_bench-$k.proverlog
 
 export PATH=$PATH:/usr/local/go/bin
-RUST_MIN_STACK=4194304 DEGREE=$k ~/.cargo/bin/cargo test --profile bench bench_${run_suffix} -p circuit-benchmarks --features benches  -- --nocapture > "$target_dir/$logfile" 2>&1
+DEGREE=$k ~/.cargo/bin/cargo test --profile bench bench_${run_suffix} -p circuit-benchmarks --features benches  -- --nocapture > "$target_dir/$logfile" 2>&1
