@@ -14,7 +14,8 @@ pub const BYTES_LEN_17_WORDS: usize = 136;
 #[derive(Debug, Clone)]
 pub struct PaddingConfig<F> {
     q_all: Selector,
-    q_middle: Selector,
+    q_without_first: Selector,
+    q_without_last: Selector,
     q_last: Selector,
     flag_enable: Column<Advice>,
     byte: Column<Advice>,
@@ -28,7 +29,8 @@ pub struct PaddingConfig<F> {
 impl<F: Field> PaddingConfig<F> {
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let q_all = meta.selector();
-        let q_middle = meta.selector();
+        let q_without_first = meta.selector();
+        let q_without_last = meta.selector();
         let q_last = meta.selector();
         let flag_enable = meta.advice_column();
         let byte = meta.advice_column();
@@ -59,30 +61,44 @@ impl<F: Field> PaddingConfig<F> {
             vec![q_all * flag_enable * (is_pad_zone_cur * byte_cur)]
         });
 
-        meta.create_gate("middle", |meta| {
-            let q_middle = meta.query_selector(q_middle);
+        meta.create_gate("without last", |meta| {
+            let q_without_last = meta.query_selector(q_without_last);
             let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
             let acc_len_cur = meta.query_advice(acc_len, Rotation::cur());
             let acc_len_next = meta.query_advice(acc_len, Rotation::next());
             let padded_byte_cur = meta.query_advice(padded_byte, Rotation::cur());
             let byte_cur = meta.query_advice(byte, Rotation::cur());
-            let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
-            let is_pad_zone_next = meta.query_advice(is_pad_zone, Rotation::next());
-            let diff_is_zero_expr = diff_is_zero.clone().is_zero_expression;
             iter::empty()
                 .chain(Some(("increase acc_len", acc_len_next - acc_len_cur - one)))
                 .chain(Some((
                     "check padded byte",
                     padded_byte_cur
                         - byte_cur
-                        - diff_is_zero_expr.clone() * Expression::Constant(F::from(0x80)),
+                        - diff_is_zero.clone().is_zero_expression
+                            * Expression::Constant(F::from(0x80)),
                 )))
-                .chain(Some((
-                    "check pad_zone",
-                    is_pad_zone_next - is_pad_zone_cur - diff_is_zero_expr,
-                )))
-                .map(move |(name, poly)| (name, q_middle.clone() * flag_enable_cur.clone() * poly))
+                .map(move |(name, poly)| {
+                    (
+                        name,
+                        q_without_last.clone() * flag_enable_cur.clone() * poly,
+                    )
+                })
         });
+        meta.create_gate("without first", |meta| {
+            let q_without_first = meta.query_selector(q_without_first);
+            let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
+            let is_pad_zone_prev = meta.query_advice(is_pad_zone, Rotation::prev());
+            let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
+            vec![(
+                "check pad_zone",
+                q_without_first
+                    * flag_enable_cur
+                    * (is_pad_zone_cur
+                        - is_pad_zone_prev
+                        - diff_is_zero.clone().is_zero_expression),
+            )]
+        });
+
         meta.create_gate("last", |meta| {
             let q_last = meta.query_selector(q_last);
             let padded_byte_cur = meta.query_advice(padded_byte, Rotation::cur());
@@ -99,7 +115,8 @@ impl<F: Field> PaddingConfig<F> {
         });
         Self {
             q_all,
-            q_middle,
+            q_without_first,
+            q_without_last,
             q_last,
             flag_enable,
             byte,
@@ -129,8 +146,11 @@ impl<F: Field> PaddingConfig<F> {
                 let mut padded_byte = [0u8; BYTES_LEN_17_WORDS];
                 for (offset, &byte) in bytes.iter().enumerate().take(BYTES_LEN_17_WORDS) {
                     self.q_all.enable(&mut region, offset)?;
+                    if offset != 0 {
+                        self.q_without_first.enable(&mut region, offset)?;
+                    }
                     if offset != last {
-                        self.q_middle.enable(&mut region, offset)?;
+                        self.q_without_last.enable(&mut region, offset)?;
                     }
                     flag_enable.clone().copy_advice(
                         || "flag enable",
