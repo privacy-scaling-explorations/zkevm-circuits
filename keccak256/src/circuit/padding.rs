@@ -1,16 +1,66 @@
 use eth_types::Field;
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter},
+    circuit::{AssignedCell, Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
+use itertools::Itertools;
+use std::convert::TryInto;
 use std::iter;
+use std::marker::PhantomData;
 
 pub const BYTES_LEN_17_WORDS: usize = 136;
 
+/// Build word from big endian bytes
+#[derive(Debug, Clone)]
+pub struct WordConfig<F> {
+    q_enable: Selector,
+    word: Column<Advice>,
+    _marker: PhantomData<F>,
+}
+impl<F: Field> WordConfig<F> {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        byte: Column<Advice>,
+        word: Column<Advice>,
+    ) -> Self {
+        meta.enable_equality(byte);
+        meta.enable_equality(word);
+        let q_enable = meta.selector();
+        meta.create_gate("build word", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let byte = meta.query_advice(byte, Rotation::cur());
+            let word_cur = meta.query_advice(word, Rotation::cur());
+            let word_prev = meta.query_advice(word, Rotation::prev());
+            vec![q_enable * (word_cur - Expression::Constant(F::from(256u64)) * word_prev - byte)]
+        });
+        Self {
+            q_enable,
+            word,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn assign_region(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        bytes: [AssignedCell<F, F>; 8],
+    ) -> Result<AssignedCell<F, F>, Error> {
+        let mut word_cell = bytes[0].copy_advice(|| "first byte", region, self.word, offset)?;
+        let mut word = bytes[0].value().cloned().unwrap_or_default();
+        for (i, byte) in bytes.iter().enumerate().skip(1) {
+            let real_offset = offset + i;
+            self.q_enable.enable(region, real_offset)?;
+            word = word * F::from(256u64) + byte.value().cloned().unwrap_or_default();
+            word_cell = region.assign_advice(|| "word", self.word, real_offset, || Ok(word))?;
+        }
+        Ok(word_cell)
+    }
+}
+
 // TODO: byteRLC
-// TODO: connect_word_builder
 #[derive(Debug, Clone)]
 pub struct PaddingConfig<F> {
     q_all: Selector,
@@ -24,6 +74,7 @@ pub struct PaddingConfig<F> {
     diff_is_zero: IsZeroConfig<F>,
     is_pad_zone: Column<Advice>,
     padded_byte: Column<Advice>,
+    word_config: WordConfig<F>,
 }
 
 impl<F: Field> PaddingConfig<F> {
@@ -39,6 +90,7 @@ impl<F: Field> PaddingConfig<F> {
         let diff_inv = meta.advice_column();
         let is_pad_zone = meta.advice_column();
         let padded_byte = meta.advice_column();
+        let word = meta.advice_column();
         meta.enable_equality(is_finalize);
         meta.enable_equality(input_len);
         meta.enable_equality(acc_len);
@@ -52,6 +104,7 @@ impl<F: Field> PaddingConfig<F> {
             },
             diff_inv,
         );
+        let word_config = WordConfig::configure(meta, padded_byte, word);
         meta.create_gate("all", |meta| {
             let q_all = meta.query_selector(q_all);
             let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
@@ -116,6 +169,7 @@ impl<F: Field> PaddingConfig<F> {
             diff_is_zero,
             is_pad_zone,
             padded_byte,
+            word_config,
         }
     }
     pub fn assign_region(
@@ -125,16 +179,15 @@ impl<F: Field> PaddingConfig<F> {
         input_len_cell: AssignedCell<F, F>,
         acc_len_cell: AssignedCell<F, F>,
         bytes: [u8; BYTES_LEN_17_WORDS],
-    ) -> Result<(), Error> {
+    ) -> Result<[AssignedCell<F, F>; 17], Error> {
         let diff_is_zero_chip = IsZeroChip::construct(self.diff_is_zero.clone());
         layouter.assign_region(
             || "padding validation",
             |mut region| {
                 let last = BYTES_LEN_17_WORDS - 1;
                 self.q_last.enable(&mut region, last)?;
-                let mut acc_len = acc_len_cell.value().cloned().unwrap_or_default();
                 let mut is_pad_zone = F::zero();
-                let mut padded_byte = [0u8; BYTES_LEN_17_WORDS];
+                let mut padded_bytes = [0u8; BYTES_LEN_17_WORDS];
                 for (offset, &byte) in bytes.iter().enumerate().take(BYTES_LEN_17_WORDS) {
                     self.q_all.enable(&mut region, offset)?;
                     if offset != 0 {
@@ -155,7 +208,8 @@ impl<F: Field> PaddingConfig<F> {
                         self.input_len,
                         offset,
                     )?;
-
+                    let acc_len =
+                        acc_len_cell.value().cloned().unwrap_or_default() + F::from(offset as u64);
                     region.assign_advice(
                         || "acc_len_rest",
                         self.acc_len,
@@ -180,31 +234,41 @@ impl<F: Field> PaddingConfig<F> {
                     )?;
                     let is_finalize_bit =
                         is_finalize.value().cloned().unwrap_or_default() == F::one();
-                    padded_byte[offset] = byte
+                    padded_bytes[offset] = byte
                         + diff_value
                             .map(|diff_value| (diff_value == F::zero()) as u8)
                             .unwrap_or_default()
                             * 0x80u8
                         + (((offset == last) && is_finalize_bit) as u8);
-                    region.assign_advice(
-                        || "padded byte",
-                        self.padded_byte,
-                        offset,
-                        || {
-                            let mut byte = byte_f + is_zero * F::from(0x80);
-                            if offset == last {
-                                // pad tail
-                                byte += is_finalize.value().cloned().unwrap_or_default();
-                            }
-                            Ok(byte)
-                        },
-                    )?;
-                    acc_len += F::one();
                 }
-                println!("bytes {:?}", bytes);
-                println!("padded bytes {:?}", padded_byte);
+                let padded_byte_cells: Result<Vec<_>, _> = padded_bytes
+                    .iter()
+                    .take(BYTES_LEN_17_WORDS)
+                    .enumerate()
+                    .map(|(offset, &padded_byte)| {
+                        region.assign_advice(
+                            || "padded byte",
+                            self.padded_byte,
+                            offset,
+                            || Ok(F::from(padded_byte as u64)),
+                        )
+                    })
+                    .collect();
+                let padded_byte_cells = padded_byte_cells?;
+                let words: Result<Vec<_>, _> = padded_byte_cells
+                    .iter()
+                    .chunks(8)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, chunk)| {
+                        let bytes: [AssignedCell<F, F>; 8] =
+                            chunk.cloned().collect_vec().try_into().unwrap();
+                        self.word_config.assign_region(&mut region, idx * 8, bytes)
+                    })
+                    .collect();
+                let words: [AssignedCell<F, F>; 17] = words?.try_into().unwrap();
 
-                Ok(())
+                Ok(words)
             },
         )
     }
@@ -216,9 +280,9 @@ mod tests {
     use halo2_proofs::{
         circuit::SimpleFloorPlanner,
         dev::MockProver,
+        pairing::bn256::Fr,
         plonk::{Advice, Circuit},
     };
-    use pairing::bn256::Fr;
     use pretty_assertions::assert_eq;
     use rand::{thread_rng, Fill};
     use std::marker::PhantomData;
