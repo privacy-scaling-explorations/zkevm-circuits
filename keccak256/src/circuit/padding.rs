@@ -17,7 +17,7 @@ pub struct PaddingConfig<F> {
     q_without_first: Selector,
     q_without_last: Selector,
     q_last: Selector,
-    flag_enable: Column<Advice>,
+    is_finalize: Column<Advice>,
     byte: Column<Advice>,
     input_len: Column<Advice>,
     acc_len: Column<Advice>,
@@ -32,14 +32,14 @@ impl<F: Field> PaddingConfig<F> {
         let q_without_first = meta.selector();
         let q_without_last = meta.selector();
         let q_last = meta.selector();
-        let flag_enable = meta.advice_column();
+        let is_finalize = meta.advice_column();
         let byte = meta.advice_column();
         let input_len = meta.advice_column();
         let acc_len = meta.advice_column();
         let diff_inv = meta.advice_column();
         let is_pad_zone = meta.advice_column();
         let padded_byte = meta.advice_column();
-        meta.enable_equality(flag_enable);
+        meta.enable_equality(is_finalize);
         meta.enable_equality(input_len);
         meta.enable_equality(acc_len);
         let one = Expression::Constant(F::one());
@@ -54,16 +54,14 @@ impl<F: Field> PaddingConfig<F> {
         );
         meta.create_gate("all", |meta| {
             let q_all = meta.query_selector(q_all);
-            let flag_enable = meta.query_advice(flag_enable, Rotation::cur());
             let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
             let byte_cur = meta.query_advice(byte, Rotation::cur());
 
-            vec![q_all * flag_enable * (is_pad_zone_cur * byte_cur)]
+            vec![q_all * (is_pad_zone_cur * byte_cur)]
         });
 
         meta.create_gate("without last", |meta| {
             let q_without_last = meta.query_selector(q_without_last);
-            let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
             let acc_len_cur = meta.query_advice(acc_len, Rotation::cur());
             let acc_len_next = meta.query_advice(acc_len, Rotation::next());
             let padded_byte_cur = meta.query_advice(padded_byte, Rotation::cur());
@@ -77,22 +75,15 @@ impl<F: Field> PaddingConfig<F> {
                         - diff_is_zero.clone().is_zero_expression
                             * Expression::Constant(F::from(0x80)),
                 )))
-                .map(move |(name, poly)| {
-                    (
-                        name,
-                        q_without_last.clone() * flag_enable_cur.clone() * poly,
-                    )
-                })
+                .map(move |(name, poly)| (name, q_without_last.clone() * poly))
         });
         meta.create_gate("without first", |meta| {
             let q_without_first = meta.query_selector(q_without_first);
-            let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
             let is_pad_zone_prev = meta.query_advice(is_pad_zone, Rotation::prev());
             let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
             vec![(
                 "check pad_zone",
                 q_without_first
-                    * flag_enable_cur
                     * (is_pad_zone_cur
                         - is_pad_zone_prev
                         - diff_is_zero.clone().is_zero_expression),
@@ -101,16 +92,16 @@ impl<F: Field> PaddingConfig<F> {
 
         meta.create_gate("last", |meta| {
             let q_last = meta.query_selector(q_last);
+            let is_finalize = meta.query_advice(is_finalize, Rotation::cur());
             let padded_byte_cur = meta.query_advice(padded_byte, Rotation::cur());
-            let flag_enable_cur = meta.query_advice(flag_enable, Rotation::cur());
-            let one = Expression::Constant(F::one());
+            let byte_cur = meta.query_advice(byte, Rotation::cur());
             vec![
                 q_last
-                    * flag_enable_cur
                     * (padded_byte_cur
+                        - byte_cur
                         - diff_is_zero.clone().is_zero_expression
                             * Expression::Constant(F::from(0x80))
-                        - one),
+                        - is_finalize),
             ]
         });
         Self {
@@ -118,7 +109,7 @@ impl<F: Field> PaddingConfig<F> {
             q_without_first,
             q_without_last,
             q_last,
-            flag_enable,
+            is_finalize,
             byte,
             input_len,
             acc_len,
@@ -130,7 +121,7 @@ impl<F: Field> PaddingConfig<F> {
     pub fn assign_region(
         &self,
         layouter: &mut impl Layouter<F>,
-        flag_enable: AssignedCell<F, F>,
+        is_finalize: AssignedCell<F, F>,
         input_len_cell: AssignedCell<F, F>,
         acc_len_cell: AssignedCell<F, F>,
         bytes: [u8; BYTES_LEN_17_WORDS],
@@ -152,10 +143,10 @@ impl<F: Field> PaddingConfig<F> {
                     if offset != last {
                         self.q_without_last.enable(&mut region, offset)?;
                     }
-                    flag_enable.clone().copy_advice(
+                    is_finalize.clone().copy_advice(
                         || "flag enable",
                         &mut region,
-                        self.flag_enable,
+                        self.is_finalize,
                         offset,
                     )?;
                     input_len_cell.copy_advice(
@@ -187,22 +178,25 @@ impl<F: Field> PaddingConfig<F> {
                         offset,
                         || Ok(is_pad_zone),
                     )?;
+                    let is_finalize_bit =
+                        is_finalize.value().cloned().unwrap_or_default() == F::one();
                     padded_byte[offset] = byte
                         + diff_value
                             .map(|diff_value| (diff_value == F::zero()) as u8)
                             .unwrap_or_default()
                             * 0x80u8
-                        + ((offset == last) as u8);
+                        + (((offset == last) && is_finalize_bit) as u8);
                     region.assign_advice(
                         || "padded byte",
                         self.padded_byte,
                         offset,
                         || {
-                            Ok(byte_f
-                                // pad head
-                                + is_zero * F::from(0x80)
+                            let mut byte = byte_f + is_zero * F::from(0x80);
+                            if offset == last {
                                 // pad tail
-                                + F::from(offset == last))
+                                byte += is_finalize.value().cloned().unwrap_or_default();
+                            }
+                            Ok(byte)
                         },
                     )?;
                     acc_len += F::one();
@@ -231,7 +225,7 @@ mod tests {
 
     struct MyCircuit<F> {
         bytes: [u8; BYTES_LEN_17_WORDS],
-        parent_flag: bool,
+        is_finalize: bool,
         input_len: u64,
         acc_len: u64,
         _marker: PhantomData<F>,
@@ -240,7 +234,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 bytes: [0; BYTES_LEN_17_WORDS],
-                parent_flag: true,
+                is_finalize: true,
                 input_len: 0,
                 acc_len: 0,
                 _marker: PhantomData,
@@ -251,7 +245,7 @@ mod tests {
     #[derive(Clone)]
     struct MyConfig<F> {
         padding_conf: PaddingConfig<F>,
-        parent_flag: Column<Advice>,
+        is_finalize: Column<Advice>,
         input_len: Column<Advice>,
         acc_len: Column<Advice>,
     }
@@ -265,16 +259,16 @@ mod tests {
         }
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let padding_conf = PaddingConfig::configure(meta);
-            let parent_flag = meta.advice_column();
+            let is_finalize = meta.advice_column();
             let input_len = meta.advice_column();
             let acc_len = meta.advice_column();
-            meta.enable_equality(parent_flag);
+            meta.enable_equality(is_finalize);
             meta.enable_equality(input_len);
             meta.enable_equality(acc_len);
 
             Self::Config {
                 padding_conf,
-                parent_flag,
+                is_finalize,
                 acc_len,
                 input_len,
             }
@@ -285,15 +279,15 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let (parent_flag, input_len, acc_len) = layouter.assign_region(
+            let (is_finalize, input_len, acc_len) = layouter.assign_region(
                 || "external values",
                 |mut region| {
                     let offset = 0;
-                    let parent_flag = region.assign_advice(
+                    let is_finalize = region.assign_advice(
                         || "parent flag",
-                        config.parent_flag,
+                        config.is_finalize,
                         offset,
-                        || Ok(F::from(self.parent_flag)),
+                        || Ok(F::from(self.is_finalize)),
                     )?;
                     let input_len = region.assign_advice(
                         || "input len",
@@ -307,13 +301,13 @@ mod tests {
                         offset,
                         || Ok(F::from(self.acc_len)),
                     )?;
-                    Ok((parent_flag, input_len, acc_len))
+                    Ok((is_finalize, input_len, acc_len))
                 },
             )?;
 
             config.padding_conf.assign_region(
                 &mut layouter,
-                parent_flag,
+                is_finalize,
                 input_len,
                 acc_len,
                 self.bytes,
@@ -328,7 +322,7 @@ mod tests {
         bytes[0] = 1;
         let circuit = MyCircuit::<Fr> {
             bytes,
-            parent_flag: true,
+            is_finalize: true,
             input_len: 1,
             acc_len: 0,
             _marker: PhantomData,
@@ -341,7 +335,7 @@ mod tests {
     fn test_full_pad() {
         let circuit = MyCircuit::<Fr> {
             bytes: [0; BYTES_LEN_17_WORDS],
-            parent_flag: true,
+            is_finalize: true,
             input_len: 0,
             acc_len: 0,
             _marker: PhantomData,
@@ -358,8 +352,24 @@ mod tests {
         bytes[135] = 0;
         let circuit = MyCircuit::<Fr> {
             bytes,
-            parent_flag: true,
+            is_finalize: true,
             input_len: 135,
+            acc_len: 0,
+            _marker: PhantomData,
+        };
+        let prover = MockProver::<Fr>::run(9, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn test_no_pad() {
+        let mut bytes = [0u8; BYTES_LEN_17_WORDS];
+        let mut rng = thread_rng();
+        bytes.try_fill(&mut rng).unwrap();
+        let circuit = MyCircuit::<Fr> {
+            bytes,
+            is_finalize: false,
+            input_len: 136,
             acc_len: 0,
             _marker: PhantomData,
         };
