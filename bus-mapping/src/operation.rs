@@ -766,7 +766,7 @@ impl CallContextOp {
 /// execution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TxReceiptField {
-    /// flag indicates whether if a tx succeed or not
+    /// flag indicates whether a tx succeed or not
     PostStateOrStatus,
     /// the cumulative gas used in the block containing the transaction receipt
     /// as of immediately after the transaction has happened.

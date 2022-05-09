@@ -40,7 +40,7 @@ pub struct OperationContainer {
     pub account_destructed: Vec<Operation<AccountDestructedOp>>,
     /// Operations of CallContextOp
     pub call_context: Vec<Operation<CallContextOp>>,
-    /// Operations of CallContextOp
+    /// Operations of TxReceiptOp
     pub tx_receipt: Vec<Operation<TxReceiptOp>>,
 }
 
