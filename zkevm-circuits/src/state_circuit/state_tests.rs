@@ -12,9 +12,9 @@ mod tests {
     use halo2_proofs::{
         arithmetic::BaseExt,
         dev::{MockProver, VerifyFailure},
+        pairing::bn256::Fr,
         plonk::{Circuit, ConstraintSystem},
     };
-    use pairing::bn256::Fr;
 
     fn test_state_circuit_ok(
         memory_ops: Vec<Operation<MemoryOp>>,
