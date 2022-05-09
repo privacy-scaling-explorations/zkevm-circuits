@@ -28,7 +28,7 @@ impl<F: FieldExt> StorageRootChip<F> {
         not_first_level: Column<Advice>,
         is_leaf_s_value: Column<Advice>,
         is_leaf_c_value: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         acc_s: Column<Advice>,
@@ -53,8 +53,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 rot_into_branch_init = -17;
             }
 
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
             );
 
@@ -93,7 +93,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 not_first_level.clone()
                     * (one.clone() - is_extension_node.clone())
                     * is_last_branch_child.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * branch_acc, // TODO: replace with acc once ValueNode is added
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -101,7 +101,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 not_first_level.clone()
                     * (one.clone() - is_extension_node.clone())
                     * is_last_branch_child.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * hash_rlc,
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
             ));
@@ -132,8 +132,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 );
             }
 
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
             );
 
@@ -162,7 +162,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 not_first_level.clone()
                     * is_extension_node.clone()
                     * is_after_last_branch_child.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * (one.clone() - is_branch_placeholder.clone())
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -171,7 +171,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 not_first_level.clone()
                     * is_extension_node.clone()
                     * is_after_last_branch_child.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * (one.clone() - is_branch_placeholder.clone())
                     * hash_rlc.clone(),
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
@@ -193,8 +193,8 @@ impl<F: FieldExt> StorageRootChip<F> {
             }
             let is_placeholder = meta.query_advice(sel, Rotation::cur());
 
-            let is_account_leaf_storage_codehash_prev =
-                meta.query_advice(is_account_leaf_storage_codehash_c, Rotation(rot));
+            let is_account_leaf_in_added_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot));
 
             let acc = meta.query_advice(acc_s, Rotation::cur());
 
@@ -214,7 +214,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 not_first_level.clone()
                     * is_leaf.clone()
                     * (one.clone() - is_placeholder.clone())
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
@@ -222,7 +222,7 @@ impl<F: FieldExt> StorageRootChip<F> {
                 not_first_level.clone()
                     * is_leaf.clone()
                     * (one.clone() - is_placeholder)
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * hash_rlc.clone(),
                 meta.query_fixed(keccak_table[1], Rotation::cur()),
             ));
@@ -253,8 +253,8 @@ impl<F: FieldExt> StorageRootChip<F> {
                 );
             }
 
-            let is_account_leaf_storage_codehash_prev =
-                meta.query_advice(is_account_leaf_storage_codehash_c, Rotation(rot));
+            let is_account_leaf_in_added_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot));
 
             let acc = meta.query_advice(acc_s, Rotation::cur());
 
@@ -273,7 +273,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_leaf.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * is_branch_placeholder.clone()
                     * acc,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -281,7 +281,7 @@ impl<F: FieldExt> StorageRootChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_leaf.clone()
-                    * is_account_leaf_storage_codehash_prev.clone()
+                    * is_account_leaf_in_added_branch.clone()
                     * is_branch_placeholder.clone()
                     * hash_rlc.clone(),
                 meta.query_fixed(keccak_table[1], Rotation::cur()),

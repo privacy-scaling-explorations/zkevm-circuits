@@ -29,7 +29,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
         not_first_level: Column<Advice>, /* to avoid rotating back when in the first branch (for
                                           * key rlc) */
         is_branch_init: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
         modified_node: Column<Advice>, // index of the modified node
         c16_col: Column<Advice>,
@@ -94,7 +94,7 @@ impl<F: FieldExt> BranchKeyChip<F> {
             // -2 because we are in the first branch child and -1 is branch init row, -2 is
             // account leaf storage codehash when we are in the first storage proof level
             let is_account_leaf_storage_codehash_prev =
-                meta.query_advice(is_account_leaf_storage_codehash_c, Rotation(-2));
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-2));
 
             let c16 = Expression::Constant(F::from(16));
             // If sel1 = 1, then modified_node is multiplied by 16.

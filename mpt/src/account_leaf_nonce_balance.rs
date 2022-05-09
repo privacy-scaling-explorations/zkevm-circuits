@@ -71,15 +71,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
             // 184     80      248     78      nonce      balance
 
-            let mut rot = -1;
+            let mut rot = -2;
+
+            // TODO: rot - 1 is a hack (works only when keys are the same in S and C),
+            // compute acc values in key C as well (becomes a problem for storing
+            // intermediate values though)
             if !is_s {
-                rot = -2;
+                rot = rot - 1;
             }
 
             let c128 = Expression::Constant(F::from(128));
             let c248 = Expression::Constant(F::from(248));
+
             let acc_prev = meta.query_advice(acc, Rotation(rot));
             let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation(rot));
+
             let acc_mult_after_nonce = meta.query_advice(acc_mult_c, Rotation::cur());
             let mult_diff_nonce = meta.query_advice(mult_diff_nonce, Rotation::cur());
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
@@ -126,7 +132,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
 
-            let c_advices0_prev = meta.query_advice(c_advices[0], Rotation::prev());
             // balance_len + 128:
             let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
 

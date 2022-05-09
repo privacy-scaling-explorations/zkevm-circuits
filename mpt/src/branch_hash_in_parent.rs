@@ -25,7 +25,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
         inter_root: Column<Advice>,
         not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         is_last_branch_child: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
@@ -79,8 +79,8 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
             // -17 because we are in the last branch child (-16 takes us to branch init)
-            let is_account_leaf_storage_codehash_prev =
-                meta.query_advice(is_account_leaf_storage_codehash_c, Rotation(-17));
+            let is_account_leaf_in_added_branch_prev =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-17));
 
             // We need to do the lookup only if we are in the last branch child.
             let is_last_branch_child = meta.query_advice(is_last_branch_child, Rotation::cur());
@@ -100,7 +100,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * is_last_branch_child.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
+                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                     * (one.clone() - is_branch_placeholder.clone())
                     * (one.clone() - is_extension_node.clone())
                     * branch_acc, // TODO: replace with acc once ValueNode is added
@@ -113,7 +113,7 @@ impl<F: FieldExt> BranchHashInParentChip<F> {
                 not_first_level.clone()
                         * is_last_branch_child.clone()
                         * (one.clone()
-                            - is_account_leaf_storage_codehash_prev.clone()) // we don't check this in the first storage level
+                            - is_account_leaf_in_added_branch_prev.clone()) // we don't check this in the first storage level
                         * (one.clone() - is_branch_placeholder.clone())
                         * (one.clone() - is_extension_node.clone())
                         * mod_node_hash_rlc_cur,

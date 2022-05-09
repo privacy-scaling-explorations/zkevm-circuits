@@ -104,7 +104,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         inter_root: Column<Advice>,
         not_first_level: Column<Advice>,
         q_not_first: Column<Fixed>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         is_branch_init: Column<Advice>, /* to avoid ConstraintPoisened and failed lookups (when
                                          * rotation lands < 0) */
         s_rlp1: Column<Advice>,
@@ -462,8 +462,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
 
-            let is_account_leaf_storage_codehash_c = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
             );
 
@@ -481,7 +481,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * q_enable.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_c.clone())
+                    * (one.clone() - is_account_leaf_in_added_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone())
                     * acc_c,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
@@ -493,7 +493,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * q_enable.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_c.clone())
+                    * (one.clone() - is_account_leaf_in_added_branch.clone())
                     * (one.clone() - is_branch_placeholder.clone())
                     * mod_node_hash_rlc_cur,
                 keccak_table_i,

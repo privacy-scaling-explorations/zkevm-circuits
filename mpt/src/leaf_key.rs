@@ -43,7 +43,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
         key_rlc_mult_prev: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         modified_node: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         is_s: bool,
@@ -165,10 +165,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // key rlc is in the first branch node (not branch init)
             let mut rot = -18;
@@ -302,10 +300,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             let key_rlc_acc_start = Expression::Constant(F::zero());
             let key_mult_start = one.clone();
@@ -424,15 +420,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let is_first_storage_level = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_init - 1),
-            );
+            let is_first_storage_level =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_init - 1));
 
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Could be used any rotation into previous branch, because key RLC is the same
             // in all branch children:
@@ -479,15 +471,11 @@ impl<F: FieldExt> LeafKeyChip<F> {
             // Note: key rlc is in the first branch node (not branch init).
             let rot_level_above = rot_into_init + 1 - 19;
 
-            let is_first_storage_level = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_init - 1),
-            );
+            let is_first_storage_level =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_init - 1));
 
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));

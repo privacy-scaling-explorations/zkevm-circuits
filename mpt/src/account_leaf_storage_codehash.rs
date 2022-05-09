@@ -216,6 +216,15 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 leaf_without_branch = one.clone() - meta.query_fixed(q_not_first, Rotation(-4));
             }
 
+            // Placeholder leaf appears when a new account is created. There are no
+            // constraints for placeholder leaf (except that the `modified_node`
+            // in parent branch is 0), because the previous values are actually
+            // not important - we do not need to prove the correct modification
+            // of the trie, we just need a proof for an account with default values to
+            // exist in the trie. There are no constraints for default values, because the
+            // correct values are implied by lookups (the lookups will fail if not correct
+            // values in the circuit).
+
             // Rotate into one of the branch rows (make sure the rotation will bring into
             // branch rows S as well as C row):
             let mut placeholder_leaf = meta.query_advice(sel1, Rotation(-7));

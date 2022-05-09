@@ -31,10 +31,12 @@ impl<F: FieldExt> SelectorsChip<F> {
         is_leaf_c_key: Column<Advice>,
         is_leaf_c_value: Column<Advice>,
         is_account_leaf_key_s: Column<Advice>,
+        is_account_leaf_key_c: Column<Advice>,
         is_account_leaf_nonce_balance_s: Column<Advice>,
         is_account_leaf_nonce_balance_c: Column<Advice>,
         is_account_leaf_storage_codehash_s: Column<Advice>,
         is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         is_leaf_in_added_branch: Column<Advice>,
         is_extension_node_s: Column<Advice>,
         is_extension_node_c: Column<Advice>,
@@ -64,15 +66,18 @@ impl<F: FieldExt> SelectorsChip<F> {
             let is_leaf_c_value = meta.query_advice(is_leaf_c_value, Rotation::cur());
 
             let is_account_leaf_key_s = meta.query_advice(is_account_leaf_key_s, Rotation::cur());
+            let is_account_leaf_key_c = meta.query_advice(is_account_leaf_key_c, Rotation::cur());
             let is_account_leaf_nonce_balance_s =
                 meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::cur());
             let is_account_leaf_nonce_balance_c =
                 meta.query_advice(is_account_leaf_nonce_balance_c, Rotation::cur());
             let is_account_leaf_storage_codehash_s =
                 meta.query_advice(is_account_leaf_storage_codehash_s, Rotation::cur());
-
             let is_account_leaf_storage_codehash_c =
                 meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
+            let is_account_leaf_in_added_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
+
             let sel1 = meta.query_advice(sel1, Rotation::cur());
             let sel2 = meta.query_advice(sel2, Rotation::cur());
 
@@ -118,6 +123,10 @@ impl<F: FieldExt> SelectorsChip<F> {
                 get_bool_constraint(q_enable.clone(), is_account_leaf_key_s.clone()),
             ));
             constraints.push((
+                "bool check is_account_leaf_key_c",
+                get_bool_constraint(q_enable.clone(), is_account_leaf_key_c.clone()),
+            ));
+            constraints.push((
                 "bool check is_account_nonce_balance_s",
                 get_bool_constraint(q_enable.clone(), is_account_leaf_nonce_balance_s.clone()),
             ));
@@ -132,6 +141,10 @@ impl<F: FieldExt> SelectorsChip<F> {
             constraints.push((
                 "bool check is_account_storage_codehash_c",
                 get_bool_constraint(q_enable.clone(), is_account_leaf_storage_codehash_c.clone()),
+            ));
+            constraints.push((
+                "bool check is_account_leaf_in_added_branch",
+                get_bool_constraint(q_enable.clone(), is_account_leaf_in_added_branch.clone()),
             ));
             constraints.push((
                 "bool check branch sel1",
@@ -223,6 +236,10 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(is_account_leaf_key_s, Rotation::prev());
                 let is_account_leaf_key_s_cur =
                     meta.query_advice(is_account_leaf_key_s, Rotation::cur());
+                let is_account_leaf_key_c_prev =
+                    meta.query_advice(is_account_leaf_key_c, Rotation::prev());
+                let is_account_leaf_key_c_cur =
+                    meta.query_advice(is_account_leaf_key_c, Rotation::cur());
                 let is_account_leaf_nonce_balance_s_prev =
                     meta.query_advice(is_account_leaf_nonce_balance_s, Rotation::prev());
                 let is_account_leaf_nonce_balance_s_cur =
@@ -239,6 +256,10 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::prev());
                 let is_account_leaf_storage_codehash_c_cur =
                     meta.query_advice(is_account_leaf_storage_codehash_c, Rotation::cur());
+                let is_account_leaf_in_added_branch_prev =
+                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::prev());
+                let is_account_leaf_in_added_branch_cur =
+                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
 
                 let is_extension_node_s_prev =
                     meta.query_advice(is_extension_node_s, Rotation::prev());
@@ -250,15 +271,15 @@ impl<F: FieldExt> SelectorsChip<F> {
                     meta.query_advice(is_extension_node_c, Rotation::cur());
 
                 // Branch init can start after another branch (means after extension node S)
-                // or after account leaf storage codehash (account -> storage proof)
-                // or after leaf in added branch (after key/value proof ends).
+                // or after account leaf in added branch (account -> storage proof)
+                // or after storage leaf in added branch (after key/value proof ends).
                 // Also, it can be in the first row.
                 constraints.push((
                     "branch init after",
                     q_not_first.clone()
                         * (is_branch_init_cur.clone() - is_extension_node_c_prev.clone())
                         * (is_branch_init_cur.clone()
-                            - is_account_leaf_storage_codehash_c_prev.clone())
+                            - is_account_leaf_in_added_branch_prev.clone())
                         * (is_branch_init_cur.clone() - is_leaf_in_added_branch_prev.clone()),
                 ));
 
@@ -283,9 +304,13 @@ impl<F: FieldExt> SelectorsChip<F> {
                     * is_account_leaf_key_s_cur.clone(),
                 ));
                 constraints.push((
-                    "account leaf key -> account leaf nonce balance S",
+                    "account leaf key s -> account leaf key c",
+                    q_not_first.clone() * (is_account_leaf_key_s_prev - is_account_leaf_key_c_cur),
+                ));
+                constraints.push((
+                    "account leaf key c -> account leaf nonce balance S",
                     q_not_first.clone()
-                        * (is_account_leaf_key_s_prev - is_account_leaf_nonce_balance_s_cur),
+                        * (is_account_leaf_key_c_prev - is_account_leaf_nonce_balance_s_cur),
                 ));
                 constraints.push((
                     "account leaf nonce balance S -> account leaf nonce balance C",
@@ -305,13 +330,19 @@ impl<F: FieldExt> SelectorsChip<F> {
                         * (is_account_leaf_storage_codehash_s_prev
                             - is_account_leaf_storage_codehash_c_cur),
                 ));
+                constraints.push((
+                    "account leaf storage codehash C -> account leaf added in branch",
+                    q_not_first.clone()
+                        * (is_account_leaf_storage_codehash_c_prev
+                            - is_account_leaf_in_added_branch_cur),
+                ));
 
                 // Storage leaf
                 constraints.push((
                     "storage leaf key follows extension node C or account leaf storage codehash c",
                     q_not_first.clone()
                     * (is_extension_node_c_prev - is_leaf_s_key_cur.clone())
-                    * (is_account_leaf_storage_codehash_c_prev - is_leaf_s_key_cur.clone()) // when storage leaf without branch
+                    * (is_account_leaf_in_added_branch_prev - is_leaf_s_key_cur.clone()) // when storage leaf without branch
                     * is_leaf_s_key_cur,
                 ));
                 constraints.push((
