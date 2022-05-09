@@ -14,7 +14,7 @@ use std::convert::TryInto;
 #[derive(Debug, Clone)]
 pub struct RhoConfig<F> {
     state: [Column<Advice>; 25],
-    lane_configs: [LaneRotateConversionConfig<F>; 25],
+    lane_config: LaneRotateConversionConfig<F>,
     overflow_check_config: OverflowCheckConfig<F>,
     base13_to_9_table: Base13toBase9TableConfig<F>,
     special_chunk_table: SpecialChunkTableConfig<F>,
@@ -29,34 +29,14 @@ impl<F: Field> RhoConfig<F> {
         let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
         let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
 
-        let lane_configs: [LaneRotateConversionConfig<F>; 25] = state
-            .iter()
-            .enumerate()
-            .map(|(idx, &lane)| {
-                LaneRotateConversionConfig::configure(
-                    meta,
-                    idx,
-                    lane,
-                    &base13_to_9_table,
-                    &special_chunk_table,
-                )
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-        let overflow_detector_cols = lane_configs
-            .iter()
-            .map(|config| config.overflow_detector)
-            .collect();
-        let overflow_check_config = OverflowCheckConfig::configure(
-            meta,
-            overflow_detector_cols,
-            &step2_range_table,
-            &step3_range_table,
-        );
+        let lane_config =
+            LaneRotateConversionConfig::configure(meta, &base13_to_9_table, &special_chunk_table);
+
+        let overflow_check_config =
+            OverflowCheckConfig::configure(meta, &step2_range_table, &step3_range_table);
         Self {
             state,
-            lane_configs,
+            lane_config,
             overflow_check_config,
             base13_to_9_table,
             special_chunk_table,
@@ -76,10 +56,11 @@ impl<F: Field> RhoConfig<F> {
         );
         let lane_and_ods: Result<Vec<R<F>>, Error> = state
             .iter()
-            .zip(self.lane_configs.iter())
-            .map(|(lane, lane_config)| -> Result<R<F>, Error> {
+            .enumerate()
+            .map(|(idx, lane)| -> Result<R<F>, Error> {
                 let (out_lane, step2_od, step3_od) =
-                    lane_config.assign_region(layouter, lane.clone())?;
+                    self.lane_config
+                        .assign_region(layouter, lane.clone(), idx)?;
                 Ok((out_lane, step2_od, step3_od))
             })
             .into_iter()
@@ -146,7 +127,11 @@ mod tests {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let col = meta.advice_column();
+                        meta.enable_equality(col);
+                        col
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
