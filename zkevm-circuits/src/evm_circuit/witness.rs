@@ -4,15 +4,17 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag, TxLogFieldTag,
+        TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::RandomLinearCombination,
 };
+
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
-    operation::{self, AccountField, CallContextField},
+    operation::{self, AccountField, CallContextField, TxReceiptField},
 };
+
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
@@ -512,6 +514,13 @@ pub enum Rw {
         // when it is topic field, value can be word type
         value: Word,
     },
+    TxReceipt {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        field_tag: TxReceiptFieldTag,
+        value: u64,
+    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -559,6 +568,7 @@ impl Rw {
             Self::AccountStorage { rw_counter, .. } => (*rw_counter),
             Self::TxRefund { rw_counter, .. } => (*rw_counter),
             Self::TxLog { rw_counter, .. } => (*rw_counter),
+            Self::TxReceipt { rw_counter, .. } => (*rw_counter),
         }
     }
 
@@ -637,6 +647,13 @@ impl Rw {
     pub fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn receipt_value(&self) -> u64 {
+        match self {
+            Self::TxReceipt { value, .. } => *value,
             _ => unreachable!(),
         }
     }
@@ -871,6 +888,26 @@ impl Rw {
                 F::zero(),
             ]
             .into(),
+            Self::TxReceipt {
+                rw_counter,
+                is_write,
+                tx_id,
+                field_tag,
+                value,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxReceipt as u64),
+                F::from(*tx_id as u64),
+                F::zero(),
+                F::from(*field_tag as u64),
+                F::zero(),
+                F::from(*value),
+                F::zero(),
+                F::zero(),
+                F::zero(),
+            ]
+            .into(),
             _ => unimplemented!(),
         }
     }
@@ -1069,6 +1106,24 @@ impl From<&operation::OperationContainer> for RwMap {
                 })
                 .collect(),
         );
+        rws.insert(
+            RwTableTag::TxReceipt,
+            container
+                .tx_receipt
+                .iter()
+                .map(|op| Rw::TxReceipt {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    field_tag: match op.op().field {
+                        TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
+                        TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
+                        TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
 
         Self(rws)
     }
@@ -1215,6 +1270,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::Account => RwTableTag::Account,
                     operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
+                    operation::Target::TxReceipt => RwTableTag::TxReceipt,
                 };
                 (tag, x.as_usize())
             })
@@ -1287,7 +1343,8 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
             .chain(
                 (if is_last_tx {
                     Some(iter::once(ExecStep {
-                        rw_counter: tx.steps().last().unwrap().rwc.0 + 4,
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        rw_counter: tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize,
                         execution_state: ExecutionState::EndBlock,
                         ..Default::default()
                     }))

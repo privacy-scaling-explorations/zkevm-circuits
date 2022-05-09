@@ -156,6 +156,7 @@ pub enum RwTableTag {
     AccountDestructed,
     CallContext,
     TxLog,
+    TxReceipt,
 }
 
 impl RwTableTag {
@@ -191,6 +192,29 @@ pub enum TxLogFieldTag {
     Address = 1,
     Topic,
     Data,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TxReceiptFieldTag {
+    PostStateOrStatus = 1,
+    CumulativeGasUsed,
+    LogLength,
+}
+
+impl TxReceiptFieldTag {
+    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
+        [
+            Self::PostStateOrStatus,
+            Self::CumulativeGasUsed,
+            Self::LogLength,
+        ]
+        .iter()
+        .copied()
+    }
+
+    pub(crate) fn amount() -> usize {
+        Self::iterator().count()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -232,6 +256,7 @@ impl_expr!(BytecodeFieldTag);
 impl_expr!(CallContextFieldTag);
 impl_expr!(BlockContextFieldTag);
 impl_expr!(TxLogFieldTag);
+impl_expr!(TxReceiptFieldTag);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Table {

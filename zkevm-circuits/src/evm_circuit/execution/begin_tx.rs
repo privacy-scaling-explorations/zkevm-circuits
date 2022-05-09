@@ -187,6 +187,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_source: To(code_hash.expr()),
             gas_left: To(gas_left),
             reversible_write_counter: To(2.expr()),
+            log_id: To(0.expr()),
             ..StepStateTransition::new_context()
         });
 
