@@ -5,25 +5,30 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-pub trait LookupTable<F: FieldExt, const W: usize> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
+pub trait LookupTable<F: FieldExt> {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Advice>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W] {
-        self.map(|column| meta.query_advice(column, Rotation::cur()))
+impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Advice>; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_advice(*column, Rotation::cur()))
+            .collect()
     }
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W] {
-        self.map(|column| meta.query_fixed(column, Rotation::cur()))
+impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_fixed(*column, Rotation::cur()))
+            .collect()
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
-    Range5 = 1,
+    Zero = 0,
+    Range5,
     Range16,
     Range32,
     Range64,
@@ -40,6 +45,7 @@ pub enum FixedTableTag {
 impl FixedTableTag {
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
+            Self::Zero,
             Self::Range5,
             Self::Range16,
             Self::Range32,
@@ -60,6 +66,7 @@ impl FixedTableTag {
     pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
+            Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
             Self::Range5 => {
                 Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
@@ -258,13 +265,33 @@ impl_expr!(BlockContextFieldTag);
 impl_expr!(TxLogFieldTag);
 impl_expr!(TxReceiptFieldTag);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum Table {
     Fixed,
     Tx,
     Rw,
     Bytecode,
     Block,
+    Byte,
+}
+
+impl Table {
+    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
+        [
+            Self::Fixed,
+            Self::Tx,
+            Self::Rw,
+            Self::Bytecode,
+            Self::Block,
+            Self::Byte,
+        ]
+        .iter()
+        .copied()
+    }
+
+    pub(crate) fn amount() -> usize {
+        Self::iterator().count()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -329,6 +356,11 @@ pub(crate) enum Lookup<F> {
         /// Value of the field.
         value: Expression<F>,
     },
+    /// Lookup to byte value.
+    Byte {
+        /// Value of the field.
+        value: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -345,6 +377,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
+            Self::Byte { .. } => Table::Byte,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -389,6 +422,9 @@ impl<F: FieldExt> Lookup<F> {
                 value,
             } => {
                 vec![field_tag.clone(), number.clone(), value.clone()]
+            }
+            Self::Byte { value } => {
+                vec![value.clone()]
             }
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
