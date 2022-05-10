@@ -40,6 +40,7 @@ pub enum FixedTableTag {
     BitwiseOr,
     BitwiseXor,
     ResponsibleOpcode,
+    Pow2,
 }
 
 impl FixedTableTag {
@@ -58,6 +59,7 @@ impl FixedTableTag {
             Self::BitwiseOr,
             Self::BitwiseXor,
             Self::ResponsibleOpcode,
+            Self::Pow2,
         ]
         .iter()
         .copied()
@@ -119,6 +121,9 @@ impl FixedTableTag {
                             ]
                         })
                 }))
+            }
+            Self::Pow2 => {
+                Box::new((0..65).map(move |value| [tag, F::from(value), F::from(1 << value)]))
             }
         }
     }
