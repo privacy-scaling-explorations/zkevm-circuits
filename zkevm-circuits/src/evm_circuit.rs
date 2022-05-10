@@ -141,7 +141,6 @@ impl<F: Field> EvmCircuit<F> {
 
 #[cfg(any(feature = "test", test))]
 pub mod test {
-    use strum::IntoEnumIterator;
     use crate::{
         evm_circuit::{
             table::FixedTableTag,

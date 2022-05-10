@@ -4,7 +4,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use strum_macros::{EnumIter, EnumCount};
+use strum_macros::{EnumCount, EnumIter};
 
 pub trait LookupTable<F: FieldExt> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;

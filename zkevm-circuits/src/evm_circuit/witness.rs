@@ -683,7 +683,8 @@ impl Rw {
             | Self::Account { rw_counter, .. }
             | Self::AccountDestructed { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
-            | Self::TxLog { rw_counter, .. } => *rw_counter,
+            | Self::TxLog { rw_counter, .. }
+            | Self::TxReceipt { rw_counter, .. } => *rw_counter,
         }
     }
 
@@ -698,7 +699,8 @@ impl Rw {
             | Self::Account { is_write, .. }
             | Self::AccountDestructed { is_write, .. }
             | Self::CallContext { is_write, .. }
-            | Self::TxLog { is_write, .. } => *is_write,
+            | Self::TxLog { is_write, .. }
+            | Self::TxReceipt { is_write, .. } => *is_write,
         }
     }
 
@@ -714,6 +716,7 @@ impl Rw {
             Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
             Self::CallContext { .. } => RwTableTag::CallContext,
             Self::TxLog { .. } => RwTableTag::TxLog,
+            Self::TxReceipt { .. } => RwTableTag::TxReceipt,
         }
     }
 
@@ -723,7 +726,8 @@ impl Rw {
             | Self::TxAccessListAccount { tx_id, .. }
             | Self::TxAccessListAccountStorage { tx_id, .. }
             | Self::TxRefund { tx_id, .. }
-            | Self::TxLog { tx_id, .. } => Some(*tx_id),
+            | Self::TxLog { tx_id, .. }
+            | Self::TxReceipt { tx_id, .. } => Some(*tx_id),
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
@@ -755,7 +759,7 @@ impl Rw {
             Self::TxLog { log_id, index, .. } => {
                 Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
             }
-            Self::CallContext { .. } | Self::TxRefund { .. } => None,
+            Self::CallContext { .. } | Self::TxRefund { .. } | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -764,6 +768,7 @@ impl Rw {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
+            Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
@@ -785,7 +790,8 @@ impl Rw {
             | Self::Account { .. }
             | Self::TxAccessListAccount { .. }
             | Self::AccountDestructed { .. }
-            | Self::TxLog { .. } => None,
+            | Self::TxLog { .. }
+            | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -816,7 +822,7 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
-            Self::TxRefund { value, .. } => F::from(*value),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
     }
 
@@ -839,7 +845,8 @@ impl Rw {
             Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
-            | Self::TxLog { .. } => None,
+            | Self::TxLog { .. }
+            | Self::TxReceipt { .. } => None,
         }
     }
 
