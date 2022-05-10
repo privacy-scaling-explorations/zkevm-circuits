@@ -10,6 +10,7 @@ use halo2_proofs::{
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use std::str::FromStr;
+use strum::IntoEnumIterator;
 use zkevm_circuits::evm_circuit::{
     table::FixedTableTag, test::TestCircuit, witness::block_convert,
 };
@@ -37,7 +38,7 @@ pub async fn compute_proof(
     let block = block_convert(&builder.block, &builder.code_db);
     {
         // generate evm_circuit proof
-        let circuit = TestCircuit::<Fr>::new(block.clone(), FixedTableTag::iterator().collect());
+        let circuit = TestCircuit::<Fr>::new(block.clone(), FixedTableTag::iter().collect());
 
         // TODO: can this be pre-generated to a file?
         // related
@@ -60,23 +61,7 @@ pub async fn compute_proof(
 
     {
         // generate state_circuit proof
-        //
-        // TODO: this should be configurable
-        const MEMORY_ADDRESS_MAX: usize = 2000;
-        const STACK_ADDRESS_MAX: usize = 1300;
-        const MEMORY_ROWS_MAX: usize = 16384;
-        const STACK_ROWS_MAX: usize = 16384;
-        const STORAGE_ROWS_MAX: usize = 16384;
-        const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
-
-        let circuit = StateCircuit::<
-            Fr,
-            true,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ADDRESS_MAX,
-            GLOBAL_COUNTER_MAX,
-        >::new(block.randomness, &block.rws);
+        let circuit = StateCircuit::new(block.randomness, block.rws);
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(params, &circuit)?;

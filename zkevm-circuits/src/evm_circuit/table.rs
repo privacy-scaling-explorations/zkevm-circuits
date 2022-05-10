@@ -4,6 +4,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum_macros::{EnumCount, EnumIter};
 
 pub trait LookupTable<F: FieldExt> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
@@ -25,7 +26,7 @@ impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
     Range5,
@@ -43,26 +44,6 @@ pub enum FixedTableTag {
 }
 
 impl FixedTableTag {
-    pub fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::Zero,
-            Self::Range5,
-            Self::Range16,
-            Self::Range32,
-            Self::Range64,
-            Self::Range256,
-            Self::Range512,
-            Self::Range1024,
-            Self::SignByte,
-            Self::BitwiseAnd,
-            Self::BitwiseOr,
-            Self::BitwiseXor,
-            Self::ResponsibleOpcode,
-        ]
-        .iter()
-        .copied()
-    }
-
     pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
@@ -151,10 +132,11 @@ pub enum BlockContextFieldTag {
     ChainId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
-    Memory = 2,
+    Start = 1,
     Stack,
+    Memory,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -180,7 +162,7 @@ impl RwTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
@@ -201,30 +183,14 @@ pub enum TxLogFieldTag {
     Data,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
 pub enum TxReceiptFieldTag {
     PostStateOrStatus = 1,
     CumulativeGasUsed,
     LogLength,
 }
 
-impl TxReceiptFieldTag {
-    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::PostStateOrStatus,
-            Self::CumulativeGasUsed,
-            Self::LogLength,
-        ]
-        .iter()
-        .copied()
-    }
-
-    pub(crate) fn amount() -> usize {
-        Self::iterator().count()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,
@@ -265,7 +231,7 @@ impl_expr!(BlockContextFieldTag);
 impl_expr!(TxLogFieldTag);
 impl_expr!(TxReceiptFieldTag);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
     Fixed,
     Tx,
@@ -273,25 +239,6 @@ pub(crate) enum Table {
     Bytecode,
     Block,
     Byte,
-}
-
-impl Table {
-    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::Fixed,
-            Self::Tx,
-            Self::Rw,
-            Self::Bytecode,
-            Self::Block,
-            Self::Byte,
-        ]
-        .iter()
-        .copied()
-    }
-
-    pub(crate) fn amount() -> usize {
-        Self::iterator().count()
-    }
 }
 
 #[derive(Clone, Debug)]

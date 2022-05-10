@@ -22,6 +22,7 @@ use crate::{
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::plonk::Error;
+use strum::EnumCount;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndTxGadget<F> {
@@ -255,7 +256,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         } else {
             let rw = &block.rws[(
                 RwTableTag::TxReceipt,
-                (tx.id - 1) * TxReceiptFieldTag::amount() - 1,
+                (tx.id - 1) * TxReceiptFieldTag::COUNT - 1,
             )];
             rw.receipt_value()
         };

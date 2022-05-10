@@ -261,7 +261,7 @@ pub mod test {
                         tx_id,
                         log_id,
                         field_tag: TxLogFieldTag::Data,
-                        index: idx,
+                        index: idx.try_into().unwrap(),
                         value: Word::from(byte),
                     });
                     rw_offset += 1;
