@@ -583,7 +583,7 @@ impl<F: FieldExt> MPTConfig<F> {
             is_branch_init,
             is_branch_child,
             is_last_branch_child,
-            is_account_leaf_storage_codehash_c,
+            is_account_leaf_in_added_branch,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -771,7 +771,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             drifted_pos,
-            is_account_leaf_storage_codehash_c,
+            is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
             keccak_table.clone(),
@@ -797,7 +797,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            is_account_leaf_storage_codehash_c,
+            is_account_leaf_in_added_branch,
             s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
             true,
             acc_r,
@@ -824,7 +824,7 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
-            is_account_leaf_storage_codehash_c,
+            is_account_leaf_in_added_branch,
             s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
             false,
             acc_r,
@@ -2410,7 +2410,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // leaf value C row (to enable lookups):
                                     pv.rlc1 = pv.acc_c;
 
-                                    let row_prev = &witness[offset - 3];
+                                    // account leaf storage codehash S <- rotate here
+                                    // account leaf storage codehash C
+                                    // account leaf in added branch
+                                    // leaf key S
+                                    // leaf value S <- we are here
+                                    // leaf key C
+                                    // leaf value C
+                                    let row_prev = &witness[offset - 4];
                                     if row_prev[row_prev.len() - 1] == 9
                                         && row_prev[S_START..S_START + HASH_WIDTH]
                                             == empty_trie_hash
@@ -2437,7 +2444,14 @@ impl<F: FieldExt> MPTConfig<F> {
                                         || Ok(pv.rlc1),
                                     )?;
 
-                                    let row_prev = &witness[offset - 4];
+                                    // account leaf storage codehash S
+                                    // account leaf storage codehash C <- rotate here
+                                    // account leaf in added branch
+                                    // leaf key S
+                                    // leaf value S
+                                    // leaf key C
+                                    // leaf value C <- we are here
+                                    let row_prev = &witness[offset - 5];
                                     if row_prev[row_prev.len() - 1] == 11
                                         && row_prev[S_START..S_START + HASH_WIDTH]
                                             == empty_trie_hash

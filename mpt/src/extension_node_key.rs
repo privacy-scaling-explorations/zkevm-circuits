@@ -34,7 +34,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         is_branch_init: Column<Advice>,
         is_branch_child: Column<Advice>,
         is_last_branch_child: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         s_rlp1: Column<Advice>,
         s_rlp2: Column<Advice>,
         c_rlp1: Column<Advice>,
@@ -109,8 +109,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             // We are in extension row C, -18 brings us in the branch init row.
             // -19 is account leaf storage codehash when we are in the first storage proof level.
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+            let is_account_leaf_in_added_branch_prev = meta.query_advice(
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init-1),
             );
 
@@ -211,7 +211,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             // long even not first level not first storage selector:
             let after_first_level = not_first_level.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                     * is_extension_node.clone()
                     * is_extension_c_row.clone();
 
@@ -409,7 +409,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             // long odd not first level not first storage selector:
             let long_odd = not_first_level.clone()
-                    * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                     * is_extension_c_row.clone()
                     * (is_ext_long_odd_c16.clone() + is_ext_long_odd_c1.clone());
     
@@ -454,7 +454,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
 
             // short: 
             let short = not_first_level.clone()
-                * (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+                * (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                 * is_extension_c_row.clone()
                 * (is_ext_short_c16.clone() + is_ext_short_c1.clone());
 
@@ -486,8 +486,8 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
         });
 
         let get_long_even = |meta: &mut VirtualCells<F>| {
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+            let is_account_leaf_in_added_branch_prev = meta.query_advice(
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
             );
             let is_extension_c_row =
@@ -502,14 +502,14 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Rotation(rot_into_branch_init),
             );
 
-            (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+            (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                 * is_extension_c_row.clone()
                 * (is_ext_long_even_c16 + is_ext_long_even_c1)
         };
 
         let get_long_odd = |meta: &mut VirtualCells<F>| { 
-            let is_account_leaf_storage_codehash_prev = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+            let is_account_leaf_in_added_branch_prev = meta.query_advice(
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_branch_init - 1),
             );
             let is_extension_c_row =
@@ -524,7 +524,7 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 Rotation(rot_into_branch_init),
             );
 
-            (one.clone() - is_account_leaf_storage_codehash_prev.clone())
+            (one.clone() - is_account_leaf_in_added_branch_prev.clone())
                 * is_extension_c_row.clone()
                 * (is_ext_long_odd_c16 + is_ext_long_odd_c1)
         };

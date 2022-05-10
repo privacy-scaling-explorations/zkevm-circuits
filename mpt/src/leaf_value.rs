@@ -44,7 +44,7 @@ impl<F: FieldExt> LeafValueChip<F> {
         key_rlc_mult: Column<Advice>, // to store key_rlc from previous row (to enable lookup)
         mult_diff: Column<Advice>,    /* to store leaf value S RLC from two rows above (to
                                        * enable lookup) */
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         is_branch_placeholder: Column<Advice>,
         is_s: bool,
         acc_r: F,
@@ -166,10 +166,8 @@ impl<F: FieldExt> LeafValueChip<F> {
             if !is_s {
                 sel = meta.query_advice(sel2, Rotation(rot));
             }
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
             // For leaf without branch the constraint is in storage_root_in_account_leaf
             constraints.push((
                 "Placeholder leaf (no value set) needs to have value = 0 (s_rlp1)",
@@ -244,10 +242,18 @@ impl<F: FieldExt> LeafValueChip<F> {
                 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
             ];
             let mut sel = meta.query_advice(sel1, Rotation::cur());
-            let mut rot_into_storage_root = -3;
+
+            // account leaf storage codehash S
+            // account leaf storage codehash C
+            // account leaf in added branch
+            // leaf key S
+            // leaf value S
+            // leaf key C
+            // leaf value C
+            let mut rot_into_storage_root = -4;
             if !is_s {
                 sel = meta.query_advice(sel2, Rotation::cur());
-                rot_into_storage_root = -4;
+                rot_into_storage_root = -5;
             }
             for (ind, col) in s_advices.iter().enumerate() {
                 let s = meta.query_advice(*col, Rotation(rot_into_storage_root));
@@ -280,10 +286,8 @@ impl<F: FieldExt> LeafValueChip<F> {
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // If sel = 1, there is no leaf at this position (value is being added or
             // deleted) and we don't check the hash of it.
@@ -348,13 +352,11 @@ impl<F: FieldExt> LeafValueChip<F> {
 
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
             let is_leaf_without_branch_after_placeholder = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+                is_account_leaf_in_added_branch,
                 Rotation(rot_into_account - 19),
             );
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Note: sel1 and sel2 in branch children: denote whether there is no leaf at
             // is_modified (when value is added or deleted from trie)

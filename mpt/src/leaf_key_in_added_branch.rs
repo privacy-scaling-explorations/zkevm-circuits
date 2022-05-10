@@ -45,7 +45,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
-        is_account_leaf_storage_codehash_c: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         keccak_table: [Column<Fixed>; KECCAK_INPUT_WIDTH + KECCAK_OUTPUT_WIDTH],
@@ -98,10 +98,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(rot_branch_init),
             );
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
             constraints.push((
                 "is_long + is_short = 1 when leaf drifts",
                 q_enable.clone()
@@ -232,14 +230,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-2));
 
             let is_first_storage_level = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
+                is_account_leaf_in_added_branch,
                 Rotation(rot_branch_init - 1),
             );
 
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             let is_one_nibble = get_is_extension_node_one_nibble(meta, s_advices, rot_branch_init);
 
@@ -414,10 +410,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // Note: value doesn't reach c_rlp1.
 
             // If leaf without branch, then there is no added branch.
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Any rotation that lands into branch children can be used.
             let rot = -17;
@@ -476,10 +470,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // Note: value doesn't reach c_rlp1.
 
             // If leaf without branch, then there is no added branch.
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_storage_codehash_c,
-                Rotation(rot_into_account),
-            );
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Any rotation that lands into branch children can be used.
             let rot = -17;
