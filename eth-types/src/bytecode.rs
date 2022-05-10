@@ -177,6 +177,106 @@ impl Bytecode {
             self.write_op(opcode);
         }
     }
+
+    ///
+    pub fn append_op(&mut self, op: OpcodeWithData) -> &mut Self {
+        match op {
+            OpcodeWithData::Opcode(opcode) => {
+                self.write_op(opcode);
+            }
+            OpcodeWithData::Push(n, word) => {
+                self.push(n, word);
+            }
+        }
+        self
+    }
+
+    /// create iterator
+    pub fn iter<'a>(&'a self) -> BytecodeIterator<'a> {
+        BytecodeIterator(self.code.iter())
+    }
+}
+
+/// TODO
+#[derive(Clone, PartialEq, Eq)]
+pub enum OpcodeWithData {
+    ///
+    Opcode(OpcodeId),
+    ///
+    Push(usize, Word),
+}
+
+impl OpcodeWithData {
+    /// TODO
+    pub fn opcode(&self) -> OpcodeId {
+        match self {
+            OpcodeWithData::Opcode(op) => *op,
+            OpcodeWithData::Push(n, _) => {
+                OpcodeId::try_from(OpcodeId::PUSH1.as_u8() + (*n as u8) - 1).unwrap()
+            }
+        }
+    }
+}
+
+impl FromStr for OpcodeWithData {
+    type Err = String;
+    fn from_str(op: &str) -> Result<Self, Self::Err> {
+        let err = || format!("unable to parse {}", op);
+        if op.starts_with("PUSH") {
+            let n_value: Vec<_> = op[4..].splitn(3, ['(', ')']).collect();
+            let n = usize::from_str_radix(&n_value[0], 10).map_err(|_| err())?;
+            if n < 1 || n > 32 {
+                return Err(err());
+            }
+            let value = if n_value[1].starts_with("0x") {
+                Word::from_str_radix(&n_value[1][2..], 16)
+            } else {
+                Word::from_str_radix(&n_value[1], 10)
+            }
+            .map_err(|_| err())?;
+            Ok(OpcodeWithData::Push(n, value))
+        } else {
+            let opcode = OpcodeId::from_str(op).map_err(|_| err())?;
+            Ok(OpcodeWithData::Opcode(opcode))
+        }
+    }
+}
+
+impl ToString for OpcodeWithData {
+    fn to_string(&self) -> String {
+        match self {
+            OpcodeWithData::Opcode(opcode) => format!("{:?}", opcode),
+            OpcodeWithData::Push(n, word) => format!("PUSH{}({})", n, word),
+        }
+    }
+}
+
+/// TODO
+pub struct BytecodeIterator<'a>(std::slice::Iter<'a, u8>);
+impl<'a> Iterator for BytecodeIterator<'a> {
+    type Item = OpcodeWithData;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(byte) = self.0.next() {
+            let op = OpcodeId::try_from(*byte).unwrap();
+
+            if op.is_push() {
+                let n = op.as_u8() - OpcodeId::PUSH1.as_u8() + 1;
+                let mut value = vec![0u8; n as usize];
+                for value_byte in value.iter_mut() {
+                    *value_byte = *self.0.next().unwrap();
+                }
+                Some(OpcodeWithData::Push(
+                    n as usize,
+                    Word::from(value.as_slice()),
+                ))
+            } else {
+                Some(OpcodeWithData::Opcode(op))
+            }
+        } else {
+            None
+        }
+    }
 }
 
 impl TryFrom<Vec<u8>> for Bytecode {
@@ -254,7 +354,9 @@ macro_rules! bytecode_internal {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::Bytecode;
+    use std::str::FromStr;
 
     #[test]
     fn test_bytecode_roundtrip() {
@@ -272,5 +374,24 @@ mod tests {
             STOP
         };
         assert_eq!(Bytecode::try_from(code.to_vec()).unwrap(), code);
+    }
+
+    #[test]
+    fn test_asm_disasm() {
+        let code = bytecode! {
+            PUSH1(5)
+            PUSH2(0xa)
+            MUL
+            STOP
+        };
+        let mut code2 = Bytecode::default();
+        code.iter()
+            .map(|op| op.to_string())
+            .map(|op| OpcodeWithData::from_str(&op).unwrap())
+            .for_each(|op| {
+                code2.append_op(op);
+            });
+
+        assert_eq!(code.code, code2.code);
     }
 }

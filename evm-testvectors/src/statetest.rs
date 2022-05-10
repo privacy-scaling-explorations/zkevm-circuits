@@ -1,15 +1,14 @@
+use crate::utils::{config_bytecode_test_config, OPCODES_UNIMPLEMENTED};
 use anyhow::Context;
 use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 use bus_mapping::mock::BlockData;
 use eth_types::{
-    evm_types::{Gas, OpcodeId},
-    geth_types,
-    geth_types::Account,
-    Address, Bytes, GethExecTrace, H256, U256, U64,
+    evm_types::Gas, geth_types, geth_types::Account, Address, Bytes, GethExecTrace, H256, U256, U64,
 };
 use external_tracer::TraceConfig;
 use std::collections::HashMap;
 use thiserror::Error;
+use zkevm_circuits::test_util::BytecodeTestConfig;
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -33,17 +32,18 @@ pub enum StateTestError {
     SkipUnimplementedOpcode(String),
 }
 
+#[derive(Debug, Clone)]
 pub struct StateTestConfig {
     pub max_gas: Gas,
-    pub unimplemented_opcodes: Vec<OpcodeId>,
     pub run_circuit: bool,
+    pub bytecode_test_config: BytecodeTestConfig,
 }
 impl Default for StateTestConfig {
     fn default() -> Self {
         Self {
             max_gas: Gas(1000000),
-            unimplemented_opcodes: Vec::new(),
             run_circuit: true,
+            bytecode_test_config: BytecodeTestConfig::default(),
         }
     }
 }
@@ -270,13 +270,17 @@ impl StateTest {
         Ok(())
     }
 
-    pub fn test_circuit(self, builder: &CircuitInputBuilder) {
+    pub fn test_circuit(
+        self,
+        builder: &CircuitInputBuilder,
+        bytecode_test_config: BytecodeTestConfig,
+    ) {
         // build a witness block from trace result
         let block =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
 
         // finish requiered tests according to config using this witness block
-        zkevm_circuits::evm_circuit::test::run_test_circuit_incomplete_fixed_table(block)
+        zkevm_circuits::test_util::test_circuits_using_witness_block(block, bytecode_test_config)
             .expect("circuit should pass");
     }
 
@@ -289,7 +293,7 @@ impl StateTest {
         Ok(geth_traces.remove(0))
     }
 
-    pub fn run(self, config: &StateTestConfig) -> Result<(), StateTestError> {
+    pub fn run(self, mut config: StateTestConfig) -> Result<(), StateTestError> {
         // get the geth traces
         let (_, trace_config, post) = self.clone().into_traceconfig();
 
@@ -303,7 +307,7 @@ impl StateTest {
         if let Some(step) = geth_traces[0]
             .struct_logs
             .iter()
-            .find(|step| config.unimplemented_opcodes.contains(&step.op))
+            .find(|step| OPCODES_UNIMPLEMENTED.contains(&step.op))
         {
             return Err(StateTestError::SkipUnimplementedOpcode(format!(
                 "{:?}",
@@ -315,12 +319,17 @@ impl StateTest {
             return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }
 
+        config_bytecode_test_config(
+            &mut config.bytecode_test_config,
+            geth_traces[0].struct_logs.iter().map(|step| step.op),
+        );
+
         let builder = Self::create_input_builder(trace_config, geth_traces)?;
 
         Self::check_post(&builder, &post)?;
 
         if config.run_circuit {
-            Self::test_circuit(self, &builder);
+            Self::test_circuit(self, &builder, config.bytecode_test_config);
         }
         Ok(())
     }
