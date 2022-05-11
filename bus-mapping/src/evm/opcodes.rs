@@ -28,6 +28,7 @@ mod codecopy;
 mod dup;
 mod extcodehash;
 mod gasprice;
+mod logs;
 mod mload;
 mod mstore;
 mod number;
@@ -49,6 +50,7 @@ use codecopy::Codecopy;
 use dup::Dup;
 use extcodehash::Extcodehash;
 use gasprice::GasPrice;
+use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
@@ -188,11 +190,11 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SWAP14 => Swap::<14>::gen_associated_ops,
         OpcodeId::SWAP15 => Swap::<15>::gen_associated_ops,
         OpcodeId::SWAP16 => Swap::<16>::gen_associated_ops,
-        // OpcodeId::LOG0 => {},
-        // OpcodeId::LOG1 => {},
-        // OpcodeId::LOG2 => {},
-        // OpcodeId::LOG3 => {},
-        // OpcodeId::LOG4 => {},
+        OpcodeId::LOG0 => Log::gen_associated_ops,
+        OpcodeId::LOG1 => Log::gen_associated_ops,
+        OpcodeId::LOG2 => Log::gen_associated_ops,
+        OpcodeId::LOG3 => Log::gen_associated_ops,
+        OpcodeId::LOG4 => Log::gen_associated_ops,
         // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},

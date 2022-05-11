@@ -193,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             selectors[idx] = true;
             bytes[idx] = if selectors[idx] && src_addr < aux.src_addr_end() as usize {
                 let indice = step.rw_indices[rw_idx];
-                rw_idx += 1;
+                rw_idx += 2;
                 block.rws[indice].memory_value()
             } else {
                 0

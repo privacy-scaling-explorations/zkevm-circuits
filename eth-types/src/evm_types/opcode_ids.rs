@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
 use std::str::FromStr;
+use std::fmt;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash)]
@@ -966,5 +967,11 @@ impl<'de> Deserialize<'de> for OpcodeId {
     {
         let s = String::deserialize(deserializer)?;
         OpcodeId::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
+impl fmt::Display for OpcodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }

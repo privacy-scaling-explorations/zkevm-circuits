@@ -108,6 +108,8 @@ pub enum Target {
     CallContext,
     /// Means the target of the operation is the TxReceipt.
     TxReceipt,
+    /// Means the target of the operation is the TxLog.
+    TxLog,
 }
 
 /// Trait used for Operation Kinds.
@@ -779,6 +781,106 @@ impl CallContextOp {
     }
 }
 
+/// Represents a field parameter of the TxLog that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TxLogField {
+    /// contrac address
+    Address,
+    /// topic of log entry
+    Topic,
+    /// data of log entry
+    Data,
+}
+
+/// Represents TxLog read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxLogOp {
+    /// tx_id of TxLog
+    pub tx_id: usize,
+    /// id of log entry
+    pub log_id: usize,
+    /// field of TxLogField
+    pub field: TxLogField,
+    /// topic index if field is Topic
+    /// byte index if field is Data
+    /// it would be zero for other field tags
+    pub index: usize,
+    /// value
+    pub value: Word,
+}
+
+impl TxLogOp {
+    /// Create a new instance of a `TxLogOp` from it's components.
+    pub fn new(tx_id: usize, log_id: usize, field: TxLogField, index: usize, value: Word ) -> TxLogOp {
+        TxLogOp {
+            tx_id,
+            log_id,
+            field,
+            index,
+            value,
+        }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::TxLog
+    }
+
+    /// Returns the log id associated to this Operation.
+    pub const fn tx_id(&self) -> usize {
+        self.tx_id
+    }
+
+    /// Returns the log id associated to this Operation.
+    pub const fn log_id(&self) -> usize {
+        self.log_id
+    }
+
+     /// Returns the index associated to this Operation.
+     pub const fn index(&self) -> usize {
+        self.index
+    }
+
+    /// Returns the bytes read or written by this operation.
+    pub fn value(&self) -> Word {
+        self.value
+    }
+}
+
+impl fmt::Debug for TxLogOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxReceiptContextOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, log_id: {:?}, field: {:?}, index: {:?}, value: {:?}",
+            self.tx_id, self.log_id, self.field, self.index, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxLogOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxLogOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id,&self.log_id, &self.field).cmp(&(&other.tx_id, &other.log_id, &other.field))
+    }
+}
+
+impl Op for TxLogOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxLog(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("TxLog can't be reverted")
+    }
+}
+
 /// Represents a field parameter of the TxReceipt that can be accessed via EVM
 /// execution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -860,6 +962,8 @@ pub enum OpEnum {
     CallContext(CallContextOp),
     /// TxReceipt
     TxReceipt(TxReceiptOp),
+    /// TxLog
+    TxLog(TxLogOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.
