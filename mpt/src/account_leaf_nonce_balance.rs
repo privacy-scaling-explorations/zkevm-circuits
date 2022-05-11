@@ -71,15 +71,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
             // 184     80      248     78      nonce      balance
 
-            let mut rot = -2;
-
-            // TODO: rot - 1 is a hack (works only when keys are the same in S and C),
-            // compute acc values in key C as well (becomes a problem for storing
-            // intermediate values though)
-            if !is_s {
-                rot = rot - 1;
-            }
-
+            let rot = -2;
             let c128 = Expression::Constant(F::from(128));
             let c248 = Expression::Constant(F::from(248));
 

@@ -853,6 +853,32 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
+            true,
+        );
+
+        AccountLeafKeyChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let is_account_leaf_key_c =
+                    meta.query_advice(is_account_leaf_key_c, Rotation::cur());
+
+                q_enable * is_account_leaf_key_c
+            },
+            q_not_first,
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            acc_s,
+            acc_mult_s,
+            key_rlc,
+            key_rlc_mult,
+            r_table.clone(),
+            fixed_table.clone(),
+            address_rlc,
+            false,
         );
 
         AccountLeafNonceBalanceChip::<F>::configure(
@@ -2476,24 +2502,32 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             }
 
-                            if row[row.len() - 1] == 6 {
-                                // account leaf key S
-                                pv.acc_s = F::zero();
-                                pv.acc_mult_s = F::one();
+                            if row[row.len() - 1] == 6 || row[row.len() - 1] == 4 {
+                                // account leaf key S & C
+                                let mut acc = F::zero();
+                                let mut acc_mult = F::one();
                                 // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
                                 let key_len = (row[2] - 128) as usize;
                                 for b in row.iter().take(3 + key_len) {
-                                    pv.acc_s += F::from(*b as u64) * pv.acc_mult_s;
-                                    pv.acc_mult_s *= self.acc_r;
+                                    acc += F::from(*b as u64) * acc_mult;
+                                    acc_mult *= self.acc_r;
                                 }
                                 self.assign_acc(
                                     &mut region,
-                                    pv.acc_s,
-                                    pv.acc_mult_s,
+                                    acc,
+                                    acc_mult,
                                     F::zero(),
                                     F::zero(),
                                     offset,
                                 )?;
+
+                                if row[row.len() - 1] == 6 {
+                                    pv.acc_s = acc;
+                                    pv.acc_mult_s = acc_mult;
+                                } else {
+                                    pv.acc_c = acc;
+                                    pv.acc_mult_c = acc_mult;
+                                }
 
                                 // For leaf S and leaf C we need to start with the same rlc.
                                 let mut key_rlc_new = pv.key_rlc;
@@ -2505,9 +2539,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                     || Ok(key_rlc_new),
                                 )?;
-                            } else if row[row.len() - 1] == 4 {
-                                // TODO: account leaf key C, note TODO: rot - 1
-                                // in account_leaf_nonce_balance
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
                                 if row[row.len() - 1] == 7 {
                                     pv.acc_account_leaf = pv.acc_s;
@@ -2516,8 +2547,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // nonce RLC and balance RLC
                                     compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 } else {
-                                    pv.acc_s = pv.acc_account_leaf;
-                                    pv.acc_mult_s = pv.acc_mult_account_leaf;
+                                    pv.acc_s = pv.acc_c;
+                                    pv.acc_mult_s = pv.acc_mult_c;
 
                                     // assign nonce S
                                     region.assign_advice(
