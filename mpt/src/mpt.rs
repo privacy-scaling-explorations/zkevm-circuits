@@ -23,10 +23,11 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS, LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
+        ACCOUNT_NONCE_BALANCE_KEY_OFFSET, COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
+        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
+        IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
+        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
+        LAYOUT_OFFSET, NOT_FIRST_LEVEL_POS,
     },
     roots::RootsChip,
     storage_root_in_account_leaf::StorageRootChip,
@@ -2587,21 +2588,50 @@ impl<F: FieldExt> MPTConfig<F> {
                                     C_START - 2,
                                     2,
                                 );
-                                // nonce contribution to leaf RLC
+                                // nonce contribution to leaf RLC:
+                                /*
+                                If nonce stream length is 1, it doesn't have
+                                the first byte with length info. Same for balance.
+                                There are four possibilities:
+                                  - nonce is short (length 1), balance is short (length 1)
+                                  - nonce is short, balance is long
+                                  - nonce is long, balance is short
+                                  - nonce is long, balance is long
+                                We put this info in sel1/sel2 in the key row (sel1/sel2 are
+                                    already used for other purposes in nonce balance row):
+                                    - sel1/sel2: 0/0 (how to check: (1-sel1)*(1-sel2))
+                                    - sel1/sel2: 0/1 (how to check: (1-sel1)*sel2)
+                                    - sel1/sel2: 1/0 (how to check: sel1*(1-sel2))
+                                    - sel1/sel2: 1/1 (how to check: sel1*sel2)
+                                */
+                                let mut nonce_len: usize = 1;
+                                if row[S_START] >= 128 {
+                                    nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
+                                    region.assign_advice(
+                                        || "assign sel1".to_string(),
+                                        self.sel1,
+                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
+                                        || Ok(F::zero()),
+                                    )?;
+                                } else {
+                                    region.assign_advice(
+                                        || "assign sel1".to_string(),
+                                        self.sel1,
+                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
+                                        || Ok(F::one()),
+                                    )?;
+                                }
                                 compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
                                     S_START,
-                                    row[S_START] as usize - 128 + 1, /* +1 for byte with length
-                                                                      * info */
+                                    nonce_len,
                                 );
 
-                                let key_len = row[S_START] as usize - 128;
                                 let mut mult_diff_s = F::one();
-                                for _ in 0..key_len + 4 + 1 {
+                                for _ in 0..nonce_len + 4 {
                                     // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
-                                    // + 1 because of byte with length info
                                     mult_diff_s *= self.acc_r;
                                 }
 
@@ -2610,19 +2640,33 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // balance.
                                 let acc_mult_tmp = pv.acc_mult_s;
                                 // balance contribution to leaf RLC
+                                let mut balance_len: usize = 1;
+                                if row[C_START] >= 128 {
+                                    balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
+                                    region.assign_advice(
+                                        || "assign sel2".to_string(),
+                                        self.sel2,
+                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
+                                        || Ok(F::zero()),
+                                    )?;
+                                } else {
+                                    region.assign_advice(
+                                        || "assign sel2".to_string(),
+                                        self.sel2,
+                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
+                                        || Ok(F::one()),
+                                    )?;
+                                }
                                 compute_acc_and_mult(
                                     row,
                                     &mut pv.acc_s,
                                     &mut pv.acc_mult_s,
                                     C_START,
-                                    row[C_START] as usize - 128 + 1, /* +1 for byte with length
-                                                                      * info */
+                                    balance_len,
                                 );
 
-                                let key_len = row[C_START] as usize - 128;
                                 let mut mult_diff_c = F::one();
-                                for _ in 0..key_len + 1 {
-                                    // + 1 because of byte with length info
+                                for _ in 0..balance_len {
                                     mult_diff_c *= self.acc_r;
                                 }
 
