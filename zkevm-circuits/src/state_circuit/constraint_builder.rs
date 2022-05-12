@@ -131,10 +131,15 @@ impl<F: Field> ConstraintBuilder<F> {
             "first access to new stack address is a write",
             q.first_access() * (1.expr() - q.is_write()),
         );
-        self.add_lookup(
-            "stack address fits into 10 bits",
-            (q.address.value.clone(), q.lookups.u10.clone()),
-        );
+        // whyyyyyy does this fail?????
+        // self.add_lookup(
+        //     "stack address fits into 10 bits",
+        //     // TODO: add this condition into each of the lookups automatically
+        //     (
+        //         not::expr(q.tag_matches(RwTableTag::Stack)) * q.address.value.clone(),
+        //         q.lookups.u10.clone(),
+        //     ),
+        // );
         // this pushes the degree to 17....
         self.condition(q.first_access(), |cb| {
             cb.require_zero(

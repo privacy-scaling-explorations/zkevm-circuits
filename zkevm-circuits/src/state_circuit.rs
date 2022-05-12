@@ -5,7 +5,7 @@ mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
 #[cfg(test)]
-mod state_tests;
+mod test;
 
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
@@ -32,6 +32,8 @@ use lexicographic_ordering::{
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
+#[cfg(test)]
+use std::collections::HashMap;
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
@@ -63,10 +65,12 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 pub struct StateCircuit<F: Field> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<Rw>,
+    #[cfg(test)]
+    overrides: HashMap<(test::AdviceColumn, usize), F>,
 }
 
 impl<F: Field> StateCircuit<F> {
-    /// make a new state circuit
+    /// make a new state circuit from an RwMap
     pub fn new(randomness: F, rw_map: RwMap) -> Self {
         let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
         rows.sort_by_key(|row| {
@@ -79,7 +83,12 @@ impl<F: Field> StateCircuit<F> {
                 row.rw_counter(),
             )
         });
-        Self { randomness, rows }
+        Self {
+            randomness,
+            rows,
+            #[cfg(test)]
+            overrides: HashMap::new(),
+        }
     }
 
     /// powers of randomness for instance columns
@@ -166,6 +175,21 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        #[cfg(test)]
+        // We have to assign the overrides first, because in halo2, the first assignment is the one
+        // that sticks.
+        layouter.assign_region(
+            || "rw table",
+            |mut region| {
+                for ((column, offset), &f) in &self.overrides {
+                    dbg!(offset, f);
+                    let advice_column = column.value(&config);
+                    region.assign_advice(|| "override", advice_column, *offset, || Ok(f))?;
+                }
+                Ok(())
+            },
+        )?;
+
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
         let is_storage_key_unchanged =
             IsZeroChip::construct(config.is_storage_key_unchanged.clone());
@@ -176,7 +200,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let mut prev_storage_key = F::zero();
 
         layouter.assign_region(
-            || "assign rw table",
+            || "rw table",
             |mut region| {
                 for (offset, row) in self.rows.iter().enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
@@ -206,9 +230,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     if let Some(id) = row.id() {
                         config.id.assign(&mut region, offset, id as u32)?;
                     }
-                    if let Some(address) = row.address() {
-                        config.address.assign(&mut region, offset, address)?;
-                    }
+                    // if let Some(address) = row.address() {
+                    //     config.address.assign(&mut region, offset, address)?;
+                    // }
                     if let Some(field_tag) = row.field_tag() {
                         region.assign_advice(
                             || "field_tag",
@@ -240,7 +264,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 }
                 Ok(())
             },
-        )
+        )?;
+
+        Ok(())
     }
 }
 
