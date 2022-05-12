@@ -9,7 +9,11 @@ use std::marker::PhantomData;
 use crate::{
     helpers::range_lookups,
     mpt::FixedTableTag,
-    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+    param::{
+        ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
+        HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
+        LAYOUT_OFFSET, IS_BRANCH_C_PLACEHOLDER_POS,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -225,11 +229,16 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // correct values are implied by lookups (the lookups will fail if not correct
             // values in the circuit).
 
-            // Rotate into one of the branch rows (make sure the rotation will bring into
-            // branch rows S as well as C row):
-            let mut placeholder_leaf = meta.query_advice(sel1, Rotation(-7));
+            // Rotate into branch init:
+            let mut placeholder_leaf = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+            );
             if !is_s {
-                placeholder_leaf = meta.query_advice(sel2, Rotation(-7));
+                placeholder_leaf = meta.query_advice(
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
+                );
             }
 
             // Note: accumulated in s (not in c) for c:

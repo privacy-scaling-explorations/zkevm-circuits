@@ -23,7 +23,8 @@ use crate::{
     leaf_key_in_added_branch::LeafKeyInAddedBranchChip,
     leaf_value::LeafValueChip,
     param::{
-        ACCOUNT_NONCE_BALANCE_KEY_OFFSET, COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
+        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, COUNTER_WITNESS_LEN, IS_BALANCE_MOD_POS,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
         IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
         IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_STORAGE_MOD_POS,
@@ -2610,15 +2611,21 @@ impl<F: FieldExt> MPTConfig<F> {
                                     region.assign_advice(
                                         || "assign sel1".to_string(),
                                         self.sel1,
-                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
-                                        || Ok(F::zero()),
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
+                                                - ACCOUNT_LEAF_KEY_S_IND)
+                                                as usize,
+                                        || Ok(F::one()),
                                     )?;
                                 } else {
                                     region.assign_advice(
                                         || "assign sel1".to_string(),
                                         self.sel1,
-                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
-                                        || Ok(F::one()),
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
+                                                - ACCOUNT_LEAF_KEY_C_IND)
+                                                as usize,
+                                        || Ok(F::zero()),
                                     )?;
                                 }
                                 compute_acc_and_mult(
@@ -2646,15 +2653,21 @@ impl<F: FieldExt> MPTConfig<F> {
                                     region.assign_advice(
                                         || "assign sel2".to_string(),
                                         self.sel2,
-                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
-                                        || Ok(F::zero()),
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
+                                                - ACCOUNT_LEAF_KEY_S_IND)
+                                                as usize,
+                                        || Ok(F::one()),
                                     )?;
                                 } else {
                                     region.assign_advice(
                                         || "assign sel2".to_string(),
                                         self.sel2,
-                                        offset - ACCOUNT_NONCE_BALANCE_KEY_OFFSET,
-                                        || Ok(F::one()),
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
+                                                - ACCOUNT_LEAF_KEY_C_IND)
+                                                as usize,
+                                        || Ok(F::zero()),
                                     )?;
                                 }
                                 compute_acc_and_mult(

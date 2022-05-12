@@ -16,7 +16,7 @@ pub const BRANCH_0_S_START: usize = 4; // row 0 of a branch contains some RLP da
 pub const BRANCH_0_C_START: usize = 7;
 pub const BRANCH_0_KEY_POS: usize = 10; // row 0 of a branch contains info (deriving from key) about which branch node
                                         // is being modified
-pub const BRANCH_ROWS_NUM: usize = 19;
+pub const BRANCH_ROWS_NUM: i32 = 19;
 pub const R_TABLE_LEN: usize = 32;
 pub const IS_BRANCH_S_PLACEHOLDER_POS: usize = 11;
 pub const IS_BRANCH_C_PLACEHOLDER_POS: usize = 12;
@@ -38,4 +38,10 @@ pub const IS_CODEHASH_MOD_POS: usize = 6;
 pub const COUNTER_WITNESS_LEN: usize = 4;
 pub const COUNTER_POS: usize = IS_CODEHASH_MOD_POS + COUNTER_WITNESS_LEN;
 
-pub const ACCOUNT_NONCE_BALANCE_KEY_OFFSET: usize = 2;
+pub const ACCOUNT_LEAF_KEY_S_IND: i32 = 0;
+pub const ACCOUNT_LEAF_KEY_C_IND: i32 = 1;
+pub const ACCOUNT_LEAF_NONCE_BALANCE_S_IND: i32 = 2;
+pub const ACCOUNT_LEAF_NONCE_BALANCE_C_IND: i32 = 3;
+pub const ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND: i32 = 4;
+pub const ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND: i32 = 5;
+pub const ACCOUNT_LEAF_KEY_IN_ADDED_IND: i32 = 6;

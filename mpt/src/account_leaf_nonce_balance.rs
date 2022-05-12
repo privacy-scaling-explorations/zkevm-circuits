@@ -8,9 +8,12 @@ use pairing::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 use crate::{
-    helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
+    helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
-    param::HASH_WIDTH,
+    param::{
+        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, HASH_WIDTH,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -82,8 +85,49 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let mult_diff_nonce = meta.query_advice(mult_diff_nonce, Rotation::cur());
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
 
+            // TODO
+            let mut is_nonce_long = meta.query_advice(
+                sel1,
+                Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
+            );
+            let mut is_balance_long = meta.query_advice(
+                sel2,
+                Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
+            );
+            if !is_s {
+                is_nonce_long = meta.query_advice(
+                    sel1,
+                    Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
+                );
+                is_balance_long = meta.query_advice(
+                    sel2,
+                    Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
+                );
+            }
+
+            constraints.push((
+                "bool check is_nonce_long",
+                get_bool_constraint(q_enable.clone(), is_nonce_long.clone()),
+            ));
+            constraints.push((
+                "bool check is_balance_long",
+                get_bool_constraint(q_enable.clone(), is_balance_long.clone()),
+            ));
+
+            for ind in 1..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                let c = meta.query_advice(c_advices[ind], Rotation::cur());
+                constraints.push((
+                    "s_advices[i] = 0 for i > 0 when is_nonce_short",
+                    q_enable.clone() * (one.clone() - is_nonce_long.clone()) * s.clone(),
+                ));
+                constraints.push((
+                    "c_advices[i] = 0 for i > 0 when is_balance_short",
+                    q_enable.clone() * (one.clone() - is_balance_long.clone()) * c.clone(),
+                ));
+            }
+
             let key_len = meta.query_advice(s_advices[0], Rotation(rot)) - c128.clone();
-            // nonce_len + 128:
             let s_advices0_cur = meta.query_advice(s_advices[0], Rotation::cur());
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
@@ -106,7 +150,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
 
-            let nonce_rlc = s_advices0_cur.clone()
+            let nonce_long_rlc = s_advices0_cur.clone()
                 + compute_rlc(
                     meta,
                     s_advices.iter().skip(1).map(|v| *v).collect_vec(),
@@ -116,6 +160,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     r_table.clone(),
                 );
 
+            let nonce_rlc = nonce_long_rlc * is_nonce_long.clone()
+                + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
+
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
                 "nonce RLC",
@@ -124,11 +171,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
 
-            // balance_len + 128:
             let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
-
             let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
-            let balance_rlc = c_advices0_cur.clone()
+            let balance_long_rlc = c_advices0_cur.clone()
                 + compute_rlc(
                     meta,
                     c_advices.iter().skip(1).map(|v| *v).collect_vec(),
@@ -137,6 +182,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                     0,
                     r_table.clone(),
                 );
+
+            let balance_rlc = balance_long_rlc * is_balance_long.clone()
+                + c_advices0_cur.clone() * (one.clone() - is_balance_long.clone());
 
             constraints.push((
                 "balance RLC",
@@ -207,8 +255,15 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             // RLP:
             let c66 = Expression::Constant(F::from(66)); // the number of bytes in storage codehash row
             let c184 = Expression::Constant(F::from(184));
-            let nonce_len = s_advices0_cur - c128.clone();
-            let balance_len = c_advices0_cur - c128.clone();
+            let nonce_long_len = s_advices0_cur - c128.clone() + one.clone();
+
+            let nonce_len =
+                nonce_long_len * is_nonce_long.clone() + (one.clone() - is_nonce_long.clone());
+
+            let balance_long_len = c_advices0_cur - c128.clone() + one.clone();
+            let balance_len = balance_long_len * is_balance_long.clone()
+                + (one.clone() - is_balance_long.clone());
+
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
             // 184     80      248     78      nonce      balance
             constraints.push(("RLP 1", q_enable.clone() * (s_rlp1.clone() - c184)));
@@ -219,8 +274,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             ));
             constraints.push((
                 "RLP 4",
-                q_enable.clone()
-                    * (c_rlp2.clone() - nonce_len - one.clone() - balance_len - one.clone() - c66),
+                q_enable.clone() * (c_rlp2.clone() - nonce_len - balance_len - c66),
             ));
             constraints.push((
                 "account leaf RLP length",
