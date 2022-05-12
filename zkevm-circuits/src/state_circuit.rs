@@ -39,11 +39,11 @@ pub struct StateConfig<F: Field> {
     // https://github.com/appliedzkp/zkevm-circuits/issues/407
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
     is_write: Column<Advice>,
-    tag: Column<Advice>,
-    id: MpiConfig<u32, N_LIMBS_ID>,
-    address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
-    field_tag: Column<Advice>,
-    storage_key: RlcConfig<N_BYTES_WORD>,
+    tag: Column<Advice>,                                  // key0
+    id: MpiConfig<u32, N_LIMBS_ID>,                       // key1
+    address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>, // key2
+    field_tag: Column<Advice>,                            // key3
+    storage_key: RlcConfig<N_BYTES_WORD>,                 // key4
     is_storage_key_unchanged: IsZeroConfig<F>,
     value: Column<Advice>,
     lookups: LookupsConfig,
@@ -101,8 +101,14 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let [is_write, tag, field_tag, value, is_zero_chip_advice_column] =
             [0; 5].map(|_| meta.advice_column());
 
+        // Ref. spec 0.0. id is in the expected range
         let id = MpiChip::configure(meta, selector, lookups.u16);
+        // Ref. spec 0.1. key2 is linear combination of 10 x 16bit limbs and also
+        // in range
+        // key2: address
         let address = MpiChip::configure(meta, selector, lookups.u16);
+        // Ref. spec 0.2. key4 is RLC encoded
+        // key4: storage_key
         let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
         let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
 
@@ -126,6 +132,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             field_tag,
             storage_key,
             value,
+            // Ref. spec 0.4. Keys are sorted in lexicographic order for same Tag
             lexicographic_ordering: LexicographicOrderingChip::configure(
                 meta,
                 selector,

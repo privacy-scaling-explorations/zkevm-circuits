@@ -18,12 +18,12 @@ pub struct Queries<F: Field> {
     pub selector: Expression<F>,
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
-    pub tag: Expression<F>,
+    pub tag: Expression<F>, // key0
     pub prev_tag: Expression<F>,
-    pub id: MpiQueries<F, N_LIMBS_ID>,
-    pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
-    pub field_tag: Expression<F>,
-    pub storage_key: RlcQueries<F, N_BYTES_WORD>,
+    pub id: MpiQueries<F, N_LIMBS_ID>,                   // key1
+    pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>, // key2
+    pub field_tag: Expression<F>,                        // key3
+    pub storage_key: RlcQueries<F, N_BYTES_WORD>,        // key4
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
@@ -75,48 +75,60 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
             cb.build_account_storage_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
-            cb.build_tx_access_list_account_constraints(q)
+        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
+            cb.build_call_context_constraints(q)
+        });
+        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
+            cb.build_account_constraints(q)
+        });
+        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
+            cb.build_tx_refund_constraints(q)
         });
         self.condition(
             q.tag_matches(RwTableTag::TxAccessListAccountStorage),
             |cb| cb.build_tx_access_list_account_storage_constraints(q),
         );
-        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
-            cb.build_tx_refund_constraints(q)
-        });
-        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
-            cb.build_account_constraints(q)
+        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
+            cb.build_tx_access_list_account_constraints(q)
         });
         self.condition(q.tag_matches(RwTableTag::AccountDestructed), |cb| {
             cb.build_account_destructed_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
-            cb.build_call_context_constraints(q)
-        });
+        // TODO: tx_receipt
+        // TODO: tx_log
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 0.0. tag is in the expected range
         self.require_in_set("tag in RwTableTag range", q.tag(), set::<F, RwTableTag>());
+        // Ref. spec 0.3. is_write is boolean
         self.require_boolean("is_write is boolean", q.is_write());
+
+        // Ref. spec 0.5. Read consistency
+        // TODO?
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 1.0. rw_counter is 0
         self.require_zero("rw_counter is 0 for Start", q.rw_counter.value.clone());
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 2.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
         self.require_zero("storage_key is 0 for Memory", q.storage_key.encoded.clone());
+        // Ref. spec 2.1. First access for a set of all keys
         self.require_zero(
             "read from a fresh key is 0",
             q.first_access() * q.is_read() * q.value(),
         );
+        // Ref. spec 2.2. mem_addr in range
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
+        // Ref. spec 2.3. value is a byte
         self.add_lookup(
             "memory value is a byte",
             (q.value.clone(), q.lookups.u8.clone()),
@@ -124,16 +136,21 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 3.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Stack", q.field_tag());
         self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
+        // Ref. spec 3.1. First access for a set of all keys
         self.require_zero(
             "first access to new stack address is a write",
             q.first_access() * (1.expr() - q.is_write()),
         );
+
+        // Ref. spec 3.2. stack_ptr in range
         self.add_lookup(
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
+        // Ref. spec 3.3. stack_ptr only increases by 0 or 1
         // this pushes the degree to 17....
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
@@ -149,9 +166,12 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
         // TODO: connection to MPT on first and last access for each (address, key)
-        // No longer true because we moved id from aux to here.
-        // self.require_zero("id is 0 for AccountStorage", q.id());
+
+        // Ref. spec 4.0. Unused keys are 0
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
+
+        // Ref. spec 4.1. First access for a set of all keys
+        // TODO
         // for every first access, we add an AccountStorage write to setup the
         // value from the previous block with rw_counter = 0
         // needs some work...
@@ -161,6 +181,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // q.rw_counter.value.clone()); })
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 9.0. Unused keys are 0
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
         self.require_zero(
             "storage_key is 0 for TxAccessListAccount",
@@ -170,6 +191,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_tx_access_list_account_storage_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 10.0. Unused keys are 0
         self.require_zero(
             "field_tag is 0 for TxAccessListAccountStorage",
             q.field_tag(),
@@ -178,6 +200,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_tx_refund_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 7.0. Unused keys are 0
         self.require_zero("address is 0 for TxRefund", q.address.value.clone());
         self.require_zero("field_tag is 0 for TxRefund", q.field_tag());
         self.require_zero(
@@ -188,16 +211,20 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 6.0. Unused keys are 0
         self.require_zero("id is 0 for Account", q.id());
         self.require_zero(
             "storage_key is 0 for Account",
             q.storage_key.encoded.clone(),
         );
+        // Ref. spec 0.0. field_tag is in the expected range
         self.require_in_set(
             "field_tag in AccountFieldTag range",
             q.field_tag(),
             set::<F, AccountFieldTag>(),
         );
+        // Ref. spec 6.1. First access for a set of all keys
+        // TODO
         // // for every first access, we add an Account write to setup the value
         // from the // previous block with rw_counter = 0
         // self.condition(q.first_access(), |cb| {
@@ -207,6 +234,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_account_destructed_constraints(&mut self, q: &Queries<F>) {
+        // 0. Unused keys are 0
         self.require_zero("id is 0 for AccountDestructed", q.id());
         self.require_zero("field_tag is 0 for AccountDestructed", q.field_tag());
         self.require_zero(
@@ -217,11 +245,13 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_call_context_constraints(&mut self, q: &Queries<F>) {
+        // Ref. spec 5.0. Unused keys are 0
         self.require_zero("address is 0 for CallContext", q.address.value.clone());
         self.require_zero(
             "storage_key is 0 for CallContext",
             q.storage_key.encoded.clone(),
         );
+        // Ref. spec 0.0. field_tag is in the expected range
         self.add_lookup(
             "field_tag in CallContextFieldTag range",
             (q.field_tag(), q.lookups.call_context_field_tag.clone()),
