@@ -128,7 +128,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             value,
             lexicographic_ordering: LexicographicOrderingChip::configure(
                 meta,
-                selector,
                 tag,
                 field_tag,
                 id.limbs,
