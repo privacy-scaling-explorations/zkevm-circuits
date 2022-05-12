@@ -70,7 +70,7 @@ use std::ops::Mul;
 
 #[derive(Clone)]
 pub struct Config<F: Field> {
-    selector: Column<Fixed>,
+    pub(crate) selector: Column<Fixed>,
     upper_limb_difference: Column<Advice>,
     pub(crate) upper_limb_difference_is_zero: IsZeroConfig<F>,
     lower_limb_difference: Column<Advice>,

@@ -11,6 +11,11 @@ use crate::evm_circuit::{
     param::N_BYTES_WORD,
     witness::{Rw, RwMap},
 };
+use crate::evm_circuit::{
+    table::{AccountFieldTag, RwTableTag},
+    util::not,
+};
+use crate::util::Expr;
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
@@ -106,9 +111,20 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
         let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
 
+        let lexicographic_ordering = LexicographicOrderingChip::configure(
+            meta,
+            tag,
+            field_tag,
+            id.limbs,
+            address.limbs,
+            storage_key.bytes,
+            rw_counter.limbs,
+            lookups.u16,
+        );
+
         let is_storage_key_unchanged = IsZeroChip::configure(
             meta,
-            |meta| meta.query_fixed(selector, Rotation::cur()),
+            |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
             |meta| {
                 meta.query_advice(storage_key.encoded, Rotation::cur())
                     - meta.query_advice(storage_key.encoded, Rotation::prev())
@@ -126,16 +142,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             field_tag,
             storage_key,
             value,
-            lexicographic_ordering: LexicographicOrderingChip::configure(
-                meta,
-                tag,
-                field_tag,
-                id.limbs,
-                address.limbs,
-                storage_key.bytes,
-                rw_counter.limbs,
-                lookups.u16,
-            ),
+            lexicographic_ordering,
             is_storage_key_unchanged,
             lookups,
             power_of_randomness,
@@ -172,14 +179,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             || "assign rw table",
             |mut region| {
                 for (offset, row) in self.rows.iter().enumerate() {
+                    region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
                     if offset != 0 {
-                        region.assign_fixed(
-                            || "selector",
-                            config.selector,
-                            offset,
-                            || Ok(F::one()),
-                        )?;
-
                         lexicographic_ordering_chip.assign(
                             &mut region,
                             offset,
@@ -265,5 +266,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
             .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
+        is_first_row: not::expr(
+            meta.query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
+        ),
     }
 }

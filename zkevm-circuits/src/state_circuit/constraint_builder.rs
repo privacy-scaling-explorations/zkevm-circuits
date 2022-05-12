@@ -6,7 +6,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not},
+    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -28,6 +28,7 @@ pub struct Queries<F: Field> {
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub is_storage_key_unchanged: Expression<F>,
+    pub is_first_row: Expression<F>,
     pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
 }
 
@@ -137,9 +138,8 @@ impl<F: Field> ConstraintBuilder<F> {
         // this pushes the degree to 17....
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
-                // previous tag is Start <=> this is the first stack rw
-                "previous tag is Start or address change is 0 or 1",
-                (q.prev_tag.clone() - RwTableTag::Start.expr())
+                "if not first row, address change is 0 or 1",
+                (not::expr(q.is_first_row.clone()))
                     * q.address_change()
                     * (1.expr() - q.address_change()),
             )
@@ -302,10 +302,13 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        not::expr(
-            self.lexicographic_ordering_upper_limb_difference_is_zero
-                .clone(),
-        ) * not::expr(self.is_storage_key_unchanged.clone())
+        or::expr(&[
+            self.is_first_row.clone(),
+            not::expr(
+                self.lexicographic_ordering_upper_limb_difference_is_zero
+                    .clone(),
+            ) * not::expr(self.is_storage_key_unchanged.clone()),
+        ])
     }
 
     fn address_change(&self) -> Expression<F> {
