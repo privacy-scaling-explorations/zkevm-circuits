@@ -7,6 +7,7 @@ use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
 use eth_types::{
+    address,
     evm_types::{MemoryAddress, StackAddress},
     Address, Field, ToAddress, Word, U256,
 };
@@ -255,12 +256,12 @@ fn mason() {
     let rows = vec![Rw::Account {
         rw_counter: 1,
         is_write: false,
-        account_address: Address::default(),
+        account_address: address!("0x000000000000000000000000000000000cafe002"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(2))]);
+    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
 
     let errors = verify_with_overrides(rows, overrides).err().unwrap();
 
@@ -290,13 +291,8 @@ fn verify_with_overrides(
     overrides: HashMap<(AdviceColumn, usize), Fr>,
 ) -> Result<(), Vec<VerifyFailure>> {
     // Sanity check that the original RwTable without overrides is valid.
-    // assert_eq!(verify(rows.clone()), Ok(()));
+    assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_rows = rows.len();
-    // let result = prover(rows, overrides).verify_at_rows(0..n_rows, 0..n_rows);
-    // let x = &result.err().unwrap()[0];
-    // let y = format!("{:?}", x);
-    // dbg!(y);
-    // panic!();
     prover(rows, overrides).verify_at_rows(0..n_rows, 0..n_rows)
 }

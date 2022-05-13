@@ -136,8 +136,8 @@ impl<F: Field> ConstraintBuilder<F> {
         //     "stack address fits into 10 bits",
         //     // TODO: add this condition into each of the lookups automatically
         //     (
-        //         not::expr(q.tag_matches(RwTableTag::Stack)) * q.address.value.clone(),
-        //         q.lookups.u10.clone(),
+        //         not::expr(q.tag_matches(RwTableTag::Stack)) *
+        // q.address.value.clone(),         q.lookups.u10.clone(),
         //     ),
         // );
         // this pushes the degree to 17....

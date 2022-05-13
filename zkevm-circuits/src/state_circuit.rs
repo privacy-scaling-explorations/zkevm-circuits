@@ -175,21 +175,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        #[cfg(test)]
-        // We have to assign the overrides first, because in halo2, the first assignment is the one
-        // that sticks.
-        layouter.assign_region(
-            || "rw table",
-            |mut region| {
-                for ((column, offset), &f) in &self.overrides {
-                    dbg!(offset, f);
-                    let advice_column = column.value(&config);
-                    region.assign_advice(|| "override", advice_column, *offset, || Ok(f))?;
-                }
-                Ok(())
-            },
-        )?;
-
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
         let is_storage_key_unchanged =
             IsZeroChip::construct(config.is_storage_key_unchanged.clone());
@@ -230,9 +215,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     if let Some(id) = row.id() {
                         config.id.assign(&mut region, offset, id as u32)?;
                     }
-                    // if let Some(address) = row.address() {
-                    //     config.address.assign(&mut region, offset, address)?;
-                    // }
+                    if let Some(address) = row.address() {
+                        config.address.assign(&mut region, offset, address)?;
+                    }
+
                     if let Some(field_tag) = row.field_tag() {
                         region.assign_advice(
                             || "field_tag",
@@ -262,6 +248,13 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 
                     prev_storage_key = cur_storage_key;
                 }
+
+                #[cfg(test)]
+                for ((column, offset), &f) in &self.overrides {
+                    let advice_column = column.value(&config);
+                    region.assign_advice(|| "override", advice_column, *offset, || Ok(f))?;
+                }
+
                 Ok(())
             },
         )?;
