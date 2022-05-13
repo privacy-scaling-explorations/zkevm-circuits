@@ -85,7 +85,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let mult_diff_nonce = meta.query_advice(mult_diff_nonce, Rotation::cur());
             let mult_diff_balance = meta.query_advice(mult_diff_balance, Rotation::cur());
 
-            // TODO
             let mut is_nonce_long = meta.query_advice(
                 sel1,
                 Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
@@ -237,10 +236,17 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let acc_mult_final = meta.query_advice(acc_mult_s, Rotation::cur());
 
             constraints.push((
-                "leaf nonce acc mult",
+                "leaf nonce acc mult (nonce long)",
                 q_enable.clone()
+                    * is_nonce_long.clone()
                     * (acc_mult_after_nonce.clone()
                         - acc_mult_prev.clone() * mult_diff_nonce.clone()),
+            ));
+            constraints.push((
+                "leaf nonce acc mult (nonce short)",
+                q_enable.clone()
+                    * (one.clone() - is_nonce_long.clone())
+                    * (acc_mult_after_nonce.clone() - acc_mult_prev.clone() * r_table[4].clone()), // r_table[4] because of s_rlp1, s_rlp2, c_rlp1, c_rlp2, and 1 for nonce_len = 1
             ));
 
             // Balance mult:
@@ -278,7 +284,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             ));
             constraints.push((
                 "account leaf RLP length",
-                q_enable.clone() * (rlp_len - key_len - one.clone() - s_rlp2 - one.clone() - one),
+                q_enable.clone()
+                    * (rlp_len
+                        - key_len
+                        - one.clone()
+                        - s_rlp2
+                        - one.clone() * (one.clone() - is_nonce_long)
+                        - one.clone() * (one.clone() - is_balance_long)),
                 // -1 because key_len is stored in 1 column
                 // -1 because of s_rlp1
                 // -1 because of s_rlp2
@@ -287,11 +299,21 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             constraints
         });
 
+        let q_enable_nonce_long = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+            let mut is_nonce_long = meta.query_advice(
+                sel1,
+                Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
+            );
+
+            q_enable * is_nonce_long
+        };
         // mult_diff_nonce corresponds to nonce length:
         mult_diff_lookup(
             meta,
-            q_enable.clone(),
-            5, // 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length info
+            q_enable_nonce_long, // mult_diff is acc_r when is_nonce_short
+            5,                   /* 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length
+                                  * info */
             s_advices[0],
             mult_diff_nonce,
             fixed_table,

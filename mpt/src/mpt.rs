@@ -163,8 +163,10 @@ struct ProofVariables<F> {
     node_index: u8,
     acc_s: F,
     acc_mult_s: F,
-    acc_account_leaf: F,
-    acc_mult_account_leaf: F,
+    acc_account_s: F,
+    acc_mult_account_s: F,
+    acc_account_c: F,
+    acc_mult_account_c: F,
     acc_nonce_balance_s: F,
     acc_mult_nonce_balance_s: F,
     acc_nonce_balance_c: F,
@@ -206,8 +208,10 @@ impl<F: FieldExt> ProofVariables<F> {
             node_index: 0,
             acc_s: F::zero(),
             acc_mult_s: F::zero(),
-            acc_account_leaf: F::zero(),
-            acc_mult_account_leaf: F::zero(),
+            acc_account_s: F::zero(),
+            acc_mult_account_s: F::zero(),
+            acc_account_c: F::zero(),
+            acc_mult_account_c: F::zero(),
             acc_nonce_balance_s: F::zero(),
             acc_mult_nonce_balance_s: F::zero(),
             acc_nonce_balance_c: F::zero(),
@@ -2524,11 +2528,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
 
                                 if row[row.len() - 1] == 6 {
-                                    pv.acc_s = acc;
-                                    pv.acc_mult_s = acc_mult;
+                                    pv.acc_account_s = acc;
+                                    pv.acc_mult_account_s = acc_mult
                                 } else {
-                                    pv.acc_c = acc;
-                                    pv.acc_mult_c = acc_mult;
+                                    pv.acc_account_c = acc;
+                                    pv.acc_mult_account_c = acc_mult
                                 }
 
                                 // For leaf S and leaf C we need to start with the same rlc.
@@ -2542,15 +2546,16 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || Ok(key_rlc_new),
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
+                                let mut acc_account;
+                                let mut acc_mult_account;
                                 if row[row.len() - 1] == 7 {
-                                    pv.acc_account_leaf = pv.acc_s;
-                                    pv.acc_mult_account_leaf = pv.acc_mult_s;
-
+                                    acc_account = pv.acc_account_s;
+                                    acc_mult_account = pv.acc_mult_account_s;
                                     // nonce RLC and balance RLC
                                     compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 } else {
-                                    pv.acc_s = pv.acc_c;
-                                    pv.acc_mult_s = pv.acc_mult_c;
+                                    acc_account = pv.acc_account_c;
+                                    acc_mult_account = pv.acc_mult_account_c;
 
                                     // assign nonce S
                                     region.assign_advice(
@@ -2576,16 +2581,16 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // s_rlp1, s_rlp2
                                 compute_acc_and_mult(
                                     row,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
+                                    &mut acc_account,
+                                    &mut acc_mult_account,
                                     S_START - 2,
                                     2,
                                 );
                                 // c_rlp1, c_rlp2
                                 compute_acc_and_mult(
                                     row,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
+                                    &mut acc_account,
+                                    &mut acc_mult_account,
                                     C_START - 2,
                                     2,
                                 );
@@ -2630,8 +2635,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                                 compute_acc_and_mult(
                                     row,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
+                                    &mut acc_account,
+                                    &mut acc_mult_account,
                                     S_START,
                                     nonce_len,
                                 );
@@ -2645,7 +2650,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // It's easier to constrain (in account_leaf_nonce_balance.rs)
                                 // the multiplier if we store acc_mult both after nonce and after
                                 // balance.
-                                let acc_mult_tmp = pv.acc_mult_s;
+                                let acc_mult_tmp = acc_mult_account;
                                 // balance contribution to leaf RLC
                                 let mut balance_len: usize = 1;
                                 if row[C_START] >= 128 {
@@ -2672,8 +2677,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
                                 compute_acc_and_mult(
                                     row,
-                                    &mut pv.acc_s,
-                                    &mut pv.acc_mult_s,
+                                    &mut acc_account,
+                                    &mut acc_mult_account,
                                     C_START,
                                     balance_len,
                                 );
@@ -2685,8 +2690,8 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 self.assign_acc(
                                     &mut region,
-                                    pv.acc_s,
-                                    pv.acc_mult_s,
+                                    acc_account,
+                                    acc_mult_account,
                                     F::zero(),
                                     acc_mult_tmp,
                                     offset,
@@ -2705,11 +2710,11 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || Ok(mult_diff_c),
                                 )?;
                                 if row[row.len() - 1] == 7 {
-                                    pv.acc_nonce_balance_s = pv.acc_s;
-                                    pv.acc_mult_nonce_balance_s = pv.acc_mult_s;
+                                    pv.acc_nonce_balance_s = acc_account;
+                                    pv.acc_mult_nonce_balance_s = acc_mult_account;
                                 } else {
-                                    pv.acc_nonce_balance_c = pv.acc_s;
-                                    pv.acc_mult_nonce_balance_c = pv.acc_mult_s;
+                                    pv.acc_nonce_balance_c = acc_account;
+                                    pv.acc_mult_nonce_balance_c = acc_mult_account;
                                 }
                             } else if row[row.len() - 1] == 9 || row[row.len() - 1] == 11 {
                                 if row[row.len() - 1] == 9 {
