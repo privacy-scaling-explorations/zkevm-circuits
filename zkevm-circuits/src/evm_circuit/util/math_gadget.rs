@@ -1155,8 +1155,8 @@ impl<F: Field> ShrWordsGadget<F> {
             .assign(region, offset, F::from(shf_div64), F::from(2))?;
         self.a64s_lo_lt_p_lo
             .iter()
-            .zip(a64s.iter())
-            .map(|(lt, val)| lt.assign(region, offset, F::from(*val), F::from_u128(p_lo)))
+            .zip(a64s_lo.iter())
+            .map(|(lt, val)| lt.assign(region, offset, F::from_u128(*val), F::from_u128(p_lo)))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
     }
