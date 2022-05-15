@@ -122,9 +122,10 @@ impl FixedTableTag {
                         })
                 }))
             }
-            Self::Pow2 => {
-                Box::new((0..65).map(move |value| [tag, F::from(value), F::from(1 << value)]))
-            }
+            Self::Pow2 => Box::new(
+                // gupeng
+                (0..65).map(move |value| [tag, F::from(value), F::from(value), F::zero()]),
+            ),
         }
     }
 }
