@@ -931,6 +931,8 @@ pub(crate) struct ShrWordsGadget<F> {
     shf_div64_eq1: IsEqualGadget<F>,
     // shf_div64 == 2
     shf_div64_eq2: IsEqualGadget<F>,
+    // a64s_lo[idx] < p_lo
+    a64s_lo_lt_p_lo: [LtGadget<F, 64>; 4],
 }
 
 impl<F: Field> ShrWordsGadget<F> {
@@ -951,16 +953,21 @@ impl<F: Field> ShrWordsGadget<F> {
         let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
         for idx in 0..4 {
             let offset = idx * N_BYTES_U64;
+
+            // a64s constraint
             cb.require_equal(
                 "a64s[idx] == from_bytes(a[8 * idx..8 * (idx + 1)])",
                 a64s[idx].expr(),
                 from_bytes::expr(&a.cells[offset..offset + N_BYTES_U64]),
             );
+
+            // b64s constraint
             cb.require_equal(
                 "b64s[idx] * shf_lt256 == from_bytes(b[8 * idx..8 * (idx + 1)])",
                 b64s[idx].expr() * shf_lt256.expr(),
                 from_bytes::expr(&b.cells[offset..offset + N_BYTES_U64]),
             );
+
             cb.require_equal(
                 "a64s[idx] == a64s_lo[idx] + a64s_hi[idx] * p_lo",
                 a64s[idx].expr(),
@@ -968,24 +975,47 @@ impl<F: Field> ShrWordsGadget<F> {
             );
         }
 
+        // a64s_lo[idx] < p_lo
+        let a64s_lo_lt_p_lo =
+            array_init(|idx| LtGadget::construct(cb, a64s_lo[idx].expr(), p_lo.expr()));
+
         // merge contraints
         let shf_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
         let shf_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
         let shf_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
         cb.require_equal(
-            "b64s[0] == (a64s_hi[0] + a64s_lo[1] * p_hi) * shf_div64_eq0 + (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq1 + (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq2 + a64s_hi[3] * (1 - shf_div64_eq0 - shf_div64_eq1 - shf_div64_eq2)",
+            "b64s[0] == \
+                (a64s_hi[0] + a64s_lo[1] * p_hi) * shf_div64_eq0 + \
+                (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq1 + \
+                (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq2 + \
+                a64s_hi[3] * (1 - shf_div64_eq0 - shf_div64_eq1 - shf_div64_eq2)",
             b64s[0].expr(),
-            (a64s_hi[0].expr() + a64s_lo[1].expr() * p_hi.expr()) * shf_div64_eq0.expr() + (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq1.expr() + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq2.expr() + a64s_hi[3].expr() * (1.expr() - shf_div64_eq0.expr() - shf_div64_eq1.expr() - shf_div64_eq2.expr()),
+            (a64s_hi[0].expr() + a64s_lo[1].expr() * p_hi.expr()) * shf_div64_eq0.expr()
+                + (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq1.expr()
+                + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq2.expr()
+                + a64s_hi[3].expr()
+                    * (1.expr()
+                        - shf_div64_eq0.expr()
+                        - shf_div64_eq1.expr()
+                        - shf_div64_eq2.expr()),
         );
         cb.require_equal(
-            "b64s[1] == (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq0 + (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq1 + a64s_hi[3] * shf_div64_eq2",
+            "b64s[1] == \
+                (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq0 + \
+                (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq1 + \
+                a64s_hi[3] * shf_div64_eq2",
             b64s[1].expr(),
-            (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq0.expr() + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr() + a64s_hi[3].expr() * shf_div64_eq2.expr(),
+            (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq0.expr()
+                + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr()
+                + a64s_hi[3].expr() * shf_div64_eq2.expr(),
         );
         cb.require_equal(
-            "b64s[2] == (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq0 + a64s_hi[3] * shf_div64_eq1",
+            "b64s[2] == \
+                (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq0 + \
+                a64s_hi[3] * shf_div64_eq1",
             b64s[2].expr(),
-            (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr() + a64s_hi[3].expr() * shf_div64_eq1.expr(),
+            (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr()
+                + a64s_hi[3].expr() * shf_div64_eq1.expr(),
         );
         cb.require_equal(
             "b64s[3] == a64s_hi[3] * shf_div64_eq0",
@@ -1034,6 +1064,7 @@ impl<F: Field> ShrWordsGadget<F> {
             shf_div64_eq0,
             shf_div64_eq1,
             shf_div64_eq2,
+            a64s_lo_lt_p_lo,
         }
     }
 
@@ -1122,6 +1153,14 @@ impl<F: Field> ShrWordsGadget<F> {
             .assign(region, offset, F::from(shf_div64), F::from(1))?;
         self.shf_div64_eq2
             .assign(region, offset, F::from(shf_div64), F::from(2))?;
+        for idx in 0..4 {
+            self.a64s_lo_lt_p_lo[idx].assign(
+                region,
+                offset,
+                F::from(a64s[idx]),
+                F::from_u128(p_lo),
+            )?;
+        }
         Ok(())
     }
 }
