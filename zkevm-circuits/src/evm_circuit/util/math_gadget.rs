@@ -2,6 +2,7 @@ use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::N_BYTES_U64,
+        table::{FixedTableTag, Lookup},
         util::{
             self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, pow_of_two_expr,
             select, split_u256, split_u256_limb64, sum, Cell,
@@ -924,6 +925,12 @@ pub(crate) struct ShrWordsGadget<F> {
     p_hi: Cell<F>,
     // shift < 256
     shf_lt256: IsZeroGadget<F>,
+    // shf_div64 == 0
+    shf_div64_eq0: IsZeroGadget<F>,
+    // shf_div64 == 1
+    shf_div64_eq1: IsEqualGadget<F>,
+    // shf_div64 == 2
+    shf_div64_eq2: IsEqualGadget<F>,
 }
 
 impl<F: Field> ShrWordsGadget<F> {
@@ -960,6 +967,57 @@ impl<F: Field> ShrWordsGadget<F> {
                 a64s_lo[idx].expr() + a64s_hi[idx].expr() * p_lo.expr(),
             );
         }
+
+        // merge contraints
+        let shf_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
+        let shf_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
+        let shf_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
+        cb.require_equal(
+            "b64s[0] == (a64s_hi[0] + a64s_lo[1] * p_hi) * shf_div64_eq0 + (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq1 + (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq2 + a64s_hi[3] * (1 - shf_div64_eq0 - shf_div64_eq1 - shf_div64_eq2)",
+            b64s[0].expr(),
+            (a64s_hi[0].expr() + a64s_lo[1].expr() * p_hi.expr()) * shf_div64_eq0.expr() + (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq1.expr() + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq2.expr() + a64s_hi[3].expr() * (1.expr() - shf_div64_eq0.expr() - shf_div64_eq1.expr() - shf_div64_eq2.expr()),
+        );
+        cb.require_equal(
+            "b64s[1] == (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq0 + (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq1 + a64s_hi[3] * shf_div64_eq2",
+            b64s[1].expr(),
+            (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq0.expr() + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr() + a64s_hi[3].expr() * shf_div64_eq2.expr(),
+        );
+        cb.require_equal(
+            "b64s[2] == (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq0 + a64s_hi[3] * shf_div64_eq1",
+            b64s[2].expr(),
+            (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr() + a64s_hi[3].expr() * shf_div64_eq1.expr(),
+        );
+        cb.require_equal(
+            "b64s[3] == a64s_hi[3] * shf_div64_eq0",
+            b64s[3].expr(),
+            a64s_hi[3].expr() * shf_div64_eq0.expr(),
+        );
+
+        // shift constraint
+        cb.require_equal(
+            "shift[0] == shf_mod64 + shf_div64 * 64",
+            shift.cells[0].expr(),
+            shf_mod64.expr() + shf_div64.expr() * 64.expr(),
+        );
+
+        // p_lo == pow(2, shf_mod64)
+        cb.add_lookup(
+            "Pow2 lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::Pow2.expr(),
+                values: [shf_mod64.expr(), p_lo.expr(), 0.expr()],
+            },
+        );
+
+        // p_hi == pow(2, 64 - shf_mod64)
+        cb.add_lookup(
+            "Pow2 lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::Pow2.expr(),
+                values: [64.expr() - shf_mod64.expr(), p_hi.expr(), 0.expr()],
+            },
+        );
+
         Self {
             a,
             shift,
@@ -973,6 +1031,9 @@ impl<F: Field> ShrWordsGadget<F> {
             p_lo,
             p_hi,
             shf_lt256,
+            shf_div64_eq0,
+            shf_div64_eq1,
+            shf_div64_eq2,
         }
     }
 
@@ -1045,14 +1106,22 @@ impl<F: Field> ShrWordsGadget<F> {
             .zip(a64s_hi.iter())
             .map(|(cell, val)| cell.assign(region, offset, Some(F::from_u128(*val))))
             .collect::<Result<Vec<_>, _>>()?;
+        let shf_div64 = shf_div64 as u64;
+        let shf_mod64 = shf_mod64 as u64;
         self.shf_div64
-            .assign(region, offset, Some(F::from_u128(shf_div64 as u128)))?;
+            .assign(region, offset, Some(F::from(shf_div64)))?;
         self.shf_mod64
-            .assign(region, offset, Some(F::from_u128(shf_mod64 as u128)))?;
+            .assign(region, offset, Some(F::from(shf_mod64)))?;
         self.p_lo.assign(region, offset, Some(F::from_u128(p_lo)))?;
         self.p_hi.assign(region, offset, Some(F::from_u128(p_hi)))?;
         self.shf_lt256
             .assign(region, offset, F::from_u128(shf_lt256))?;
+        self.shf_div64_eq0
+            .assign(region, offset, F::from(shf_div64))?;
+        self.shf_div64_eq1
+            .assign(region, offset, F::from(shf_div64), F::from(1))?;
+        self.shf_div64_eq2
+            .assign(region, offset, F::from(shf_div64), F::from(2))?;
         Ok(())
     }
 }
