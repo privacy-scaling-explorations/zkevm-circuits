@@ -932,7 +932,7 @@ pub(crate) struct ShrWordsGadget<F> {
     // shf_div64 == 2
     shf_div64_eq2: IsEqualGadget<F>,
     // a64s_lo[idx] < p_lo
-    a64s_lo_lt_p_lo: [LtGadget<F, 64>; 4],
+    a64s_lo_lt_p_lo: [LtGadget<F, 16>; 4],
 }
 
 impl<F: Field> ShrWordsGadget<F> {
@@ -1113,7 +1113,7 @@ impl<F: Field> ShrWordsGadget<F> {
             a64s_hi[idx] = u128::from(a64s[idx]) / p_lo;
         }
         let mut b64s = [0_u128; 4];
-        b64s[3 - shf_div64 as usize] = a64s_hi[3].into();
+        b64s[3 - shf_div64 as usize] = a64s_hi[3];
         for k in 0..3 - shf_div64 {
             b64s[k] = a64s_hi[k + shf_div64] + a64s_lo[k + shf_div64 + 1] * p_hi;
         }
@@ -1153,14 +1153,11 @@ impl<F: Field> ShrWordsGadget<F> {
             .assign(region, offset, F::from(shf_div64), F::from(1))?;
         self.shf_div64_eq2
             .assign(region, offset, F::from(shf_div64), F::from(2))?;
-        for idx in 0..4 {
-            self.a64s_lo_lt_p_lo[idx].assign(
-                region,
-                offset,
-                F::from(a64s[idx]),
-                F::from_u128(p_lo),
-            )?;
-        }
+        self.a64s_lo_lt_p_lo
+            .iter()
+            .zip(a64s.iter())
+            .map(|(lt, val)| lt.assign(region, offset, F::from(*val), F::from_u128(p_lo)))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(())
     }
 }
