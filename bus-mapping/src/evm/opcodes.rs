@@ -295,7 +295,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
-    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
@@ -312,7 +312,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         },
     )?;
 
-    let (found, callee_account) = state.sdb.get_account_mut(&call.address);
+    let (found, callee_account) = state.sdb.get_account(&call.address);
     if !found {
         return Err(Error::AccountNotFound(call.address));
     }
@@ -559,7 +559,7 @@ fn dummy_gen_call_ops(
     let (_, account) = state.sdb.get_account(&call.address);
     let callee_code_hash = account.code_hash;
 
-    let is_warm_prev = !state.sdb.add_account_to_access_list(call.address);
+    let is_warm = state.sdb.check_account_in_access_list(&call.address);
     state.push_op_reversible(
         &mut exec_step,
         RW::WRITE,
@@ -567,7 +567,7 @@ fn dummy_gen_call_ops(
             tx_id,
             address: call.address,
             is_warm: true,
-            is_warm_prev,
+            is_warm_prev: is_warm,
         },
     )?;
 
@@ -600,7 +600,7 @@ fn dummy_gen_create_ops(
     let call = state.parse_call(geth_step)?;
 
     // Increase caller's nonce
-    let nonce_prev = state.sdb.increase_nonce(&call.caller_address);
+    let nonce_prev = state.sdb.get_nonce(&call.caller_address);
     state.push_op_reversible(
         &mut exec_step,
         RW::WRITE,
@@ -613,7 +613,7 @@ fn dummy_gen_create_ops(
     )?;
 
     // Add callee into access list
-    let is_warm_prev = !state.sdb.add_account_to_access_list(call.address);
+    let is_warm = state.sdb.check_account_in_access_list(&call.address);
     state.push_op_reversible(
         &mut exec_step,
         RW::WRITE,
@@ -621,14 +621,14 @@ fn dummy_gen_create_ops(
             tx_id,
             address: call.address,
             is_warm: true,
-            is_warm_prev,
+            is_warm_prev: is_warm,
         },
     )?;
 
     state.push_call(call.clone(), geth_step);
 
     // Increase callee's nonce
-    let nonce_prev = state.sdb.increase_nonce(&call.address);
+    let nonce_prev = state.sdb.get_nonce(&call.address);
     debug_assert!(nonce_prev == 0);
     state.push_op_reversible(
         &mut exec_step,
@@ -641,13 +641,12 @@ fn dummy_gen_create_ops(
         },
     )?;
 
-    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance = caller_account.balance - call.value;
-    caller_account.balance = caller_balance;
     state.push_op_reversible(
         &mut exec_step,
         RW::WRITE,
@@ -659,13 +658,12 @@ fn dummy_gen_create_ops(
         },
     )?;
 
-    let (found, callee_account) = state.sdb.get_account_mut(&call.address);
+    let (found, callee_account) = state.sdb.get_account(&call.address);
     if !found {
         return Err(Error::AccountNotFound(call.address));
     }
     let callee_balance_prev = callee_account.balance;
     let callee_balance = callee_account.balance + call.value;
-    callee_account.balance = callee_balance;
     state.push_op_reversible(
         &mut exec_step,
         RW::WRITE,

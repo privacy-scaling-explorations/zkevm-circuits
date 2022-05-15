@@ -86,7 +86,7 @@ impl Opcode for Call {
             },
         );
 
-        let is_warm_prev = !state.sdb.add_account_to_access_list(call.address);
+        let is_warm = state.sdb.check_account_in_access_list(&call.address);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -94,7 +94,7 @@ impl Opcode for Call {
                 tx_id,
                 address: call.address,
                 is_warm: true,
-                is_warm_prev,
+                is_warm_prev: is_warm,
             },
         )?;
 
@@ -119,13 +119,12 @@ impl Opcode for Call {
             );
         }
 
-        let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+        let (found, caller_account) = state.sdb.get_account(&call.caller_address);
         if !found {
             return Err(Error::AccountNotFound(call.caller_address));
         }
         let caller_balance_prev = caller_account.balance;
         let caller_balance = caller_account.balance - call.value;
-        caller_account.balance = caller_balance;
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -137,14 +136,13 @@ impl Opcode for Call {
             },
         )?;
 
-        let (found, callee_account) = state.sdb.get_account_mut(&call.address);
+        let (found, callee_account) = state.sdb.get_account(&call.address);
         if !found {
             return Err(Error::AccountNotFound(call.address));
         }
         let is_account_empty = callee_account.is_empty();
         let callee_balance_prev = callee_account.balance;
         let callee_balance = callee_account.balance + call.value;
-        callee_account.balance = callee_balance;
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -186,7 +184,7 @@ impl Opcode for Call {
         .max()
         .unwrap();
         let has_value = !call.value.is_zero();
-        let gas_cost = if is_warm_prev {
+        let gas_cost = if is_warm {
             GasCost::WARM_ACCESS.as_u64()
         } else {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()

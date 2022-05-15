@@ -78,9 +78,9 @@ impl Opcode for Sstore {
         state.push_stack_op(&mut exec_step, RW::READ, key_stack_position, key)?;
         state.push_stack_op(&mut exec_step, RW::READ, value_stack_position, value)?;
 
-        let is_warm_prev = !state
+        let is_warm = state
             .sdb
-            .add_account_storage_to_access_list((contract_addr, key));
+            .check_account_storage_in_access_list(&(contract_addr, key));
 
         let (_, value_prev) = state.sdb.get_storage(&contract_addr, &key);
         let value_prev = *value_prev;
@@ -108,7 +108,7 @@ impl Opcode for Sstore {
                 address: state.call()?.address,
                 key,
                 is_warm: true,
-                is_warm_prev,
+                is_warm_prev: is_warm,
             },
         )?;
 
