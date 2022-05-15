@@ -83,6 +83,9 @@ pub struct StateDB {
     // state before current transaction, to calculate gas cost for some opcodes like sstore.
     // So both dirty storage and committed storage are needed.
     dirty_storage: HashMap<(Address, Word), Word>,
+    // Accounts that have been through `SELFDESTRUCT` under the situation that `is_persistent` is
+    // `true`. These accounts will be reset once `commit_tx` is called.
+    destructed_account: HashSet<Address>,
     refund: u64,
 }
 
@@ -94,6 +97,7 @@ impl StateDB {
             access_list_account: HashSet::new(),
             access_list_account_storage: HashSet::new(),
             dirty_storage: HashMap::new(),
+            destructed_account: HashSet::new(),
             refund: 0,
         }
     }
@@ -221,6 +225,11 @@ impl StateDB {
         debug_assert!(exist);
     }
 
+    /// Set account as self destructed.
+    pub fn destruct_account(&mut self, addr: Address) {
+        self.destructed_account.insert(addr);
+    }
+
     /// Retrieve refund.
     pub fn refund(&self) -> u64 {
         self.refund
@@ -242,6 +251,10 @@ impl StateDB {
             *ptr = value;
         }
         self.dirty_storage = HashMap::new();
+        for addr in self.destructed_account.clone() {
+            let (_, account) = self.get_account_mut(&addr);
+            *account = ACCOUNT_ZERO.clone();
+        }
         self.refund = 0;
     }
 }

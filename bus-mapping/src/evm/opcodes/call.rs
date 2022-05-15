@@ -119,44 +119,17 @@ impl Opcode for Call {
             );
         }
 
-        let (found, caller_account) = state.sdb.get_account(&call.caller_address);
-        if !found {
-            return Err(Error::AccountNotFound(call.caller_address));
-        }
-        let caller_balance_prev = caller_account.balance;
-        let caller_balance = caller_account.balance - call.value;
-        state.push_op_reversible(
+        state.transfer(
             &mut exec_step,
-            RW::WRITE,
-            AccountOp {
-                address: call.caller_address,
-                field: AccountField::Balance,
-                value: caller_balance,
-                value_prev: caller_balance_prev,
-            },
+            call.caller_address,
+            call.address,
+            call.value,
         )?;
 
-        let (found, callee_account) = state.sdb.get_account(&call.address);
-        if !found {
-            return Err(Error::AccountNotFound(call.address));
-        }
+        let (_, callee_account) = state.sdb.get_account(&call.address);
         let is_account_empty = callee_account.is_empty();
-        let callee_balance_prev = callee_account.balance;
-        let callee_balance = callee_account.balance + call.value;
-        state.push_op_reversible(
-            &mut exec_step,
-            RW::WRITE,
-            AccountOp {
-                address: call.address,
-                field: AccountField::Balance,
-                value: callee_balance,
-                value_prev: callee_balance_prev,
-            },
-        )?;
-
-        let (_, account) = state.sdb.get_account(&call.address);
-        let callee_nonce = account.nonce;
-        let callee_code_hash = account.code_hash;
+        let callee_nonce = callee_account.nonce;
+        let callee_code_hash = callee_account.code_hash;
         for (field, value) in [
             (AccountField::Nonce, callee_nonce),
             (AccountField::CodeHash, callee_code_hash.to_word()),

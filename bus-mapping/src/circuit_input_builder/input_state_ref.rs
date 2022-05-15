@@ -8,8 +8,8 @@ use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
     operation::{
-        AccountField, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation, StackOp,
-        Target, RW,
+        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
+        StackOp, Target, RW,
     },
     state_db::{CodeDB, StateDB},
     Error,
@@ -263,6 +263,64 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_id = self.call()?.call_id;
         self.push_op(step, RW::READ, StackOp::new(call_id, address, value));
         Ok(())
+    }
+
+    /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
+    /// balance by `value`, with `sender` being extraly charged with `fee`.
+    pub fn transfer_with_fee(
+        &mut self,
+        step: &mut ExecStep,
+        sender: Address,
+        receiver: Address,
+        value: Word,
+        fee: Word,
+    ) -> Result<(), Error> {
+        let (found, sender_account) = self.sdb.get_account(&sender);
+        if !found {
+            return Err(Error::AccountNotFound(sender));
+        }
+        let sender_balance_prev = sender_account.balance;
+        let sender_balance = sender_account.balance - value - fee;
+        self.push_op_reversible(
+            step,
+            RW::WRITE,
+            AccountOp {
+                address: sender,
+                field: AccountField::Balance,
+                value: sender_balance,
+                value_prev: sender_balance_prev,
+            },
+        )?;
+
+        let (found, receiver_account) = self.sdb.get_account(&receiver);
+        if !found {
+            return Err(Error::AccountNotFound(receiver));
+        }
+        let receiver_balance_prev = receiver_account.balance;
+        let receiver_balance = receiver_account.balance + value;
+        self.push_op_reversible(
+            step,
+            RW::WRITE,
+            AccountOp {
+                address: receiver,
+                field: AccountField::Balance,
+                value: receiver_balance,
+                value_prev: receiver_balance_prev,
+            },
+        )?;
+
+        Ok(())
+    }
+
+    /// Same functionality with `transfer_with_fee` but with `fee` set zero.
+    pub fn transfer(
+        &mut self,
+        step: &mut ExecStep,
+        sender: Address,
+        receiver: Address,
+        value: Word,
+    ) -> Result<(), Error> {
+        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
     }
 
     /// Fetch and return code for the given code hash from the code DB.

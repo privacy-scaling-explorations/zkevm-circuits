@@ -11,7 +11,7 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToWord, Word,
+    GethExecStep, ToAddress, ToWord, Word,
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
@@ -203,7 +203,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::STATICCALL => {},
         // TODO: Handle REVERT by its own gen_associated_ops.
         OpcodeId::REVERT => Stop::gen_associated_ops,
-        // OpcodeId::SELFDESTRUCT => {},
+        OpcodeId::SELFDESTRUCT => {
+            warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
+            dummy_gen_selfdestruct_ops
+        }
         OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
             dummy_gen_call_ops
@@ -256,6 +259,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         );
     }
 
+    // Increase caller's nonce
     let caller_address = call.caller_address;
     let nonce_prev = state.sdb.increase_nonce(&caller_address);
     state.push_op(
@@ -269,6 +273,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         },
     );
 
+    // Add caller and callee into access list
     for address in [call.caller_address, call.address] {
         state.sdb.add_account_to_access_list(address);
         state.push_op(
@@ -283,6 +288,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         );
     }
 
+    // Calculate intrinsic gas cost
     let call_data_gas_cost = state
         .tx
         .input
@@ -295,40 +301,18 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
-    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
-    if !found {
-        return Err(Error::AccountNotFound(call.caller_address));
-    }
-    let caller_balance_prev = caller_account.balance;
-    let caller_balance = caller_account.balance - call.value - state.tx.gas_price * state.tx.gas;
-    state.push_op_reversible(
+    // Transfer with fee
+    state.transfer_with_fee(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.caller_address,
-            field: AccountField::Balance,
-            value: caller_balance,
-            value_prev: caller_balance_prev,
-        },
+        call.caller_address,
+        call.address,
+        call.value,
+        state.tx.gas_price * state.tx.gas,
     )?;
 
-    let (found, callee_account) = state.sdb.get_account(&call.address);
-    if !found {
-        return Err(Error::AccountNotFound(call.address));
-    }
-    let callee_balance_prev = callee_account.balance;
-    let callee_balance = callee_account.balance + call.value;
+    // Get code_hash of callee
+    let (_, callee_account) = state.sdb.get_account(&call.address);
     let code_hash = callee_account.code_hash;
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.address,
-            field: AccountField::Balance,
-            value: callee_balance,
-            value_prev: callee_balance_prev,
-        },
-    )?;
 
     // There are 4 branches from here.
     match (
@@ -641,38 +625,11 @@ fn dummy_gen_create_ops(
         },
     )?;
 
-    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
-    if !found {
-        return Err(Error::AccountNotFound(call.caller_address));
-    }
-    let caller_balance_prev = caller_account.balance;
-    let caller_balance = caller_account.balance - call.value;
-    state.push_op_reversible(
+    state.transfer(
         &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.caller_address,
-            field: AccountField::Balance,
-            value: caller_balance,
-            value_prev: caller_balance_prev,
-        },
-    )?;
-
-    let (found, callee_account) = state.sdb.get_account(&call.address);
-    if !found {
-        return Err(Error::AccountNotFound(call.address));
-    }
-    let callee_balance_prev = callee_account.balance;
-    let callee_balance = callee_account.balance + call.value;
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        AccountOp {
-            address: call.address,
-            field: AccountField::Balance,
-            value: callee_balance,
-            value_prev: callee_balance_prev,
-        },
+        call.caller_address,
+        call.address,
+        call.value,
     )?;
 
     if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
@@ -683,4 +640,39 @@ fn dummy_gen_create_ops(
         // 2. Create with non-empty initcode.
         Ok(vec![exec_step])
     }
+}
+
+fn dummy_gen_selfdestruct_ops(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    let geth_step = &geth_steps[0];
+    let mut exec_step = state.new_step(geth_step)?;
+    let sender = state.call()?.address;
+    let receiver = geth_step.stack.last()?.to_address();
+
+    let is_warm = state.sdb.check_account_in_access_list(&receiver);
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        TxAccessListAccountOp {
+            tx_id: state.tx_ctx.id(),
+            address: receiver,
+            is_warm: true,
+            is_warm_prev: is_warm,
+        },
+    )?;
+
+    let (found, receiver_account) = state.sdb.get_account(&receiver);
+    if !found {
+        return Err(Error::AccountNotFound(receiver));
+    }
+    let value = receiver_account.balance;
+    state.transfer(&mut exec_step, sender, receiver, value)?;
+
+    if state.call()?.is_persistent {
+        state.sdb.destruct_account(sender);
+    }
+
+    Ok(vec![exec_step])
 }
