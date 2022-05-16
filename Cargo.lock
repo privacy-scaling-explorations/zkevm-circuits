@@ -1108,6 +1108,7 @@ dependencies = [
  "ethers-providers",
  "halo2_proofs",
  "hex",
+ "itertools",
  "lazy_static",
  "regex",
  "serde",

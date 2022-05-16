@@ -4,6 +4,7 @@ use crate::{DebugByte, ToBigEndian, Word};
 use core::convert::TryFrom;
 use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 use core::str::FromStr;
+use itertools::Itertools;
 use std::fmt;
 
 /// Represents a `MemoryAddress` of the EVM.
@@ -81,7 +82,7 @@ impl TryFrom<Word> for MemoryAddress {
 
 impl_from_usize_wrappers!(
     MemoryAddress = MemoryAddress,
-    (u8, u16, u32, usize, i32, i64)
+    (u8, u16, u32, u64, usize, i32, i64)
 );
 
 impl FromStr for MemoryAddress {
@@ -259,17 +260,25 @@ impl Memory {
 
     /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
     /// `addr` and finnishes at `addr + 32`.
-    pub fn read_word(&self, addr: MemoryAddress) -> Result<Word, Error> {
-        // Ensure that the memory is big enough to have values in the range
-        // `[addr, addr+32)`.
-        if self.0.len() < addr.0 + 32 {
-            return Err(Error::InvalidMemoryPointer);
-        }
+    pub fn read_word(&self, addr: MemoryAddress) -> Word {
+        Word::from_big_endian(&self.read_chunk(addr, MemoryAddress::from(32)))
+    }
 
-        // Now we know that the indexing will not panic.
-        Ok(Word::from_big_endian(
-            &self[addr..addr + MemoryAddress::from(32)],
-        ))
+    /// Reads an chunk of memory[offset..offset+length]. Zeros will be padded if
+    /// index out of range.
+    pub fn read_chunk(&self, offset: MemoryAddress, length: MemoryAddress) -> Vec<u8> {
+        let chunk = if self.0.len() < offset.0 {
+            &[]
+        } else {
+            &self.0[offset.0..]
+        };
+        let chunk = if chunk.len() < length.0 {
+            // Expand chunk to expected size
+            chunk.iter().cloned().pad_using(length.0, |_| 0).collect()
+        } else {
+            chunk[..length.0].to_vec()
+        };
+        chunk
     }
 
     /// Returns the size of memory in word.
@@ -336,7 +345,7 @@ mod memory_tests {
 
         // If we read a word at addr `0x40` we should get `0x80`.
         assert_eq!(
-            mem_map.read_word(MemoryAddress::from(0x40))?,
+            mem_map.read_word(MemoryAddress::from(0x40)),
             Word::from(0x80)
         );
 
