@@ -7,15 +7,11 @@ mod random_linear_combination;
 #[cfg(test)]
 mod test;
 
+use crate::evm_circuit::util::not;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     witness::{Rw, RwMap},
 };
-use crate::evm_circuit::{
-    table::{AccountFieldTag, RwTableTag},
-    util::not,
-};
-use crate::util::Expr;
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};

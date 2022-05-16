@@ -23,6 +23,8 @@ use std::collections::HashMap;
 pub enum AdviceColumn {
     IsWrite,
     Address,
+    AddressLimb0,
+    AddressLimb1,
 }
 
 impl AdviceColumn {
@@ -30,6 +32,8 @@ impl AdviceColumn {
         match self {
             Self::IsWrite => config.is_write,
             Self::Address => config.address.value,
+            Self::AddressLimb0 => config.address.limbs[0], // because of be order of limbs
+            Self::AddressLimb1 => config.address.limbs[1], // because of be order of limbs
         }
     }
 }
@@ -252,7 +256,7 @@ fn diff_1_problem_repro() {
 }
 
 #[test]
-fn mason() {
+fn address_limb_mismatch() {
     let rows = vec![Rw::Account {
         rw_counter: 1,
         is_write: false,
@@ -263,10 +267,29 @@ fn mason() {
     }];
     let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
 
-    let errors = verify_with_overrides(rows, overrides).err().unwrap();
+    let result = verify_with_overrides(rows, overrides);
 
-    assert_eq!(errors.len(), 1);
-    assert!(format!("{}", errors[0]).contains("mpi value matches claimed limbs"));
+    assert_error_matches(result, "mpi value matches claimed limbs");
+}
+
+#[test]
+fn address_limb_out_of_range() {
+    let rows = vec![Rw::Account {
+        rw_counter: 1,
+        is_write: false,
+        account_address: address!("0x0000000000000000000000000000000000010000"),
+        field_tag: AccountFieldTag::CodeHash,
+        value: U256::one(),
+        value_prev: U256::zero(),
+    }];
+    let overrides = HashMap::from([
+        ((AdviceColumn::AddressLimb0, 0), Fr::from(1 << 16)),
+        ((AdviceColumn::AddressLimb1, 0), Fr::zero()),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "mpi limb fits into u16");
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
@@ -295,4 +318,28 @@ fn verify_with_overrides(
 
     let n_rows = rows.len();
     prover(rows, overrides).verify_at_rows(0..n_rows, 0..n_rows)
+}
+
+fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
+    let errors = result.err().expect("result is not an error");
+    dbg!(&errors);
+    assert_eq!(errors.len(), 1);
+    match &errors[0] {
+        VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
+            // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
+            // to match off of its format string.
+            let constraint = format!("{}", constraint);
+            if !constraint.contains(name) {
+                panic!("{} does not contain {}", constraint, name);
+            }
+        }
+        VerifyFailure::Lookup {
+            name: lookup_name, ..
+        } => {
+            assert_eq!(lookup_name, &name)
+        }
+        VerifyFailure::CellNotAssigned { .. } => panic!(),
+        VerifyFailure::ConstraintPoisoned { .. } => panic!(),
+        VerifyFailure::Permutation { .. } => panic!(),
+    }
 }
