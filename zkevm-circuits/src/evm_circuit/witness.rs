@@ -429,7 +429,7 @@ impl RwMap {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Rw {
     TxAccessListAccount {
         rw_counter: usize,

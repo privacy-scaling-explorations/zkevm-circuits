@@ -240,13 +240,17 @@ impl<F: Field> Chip<F> {
             .zip(&prev_be_limbs)
             .enumerate()
             .find(|(_, (a, b))| a != b);
-        let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
+        let (index, (cur_limb, prev_limb)) = if cfg!(test) {
+            find_result.unwrap_or((30, (&0, &0)))
+        } else {
+            find_result.expect("repeated rw counter")
+        };
 
-        let mut upper_limb_difference = F::from((cur_limb - prev_limb) as u64);
+        let mut upper_limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
         let mut lower_limb_difference = lower_limb_difference_value(&cur_be_limbs, &prev_be_limbs);
         if index >= 15 {
+            lower_limb_difference = upper_limb_difference;
             upper_limb_difference = F::zero();
-            lower_limb_difference = F::from((cur_limb - prev_limb) as u64);
         }
 
         region.assign_advice(

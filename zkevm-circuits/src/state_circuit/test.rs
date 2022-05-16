@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::AccountFieldTag,
+    table::{AccountFieldTag, CallContextFieldTag},
     witness::{Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -262,7 +262,7 @@ fn address_limb_mismatch() {
         is_write: false,
         account_address: address!("0x000000000000000000000000000000000cafe002"),
         field_tag: AccountFieldTag::CodeHash,
-        value: U256::one(),
+        value: U256::zero(),
         value_prev: U256::zero(),
     }];
     let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
@@ -279,7 +279,7 @@ fn address_limb_out_of_range() {
         is_write: false,
         account_address: address!("0x0000000000000000000000000000000000010000"),
         field_tag: AccountFieldTag::CodeHash,
-        value: U256::one(),
+        value: U256::zero(),
         value_prev: U256::zero(),
     }];
     let overrides = HashMap::from([
@@ -290,6 +290,54 @@ fn address_limb_out_of_range() {
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "mpi limb fits into u16");
+}
+
+#[test]
+fn nonlexicographic_order_tag() {
+    let first = Rw::Memory {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 1,
+        memory_address: 10,
+        byte: 12,
+    };
+    let second = Rw::CallContext {
+        rw_counter: 2,
+        is_write: false,
+        call_id: 1,
+        field_tag: CallContextFieldTag::IsSuccess,
+        value: U256::one(),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_rw_counter() {
+    let first = Rw::CallContext {
+        rw_counter: 0,
+        is_write: false,
+        call_id: 1,
+        field_tag: CallContextFieldTag::IsSuccess,
+        value: U256::one(),
+    };
+    let second = Rw::CallContext {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 1,
+        field_tag: CallContextFieldTag::IsSuccess,
+        value: U256::one(),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference is zero or lower_limb_difference fits into u16",
+    );
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
