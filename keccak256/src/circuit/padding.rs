@@ -105,6 +105,7 @@ impl<F: Field> PaddingConfig<F> {
             diff_inv,
         );
         let word_config = WordConfig::configure(meta, padded_byte, word);
+        // Check bytes in the pad zone must be 0
         meta.create_gate("all", |meta| {
             let q_all = meta.query_selector(q_all);
             let is_pad_zone_cur = meta.query_advice(is_pad_zone, Rotation::cur());
@@ -112,7 +113,9 @@ impl<F: Field> PaddingConfig<F> {
 
             vec![q_all * (is_pad_zone_cur * byte_cur)]
         });
-
+        // check that
+        // 1. acc_len is increasing by one in each row
+        // 2. padded_byte is correctly padded 0x80 from byte
         meta.create_gate("without last", |meta| {
             let q_without_last = meta.query_selector(q_without_last);
             let acc_len_cur = meta.query_advice(acc_len, Rotation::cur());
@@ -130,6 +133,8 @@ impl<F: Field> PaddingConfig<F> {
                 )))
                 .map(move |(name, poly)| (name, q_without_last.clone() * poly))
         });
+        // Check that cells in the pad_zone column are 0 before the pad, and are 1 after
+        // the pad.
         meta.create_gate("without first", |meta| {
             let q_without_first = meta.query_selector(q_without_first);
             let is_pad_zone_prev = meta.query_advice(is_pad_zone, Rotation::prev());
@@ -142,7 +147,8 @@ impl<F: Field> PaddingConfig<F> {
                         - diff_is_zero.clone().is_zero_expression),
             )]
         });
-
+        // padded_byte is padded 0x80 if pad happens here. padded_byte is also padded
+        // 0x01 if the state_tag is Finalize
         meta.create_gate("last", |meta| {
             let q_last = meta.query_selector(q_last);
             let is_finalize = meta.query_advice(is_finalize, Rotation::cur());
