@@ -20,7 +20,8 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let map_type = |t| match t {
         "uint" => ParamType::Uint(256),
         "uint256" => ParamType::Uint(256),
-        _ => unimplemented!(),
+        "bool" => ParamType::Bool,
+        _ => panic!("unimplemented abi type {:?}", t),
     };
 
     let encode_type = |t, v: &str| match t {
@@ -30,7 +31,14 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
             } else {
                 U256::from_str_radix(v, 10).map(Token::Uint)
             }
-        }
+        },
+        &ParamType::Bool => {
+            match v.to_lowercase().as_str() {
+                "true" | "0x01" => Ok(Token::Bool(true)),
+                "false" | "0x00" => Ok(Token::Bool(false)),
+                _ => panic!("unexpected boolean '{}'", v)
+            }
+        },
         _ => unimplemented!(),
     };
 

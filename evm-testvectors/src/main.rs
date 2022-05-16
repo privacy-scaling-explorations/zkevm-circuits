@@ -1,12 +1,11 @@
 mod abi;
-mod code_cache;
-mod lllc;
+mod compiler;
 mod result_cache;
 mod statetest;
 mod utils;
 mod yaml;
 
-use crate::lllc::Lllc;
+use crate::compiler::Compiler;
 use crate::yaml::YamlStateTestBuilder;
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -54,16 +53,13 @@ struct Args {
     raw: Option<String>,
 }
 
-const TEST_IGNORE_LIST : [&str;1] = ["gasCostMemory_d61_g0_v0"];
-const FILE_IGNORE_LIST : [&str;4]=  [
-        "EIP1559",
-        "EIP2930",
-        "stExample",
-        "ValueOverflowFiller", // weird 0x:biginteger 0x...
-    ];
-
-
-
+const TEST_IGNORE_LIST: [&str; 0] = [];
+const FILE_IGNORE_LIST: [&str; 4] = [
+    "EIP1559",
+    "EIP2930",
+    "stExample",
+    "ValueOverflowFiller", // weird 0x:biginteger 0x...
+];
 
 /// This crate helps to execute the common ethereum tests located in https://github.com/ethereum/tests
 
@@ -79,18 +75,16 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
 
     let results = Arc::new(RwLock::from(results));
 
-
     // for each test
     tcs.into_par_iter().for_each(|tc| {
         let id = tc.id.clone();
-        if TEST_IGNORE_LIST.contains(&id.as_str()) {
+        if TEST_IGNORE_LIST.iter().any(|t| id.as_str().contains(t)) {
             return;
         }
         if results.read().unwrap().contains(&id.as_str()) {
             return;
         }
 
-        log::info!("Running {}",id);
         std::panic::set_hook(Box::new(|_info| {}));
         let result = std::panic::catch_unwind(|| tc.run(config.clone()));
 
@@ -99,6 +93,7 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
             Ok(res) => res,
             Err(_) => {
                 log::error!(target: "vmvectests", "PANIKED test {}",id);
+                results.write().unwrap().insert(&id, "00PANIK").unwrap();
                 return;
             }
         };
@@ -112,17 +107,21 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
                     results
                         .write()
                         .unwrap()
-                        .insert(&id, &format!("{}", err))
+                        .insert(&id, &format!("03SKIPPED {}", err))
                         .unwrap();
+                },
+                _ => {
+                    log::error!(target: "vmvectests", "FAILED test {} : {:?}",id, err);
+                    results.write().unwrap().insert(&id, &format!("01FAILED {:?}",err)).unwrap();
                 }
-                _ => log::error!(target: "vmvectests", "FAILED test {} : {:?}",id, err),
+
             }
             return;
         }
 
         let results = std::sync::Arc::clone(&results);
-        results.write().unwrap().insert(&id, "success").unwrap();
-        log::info!(target: "vmvectests", "SUCCESS test {}",id)
+        results.write().unwrap().insert(&id, "04success").unwrap();
+        log::info!(target: "vmvectests", "04SUCCESS test {}",id)
     });
 
     Ok(())
@@ -225,9 +224,9 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
 }
 
 fn main() -> Result<()> {
+    //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
+    // "tests/src/GeneralStateTestsFiller/**" --skip-state-circuit
 
-    //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path "tests/src/GeneralStateTestsFiller/**" --skip-state-circuit
-    
     let args = Args::parse();
 
     let bytecode_test_config = BytecodeTestConfig {
@@ -243,7 +242,7 @@ fn main() -> Result<()> {
     ResultCache::new(PathBuf::from(RESULT_CACHE))?.sort()?;
 
     let config = StateTestConfig {
-        max_gas: Gas(1000000),
+        max_gas: Gas(100000000),
         run_circuit: !args.skip_circuit,
         bytecode_test_config,
     };
@@ -253,17 +252,21 @@ fn main() -> Result<()> {
     let files = glob::glob(&format!("{}/*.yml", args.path))
         .expect("Failed to read glob pattern")
         .map(|f| f.unwrap())
-        .filter(|f| !FILE_IGNORE_LIST.iter().any(|e| f.as_path().to_string_lossy().contains(e)));
+        .filter(|f| {
+            !FILE_IGNORE_LIST
+                .iter()
+                .any(|e| f.as_path().to_string_lossy().contains(e))
+        });
 
     let mut tests = Vec::new();
-    let mut lllc = Lllc::default().with_docker_lllc().with_default_cache()?;
+    let mut compiler = Compiler::new(true, Some(PathBuf::from("./code.cache")))?;
 
     log::info!("Parsing and compliling tests...");
     for file in files {
         let src = std::fs::read_to_string(&file)?;
         let path = file.as_path().to_string_lossy();
-        println!("======>{}",path);
-        let mut tcs = match YamlStateTestBuilder::new(&mut lllc).from_yaml(&path, &src) {
+        println!("======>{}", path);
+        let mut tcs = match YamlStateTestBuilder::new(&mut compiler).from_yaml(&path, &src) {
             Err(err) => {
                 log::warn!("Failed to load {}: {:?}", path, err);
                 Vec::new()

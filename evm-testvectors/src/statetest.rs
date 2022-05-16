@@ -315,6 +315,16 @@ impl StateTest {
             )));
         }
 
+        if geth_traces[0]
+            .struct_logs
+            .iter()
+            .any(|step| step.error.as_ref().map(|e| e.contains("stack underflow")) == Some(true))
+        {
+            return Err(StateTestError::SkipUnimplementedOpcode(String::from(
+                "stack underflow not implemented",
+            )));
+        }
+
         if geth_traces[0].gas > config.max_gas {
             return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
         }

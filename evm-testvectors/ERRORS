@@ -1,0 +1,134 @@
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test transactionCollidingWithNonEmptyAccount_callsItself_d0_g0_v0 : CircuitInput("TracingError(\"Failed to run Trace, err: Failed to apply config.Transactions[0]: sender not an eoa: address 0xa94f5374Fce5edBC8E2a8697C15331677e6EbF0B, codehash: 0x8eef07e3d474f8e2e1f501216e7fd504cd9eb91c471a37f6af66572cb2ff42d7\")")
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test eip2929OOG_d1(failEIP2929)_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 24743 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test transactionCollidingWithNonEmptyAccount_send_d0_g0_v0 : CircuitInput("TracingError(\"Failed to run Trace, err: Failed to apply config.Transactions[0]: sender not an eoa: address 0xa94f5374Fce5edBC8E2a8697C15331677e6EbF0B, codehash: 0x8eef07e3d474f8e2e1f501216e7fd504cd9eb91c471a37f6af66572cb2ff42d7\")")
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test eip2929OOG_d5(failEIP2929)_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 24743 }
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test eip2929OOG_d6(failEIP2929)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d40_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d41_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d42_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d43_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d44_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d48_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d45_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d46_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] FAILED test gasCostMemory_d47_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d39(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d40(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d18(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d41(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d42(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d21(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d43(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d22(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d44(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d45(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d23(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d24(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d25(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d26(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d27(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d185(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d28(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d29(fail)_g0_v0
+[2022-05-11T17:38:21Z ERROR vmvectests] PANIKED test buffer_d30(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d33(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d188(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d36(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d189(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d37(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d190(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d38(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d191(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d192(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d193(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d194(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d195(fail)_g0_v0
+[2022-05-11T17:38:22Z ERROR vmvectests] PANIKED test buffer_d196(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d197(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d200(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d203(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d204(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d205(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d206(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test random_d3(random3)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d207(fail)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test blockInfo_d3(number)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test envInfo_d3(codecopy_neg_offset)_g0_v0
+[2022-05-11T17:38:23Z ERROR vmvectests] PANIKED test buffer_d208(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test buffer_d209(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test buffer_d210(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test buffer_d211(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d10(ok)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test buffer_d212(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d11(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d12(ok)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d13(ok)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d2(ok)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d3(fail)_g0_v0
+[2022-05-11T17:38:24Z ERROR vmvectests] PANIKED test bufferSrcOffset_d14(ok)_g0_v0
+[2022-05-11T17:38:25Z ERROR vmvectests] PANIKED test bufferSrcOffset_d15(fail)_g0_v0
+[2022-05-11T17:38:25Z ERROR vmvectests] PANIKED test envInfo_d7(gasprice)_g0_v0
+[2022-05-11T17:38:25Z ERROR vmvectests] PANIKED test bufferSrcOffset_d6(ok)_g0_v0
+[2022-05-11T17:38:25Z ERROR vmvectests] PANIKED test bufferSrcOffset_d7(fail)_g0_v0
+[2022-05-11T17:38:25Z ERROR vmvectests] PANIKED test bufferSrcOffset_d37(ok)_g0_v0
+[2022-05-11T17:38:26Z ERROR vmvectests] PANIKED test bufferSrcOffset_d38(ok)_g0_v0
+[2022-05-11T17:38:26Z ERROR vmvectests] PANIKED test bufferSrcOffset_d39(fail)_g0_v0
+[2022-05-11T17:38:26Z ERROR vmvectests] PANIKED test random_d4(random4)_g0_v0
+[2022-05-11T17:38:26Z ERROR vmvectests] FAILED test invalidAddr_d41(ok)_g0_v0 : CircuitInput("AccountNotFound(0x0000000000000000000000000000000000000002)")
+[2022-05-11T17:38:26Z ERROR vmvectests] FAILED test eip2929OOG_d0(failEIP2929)_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 24743 }
+[2022-05-11T17:38:27Z ERROR vmvectests] FAILED test costRevert_d27(stackOver)_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (54508464)\")")
+[2022-05-11T17:38:27Z ERROR vmvectests] PANIKED test envInfo_d8(origin)_g0_v0
+[2022-05-11T17:38:33Z ERROR vmvectests] PANIKED test gasCostMemSeg_d29_g0_v0
+[2022-05-11T17:38:33Z ERROR vmvectests] FAILED test gasCostMemory_d36_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:33Z ERROR vmvectests] FAILED test gasCostMemory_d37_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:33Z ERROR vmvectests] FAILED test gasCostMemory_d38_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:33Z ERROR vmvectests] FAILED test gasCostMemory_d39_g0_v0 : StorageMismatch { slot: 0, expected: 0, found: 1900 }
+[2022-05-11T17:38:50Z ERROR vmvectests] PANIKED test bufferSrcOffset_d20(ok)_g0_v0
+[2022-05-11T17:38:51Z ERROR vmvectests] PANIKED test bufferSrcOffset_d44(ok)_g0_v0
+[2022-05-11T17:38:53Z ERROR vmvectests] PANIKED test bufferSrcOffset_d45(ok)_g0_v0
+[2022-05-11T17:38:53Z ERROR vmvectests] PANIKED test bufferSrcOffset_d46(ok)_g0_v0
+[2022-05-11T17:38:54Z ERROR vmvectests] PANIKED test bufferSrcOffset_d47(ok)_g0_v0
+[2022-05-11T17:38:55Z ERROR vmvectests] FAILED test costRevert_d6(stackOver)_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (54513819)\")")
+[2022-05-11T17:39:17Z ERROR vmvectests] PANIKED test bufferSrcOffset_d21(ok)_g0_v0
+[2022-05-11T17:39:17Z ERROR vmvectests] PANIKED test bufferSrcOffset_d22(ok)_g0_v0
+[2022-05-11T17:39:17Z ERROR vmvectests] PANIKED test bufferSrcOffset_d23(ok)_g0_v0
+[2022-05-11T17:39:18Z ERROR vmvectests] PANIKED test bufferSrcOffset_d26(ok)_g0_v0
+[2022-05-11T17:39:18Z ERROR vmvectests] PANIKED test bufferSrcOffset_d27(fail)_g0_v0
+[2022-05-11T17:39:18Z ERROR vmvectests] PANIKED test bufferSrcOffset_d30(ok)_g0_v0
+[2022-05-11T17:39:18Z ERROR vmvectests] PANIKED test bufferSrcOffset_d31(fail)_g0_v0
+[2022-05-11T17:39:19Z ERROR vmvectests] PANIKED test bufferSrcOffset_d34(ok)_g0_v0
+[2022-05-11T17:39:19Z ERROR vmvectests] PANIKED test bufferSrcOffset_d35(fail)_g0_v0
+[2022-05-11T17:39:19Z ERROR vmvectests] PANIKED test bufferSrcOffset_d36(ok)_g0_v0
+[2022-05-11T17:39:22Z ERROR vmvectests] FAILED test CallcodeToPrecompileFromCalledContract_d0_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (1142357358)\")")
+[2022-05-11T17:39:36Z ERROR vmvectests] PANIKED test gasCostMemory_d67_g0_v0
+[2022-05-11T17:39:36Z ERROR vmvectests] PANIKED test gasCostMemory_d58_g0_v0
+[2022-05-11T17:39:36Z ERROR vmvectests] PANIKED test gasCostMemory_d50_g0_v0
+[2022-05-11T17:39:40Z ERROR vmvectests] FAILED test shiftCombinations_d0_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (3328971259)\")")
+[2022-05-11T17:39:51Z ERROR vmvectests] PANIKED test gasCostMemory_d71_g0_v0
+[2022-05-11T17:40:02Z ERROR vmvectests] FAILED test CallcodeToPrecompileFromTransaction_d0_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (1142353180)\")")
+[2022-05-11T17:40:14Z ERROR vmvectests] PANIKED test gasCostMemory_d69_g0_v0
+[2022-05-11T17:40:23Z ERROR vmvectests] FAILED test DelegatecallToPrecompileFromCalledContract_d0_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (640831124)\")")
+[2022-05-11T17:40:32Z ERROR vmvectests] FAILED test shiftSignedCombinations_d0_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (1337107983)\")")
+[2022-05-11T17:40:32Z ERROR vmvectests] FAILED test underflowTest_d91(CALL-7)_g0_v0 : CircuitInput("AccountNotFound(0x0000000000000000000000000000000000000080)")
+[2022-05-11T17:40:43Z ERROR vmvectests] FAILED test DelegatecallToPrecompileFromTransaction_d0_g0_v0 : CircuitInput("TracingError(\"Failed to process trace, err: bigger than 10MB (640826929)\")")
+[2022-05-11T17:40:43Z ERROR vmvectests] FAILED test HighGasPrice_d0_g0_v0 : CircuitInput("TracingError(\"Failed to run Trace, err: Failed to apply config.Transactions[0]: insufficient funds for gas * price + value: address 0xa94f5374Fce5edBC8E2a8697C15331677e6EbF0B have 1000000000 want 115792089237316195423570985008687907853269984665640564039457584007914129628001\")")
+[2022-05-11T17:40:48Z ERROR vmvectests] PANIKED test gasCostMemory_d68_g0_v0
+[2022-05-11T17:41:03Z ERROR vmvectests] PANIKED test gasCostMemory_d73_g0_v0
+[2022-05-11T17:41:04Z ERROR vmvectests] PANIKED test gasCostMemory_d59_g0_v0
+[2022-05-11T17:41:05Z ERROR vmvectests] PANIKED test gasCostMemory_d51_g0_v0
+[2022-05-11T17:41:17Z ERROR vmvectests] PANIKED test gasCostMemory_d72_g0_v0
+[2022-05-11T17:41:17Z ERROR vmvectests] FAILED test transactionCollidingWithNonEmptyAccount_calls_d0_g0_v0 : CircuitInput("TracingError(\"Failed to run Trace, err: Failed to apply config.Transactions[0]: sender not an eoa: address 0xa94f5374Fce5edBC8E2a8697C15331677e6EbF0B, codehash: 0x8eef07e3d474f8e2e1f501216e7fd504cd9eb91c471a37f6af66572cb2ff42d7\")")
+[2022-05-11T17:41:38Z ERROR vmvectests] PANIKED test gasCostMemory_d70_g0_v0
+[2022-05-11T17:41:51Z ERROR vmvectests] PANIKED test gasCostMemory_d74_g0_v0
+[2022-05-11T17:41:59Z ERROR vmvectests] PANIKED test gasCostMemory_d63_g0_v0
+[2022-05-11T17:42:03Z ERROR vmvectests] PANIKED test gasCostMemory_d65_g0_v0
+[2022-05-11T17:42:17Z ERROR vmvectests] PANIKED test gasCostMemory_d52_g0_v0
+[2022-05-11T17:42:17Z ERROR vmvectests] PANIKED test gasCostMemory_d60_g0_v0
+[2022-05-11T17:42:17Z ERROR vmvectests] PANIKED test gasCostMemory_d53_g0_v0
+[2022-05-11T17:42:26Z ERROR vmvectests] PANIKED test gasCostMemory_d64_g0_v0
+[2022-05-11T17:42:44Z ERROR vmvectests] PANIKED test gasCostMemory_d61_g0_v0
+[2022-05-11T17:42:54Z ERROR vmvectests] PANIKED test gasCostMemory_d66_g0_v0
+[2022-05-11T17:43:00Z ERROR vmvectests] PANIKED test gasCostMemory_d55_g0_v0
+[2022-05-11T17:43:02Z ERROR vmvectests] PANIKED test gasCostMemory_d56_g0_v0
+[2022-05-11T17:43:11Z ERROR vmvectests] PANIKED test gasCostMemory_d57_g0_v0
+[2022-05-11T17:43:11Z ERROR vmvectests] PANIKED test gasCostMemory_d54_g0_v0

@@ -1,4 +1,4 @@
-use super::lllc::Lllc;
+use super::compiler::Compiler;
 use crate::abi;
 use crate::statetest::{AccountMatch, Env, StateTest};
 use anyhow::{bail, Context, Result};
@@ -6,16 +6,11 @@ use eth_types::evm_types::OpcodeId;
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::utils::secret_key_to_address;
 use k256::ecdsa::SigningKey;
-use once_cell::sync::Lazy;
-use regex::Regex;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
 use yaml_rust::Yaml;
 
-static TAGS_REGEXP: Lazy<Regex> = Lazy::new(|| Regex::new("((:[a-z]+[ n\\n])([^:]+))").unwrap());
-
-type Tag = String;
 type Label = String;
 
 #[derive(Debug, Clone)]
@@ -45,12 +40,12 @@ impl Refs {
 }
 
 pub struct YamlStateTestBuilder<'a> {
-    lllc: &'a mut Lllc,
+    compiler: &'a mut Compiler,
 }
 
 impl<'a> YamlStateTestBuilder<'a> {
-    pub fn new(lllc: &'a mut Lllc) -> Self {
-        Self { lllc }
+    pub fn new(compiler: &'a mut Compiler) -> Self {
+        Self { compiler }
     }
 
     /// generates `StateTest` vectors from a ethereum yaml test specification
@@ -91,7 +86,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .as_vec()
                 .context("as_vec")?
                 .iter()
-                .map(Self::parse_calldata)
+                .map(|item| self.parse_calldata(item))
                 .collect::<Result<_>>()?;
 
             let gas_limit_s: Vec<_> = yaml_transaction["gasLimit"]
@@ -108,7 +103,12 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
-            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"])?;
+            // TODO: check handling this
+            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(U256::one());
+
+            // TODO handle maxPriorityFeePerGas
+            // TODO maxFeePerGas
+
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
@@ -235,21 +235,32 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// converts list of tagged values string into a map
     /// if there's no tags, an entry with an empty tag and the full string is
     /// returned
-    fn decompose_tags(expr: &str) -> HashMap<Tag, String> {
-        let expr = expr.trim();
-        if expr.starts_with(':') {
-            TAGS_REGEXP
-                .captures_iter(expr)
-                .map(|cap| (cap[2].trim().into(), cap[3].trim().into()))
-                .collect()
+    fn decompose_tags(expr: &str) -> HashMap<String, String> {
+        let mut tags = HashMap::new();
+        let mut it = expr.trim();
+        if it.is_empty() {
+            tags.insert("".to_string(), "".to_string());
         } else {
-            let mut tags = HashMap::new();
-            tags.insert("".to_string(), expr.to_string());
-            tags
+            while !it.is_empty() {
+                if it.starts_with(":") {
+                    let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
+                    it = &it[tag.len() + 1..];
+                    let value_len = if tag == ":yul" || tag == ":solidity" {
+                        it.len()
+                    } else {
+                        it.find(':').unwrap_or(it.len())
+                    };
+                    tags.insert(tag.to_string(), it[..value_len].trim().to_string());
+                    it = &it[value_len..];
+                } else {
+                    tags.insert("".to_string(), it.trim().to_string());
+                    it = &it[it.len()..]
+                }
+            }
         }
+        tags
     }
-
-    /// returns the element as an address
+   /// returns the element as an address
     fn parse_address(yaml: &Yaml) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
             if as_str.starts_with("0x") {
@@ -263,7 +274,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         } else if let Yaml::Real(as_real) = yaml {
             Ok(Address::from_str(as_real)?)
         } else {
-            bail!("cannot parse address {:?}",yaml);
+            bail!("cannot parse address {:?}", yaml);
         }
     }
 
@@ -287,16 +298,26 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// returns the element as calldata bytes, supports :raw and :abi
-    fn parse_calldata(yaml: &Yaml) -> Result<(Bytes, Option<Label>)> {
-        let tags = Self::decompose_tags(yaml.as_str().context(format!("calldata_as_str({:?})",yaml))?);
+    fn parse_calldata(&mut self, yaml: &Yaml) -> Result<(Bytes, Option<Label>)> {
+        let tags = if let Some(as_str) = yaml.as_str() {
+            Self::decompose_tags(as_str)
+        } else if let Some(as_map) = yaml.as_hash() {
+            if let Some(Yaml::String(data)) = as_map.get(&Yaml::String("data".to_string())) {
+                Self::decompose_tags(data)
+            } else {
+                bail!("do not know what to do with calldata(3): {:?}", yaml);
+            }
+        } else {
+            bail!("do not know what to do with calldata(4): {:?}", yaml);
+        };
         let label = tags.get(":label").cloned();
 
         if let Some(notag) = tags.get("") {
             let notag = notag.trim();
             if notag.is_empty() {
-                Ok((Bytes::default(),label))
+                Ok((Bytes::default(), label))
             } else if notag.starts_with("{") {
-                bail!("yul calldata not supported yet")
+                Ok((self.compiler.yul(notag)?, label))
             } else if notag.starts_with("0x") {
                 Ok((Bytes::from(hex::decode(&notag[2..])?), label))
             } else {
@@ -306,10 +327,14 @@ impl<'a> YamlStateTestBuilder<'a> {
             Ok((Bytes::from(hex::decode(&raw[2..])?), label))
         } else if let Some(abi) = tags.get(":abi") {
             Ok((abi::encode_funccall(abi)?, label))
-         } else if let Some(_yul) = tags.get(":yul") {
-            bail!("yul calldata not supported yet")
-         } else {
-            bail!("do not know what to do with calldata: (2) '{:?}'", yaml)
+        } else if let Some(yul) = tags.get(":yul") {
+            Ok((self.compiler.yul(yul)?, label))
+        } else {
+            bail!(
+                "do not know what to do with calldata: (2) {:?} '{:?}'",
+                tags,
+                yaml
+            )
         }
     }
 
@@ -318,9 +343,9 @@ impl<'a> YamlStateTestBuilder<'a> {
         let as_str = if let Some(as_str) = yaml.as_str() {
             as_str.to_string()
         } else if let Some(as_int) = yaml.as_i64() {
-            format!("0x{:x}", as_int) 
+            format!("0x{:x}", as_int)
         } else {
-            bail!(format!("code '{:?}' not an str",yaml));
+            bail!(format!("code '{:?}' not an str", yaml));
         };
         let tags = Self::decompose_tags(&as_str);
 
@@ -328,18 +353,19 @@ impl<'a> YamlStateTestBuilder<'a> {
             if notag.starts_with("0x") {
                 Bytes::from(hex::decode(&tags[""][2..])?)
             } else if notag.starts_with('{') {
-                self.lllc.compile(notag)?
+                self.compiler.lll(notag)?
             } else if notag.trim().len() == 0 {
                 Bytes::default()
             } else {
-                bail!("do not know what to do with code(1) '{}'", notag);
+                bail!("do not know what to do with code(1) {:?} '{}'", yaml, notag);
             }
         } else if let Some(raw) = tags.get(":raw") {
             Bytes::from(hex::decode(&raw[2..])?)
-        } else if let Some(_yul) = tags.get(":yul") {
-            bail!("yul not supported yet")
-         } else if let Some(_solidity) = tags.get(":solidity") {
-            bail!("solidity not supported yet")
+        } else if let Some(yul) = tags.get(":yul") {
+            self.compiler.yul(yul)?
+        } else if let Some(solidity) = tags.get(":solidity") {
+            println!("SOLIDITY: >>>{}<<< => {:?}", solidity, yaml);
+            self.compiler.solidity(solidity)?
         } else {
             bail!("do not know what to do with code(2) '{:?}'", yaml);
         };
@@ -372,7 +398,10 @@ impl<'a> YamlStateTestBuilder<'a> {
         } else if let Some(as_str) = yaml.as_str() {
             if let Some(stripped) = as_str.strip_prefix("0x") {
                 Ok(U256::from_str_radix(stripped, 16)?)
-            } else if as_str.to_lowercase().contains(['a','b','c','d','e','f']) {
+            } else if as_str
+                .to_lowercase()
+                .contains(['a', 'b', 'c', 'd', 'e', 'f'])
+            {
                 Ok(U256::from_str_radix(as_str, 16)?)
             } else {
                 Ok(U256::from_str_radix(as_str, 10)?)
@@ -435,7 +464,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                     refs.push(Ref::Label(label.to_string()))
                 } else if as_str.contains("-") {
                     // range
-                    let mut range = as_str.splitn(2,'-');
+                    let mut range = as_str.splitn(2, '-');
                     let lo = range.next().unwrap().parse::<usize>()?;
                     let hi = range.next().unwrap().parse::<usize>()?;
                     for i in lo..=hi {
@@ -572,7 +601,7 @@ arith:
 
     #[test]
     fn combinations() -> Result<()> {
-        let tcs = YamlStateTestBuilder::new(&mut Lllc::default())
+        let tcs = YamlStateTestBuilder::new(&mut Compiler::default())
             .from_yaml("", &Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
@@ -599,7 +628,7 @@ arith:
 
     #[test]
     fn parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default())
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
             .from_yaml("", &Template::default().to_string())?;
         let current = tc.remove(0);
 
@@ -673,7 +702,7 @@ arith:
     fn result_pass() -> Result<()> {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default())
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
             .from_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
         t1.run(StateTestConfig::default())?;
@@ -681,7 +710,7 @@ arith:
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
             "",
             &Template {
                 res_storage: "2".into(),
@@ -702,7 +731,7 @@ arith:
     }
     #[test]
     fn bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
             "",
             &Template {
                 res_balance: "1000000000002".into(),
@@ -723,7 +752,7 @@ arith:
 
     #[test]
     fn bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
             "",
             &Template {
                 res_code: ":raw 0x600200".into(),
@@ -744,7 +773,7 @@ arith:
 
     #[test]
     fn bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
             "",
             &Template {
                 res_nonce: "2".into(),
@@ -766,7 +795,7 @@ arith:
 
     #[test]
     fn sstore() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
             "",
             &Template {
                 pre_code: ":raw 0x607760005500".into(),
@@ -778,14 +807,14 @@ arith:
         )?;
         let mut config = StateTestConfig::default();
         config.bytecode_test_config.enable_state_circuit_test = false;
- 
+
         tc.remove(0).run(config)?;
         Ok(())
     }
 
     #[test]
     fn fail_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Lllc::default()).from_yaml(
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).from_yaml(
             "",
             &Template {
                 pre_code: ":raw 0xF4".into(),
