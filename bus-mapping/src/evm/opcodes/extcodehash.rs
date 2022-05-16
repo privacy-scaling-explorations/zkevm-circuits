@@ -166,7 +166,7 @@ mod extcodehash_tests {
         if is_warm {
             code.append(&bytecode! {
                 PUSH20(external_address.to_word())
-                BALANCE
+                EXTCODEHASH
                 POP
             });
         }
@@ -229,7 +229,8 @@ mod extcodehash_tests {
         let indices = transaction
             .steps()
             .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
+            .last()
             .unwrap()
             .bus_mapping_instance
             .clone();
