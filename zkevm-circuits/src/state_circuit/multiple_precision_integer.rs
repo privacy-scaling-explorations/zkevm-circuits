@@ -68,8 +68,6 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
         offset: usize,
         value: Address,
     ) -> Result<AssignedCell<F, F>, Error> {
-        dbg!(value);
-        dbg!(value.to_limbs());
         for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in address mpi", i),

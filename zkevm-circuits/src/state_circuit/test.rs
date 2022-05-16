@@ -32,8 +32,8 @@ impl AdviceColumn {
         match self {
             Self::IsWrite => config.is_write,
             Self::Address => config.address.value,
-            Self::AddressLimb0 => config.address.limbs[0], // because of be order of limbs
-            Self::AddressLimb1 => config.address.limbs[1], // because of be order of limbs
+            Self::AddressLimb0 => config.address.limbs[0],
+            Self::AddressLimb1 => config.address.limbs[1],
         }
     }
 }

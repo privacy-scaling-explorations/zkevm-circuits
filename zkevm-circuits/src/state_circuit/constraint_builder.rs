@@ -307,7 +307,8 @@ impl<F: Field> Queries<F> {
             not::expr(
                 self.lexicographic_ordering_upper_limb_difference_is_zero
                     .clone(),
-            ) * not::expr(self.is_storage_key_unchanged.clone()),
+            ),
+            not::expr(self.is_storage_key_unchanged.clone()),
         ])
     }
 

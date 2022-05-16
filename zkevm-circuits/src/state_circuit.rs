@@ -214,7 +214,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     if let Some(address) = row.address() {
                         config.address.assign(&mut region, offset, address)?;
                     }
-
                     if let Some(field_tag) = row.field_tag() {
                         region.assign_advice(
                             || "field_tag",
@@ -253,9 +252,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 
                 Ok(())
             },
-        )?;
-
-        Ok(())
+        )
     }
 }
 
