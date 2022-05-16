@@ -859,6 +859,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
+            is_account_leaf_in_added_branch,
             true,
         );
 
@@ -884,6 +885,7 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
+            is_account_leaf_in_added_branch,
             false,
         );
 

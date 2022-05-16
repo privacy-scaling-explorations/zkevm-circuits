@@ -9,7 +9,10 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
-    param::{HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET, R_TABLE_LEN},
+    param::{
+        HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET, R_TABLE_LEN,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -38,11 +41,13 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
+        is_account_leaf_in_added_branch: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
+        let one = Expression::Constant(F::one());
 
-        meta.create_gate("account leaf key", |meta| {
+        meta.create_gate("account leaf RLC after key", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -52,7 +57,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             157 means the key is 29 (157 - 128) bytes long.
             */
 
-            let one = Expression::Constant(F::one());
             let c248 = Expression::Constant(F::from(248));
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
@@ -172,10 +176,33 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 q_enable.clone() * (key_rlc_acc - key_rlc.clone()),
             ));
 
+            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            if !is_s {
+                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            }
+            let is_branch_placeholder = meta.query_advice(is_branch_placeholder, Rotation(rot - 1));
+            let is_leaf_without_branch =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot - 2)); // rot-1 is init branch
+
             constraints.push((
-                "Computed account address RLC same as value in address_rlc column",
-                q_enable * (key_rlc - address_rlc),
+                "Computed account address RLC same as value in address_rlc column 1",
+                q_enable
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (key_rlc.clone() - address_rlc.clone()),
             ));
+
+            /*
+            TODO: rlc properly generated (ignoring branch placeholder)
+            let key_rlc_prev = meta.query_advice(key_rlc, Rotation::cur());
+            constraints.push((
+                "Computed account address RLC same as value in address_rlc column 2",
+                q_enable
+                    * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (key_rlc_prev - address_rlc.clone()),
+            ));
+            */
 
             constraints
         });
