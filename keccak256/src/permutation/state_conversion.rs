@@ -21,10 +21,10 @@ impl<F: Field> StateBaseConversion<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
+        lane: Column<Advice>,
         flag: Column<Advice>,
     ) -> Self {
         meta.enable_equality(flag);
-        let lane = meta.advice_column();
         let bcc = BaseConversionConfig::configure(meta, bi.clone(), lane, flag);
 
         Self { bi, bcc, state }
@@ -73,6 +73,7 @@ mod tests {
         struct MyConfig<F> {
             flag: Column<Advice>,
             state: [Column<Advice>; 25],
+            lane: Column<Advice>,
             table: FromBinaryTableConfig<F>,
             conversion: StateBaseConversion<F>,
         }
@@ -85,11 +86,13 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let flag = meta.advice_column();
+                let lane = meta.advice_column();
                 let bi = table.get_base_info(false);
-                let conversion = StateBaseConversion::configure(meta, state, bi, flag);
+                let conversion = StateBaseConversion::configure(meta, state, bi, lane, flag);
                 Self {
                     flag,
                     state,
+                    lane,
                     table,
                     conversion,
                 }
