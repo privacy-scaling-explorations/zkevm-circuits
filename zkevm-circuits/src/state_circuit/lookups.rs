@@ -14,7 +14,7 @@ pub struct Config {
     // https://github.com/zcash/halo2/blob/642efc1536d3ea2566b04814bd60a00c4745ae22/halo2_proofs/src/plonk/circuit.rs#L266
     pub u8: Column<Fixed>,
     pub u10: Column<Fixed>,
-    pub u16: Column<Fixed>,
+    //pub u16: Column<Fixed>,
     pub call_context_field_tag: Column<Fixed>,
 }
 
@@ -22,7 +22,7 @@ pub struct Config {
 pub struct Queries<F> {
     pub u8: Expression<F>,
     pub u10: Expression<F>,
-    pub u16: Expression<F>,
+    //pub u16: Expression<F>,
     pub call_context_field_tag: Expression<F>,
 }
 
@@ -31,7 +31,7 @@ impl<F: Field> Queries<F> {
         Self {
             u8: meta.query_fixed(c.u8, Rotation::cur()),
             u10: meta.query_fixed(c.u10, Rotation::cur()),
-            u16: meta.query_fixed(c.u16, Rotation::cur()),
+            //u16: meta.query_fixed(c.u16, Rotation::cur()),
             call_context_field_tag: meta.query_fixed(c.call_context_field_tag, Rotation::cur()),
         }
     }
@@ -54,7 +54,7 @@ impl<F: Field> Chip<F> {
         Config {
             u8: meta.fixed_column(),
             u10: meta.fixed_column(),
-            u16: meta.fixed_column(),
+            //u16: meta.fixed_column(),
             call_context_field_tag: meta.fixed_column(),
         }
     }
@@ -63,7 +63,7 @@ impl<F: Field> Chip<F> {
         for (column, exponent) in [
             (self.config.u8, 8),
             (self.config.u10, 10),
-            (self.config.u16, 16),
+            //(self.config.u16, 16),
         ] {
             layouter.assign_region(
                 || format!("assign u{} fixed column", exponent),

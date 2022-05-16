@@ -429,6 +429,27 @@ impl RwMap {
     }
 }
 
+#[derive(Default)]
+pub struct RwKeys {
+    // FIXME: in state circuit, tag and field_tag are encoded as u8
+    pub tag: u64,
+    pub field_tag: u64,
+    pub id: usize,
+    pub address: Address,
+    pub storage_key: Word,
+    pub rw_counter: usize,
+}
+
+impl RwKeys {
+    pub fn is_same_access(&self, other: &RwKeys) -> bool {
+        self.tag == other.tag
+            && self.field_tag == other.field_tag
+            && self.id == other.id
+            && self.address == other.address
+            && self.storage_key == other.storage_key
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Rw {
     TxAccessListAccount {
@@ -526,19 +547,37 @@ pub enum Rw {
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
-    pub rw_counter: F,
-    pub is_write: F,
-    pub tag: F,
-    pub key1: F,
-    pub key2: F,
-    pub key3: F,
-    pub key4: F,
+    pub rw_counter: u64,
+    pub is_write: bool,
+    pub tag: u64,
+    pub id: u64,
+    pub address: Address,
+    pub field_tag: u64,
+    pub storage_key: U256,
     pub value: F,
     pub value_prev: F,
     pub aux1: F,
     pub aux2: F,
 }
 
+impl<F> RwRow<F>
+where
+    F: FieldExt,
+{
+    pub fn rw_keys(&self) -> RwKeys {
+        // TODO: fix the "as" conversion
+        RwKeys {
+            tag: self.tag,
+            field_tag: self.field_tag,
+            id: self.id as usize,
+            address: self.address,
+            storage_key: self.storage_key,
+            rw_counter: self.rw_counter as usize,
+        }
+    }
+}
+
+/*
 impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
     fn from(row: [F; 11]) -> Self {
         Self {
@@ -556,8 +595,18 @@ impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
         }
     }
 }
-
+*/
 impl Rw {
+    pub fn rw_keys(&self) -> RwKeys {
+        RwKeys {
+            tag: self.tag() as u64,
+            field_tag: self.field_tag().unwrap_or_default(),
+            id: self.id().unwrap_or_default(),
+            address: self.address().unwrap_or_default(),
+            storage_key: self.storage_key().unwrap_or_default(),
+            rw_counter: self.rw_counter(),
+        }
+    }
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
@@ -653,16 +702,13 @@ impl Rw {
 
     pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
-            rw_counter: F::from(self.rw_counter() as u64),
-            is_write: F::from(self.is_write() as u64),
-            tag: F::from(self.tag() as u64),
-            key1: F::from(self.id().unwrap_or_default() as u64),
-            key2: self.address().unwrap_or_default().to_scalar().unwrap(),
-            key3: F::from(self.field_tag().unwrap_or_default() as u64),
-            key4: RandomLinearCombination::random_linear_combine(
-                self.storage_key().unwrap_or_default().to_le_bytes(),
-                randomness,
-            ),
+            rw_counter: (self.rw_counter() as u64),
+            is_write: (self.is_write()),
+            tag: (self.tag() as u64),
+            id: (self.id().unwrap_or_default() as u64),
+            address: self.address().unwrap_or_default(),
+            field_tag: (self.field_tag().unwrap_or_default() as u64),
+            storage_key: self.storage_key().unwrap_or_default(),
             value: self.value_assignment(randomness),
             value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
             aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.

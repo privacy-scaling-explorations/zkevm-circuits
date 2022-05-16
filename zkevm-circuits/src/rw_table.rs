@@ -1,12 +1,12 @@
 #![allow(missing_docs)]
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
-use crate::evm_circuit::{table::LookupTable, witness::RwRow};
+use crate::evm_circuit::{table::LookupTable, util::RandomLinearCombination, witness::RwRow};
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Copy)]
@@ -24,7 +24,7 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl<F: FieldExt> LookupTable<F> for RwTable {
+impl<F: Field> LookupTable<F> for RwTable {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.rw_counter, Rotation::cur()),
@@ -42,7 +42,7 @@ impl<F: FieldExt> LookupTable<F> for RwTable {
     }
 }
 impl RwTable {
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             rw_counter: meta.advice_column(),
             is_write: meta.advice_column(),
@@ -57,20 +57,27 @@ impl RwTable {
             aux2: meta.advice_column(),
         }
     }
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        randomness: F,
         row: &RwRow<F>,
     ) -> Result<(), Error> {
         for (column, value) in [
-            (self.rw_counter, row.rw_counter),
-            (self.is_write, row.is_write),
-            (self.tag, row.tag),
-            (self.key1, row.key1),
-            (self.key2, row.key2),
-            (self.key3, row.key3),
-            (self.key4, row.key4),
+            (self.rw_counter, F::from(row.rw_counter)),
+            (self.is_write, F::from(row.is_write)),
+            (self.tag, F::from(row.tag)),
+            (self.key1, F::from(row.id)),
+            (self.key2, (row.address.to_scalar().unwrap())),
+            (self.key3, F::from(row.field_tag)),
+            (
+                self.key4,
+                RandomLinearCombination::random_linear_combine(
+                    row.storage_key.to_le_bytes(),
+                    randomness,
+                ),
+            ),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),

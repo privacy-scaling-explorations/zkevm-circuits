@@ -7,15 +7,20 @@ mod random_linear_combination;
 #[cfg(test)]
 mod state_tests;
 
-use crate::evm_circuit::{
-    param::N_BYTES_WORD,
-    witness::{Rw, RwMap},
+use crate::{
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        table::RwTableTag,
+        util::RandomLinearCombination,
+        witness::{Rw, RwKeys, RwMap, RwRow},
+    },
+    state_circuit::lexicographic_ordering::rw_to_be_limbs,
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field};
+use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
     },
@@ -83,6 +88,69 @@ impl<F: Field> StateCircuit<F> {
             .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len()])
             .collect()
     }
+
+    fn assign_row(
+        &self,
+        config: &StateConfig<F>,
+        region: &mut Region<F>,
+        is_storage_key_unchanged: &IsZeroChip<F>,
+        lexicographic_ordering_chip: &LexicographicOrderingChip<F>,
+        offset: usize,
+        row: RwRow<F>,
+        prev_row: Option<RwRow<F>>,
+    ) -> Result<(), Error> {
+        // step 1: assign selector
+        if offset != 0 {
+            region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
+        }
+        // step 2: assign lexicographic_ordering_chip
+        // we deliberately don't reuse the "offset == 0" if clause
+        if offset != 0 {
+            let rw_keys = row.rw_keys();
+            let prev_rw_keys = prev_row
+                .expect("prev_row is empty only for first row")
+                .rw_keys();
+            lexicographic_ordering_chip.assign(region, offset, &rw_keys, &prev_rw_keys)?;
+        }
+
+        config
+            .rw_counter
+            .assign(region, offset, row.rw_counter as u32)?;
+        region.assign_advice(
+            || "is_write",
+            config.is_write,
+            offset,
+            || Ok(if row.is_write { F::one() } else { F::zero() }),
+        )?;
+        region.assign_advice(|| "tag", config.tag, offset, || Ok(F::from(row.tag as u64)))?;
+        config.id.assign(region, offset, row.id as u32)?;
+        config.address.assign(region, offset, row.address)?;
+        region.assign_advice(
+            || "field_tag",
+            config.field_tag,
+            offset,
+            || Ok(F::from(row.field_tag as u64)),
+        )?;
+
+        // TODO: chain assigments idiomatically.
+        let cur_storage_key = *(config
+            .storage_key
+            .assign(region, offset, self.randomness, row.storage_key)?
+            .value()
+            .unwrap_or(&F::zero()));
+
+        let prev_storage_key = RandomLinearCombination::random_linear_combine(
+            prev_row.unwrap_or_default().storage_key.to_le_bytes(),
+            self.randomness,
+        );
+        is_storage_key_unchanged.assign(
+            region,
+            offset,
+            Some(cur_storage_key - prev_storage_key),
+        )?;
+
+        Ok(())
+    }
 }
 
 impl<F: Field> Circuit<F> for StateCircuit<F> {
@@ -101,10 +169,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let [is_write, tag, field_tag, value, is_zero_chip_advice_column] =
             [0; 5].map(|_| meta.advice_column());
 
-        let id = MpiChip::configure(meta, selector, lookups.u16);
-        let address = MpiChip::configure(meta, selector, lookups.u16);
+        let id = MpiChip::configure(meta, selector);
+        let address = MpiChip::configure(meta, selector);
         let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
-        let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
+        let rw_counter = MpiChip::configure(meta, selector);
 
         let is_storage_key_unchanged = IsZeroChip::configure(
             meta,
@@ -135,7 +203,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 address.limbs,
                 storage_key.bytes,
                 rw_counter.limbs,
-                lookups.u16,
+                //lookups.u16,
             ),
             is_storage_key_unchanged,
             lookups,
@@ -160,6 +228,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        println!("synthesize begin");
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
         let is_storage_key_unchanged =
             IsZeroChip::construct(config.is_storage_key_unchanged.clone());
@@ -167,76 +236,52 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
-        let mut prev_storage_key = F::zero();
-
         layouter.assign_region(
             || "assign rw table",
             |mut region| {
-                for (offset, row) in self.rows.iter().enumerate() {
-                    if offset != 0 {
-                        region.assign_fixed(
-                            || "selector",
-                            config.selector,
-                            offset,
-                            || Ok(F::one()),
-                        )?;
+                let mut prev_row: Option<RwRow<F>> = None;
+                let mut offset = 0;
 
-                        lexicographic_ordering_chip.assign(
+                for row in self.rows.iter() {
+                    println!("offset {} row {:#?}", offset, row);
+
+                    let row: RwRow<F> = row.table_assignment(self.randomness);
+
+                    // check if we need to insert an initial row before the real row
+                    if prev_row.is_none()
+                        || !row.rw_keys().is_same_access(&prev_row.unwrap().rw_keys())
+                    {
+                        // need to insert a initial row
+                        let mut initial_row = row.clone();
+                        // TODO: set default value correctly
+                        // rw_counter == 0 means this is an "initial row"
+                        initial_row.rw_counter = 0;
+
+                        // assign this initial row
+                        self.assign_row(
+                            &config,
                             &mut region,
+                            &is_storage_key_unchanged,
+                            &lexicographic_ordering_chip,
                             offset,
-                            row,
-                            &self.rows[offset - 1],
+                            initial_row,
+                            prev_row,
                         )?;
-                    }
-                    config
-                        .rw_counter
-                        .assign(&mut region, offset, row.rw_counter() as u32)?;
-                    region.assign_advice(
-                        || "is_write",
-                        config.is_write,
-                        offset,
-                        || Ok(if row.is_write() { F::one() } else { F::zero() }),
-                    )?;
-                    region.assign_advice(
-                        || "tag",
-                        config.tag,
-                        offset,
-                        || Ok(F::from(row.tag() as u64)),
-                    )?;
-                    if let Some(id) = row.id() {
-                        config.id.assign(&mut region, offset, id as u32)?;
-                    }
-                    if let Some(address) = row.address() {
-                        config.address.assign(&mut region, offset, address)?;
-                    }
-                    if let Some(field_tag) = row.field_tag() {
-                        region.assign_advice(
-                            || "field_tag",
-                            config.field_tag,
-                            offset,
-                            || Ok(F::from(field_tag as u64)),
-                        )?;
+                        offset += 1;
+                        prev_row = Some(initial_row);
                     }
 
-                    // TODO: chain assigments idiomatically.
-                    let cur_storage_key = *(config
-                        .storage_key
-                        .assign(
-                            &mut region,
-                            offset,
-                            self.randomness,
-                            row.storage_key().unwrap_or_default(),
-                        )?
-                        .value()
-                        .unwrap_or(&F::zero()));
-
-                    is_storage_key_unchanged.assign(
+                    self.assign_row(
+                        &config,
                         &mut region,
+                        &is_storage_key_unchanged,
+                        &lexicographic_ordering_chip,
                         offset,
-                        Some(cur_storage_key - prev_storage_key),
+                        row,
+                        prev_row,
                     )?;
-
-                    prev_storage_key = cur_storage_key;
+                    prev_row = Some(row.clone());
+                    offset += 1;
                 }
                 Ok(())
             },

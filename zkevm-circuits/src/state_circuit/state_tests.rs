@@ -32,7 +32,7 @@ mod tests {
         let circuit = StateCircuit::new(randomness, rw_map);
         let power_of_randomness = circuit.instance();
 
-        let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<Fr>::run(12, &circuit, power_of_randomness).unwrap();
         let verify_result = prover.verify();
         assert_eq!(verify_result, Ok(()));
     }
@@ -80,7 +80,7 @@ mod tests {
         );
 
         let storage_op_0 = Operation::new(
-            RWCounter::from(0),
+            RWCounter::from(1),
             RW::WRITE,
             StorageOp::new(
                 U256::from(100).to_address(),
@@ -125,15 +125,16 @@ mod tests {
 
     #[test]
     fn state_circuit_simple_6() {
+        println!("state_circuit_simple_6");
         let memory_op_0 = Operation::new(
             RWCounter::from(12),
             RW::WRITE,
-            MemoryOp::new(1, MemoryAddress::from(0), 32),
+            MemoryOp::new(2, MemoryAddress::from(0x90), 32),
         );
         let memory_op_1 = Operation::new(
-            RWCounter::from(13),
+            RWCounter::from(17),
             RW::READ,
-            MemoryOp::new(1, MemoryAddress::from(0), 32),
+            MemoryOp::new(2, MemoryAddress::from(0x90), 32),
         );
         let storage_op_2 = Operation::new(
             RWCounter::from(19),
@@ -240,7 +241,7 @@ mod tests {
         let circuit = StateCircuit { randomness, rows };
         let power_of_randomness = circuit.instance();
 
-        MockProver::<Fr>::run(17, &circuit, power_of_randomness)
+        MockProver::<Fr>::run(12, &circuit, power_of_randomness)
             .unwrap()
             .verify_at_rows(0..n_rows, 0..n_rows)
     }

@@ -131,11 +131,11 @@ where
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        u16_range: Column<Fixed>,
+        //u16_range: Column<Fixed>,
     ) -> Config<T, N> {
         let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
-
+        /*
         for &limb in &limbs {
             meta.lookup_any("mpi limb fits into u16", |meta| {
                 vec![(
@@ -144,6 +144,7 @@ where
                 )]
             });
         }
+        */
         meta.create_gate("mpi value matches claimed limbs", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let value = meta.query_advice(value, Rotation::cur());
