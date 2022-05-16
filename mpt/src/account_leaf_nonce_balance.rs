@@ -270,8 +270,16 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let balance_len = balance_long_len * is_balance_long.clone()
                 + (one.clone() - is_balance_long.clone());
 
-            // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
-            // 184     80      248     78      nonce      balance
+            /*
+            s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices  c_advices
+            184     80      248     78      nonce      balance
+
+            Or:
+            s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_advices                         c_advices
+            248     109     157     (this is key row, 157 means key of length 29)
+            184     77      248     75      7 (short nonce , only one byte)   135 (means balance is of length 7) 28 ... 59
+            */
+
             constraints.push(("RLP 1", q_enable.clone() * (s_rlp1.clone() - c184)));
             constraints.push(("RLP 2", q_enable.clone() * (c_rlp1.clone() - c248)));
             constraints.push((
@@ -285,12 +293,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             constraints.push((
                 "account leaf RLP length",
                 q_enable.clone()
-                    * (rlp_len
-                        - key_len
-                        - one.clone()
-                        - s_rlp2
-                        - one.clone() * (one.clone() - is_nonce_long)
-                        - one.clone() * (one.clone() - is_balance_long)),
+                    * (rlp_len - key_len - one.clone() - s_rlp2 - one.clone() - one.clone()),
                 // -1 because key_len is stored in 1 column
                 // -1 because of s_rlp1
                 // -1 because of s_rlp2
