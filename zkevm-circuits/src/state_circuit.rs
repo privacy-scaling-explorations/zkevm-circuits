@@ -65,23 +65,14 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 #[derive(Default)]
 pub struct StateCircuit<F: Field> {
     pub(crate) randomness: F,
-    pub(crate) rows: Vec<Rw>,
+    // use rows rather than RwMap here mainly for testing 
+    pub(crate) rows: Vec<RwRow<F>>,
 }
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit
     pub fn new(randomness: F, rw_map: RwMap) -> Self {
-        let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
-        rows.sort_by_key(|row| {
-            (
-                row.tag() as u64,
-                row.field_tag().unwrap_or_default(),
-                row.id().unwrap_or_default(),
-                row.address().unwrap_or_default(),
-                row.storage_key().unwrap_or_default(),
-                row.rw_counter(),
-            )
-        });
+        let rows = rw_map.table_assignments(randomness);
         Self { randomness, rows }
     }
 
@@ -118,7 +109,7 @@ impl<F: Field> StateCircuit<F> {
 
         config
             .rw_table
-            .assign(region, offset, self.randomness, &row)?;
+            .assign_row(region, offset, self.randomness, &row)?;
 
         config
             .rw_counter_mpi
@@ -235,49 +226,17 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         layouter.assign_region(
             || "assign rw table",
             |mut region| {
-                let mut prev_row: Option<RwRow<F>> = None;
-                let mut offset = 0;
-
-                for row in self.rows.iter() {
+                for (offset, row) in self.rows.iter().enumerate() {
                     println!("offset {} row {:#?}", offset, row);
-
-                    let row: RwRow<F> = row.table_assignment(self.randomness);
-
-                    // check if we need to insert an initial row before the real row
-                    if prev_row.is_none()
-                        || !row.rw_keys().is_same_access(&prev_row.unwrap().rw_keys())
-                    {
-                        // need to insert a initial row
-                        let mut initial_row = row;
-                        // TODO: set default value correctly
-                        // rw_counter == 0 means this is an "initial row"
-                        initial_row.rw_counter = 0;
-
-                        // assign this initial row
-                        self.assign_row(
-                            &config,
-                            &mut region,
-                            &is_storage_key_unchanged,
-                            &lexicographic_ordering_chip,
-                            offset,
-                            initial_row,
-                            prev_row,
-                        )?;
-                        offset += 1;
-                        prev_row = Some(initial_row);
-                    }
-
                     self.assign_row(
                         &config,
                         &mut region,
                         &is_storage_key_unchanged,
                         &lexicographic_ordering_chip,
                         offset,
-                        row,
-                        prev_row,
+                        *row,
+                        if offset == 0 { None} else {Some(self.rows[offset - 1])},
                     )?;
-                    prev_row = Some(row);
-                    offset += 1;
                 }
                 Ok(())
             },

@@ -249,7 +249,7 @@ pub mod test {
                 |mut region| {
                     let mut offset = 0;
                     self.rw_table
-                        .assign(&mut region, offset, randomness, &Default::default())?;
+                        .assign_row(&mut region, offset, randomness, &Default::default())?;
                     offset += 1;
 
                     let mut rows = rws
@@ -264,7 +264,7 @@ pub mod test {
                         assert!(rw.rw_counter() == expected_rw_counter);
                         expected_rw_counter += 1;
 
-                        self.rw_table.assign(
+                        self.rw_table.assign_row(
                             &mut region,
                             offset,
                             randomness,
