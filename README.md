@@ -21,3 +21,4 @@ For state circuit, `MEMORY_ADDRESS_MAX` and `STACK_ADDRESS_MAX` do not need to b
 By default will take values: 2000 and 1300.
 
 You can also run both benchmarks by running: `make circuit_benches DEGREE=18`.
+ 
