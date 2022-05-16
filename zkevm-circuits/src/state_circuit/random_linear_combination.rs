@@ -73,10 +73,10 @@ impl<F: Field, const N: usize> Chip<F, N> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
+        encoded: Column<Advice>,
         u8_lookup: Column<Fixed>,
         power_of_randomness: [Column<Instance>; 31],
     ) -> Config<N> {
-        let encoded = meta.advice_column();
         let bytes = [0; N].map(|_| meta.advice_column());
 
         for &byte in &bytes {

@@ -13,6 +13,7 @@ use crate::{
         util::RandomLinearCombination,
         witness::{Rw, RwMap, RwRow},
     },
+    rw_table::RwTable,
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
@@ -38,17 +39,21 @@ const N_LIMBS_ID: usize = 2;
 /// Config for StateCircuit
 #[derive(Clone)]
 pub struct StateConfig<F: Field> {
-    selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
+    // Figure out why you get errors when this is Selector.
     // https://github.com/appliedzkp/zkevm-circuits/issues/407
-    rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
-    is_write: Column<Advice>,
-    tag: Column<Advice>,
-    id: MpiConfig<u32, N_LIMBS_ID>,
-    address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
-    field_tag: Column<Advice>,
-    storage_key: RlcConfig<N_BYTES_WORD>,
+    selector: Column<Fixed>,
+
+    rw_table: RwTable,
+
+    rw_counter_mpi: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
+    //is_write: Column<Advice>,
+    //tag: Column<Advice>,
+    id_mpi: MpiConfig<u32, N_LIMBS_ID>,
+    address_mpi: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
+    //field_tag: Column<Advice>,
+    storage_key_rlc: RlcConfig<N_BYTES_WORD>,
+    //value: Column<Advice>,
     is_storage_key_unchanged: IsZeroConfig<F>,
-    value: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
     lexicographic_ordering: LexicographicOrderingConfig<F>,
@@ -112,31 +117,22 @@ impl<F: Field> StateCircuit<F> {
         }
 
         config
-            .rw_counter
+            .rw_table
+            .assign(region, offset, self.randomness, &row)?;
+
+        config
+            .rw_counter_mpi
             .assign(region, offset, row.rw_counter as u32)?;
-        region.assign_advice(
-            || "is_write",
-            config.is_write,
-            offset,
-            || Ok(if row.is_write { F::one() } else { F::zero() }),
-        )?;
-        region.assign_advice(|| "tag", config.tag, offset, || Ok(F::from(row.tag as u64)))?;
-        config.id.assign(region, offset, row.id as u32)?;
-        config.address.assign(region, offset, row.address)?;
-        region.assign_advice(
-            || "field_tag",
-            config.field_tag,
-            offset,
-            || Ok(F::from(row.field_tag as u64)),
-        )?;
+        config.id_mpi.assign(region, offset, row.id as u32)?;
+        config.address_mpi.assign(region, offset, row.address)?;
 
-        // TODO: chain assigments idiomatically.
-        let cur_storage_key = *(config
-            .storage_key
-            .assign(region, offset, self.randomness, row.storage_key)?
-            .value()
-            .unwrap_or(&F::zero()));
-
+        config
+            .storage_key_rlc
+            .assign(region, offset, self.randomness, row.storage_key)?;
+        let cur_storage_key = RandomLinearCombination::random_linear_combine(
+            row.storage_key.to_le_bytes(),
+            self.randomness,
+        );
         let prev_storage_key = RandomLinearCombination::random_linear_combine(
             prev_row.unwrap_or_default().storage_key.to_le_bytes(),
             self.randomness,
@@ -164,48 +160,50 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, tag, field_tag, value, is_zero_chip_advice_column] =
-            [0; 5].map(|_| meta.advice_column());
-
-        let id = MpiChip::configure(meta, selector);
-        let address = MpiChip::configure(meta, selector);
-        let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
-        let rw_counter = MpiChip::configure(meta, selector);
+        let rw_table = RwTable::construct(meta);
+        let is_zero_chip_advice_column = meta.advice_column();
+        let id_mpi = MpiChip::configure(meta, rw_table.id, selector);
+        let address_mpi = MpiChip::configure(meta, rw_table.address, selector);
+        let storage_key_rlc = RlcChip::configure(
+            meta,
+            selector,
+            rw_table.storage_key,
+            lookups.u8,
+            power_of_randomness,
+        );
+        let rw_counter_mpi = MpiChip::configure(meta, rw_table.rw_counter, selector);
 
         let is_storage_key_unchanged = IsZeroChip::configure(
             meta,
             |meta| meta.query_fixed(selector, Rotation::cur()),
             |meta| {
-                meta.query_advice(storage_key.encoded, Rotation::cur())
-                    - meta.query_advice(storage_key.encoded, Rotation::prev())
+                meta.query_advice(rw_table.storage_key, Rotation::cur())
+                    - meta.query_advice(rw_table.storage_key, Rotation::prev())
             },
             is_zero_chip_advice_column,
         );
 
         let config = Self::Config {
             selector,
-            rw_counter,
-            is_write,
-            tag,
-            id,
-            address,
-            field_tag,
-            storage_key,
-            value,
+            address_mpi,
+            id_mpi,
+            rw_counter_mpi,
+            storage_key_rlc,
             lexicographic_ordering: LexicographicOrderingChip::configure(
                 meta,
                 selector,
-                tag,
-                field_tag,
-                id.limbs,
-                address.limbs,
-                storage_key.bytes,
-                rw_counter.limbs,
+                rw_table.tag,
+                rw_table.field_tag,
+                id_mpi.limbs,
+                address_mpi.limbs,
+                storage_key_rlc.bytes,
+                rw_counter_mpi.limbs,
                 //lookups.u16,
             ),
             is_storage_key_unchanged,
             lookups,
             power_of_randomness,
+            rw_table,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -290,15 +288,15 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Queries<F> {
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
-        rw_counter: MpiQueries::new(meta, c.rw_counter),
-        is_write: meta.query_advice(c.is_write, Rotation::cur()),
-        tag: meta.query_advice(c.tag, Rotation::cur()),
-        prev_tag: meta.query_advice(c.tag, Rotation::prev()),
-        id: MpiQueries::new(meta, c.id),
-        address: MpiQueries::new(meta, c.address),
-        field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
-        storage_key: RlcQueries::new(meta, c.storage_key),
-        value: meta.query_advice(c.value, Rotation::cur()),
+        rw_counter: MpiQueries::new(meta, c.rw_counter_mpi),
+        is_write: meta.query_advice(c.rw_table.is_write, Rotation::cur()),
+        tag: meta.query_advice(c.rw_table.tag, Rotation::cur()),
+        prev_tag: meta.query_advice(c.rw_table.tag, Rotation::prev()),
+        id: MpiQueries::new(meta, c.id_mpi),
+        address: MpiQueries::new(meta, c.address_mpi),
+        field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
+        storage_key: RlcQueries::new(meta, c.storage_key_rlc),
+        value: meta.query_advice(c.rw_table.value, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c
             .power_of_randomness

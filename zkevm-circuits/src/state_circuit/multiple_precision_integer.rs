@@ -130,10 +130,11 @@ where
 
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        value: Column<Advice>,
         selector: Column<Fixed>,
         //u16_range: Column<Fixed>,
     ) -> Config<T, N> {
-        let value = meta.advice_column();
+        //let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
         /*
         for &limb in &limbs {
