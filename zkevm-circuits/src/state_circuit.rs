@@ -7,7 +7,6 @@ mod random_linear_combination;
 #[cfg(test)]
 mod test;
 
-use crate::evm_circuit::util::not;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     util::RandomLinearCombination,
@@ -295,9 +294,5 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
             .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
-        // TODO: this is no longer needed with the start at the beginning?
-        is_first_row: not::expr(
-            meta.query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
-        ),
     }
 }

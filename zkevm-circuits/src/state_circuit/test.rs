@@ -63,7 +63,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::configure(&mut meta);
-    assert_eq!(meta.degree(), 19);
+    assert_eq!(meta.degree(), 18);
 }
 
 #[test]
