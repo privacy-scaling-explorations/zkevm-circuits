@@ -63,7 +63,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::configure(&mut meta);
-    assert_eq!(meta.degree(), 20);
+    assert_eq!(meta.degree(), 19);
 }
 
 #[test]
@@ -265,7 +265,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::Address, 0), Fr::from(10))]);
+    let overrides = HashMap::from([((AdviceColumn::Address, 1), Fr::from(10))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -283,8 +283,8 @@ fn address_limb_out_of_range() {
         value_prev: U256::zero(),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::AddressLimb0, 0), Fr::from(1 << 16)),
-        ((AdviceColumn::AddressLimb1, 0), Fr::zero()),
+        ((AdviceColumn::AddressLimb0, 1), Fr::from(1 << 16)),
+        ((AdviceColumn::AddressLimb1, 1), Fr::zero()),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -319,14 +319,14 @@ fn nonlexicographic_order_tag() {
 #[test]
 fn nonlexicographic_order_rw_counter() {
     let first = Rw::CallContext {
-        rw_counter: 0,
+        rw_counter: 1,
         is_write: false,
         call_id: 1,
         field_tag: CallContextFieldTag::IsSuccess,
         value: U256::one(),
     };
     let second = Rw::CallContext {
-        rw_counter: 1,
+        rw_counter: 2,
         is_write: false,
         call_id: 1,
         field_tag: CallContextFieldTag::IsSuccess,
@@ -354,7 +354,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockP
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
     let n_rows = rows.len();
-    prover(rows, HashMap::new()).verify_at_rows(0..n_rows, 0..n_rows)
+    prover(rows, HashMap::new()).verify_at_rows(0..n_rows + 1, 0..n_rows + 1)
 }
 
 fn verify_with_overrides(
@@ -365,7 +365,7 @@ fn verify_with_overrides(
     assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(0..n_rows, 0..n_rows)
+    prover(rows, overrides).verify_at_rows(0..n_rows + 1, 0..n_rows + 1)
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {

@@ -14,7 +14,7 @@ use crate::evm_circuit::{
     witness::{Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field, ToBigEndian};
+use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -198,11 +198,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 let rows = once(&Rw::Start).chain(&self.rows);
                 let prev_rows = once(&Rw::Start).chain(rows.clone());
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
+                    dbg!(offset, row, prev_row);
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
-
-                    if offset != 0 {
-                        lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;
-                    }
                     config
                         .rw_counter
                         .assign(&mut region, offset, row.rw_counter() as u32)?;
@@ -218,14 +215,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         offset,
                         || Ok(F::from(row.tag() as u64)),
                     )?;
-
                     if let Some(id) = row.id() {
                         config.id.assign(&mut region, offset, id as u32)?;
                     }
-                    let id_change = F::from(row.id().unwrap_or_default() as u64)
-                        - F::from(prev_row.id().unwrap_or_default() as u64);
-                    is_id_unchanged.assign(&mut region, offset, Some(id_change))?;
-
                     if let Some(address) = row.address() {
                         config.address.assign(&mut region, offset, address)?;
                     }
@@ -245,18 +237,27 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             storage_key,
                         )?;
                     }
-                    let storage_key_change = RandomLinearCombination::random_linear_combine(
-                        row.storage_key().unwrap_or_default().to_be_bytes(),
-                        self.randomness,
-                    ) - RandomLinearCombination::random_linear_combine(
-                        prev_row.storage_key().unwrap_or_default().to_be_bytes(),
-                        self.randomness,
-                    );
-                    is_storage_key_unchanged.assign(
-                        &mut region,
-                        offset,
-                        Some(storage_key_change),
-                    )?;
+
+                    if offset != 0 {
+                        lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;
+
+                        let id_change = F::from(row.id().unwrap_or_default() as u64)
+                            - F::from(prev_row.id().unwrap_or_default() as u64);
+                        is_id_unchanged.assign(&mut region, offset, Some(id_change))?;
+
+                        let storage_key_change = RandomLinearCombination::random_linear_combine(
+                            row.storage_key().unwrap_or_default().to_le_bytes(),
+                            self.randomness,
+                        ) - RandomLinearCombination::random_linear_combine(
+                            prev_row.storage_key().unwrap_or_default().to_le_bytes(),
+                            self.randomness,
+                        );
+                        is_storage_key_unchanged.assign(
+                            &mut region,
+                            offset,
+                            Some(storage_key_change),
+                        )?;
+                    }
                 }
 
                 #[cfg(test)]
