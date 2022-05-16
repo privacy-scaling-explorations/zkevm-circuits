@@ -282,7 +282,15 @@ mod test {
     };
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
     use eth_types::{self, address, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use lazy_static::lazy_static;
     use mock::TestContext;
+
+    lazy_static! {
+        static ref POINT_ONE_ETHER: Word = Word::from(10u64.pow(17));
+        static ref MINIMAL_GAS: Word =
+            Word::from(GasCost::TX.as_u64() + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64());
+        static ref TWO_GWEI: Word = Word::from(2_000_000_000);
+    }
 
     fn test_ok(tx: eth_types::Transaction, is_success: bool) {
         let code = if is_success {
@@ -336,23 +344,19 @@ mod test {
     }
 
     fn mock_tx(
-        value: Option<Word>,
-        gas: Option<u64>,
-        gas_price: Option<Word>,
+        value: Word,
+        gas: Word,
+        gas_price: Word,
         calldata: Vec<u8>,
     ) -> eth_types::Transaction {
         let from = address!("0x00000000000000000000000000000000000000fe");
         let to = address!("0x00000000000000000000000000000000000000ff");
-        let minimal_gas =
-            Word::from(GasCost::TX.as_u64() + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64());
-        let point_one_ether = Word::from(10u64.pow(17));
-        let two_gwei = Word::from(2_000_000_000);
         eth_types::Transaction {
             from,
             to: Some(to),
-            value: value.unwrap_or(point_one_ether),
-            gas: gas.map(Word::from).unwrap_or(minimal_gas),
-            gas_price: gas_price.or(Some(two_gwei)),
+            value,
+            gas,
+            gas_price: Some(gas_price),
             input: calldata.into(),
             ..Default::default()
         }
@@ -360,64 +364,59 @@ mod test {
 
     #[test]
     fn begin_tx_gadget_simple() {
-        // Transfer 1 ether, successfully
-        test_ok(mock_tx(None, None, None, vec![]), true);
+        // Transfer 0.1 ether, successfully
+        test_ok(
+            mock_tx(*POINT_ONE_ETHER, *MINIMAL_GAS, *TWO_GWEI, vec![]),
+            true,
+        );
 
-        // Transfer 1 ether, tx reverts
-        test_ok(mock_tx(None, None, None, vec![]), false);
+        // Transfer 0.1 ether, tx reverts
+        test_ok(
+            mock_tx(*POINT_ONE_ETHER, *MINIMAL_GAS, *TWO_GWEI, vec![]),
+            false,
+        );
 
         // Transfer nothing with some calldata
         test_ok(
-            mock_tx(None, Some(21086), None, vec![1, 2, 3, 4, 0, 0, 0, 0]),
+            mock_tx(
+                Word::zero(),
+                Word::from(21086),
+                *TWO_GWEI,
+                vec![1, 2, 3, 4, 0, 0, 0, 0],
+            ),
             false,
         );
     }
 
     #[test]
     fn begin_tx_gadget_rand() {
-        let point_one_ether = Word::from(10u8).pow(Word::from(17u8));
+        let random_amount = Word::from_little_endian(&rand_bytes(32)) % *POINT_ONE_ETHER;
+        let random_gas_price = Word::from(rand_range(0..47619047619047u64));
+
+        // If this test fails, we want these values to appear in the CI logs.
+        dbg!(random_amount, random_gas_price);
 
         // Transfer random ether, successfully
         test_ok(
-            mock_tx(
-                Some(Word::from_little_endian(&rand_bytes(32)) % point_one_ether),
-                None,
-                None,
-                vec![],
-            ),
+            mock_tx(random_amount, *MINIMAL_GAS, *TWO_GWEI, vec![]),
             true,
         );
 
         // Transfer nothing with random gas_price, successfully
         test_ok(
-            mock_tx(
-                None,
-                None,
-                Some(Word::from(rand_range(0..47619047619047u64))),
-                vec![],
-            ),
+            mock_tx(Word::zero(), *MINIMAL_GAS, random_gas_price, vec![]),
             true,
         );
 
         // Transfer random ether, tx reverts
         test_ok(
-            mock_tx(
-                Some(Word::from_little_endian(&rand_bytes(32)) % point_one_ether),
-                None,
-                None,
-                vec![],
-            ),
+            mock_tx(random_amount, *MINIMAL_GAS, *TWO_GWEI, vec![]),
             false,
         );
 
         // Transfer nothing with random gas_price, tx reverts
         test_ok(
-            mock_tx(
-                None,
-                None,
-                Some(Word::from(rand_range(0..476190476190476u64))),
-                vec![],
-            ),
+            mock_tx(Word::zero(), *MINIMAL_GAS, random_gas_price, vec![]),
             false,
         );
     }
