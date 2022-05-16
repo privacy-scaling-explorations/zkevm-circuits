@@ -6,7 +6,11 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::evm_circuit::{table::LookupTable, util::RandomLinearCombination, witness::{RwRow, Rw, RwMap}};
+use crate::evm_circuit::{
+    table::LookupTable,
+    util::RandomLinearCombination,
+    witness::{RwMap, RwRow},
+};
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Copy)]
@@ -57,13 +61,13 @@ impl RwTable {
             aux2: meta.advice_column(),
         }
     }
-    
+
     pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         randomness: F,
         rw_map: &RwMap,
-    )-> Result<Vec<RwRow<F>>, Error> {
+    ) -> Result<Vec<RwRow<F>>, Error> {
         let rows = rw_map.table_assignments(randomness);
         for (offset, row) in rows.iter().enumerate() {
             self.assign_row(region, offset, randomness, row)?;

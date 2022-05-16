@@ -11,7 +11,7 @@ use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         util::RandomLinearCombination,
-        witness::{Rw, RwMap, RwRow},
+        witness::{RwMap, RwRow},
     },
     rw_table::RwTable,
 };
@@ -21,7 +21,7 @@ use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
+        Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
     },
     poly::Rotation,
 };
@@ -65,7 +65,7 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 #[derive(Default)]
 pub struct StateCircuit<F: Field> {
     pub(crate) randomness: F,
-    // use rows rather than RwMap here mainly for testing 
+    // use rows rather than RwMap here mainly for testing
     pub(crate) rows: Vec<RwRow<F>>,
 }
 
@@ -235,7 +235,11 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         &lexicographic_ordering_chip,
                         offset,
                         *row,
-                        if offset == 0 { None} else {Some(self.rows[offset - 1])},
+                        if offset == 0 {
+                            None
+                        } else {
+                            Some(self.rows[offset - 1])
+                        },
                     )?;
                 }
                 Ok(())

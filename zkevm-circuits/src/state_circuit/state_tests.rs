@@ -238,7 +238,10 @@ mod tests {
         let n_rows = rows.len();
 
         let randomness = Fr::rand();
-        let rows = rows.iter().map(|r| r.table_assignment(randomness)).collect();
+        let rows = rows
+            .iter()
+            .map(|r| r.table_assignment(randomness))
+            .collect();
         let circuit = StateCircuit { randomness, rows };
         let power_of_randomness = circuit.instance();
 

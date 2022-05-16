@@ -427,34 +427,45 @@ impl RwMap {
         });
         sorted
     }
-    pub fn table_assignments<F>(&self, randomness: F) -> Vec<RwRow<F>>  where F: Field{
-    
-            let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-            rows.sort_by_key(|row| {
-                (
-                    row.tag() as u64,
-                    row.field_tag().unwrap_or_default(),
-                    row.id().unwrap_or_default(),
-                    row.address().unwrap_or_default(),
-                    row.storage_key().unwrap_or_default(),
-                    row.rw_counter(),
-                )
-            });
-            let rows:Vec<RwRow<F>> = rows.iter().map(|r| r.table_assignment(randomness)).collect();
-            
-        
+    pub fn check_rw_counter_sanity(&self) {
+        // check rw_counter is continous and starting from 1
+        for (idx, rw_counter) in self.0.values().flatten().map(|r| r.rw_counter()).sorted().enumerate() {
+            debug_assert_eq!(idx, rw_counter - 1);
+        }
+    }
+    pub fn table_assignments<F>(&self, randomness: F) -> Vec<RwRow<F>>
+    where
+        F: Field,
+    {
+        let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
+
+
+        rows.sort_by_key(|row| {
+            (
+                row.tag() as u64,
+                row.field_tag().unwrap_or_default(),
+                row.id().unwrap_or_default(),
+                row.address().unwrap_or_default(),
+                row.storage_key().unwrap_or_default(),
+                row.rw_counter(),
+            )
+        });
+
+
+
+        let rows: Vec<RwRow<F>> = rows
+            .iter()
+            .map(|r| r.table_assignment(randomness))
+            .collect();
+
         let mut rw_rows: Vec<RwRow<F>> = Vec::new();
         for row in rows {
             //let row: RwRow<F> = row.table_assignment(randomness);
-    
+
             // check if we need to insert an initial row before the real row
             let need_initial_row = match rw_rows.last() {
                 None => true,
-                Some(prev_row) => {
-                    !row
-                    .rw_keys()
-                    .is_same_access(&prev_row.rw_keys())
-                }
+                Some(prev_row) => !row.rw_keys().is_same_access(&prev_row.rw_keys()),
             };
             if need_initial_row {
                 // need to insert a initial row
@@ -464,12 +475,11 @@ impl RwMap {
                 initial_row.rw_counter = 0;
                 rw_rows.push(initial_row);
             }
-            rw_rows.push(row.clone());
+            rw_rows.push(row);
         }
         rw_rows
     }
-    }
-
+}
 
 #[derive(Default)]
 pub struct RwKeys {
