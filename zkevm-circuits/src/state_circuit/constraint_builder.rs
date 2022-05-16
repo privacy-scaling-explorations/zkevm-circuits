@@ -21,6 +21,7 @@ pub struct Queries<F: Field> {
     pub tag: Expression<F>,
     pub prev_tag: Expression<F>,
     pub id: MpiQueries<F, N_LIMBS_ID>,
+    pub is_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
@@ -135,15 +136,15 @@ impl<F: Field> ConstraintBuilder<F> {
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
-        // this pushes the degree to 17....
-        self.condition(q.first_access(), |cb| {
-            cb.require_zero(
-                "if not first row, address change is 0 or 1",
-                (not::expr(q.is_first_row.clone()))
-                    * q.address_change()
-                    * (1.expr() - q.address_change()),
-            )
-        });
+        self.condition(
+            not::expr(q.is_first_row.clone()) * q.is_id_unchanged.clone(),
+            |cb| {
+                cb.require_boolean(
+                    "if call id is the same, address change is 0 or 1",
+                    q.address_change(),
+                )
+            },
+        );
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {

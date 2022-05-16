@@ -10,10 +10,11 @@ mod test;
 use crate::evm_circuit::util::not;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
+    util::RandomLinearCombination,
     witness::{Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field};
+use eth_types::{Address, Field, ToBigEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
@@ -30,6 +31,7 @@ use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries a
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
 #[cfg(test)]
 use std::collections::HashMap;
+use std::iter::once;
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
@@ -44,6 +46,7 @@ pub struct StateConfig<F: Field> {
     is_write: Column<Advice>,
     tag: Column<Advice>,
     id: MpiConfig<u32, N_LIMBS_ID>,
+    is_id_unchanged: IsZeroConfig<F>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
     storage_key: RlcConfig<N_BYTES_WORD>,
@@ -108,8 +111,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, tag, field_tag, value, is_zero_chip_advice_column] =
-            [0; 5].map(|_| meta.advice_column());
+        let [is_write, tag, field_tag, value, is_id_unchanged_column, is_storage_key_unchanged_column] =
+            [0; 6].map(|_| meta.advice_column());
 
         let id = MpiChip::configure(meta, selector, lookups.u16);
         let address = MpiChip::configure(meta, selector, lookups.u16);
@@ -127,6 +130,15 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             lookups.u16,
         );
 
+        let is_id_unchanged = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
+            |meta| {
+                meta.query_advice(id.value, Rotation::cur())
+                    - meta.query_advice(id.value, Rotation::prev())
+            },
+            is_id_unchanged_column,
+        );
         let is_storage_key_unchanged = IsZeroChip::configure(
             meta,
             |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
@@ -134,7 +146,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 meta.query_advice(storage_key.encoded, Rotation::cur())
                     - meta.query_advice(storage_key.encoded, Rotation::prev())
             },
-            is_zero_chip_advice_column,
+            is_storage_key_unchanged_column,
         );
 
         let config = Self::Config {
@@ -143,6 +155,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             is_write,
             tag,
             id,
+            is_id_unchanged,
             address,
             field_tag,
             storage_key,
@@ -172,26 +185,23 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
+
+        let is_id_unchanged = IsZeroChip::construct(config.is_id_unchanged.clone());
         let is_storage_key_unchanged =
             IsZeroChip::construct(config.is_storage_key_unchanged.clone());
-
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
-
-        let mut prev_storage_key = F::zero();
 
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                for (offset, row) in self.rows.iter().enumerate() {
+                let rows = once(&Rw::Start).chain(&self.rows);
+                let prev_rows = once(&Rw::Start).chain(rows.clone());
+                for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
+
                     if offset != 0 {
-                        lexicographic_ordering_chip.assign(
-                            &mut region,
-                            offset,
-                            row,
-                            &self.rows[offset - 1],
-                        )?;
+                        lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;
                     }
                     config
                         .rw_counter
@@ -208,9 +218,14 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         offset,
                         || Ok(F::from(row.tag() as u64)),
                     )?;
+
                     if let Some(id) = row.id() {
                         config.id.assign(&mut region, offset, id as u32)?;
                     }
+                    let id_change = F::from(row.id().unwrap_or_default() as u64)
+                        - F::from(prev_row.id().unwrap_or_default() as u64);
+                    is_id_unchanged.assign(&mut region, offset, Some(id_change))?;
+
                     if let Some(address) = row.address() {
                         config.address.assign(&mut region, offset, address)?;
                     }
@@ -222,26 +237,26 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             || Ok(F::from(field_tag as u64)),
                         )?;
                     }
-
-                    // TODO: chain assigments idiomatically.
-                    let cur_storage_key = *(config
-                        .storage_key
-                        .assign(
+                    if let Some(storage_key) = row.storage_key() {
+                        config.storage_key.assign(
                             &mut region,
                             offset,
                             self.randomness,
-                            row.storage_key().unwrap_or_default(),
-                        )?
-                        .value()
-                        .unwrap_or(&F::zero()));
-
+                            storage_key,
+                        )?;
+                    }
+                    let storage_key_change = RandomLinearCombination::random_linear_combine(
+                        row.storage_key().unwrap_or_default().to_be_bytes(),
+                        self.randomness,
+                    ) - RandomLinearCombination::random_linear_combine(
+                        prev_row.storage_key().unwrap_or_default().to_be_bytes(),
+                        self.randomness,
+                    );
                     is_storage_key_unchanged.assign(
                         &mut region,
                         offset,
-                        Some(cur_storage_key - prev_storage_key),
+                        Some(storage_key_change),
                     )?;
-
-                    prev_storage_key = cur_storage_key;
                 }
 
                 #[cfg(test)]
@@ -264,6 +279,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
         tag: meta.query_advice(c.tag, Rotation::cur()),
         prev_tag: meta.query_advice(c.tag, Rotation::prev()),
         id: MpiQueries::new(meta, c.id),
+        is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
         address: MpiQueries::new(meta, c.address),
         field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.storage_key),
@@ -278,6 +294,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
             .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
+        // TODO: this is no longer needed with the start at the beginning?
         is_first_row: not::expr(
             meta.query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
         ),
