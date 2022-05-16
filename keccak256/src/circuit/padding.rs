@@ -184,8 +184,8 @@ impl<F: Field> PaddingConfig<F> {
         layouter.assign_region(
             || "padding validation",
             |mut region| {
-                let last = BYTES_LEN_17_WORDS - 1;
-                self.q_last.enable(&mut region, last)?;
+                const LAST: usize = BYTES_LEN_17_WORDS - 1;
+                self.q_last.enable(&mut region, LAST)?;
                 let mut is_pad_zone = F::zero();
                 let mut padded_bytes = [0u8; BYTES_LEN_17_WORDS];
                 for (offset, &byte) in bytes.iter().enumerate().take(BYTES_LEN_17_WORDS) {
@@ -193,7 +193,7 @@ impl<F: Field> PaddingConfig<F> {
                     if offset != 0 {
                         self.q_without_first.enable(&mut region, offset)?;
                     }
-                    if offset != last {
+                    if offset != LAST {
                         self.q_without_last.enable(&mut region, offset)?;
                     }
                     is_finalize.clone().copy_advice(
@@ -239,7 +239,7 @@ impl<F: Field> PaddingConfig<F> {
                             .map(|diff_value| (diff_value == F::zero()) as u8)
                             .unwrap_or_default()
                             * 0x80u8
-                        + (((offset == last) && is_finalize_bit) as u8);
+                        + (((offset == LAST) && is_finalize_bit) as u8);
                 }
                 let padded_byte_cells: Result<Vec<_>, _> = padded_bytes
                     .iter()
