@@ -383,7 +383,7 @@ mod test {
                     tx_id,
                     log_id: log_id.try_into().unwrap(),
                     field_tag: TxLogFieldTag::Topic,
-                    index: idx.try_into().unwrap(),
+                    index: idx,
                     value: *topic,
                 });
             }
