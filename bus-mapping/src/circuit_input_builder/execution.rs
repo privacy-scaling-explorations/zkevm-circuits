@@ -136,8 +136,8 @@ impl ExecState {
         }
     }
 
-      /// Returns `true` if `ExecState` is an opcode and the opcode is a `Logn`.
-      pub fn is_log(&self) -> bool {
+    /// Returns `true` if `ExecState` is an opcode and the opcode is a `Logn`.
+    pub fn is_log(&self) -> bool {
         if let ExecState::Op(op) = self {
             op.is_log()
         } else {

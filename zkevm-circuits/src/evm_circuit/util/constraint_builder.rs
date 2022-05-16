@@ -1042,6 +1042,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn tx_log_lookup(
         &mut self,
         tx_id: Expression<F>,
+        log_id: Expression<F>,
         tag: TxLogFieldTag,
         index: Expression<F>,
         value: Expression<F>,
@@ -1052,7 +1053,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             [
                 tx_id,
+<<<<<<< HEAD
                 index + (1u64 << 8).expr() * self.curr.state.log_id.expr(),
+=======
+                log_id,
+>>>>>>> modi single circuit step&pass
                 tag.expr(),
                 0.expr(),
                 value,

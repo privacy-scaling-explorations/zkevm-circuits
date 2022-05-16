@@ -50,7 +50,7 @@ impl CircuitInputBuilderTx {
 
         let pre_log_id = if tx.is_steps_empty() {
             0
-        }else{
+        } else {
             tx.last_step().log_id
         };
 

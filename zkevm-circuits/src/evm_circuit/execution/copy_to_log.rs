@@ -70,6 +70,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             cb.condition(buffer_reader.has_data(i) * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(
                     tx_id.expr(),
+                    cb.curr.state.log_id.expr(),
                     TxLogFieldTag::Data,
                     data_start_index.expr() + i.expr(),
                     buffer_reader.byte(i),

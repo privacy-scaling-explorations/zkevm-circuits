@@ -62,9 +62,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         // use call context's  callee address as contract address
         let contract_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
+        cb.require_boolean("is_persistent is bool", is_persistent.expr());
+
         cb.condition(is_persistent.expr(), |cb| {
             cb.tx_log_lookup(
                 tx_id.expr(),
+                cb.curr.state.log_id.expr() + 1.expr(),
                 TxLogFieldTag::Address,
                 0.expr(),
                 contract_address.expr(),
@@ -79,7 +82,13 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 cb.stack_pop(topic.expr());
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
-                cb.tx_log_lookup(tx_id.expr(), TxLogFieldTag::Topic, idx.expr(), topic.expr());
+                cb.tx_log_lookup(
+                    tx_id.expr(),
+                    cb.curr.state.log_id.expr() + 1.expr(),
+                    TxLogFieldTag::Topic,
+                    idx.expr(),
+                    topic.expr(),
+                );
             });
         }
 
@@ -165,6 +174,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             + 8.expr() * from_bytes::expr(&msize.cells)
             + memory_expansion.gas_cost();
         // State transition
+
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
@@ -215,18 +225,23 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_count = (opcode.as_u8() - OpcodeId::LOG0.as_u8()) as usize;
         assert!(topic_count <= 4);
 
-        let mut rws_stack_index = 1;
+        let is_persistent = call.is_persistent as u64;
+        let mut topic_stack_entry = if topic_count > 0 {
+            step.rw_indices[6 + call.is_persistent as usize]
+        } else {
+            // if topic_count == 0, this value will be no used anymore
+            (RwTableTag::Stack, 0usize)
+        };
+
         for i in 0..4 {
             let mut topic = Word::random_linear_combine([0; 32], block.randomness);
             if i < topic_count {
-                rws_stack_index += 1;
                 topic = Word::random_linear_combine(
-                    block.rws[(RwTableTag::Stack, rws_stack_index)]
-                        .stack_value()
-                        .to_le_bytes(),
+                    block.rws[topic_stack_entry].stack_value().to_le_bytes(),
                     block.randomness,
                 );
                 self.topic_selectors[i].assign(region, offset, Some(F::one()))?;
+                topic_stack_entry.1 += 1;
             } else {
                 self.topic_selectors[i].assign(region, offset, Some(F::zero()))?;
             }
@@ -239,7 +254,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.is_static_call
             .assign(region, offset, Some(F::from(call.is_static as u64)))?;
         self.is_persistent
-            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+            .assign(region, offset, Some(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
@@ -249,148 +264,186 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use eth_types::{bytecode, Word, Bytecode, evm_types::OpcodeId};
+    use eth_types::{bytecode, evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
 
     use crate::test_util::run_test_circuits;
 
-    // make dynamic byte code sequence base on topics
-    // fn make_log_byte_code(memory_start: Word, msize: Word, topics: &[Word]) -> Bytecode {
-    //     let mut bytes: Vec<u8> = Vec::new();
-    //     for topic in [topics, &[msize, memory_start]].concat() {
-    //         bytes.push(OpcodeId::PUSH32.as_u8());
-    //         bytes = [bytes, topic.to_be_bytes().to_vec()].concat();
-    //     }
-
-    //     let codes = [
-    //         OpcodeId::LOG0,
-    //         OpcodeId::LOG1,
-    //         OpcodeId::LOG2,
-    //         OpcodeId::LOG3,
-    //         OpcodeId::LOG4,
-    //     ];
-    //     bytes.push(codes[topics.len()].as_u8());
-    //     bytes.push(OpcodeId::STOP.as_u8());
-    //     Bytecode::new(bytes)
-    // }
-
     #[test]
-    fn test_ok_buss_mapping(/*memory_start: Word, msize: Word, topics: &[Word], is_persistent: bool*/) {
-          // prepare memory data
-          let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
-          let memory_data = std::iter::repeat(0)
-              .take(24)
-              .chain(pushdata.clone())
-              .collect::<Vec<u8>>();
-  
-          let mut code_prepare = bytecode! {
-              // populate memory.
-              PUSH16(Word::from_big_endian(&pushdata))
-              PUSH1(0x00) // offset
-              MSTORE
-          };
+    fn make_log_byte_code() {
+        // zero topic: log0
+        test_log_ok(&[]);
+        // one topic: log1
+        test_log_ok(&[Word::from(0xA0)]);
+        // two topics: log2
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
+        // three topics: log3
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        // four topics: log4
+        test_log_ok(&[
+            Word::from(0xA0),
+            Word::from(0xef),
+            Word::from(0xb0),
+            Word::from(0x37),
+        ]);
+    }
 
-          let topics = [Word::from(0xA0)];
-          let log_codes = [
-                     OpcodeId::LOG0,
-                     OpcodeId::LOG1,
-                     OpcodeId::LOG2,
-                     OpcodeId::LOG3,
-                     OpcodeId::LOG4,
-            ];
-        
+    fn test_log_ok(topics: &[Word]) {
+        // prepare memory data
+        let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
+        let memory_data = std::iter::repeat(0)
+            .take(24)
+            .chain(pushdata.clone())
+            .collect::<Vec<u8>>();
+
+        let mut code_prepare = bytecode! {
+            // populate memory.
+            PUSH16(Word::from_big_endian(&pushdata))
+            PUSH1(0x00) // offset
+            MSTORE
+        };
+
+        let log_codes = [
+            OpcodeId::LOG0,
+            OpcodeId::LOG1,
+            OpcodeId::LOG2,
+            OpcodeId::LOG3,
+            OpcodeId::LOG4,
+        ];
+
         let topic_count = topics.len();
-        // test_ok(
-        //     Word::from(0x10),
-        //     Word::from(2),
-        //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-        //     true,
-        // );
-        // // log4
-        // test_ok(
-        //     Word::from(0x10),
-        //     Word::from(2),
-        //     &[
-        //         Word::from(0xA0),
-        //         Word::from(0xef),
-        //         Word::from(0xb0),
-        //         Word::from(0x37),
-        //     ],
-        //     true,
-        // );
-        // // zero topic: log0
-        // test_ok(Word::from(0x10), Word::from(2), &[], true);
-        // // is_persistent = false cases
-        // // zero topic: log0
-        // test_ok(Word::from(0x10), Word::from(2), &[], false);
-        // // log1
-        // test_ok(Word::from(0x10), Word::from(2), &[Word::from(0xA0)], false);
-        // // log2
-        //     Word::from(0x10),
-        //     Word::from(2),
-        //     &[Word::from(0xA0), Word::from(0xef)],
-        //     false,
-        // );
-        // // log3
-        // test_ok(
-        //     Word::from(0x10),
-        //     Word::from(2),
-        //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-        //     false,
-        // );
-        // // log4
-        // test_ok(
-        //     Word::from(0x10),
-        //     Word::from(2),
-        //     &[
-        //         Word::from(0xA0),
-        //         Word::from(0xef),
-        //         Word::from(0xb0),
-        //         Word::from(0x37),
-        //     ],
-        //     false,
-        // );
+        let cur_op_code = log_codes[topic_count];
+
+        let mstart = 0x00usize;
+        //  let msize = 0x10usize;
+        //  this is hack to test no CopyToLog circuit
+        let msize = 0x20usize;
+        let mut code = Bytecode::default();
+        // make dynamic topics push operations
+        for i in 0..topic_count {
+            code.push(32, topics[i]);
+        }
+        code.push(32, Word::from(msize));
+        code.push(32, Word::from(mstart));
+        code.write_op(cur_op_code);
+        code.write_op(OpcodeId::STOP);
+        code_prepare.append(&code);
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
+                None,
+            ),
+            Ok(()),
+        );
     }
 
     // #[test]
-    // fn log_gadget_multi_step() {
-        // is_persistent = true cases
-    //     test_ok(
-    //         Word::from(0x10),
-    //         Word::from(128),
-    //         &[Word::from(0xs100)],
-    //         true,
-    //     );
-    //     test_ok(
-    //         Word::from(0x10),
-    //         Word::from(128),
-    //         &[Word::from(0xA0), Word::from(0xef)],
-    //         true,
-    //     );
-    //     test_ok(
-    //         Word::from(0x10),
-    //         Word::from(128),
-    //         &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-    //         true,
-    //     );
-    //     // is_persistent = false cases
-    //     test_ok(
-    //         Word::from(0x10),
-    //         Word::from(128),
-    //         &[Word::from(0x100)],
-    //         false,
-    //     );
-    //     test_ok(
-    //         Word::from(0x10),
-    //         Word::from(128),
-    //         &[Word::from(0xA0), Word::from(0xef)],
-    //         false,
-    //     );
-    //     test_ok(
-    //         Word::from(0x10),
-    //         Word::from(128),
-    //         &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-    //         false,
-    //     );
-    // }
+    // fn log_gadget_simple() {
+    // is_persistent = true cases
+    // log1
+    // test_ok_buss_mapping(Word::from(0x10), Word::from(2),
+    // &[Word::from(0xA0)], true); // log2
+    // test_ok(
+    //     Word::from(0x10),
+    //     Word::from(2),
+    //     &[Word::from(0xA0), Word::from(0xef)],
+    //     true,
+    // );
+    // // log3
+    // test_ok(
+    //     Word::from(0x10),
+    //     Word::from(2),
+    //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+    //     true,
+    // );
+    // // log4
+    // test_ok(
+    //     Word::from(0x10),
+    //     Word::from(2),
+    //     &[
+    //         Word::from(0xA0),
+    //         Word::from(0xef),
+    //         Word::from(0xb0),
+    //         Word::from(0x37),
+    //     ],
+    //     true,
+    // );
+    // // zero topic: log0
+    // test_ok(Word::from(0x10), Word::from(2), &[], true);
+    // // is_persistent = false cases
+    // // zero topic: log0
+    // test_ok(Word::from(0x10), Word::from(2), &[], false);
+    // // log1
+    // test_ok(Word::from(0x10), Word::from(2), &[Word::from(0xA0)], false);
+    // // log2
+    // test_ok(
+    //     Word::from(0x10),
+    //     Word::from(2),
+    //     &[Word::from(0xA0), Word::from(0xef)],
+    //     false,
+    // );
+    // // log3
+    // test_ok(
+    //     Word::from(0x10),
+    //     Word::from(2),
+    //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+    //     false,
+    // );
+    // // log4
+    // test_ok(
+    //     Word::from(0x10),
+    //     Word::from(2),
+    //     &[
+    //         Word::from(0xA0),
+    //         Word::from(0xef),
+    //         Word::from(0xb0),
+    //         Word::from(0x37),
+    //     ],
+    //     false,
+    // );
+}
+>>>>>>> modi single circuit step&pass
+
+// #[test]
+// fn log_gadget_multi_step() {
+// is_persistent = true cases
+//     test_ok(
+//         Word::from(0x10),
+//         Word::from(128),
+//         &[Word::from(0xs100)],
+//         true,
+//     );
+//     test_ok(
+//         Word::from(0x10),
+//         Word::from(128),
+//         &[Word::from(0xA0), Word::from(0xef)],
+//         true,
+//     );
+//     test_ok(
+//         Word::from(0x10),
+//         Word::from(128),
+//         &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+//         true,
+//     );
+//     // is_persistent = false cases
+//     test_ok(
+//         Word::from(0x10),
+//         Word::from(128),
+//         &[Word::from(0x100)],
+//         false,
+//     );
+//     test_ok(
+//         Word::from(0x10),
+//         Word::from(128),
+//         &[Word::from(0xA0), Word::from(0xef)],
+//         false,
+//     );
+//     test_ok(
+//         Word::from(0x10),
+//         Word::from(128),
+//         &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+//         false,
+//     );
+// }
 //}

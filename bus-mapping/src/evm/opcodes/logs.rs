@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::operation::{CallContextField, TxLogField, CallContextOp, MemoryOp, TxLogOp, RW};
+use crate::operation::{CallContextField, CallContextOp, MemoryOp, TxLogField, TxLogOp, RW};
 use crate::Error;
 use crate::{
     circuit_input_builder::{
@@ -7,9 +7,9 @@ use crate::{
     },
     constants::MAX_COPY_BYTES,
 };
-use eth_types::evm_types::{OpcodeId, MemoryAddress};
-use eth_types::{GethExecStep, ToWord};
+use eth_types::evm_types::{MemoryAddress, OpcodeId};
 use eth_types::Word;
+use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian, ToWord};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Log;
@@ -33,12 +33,11 @@ fn gen_log_step(
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
-    // only increase log_id for log step
-    exec_step.log_id = exec_step.log_id + 1;
 
     let mstart = geth_step.stack.nth_last(0)?;
     let msize = geth_step.stack.nth_last(1)?;
 
+    let call_id = state.call()?.call_id;
     let mut stack_index = 0;
     state.push_stack_op(
         &mut exec_step,
@@ -53,22 +52,23 @@ fn gen_log_step(
         msize,
     )?;
 
-    stack_index += 2 ;
+    stack_index += 1;
+
     state.push_op(
         &mut exec_step,
         RW::READ,
         CallContextOp {
-            call_id: state.call()?.call_id,
+            call_id,
             field: CallContextField::TxId,
             value: state.tx_ctx.id().into(),
         },
     );
-    
+
     state.push_op(
         &mut exec_step,
         RW::READ,
         CallContextOp {
-            call_id: state.call()?.call_id,
+            call_id,
             field: CallContextField::IsStatic,
             value: Word::from(state.call()?.is_static as u8),
         },
@@ -78,7 +78,7 @@ fn gen_log_step(
         &mut exec_step,
         RW::READ,
         CallContextOp {
-            call_id:state.call()?.call_id,
+            call_id,
             field: CallContextField::CalleeAddress,
             value: state.call()?.address.to_word(),
         },
@@ -88,7 +88,7 @@ fn gen_log_step(
         &mut exec_step,
         RW::READ,
         CallContextOp {
-            call_id: state.call()?.call_id,
+            call_id,
             field: CallContextField::IsPersistent,
             value: Word::from(state.call()?.is_persistent as u8),
         },
@@ -101,17 +101,18 @@ fn gen_log_step(
             RW::WRITE,
             TxLogOp {
                 tx_id: state.tx_ctx.id(),
-                log_id: log_id,
+                log_id: log_id + 1,
                 field: TxLogField::Address,
                 index: 0,
                 value: state.call()?.address.to_word(),
-            });
-        }
+            },
+        );
+    }
 
     // generates topic operation dynamically
-    let topic_length = match  exec_step.exec_state{
-        ExecState::Op(op_id) => (op_id.as_u8() - OpcodeId::LOG0.as_u8()) as usize ,
-        _=> panic!("currently only handle succeful log state"),
+    let topic_length = match exec_step.exec_state {
+        ExecState::Op(op_id) => (op_id.as_u8() - OpcodeId::LOG0.as_u8()) as usize,
+        _ => panic!("currently only handle succeful log state"),
     };
 
     //let mut topics = Vec::with_capacity(topic_length);
@@ -125,18 +126,19 @@ fn gen_log_step(
             topic,
         )?;
         stack_index += 1;
-       
-        if state.call()?.is_persistent  {
+
+        if state.call()?.is_persistent {
             state.push_op(
                 &mut exec_step,
                 RW::WRITE,
                 TxLogOp {
                     tx_id: state.tx_ctx.id(),
-                    log_id: log_id,
+                    log_id: log_id + 1,
                     field: TxLogField::Topic,
                     index: i,
                     value: topic,
-                });
+                },
+            );
         }
     }
 
@@ -151,23 +153,23 @@ fn gen_log_copy_step(
     src_addr_end: u64,
     bytes_left: usize,
 ) -> Result<(), Error> {
-
     // Get memory data
-    let memory_address:MemoryAddress = Word::from(src_addr).try_into()?;
-    let mem_read_value = geth_steps[1]
-    .memory
-    .read_word(memory_address)
-    .unwrap_or_else(|_| Word::zero());
+    let memory_address: MemoryAddress = Word::from(src_addr).try_into()?;
+    let mem_read_value = geth_steps[0]
+        .memory
+        .read_word(memory_address)
+        .unwrap_or_else(|_| Word::zero())
+        .to_be_bytes();
 
     for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
         let addr = src_addr + idx as u64;
         let byte = if addr < src_addr_end {
-                let byte = mem_read_value.byte(idx);
-                state.push_op(
-                    exec_step,
-                    RW::READ,
-                    MemoryOp::new(state.call()?.caller_id, (addr as usize).into(), byte),
-                );
+            let byte = mem_read_value[idx];
+            state.push_op(
+                exec_step,
+                RW::READ,
+                MemoryOp::new(state.call()?.call_id, (addr as usize).into(), byte),
+            );
             byte
         } else {
             0
@@ -175,7 +177,7 @@ fn gen_log_copy_step(
         // write to tx log if persistent
         let log_id = exec_step.log_id;
         if state.call()?.is_persistent {
-            state.push_op(  
+            state.push_op(
                 exec_step,
                 RW::WRITE,
                 TxLogOp {
@@ -184,7 +186,8 @@ fn gen_log_copy_step(
                     field: TxLogField::Data,
                     index: idx,
                     value: Word::from(byte),
-                });
+                },
+            );
         }
     }
 
@@ -206,10 +209,7 @@ fn gen_log_copy_steps(
     let memory_start = geth_steps[0].stack.nth_last(0)?.as_u64();
     let msize = geth_steps[0].stack.nth_last(1)?.as_usize();
 
-    let (src_addr, buffer_addr_end) = (
-        memory_start,
-        memory_start + msize as u64,
-    );
+    let (src_addr, buffer_addr_end) = (memory_start, memory_start + msize as u64);
 
     let mut copied = 0;
     let mut steps = vec![];
@@ -239,16 +239,14 @@ mod log_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, TxLogOp, TxLogField, RW},
+        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, TxLogField, TxLogOp, RW},
     };
     use eth_types::{
         bytecode,
-        Bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        ToWord, Word,
+        Bytecode, ToWord, Word,
     };
-
 
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
@@ -256,15 +254,15 @@ mod log_tests {
     #[test]
     fn logs_opcode_ok() {
         // zero topics
-        logs_opcode_impl(&[]);
+        test_logs_opcode(&[]);
         // one topics
-        logs_opcode_impl(&[Word::from(0xA0)]);
+        test_logs_opcode(&[Word::from(0xA0)]);
         // two topics
-        logs_opcode_impl(&[Word::from(0xA0), Word::from(0xef)]);
+        test_logs_opcode(&[Word::from(0xA0), Word::from(0xef)]);
         // three topics
-        logs_opcode_impl(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        test_logs_opcode(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
         // four topics
-        logs_opcode_impl(&[
+        test_logs_opcode(&[
             Word::from(0xA0),
             Word::from(0xef),
             Word::from(0xb0),
@@ -272,16 +270,15 @@ mod log_tests {
         ]);
     }
 
-
-    fn logs_opcode_impl(topics: &[Word]) {
+    fn test_logs_opcode(topics: &[Word]) {
         let log_codes = [
-                     OpcodeId::LOG0,
-                     OpcodeId::LOG1,
-                     OpcodeId::LOG2,
-                     OpcodeId::LOG3,
-                     OpcodeId::LOG4,
-            ];
-        
+            OpcodeId::LOG0,
+            OpcodeId::LOG1,
+            OpcodeId::LOG2,
+            OpcodeId::LOG3,
+            OpcodeId::LOG4,
+        ];
+
         let topic_count = topics.len();
         let cur_op_code = log_codes[topic_count];
 
@@ -296,15 +293,15 @@ mod log_tests {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
         code.write_op(OpcodeId::STOP);
-        
+
         // prepare memory data
-        let pushdata = hex::decode("1234567890abcdef").unwrap();
+        let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
         let memory_data = std::iter::repeat(0)
-            .take(24)
+            .take(16)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
 
-        let mut code_prepare:Bytecode = bytecode! {
+        let mut code_prepare: Bytecode = bytecode! {
             // populate memory.
             PUSH16(Word::from_big_endian(&pushdata))
             PUSH1(0x00) // offset
@@ -313,11 +310,10 @@ mod log_tests {
 
         code_prepare.append(&code);
 
-
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_account_1_no_code(code_prepare),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
@@ -332,18 +328,6 @@ mod log_tests {
         let is_persistent = builder.block.txs()[0].calls()[0].is_persistent;
         let callee_address = builder.block.txs()[0].to;
 
-        for step in  builder.block.txs()[0]
-        .steps(){
-            match  step.exec_state {
-                ExecState::Op(id) =>  println!("op id of step {}", id),
-                ExecState::BeginTx => println!("virtual  step begin_tx"),
-                ExecState::EndTx => println!("virtual step EndTx"),
-                ExecState::CopyToLog => println!("virtualstep CopyToLog"),
-                ExecState::CopyToMemory => println!("virtual step CopyToMemory"),
-                _ => panic!("can not reachable"),
-            }  
-        }
-
         let step = builder.block.txs()[0]
             .steps()
             .iter()
@@ -352,7 +336,6 @@ mod log_tests {
 
         let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
 
-
         assert_eq!(
             [0, 1]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
@@ -360,8 +343,6 @@ mod log_tests {
             [
                 (
                     RW::READ,
-                    // log0 stack address :1022
-                    // log1 stack address :1021
                     &StackOp::new(1, StackAddress::from((1022 - topic_count) as u32), Word::from(mstart))
                 ),
                 (
@@ -370,72 +351,72 @@ mod log_tests {
                 )
             ]
         );
-       
+
         // assert call context is right
         assert_eq!(
             [2, 3, 4, 5]
-                .map(|idx| &builder.block.container.call_context[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context
+                    [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
                     RW::READ,
                     &CallContextOp {
-                                       call_id: 1,
-                                       field: CallContextField::TxId,
-                                       value: Word::from(1),
-                              },
+                        call_id: 1,
+                        field: CallContextField::TxId,
+                        value: Word::from(1),
+                    },
                 ),
                 (
                     RW::READ,
                     &CallContextOp {
-                                       call_id: 1,
-                                       field: CallContextField::IsStatic,
-                                       value: Word::from(0),
-                              },
+                        call_id: 1,
+                        field: CallContextField::IsStatic,
+                        value: Word::from(0),
+                    },
                 ),
                 (
                     RW::READ,
                     &CallContextOp {
-                                       call_id: 1,
-                                       field: CallContextField::CalleeAddress,
-                                       value: callee_address.to_word(),
-                              },
+                        call_id: 1,
+                        field: CallContextField::CalleeAddress,
+                        value: callee_address.to_word(),
+                    },
                 ),
                 (
                     RW::READ,
                     &CallContextOp {
-                                       call_id: 1,
-                                       field: CallContextField::IsPersistent,
-                                       value: Word::from(1),
-                              },
+                        call_id: 1,
+                        field: CallContextField::IsPersistent,
+                        value: Word::from(1),
+                    },
                 ),
             ]
         );
 
-         // TODO: construct is_persistent = false conditions
-         if is_persistent {
+        // TODO: handle is_persistent = false conditions
+        if is_persistent {
             assert_eq!(
-                [6]
-                    .map(|idx| &builder.block.container.tx_log[step.bus_mapping_instance[idx].as_usize()])
+                [6].map(|idx| &builder.block.container.tx_log
+                    [step.bus_mapping_instance[idx].as_usize()])
                     .map(|operation| (operation.rw(), operation.op())),
-                [
-                    (
-                        RW::WRITE,
-                        &TxLogOp {
-                            tx_id: 1 ,
-                            log_id: step.log_id,
-                            field: TxLogField::Address,
-                            index: 0,
-                            value: callee_address.to_word(),
-                        }
-                    ),
-                ]
+                [(
+                    RW::WRITE,
+                    &TxLogOp {
+                        tx_id: 1,
+                        log_id: step.log_id + 1,
+                        field: TxLogField::Address,
+                        index: 0,
+                        value: callee_address.to_word(),
+                    }
+                ),]
             );
         }
-         // memory reads.
-         let mut log_data_ops = Vec::with_capacity(msize); 
-         assert_eq!(
-            (mstart..(mstart + msize))
+        // memory reads.
+        let mut log_data_ops = Vec::with_capacity(msize);
+        assert_eq!(
+            // skip first 32 writes of MSTORE ops
+            (mstart + 32..(mstart + 32 + msize))
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
@@ -444,64 +425,49 @@ mod log_tests {
                 (0..msize).for_each(|idx| {
                     memory_ops.push((
                         RW::READ,
-                        MemoryOp::new(
-                            1,
-                            (mstart + idx).into(),
-                            memory_data[mstart + idx],
-                        ),
-                      ));
-                     // tx log addition
-                     log_data_ops.push((
+                        MemoryOp::new(1, (mstart + idx).into(), memory_data[mstart + idx]),
+                    ));
+                    // tx log addition
+                    log_data_ops.push((
                         RW::WRITE,
                         TxLogOp::new(
                             1,
-                            step.log_id,
+                            step.log_id + 1, // because it is in next CopyToLog step
                             TxLogField::Data,
                             idx,
                             Word::from(memory_data[mstart + idx]),
                         ),
                     ));
-                    }
-                );
-            
+                });
+
                 memory_ops
             },
         );
 
         // log topic writes
-        let mut log_topic_ops = Vec::with_capacity(topic_count); 
-        for (idx, topic) in topics.iter().rev().enumerate(){
+        let mut log_topic_ops = Vec::with_capacity(topic_count);
+        for (idx, topic) in topics.iter().rev().enumerate() {
             log_topic_ops.push((
                 RW::WRITE,
-                TxLogOp::new(
-                    1,
-                    step.log_id,
-                    TxLogField::Topic,
-                    idx,
-                    *topic,
-                ),
+                TxLogOp::new(1, step.log_id + 1, TxLogField::Topic, idx, *topic),
             ));
         }
 
         assert_eq!(
-            (1 ..1 + topic_count)   
+            (1..1 + topic_count)
                 .map(|idx| &builder.block.container.tx_log[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, TxLogOp)>>(),
-            {
-                log_topic_ops
-            },
+            { log_topic_ops },
         );
 
         // log data writes
         assert_eq!(
-            ((1 + topic_count)..msize + 1 + topic_count)  // 
+            ((1 + topic_count)..msize + 1 + topic_count) //
                 .map(|idx| &builder.block.container.tx_log[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, TxLogOp)>>(),
-            {
-                log_data_ops
-            },
+            { log_data_ops },
         );
     }
 }

@@ -812,7 +812,13 @@ pub struct TxLogOp {
 
 impl TxLogOp {
     /// Create a new instance of a `TxLogOp` from it's components.
-    pub fn new(tx_id: usize, log_id: usize, field: TxLogField, index: usize, value: Word ) -> TxLogOp {
+    pub fn new(
+        tx_id: usize,
+        log_id: usize,
+        field: TxLogField,
+        index: usize,
+        value: Word,
+    ) -> TxLogOp {
         TxLogOp {
             tx_id,
             log_id,
@@ -837,8 +843,8 @@ impl TxLogOp {
         self.log_id
     }
 
-     /// Returns the index associated to this Operation.
-     pub const fn index(&self) -> usize {
+    /// Returns the index associated to this Operation.
+    pub const fn index(&self) -> usize {
         self.index
     }
 
@@ -867,7 +873,7 @@ impl PartialOrd for TxLogOp {
 
 impl Ord for TxLogOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        (&self.tx_id,&self.log_id, &self.field).cmp(&(&other.tx_id, &other.log_id, &other.field))
+        (&self.tx_id, &self.log_id, &self.field).cmp(&(&other.tx_id, &other.log_id, &other.field))
     }
 }
 

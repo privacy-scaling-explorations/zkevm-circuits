@@ -285,7 +285,7 @@ impl Transaction {
 
     /// Return last step in this transaction.
     pub fn last_step(&self) -> &ExecStep {
-        if self.steps().is_empty(){
+        if self.steps().is_empty() {
             panic!("there is no steps in tx");
         }
 

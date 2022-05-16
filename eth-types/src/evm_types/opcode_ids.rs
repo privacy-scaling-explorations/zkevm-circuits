@@ -4,8 +4,8 @@ use core::fmt::Debug;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
-use std::str::FromStr;
 use std::fmt;
+use std::str::FromStr;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash)]
