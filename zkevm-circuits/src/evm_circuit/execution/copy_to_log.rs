@@ -337,7 +337,6 @@ pub mod test {
             .zip(buffer.iter().copied())
             .collect();
 
-        //let mut data_start_index = 0;
         let mut copied = 0;
         while copied < length {
             let (step, rw_offset) = make_log_copy_step(
