@@ -10,11 +10,9 @@ mod state_tests;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
-        table::RwTableTag,
         util::RandomLinearCombination,
-        witness::{Rw, RwKeys, RwMap, RwRow},
+        witness::{Rw, RwMap, RwRow},
     },
-    state_circuit::lexicographic_ordering::rw_to_be_limbs,
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
@@ -252,7 +250,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         || !row.rw_keys().is_same_access(&prev_row.unwrap().rw_keys())
                     {
                         // need to insert a initial row
-                        let mut initial_row = row.clone();
+                        let mut initial_row = row;
                         // TODO: set default value correctly
                         // rw_counter == 0 means this is an "initial row"
                         initial_row.rw_counter = 0;
@@ -280,7 +278,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         row,
                         prev_row,
                     )?;
-                    prev_row = Some(row.clone());
+                    prev_row = Some(row);
                     offset += 1;
                 }
                 Ok(())

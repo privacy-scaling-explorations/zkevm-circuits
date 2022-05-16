@@ -175,7 +175,7 @@ impl<F: Field> Chip<F> {
             let prev = Queries::new(meta, &config, Rotation::prev());
             let lower_limb_difference = meta.query_advice(lower_limb_difference, Rotation::cur());
             vec![
-                selector.clone()
+                selector
                     * (lower_limb_difference_possible_values(cur, prev)
                         .iter()
                         .map(|e| lower_limb_difference.clone() - e.clone())
