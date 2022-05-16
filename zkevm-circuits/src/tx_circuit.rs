@@ -1,5 +1,9 @@
 //! The transaction circuit implementation.
 
+// Naming notes:
+// - *_be: Big-Endian bytes
+// - *_le: Little-Endian bytes
+
 mod sign_verify;
 
 use crate::util::Expr;
@@ -12,7 +16,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use k256::elliptic_curve::generic_array::{typenum::consts::U32, GenericArray};
 use lazy_static::lazy_static;
 use libsecp256k1;
 use log::error;
@@ -23,6 +26,7 @@ use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
 use sign_verify::{SignData, SignVerifyChip, SignVerifyConfig};
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
+use std::convert::TryInto;
 use std::marker::PhantomData;
 use subtle::CtOption;
 
@@ -74,12 +78,7 @@ fn random_linear_combine<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
-fn recover_pk(
-    v: u8,
-    r: &Word,
-    s: &Word,
-    msg_hash: &GenericArray<u8, U32>,
-) -> Result<Secp256k1Affine, Error> {
+fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k1Affine, Error> {
     let r_be = r.to_be_bytes();
     let s_be = s.to_be_bytes();
     let mut r = libsecp256k1::curve::Scalar::from_int(0);
@@ -154,7 +153,11 @@ fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
         .append(&0u32)
         .append(&0u32);
     let msg = stream.out();
-    let msg_hash = Keccak256::digest(&msg);
+    let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+        .as_slice()
+        .to_vec()
+        .try_into()
+        .expect("hash length isn't 32 bytes");
     let v = (tx.v - 35 - chain_id * 2) as u8;
     let pk = recover_pk(v, &tx.r, &tx.s, &msg_hash)?;
     // msg_hash = msg_hash % q
@@ -519,8 +522,9 @@ mod tx_circuit_tests {
         }
     }
 
+    #[ignore]
     #[test]
-    fn test_tx_circuit() {
+    fn serial_test_tx_circuit() {
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;

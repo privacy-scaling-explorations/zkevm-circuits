@@ -35,8 +35,6 @@ ecc =       { git = "https://github.com/appliedzkp/halo2wrong", rev = "92b96893b
 maingate =  { git = "https://github.com/appliedzkp/halo2wrong", rev = "92b96893b5699ff40723e201a2416313aeafd267", features = ["kzg"] }
 integer =   { git = "https://github.com/appliedzkp/halo2wrong", rev = "92b96893b5699ff40723e201a2416313aeafd267", features = ["kzg"] }
 group = "0.11"
-k256 = "0.10.4"
-generic-array = "0.12.4"
 libsecp256k1 = "0.7"
 rlp = "0.5"
 num-bigint = { version = "0.4" }

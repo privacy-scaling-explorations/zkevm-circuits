@@ -544,7 +544,7 @@ dependencies = [
  "coins-core",
  "digest 0.9.0",
  "hmac 0.11.0",
- "k256 0.9.6",
+ "k256",
  "lazy_static",
  "serde",
  "sha2 0.9.9",
@@ -1097,18 +1097,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ecdsa"
-version = "0.13.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d69ae62e0ce582d56380743515fefaf1a8c70cec685d9677636d7e30ae9dc9"
-dependencies = [
- "der 0.5.1",
- "elliptic-curve 0.11.12",
- "rfc6979",
- "signature",
-]
-
-[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1124,7 +1112,7 @@ dependencies = [
  "ff 0.10.1",
  "generic-array 0.14.5",
  "group 0.10.0",
- "pkcs8 0.7.6",
+ "pkcs8",
  "rand_core",
  "subtle",
  "zeroize",
@@ -1139,11 +1127,8 @@ dependencies = [
  "base16ct",
  "crypto-bigint 0.3.2",
  "der 0.5.1",
- "ff 0.11.1",
  "generic-array 0.14.5",
- "group 0.11.0",
  "rand_core",
- "sec1",
  "subtle",
  "zeroize",
 ]
@@ -1337,7 +1322,7 @@ dependencies = [
  "ethabi",
  "generic-array 0.14.5",
  "hex",
- "k256 0.9.6",
+ "k256",
  "once_cell",
  "proc-macro2",
  "quote",
@@ -2243,19 +2228,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "k256"
-version = "0.10.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19c3a5e0a0b8450278feda242592512e09f61c72e018b8cd5c859482802daf2d"
-dependencies = [
- "cfg-if 1.0.0",
- "ecdsa 0.13.4",
- "elliptic-curve 0.11.12",
- "sec1",
- "sha2 0.9.9",
-]
-
-[[package]]
 name = "keccak"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2847,18 +2819,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee3ef9b64d26bad0536099c816c6734379e45bbd5f14798def6809e5cc350447"
 dependencies = [
  "der 0.4.5",
- "spki 0.4.1",
-]
-
-[[package]]
-name = "pkcs8"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cabda3fb821068a9a4fab19a683eac3af12edf0f34b94a8be53c4972b8149d0"
-dependencies = [
- "der 0.5.1",
- "spki 0.5.4",
- "zeroize",
+ "spki",
 ]
 
 [[package]]
@@ -3197,17 +3158,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rfc6979"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96ef608575f6392792f9ecf7890c00086591d29a83910939d430753f7c050525"
-dependencies = [
- "crypto-bigint 0.3.2",
- "hmac 0.11.0",
- "zeroize",
-]
-
-[[package]]
 name = "ring"
 version = "0.16.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3402,19 +3352,6 @@ checksum = "d53dcdb7c9f8158937a7981b48accfd39a43af418591a5d008c7b22b5e1b7ca4"
 dependencies = [
  "ring",
  "untrusted",
-]
-
-[[package]]
-name = "sec1"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08da66b8b0965a5555b6bd6639e68ccba85e1e2506f5fbb089e93f8a04e1a2d1"
-dependencies = [
- "der 0.5.1",
- "generic-array 0.14.5",
- "pkcs8 0.8.0",
- "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -3702,16 +3639,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c01a0c15da1b0b0e1494112e7af814a678fec9bd157881b49beac661e9b6f32"
 dependencies = [
  "der 0.4.5",
-]
-
-[[package]]
-name = "spki"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44d01ac02a6ccf3e07db148d2be087da624fea0221a16152ed01f0496a6b0a27"
-dependencies = [
- "base64ct",
- "der 0.5.1",
 ]
 
 [[package]]
@@ -4444,13 +4371,11 @@ dependencies = [
  "ethers-signers",
  "ff 0.11.1",
  "gadgets",
- "generic-array 0.12.4",
  "group 0.11.0",
  "halo2_proofs 0.1.0-beta.1",
  "hex",
  "integer",
  "itertools",
- "k256 0.10.4",
  "keccak256",
  "lazy_static",
  "libsecp256k1",

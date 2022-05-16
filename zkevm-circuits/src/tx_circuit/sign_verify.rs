@@ -1,3 +1,7 @@
+// Naming notes:
+// - *_be: Big-Endian bytes
+// - *_le: Little-Endian bytes
+
 use crate::{
     evm_circuit::util::{not, RandomLinearCombination, Word},
     util::Expr,
@@ -227,7 +231,6 @@ impl<F: FieldExt> SignVerifyConfig<F> {
                 .collect::<Vec<Expression<F>>>()
                 .try_into()
                 .expect("vector to array of size 64");
-            // let mut pk_be: [_; 64] = (0..64)pk[0] + pk[1];
             pk_be[..32].reverse();
             pk_be[32..].reverse();
             let pk_rlc =
@@ -473,11 +476,6 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         &self,
         ctx: &mut RegionCtx<F>,
         chips: &ChipsRef<F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        // main_gate: &MainGate<F>,
-        // range_chip: &RangeChip<F>,
-        // ecc_chip: &GeneralEccChip<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        // scalar_chip: &IntegerChip<secp256k1::Fq, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        // ecdsa_chip: &EcdsaChip<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         sign_data: &SignData,
     ) -> Result<AssignedECDSA<F>, Error> {
         let SignData {
@@ -940,7 +938,7 @@ mod sign_verify_tests {
     fn gen_key_pair(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
         // generate a valid signature
         let generator = <Secp256k1Affine as PrimeCurveAffine>::generator();
-        let sk = <Secp256k1Affine as CurveAffine>::ScalarExt::random(rng);
+        let sk = secp256k1::Fq::random(rng);
         let pk = generator * sk;
         let pk = pk.to_affine();
 
@@ -949,7 +947,7 @@ mod sign_verify_tests {
 
     // Generate a test message hash
     fn gen_msg_hash(rng: impl RngCore) -> secp256k1::Fq {
-        <Secp256k1Affine as CurveAffine>::ScalarExt::random(rng)
+        secp256k1::Fq::random(rng)
     }
 
     // Returns (r, s)
@@ -962,11 +960,20 @@ mod sign_verify_tests {
         sign(randomness, sk, msg_hash)
     }
 
+    #[ignore]
     #[test]
-    fn test_sign_verify() {
+    fn serial_test_sign_verify() {
+        // Vectors using `XorShiftRng::seed_from_u64(1)`
+        // sk: 0x771bd7bf6c6414b9370bb8559d46e1cedb479b1836ea3c2e59a54c343b0d0495
+        // pk: (
+        //   0x8e31a3586d4c8de89d4e0131223ecfefa4eb76215f68a691ae607757d6256ede,
+        //   0xc76fdd462294a7eeb8ff3f0f698eb470f32085ba975801dbe446ed8e0b05400b
+        // )
+        // pk_hash: d90e2e9d267cbcfd94de06fa7adbe6857c2c733025c0b8938a76beeefc85d6c7
+        // addr: 0x7adbe6857c2c733025c0b8938a76beeefc85d6c7
         let mut rng = XorShiftRng::seed_from_u64(1);
-        const MAX_VERIF: usize = 4;
-        const NUM_TXS: usize = 3;
+        const MAX_VERIF: usize = 3;
+        const NUM_TXS: usize = 2;
         let mut txs = Vec::new();
         for _ in 0..NUM_TXS {
             let (sk, pk) = gen_key_pair(&mut rng);
@@ -979,16 +986,7 @@ mod sign_verify_tests {
             });
         }
 
-        let k = 20;
+        let k = 19;
         run::<Fr, MAX_VERIF>(k, txs);
     }
 }
-
-// Vectors using `XorShiftRng::seed_from_u64(1)`
-// sk: 0x771bd7bf6c6414b9370bb8559d46e1cedb479b1836ea3c2e59a54c343b0d0495
-// pk: (
-//   0x8e31a3586d4c8de89d4e0131223ecfefa4eb76215f68a691ae607757d6256ede,
-//   0xc76fdd462294a7eeb8ff3f0f698eb470f32085ba975801dbe446ed8e0b05400b
-// )
-// pk_hash: d90e2e9d267cbcfd94de06fa7adbe6857c2c733025c0b8938a76beeefc85d6c7
-// addr: 0x7adbe6857c2c733025c0b8938a76beeefc85d6c7
