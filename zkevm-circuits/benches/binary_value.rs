@@ -4,11 +4,10 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
+    pairing::{arithmetic::FieldExt, bn256::Fr as Fp},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
-
-use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
 
 #[derive(Copy, Clone, Debug)]
 struct MemoryAddress<F: FieldExt>(F);

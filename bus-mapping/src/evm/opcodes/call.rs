@@ -31,8 +31,8 @@ impl Opcode for Call {
         let mut exec_step = state.new_step(geth_step)?;
 
         let tx_id = state.tx_ctx.id();
-        let call = state.call()?.clone();
-        let callee = state.parse_call(geth_step)?;
+        let current_call = state.call()?.clone();
+        let call = state.parse_call(geth_step)?;
 
         // NOTE: For `RwCounterEndOfReversion` we use the `0` value as a placeholder,
         // and later set the proper value in
@@ -42,17 +42,23 @@ impl Opcode for Call {
             (CallContextField::RwCounterEndOfReversion, 0.into()),
             (
                 CallContextField::IsPersistent,
-                (call.is_persistent as u64).into(),
+                (current_call.is_persistent as u64).into(),
             ),
-            (CallContextField::CallerAddress, call.address.to_word()),
-            (CallContextField::IsStatic, (call.is_static as u64).into()),
-            (CallContextField::Depth, call.depth.into()),
+            (
+                CallContextField::CallerAddress,
+                current_call.address.to_word(),
+            ),
+            (
+                CallContextField::IsStatic,
+                (current_call.is_static as u64).into(),
+            ),
+            (CallContextField::Depth, current_call.depth.into()),
         ] {
             state.push_op(
                 &mut exec_step,
                 RW::READ,
                 CallContextOp {
-                    call_id: call.call_id,
+                    call_id: current_call.call_id,
                     field,
                     value,
                 },
@@ -64,7 +70,7 @@ impl Opcode for Call {
                 &mut exec_step,
                 RW::READ,
                 StackOp {
-                    call_id: call.call_id,
+                    call_id: current_call.call_id,
                     address: geth_step.stack.nth_last_filled(i),
                     value: geth_step.stack.nth_last(i)?,
                 },
@@ -74,85 +80,56 @@ impl Opcode for Call {
             &mut exec_step,
             RW::WRITE,
             StackOp {
-                call_id: call.call_id,
+                call_id: current_call.call_id,
                 address: geth_step.stack.nth_last_filled(6),
-                value: (callee.is_success as u64).into(),
+                value: (call.is_success as u64).into(),
             },
         );
 
-        let is_warm_access = !state.sdb.add_account_to_access_list(callee.address);
+        let is_warm = state.sdb.check_account_in_access_list(&call.address);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             TxAccessListAccountOp {
                 tx_id,
-                address: callee.address,
+                address: call.address,
                 is_warm: true,
-                is_warm_prev: is_warm_access,
+                is_warm_prev: is_warm,
             },
         )?;
 
         // Switch to callee's call context
-        state.push_call(callee.clone(), geth_step);
+        state.push_call(call.clone(), geth_step);
 
         for (field, value) in [
             (CallContextField::RwCounterEndOfReversion, 0.into()),
             (
                 CallContextField::IsPersistent,
-                (callee.is_persistent as u64).into(),
+                (call.is_persistent as u64).into(),
             ),
         ] {
             state.push_op(
                 &mut exec_step,
                 RW::READ,
                 CallContextOp {
-                    call_id: callee.call_id,
+                    call_id: call.call_id,
                     field,
                     value,
                 },
             );
         }
 
-        let (found, caller_account) = state.sdb.get_account_mut(&callee.caller_address);
-        if !found {
-            return Err(Error::AccountNotFound(callee.caller_address));
-        }
-        let caller_balance_prev = caller_account.balance;
-        let caller_balance = caller_account.balance - callee.value;
-        caller_account.balance = caller_balance;
-        state.push_op_reversible(
+        state.transfer(
             &mut exec_step,
-            RW::WRITE,
-            AccountOp {
-                address: callee.caller_address,
-                field: AccountField::Balance,
-                value: caller_balance,
-                value_prev: caller_balance_prev,
-            },
+            call.caller_address,
+            call.address,
+            call.value,
         )?;
 
-        let (found, callee_account) = state.sdb.get_account_mut(&callee.address);
-        if !found {
-            return Err(Error::AccountNotFound(callee.address));
-        }
+        let (_, callee_account) = state.sdb.get_account(&call.address);
         let is_account_empty = callee_account.is_empty();
-        let callee_balance_prev = callee_account.balance;
-        let callee_balance = callee_account.balance + callee.value;
-        callee_account.balance = callee_balance;
-        state.push_op_reversible(
-            &mut exec_step,
-            RW::WRITE,
-            AccountOp {
-                address: callee.address,
-                field: AccountField::Balance,
-                value: callee_balance,
-                value_prev: callee_balance_prev,
-            },
-        )?;
-
-        let (_, account) = state.sdb.get_account(&callee.address);
-        let callee_nonce = account.nonce;
-        let callee_code_hash = account.code_hash;
+        let callee_nonce = callee_account.nonce;
+        let callee_code_hash = callee_account.code_hash;
         for (field, value) in [
             (AccountField::Nonce, callee_nonce),
             (AccountField::CodeHash, callee_code_hash.to_word()),
@@ -161,7 +138,7 @@ impl Opcode for Call {
                 &mut exec_step,
                 RW::READ,
                 AccountOp {
-                    address: callee.address,
+                    address: call.address,
                     field,
                     value,
                     value_prev: value,
@@ -173,14 +150,14 @@ impl Opcode for Call {
         // there isn't next geth_step (e.g. callee doesn't have code).
         let next_memory_word_size = [
             geth_step.memory.word_size() as u64,
-            (callee.call_data_offset + callee.call_data_length + 31) / 32,
-            (callee.return_data_offset + callee.return_data_length + 31) / 32,
+            (call.call_data_offset + call.call_data_length + 31) / 32,
+            (call.return_data_offset + call.return_data_length + 31) / 32,
         ]
         .into_iter()
         .max()
         .unwrap();
-        let has_value = !callee.value.is_zero();
-        let gas_cost = if is_warm_access {
+        let has_value = !call.value.is_zero();
+        let gas_cost = if is_warm {
             GasCost::WARM_ACCESS.as_u64()
         } else {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
@@ -220,13 +197,13 @@ impl Opcode for Call {
                         &mut exec_step,
                         RW::WRITE,
                         CallContextOp {
-                            call_id: call.call_id,
+                            call_id: current_call.call_id,
                             field,
                             value,
                         },
                     );
                 }
-                state.handle_return()?;
+                state.handle_return(geth_step)?;
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
@@ -254,7 +231,7 @@ impl Opcode for Call {
                         &mut exec_step,
                         RW::WRITE,
                         CallContextOp {
-                            call_id: call.call_id,
+                            call_id: current_call.call_id,
                             field,
                             value,
                         },
@@ -262,48 +239,45 @@ impl Opcode for Call {
                 }
 
                 for (field, value) in [
-                    (CallContextField::CallerId, call.call_id.into()),
+                    (CallContextField::CallerId, current_call.call_id.into()),
                     (CallContextField::TxId, tx_id.into()),
-                    (CallContextField::Depth, callee.depth.into()),
+                    (CallContextField::Depth, call.depth.into()),
                     (
                         CallContextField::CallerAddress,
-                        callee.caller_address.to_word(),
+                        call.caller_address.to_word(),
                     ),
-                    (CallContextField::CalleeAddress, callee.address.to_word()),
+                    (CallContextField::CalleeAddress, call.address.to_word()),
                     (
                         CallContextField::CallDataOffset,
-                        callee.call_data_offset.into(),
+                        call.call_data_offset.into(),
                     ),
                     (
                         CallContextField::CallDataLength,
-                        callee.call_data_length.into(),
+                        call.call_data_length.into(),
                     ),
                     (
                         CallContextField::ReturnDataOffset,
-                        callee.return_data_offset.into(),
+                        call.return_data_offset.into(),
                     ),
                     (
                         CallContextField::ReturnDataLength,
-                        callee.return_data_length.into(),
+                        call.return_data_length.into(),
                     ),
-                    (CallContextField::Value, callee.value),
-                    (
-                        CallContextField::IsSuccess,
-                        (callee.is_success as u64).into(),
-                    ),
-                    (CallContextField::IsStatic, (callee.is_static as u64).into()),
+                    (CallContextField::Value, call.value),
+                    (CallContextField::IsSuccess, (call.is_success as u64).into()),
+                    (CallContextField::IsStatic, (call.is_static as u64).into()),
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                     (CallContextField::IsRoot, 0.into()),
                     (CallContextField::IsCreate, 0.into()),
-                    (CallContextField::CodeSource, callee.code_hash.to_word()),
+                    (CallContextField::CodeSource, call.code_hash.to_word()),
                 ] {
                     state.push_op(
                         &mut exec_step,
                         RW::READ,
                         CallContextOp {
-                            call_id: callee.call_id,
+                            call_id: call.call_id,
                             field,
                             value,
                         },

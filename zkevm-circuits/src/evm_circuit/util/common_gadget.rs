@@ -1,3 +1,4 @@
+use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::N_BYTES_GAS,
@@ -12,10 +13,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{Field, U256};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 use std::convert::TryInto;
 
 /// Construction of execution state that stays in the same call context, which
@@ -60,7 +58,7 @@ impl<F: Field> SameContextGadget<F> {
 
     pub(crate) fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -142,7 +140,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value_prev: U256,
         updates: Vec<U256>,
@@ -191,7 +189,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         (sender_balance, sender_balance_prev): (U256, U256),
         (receiver_balance, receiver_balance_prev): (U256, U256),
@@ -248,7 +246,7 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         (sender_balance, sender_balance_prev): (U256, U256),
         (receiver_balance, receiver_balance_prev): (U256, U256),

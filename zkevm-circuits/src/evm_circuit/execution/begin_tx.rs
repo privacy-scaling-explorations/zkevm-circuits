@@ -11,14 +11,14 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
-            select, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -187,6 +187,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_source: To(code_hash.expr()),
             gas_left: To(gas_left),
             reversible_write_counter: To(2.expr()),
+            log_id: To(0.expr()),
             ..StepStateTransition::new_context()
         });
 
@@ -211,7 +212,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,

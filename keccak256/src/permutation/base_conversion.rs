@@ -99,7 +99,7 @@ impl<F: Field> BaseConversionConfig<F> {
     ) -> Result<AssignedCell<F, F>, Error> {
         let (input_coefs, output_coefs, _) = self
             .base_info
-            .compute_coefs(*input.value().unwrap_or(&F::zero()))?;
+            .compute_coefs(input.value().copied().unwrap_or_default())?;
 
         layouter.assign_region(
             || "Base conversion",
@@ -168,10 +168,10 @@ mod tests {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use num_bigint::BigUint;
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
     fn test_base_conversion_from_b2() {
@@ -381,7 +381,7 @@ mod tests {
             input_lane: biguint_to_f::<Fp>(&input),
             output_lane: biguint_to_f::<Fp>(&convert_b9_lane_to_b13(input)),
         };
-        let k = 17;
+        let k = 16;
         let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }

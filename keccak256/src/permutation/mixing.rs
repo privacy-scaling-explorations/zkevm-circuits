@@ -92,7 +92,9 @@ impl<F: Field> MixingConfig<F> {
         let absorb_config = AbsorbConfig::configure(meta, state);
 
         let base_info = table.get_base_info(false);
-        let base_conv_config = StateBaseConversion::configure(meta, state, base_info, flag);
+        let base_conv_lane = meta.advice_column();
+        let base_conv_config =
+            StateBaseConversion::configure(meta, state, base_info, base_conv_lane, flag);
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
@@ -331,10 +333,10 @@ mod tests {
     use crate::common::{State, PERMUTATION, ROUND_CONSTANTS};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 

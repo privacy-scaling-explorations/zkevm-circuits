@@ -246,10 +246,9 @@ pub fn state_bigint_to_field<F: Field, const N: usize>(state: StateBigInt) -> [F
 /// Returns only the value of a an assigned state cell.
 pub fn split_state_cells<F: Field, const N: usize>(state: [AssignedCell<F, F>; N]) -> [F; N] {
     let mut res = [F::zero(); N];
-    state
-        .iter()
-        .enumerate()
-        .for_each(|(idx, assigned_cell)| res[idx] = *assigned_cell.value().unwrap());
+    state.iter().enumerate().for_each(|(idx, assigned_cell)| {
+        res[idx] = assigned_cell.value().copied().unwrap_or_default()
+    });
     res
 }
 

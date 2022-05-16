@@ -157,14 +157,14 @@ impl<F: Field> WordConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ff::PrimeField;
-    use halo2_proofs::arithmetic::Field as HaloField;
     use halo2_proofs::{
+        arithmetic::Field as Halo2Field,
         circuit::SimpleFloorPlanner,
         dev::{FailureLocation, MockProver, VerifyFailure},
+        pairing::bn256::Fr as Fp,
+        pairing::group::ff::PrimeField,
         plonk::{Circuit, Instance},
     };
-    use pairing::bn256::Fr as Fp;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::marker::PhantomData;

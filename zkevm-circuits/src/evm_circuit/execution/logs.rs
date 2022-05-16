@@ -12,7 +12,7 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            sum, Cell, Word,
+            sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +21,7 @@ use crate::{
 use array_init::array_init;
 use eth_types::Field;
 use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LogGadget<F> {
@@ -155,7 +155,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             },
         );
 
-        let gas_cost = GasCost::LOG.as_u64().expr() * topic_count.clone()
+        let gas_cost = GasCost::LOG.as_u64().expr()
+            + GasCost::LOG.as_u64().expr() * topic_count.clone()
             + 8.expr() * from_bytes::expr(&msize.cells)
             + memory_expansion.gas_cost();
         // State transition
@@ -186,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
@@ -255,7 +256,7 @@ mod test {
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
 
     // make dynamic byte code sequence base on topics
@@ -382,7 +383,7 @@ mod test {
                     tx_id,
                     log_id: log_id.try_into().unwrap(),
                     field_tag: TxLogFieldTag::Topic,
-                    index: idx,
+                    index: idx.try_into().unwrap(),
                     value: *topic,
                 });
             }
@@ -407,8 +408,10 @@ mod test {
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let topic_count = topics.len();
         // dynamic calculate topic_count
-        let gas_cost =
-            GasCost::LOG.as_u64() * topic_count as u64 + 8 * msize.as_u64() + memory_expension_gas;
+        let gas_cost = GasCost::LOG.as_u64()
+            + GasCost::LOG.as_u64() * topic_count as u64
+            + 8 * msize.as_u64()
+            + memory_expension_gas;
         let codes = [
             OpcodeId::LOG0,
             OpcodeId::LOG1,

@@ -1,5 +1,5 @@
+use halo2_proofs::pairing::bn256::G1Affine;
 use halo2_proofs::poly::commitment::Params;
-use pairing::bn256::G1Affine;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

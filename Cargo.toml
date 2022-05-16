@@ -14,7 +14,6 @@ members = [
     "evm-testvectors"
 ]
 
-
 [patch.crates-io]
 # This fork makes bitvec 0.20.x work with funty 1.1 and funty 1.2.  Without
 # this fork, bitvec 0.20.x is incompatible with funty 1.2, which we depend on,
