@@ -270,31 +270,47 @@ mod test {
     use crate::test_util::run_test_circuits;
 
     #[test]
-    fn make_log_byte_code() {
+    fn log_tests() {
+        // // zero topic: log0
+        // test_log_ok(&[]);
+        // one topic: log1
+        test_log_ok(&[Word::from(0xA0)]);
+        // // two topics: log2
+        // test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
+        // // three topics: log3
+        // test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        // // four topics: log4
+        // test_log_ok(&[
+        //     Word::from(0xA0),
+        //     Word::from(0xef),
+        //     Word::from(0xb0),
+        //     Word::from(0x37),
+        // ]);
+    }
+
+    #[test]
+    fn multi_log_tests() {
         // zero topic: log0
         test_log_ok(&[]);
         // one topic: log1
-        test_log_ok(&[Word::from(0xA0)]);
+        test_multi_log_ok(&[Word::from(0xA0)]);
         // two topics: log2
         test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
-        // three topics: log3
-        test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
-        // four topics: log4
-        test_log_ok(&[
-            Word::from(0xA0),
-            Word::from(0xef),
-            Word::from(0xb0),
-            Word::from(0x37),
-        ]);
+        // // three topics: log3
+        // test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        // // four topics: log4
+        // test_log_ok(&[
+        //     Word::from(0xA0),
+        //     Word::from(0xef),
+        //     Word::from(0xb0),
+        //     Word::from(0x37),
+        // ]);
     }
+
 
     fn test_log_ok(topics: &[Word]) {
         // prepare memory data
         let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
-        let memory_data = std::iter::repeat(0)
-            .take(24)
-            .chain(pushdata.clone())
-            .collect::<Vec<u8>>();
 
         let mut code_prepare = bytecode! {
             // populate memory.
@@ -338,6 +354,7 @@ mod test {
         );
     }
 
+<<<<<<< HEAD
     // #[test]
     // fn log_gadget_simple() {
     // is_persistent = true cases
@@ -404,46 +421,73 @@ mod test {
     // );
 }
 >>>>>>> modi single circuit step&pass
+=======
+    
+    fn test_multi_log_ok(topics: &[Word]) {
+        // prepare memory data
+        let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
 
-// #[test]
-// fn log_gadget_multi_step() {
-// is_persistent = true cases
-//     test_ok(
-//         Word::from(0x10),
-//         Word::from(128),
-//         &[Word::from(0xs100)],
-//         true,
-//     );
-//     test_ok(
-//         Word::from(0x10),
-//         Word::from(128),
-//         &[Word::from(0xA0), Word::from(0xef)],
-//         true,
-//     );
-//     test_ok(
-//         Word::from(0x10),
-//         Word::from(128),
-//         &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-//         true,
-//     );
-//     // is_persistent = false cases
-//     test_ok(
-//         Word::from(0x10),
-//         Word::from(128),
-//         &[Word::from(0x100)],
-//         false,
-//     );
-//     test_ok(
-//         Word::from(0x10),
-//         Word::from(128),
-//         &[Word::from(0xA0), Word::from(0xef)],
-//         false,
-//     );
-//     test_ok(
-//         Word::from(0x10),
-//         Word::from(128),
-//         &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-//         false,
-//     );
-// }
-//}
+        let mut code_prepare = bytecode! {
+            // populate memory.
+            PUSH16(Word::from_big_endian(&pushdata))
+            PUSH1(0x00) // offset
+            MSTORE
+        };
+
+        let mut code_prepare2 = bytecode! {
+            // populate memory.
+            PUSH16(Word::from_big_endian(&pushdata))
+            PUSH1(0x05) // offset
+            MSTORE
+        };
+
+        let log_codes = [
+            OpcodeId::LOG0,
+            OpcodeId::LOG1,
+            OpcodeId::LOG2,
+            OpcodeId::LOG3,
+            OpcodeId::LOG4,
+        ];
+
+        let topic_count = topics.len();
+        let cur_op_code = log_codes[topic_count];
+
+        let mut mstart = 0x00usize;
+        //  let msize = 0x10usize;
+        //  this is hack to test no CopyToLog circuit
+        let mut msize = 0x10usize;
+         // first log op code 
+        let mut code = Bytecode::default();
+        // make dynamic topics push operations
+        for i in 0..topic_count {
+            code.push(32, topics[i]);
+        }
+        code.push(32, Word::from(msize));
+        code.push(32, Word::from(mstart));
+        code.write_op(cur_op_code);
+
+
+        // second log op code
+        code.append(&code_prepare2.clone()); 
+        mstart = 0x05usize;
+        msize = 0x10usize;
+        for i in 0..topic_count {
+            code.push(32, topics[i]);
+        }
+        code.push(32, Word::from(msize));
+        code.push(32, Word::from(mstart));
+        code.write_op(cur_op_code);
+>>>>>>> add multi log steps test
+
+        code.write_op(OpcodeId::STOP);
+        code_prepare.append(&code);
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
+                None,
+            ),
+            Ok(()),
+        );
+    }
+}
