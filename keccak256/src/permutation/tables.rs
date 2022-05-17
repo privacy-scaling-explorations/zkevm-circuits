@@ -226,6 +226,7 @@ impl<F: Field> BaseInfo<F> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FromBinaryTableConfig<F> {
     base2: TableColumn,
@@ -234,6 +235,7 @@ pub struct FromBinaryTableConfig<F> {
     _marker: PhantomData<F>,
 }
 
+#[allow(dead_code)]
 impl<F: Field> FromBinaryTableConfig<F> {
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
