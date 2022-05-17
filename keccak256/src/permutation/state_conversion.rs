@@ -11,7 +11,7 @@ use std::convert::TryInto;
 #[derive(Debug, Clone)]
 pub(crate) struct StateBaseConversion<F> {
     bi: BaseInfo<F>,
-    bccs: [BaseConversionConfig<F>; 25],
+    bcc: BaseConversionConfig<F>,
     state: [Column<Advice>; 25],
 }
 
@@ -21,17 +21,13 @@ impl<F: Field> StateBaseConversion<F> {
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
+        lane: Column<Advice>,
         flag: Column<Advice>,
     ) -> Self {
         meta.enable_equality(flag);
-        let bccs: [BaseConversionConfig<F>; 25] = state
-            .iter()
-            .map(|&lane| BaseConversionConfig::configure(meta, bi.clone(), lane, flag))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+        let bcc = BaseConversionConfig::configure(meta, bi.clone(), lane, flag);
 
-        Self { bi, bccs, state }
+        Self { bi, bcc, state }
     }
 
     pub(crate) fn assign_region(
@@ -42,9 +38,10 @@ impl<F: Field> StateBaseConversion<F> {
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         let state: Result<Vec<AssignedCell<F, F>>, Error> = state
             .iter()
-            .zip(self.bccs.iter())
-            .map(|(lane, config)| {
-                let output = config.assign_region(layouter, lane.clone(), flag.clone())?;
+            .map(|lane| {
+                let output = self
+                    .bcc
+                    .assign_region(layouter, lane.clone(), flag.clone())?;
                 Ok(output)
             })
             .into_iter()
@@ -76,6 +73,7 @@ mod tests {
         struct MyConfig<F> {
             flag: Column<Advice>,
             state: [Column<Advice>; 25],
+            lane: Column<Advice>,
             table: FromBinaryTableConfig<F>,
             conversion: StateBaseConversion<F>,
         }
@@ -88,11 +86,13 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let flag = meta.advice_column();
+                let lane = meta.advice_column();
                 let bi = table.get_base_info(false);
-                let conversion = StateBaseConversion::configure(meta, state, bi, flag);
+                let conversion = StateBaseConversion::configure(meta, state, bi, lane, flag);
                 Self {
                     flag,
                     state,
+                    lane,
                     table,
                     conversion,
                 }

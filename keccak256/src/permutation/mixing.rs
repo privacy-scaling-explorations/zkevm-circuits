@@ -92,7 +92,9 @@ impl<F: Field> MixingConfig<F> {
         let absorb_config = AbsorbConfig::configure(meta, state);
 
         let base_info = table.get_base_info(false);
-        let base_conv_config = StateBaseConversion::configure(meta, state, base_info, flag);
+        let base_conv_lane = meta.advice_column();
+        let base_conv_config =
+            StateBaseConversion::configure(meta, state, base_info, base_conv_lane, flag);
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
