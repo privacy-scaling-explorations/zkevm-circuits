@@ -182,16 +182,6 @@ impl<F: Field> BaseInfo<F> {
         F::from(self.output_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
 
-    pub fn slice_count(self) -> usize {
-        // Just want the `self.max_chunks.div_ceil(self.num_chunks)`
-        (0..self.max_chunks)
-            .chunks(self.num_chunks)
-            .into_iter()
-            .map(|_| 0)
-            .collect_vec()
-            .len()
-    }
-
     pub fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>, F), Error> {
         // big-endian
         let input_chunks: Vec<u8> = {
