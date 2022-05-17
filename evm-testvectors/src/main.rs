@@ -9,7 +9,7 @@ use crate::compiler::Compiler;
 use crate::yaml::YamlStateTestBuilder;
 use anyhow::{bail, Result};
 use clap::Parser;
-use eth_types::{evm_types::Gas, U256};
+use eth_types::evm_types::Gas;
 use rayon::prelude::*;
 use result_cache::ResultCache;
 use statetest::{StateTest, StateTestConfig, StateTestError};
@@ -22,7 +22,6 @@ use crate::utils::config_bytecode_test_config;
 
 #[macro_use]
 extern crate prettytable;
-use prettytable::Table;
 
 /// EVM test vectors utility
 #[derive(Parser, Debug)]
@@ -54,10 +53,11 @@ struct Args {
 }
 
 const TEST_IGNORE_LIST: [&str; 0] = [];
-const FILE_IGNORE_LIST: [&str; 4] = [
+const FILE_IGNORE_LIST: [&str; 5] = [
     "EIP1559",
     "EIP2930",
     "stExample",
+    "bufferFiller.yml",    // we are using U256::as_xxx() that panics 
     "ValueOverflowFiller", // weird 0x:biginteger 0x...
 ];
 
@@ -130,57 +130,12 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
 fn run_single_test(test: StateTest, mut config: StateTestConfig) -> Result<()> {
     println!("{}", &test);
 
-    fn kv(storage: std::collections::HashMap<U256, U256>) -> Vec<String> {
-        let mut keys: Vec<_> = storage.keys().collect();
-        keys.sort();
-        keys.iter()
-            .map(|k| format!("{:?}: {:?}", k, storage[k]))
-            .collect()
-    }
-    fn split(strs: Vec<String>, len: usize) -> String {
-        let mut out = String::new();
-        let mut current = 0;
-        for s in strs {
-            if current > len {
-                current = 0;
-                out.push('\n');
-            } else if current > 0 {
-                out.push_str(", ");
-            }
-            out.push_str(&s);
-            current += s.len();
-        }
-        out
-    }
-
     let trace = test.clone().geth_trace()?;
-
     config_bytecode_test_config(
         &mut config.bytecode_test_config,
         trace.struct_logs.iter().map(|step| step.op),
     );
-
-    let mut table = Table::new();
-    table.add_row(row![
-        "PC", "OP", "GAS", "GAS_COST", "DEPTH", "ERR", "STACK", "MEMORY", "STORAGE"
-    ]);
-    for step in trace.struct_logs {
-        table.add_row(row![
-            format!("{}", step.pc.0),
-            format!("{:?}", step.op),
-            format!("{}", step.gas.0),
-            format!("{}", step.gas_cost.0),
-            format!("{}", step.depth),
-            step.error.unwrap_or("".to_string()),
-            split(step.stack.0.iter().map(ToString::to_string).collect(), 30),
-            split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
-            split(kv(step.storage.0), 30)
-        ]);
-    }
-
-    println!("FAILED: {:?}", trace.failed);
-    println!("GAS: {:?}", trace.gas);
-    table.printstd();
+    crate::utils::print_trace(trace)?;
     println!("result={:?}", test.run(config));
 
     Ok(())
@@ -265,10 +220,11 @@ fn main() -> Result<()> {
     for file in files {
         let src = std::fs::read_to_string(&file)?;
         let path = file.as_path().to_string_lossy();
-        println!("======>{}", path);
         let mut tcs = match YamlStateTestBuilder::new(&mut compiler).from_yaml(&path, &src) {
             Err(err) => {
-                log::warn!("Failed to load {}: {:?}", path, err);
+                if args.test.is_none() {
+                    log::warn!("Failed to load {}: {:?}", path, err);
+                }
                 Vec::new()
             }
             Ok(tcs) => tcs,

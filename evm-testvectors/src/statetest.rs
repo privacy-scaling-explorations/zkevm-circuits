@@ -101,6 +101,30 @@ pub struct StateTest {
 
 impl std::fmt::Display for StateTest {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+        let max_len = 100;
+
+        let format = | v : &str, k: &str | -> String {
+            let mut text = String::new();
+            let k = if k.len() == 0 {
+                k.to_string()
+            } else  {
+                format!("{} :",k)
+            };
+            let max_len = max_len - k.len();
+                for i in 0..=v.len() / max_len {
+                    if i == 0 && k.len() > 0 {
+                        text.push_str(&k);
+                    } else {
+                        let padding: String = std::iter::repeat(" ").take(k.len()).collect();
+                        text.push_str(&padding);
+                    }
+                    text.push_str(&v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]);
+                    text.push_str("\n");
+                }
+                text
+        };
+
         use prettytable::Table;
         let mut table = Table::new();
         table.add_row(row!["id", self.id]);
@@ -121,7 +145,7 @@ impl std::fmt::Display for StateTest {
         table.add_row(row!["gas_price", format!("{}", self.gas_price)]);
         table.add_row(row!["nonce", format!("{}", self.nonce)]);
         table.add_row(row!["value", format!("{}", self.value)]);
-        table.add_row(row!["data", format!("{}", hex::encode(&self.data))]);
+        table.add_row(row!["data", format(&hex::encode(&self.data),"")]);
 
         let mut addrs: Vec<_> = self.pre.keys().collect();
         addrs.extend(self.result.keys());
@@ -163,23 +187,10 @@ impl std::fmt::Display for StateTest {
                 }
             }
             let mut text = String::new();
-            let max_len = 100;
             let mut keys: Vec<_> = state.keys().collect();
             keys.sort();
             for k in keys {
-                let v = state.get(k).unwrap();
-                let max_len = max_len - k.len();
-                for i in 0..=v.len() / max_len {
-                    if i == 0 {
-                        text.push_str(&k);
-                        text.push_str(": ");
-                    } else {
-                        let padding: String = std::iter::repeat(" ").take(k.len() + 2).collect();
-                        text.push_str(&padding);
-                    }
-                    text.push_str(&v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]);
-                    text.push_str("\n");
-                }
+                text.push_str(&format(state.get(k).unwrap(),k));
             }
             table.add_row(row![format!("{:?}", addr), text]);
         }
