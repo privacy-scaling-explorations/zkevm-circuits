@@ -360,13 +360,6 @@ mod tests {
             table: FromBase9TableConfig<F>,
         }
 
-        impl<F: Field> MyConfig<F> {
-            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-                self.table.load(layouter)?;
-                Ok(())
-            }
-        }
-
         impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;

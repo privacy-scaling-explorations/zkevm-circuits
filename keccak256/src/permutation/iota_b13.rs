@@ -1,6 +1,3 @@
-use crate::arith_helpers::*;
-use crate::common::*;
-use crate::keccak_arith::*;
 use eth_types::Field;
 use halo2_proofs::circuit::{AssignedCell, Layouter};
 use halo2_proofs::{
@@ -178,11 +175,30 @@ impl<F: Field> IotaB13Config<F> {
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arith_helpers::*;
+    use crate::common::*;
+    use crate::gate_helpers::biguint_to_f;
+    use crate::keccak_arith::*;
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use pretty_assertions::assert_eq;
+    use std::convert::TryInto;
+    use std::marker::PhantomData;
 
     /// Given a [`State`] returns the `init_state` and `out_state` ready to be
     /// added as circuit witnesses applying `IotaB13` to the input to get
     /// the output.
-    pub(crate) fn compute_circ_states(state: StateBigInt, round: usize) -> ([F; 25], [F; 25]) {
+    pub(crate) fn compute_circ_states<F: Field>(
+        state: StateBigInt,
+        round: usize,
+    ) -> ([F; 25], [F; 25]) {
         // Compute out state
         let round_ctant = ROUND_CONSTANTS[round];
         let s1_arith = KeccakFArith::iota_b13(&state, round_ctant);
@@ -191,20 +207,6 @@ impl<F: Field> IotaB13Config<F> {
             state_bigint_to_field::<F, 25>(s1_arith),
         )
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::common::{PERMUTATION, ROUND_CONSTANTS};
-    use crate::gate_helpers::biguint_to_f;
-    use halo2_proofs::circuit::Layouter;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
-    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pretty_assertions::assert_eq;
-    use std::convert::TryInto;
-    use std::marker::PhantomData;
 
     #[test]
     fn test_iota_b13_gate() {
@@ -302,8 +304,7 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let (in_state, out_state) =
-            IotaB13Config::compute_circ_states(input1.into(), PERMUTATION - 1);
+        let (in_state, out_state) = compute_circ_states(input1.into(), PERMUTATION - 1);
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
