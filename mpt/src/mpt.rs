@@ -127,6 +127,8 @@ pub struct MPTConfig<F> {
     // sel1 and sel2 in storage leaf key: key_rlc_prev and key_rlc_mult_prev
     // sel1 and sel2 in storage leaf value (only when leaf without branch as otherwise this info is
     // in the branch above): whether leaf is just a placeholder
+    // sel1 and sel2 in account leaf key specifies whether nonce / balance are short / long (check
+    // nonce balance row: offset - 1)
     sel1: Column<Advice>,
     sel2: Column<Advice>,
     r_table: Vec<Expression<F>>,
@@ -847,6 +849,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_leaf_key_s
             },
             q_not_first,
+            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -856,6 +859,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
+            sel1,
+            sel2,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -873,6 +878,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 q_enable * is_account_leaf_key_c
             },
             q_not_first,
+            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -882,6 +888,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
+            sel1,
+            sel2,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -2218,6 +2226,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 is_account_leaf_in_added_branch = true;
                                 pv.key_rlc = F::zero(); // account address until here, storage key from here on
                                 pv.key_rlc_mult = F::one();
+                                pv.key_rlc_prev = F::zero();
+                                pv.key_rlc_mult_prev = F::one();
                                 pv.key_rlc_sel = true;
                             } else if row[row.len() - 1] == 13 {
                                 is_leaf_s_value = true;
@@ -2353,16 +2363,13 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // For leaf S and leaf C we need to start with the same rlc.
                                 let mut key_rlc_new = pv.key_rlc;
                                 let mut key_rlc_mult_new = pv.key_rlc_mult;
-
                                 if (pv.is_branch_s_placeholder && row[row.len() - 1] == 2)
                                     || (pv.is_branch_c_placeholder && row[row.len() - 1] == 3)
                                 {
                                     key_rlc_new = pv.key_rlc_prev;
                                     key_rlc_mult_new = pv.key_rlc_mult_prev;
                                 }
-
                                 compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, start);
-
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
@@ -2540,12 +2547,36 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // For leaf S and leaf C we need to start with the same rlc.
                                 let mut key_rlc_new = pv.key_rlc;
                                 let mut key_rlc_mult_new = pv.key_rlc_mult;
+                                if (pv.is_branch_s_placeholder && row[row.len() - 1] == 6)
+                                    || (pv.is_branch_c_placeholder && row[row.len() - 1] == 4)
+                                {
+                                    key_rlc_new = pv.key_rlc_prev;
+                                    key_rlc_mult_new = pv.key_rlc_mult_prev;
+                                }
                                 compute_key_rlc(&mut key_rlc_new, &mut key_rlc_mult_new, S_START);
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
                                     offset,
-                                    || Ok(key_rlc_new),
+                                    // || Ok(key_rlc_new),
+                                    || Ok(F::one()),
+                                )?;
+
+                                // Assign previous key RLC -
+                                // needed in case of placeholder branch/extension.
+                                // Constraint for this is in account_leaf_key.
+                                region.assign_advice(
+                                    || "assign key_rlc prev".to_string(),
+                                    self.sel1,
+                                    offset,
+                                    // || Ok(pv.key_rlc_prev),
+                                    || Ok(F::one()),
+                                )?;
+                                region.assign_advice(
+                                    || "assign key_rlc_mult prev".to_string(),
+                                    self.sel2,
+                                    offset,
+                                    || Ok(pv.key_rlc_mult_prev),
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
                                 let mut acc_account;

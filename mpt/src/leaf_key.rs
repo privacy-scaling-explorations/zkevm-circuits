@@ -9,7 +9,10 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{compute_rlc, get_bool_constraint, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
-    param::{HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET, R_TABLE_LEN},
+    param::{
+        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LAYOUT_OFFSET,
+        R_TABLE_LEN,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -416,6 +419,8 @@ impl<F: FieldExt> LeafKeyChip<F> {
         // above the placeholder branch - this is checked in leaf_value (where RLC
         // from the first gate above is used).
 
+        // Check that key_rlc_prev stores key_rlc from the previous branch (needed when
+        // after the placeholder).
         meta.create_gate("Previous level RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -469,7 +474,7 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
             // Note: key rlc is in the first branch node (not branch init).
-            let rot_level_above = rot_into_init + 1 - 19;
+            let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
 
             let is_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_init - 1));
