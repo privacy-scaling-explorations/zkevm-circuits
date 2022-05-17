@@ -10,15 +10,8 @@ on:
 jobs:
   build:
     if: github.event.pull_request.draft == false
-    name: Build and test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - wasm32-unknown-unknown
-          - wasm32-wasi
-      fail-fast: false
+    name: Build and clippy
+    runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -78,23 +71,16 @@ jobs:
           command: build
           args: --all-targets --all-features
       # Run clippy always after build to re-use artifacts and shave time. See: https://www.reillywood.com/blog/rust-faster-ci/
-      - name: Lint (clippy)
-        uses: actions-rs/cargo@v1
+      - name: Run clippy
+        uses: actions-rs/clippy-check@v1
         with:
-          command: clippy
+          name: Clippy
           args: --all-features --all-targets -- -D warnings
 
   test:
     if: github.event.pull_request.draft == false
     name: Run all workspace tests
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - wasm32-unknown-unknown
-          - wasm32-wasi
-      fail-fast: false
+    runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
     steps:
