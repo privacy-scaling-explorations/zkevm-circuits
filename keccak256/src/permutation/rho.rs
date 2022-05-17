@@ -148,9 +148,8 @@ mod tests {
                     state
                         .iter()
                         .map(|col| {
-                            let final_state = meta.query_advice(col.clone(), Rotation::cur());
-                            let expected_final_state =
-                                meta.query_advice(col.clone(), Rotation::next());
+                            let final_state = meta.query_advice(*col, Rotation::cur());
+                            let expected_final_state = meta.query_advice(*col, Rotation::next());
                             q_enable.clone() * (final_state - expected_final_state)
                         })
                         .collect::<Vec<_>>()

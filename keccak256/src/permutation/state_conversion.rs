@@ -22,7 +22,7 @@ impl<F: Field> StateBaseConversion<F> {
         flag: Column<Advice>,
     ) -> Self {
         meta.enable_equality(flag);
-        let bcc = BaseConversionConfig::configure(meta, bi.clone(), lane, flag);
+        let bcc = BaseConversionConfig::configure(meta, bi, lane, flag);
 
         Self { bcc }
     }
