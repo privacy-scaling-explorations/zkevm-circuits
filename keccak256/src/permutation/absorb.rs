@@ -17,7 +17,6 @@ pub struct AbsorbConfig<F> {
 }
 
 impl<F: Field> AbsorbConfig<F> {
-    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     // Rows are assigned as:
     // 1) STATE (25 columns) (offset -1)
