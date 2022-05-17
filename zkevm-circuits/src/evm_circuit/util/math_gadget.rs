@@ -1140,7 +1140,7 @@ impl<F: Field> ShrWordsGadget<F> {
         let shf_div64 = shf_div64 as u64;
         let shf_mod64 = shf_mod64 as u64;
         self.shf_div64
-            .assign(region, offset, Some(F::from(shf_div64)))?;
+            .assign(region, offset, Some(F::from(shf_div64 as u64)))?;
         self.shf_mod64
             .assign(region, offset, Some(F::from(shf_mod64)))?;
         self.p_lo.assign(region, offset, Some(F::from_u128(p_lo)))?;
