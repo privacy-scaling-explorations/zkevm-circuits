@@ -1137,8 +1137,6 @@ impl<F: Field> ShrWordsGadget<F> {
             .zip(a64s_hi.iter())
             .map(|(cell, val)| cell.assign(region, offset, Some(F::from_u128(*val))))
             .collect::<Result<Vec<_>, _>>()?;
-        let shf_div64 = shf_div64 as u64;
-        let shf_mod64 = shf_mod64 as u64;
         self.shf_div64
             .assign(region, offset, Some(F::from(shf_div64 as u64)))?;
         self.shf_mod64
@@ -1148,11 +1146,11 @@ impl<F: Field> ShrWordsGadget<F> {
         self.shf_lt256
             .assign(region, offset, F::from_u128(shf_lt256))?;
         self.shf_div64_eq0
-            .assign(region, offset, F::from(shf_div64))?;
+            .assign(region, offset, F::from(shf_div64 as u64))?;
         self.shf_div64_eq1
-            .assign(region, offset, F::from(shf_div64), F::from(1))?;
+            .assign(region, offset, F::from(shf_div64 as u64), F::from(1))?;
         self.shf_div64_eq2
-            .assign(region, offset, F::from(shf_div64), F::from(2))?;
+            .assign(region, offset, F::from(shf_div64 as u64), F::from(2))?;
         self.a64s_lo_lt_p_lo
             .iter()
             .zip(a64s_lo.iter())
