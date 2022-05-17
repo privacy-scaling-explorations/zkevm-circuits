@@ -74,13 +74,8 @@ impl<F: Field> KeccakFConfig<F> {
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
-        let base_conversion_config = StateBaseConversion::configure(
-            meta,
-            state,
-            base_info,
-            base_conv_lane,
-            base_conv_activator,
-        );
+        let base_conversion_config =
+            StateBaseConversion::configure(meta, base_info, base_conv_lane, base_conv_activator);
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
