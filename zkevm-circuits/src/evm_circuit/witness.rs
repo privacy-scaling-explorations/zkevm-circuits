@@ -1269,6 +1269,9 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                     circuit_input_builder::CodeSource::Address(_) => {
                         CodeSource::Account(call.code_hash.to_word())
                     }
+                    circuit_input_builder::CodeSource::Memory => {
+                        CodeSource::Account(call.code_hash.to_word())
+                    }
                     _ => unimplemented!(),
                 },
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
