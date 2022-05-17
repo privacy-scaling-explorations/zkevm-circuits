@@ -976,8 +976,11 @@ impl<F: Field> ShrWordsGadget<F> {
         }
 
         // a64s_lo[idx] < p_lo
-        let a64s_lo_lt_p_lo =
-            array_init(|idx| LtGadget::construct(cb, a64s_lo[idx].expr(), p_lo.expr()));
+        let a64s_lo_lt_p_lo = array_init(|idx| {
+            let lt = LtGadget::construct(cb, a64s_lo[idx].expr(), p_lo.expr());
+            cb.require_equal("a64s_lo[idx] < p_lo", lt.expr(), 1.expr());
+            lt
+        });
 
         // merge contraints
         let shf_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
