@@ -286,6 +286,7 @@ mod test {
     use mock::TestContext;
 
     lazy_static! {
+        static ref TEN_ETHER: Word = Word::from(10u64.pow(19));
         static ref POINT_ONE_ETHER: Word = Word::from(10u64.pow(17));
         static ref MINIMAL_GAS: Word =
             Word::from(GasCost::TX.as_u64() + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64());
@@ -318,7 +319,7 @@ mod test {
                     .address(to)
                     .balance(Word::from(10u64.pow(10)))
                     .code(code);
-                accs[1].address(from).balance(Word::from(10u64.pow(19)));
+                accs[1].address(from).balance(*TEN_ETHER);
             },
             |mut txs, _accs| {
                 txs[0]
@@ -391,7 +392,10 @@ mod test {
     #[test]
     fn begin_tx_gadget_rand() {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % *POINT_ONE_ETHER;
-        let random_gas_price = Word::from(rand_range(0..47619047619047u64));
+
+        let max_gas_price = 476_054_460_630_296u64;
+        assert_eq!(Word::from(max_gas_price), *TEN_ETHER / *MINIMAL_GAS);
+        let random_gas_price = Word::from(rand_range(0..max_gas_price));
 
         // If this test fails, we want these values to appear in the CI logs.
         dbg!(random_amount, random_gas_price);
