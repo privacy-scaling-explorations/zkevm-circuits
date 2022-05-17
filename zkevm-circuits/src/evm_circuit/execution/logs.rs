@@ -271,10 +271,10 @@ mod test {
 
     #[test]
     fn log_tests() {
-        // // zero topic: log0
-        // test_log_ok(&[]);
+        // zero topic: log0
+        test_log_ok(&[]);
         // one topic: log1
-        test_log_ok(&[Word::from(0xA0)]);
+        // test_log_ok(&[Word::from(0xA0)]);
         // // two topics: log2
         // test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
         // // three topics: log3
@@ -353,75 +353,6 @@ mod test {
             Ok(()),
         );
     }
-
-<<<<<<< HEAD
-    // #[test]
-    // fn log_gadget_simple() {
-    // is_persistent = true cases
-    // log1
-    // test_ok_buss_mapping(Word::from(0x10), Word::from(2),
-    // &[Word::from(0xA0)], true); // log2
-    // test_ok(
-    //     Word::from(0x10),
-    //     Word::from(2),
-    //     &[Word::from(0xA0), Word::from(0xef)],
-    //     true,
-    // );
-    // // log3
-    // test_ok(
-    //     Word::from(0x10),
-    //     Word::from(2),
-    //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-    //     true,
-    // );
-    // // log4
-    // test_ok(
-    //     Word::from(0x10),
-    //     Word::from(2),
-    //     &[
-    //         Word::from(0xA0),
-    //         Word::from(0xef),
-    //         Word::from(0xb0),
-    //         Word::from(0x37),
-    //     ],
-    //     true,
-    // );
-    // // zero topic: log0
-    // test_ok(Word::from(0x10), Word::from(2), &[], true);
-    // // is_persistent = false cases
-    // // zero topic: log0
-    // test_ok(Word::from(0x10), Word::from(2), &[], false);
-    // // log1
-    // test_ok(Word::from(0x10), Word::from(2), &[Word::from(0xA0)], false);
-    // // log2
-    // test_ok(
-    //     Word::from(0x10),
-    //     Word::from(2),
-    //     &[Word::from(0xA0), Word::from(0xef)],
-    //     false,
-    // );
-    // // log3
-    // test_ok(
-    //     Word::from(0x10),
-    //     Word::from(2),
-    //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-    //     false,
-    // );
-    // // log4
-    // test_ok(
-    //     Word::from(0x10),
-    //     Word::from(2),
-    //     &[
-    //         Word::from(0xA0),
-    //         Word::from(0xef),
-    //         Word::from(0xb0),
-    //         Word::from(0x37),
-    //     ],
-    //     false,
-    // );
-}
->>>>>>> modi single circuit step&pass
-=======
     
     fn test_multi_log_ok(topics: &[Word]) {
         // prepare memory data
@@ -477,7 +408,7 @@ mod test {
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
->>>>>>> add multi log steps test
+
 
         code.write_op(OpcodeId::STOP);
         code_prepare.append(&code);

@@ -814,10 +814,20 @@ impl Rw {
             }
             Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
-            | Self::Stack { value, .. }
-            | Self::TxLog { value, .. } => {
+            | Self::Stack { value, .. }=> {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+            },
+
+            Self::TxLog {field_tag, value, .. } =>{
+                match field_tag {
+                    TxLogFieldTag::Address => value.to_scalar().unwrap(),
+                    _ => RandomLinearCombination::random_linear_combine(
+                        value.to_le_bytes(),
+                        randomness,
+                    ),
+                }
             }
+            
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
@@ -832,7 +842,6 @@ impl Rw {
                 Some(RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
                     randomness,
-<<<<<<< HEAD
                 ))
             }
             Self::TxAccessListAccount { is_warm_prev, .. }
@@ -860,65 +869,6 @@ impl Rw {
                 randomness,
             )),
             _ => None,
-=======
-                ),
-                F::from(*tx_id as u64),
-                RandomLinearCombination::random_linear_combine(
-                    committed_value.to_le_bytes(),
-                    randomness,
-                ),
-            ]
-            .into(),
-            Self::TxLog {
-                rw_counter,
-                is_write,
-                tx_id,
-                log_id,
-                field_tag,
-                index,
-                value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxLog as u64),
-                F::from(*tx_id as u64),
-                F::from(*log_id as u64),
-                F::from(*field_tag as u64),
-                F::from(*index as u64),
-                match field_tag {
-                    TxLogFieldTag::Address => value.to_scalar().unwrap(),
-                    _ => RandomLinearCombination::random_linear_combine(
-                        value.to_le_bytes(),
-                        randomness,
-                    ),
-                },
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::TxReceipt {
-                rw_counter,
-                is_write,
-                tx_id,
-                field_tag,
-                value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxReceipt as u64),
-                F::from(*tx_id as u64),
-                F::zero(),
-                F::from(*field_tag as u64),
-                F::zero(),
-                F::from(*value),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            _ => unimplemented!(),
->>>>>>> modi single circuit step&pass
         }
     }
 }

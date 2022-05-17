@@ -232,6 +232,9 @@ impl<F: Field> Chip<F> {
             .find(|(_, (a, b))| a != b);
         let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
 
+        if cur_limb < prev_limb {
+            print!("cur_limb is less than prev_limb");
+        }
         let mut upper_limb_difference = F::from((cur_limb - prev_limb) as u64);
         let mut lower_limb_difference = lower_limb_difference_value(&cur_be_limbs, &prev_be_limbs);
         if index >= 15 {
