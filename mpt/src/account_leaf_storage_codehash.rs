@@ -11,8 +11,8 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
-        HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH,
-        LAYOUT_OFFSET, IS_BRANCH_C_PLACEHOLDER_POS,
+        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
+        KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
     },
 };
 
@@ -215,10 +215,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
             // TODO: test for account proof with only leaf (without branch)
-            let mut leaf_without_branch = one.clone() - meta.query_fixed(q_not_first, Rotation(-3));
-            if !is_s {
-                leaf_without_branch = one.clone() - meta.query_fixed(q_not_first, Rotation(-4));
-            }
 
             // Placeholder leaf appears when a new account is created. There are no
             // constraints for placeholder leaf (except that the `modified_node`
@@ -228,14 +224,21 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // exist in the trie. There are no constraints for default values, because the
             // correct values are implied by lookups (the lookups will fail if not correct
             // values in the circuit).
+            // Rotate into a branch:
+            let mut is_placeholder_leaf =
+                meta.query_advice(sel1, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - 3)));
+            if !is_s {
+                is_placeholder_leaf =
+                    meta.query_advice(sel2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - 4)));
+            }
 
             // Rotate into branch init:
-            let mut placeholder_leaf = meta.query_advice(
+            let mut is_branch_placeholder = meta.query_advice(
                 s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
             );
             if !is_s {
-                placeholder_leaf = meta.query_advice(
+                is_branch_placeholder = meta.query_advice(
                     s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                     Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
                 );
@@ -247,25 +250,37 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
-                    * (one.clone() - leaf_without_branch.clone())
-                    * (one.clone() - placeholder_leaf.clone())
+                // same for branch placeholder and not branch placeholder
+                    * (one.clone() - is_placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * acc_s,
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
             // Any rotation that lands into branch can be used instead of -17.
             let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(-17));
+            let mut mod_node_hash_rlc_cur_prev =
+                meta.query_advice(s_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
             if !is_s {
                 mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(-17));
+                mod_node_hash_rlc_cur_prev =
+                    meta.query_advice(c_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
             }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 not_first_level.clone()
-                    * (one.clone() - leaf_without_branch.clone())
-                    * (one.clone() - placeholder_leaf.clone())
+                    * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * mod_node_hash_rlc_cur,
-                keccak_table_i,
+                keccak_table_i.clone(),
+            ));
+            constraints.push((
+                not_first_level.clone()
+                    * is_branch_placeholder.clone()
+                    * (one.clone() - is_placeholder_leaf.clone())
+                    * is_account_leaf_storage_codehash.clone()
+                    * mod_node_hash_rlc_cur_prev,
+                keccak_table_i.clone(),
             ));
 
             constraints

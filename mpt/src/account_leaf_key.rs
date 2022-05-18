@@ -44,7 +44,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
-        is_account_leaf_in_added_branch: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};

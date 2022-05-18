@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use crate::{
     helpers::{get_bool_constraint, key_len_lookup, range_lookups},
     mpt::FixedTableTag,
-    param::{HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
+    param::{BRANCH_ROWS_NUM, HASH_WIDTH, KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH},
 };
 
 #[derive(Clone, Debug)]
@@ -353,7 +353,7 @@ impl<F: FieldExt> LeafValueChip<F> {
             // For leaf without branch, the constraints are in storage_root_in_account_leaf.
             let is_leaf_without_branch_after_placeholder = meta.query_advice(
                 is_account_leaf_in_added_branch,
-                Rotation(rot_into_account - 19),
+                Rotation(rot_into_account - BRANCH_ROWS_NUM),
             );
             let is_leaf_without_branch =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
