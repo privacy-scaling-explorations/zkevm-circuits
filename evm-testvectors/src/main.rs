@@ -6,8 +6,9 @@ mod statetest;
 mod utils;
 mod yaml;
 
-use crate::compiler::Compiler;
-use crate::yaml::YamlStateTestBuilder;
+use compiler::Compiler;
+use yaml::YamlStateTestBuilder;
+use json::JsonStateTestBuilder;
 use anyhow::{bail, Result};
 use clap::Parser;
 use eth_types::evm_types::Gas;
@@ -184,7 +185,7 @@ fn run_bytecode(code: &str, mut bytecode_test_config: BytecodeTestConfig) -> Res
 
 fn main() -> Result<()> {
     //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
-    // "tests/src/GeneralStateTestsFiller/**" --skip-state-circuit
+    // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
 
     let args = Args::parse();
 
@@ -208,7 +209,7 @@ fn main() -> Result<()> {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let files = glob::glob(&format!("{}/*.yml", args.path))
+    let files = glob::glob(&format!("{}", args.path))
         .expect("Failed to read glob pattern")
         .map(|f| f.unwrap())
         .filter(|f| {
@@ -222,18 +223,30 @@ fn main() -> Result<()> {
 
     log::info!("Parsing and compliling tests...");
     for file in files {
-        let src = std::fs::read_to_string(&file)?;
-        let path = file.as_path().to_string_lossy();
-        let mut tcs = match YamlStateTestBuilder::new(&mut compiler).from_yaml(&path, &src) {
-            Err(err) => {
-                if args.test.is_none() {
-                    log::warn!("Failed to load {}: {:?}", path, err);
-                }
-                Vec::new()
+        if let Some(ext) = file.extension() {
+            let ext = &*ext.to_string_lossy();
+            if !["yml","json"].contains(&ext) {
+                continue;
             }
-            Ok(tcs) => tcs,
-        };
+            let path = file.as_path().to_string_lossy();
+            let src = std::fs::read_to_string(&file)?;
+            let result = match ext {
+                "yml" => YamlStateTestBuilder::new(&mut compiler).from_yaml(&path, &src),
+                "json" => JsonStateTestBuilder::new(&mut compiler).from_json(&path, &src),
+                _ => unreachable!(),         
+            };
+            let mut tcs = match result {
+                Err(err) => {
+                 if args.test.is_none() {
+                     log::warn!("Failed to load {}: {:?}", path, err);
+                 }
+                    Vec::new()
+             }
+                Ok(tcs) => tcs,
+            };
+ 
         tests.append(&mut tcs);
+        }
     }
 
     if let Some(test_id) = args.test {
