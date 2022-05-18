@@ -10,24 +10,21 @@ use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub(crate) struct StateBaseConversion<F> {
-    bi: BaseInfo<F>,
     bcc: BaseConversionConfig<F>,
-    state: [Column<Advice>; 25],
 }
 
 impl<F: Field> StateBaseConversion<F> {
     /// Side effect: parent flag is enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
         lane: Column<Advice>,
         flag: Column<Advice>,
     ) -> Self {
         meta.enable_equality(flag);
-        let bcc = BaseConversionConfig::configure(meta, bi.clone(), lane, flag);
+        let bcc = BaseConversionConfig::configure(meta, bi, lane, flag);
 
-        Self { bi, bcc, state }
+        Self { bcc }
     }
 
     pub(crate) fn assign_region(
@@ -73,7 +70,6 @@ mod tests {
         struct MyConfig<F> {
             flag: Column<Advice>,
             state: [Column<Advice>; 25],
-            lane: Column<Advice>,
             table: FromBinaryTableConfig<F>,
             conversion: StateBaseConversion<F>,
         }
@@ -88,11 +84,10 @@ mod tests {
                 let flag = meta.advice_column();
                 let lane = meta.advice_column();
                 let bi = table.get_base_info(false);
-                let conversion = StateBaseConversion::configure(meta, state, bi, lane, flag);
+                let conversion = StateBaseConversion::configure(meta, bi, lane, flag);
                 Self {
                     flag,
                     state,
-                    lane,
                     table,
                     conversion,
                 }

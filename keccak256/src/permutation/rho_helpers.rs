@@ -1,5 +1,5 @@
 use crate::{
-    arith_helpers::{convert_b13_coef, convert_b13_lane_to_b9, B13, B2, B9},
+    arith_helpers::{convert_b13_coef, convert_b13_lane_to_b9, B13, B9},
     common::LANE_SIZE,
 };
 use itertools::Itertools;
@@ -41,11 +41,6 @@ pub fn slice_lane(rotation: u32) -> Vec<(u32, u32)> {
     }
     output
 }
-
-/// We have 12 step 1, 12 step 2, and 13 step 3
-///
-/// See tests for more detail
-pub const STEP_COUNTS: [u32; 3] = [12, 12, 13];
 
 /// A mapping from `step` to a overflow detector value
 ///
@@ -102,8 +97,6 @@ pub struct OverflowDetector {
 
 #[derive(Debug, Clone)]
 pub struct Conversion {
-    chunk_idx: u32,
-    step: u32,
     pub input: Slice,
     pub output: Slice,
     pub overflow_detector: OverflowDetector,
@@ -124,8 +117,6 @@ pub struct RhoLane {
     input: BigUint,
     // base 9
     pub output: BigUint,
-    // output in binary, useful to check against plain rho output
-    output_b2: u64,
     rotation: u32,
     // base13 in little endian
     chunks: [u8; RHO_LANE_SIZE],
@@ -146,16 +137,10 @@ impl RhoLane {
         let special_low = *chunks.get(0).unwrap();
         debug_assert!(special_high + special_low < B13, "invalid Rho input lane");
         let output = convert_b13_lane_to_b9(input.clone(), rotation);
-        let output_b2 = *BigUint::from_radix_le(&output.to_radix_le(B9.into()), B2.into())
-            .unwrap_or_default()
-            .to_u64_digits()
-            .first()
-            .unwrap_or(&0);
 
         Self {
             input,
             output,
-            output_b2,
             rotation,
             chunks,
             special_high,
@@ -221,8 +206,6 @@ impl RhoLane {
                     }
                 };
                 Conversion {
-                    chunk_idx,
-                    step,
                     input,
                     output,
                     overflow_detector,
@@ -263,7 +246,14 @@ impl RhoLane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arith_helpers::B2;
     use crate::common::ROTATION_CONSTANTS;
+
+    /// We have 12 step 1, 12 step 2, and 13 step 3
+    ///
+    /// See tests for more detail
+    const STEP_COUNTS: [u32; 3] = [12, 12, 13];
+
     #[test]
     fn test_overflow_counting() {
         // counting how many step 1, step 2, and step 3 in the lane slices.

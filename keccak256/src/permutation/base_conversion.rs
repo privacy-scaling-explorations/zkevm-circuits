@@ -15,7 +15,6 @@ pub(crate) struct BaseConversionConfig<F> {
     // Flag is copied from the parent flag. Parent flag is assumed to be binary
     // constrained.
     flag: Column<Advice>,
-    input_lane: Column<Advice>,
     input_coef: Column<Advice>,
     input_acc: Column<Advice>,
     output_coef: Column<Advice>,
@@ -83,7 +82,6 @@ impl<F: Field> BaseConversionConfig<F> {
             q_lookup,
             base_info,
             flag,
-            input_lane,
             input_coef,
             input_acc,
             output_coef,
