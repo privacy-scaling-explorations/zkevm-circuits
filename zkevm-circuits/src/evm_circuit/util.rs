@@ -423,6 +423,21 @@ pub(crate) mod not {
     }
 }
 
+/// Returns `a ^ b`.
+/// `a` and `b` needs to be boolean
+pub(crate) mod xor {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(a: E, b: E) -> Expression<F> {
+        a.expr() + b.expr() - 2.expr() * a.expr() * b.expr()
+    }
+
+    pub(crate) fn value<F: FieldExt>(a: F, b: F) -> F {
+        a + b - F::from(2u64) * a * b
+    }
+}
+
 /// Returns `when_true` when `selector == 1`, and returns `when_false` when
 /// `selector == 0`. `selector` needs to be boolean.
 pub(crate) mod select {
