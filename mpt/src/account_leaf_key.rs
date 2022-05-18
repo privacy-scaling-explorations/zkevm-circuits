@@ -123,43 +123,108 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
         // acc_mult corresponds to key length:
         mult_diff_lookup(meta, q_enable, 3, s_advices[0], acc_mult_s, fixed_table);
-
         // No need to check key_rlc_mult as it's not used after this row.
-        meta.create_gate("Account leaf address RLC", |meta| {
+
+        meta.create_gate(
+            "Account leaf address RLC (leaf not in first level, branch not placeholder)",
+            |meta| {
+                let q_enable = q_enable(meta);
+                let mut constraints = vec![];
+
+                let mut is_branch_placeholder =
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+                if !is_s {
+                    is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+                }
+                let is_branch_placeholder = meta.query_advice(
+                    is_branch_placeholder,
+                    Rotation(rot_into_first_branch_child - 1),
+                );
+
+                let is_leaf_in_first_level =
+                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+
+                let key_rlc_acc_start =
+                    meta.query_advice(key_rlc, Rotation(rot_into_first_branch_child));
+                let key_mult_start =
+                    meta.query_advice(key_rlc_mult, Rotation(rot_into_first_branch_child));
+
+                // sel1, sel2 is in init branch
+                let sel1 = meta.query_advice(
+                    s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_first_branch_child - 1),
+                );
+                let sel2 = meta.query_advice(
+                    s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_first_branch_child - 1),
+                );
+
+                let c32 = Expression::Constant(F::from(32));
+                let c48 = Expression::Constant(F::from(48));
+
+                // If sel1 = 1, we have nibble+48 in s_advices[0].
+                let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+                let mut key_rlc_acc = key_rlc_acc_start.clone()
+                    + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
+                let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
+                key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+
+                // If sel2 = 1, we have 32 in s_advices[0].
+                constraints.push((
+                    "Account leaf key acc s_advice1",
+                    q_enable.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (s_advice1 - c32)
+                        * sel2,
+                ));
+
+                let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
+
+                for ind in 3..HASH_WIDTH {
+                    let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
+                }
+
+                let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+                let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+                key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[30].clone();
+                key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[31].clone();
+
+                let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+                let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
+
+                // Key RLC is to be checked to verify that the proper key is used.
+                constraints.push((
+                    "Account address RLC",
+                    q_enable.clone()
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (key_rlc_acc.clone() - key_rlc.clone()),
+                ));
+
+                constraints.push((
+                    "Computed account address RLC same as value in address_rlc column 1",
+                    q_enable
+                        * (one.clone() - is_branch_placeholder.clone())
+                        * (one.clone() - is_leaf_in_first_level.clone())
+                        * (key_rlc.clone() - address_rlc.clone()),
+                ));
+
+                constraints
+            },
+        );
+
+        meta.create_gate("Account leaf address RLC (leaf in first level)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
-            if !is_s {
-                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
-            }
-            let is_branch_placeholder = meta.query_advice(
-                is_branch_placeholder,
-                Rotation(rot_into_first_branch_child - 1),
-            );
-            let is_leaf_without_branch = meta.query_advice(
-                is_account_leaf_in_added_branch,
-                Rotation(rot_into_first_branch_child - 2),
-            ); // rot-1 is init branch
+            let is_leaf_in_first_level =
+                one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
-            let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
-
-            /*
-            Note: if using directly:
-            let rlc_prev = meta.query_advice(key_rlc, Rotation(rot_level_above));
-            The ConstraintPoisoned error is thrown in extension_node_key.
-            */
-            let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
-            let mult_prev = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
-
-            let key_rlc_acc_start = meta
-                .query_advice(key_rlc, Rotation(rot_into_first_branch_child))
-                * (one.clone() - is_branch_placeholder.clone())
-                + rlc_prev * is_branch_placeholder.clone();
-            let key_mult_start = meta
-                .query_advice(key_rlc_mult, Rotation(rot_into_first_branch_child))
-                * (one.clone() - is_branch_placeholder.clone())
-                + mult_prev * is_branch_placeholder.clone();
+            let key_rlc_acc_start = Expression::Constant(F::zero());
+            let key_mult_start = one.clone();
 
             // sel1, sel2 is in init branch
             let sel1 = meta.query_advice(
@@ -184,7 +249,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             // If sel2 = 1, we have 32 in s_advices[0].
             constraints.push((
                 "Account leaf key acc s_advice1",
-                q_enable.clone() * (s_advice1 - c32) * sel2,
+                q_enable.clone() * (s_advice1 - c32) * sel2 * is_leaf_in_first_level.clone(),
             ));
 
             let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
@@ -207,39 +272,35 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             constraints.push((
                 "Account address RLC",
                 q_enable.clone()
-                // is_branch_placeholder or not is covered when computing key_rlc_acc_start
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * is_leaf_in_first_level.clone()
                     * (key_rlc_acc.clone() - key_rlc.clone()),
             ));
 
             constraints.push((
                 "Computed account address RLC same as value in address_rlc column 1",
-                q_enable
-                    * (one.clone() - is_branch_placeholder.clone())
-                    * (key_rlc.clone() - address_rlc.clone()),
+                q_enable * is_leaf_in_first_level.clone() * (key_rlc.clone() - address_rlc.clone()),
             ));
 
             constraints
         });
 
-        // TODO: this is very similar to the gate in leaf_key, reuse somehow.
-        // Check that key_rlc_prev stores key_rlc from the previous branch (needed when
-        // after the placeholder).
+        // TODO: prepare test with account in the first level and placeholder branch in
+        // the first level. Check that key_rlc_prev stores key_rlc from the
+        // previous branch (needed when after the placeholder).
         meta.create_gate("Previous level address RLC", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
             // All branch children have the same not_first_level, any rotation could be
             // used.
-            let is_first_level = one.clone()
+            let is_branch_in_first_level = one.clone()
                 - meta.query_advice(not_first_level, Rotation(rot_into_first_branch_child));
-
-            let mut rot_into_account = -1;
-            if !is_s {
-                rot_into_account = -2;
-            }
-            let is_leaf_without_branch =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+            let is_account_in_first_level =
+                one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+            let no_prev_key_rlc = is_branch_in_first_level + is_account_in_first_level;
+            // If account is in the first level or the branch above the account leaf is in
+            // the first level, there is no branch a level above from where the
+            // key_rlc could be copied.
 
             // Could be used any rotation into previous branch, because key RLC is the same
             // in all branch children:
@@ -247,12 +308,12 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             // TODO: check why a different rotation causes (for example rot_into_init - 3)
             // causes ConstraintPoisened
 
-            // key_rlc_mult_prev_level = 1 if is_first_level
-            let key_rlc_mult_prev_level = (one.clone() - is_first_level.clone())
+            // key_rlc_mult_prev_level = 1 if no_prev_key_rlc
+            let key_rlc_mult_prev_level = (one.clone() - no_prev_key_rlc.clone())
                 * meta.query_advice(key_rlc_mult, Rotation(rot_into_prev_branch))
-                + is_first_level.clone();
-            // key_rlc_prev_level = 0 if is_first_level
-            let key_rlc_prev_level = (one.clone() - is_first_level)
+                + no_prev_key_rlc.clone();
+            // key_rlc_prev_level = 0 if no_prev_key_rlc
+            let key_rlc_prev_level = (one.clone() - no_prev_key_rlc)
                 * meta.query_advice(key_rlc, Rotation(rot_into_prev_branch));
 
             let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
@@ -260,16 +321,97 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             constraints.push((
                 "Previous key RLC",
-                q_enable.clone()
-                    * (rlc_prev - key_rlc_prev_level)
-                    * (one.clone() - is_leaf_without_branch.clone()),
+                q_enable.clone() * (rlc_prev - key_rlc_prev_level),
             ));
             constraints.push((
                 "Previous key RLC mult",
-                q_enable
-                    * (mult_prev - key_rlc_mult_prev_level)
-                    * (one.clone() - is_leaf_without_branch.clone()),
+                q_enable * (mult_prev - key_rlc_mult_prev_level),
             ));
+
+            constraints
+        });
+
+        meta.create_gate("Account leaf address RLC (after placeholder)", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let mut is_branch_placeholder = s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            if !is_s {
+                is_branch_placeholder = s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET];
+            }
+            let is_branch_placeholder = meta.query_advice(
+                is_branch_placeholder,
+                Rotation(rot_into_first_branch_child - 1),
+            );
+
+            let is_leaf_in_first_level =
+                one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+
+            /*
+            Note: if using directly:
+            let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
+            let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot_level_above));
+            The ConstraintPoisoned error is thrown in extension_node_key.
+            */
+            let key_rlc_acc_start = meta.query_advice(key_rlc_prev, Rotation::cur());
+            let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
+
+            // sel1, sel2 is in init branch
+            let sel1 = meta.query_advice(
+                s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_first_branch_child - 1),
+            );
+            let sel2 = meta.query_advice(
+                s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_first_branch_child - 1),
+            );
+
+            let c32 = Expression::Constant(F::from(32));
+            let c48 = Expression::Constant(F::from(48));
+
+            // If sel1 = 1, we have nibble+48 in s_advices[0].
+            let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
+            let mut key_rlc_acc = key_rlc_acc_start.clone()
+                + (s_advice1.clone() - c48) * key_mult_start.clone() * sel1.clone();
+            let mut key_mult = key_mult_start.clone() * r_table[0].clone() * sel1;
+            key_mult = key_mult + key_mult_start.clone() * sel2.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+
+            // If sel2 = 1, we have 32 in s_advices[0].
+            constraints.push((
+                "Account leaf key acc s_advice1",
+                q_enable.clone()
+                    * (s_advice1 - c32)
+                    * sel2
+                    * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_level.clone()),
+            ));
+
+            let s_advices2 = meta.query_advice(s_advices[2], Rotation::cur());
+            key_rlc_acc = key_rlc_acc + s_advices2 * key_mult.clone();
+
+            for ind in 3..HASH_WIDTH {
+                let s = meta.query_advice(s_advices[ind], Rotation::cur());
+                key_rlc_acc = key_rlc_acc + s * key_mult.clone() * r_table[ind - 3].clone();
+            }
+
+            let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
+            let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
+            key_rlc_acc = key_rlc_acc + c_rlp1 * key_mult.clone() * r_table[30].clone();
+            key_rlc_acc = key_rlc_acc + c_rlp2 * key_mult * r_table[31].clone();
+
+            let key_rlc = meta.query_advice(key_rlc, Rotation::cur());
+            let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
+
+            // Key RLC is to be checked to verify that the proper key is used.
+            constraints.push((
+                "Account address RLC",
+                q_enable.clone()
+                    * is_branch_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_level.clone())
+                    * (key_rlc_acc.clone() - key_rlc.clone()),
+            ));
+
+            // Note: key_rlc - address_rlc != 0 when placeholder branch
 
             constraints
         });
