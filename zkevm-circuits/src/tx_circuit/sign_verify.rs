@@ -192,8 +192,6 @@ impl<F: FieldExt> SignVerifyConfig<F> {
         let msg_hash_rlc = meta.advice_column();
         meta.enable_equality(msg_hash_rlc);
 
-        // is_not_padding == address != 0
-
         let address_inv = meta.advice_column();
         let address_is_zero = IsZeroChip::configure(
             meta,
@@ -201,6 +199,7 @@ impl<F: FieldExt> SignVerifyConfig<F> {
             |meta| meta.query_advice(address, Rotation::cur()),
             address_inv,
         );
+        // is_not_padding == address != 0
         let is_not_padding = not::expr(address_is_zero.is_zero_expression.clone());
 
         // lookup keccak table
@@ -450,6 +449,8 @@ fn integer_to_bytes_le<F: FieldExt, W: WrongExt>(
     Ok(int_le)
 }
 
+/// Helper structure pass around references to all the chips required for an
+/// ECDSA veficication.
 struct ChipsRef<'a, F: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     main_gate: &'a MainGate<F>,
     range_chip: &'a RangeChip<F>,
@@ -682,7 +683,8 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         txs: &[SignData],
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
         if txs.len() > MAX_VERIF {
-            panic!("txs.len() = {} > MAX_VERIF = {}", txs.len(), MAX_VERIF);
+            error!("txs.len() = {} > MAX_VERIF = {}", txs.len(), MAX_VERIF);
+            return Err(Error::Synthesis);
         }
         let main_gate = MainGate::new(config.main_gate_config.clone());
         // TODO: Figure out the best value for RangeChip base_bit_len, when we want to
