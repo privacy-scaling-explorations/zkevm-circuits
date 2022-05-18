@@ -859,8 +859,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
+            acc_c,
+            acc_mult_c,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -888,8 +888,8 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_mult_s,
             key_rlc,
             key_rlc_mult,
-            sel1,
-            sel2,
+            acc_c,
+            acc_mult_c,
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
@@ -2527,14 +2527,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     acc += F::from(*b as u64) * acc_mult;
                                     acc_mult *= self.acc_r;
                                 }
-                                self.assign_acc(
-                                    &mut region,
-                                    acc,
-                                    acc_mult,
-                                    F::zero(),
-                                    F::zero(),
-                                    offset,
-                                )?;
+                                // Assigning acc_s, acc_mult_s below together with acc_c
+                                // (key_rlc_prev) and acc_c_mult
+                                // (key_rlc_mult_prev).
 
                                 if row[row.len() - 1] == 6 {
                                     pv.acc_account_s = acc;
@@ -2558,25 +2553,21 @@ impl<F: FieldExt> MPTConfig<F> {
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,
                                     offset,
-                                    // || Ok(key_rlc_new),
-                                    || Ok(F::one()),
+                                    || Ok(key_rlc_new),
                                 )?;
 
-                                // Assign previous key RLC -
-                                // needed in case of placeholder branch/extension.
-                                // Constraint for this is in account_leaf_key.
-                                region.assign_advice(
-                                    || "assign key_rlc prev".to_string(),
-                                    self.sel1,
+                                // Assign previous key RLC and mult in acc_c and acc_c_mult - don't
+                                // use sel1/sel2 here (as in storage leaf case) as sel1/sel2 is
+                                // used for whether nonce/balance is short/long (in nonce balance
+                                // row, see offset - 1).
+                                // Constraints for previous key RLC are in account_leaf_key.
+                                self.assign_acc(
+                                    &mut region,
+                                    acc,
+                                    acc_mult,
+                                    pv.key_rlc_prev,
+                                    pv.key_rlc_mult_prev,
                                     offset,
-                                    // || Ok(pv.key_rlc_prev),
-                                    || Ok(F::one()),
-                                )?;
-                                region.assign_advice(
-                                    || "assign key_rlc_mult prev".to_string(),
-                                    self.sel2,
-                                    offset,
-                                    || Ok(pv.key_rlc_mult_prev),
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
                                 let mut acc_account;

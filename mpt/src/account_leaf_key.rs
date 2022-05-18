@@ -35,8 +35,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         c_rlp1: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
-        acc: Column<Advice>,
-        acc_mult: Column<Advice>,
+        acc_s: Column<Advice>,
+        acc_mult_s: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         key_rlc_prev: Column<Advice>,
@@ -94,7 +94,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             expr = expr + c_rlp1.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[1].clone();
             expr = expr + c_rlp2.clone() * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc, Rotation::cur());
+            let acc = meta.query_advice(acc_s, Rotation::cur());
 
             constraints.push(("leaf key acc", q_enable.clone() * (expr - acc)));
 
@@ -122,7 +122,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         */
 
         // acc_mult corresponds to key length:
-        mult_diff_lookup(meta, q_enable, 3, s_advices[0], acc_mult, fixed_table);
+        mult_diff_lookup(meta, q_enable, 3, s_advices[0], acc_mult_s, fixed_table);
 
         // No need to check key_rlc_mult as it's not used after this row.
         meta.create_gate("Account leaf address RLC", |meta| {
@@ -145,12 +145,10 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
 
             /*
-            let key_rlc_acc_start =
-                meta.query_advice(key_rlc, Rotation(rot_into_first_branch_child));
-            let key_mult_start =
-                meta.query_advice(key_rlc_mult, Rotation(rot_into_first_branch_child));
+            Note: if using directly:
+            let rlc_prev = meta.query_advice(key_rlc, Rotation(rot_level_above));
+            The ConstraintPoisoned error is thrown in extension_node_key.
             */
-
             let rlc_prev = meta.query_advice(key_rlc_prev, Rotation::cur());
             let mult_prev = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
 
@@ -209,22 +207,10 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             constraints.push((
                 "Account address RLC",
                 q_enable.clone()
-                    * (one.clone() - is_branch_placeholder.clone())
+                // is_branch_placeholder or not is covered when computing key_rlc_acc_start
                     * (one.clone() - is_leaf_without_branch.clone())
                     * (key_rlc_acc.clone() - key_rlc.clone()),
             ));
-
-            /*
-            // just for debugging:
-            constraints.push((
-                "Account address RLC after placeholder",
-                q_enable.clone()
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
-                    // * (key_rlc_acc.clone() - key_rlc.clone()),
-                    * (key_rlc_acc_start.clone() - key_rlc.clone()),
-            ));
-            */
 
             constraints.push((
                 "Computed account address RLC same as value in address_rlc column 1",

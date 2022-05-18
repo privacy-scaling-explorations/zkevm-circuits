@@ -488,7 +488,12 @@ impl<F: FieldExt> LeafKeyChip<F> {
             let is_branch_placeholder =
                 meta.query_advice(is_branch_placeholder, Rotation(rot_into_init));
 
-            // previous key RLC:
+            // Previous key RLC:
+            /*
+            Note: if using directly:
+            let key_rlc_prev = meta.query_advice(key_rlc, Rotation(rot_level_above));
+            The ConstraintPoisoned error is thrown in extension_node_key.
+            */
             let key_rlc_acc_start = meta.query_advice(key_rlc_prev, Rotation::cur())
                 * (one.clone() - is_first_storage_level.clone());
             let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur())
