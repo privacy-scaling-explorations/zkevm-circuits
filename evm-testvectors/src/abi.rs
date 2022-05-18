@@ -31,13 +31,11 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
             } else {
                 U256::from_str_radix(v, 10).map(Token::Uint)
             }
-        },
-        &ParamType::Bool => {
-            match v.to_lowercase().as_str() {
-                "true" | "0x01" => Ok(Token::Bool(true)),
-                "false" | "0x00" => Ok(Token::Bool(false)),
-                _ => panic!("unexpected boolean '{}'", v)
-            }
+        }
+        &ParamType::Bool => match v.to_lowercase().as_str() {
+            "true" | "0x01" => Ok(Token::Bool(true)),
+            "false" | "0x00" => Ok(Token::Bool(false)),
+            _ => panic!("unexpected boolean '{}'", v),
         },
         _ => unimplemented!(),
     };

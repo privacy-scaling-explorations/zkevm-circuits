@@ -260,7 +260,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         }
         tags
     }
-   /// returns the element as an address
+    /// returns the element as an address
     fn parse_address(yaml: &Yaml) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
             if as_str.starts_with("0x") {

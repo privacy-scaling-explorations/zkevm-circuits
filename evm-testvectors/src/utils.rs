@@ -1,7 +1,7 @@
-use eth_types::{U256, evm_types::OpcodeId, GethExecTrace};
-use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
-use prettytable::Table;
 use anyhow::Result;
+use eth_types::{evm_types::OpcodeId, GethExecTrace, U256};
+use prettytable::Table;
+use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
 
 const OPCODES_NEED_FULL_FIXED_TABLE: [OpcodeId; 3] = [OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR];
 
@@ -53,7 +53,6 @@ pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
     }
 }
 
-
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     fn kv(storage: std::collections::HashMap<U256, U256>) -> Vec<String> {
         let mut keys: Vec<_> = storage.keys().collect();
@@ -63,7 +62,6 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             .collect()
     }
     fn split(strs: Vec<String>, len: usize) -> String {
-        
         let mut out = String::new();
         let mut current_len = 0;
         let mut it = strs.iter();
@@ -80,7 +78,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             let item = if count == 1 {
                 v.to_string()
             } else {
-                format!("{}[{}]",v,count)
+                format!("{}[{}]", v, count)
             };
 
             if current_len > len {
@@ -119,5 +117,3 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
 
     Ok(())
 }
-
-

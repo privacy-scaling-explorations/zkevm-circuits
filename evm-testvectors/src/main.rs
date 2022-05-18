@@ -1,5 +1,6 @@
 mod abi;
 mod compiler;
+mod json;
 mod result_cache;
 mod statetest;
 mod utils;
@@ -57,7 +58,7 @@ const FILE_IGNORE_LIST: [&str; 5] = [
     "EIP1559",
     "EIP2930",
     "stExample",
-    "bufferFiller.yml",    // we are using U256::as_xxx() that panics 
+    "bufferFiller.yml",    // we are using U256::as_xxx() that panics
     "ValueOverflowFiller", // weird 0x:biginteger 0x...
 ];
 
@@ -109,12 +110,15 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
                         .unwrap()
                         .insert(&id, &format!("03SKIPPED {}", err))
                         .unwrap();
-                },
+                }
                 _ => {
                     log::error!(target: "vmvectests", "FAILED test {} : {:?}",id, err);
-                    results.write().unwrap().insert(&id, &format!("01FAILED {:?}",err)).unwrap();
+                    results
+                        .write()
+                        .unwrap()
+                        .insert(&id, &format!("01FAILED {:?}", err))
+                        .unwrap();
                 }
-
             }
             return;
         }
