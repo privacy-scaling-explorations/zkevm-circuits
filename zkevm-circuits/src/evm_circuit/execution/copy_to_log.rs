@@ -91,6 +91,10 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             let next_src_addr = cb.query_cell();
             let next_bytes_left = cb.query_cell();
             let next_src_addr_end = cb.query_cell();
+            let next_is_persistent = cb.query_bool();
+            let next_tx_id = cb.query_cell();
+            let next_data_start_index = cb.query_cell();
+
             cb.require_equal(
                 "next_src_addr == src_addr + copied_size",
                 next_src_addr.expr(),
@@ -106,6 +110,18 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
                 "next_src_addr_end == src_addr_end",
                 next_src_addr_end.expr(),
                 src_addr_end.expr(),
+            );
+            cb.require_equal(
+                "next_is_persistent == is_persistent",
+                next_is_persistent.expr(),
+                is_persistent.expr(),
+            );
+            cb.require_equal("next_tx_id == tx_id", next_tx_id.expr(), tx_id.expr());
+            cb.require_equal(
+                "next_data_start_index == data_start_index + MAX_COPY_BYTES
+                ",
+                next_data_start_index.expr(),
+                data_start_index.expr() + MAX_COPY_BYTES.expr(),
             );
         });
 
@@ -145,6 +161,8 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             step.aux_data.unwrap()
         };
 
+        // log won't use dst_addr
+        assert!(aux.dst_addr() == 0u64);
         let (is_persistent, tx_id, data_start_index) = match aux.copy_details() {
             CopyDetails::Log((is_persistent, tx_id, data_index)) => {
                 (is_persistent, tx_id, data_index)
