@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, RW};
+use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -42,7 +42,7 @@ mod caller_tests {
     use super::*;
     use crate::{
         circuit_input_builder::ExecState, mock::BlockData, operation::CallContextOp,
-        operation::StackOp,
+        operation::StackOp, operation::RW,
     };
     use eth_types::{
         bytecode,

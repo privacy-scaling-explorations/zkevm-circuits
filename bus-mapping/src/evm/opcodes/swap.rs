@@ -1,6 +1,5 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::RW;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -36,9 +35,8 @@ impl<const N: usize> Opcode for Swap<N> {
 
 #[cfg(test)]
 mod swap_tests {
-    use super::*;
     use crate::mock::BlockData;
-    use crate::operation::StackOp;
+    use crate::operation::{StackOp, RW};
     use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, Word};
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, TestContext};

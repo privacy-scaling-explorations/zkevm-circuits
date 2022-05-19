@@ -31,7 +31,6 @@ impl<const N: usize> Opcode for Dup<N> {
 
 #[cfg(test)]
 mod dup_tests {
-    use super::*;
     use crate::{mock::BlockData, operation::StackOp, operation::RW};
     use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, word};
     use itertools::Itertools;
