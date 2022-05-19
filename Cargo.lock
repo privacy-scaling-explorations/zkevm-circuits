@@ -2239,7 +2239,7 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "gadgets",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1",
  "itertools",
  "lazy_static",
  "num-bigint",

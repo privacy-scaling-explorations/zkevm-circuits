@@ -225,6 +225,10 @@ impl<F: Field> TxCircuitConfig<F> {
         let value = meta.advice_column();
         meta.enable_equality(value);
 
+        // This gate is used just to get the array of expressions from the power of
+        // randomness instance column, so that later on we don't need to query
+        // columns everywhere, and can pass the power of randomness array
+        // expression everywhere.  The gate itself doesn't add any constraints.
         let power_of_randomness = {
             let columns = [(); sign_verify::POW_RAND_SIZE].map(|_| meta.instance_column());
             let mut power_of_randomness = None;
