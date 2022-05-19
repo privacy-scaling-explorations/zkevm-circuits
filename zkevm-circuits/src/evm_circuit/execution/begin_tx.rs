@@ -277,20 +277,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_bytes, rand_range, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::block_convert,
     };
     use bus_mapping::{evm::OpcodeId, mock::BlockData};
-    use eth_types::{self, address, bytecode, evm_types::GasCost, geth_types::GethData, Word};
-    use lazy_static::lazy_static;
-    use mock::TestContext;
+    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use mock::{
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
-    lazy_static! {
-        static ref TEN_ETHER: Word = Word::from(10u64.pow(19));
-        static ref POINT_ONE_ETHER: Word = Word::from(10u64.pow(17));
-        static ref MINIMAL_GAS: Word =
-            Word::from(GasCost::TX.as_u64() + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64());
-        static ref TWO_GWEI: Word = Word::from(2_000_000_000);
+    fn gas(call_data: &[u8]) -> Word {
+        Word::from(
+            GasCost::TX.as_u64()
+                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+                + call_data
+                    .iter()
+                    .map(|&x| if x == 0 { 4 } else { 16 })
+                    .sum::<u64>(),
+        )
     }
 
     fn test_ok(tx: eth_types::Transaction, is_success: bool) {
@@ -308,19 +312,10 @@ mod test {
             }
         };
 
-        let from = tx.from;
-        let to = tx.to.unwrap_or_default();
-
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            |accs| {
-                accs[0]
-                    .address(to)
-                    .balance(Word::from(10u64.pow(10)))
-                    .code(code);
-                accs[1].address(from).balance(*TEN_ETHER);
-            },
+            account_0_code_account_1_no_code(code),
             |mut txs, _accs| {
                 txs[0]
                     .to(tx.to.unwrap())
@@ -344,19 +339,14 @@ mod test {
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
-    fn mock_tx(
-        value: Word,
-        gas: Word,
-        gas_price: Word,
-        calldata: Vec<u8>,
-    ) -> eth_types::Transaction {
-        let from = address!("0x00000000000000000000000000000000000000fe");
-        let to = address!("0x00000000000000000000000000000000000000ff");
+    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
+        let from = MOCK_ACCOUNTS[1];
+        let to = MOCK_ACCOUNTS[0];
         eth_types::Transaction {
             from,
             to: Some(to),
             value,
-            gas,
+            gas: gas(&calldata),
             gas_price: Some(gas_price),
             input: calldata.into(),
             ..Default::default()
@@ -366,62 +356,35 @@ mod test {
     #[test]
     fn begin_tx_gadget_simple() {
         // Transfer 0.1 ether, successfully
-        test_ok(
-            mock_tx(*POINT_ONE_ETHER, *MINIMAL_GAS, *TWO_GWEI, vec![]),
-            true,
-        );
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), true);
 
         // Transfer 0.1 ether, tx reverts
-        test_ok(
-            mock_tx(*POINT_ONE_ETHER, *MINIMAL_GAS, *TWO_GWEI, vec![]),
-            false,
-        );
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), false);
 
         // Transfer nothing with some calldata
         test_ok(
-            mock_tx(
-                Word::zero(),
-                Word::from(21086),
-                *TWO_GWEI,
-                vec![1, 2, 3, 4, 0, 0, 0, 0],
-            ),
+            mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
             false,
         );
     }
 
     #[test]
     fn begin_tx_gadget_rand() {
-        let random_amount = Word::from_little_endian(&rand_bytes(32)) % *POINT_ONE_ETHER;
-
-        let max_gas_price = 476_054_460_630_296u64;
-        assert_eq!(Word::from(max_gas_price), *TEN_ETHER / *MINIMAL_GAS);
-        let random_gas_price = Word::from(rand_range(0..max_gas_price));
-
+        let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
+        let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
         // If this test fails, we want these values to appear in the CI logs.
         dbg!(random_amount, random_gas_price);
 
         // Transfer random ether, successfully
-        test_ok(
-            mock_tx(random_amount, *MINIMAL_GAS, *TWO_GWEI, vec![]),
-            true,
-        );
+        test_ok(mock_tx(random_amount, gwei(2), vec![]), true);
 
         // Transfer nothing with random gas_price, successfully
-        test_ok(
-            mock_tx(Word::zero(), *MINIMAL_GAS, random_gas_price, vec![]),
-            true,
-        );
+        test_ok(mock_tx(eth(0), random_gas_price, vec![]), true);
 
         // Transfer random ether, tx reverts
-        test_ok(
-            mock_tx(random_amount, *MINIMAL_GAS, *TWO_GWEI, vec![]),
-            false,
-        );
+        test_ok(mock_tx(random_amount, gwei(2), vec![]), false);
 
         // Transfer nothing with random gas_price, tx reverts
-        test_ok(
-            mock_tx(Word::zero(), *MINIMAL_GAS, random_gas_price, vec![]),
-            false,
-        );
+        test_ok(mock_tx(eth(0), random_gas_price, vec![]), false);
     }
 }
