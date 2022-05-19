@@ -122,7 +122,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 .transaction
                 .data
                 .iter()
-                .map(|item| Self::parse_bytes(item))
+                .map(|item| self.parse_calldata(item))
                 .collect::<Result<_>>()?;
 
             let gas_limit_s: Vec<_> = test
@@ -292,9 +292,9 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// returns the element as an address
     fn parse_address(as_str: &str) -> Result<Address> {
         if as_str.starts_with("0x") {
-            Ok(Address::from_slice(&hex::decode(&as_str[2..])?))
+            Ok(Address::from_slice(&hex::decode(&as_str[2..]).context("parse_address")?))
         } else {
-            Ok(Address::from_slice(&hex::decode(as_str)?))
+            Ok(Address::from_slice(&hex::decode(as_str).context("parse_address")?))
         }
     }
 
@@ -309,9 +309,9 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// returns the element as an array of bytes
     fn parse_bytes(as_str: &str) -> Result<Bytes> {
         if let Some(stripped) = as_str.strip_prefix("0x") {
-            Ok(Bytes::from(hex::decode(stripped)?))
+            Ok(Bytes::from(hex::decode(stripped).context("parse_bytes")?))
         } else {
-            Ok(Bytes::from(hex::decode(as_str)?))
+            Ok(Bytes::from(hex::decode(as_str).context("parse_bytes")?))
         }
     }
 
@@ -321,7 +321,7 @@ impl<'a> JsonStateTestBuilder<'a> {
 
         let mut code = if let Some(notag) = tags.get("") {
             if notag.starts_with("0x") {
-                Bytes::from(hex::decode(&tags[""][2..])?)
+                Bytes::from(hex::decode(&tags[""][2..]).context("parse_code")?)
             } else if notag.starts_with('{') {
                 self.compiler.lll(notag)?
             } else if notag.trim().len() == 0 {
@@ -354,12 +354,43 @@ impl<'a> JsonStateTestBuilder<'a> {
         Ok(code)
     }
 
+    /// returns the element as calldata bytes, supports :raw and :abi
+    fn parse_calldata(&mut self, as_str: &str) -> Result<Bytes> {
+        let tags = Self::decompose_tags(as_str);
+
+        if let Some(notag) = tags.get("") {
+            let notag = notag.trim();
+            if notag.is_empty() {
+                Ok(Bytes::default())
+            } else if notag.starts_with("{") {
+                Ok(self.compiler.lll(notag)?)
+            } else if notag.starts_with("0x") {
+                Ok(Bytes::from(hex::decode(&notag[2..])?))
+            } else {
+                bail!("do not know what to do with calldata (1): '{:?}'", as_str);
+            }
+        } else if let Some(raw) = tags.get(":raw") {
+            Ok(Bytes::from(hex::decode(&raw[2..])?))
+        } else if let Some(abi) = tags.get(":abi") {
+            Ok(abi::encode_funccall(abi)?)
+        } else if let Some(yul) = tags.get(":yul") {
+            Ok(self.compiler.yul(yul)?)
+        } else {
+            bail!(
+                "do not know what to do with calldata: (2) {:?} '{:?}'",
+                tags,
+                as_str
+            )
+        }
+    }
+
+
     /// parse a hash entry
     fn parse_hash(value: &str) -> Result<H256> {
         if value.starts_with("0x") {
-            Ok(H256::from_slice(&hex::decode(&value[2..])?))
+            Ok(H256::from_slice(&hex::decode(&value[2..]).context("parse_hash")?))
         } else {
-            Ok(H256::from_slice(&hex::decode(value)?))
+            Ok(H256::from_slice(&hex::decode(value).context("parse_hash")?))
         }
     }
 

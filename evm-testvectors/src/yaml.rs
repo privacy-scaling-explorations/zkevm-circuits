@@ -317,7 +317,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             if notag.is_empty() {
                 Ok((Bytes::default(), label))
             } else if notag.starts_with("{") {
-                Ok((self.compiler.yul(notag)?, label))
+                Ok((self.compiler.lll(notag)?, label))
             } else if notag.starts_with("0x") {
                 Ok((Bytes::from(hex::decode(&notag[2..])?), label))
             } else {

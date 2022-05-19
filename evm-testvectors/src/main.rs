@@ -55,11 +55,54 @@ struct Args {
 }
 
 const TEST_IGNORE_LIST: [&str; 0] = [];
-const FILE_IGNORE_LIST: [&str; 5] = [
+const FILE_IGNORE_LIST: [&str;33] = [
+    
+    // unimplemented
+
     "EIP1559",
     "EIP2930",
+    "stPreCompiledContracts",
+    "stZeroKnowledge",
+ 
+    // too big 
+
+    "stTimeConsuming",
     "stExample",
+    "stQuadraticComplexityTest",
+    "50000",
+    
+    // makes panic 
+     
+    "randomStatetest", // crashes geth?
     "bufferFiller.yml",    // we are using U256::as_xxx() that panics
+   
+    // defines asm
+
+    "stackLimitGas_1023Filler.json", 
+    "stackLimitGas_1024Filler.json", 
+    "stackLimitGas_1025Filler.json", 
+    "stackLimitPush31_1023Filler.json", 
+    "stackLimitPush31_1024Filler.json", 
+    "stackLimitPush31_1025Filler.json", 
+    "stackLimitPush32_1023Filler.json", 
+    "stackLimitPush32_1024Filler.json", 
+    "stackLimitPush32_1025Filler.json", 
+    "sloadGasCostFiller.json",
+    "selfBalanceCallTypesFiller.json", 
+    "selfBalanceGasCostFiller.json",
+    "selfBalanceUpdateFiller.json", 
+    "chainIdGasCostFiller.json", 
+    
+    // bad json
+
+    "Opcodes_TransactionInitFiller",
+    "static_CallContractToCreateContractAndCallItOOGFiller.json", // bad json
+    "dummyFiller.json",
+    "codesizeOOGInvalidSizeFiller.json",
+    "codesizeValidFiller.json",
+    "create2callPrecompilesFiller.json",
+    "callToNonExistentFiller.json",
+    "tackDepthLimitSECFiller.json",
     "ValueOverflowFiller", // weird 0x:biginteger 0x...
 ];
 
@@ -88,6 +131,8 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
         }
 
         std::panic::set_hook(Box::new(|_info| {}));
+
+        log::info!(target: "vmvectests", "running test {}...",id);
         let result = std::panic::catch_unwind(|| tc.run(config.clone()));
 
         // handle panic
@@ -104,6 +149,7 @@ fn run_test_suite(tcs: Vec<StateTest>, config: StateTestConfig) -> Result<()> {
         if let Err(err) = result {
             match err {
                 StateTestError::SkipUnimplementedOpcode(_)
+                | StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_) => {
                     log::warn!(target: "vmvectests", "SKIPPED test {} : {:?}",id, err);
                     results
@@ -202,6 +248,7 @@ fn main() -> Result<()> {
     ResultCache::new(PathBuf::from(RESULT_CACHE))?.sort()?;
 
     let config = StateTestConfig {
+        max_steps: 1000,
         max_gas: Gas(100000000),
         run_circuit: !args.skip_circuit,
         bytecode_test_config,
@@ -240,7 +287,7 @@ fn main() -> Result<()> {
                  if args.test.is_none() {
                      log::warn!("Failed to load {}: {:?}", path, err);
                  }
-                    Vec::new()
+                Vec::new()
              }
                 Ok(tcs) => tcs,
             };

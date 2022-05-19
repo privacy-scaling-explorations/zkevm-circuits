@@ -28,12 +28,15 @@ pub enum StateTestError {
     },
     #[error("test skipped due {0} > max gas")]
     SkipTestMaxGasLimit(u64),
+    #[error("test skipped due {0} > max steps")]
+    SkipTestMaxSteps(usize),
     #[error("test skipped unimplemented opcode {0}")]
     SkipUnimplementedOpcode(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct StateTestConfig {
+    pub max_steps: usize,
     pub max_gas: Gas,
     pub run_circuit: bool,
     pub bytecode_test_config: BytecodeTestConfig,
@@ -42,6 +45,7 @@ impl Default for StateTestConfig {
     fn default() -> Self {
         Self {
             max_gas: Gas(1000000),
+            max_steps: 1000,
             run_circuit: true,
             bytecode_test_config: BytecodeTestConfig::default(),
         }
@@ -310,6 +314,9 @@ impl StateTest {
         let geth_traces = external_tracer::trace(&trace_config)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
+        if geth_traces[0].struct_logs.len() > config.max_steps {
+            return Err(StateTestError::SkipTestMaxSteps(geth_traces[0].struct_logs.len()));
+        }
         // we are not checking here geth_traces[0].failed, since
         // there are some tests that makes the tx failing
         // (eg memory filler tests)
