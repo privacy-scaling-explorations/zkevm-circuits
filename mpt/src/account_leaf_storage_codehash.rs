@@ -224,14 +224,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let mut is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
-            // Placeholder leaf appears when a new account is created. There are no
-            // constraints for placeholder leaf (except that the `modified_node`
-            // in parent branch is 0), because the previous values are actually
-            // not important - we do not need to prove the correct modification
-            // of the trie, we just need a proof for an account with default values to
-            // exist in the trie. There are no constraints for default values, because the
-            // correct values are implied by lookups (the lookups will fail if not correct
-            // values in the circuit).
+            // Placeholder leaf appears when a new account is created (and no existing leaf
+            // is replaced by a branch). There are no constraints for
+            // placeholder leaf except that the `modified_node`
+            // in parent branch is 0.
 
             // Rotate into any of the brach children rows:
             let mut is_placeholder_leaf = meta.query_advice(
@@ -278,6 +274,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             constraints.push((
                 not_first_level.clone()
                     * (one.clone() - is_branch_placeholder.clone())
+                    * (one.clone() - is_placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * mod_node_hash_rlc_cur,
                 keccak_table_i.clone(),
@@ -294,26 +291,10 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 let mut is_account_leaf_storage_codehash =
                     meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
-                // Placeholder leaf appears when a new account is created. There are no
-                // constraints for placeholder leaf (except that the `modified_node`
-                // in parent branch is 0), because the previous values are actually
-                // not important - we do not need to prove the correct modification
-                // of the trie, we just need a proof for an account with default values to
-                // exist in the trie. There are no constraints for default values, because the
-                // correct values are implied by lookups (the lookups will fail if not correct
-                // values in the circuit).
-
-                // Rotate into any of the brach children rows:
-                let mut is_placeholder_leaf = meta.query_advice(
-                    sel1,
-                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - EXTENSION_ROWS_NUM - 1),
-                );
-                if !is_s {
-                    is_placeholder_leaf = meta.query_advice(
-                        sel2,
-                        Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - EXTENSION_ROWS_NUM - 1),
-                    );
-                }
+                // Note: placeholder leaf cannot appear when there is a branch placeholder
+                // (placeholder leaf appears when there is no leaf at certain
+                // position, while branch placeholder appears when there is a
+                // leaf on the way to this some position).
 
                 // Rotate into branch init:
                 let mut is_branch_placeholder = meta.query_advice(
@@ -334,7 +315,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 constraints.push((
                     not_first_level.clone()
                         * is_branch_placeholder.clone()
-                        * (one.clone() - is_placeholder_leaf.clone())
                         * is_account_leaf_storage_codehash.clone()
                         * acc_s,
                     meta.query_fixed(keccak_table[0], Rotation::cur()),
