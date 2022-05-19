@@ -11,8 +11,8 @@ use crate::{
     mpt::FixedTableTag,
     param::{
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM,
-        HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, KECCAK_INPUT_WIDTH,
-        KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
+        EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+        KECCAK_INPUT_WIDTH, KECCAK_OUTPUT_WIDTH, LAYOUT_OFFSET,
     },
 };
 
@@ -56,6 +56,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
         // We don't need to check acc_mult because it's not used after this row.
 
+        // Note: differently as in leaf_value (see empty_trie there), the placeholder
+        // leaf never appears in the first level here, because there is always
+        // at least a genesis account.
         meta.create_gate("account leaf storage codehash", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let mut q_enable = q_not_first.clone()
@@ -174,6 +177,13 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
 
         // Check hash of a leaf to be state root when leaf without branch.
         // TODO: prepare test
+        // Note 1: first level branch compared to root in branch_hash_in_parent.
+        // Note 2: placeholder account leaf can appear in the first level, in this
+        // case it will be positioned after placeholder branch (because there is always
+        // at least a genesis account and adding a new leaf will make a branch). But in
+        // this case we do not check the hash to be the same as root (the lookup does
+        // not trigger because in this case account leaf is not in the first level rows)
+        // - this is ok because it is only a placeholder leaf.
         meta.lookup_any(
             "account first level leaf without branch - compared to root",
             |meta| {
@@ -214,8 +224,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let mut is_account_leaf_storage_codehash =
                 meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
 
-            // TODO: test for account proof with only leaf (without branch)
-
             // Placeholder leaf appears when a new account is created. There are no
             // constraints for placeholder leaf (except that the `modified_node`
             // in parent branch is 0), because the previous values are actually
@@ -224,12 +232,17 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             // exist in the trie. There are no constraints for default values, because the
             // correct values are implied by lookups (the lookups will fail if not correct
             // values in the circuit).
-            // Rotate into a branch:
-            let mut is_placeholder_leaf =
-                meta.query_advice(sel1, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - 3)));
+
+            // Rotate into any of the brach children rows:
+            let mut is_placeholder_leaf = meta.query_advice(
+                sel1,
+                Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - EXTENSION_ROWS_NUM - 1),
+            );
             if !is_s {
-                is_placeholder_leaf =
-                    meta.query_advice(sel2, Rotation(-(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - 4)));
+                is_placeholder_leaf = meta.query_advice(
+                    sel2,
+                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - EXTENSION_ROWS_NUM - 1),
+                );
             }
 
             // Rotate into branch init:
@@ -250,7 +263,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             let mut constraints = vec![];
             constraints.push((
                 not_first_level.clone()
-                // same for branch placeholder and not branch placeholder
+                    * (one.clone() - is_branch_placeholder.clone())
                     * (one.clone() - is_placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * acc_s,
@@ -258,33 +271,93 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
             ));
             // Any rotation that lands into branch can be used instead of -17.
             let mut mod_node_hash_rlc_cur = meta.query_advice(s_mod_node_hash_rlc, Rotation(-17));
-            let mut mod_node_hash_rlc_cur_prev =
-                meta.query_advice(s_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
             if !is_s {
                 mod_node_hash_rlc_cur = meta.query_advice(c_mod_node_hash_rlc, Rotation(-17));
-                mod_node_hash_rlc_cur_prev =
-                    meta.query_advice(c_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
             }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 not_first_level.clone()
                     * (one.clone() - is_branch_placeholder.clone())
-                    * (one.clone() - is_placeholder_leaf.clone())
                     * is_account_leaf_storage_codehash.clone()
                     * mod_node_hash_rlc_cur,
-                keccak_table_i.clone(),
-            ));
-            constraints.push((
-                not_first_level.clone()
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_placeholder_leaf.clone())
-                    * is_account_leaf_storage_codehash.clone()
-                    * mod_node_hash_rlc_cur_prev,
                 keccak_table_i.clone(),
             ));
 
             constraints
         });
+
+        meta.lookup_any(
+            "account_leaf_storage_codehash: hash of a leaf (branch placeholder)",
+            |meta| {
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+
+                let mut is_account_leaf_storage_codehash =
+                    meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur());
+
+                // Placeholder leaf appears when a new account is created. There are no
+                // constraints for placeholder leaf (except that the `modified_node`
+                // in parent branch is 0), because the previous values are actually
+                // not important - we do not need to prove the correct modification
+                // of the trie, we just need a proof for an account with default values to
+                // exist in the trie. There are no constraints for default values, because the
+                // correct values are implied by lookups (the lookups will fail if not correct
+                // values in the circuit).
+
+                // Rotate into any of the brach children rows:
+                let mut is_placeholder_leaf = meta.query_advice(
+                    sel1,
+                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - EXTENSION_ROWS_NUM - 1),
+                );
+                if !is_s {
+                    is_placeholder_leaf = meta.query_advice(
+                        sel2,
+                        Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - EXTENSION_ROWS_NUM - 1),
+                    );
+                }
+
+                // Rotate into branch init:
+                let mut is_branch_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM),
+                );
+                if !is_s {
+                    is_branch_placeholder = meta.query_advice(
+                        s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                        Rotation(-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM),
+                    );
+                }
+
+                // Note: accumulated in s (not in c) for c:
+                let acc_s = meta.query_advice(acc, Rotation::cur());
+
+                let mut constraints = vec![];
+                constraints.push((
+                    not_first_level.clone()
+                        * is_branch_placeholder.clone()
+                        * (one.clone() - is_placeholder_leaf.clone())
+                        * is_account_leaf_storage_codehash.clone()
+                        * acc_s,
+                    meta.query_fixed(keccak_table[0], Rotation::cur()),
+                ));
+                // Any rotation that lands into branch can be used instead of -17.
+                let mut mod_node_hash_rlc_cur_prev =
+                    meta.query_advice(s_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
+                if !is_s {
+                    mod_node_hash_rlc_cur_prev =
+                        meta.query_advice(c_mod_node_hash_rlc, Rotation(-17 - BRANCH_ROWS_NUM));
+                }
+                let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+                constraints.push((
+                    not_first_level.clone()
+                        * is_branch_placeholder.clone()
+                        * is_account_leaf_storage_codehash.clone()
+                        * mod_node_hash_rlc_cur_prev,
+                    keccak_table_i.clone(),
+                ));
+
+                constraints
+            },
+        );
 
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
