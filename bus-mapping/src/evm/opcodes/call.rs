@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, StackOp, TxAccessListAccountOp,
+        AccountField, CallContextField, TxAccessListAccountOp,
         RW,
     },
     Error,
@@ -54,37 +54,22 @@ impl Opcode for Call {
             ),
             (CallContextField::Depth, current_call.depth.into()),
         ] {
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: current_call.call_id,
-                    field,
-                    value,
-                },
-            );
+            state.call_context_read(&mut exec_step, current_call.call_id, field, value);
         }
 
         for i in 0..7 {
-            state.push_op(
+            state.stack_read(
                 &mut exec_step,
-                RW::READ,
-                StackOp {
-                    call_id: current_call.call_id,
-                    address: geth_step.stack.nth_last_filled(i),
-                    value: geth_step.stack.nth_last(i)?,
-                },
-            );
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
+            )?;
         }
-        state.push_op(
+
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
-            StackOp {
-                call_id: current_call.call_id,
-                address: geth_step.stack.nth_last_filled(6),
-                value: (call.is_success as u64).into(),
-            },
-        );
+            geth_step.stack.nth_last_filled(6),
+            (call.is_success as u64).into(),
+        )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&call.address);
         state.push_op_reversible(
@@ -108,15 +93,7 @@ impl Opcode for Call {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: call.call_id,
-                    field,
-                    value,
-                },
-            );
+            state.call_context_read(&mut exec_step, call.call_id, field, value);
         }
 
         state.transfer(
@@ -134,16 +111,7 @@ impl Opcode for Call {
             (AccountField::Nonce, callee_nonce),
             (AccountField::CodeHash, callee_code_hash.to_word()),
         ] {
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                AccountOp {
-                    address: call.address,
-                    field,
-                    value,
-                    value_prev: value,
-                },
-            );
+            state.account_read(&mut exec_step, call.address, field, value, value)?;
         }
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
@@ -193,15 +161,7 @@ impl Opcode for Call {
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
-                    state.push_op(
-                        &mut exec_step,
-                        RW::WRITE,
-                        CallContextOp {
-                            call_id: current_call.call_id,
-                            field,
-                            value,
-                        },
-                    );
+                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
                 state.handle_return(geth_step)?;
                 Ok(vec![exec_step])
@@ -227,15 +187,7 @@ impl Opcode for Call {
                         (exec_step.reversible_write_counter + 1).into(),
                     ),
                 ] {
-                    state.push_op(
-                        &mut exec_step,
-                        RW::WRITE,
-                        CallContextOp {
-                            call_id: current_call.call_id,
-                            field,
-                            value,
-                        },
-                    );
+                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
                 for (field, value) in [
@@ -273,15 +225,7 @@ impl Opcode for Call {
                     (CallContextField::IsCreate, 0.into()),
                     (CallContextField::CodeSource, call.code_hash.to_word()),
                 ] {
-                    state.push_op(
-                        &mut exec_step,
-                        RW::READ,
-                        CallContextOp {
-                            call_id: call.call_id,
-                            field,
-                            value,
-                        },
-                    );
+                    state.call_context_read(&mut exec_step, call.call_id, field, value);
                 }
 
                 Ok(vec![exec_step])
