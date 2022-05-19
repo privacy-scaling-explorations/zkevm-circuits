@@ -1,10 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{
-        AccountField, CallContextField, TxAccessListAccountOp,
-        RW,
-    },
+    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
 use eth_types::{

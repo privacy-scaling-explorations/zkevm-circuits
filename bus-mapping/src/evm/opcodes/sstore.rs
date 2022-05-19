@@ -119,7 +119,7 @@ mod sstore_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
-    use crate::operation::StackOp;
+    use crate::operation::{CallContextOp, StackOp};
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;

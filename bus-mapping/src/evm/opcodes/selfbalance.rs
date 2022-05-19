@@ -51,7 +51,7 @@ mod selfbalance_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, StackOp, RW},
+        operation::{AccountOp, CallContextField, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

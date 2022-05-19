@@ -124,7 +124,7 @@ mod codecopy_tests {
 
     use crate::{
         mock::BlockData,
-        operation::{MemoryOp, StackOp},
+        operation::{MemoryOp, StackOp, RW},
     };
 
     use super::*;

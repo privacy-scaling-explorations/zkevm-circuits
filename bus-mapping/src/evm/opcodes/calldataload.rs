@@ -97,6 +97,7 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
+    use crate::operation::CallContextOp;
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},

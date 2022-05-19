@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::CallContextField;
+use crate::operation::{CallContextField, RW};
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -40,7 +40,10 @@ impl Opcode for Caller {
 #[cfg(test)]
 mod caller_tests {
     use super::*;
-    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
+    use crate::{
+        circuit_input_builder::ExecState, mock::BlockData, operation::CallContextOp,
+        operation::StackOp,
+    };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
