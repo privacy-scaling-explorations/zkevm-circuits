@@ -1,7 +1,4 @@
 use crate::arith_helpers::*;
-use crate::common::*;
-use crate::gate_helpers::biguint_to_f;
-use crate::keccak_arith::*;
 use eth_types::Field;
 use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::circuit::Layouter;
@@ -11,7 +8,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use itertools::Itertools;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
@@ -26,7 +22,6 @@ pub struct IotaB9Config<F> {
 }
 
 impl<F: Field> IotaB9Config<F> {
-    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -248,11 +243,30 @@ impl<F: Field> IotaB9Config<F> {
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::*;
+    use crate::gate_helpers::biguint_to_f;
+    use crate::keccak_arith::*;
+    use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
+    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use itertools::Itertools;
+    use pretty_assertions::assert_eq;
+    use std::convert::TryInto;
+    use std::marker::PhantomData;
 
     /// Given a [`StateBigInt`] returns the `init_state` and `out_state` ready
     /// to be added as circuit witnesses applying `IotaB9` to the input to
     /// get the output.
-    pub(crate) fn compute_circ_states(state: StateBigInt, round: usize) -> ([F; 25], [F; 25]) {
+    pub(crate) fn compute_circ_states<F: Field>(
+        state: StateBigInt,
+        round: usize,
+    ) -> ([F; 25], [F; 25]) {
         let mut in_biguint = StateBigInt::default();
         let mut in_state: [F; 25] = [F::zero(); 25];
 
@@ -267,19 +281,6 @@ impl<F: Field> IotaB9Config<F> {
         let s1_arith = KeccakFArith::iota_b9(&in_biguint, round_ctant);
         (in_state, state_bigint_to_field::<F, 25>(s1_arith))
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::common::{PERMUTATION, ROUND_CONSTANTS};
-    use halo2_proofs::circuit::Layouter;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
-    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pretty_assertions::assert_eq;
-    use std::convert::TryInto;
-    use std::marker::PhantomData;
 
     #[test]
     fn test_iota_b9_gate_last_round() {
@@ -381,8 +382,7 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let (in_state, out_state) =
-            IotaB9Config::compute_circ_states(input1.into(), PERMUTATION - 1);
+        let (in_state, out_state) = compute_circ_states(input1.into(), PERMUTATION - 1);
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()

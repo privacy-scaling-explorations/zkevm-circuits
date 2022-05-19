@@ -94,7 +94,7 @@ impl<F: Field> MixingConfig<F> {
         let base_info = table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
         let base_conv_config =
-            StateBaseConversion::configure(meta, state, base_info, base_conv_lane, flag);
+            StateBaseConversion::configure(meta, base_info, base_conv_lane, flag);
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
@@ -358,13 +358,6 @@ mod tests {
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
             table: FromBase9TableConfig<F>,
-        }
-
-        impl<F: Field> MyConfig<F> {
-            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-                self.table.load(layouter)?;
-                Ok(())
-            }
         }
 
         impl<F: Field> Circuit<F> for MyCircuit<F> {
