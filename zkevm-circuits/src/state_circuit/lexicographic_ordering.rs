@@ -59,9 +59,9 @@ use std::ops::Mul;
 // non-zero value, then we assign lower_limb_difference to be the value of C29.
 
 // Packing the field into 480 bits:
-//   5 bits for tag,
-// + 4 bits for field_tag // TODO: this actually needs 5 bits. Either reduce id
-// + 24 bits for id       // to 23 bits, or add diff_3 etc.
+//   4 bits for tag,
+// + 5 bits for field_tag
+// + 24 bits for id
 // + 160 bits for address,
 // + 256 bits for storage key
 // + 32  bits for rw_counter
@@ -280,7 +280,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn packed_tags(&self) -> Expression<F> {
-        (1u64 << 4).expr() * self.tag.clone() + self.field_tag.clone()
+        (1u64 << 5).expr() * self.tag.clone() + self.field_tag.clone()
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
@@ -302,32 +302,26 @@ impl<F: Field> Queries<F> {
             .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
             .collect();
-        // most significant byte of id should be 0, so safe to overwrite it with packed
-        // tags.
-        limbs[0] = limbs[0].clone() + self.packed_tags() * (1u64 << 8).expr();
+        // most significant 9 bits of id are assumed be 0, so we can overwrite them with
+        // packed tags.
+        limbs[0] = limbs[0].clone() + self.packed_tags() * (1u64 << 7).expr();
         limbs
     }
 }
 
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
+    let mut id = row.id().unwrap_or_default() as u32;
+    assert_eq!(id.to_be_bytes().len(), 4);
+    // check that the most significant 9 bits of id are 0, and pack tag and then
+    // field_tag into them.
+    assert!(id < (1 << 23));
+    id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
+
     let mut be_bytes = vec![];
-    be_bytes.extend_from_slice(&(row.id().unwrap_or_default() as u32).to_be_bytes());
+    be_bytes.extend_from_slice(&id.to_be_bytes());
     be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
     be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
     be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
-
-    // check that the first byte of id is not used, and overwrites it with packed
-    // tags.
-    assert_eq!(be_bytes[0], 0);
-    assert_eq!(be_bytes[1], 0);
-    let tag = row.tag() as u64;
-    let tag_packed_value = row.field_tag().unwrap_or_default() + (tag << 5);
-    let tag_packed_bytes = tag_packed_value.to_le_bytes();
-    be_bytes[0] = tag_packed_bytes[0];
-    be_bytes[1] = tag_packed_bytes[1];
-    if tag_packed_value > 255 {
-        be_bytes[0] = 255;
-    }
 
     be_bytes
         .iter()
