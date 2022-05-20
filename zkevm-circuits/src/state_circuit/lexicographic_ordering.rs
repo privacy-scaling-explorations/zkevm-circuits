@@ -319,7 +319,15 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     // check that the first byte of id is not used, and overwrites it with packed
     // tags.
     assert_eq!(be_bytes[0], 0);
-    be_bytes[0] = row.field_tag().unwrap_or_default() as u8 + ((row.tag() as u8) << 4);
+    assert_eq!(be_bytes[1], 0);
+    let tag = row.tag() as u64;
+    let tag_packed_value = row.field_tag().unwrap_or_default() + tag << 5;
+    let tag_packed_bytes = tag_packed_value.to_le_bytes();
+    be_bytes[0] = tag_packed_bytes[0];
+    be_bytes[1] = tag_packed_bytes[1];
+    if tag_packed_value > 255 {
+        be_bytes[0] = 255;
+    }
 
     be_bytes
         .iter()
