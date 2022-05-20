@@ -308,15 +308,22 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 sel1,
                 Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
+            if !is_s {
+                is_nonce_long = meta.query_advice(
+                    sel1,
+                    Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
+                );
+            }
 
             q_enable * is_nonce_long
         };
         // mult_diff_nonce corresponds to nonce length:
         mult_diff_lookup(
             meta,
-            q_enable_nonce_long, // mult_diff is acc_r when is_nonce_short
-            5,                   /* 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length
-                                  * info */
+            q_enable_nonce_long, /* mult_diff is acc_r when is_nonce_short (mult_diff doesn't
+                                  * need to be checked as it's not used) */
+            5, /* 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length
+                * info */
             s_advices[0],
             mult_diff_nonce,
             fixed_table,
@@ -336,10 +343,27 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
         }
         */
 
+        let q_enable_balance_long = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+            let mut is_balance_long = meta.query_advice(
+                sel1,
+                Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)),
+            );
+            if !is_s {
+                is_balance_long = meta.query_advice(
+                    sel1,
+                    Rotation(-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)),
+                );
+            }
+
+            q_enable * is_balance_long
+        };
         // mult_diff_balance corresponds to balance length:
         mult_diff_lookup(
             meta,
-            q_enable,
+            q_enable_balance_long, /* mult_diff is acc_r when is_balance_short (mult_diff
+                                    * doesn't need to be
+                                    * checked as it's not used) */
             1, // 1 for byte with length info
             c_advices[0],
             mult_diff_balance,
