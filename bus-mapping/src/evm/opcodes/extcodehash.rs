@@ -8,7 +8,7 @@ use crate::{
     state_db::Account,
     Error,
 };
-use eth_types::{evm_types::GasCost, GethExecStep, ToAddress, ToWord, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodehash;
@@ -58,12 +58,7 @@ impl Opcode for Extcodehash {
         }
 
         // Update transaction access list for external_address
-        let is_warm = match step.gas_cost {
-            GasCost::WARM_ACCESS => true,
-            GasCost::COLD_ACCOUNT_ACCESS => false,
-            _ => unreachable!(),
-        };
-        state.sdb.add_account_to_access_list(external_address);
+        let is_warm = state.sdb.check_account_in_access_list(&external_address);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -171,7 +166,7 @@ mod extcodehash_tests {
         if is_warm {
             code.append(&bytecode! {
                 PUSH20(external_address.to_word())
-                BALANCE
+                EXTCODEHASH
                 POP
             });
         }
@@ -234,7 +229,8 @@ mod extcodehash_tests {
         let indices = transaction
             .steps()
             .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
+            .last()
             .unwrap()
             .bus_mapping_instance
             .clone();

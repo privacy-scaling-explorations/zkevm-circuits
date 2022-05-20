@@ -3,7 +3,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::Error;
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
-use eth_types::{GethExecStep, ToBigEndian, Word};
+use eth_types::{GethExecStep, ToBigEndian};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -33,10 +33,7 @@ impl Opcode for Mload {
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
         // Accesses to memory that hasn't been initialized are valid, and return
         // 0.
-        let mem_read_value = geth_steps[1]
-            .memory
-            .read_word(mem_read_addr)
-            .unwrap_or_else(|_| Word::zero());
+        let mem_read_value = geth_steps[1].memory.read_word(mem_read_addr);
 
         //
         // First stack write
@@ -69,6 +66,7 @@ mod mload_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
+        Word,
     };
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, TestContext};
