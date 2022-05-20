@@ -59,7 +59,7 @@ use std::ops::Mul;
 // non-zero value, then we assign lower_limb_difference to be the value of C29.
 
 // Packing the field into 480 bits:
-//   4 bits for tag,
+//   5 bits for tag,
 // + 4 bits for field_tag // TODO: this actually needs 5 bits. Either reduce id
 // + 24 bits for id       // to 23 bits, or add diff_3 etc.
 // + 160 bits for address,
@@ -321,7 +321,7 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     assert_eq!(be_bytes[0], 0);
     assert_eq!(be_bytes[1], 0);
     let tag = row.tag() as u64;
-    let tag_packed_value = row.field_tag().unwrap_or_default() + tag << 5;
+    let tag_packed_value = row.field_tag().unwrap_or_default() + (tag << 5);
     let tag_packed_bytes = tag_packed_value.to_le_bytes();
     be_bytes[0] = tag_packed_bytes[0];
     be_bytes[1] = tag_packed_bytes[1];
