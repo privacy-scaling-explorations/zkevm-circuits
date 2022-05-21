@@ -63,7 +63,7 @@ pub struct KeccakConfig<F> {
     s_bits: [Column<Advice>; KECCAK_WIDTH],
     c_bits: [Column<Advice>; C_WIDTH],
     iota_bits: [Column<Fixed>; IOTA_ROUND_BIT_POS.len()],
-    c_table: TableColumn,
+    c_table: [TableColumn; 5],
     _marker: PhantomData<F>,
 }
 
@@ -110,7 +110,7 @@ impl<F: Field> KeccakConfig<F> {
         let s_bits = array_init::array_init(|_| meta.advice_column());
         let c_bits = array_init::array_init(|_| meta.advice_column());
         let iota_bits = array_init::array_init(|_| meta.fixed_column());
-        let c_table = meta.lookup_table_column();
+        let c_table = array_init::array_init(|_| meta.lookup_table_column());
 
         let mut b = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
         let mut b_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
@@ -147,7 +147,7 @@ impl<F: Field> KeccakConfig<F> {
             for s in (0..64).step_by(NUM_BITS_PER_LOOKUP) {
                 meta.lookup("Theta c", |_| {
                     let mut input = 0u64.expr();
-                    let mut bits = 0u64.expr();
+                    let mut tables = Vec::new();
                     for k in s..s + NUM_BITS_PER_LOOKUP {
                         let pk = (64 + k - 1) % 64;
                         input = input * 10u64.expr()
@@ -161,9 +161,10 @@ impl<F: Field> KeccakConfig<F> {
                                 + b[ni][2][pk].clone()
                                 + b[ni][3][pk].clone()
                                 + b[ni][4][pk].clone());
-                        bits = bits * 2u64.expr() + c[i][k].clone();
+                                tables.push((c[i][k].clone(), c_table[1 + k - s]));
                     }
-                    vec![(input * (NUM_BITS_PER_LOOKUP * 2).expr() + bits, c_table)]
+                    tables.push((input, c_table[0]));
+                    tables
                 });
             }
         }
@@ -214,11 +215,11 @@ impl<F: Field> KeccakConfig<F> {
             let mut max_degree = 0;
             let mut cb = BaseConstraintBuilder::new(9);
             // TODO: just use lookup columns to enforce this?
-            for i in 0..5 {
+            /*for i in 0..5 {
                 for k in 0..64 {
                     cb.require_boolean("c bit boolean", c[i][k].clone());
                 }
-            }
+            }*/
             for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
@@ -321,10 +322,16 @@ impl<F: Field> KeccakConfig<F> {
                 if NUM_BITS_PER_LOOKUP == 1 {
                     for idx in 0u64..=10 {
                         table.assign_cell(
-                            || "range",
-                            self.c_table,
+                            || "input",
+                            self.c_table[0],
                             idx as usize,
-                            || Ok(F::from(idx * 2 + (idx & 1))),
+                            || Ok(F::from(idx)),
+                        )?;
+                        table.assign_cell(
+                            || "output",
+                            self.c_table[1],
+                            idx as usize,
+                            || Ok(F::from(idx & 1)),
                         )?;
                     }
                 } else if NUM_BITS_PER_LOOKUP == 2 {
@@ -332,12 +339,65 @@ impl<F: Field> KeccakConfig<F> {
                     for a in 0u64..=10 {
                         for b in 0u64..=10 {
                             table.assign_cell(
-                                || "range",
-                                self.c_table,
+                                || "input",
+                                self.c_table[0],
                                 offset,
-                                || Ok(F::from(((a * 10) + b) * 4 + ((a & 1) * 2) + (b & 1))),
+                                || Ok(F::from((a * 10) + b)),
+                            )?;
+                            table.assign_cell(
+                                || "output",
+                                self.c_table[1],
+                                offset,
+                                || Ok(F::from(a & 1)),
+                            )?;
+                            table.assign_cell(
+                                || "output",
+                                self.c_table[2],
+                                offset,
+                                || Ok(F::from(b & 1)),
                             )?;
                             offset += 1;
+                        }
+                    }
+                } else if NUM_BITS_PER_LOOKUP == 4 {
+                    let mut offset = 0;
+                    for a in 0u64..=10 {
+                        for b in 0u64..=10 {
+                            for c in 0u64..=10 {
+                                for d in 0u64..=10 {
+                                    table.assign_cell(
+                                        || "input",
+                                        self.c_table[0],
+                                        offset,
+                                        || Ok(F::from((((((a * 10) + b) * 10) + c) * 10) + d)),
+                                    )?;
+                                    table.assign_cell(
+                                        || "output 0",
+                                        self.c_table[1],
+                                        offset,
+                                        || Ok(F::from(a & 1)),
+                                    )?;
+                                    table.assign_cell(
+                                        || "output 1",
+                                        self.c_table[2],
+                                        offset,
+                                        || Ok(F::from(b & 1)),
+                                    )?;
+                                    table.assign_cell(
+                                        || "output 2",
+                                        self.c_table[3],
+                                        offset,
+                                        || Ok(F::from(c & 1)),
+                                    )?;
+                                    table.assign_cell(
+                                        || "output 3",
+                                        self.c_table[4],
+                                        offset,
+                                        || Ok(F::from(d & 1)),
+                                    )?;
+                                    offset += 1;
+                                }
+                            }
                         }
                     }
                 } else {
