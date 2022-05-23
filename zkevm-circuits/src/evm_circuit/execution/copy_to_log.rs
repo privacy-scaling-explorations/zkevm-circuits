@@ -8,18 +8,15 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ComparisonGadget,
             memory_gadget::BufferReaderGadget,
-            Cell,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use bus_mapping::{
-    circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData},
-    constants::MAX_COPY_BYTES,
-};
+use bus_mapping::{circuit_input_builder::CopyDetails, constants::MAX_COPY_BYTES};
 use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 /// Multi-step gadget for copying data from memory to RW log
 #[derive(Clone, Debug)]
@@ -34,6 +31,8 @@ pub(crate) struct CopyToLogGadget<F> {
     is_persistent: Cell<F>,
     // The tx id
     tx_id: Cell<F>,
+    // the log data start index fetched from last step
+    data_start_index: Cell<F>,
     // Buffer reader gadget
     buffer_reader: BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
     // The comparison gadget between num bytes copied and bytes_left
@@ -51,6 +50,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
         let src_addr_end = cb.query_cell();
         let is_persistent = cb.query_bool();
         let tx_id = cb.query_cell();
+        let data_start_index = cb.query_cell();
         let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end.expr());
 
         // Copy bytes from src and dst
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
                 cb.tx_log_lookup(
                     tx_id.expr(),
                     TxLogFieldTag::Data,
-                    i.expr(),
+                    data_start_index.expr() + i.expr(),
                     buffer_reader.byte(i),
                 )
             });
@@ -91,6 +91,10 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             let next_src_addr = cb.query_cell();
             let next_bytes_left = cb.query_cell();
             let next_src_addr_end = cb.query_cell();
+            let next_is_persistent = cb.query_bool();
+            let next_tx_id = cb.query_cell();
+            let next_data_start_index = cb.query_cell();
+
             cb.require_equal(
                 "next_src_addr == src_addr + copied_size",
                 next_src_addr.expr(),
@@ -107,6 +111,18 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
                 next_src_addr_end.expr(),
                 src_addr_end.expr(),
             );
+            cb.require_equal(
+                "next_is_persistent == is_persistent",
+                next_is_persistent.expr(),
+                is_persistent.expr(),
+            );
+            cb.require_equal("next_tx_id == tx_id", next_tx_id.expr(), tx_id.expr());
+            cb.require_equal(
+                "next_data_start_index == data_start_index + MAX_COPY_BYTES
+                ",
+                next_data_start_index.expr(),
+                data_start_index.expr() + MAX_COPY_BYTES.expr(),
+            );
         });
 
         // State transition
@@ -122,6 +138,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             src_addr_end,
             is_persistent,
             tx_id,
+            data_start_index,
             buffer_reader,
             finish_gadget,
         }
@@ -129,45 +146,52 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let CopyToLogAuxData {
-            src_addr,
-            bytes_left,
-            src_addr_end,
-            is_persistent,
-            tx_id,
-        } = match step.aux_data.as_ref().unwrap() {
-            StepAuxiliaryData::CopyToLog(aux) => aux,
-            _ => unreachable!(),
+        // Read the auxiliary data.
+        let aux = if step.aux_data.is_none() {
+            // TODO: Handle error correctly returning err
+            unreachable!("could not find aux_data for this step")
+        } else {
+            step.aux_data.unwrap()
+        };
+
+        // log won't use dst_addr
+        assert!(aux.dst_addr() == 0u64);
+        let (is_persistent, tx_id, data_start_index) = match aux.copy_details() {
+            CopyDetails::Log((is_persistent, tx_id, data_index)) => {
+                (is_persistent, tx_id, data_index)
+            }
+            _ => unreachable!("the data copy is not related to a LOG op"),
         };
 
         self.src_addr
-            .assign(region, offset, Some(F::from(*src_addr)))?;
+            .assign(region, offset, Some(F::from(aux.src_addr())))?;
         self.bytes_left
-            .assign(region, offset, Some(F::from(*bytes_left)))?;
+            .assign(region, offset, Some(F::from(aux.bytes_left())))?;
         self.src_addr_end
-            .assign(region, offset, Some(F::from(*src_addr_end)))?;
+            .assign(region, offset, Some(F::from(aux.src_addr_end())))?;
         self.is_persistent
-            .assign(region, offset, Some(F::from(*is_persistent as u64)))?;
+            .assign(region, offset, Some(F::from(is_persistent as u64)))?;
         self.tx_id
-            .assign(region, offset, Some(F::from(*tx_id as u64)))?;
-
+            .assign(region, offset, Some(F::from(tx_id as u64)))?;
+        self.data_start_index
+            .assign(region, offset, Some(F::from(data_start_index as u64)))?;
         // Retrieve the bytes and selectors
 
         let mut rw_idx = 0;
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
         let mut selectors = vec![false; MAX_COPY_BYTES];
 
-        for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
-            let src_addr = *src_addr as usize + idx;
+        for idx in 0..std::cmp::min(aux.bytes_left() as usize, MAX_COPY_BYTES) {
+            let src_addr = aux.src_addr() as usize + idx;
             selectors[idx] = true;
-            bytes[idx] = if selectors[idx] && src_addr < *src_addr_end as usize {
+            bytes[idx] = if selectors[idx] && src_addr < aux.src_addr_end() as usize {
                 let indice = step.rw_indices[rw_idx];
                 rw_idx += 1;
                 block.rws[indice].memory_value()
@@ -176,15 +200,21 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             };
         }
 
-        self.buffer_reader
-            .assign(region, offset, *src_addr, *src_addr_end, &bytes, &selectors)?;
+        self.buffer_reader.assign(
+            region,
+            offset,
+            aux.src_addr(),
+            aux.src_addr_end(),
+            &bytes,
+            &selectors,
+        )?;
 
-        let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
+        let num_bytes_copied = std::cmp::min(aux.bytes_left(), MAX_COPY_BYTES as u64);
         self.finish_gadget.assign(
             region,
             offset,
             F::from(num_bytes_copied),
-            F::from(*bytes_left),
+            F::from(aux.bytes_left()),
         )?;
 
         Ok(())
@@ -200,12 +230,12 @@ pub mod test {
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
     use bus_mapping::{
-        circuit_input_builder::{CopyToLogAuxData, StepAuxiliaryData},
+        circuit_input_builder::{CopyDetails, StepAuxiliaryData},
         constants::MAX_COPY_BYTES,
     };
     use eth_types::{evm_types::OpcodeId, Word};
     use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use std::collections::HashMap;
     use std::convert::TryInto;
 
@@ -215,6 +245,7 @@ pub mod test {
         src_addr: u64,
         src_addr_end: u64,
         bytes_left: usize,
+        data_start_index: usize,
         program_counter: u64,
         stack_pointer: usize,
         memory_size: u64,
@@ -256,7 +287,7 @@ pub mod test {
                         tx_id,
                         log_id,
                         field_tag: TxLogFieldTag::Data,
-                        index: idx,
+                        index: data_start_index + idx,
                         value: Word::from(byte),
                     });
                     rw_offset += 1;
@@ -266,13 +297,14 @@ pub mod test {
         let log_rws: &mut Vec<_> = rws.0.entry(RwTableTag::TxLog).or_insert_with(Vec::new);
         let log_idx_start = log_rws.len();
         log_rws.extend(txlog_rws);
-        let aux_data = CopyToLogAuxData {
+
+        let aux_data = StepAuxiliaryData::new(
             src_addr,
-            bytes_left: bytes_left as u64,
+            Default::default(),
+            bytes_left as u64,
             src_addr_end,
-            is_persistent,
-            tx_id,
-        };
+            CopyDetails::Log((is_persistent, tx_id, data_start_index)),
+        );
 
         let memory_indices: Vec<(RwTableTag, usize)> = (memory_idx_start
             ..memory_idx_start + bytes_left)
@@ -295,7 +327,7 @@ pub mod test {
             } else {
                 0
             },
-            aux_data: Some(StepAuxiliaryData::CopyToLog(aux_data)),
+            aux_data: Some(aux_data),
             ..Default::default()
         };
         (step, rw_offset)
@@ -330,6 +362,7 @@ pub mod test {
                 src_addr + copied as u64,
                 buffer_addr_end,
                 length - copied,
+                copied,
                 program_counter,
                 stack_pointer,
                 memory_size,

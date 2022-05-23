@@ -1,6 +1,6 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{MockAccount, MockBlock, MockTransaction};
+use crate::{eth, MockAccount, MockBlock, MockTransaction};
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
@@ -13,7 +13,7 @@ use itertools::Itertools;
 /// required to build the circuit inputs.
 ///
 /// It is specifically used to generate Test cases with very precise information
-/// details about any specific part of a block. That includes of course, it's
+/// details about any specific part of a block. That includes of course, its
 /// transactions too and the accounts involved in all of them.
 ///
 /// The intended way to interact with the structure is through the fn `new`
@@ -238,11 +238,9 @@ pub mod helpers {
         |accs| {
             accs[0]
                 .address(MOCK_ACCOUNTS[0])
-                .balance(Word::from(10u64.pow(19)))
+                .balance(eth(10))
                 .code(code);
-            accs[1]
-                .address(MOCK_ACCOUNTS[1])
-                .balance(Word::from(10u64.pow(19)));
+            accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
         }
     }
 

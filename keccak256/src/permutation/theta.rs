@@ -17,7 +17,6 @@ pub struct ThetaConfig<F> {
 }
 
 impl<F: Field> ThetaConfig<F> {
-    pub const OFFSET: usize = 2;
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
@@ -43,7 +42,7 @@ impl<F: Field> ThetaConfig<F> {
                     let old_state = meta.query_advice(state[5 * x + y], Rotation::cur());
                     let right = old_state
                         + column_sum[(x + 4) % 5].clone()
-                        + Expression::Constant(F::from(B13.into()))
+                        + Expression::Constant(F::from(B13 as u64))
                             * column_sum[(x + 1) % 5].clone();
                     q_enable.clone() * (new_state - right)
                 })
@@ -103,13 +102,14 @@ mod tests {
     use crate::common::*;
     use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
+    use eth_types::Field;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
     use itertools::Itertools;
-    use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 

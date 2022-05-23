@@ -10,28 +10,21 @@ use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub(crate) struct StateBaseConversion<F> {
-    bi: BaseInfo<F>,
-    bccs: [BaseConversionConfig<F>; 25],
-    state: [Column<Advice>; 25],
+    bcc: BaseConversionConfig<F>,
 }
 
 impl<F: Field> StateBaseConversion<F> {
     /// Side effect: parent flag is enabled
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
         bi: BaseInfo<F>,
+        lane: Column<Advice>,
         flag: Column<Advice>,
     ) -> Self {
         meta.enable_equality(flag);
-        let bccs: [BaseConversionConfig<F>; 25] = state
-            .iter()
-            .map(|&lane| BaseConversionConfig::configure(meta, bi.clone(), lane, flag))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+        let bcc = BaseConversionConfig::configure(meta, bi, lane, flag);
 
-        Self { bi, bccs, state }
+        Self { bcc }
     }
 
     pub(crate) fn assign_region(
@@ -42,9 +35,10 @@ impl<F: Field> StateBaseConversion<F> {
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         let state: Result<Vec<AssignedCell<F, F>>, Error> = state
             .iter()
-            .zip(self.bccs.iter())
-            .map(|(lane, config)| {
-                let output = config.assign_region(layouter, lane.clone(), flag.clone())?;
+            .map(|lane| {
+                let output = self
+                    .bcc
+                    .assign_region(layouter, lane.clone(), flag.clone())?;
                 Ok(output)
             })
             .into_iter()
@@ -61,12 +55,12 @@ mod tests {
     use crate::arith_helpers::convert_b2_to_b13;
     use crate::gate_helpers::biguint_to_f;
     use crate::permutation::tables::FromBinaryTableConfig;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
     fn test_state_base_conversion() {
@@ -88,8 +82,9 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let flag = meta.advice_column();
+                let lane = meta.advice_column();
                 let bi = table.get_base_info(false);
-                let conversion = StateBaseConversion::configure(meta, state, bi, flag);
+                let conversion = StateBaseConversion::configure(meta, bi, lane, flag);
                 Self {
                     flag,
                     state,
@@ -135,7 +130,7 @@ mod tests {
                 let output_state = self.conversion.assign_region(layouter, &state, flag)?;
                 let output_state: [F; 25] = output_state
                     .iter()
-                    .map(|cell| *cell.value().unwrap())
+                    .map(|cell| cell.value().copied().unwrap_or_default())
                     .collect::<Vec<F>>()
                     .try_into()
                     .unwrap();
