@@ -7,7 +7,9 @@
 mod sign_verify;
 
 use crate::util::Expr;
-use eth_types::{Address, Bytes, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{
+    geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
+};
 use ff::PrimeField;
 use group::GroupEncoding;
 use halo2_proofs::{
@@ -38,40 +40,6 @@ lazy_static! {
         0xfffffffe, 0xffffffff,
         0xffffffff, 0xffffffff,
     ]);
-}
-
-/// Transaction to be verified by the TxCircuit
-#[derive(Clone, Default, Debug)]
-pub struct Transaction {
-    /// Sender address
-    pub from: Address,
-
-    /// Recipient address (None for contract creation)
-    pub to: Option<Address>,
-
-    /// Supplied gas
-    pub gas: U256,
-
-    /// Gas price
-    pub gas_price: U256,
-
-    /// Transfered value (None for no transfer)
-    pub value: U256,
-
-    /// The compiled code of a contract OR the first 4 bytes of the hash of the
-    /// invoked method signature and encoded parameters. For details see
-    /// Ethereum Contract ABI
-    pub data: Bytes,
-
-    /// Transaction nonce
-    pub nonce: U256,
-
-    /// "v" value of the transaction signature
-    pub v: u64,
-    /// "r" value of the transaction signature
-    pub r: U256,
-    /// "s" value of the transaction signature
-    pub s: U256,
 }
 
 fn random_linear_combine<F: Field>(bytes: [u8; 32], randomness: F) -> F {
@@ -145,10 +113,10 @@ fn tx_to_sign_data(tx: &Transaction, chain_id: u64) -> Result<SignData, Error> {
     stream
         .append(&tx.nonce)
         .append(&tx.gas_price)
-        .append(&tx.gas)
+        .append(&tx.gas_limit)
         .append(&tx.to.unwrap_or_else(Address::zero))
         .append(&tx.value)
-        .append(&tx.data.0)
+        .append(&tx.call_data.0)
         .append(&chain_id)
         .append(&0u32)
         .append(&0u32);
@@ -361,7 +329,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         ),
                         (
                             TxFieldTag::Gas,
-                            random_linear_combine(tx.gas.to_le_bytes(), self.randomness),
+                            random_linear_combine(tx.gas_limit.to_le_bytes(), self.randomness),
                         ),
                         (
                             TxFieldTag::GasPrice,
@@ -383,7 +351,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                             TxFieldTag::Value,
                             random_linear_combine(tx.value.to_le_bytes(), self.randomness),
                         ),
-                        (TxFieldTag::CallDataLength, F::from(tx.data.0.len() as u64)),
+                        (
+                            TxFieldTag::CallDataLength,
+                            F::from(tx.call_data.0.len() as u64),
+                        ),
                         (
                             TxFieldTag::TxSignHash,
                             *msg_hash_rlc_value.unwrap_or(&F::zero()),
@@ -410,7 +381,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 // Assign call data
                 let mut calldata_count = 0;
                 for (i, tx) in self.txs.iter().enumerate() {
-                    for (index, byte) in tx.data.0.iter().enumerate() {
+                    for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < MAX_CALLDATA);
                         assign_row(
                             &mut region,
@@ -515,14 +486,15 @@ mod tx_circuit_tests {
         Transaction {
             from: tx.from.unwrap(),
             to,
-            gas: tx.gas.unwrap(),
+            gas_limit: tx.gas.unwrap(),
             gas_price: tx.gas_price.unwrap(),
             value: tx.value.unwrap(),
-            data: tx.data.unwrap(),
+            call_data: tx.data.unwrap(),
             nonce: tx.nonce.unwrap(),
             v: sig.v,
             r: sig.r,
             s: sig.s,
+            ..Transaction::default()
         }
     }
 
