@@ -1,6 +1,9 @@
 //! Common utility traits and functions.
 use bus_mapping::operation::Target;
-use eth_types::evm_types::{GasCost, OpcodeId};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field,
+};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
 pub(crate) trait Expr<F: FieldExt> {
@@ -62,4 +65,8 @@ impl<F: FieldExt> Expr<F> for i32 {
                 },
         )
     }
+}
+
+pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
+    crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }

@@ -6,7 +6,7 @@
 
 mod sign_verify;
 
-use crate::util::Expr;
+use crate::util::{random_linear_combine_word as rlc, Expr};
 use eth_types::{
     geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
@@ -40,10 +40,6 @@ lazy_static! {
         0xfffffffe, 0xffffffff,
         0xffffffff, 0xffffffff,
     ]);
-}
-
-fn random_linear_combine<F: Field>(bytes: [u8; 32], randomness: F) -> F {
-    crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
 fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k1Affine, Error> {
@@ -325,15 +321,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     for (tag, value) in &[
                         (
                             TxFieldTag::Nonce,
-                            random_linear_combine(tx.nonce.to_le_bytes(), self.randomness),
+                            rlc(tx.nonce.to_le_bytes(), self.randomness),
                         ),
                         (
                             TxFieldTag::Gas,
-                            random_linear_combine(tx.gas_limit.to_le_bytes(), self.randomness),
+                            rlc(tx.gas_limit.to_le_bytes(), self.randomness),
                         ),
                         (
                             TxFieldTag::GasPrice,
-                            random_linear_combine(tx.gas_price.to_le_bytes(), self.randomness),
+                            rlc(tx.gas_price.to_le_bytes(), self.randomness),
                         ),
                         (
                             TxFieldTag::CallerAddress,
@@ -349,7 +345,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         (TxFieldTag::IsCreate, F::from(tx.to.is_none() as u64)),
                         (
                             TxFieldTag::Value,
-                            random_linear_combine(tx.value.to_le_bytes(), self.randomness),
+                            rlc(tx.value.to_le_bytes(), self.randomness),
                         ),
                         (
                             TxFieldTag::CallDataLength,
