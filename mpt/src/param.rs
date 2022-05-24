@@ -38,12 +38,18 @@ pub const IS_CODEHASH_MOD_POS: usize = 6;
 pub const COUNTER_WITNESS_LEN: usize = 4;
 pub const COUNTER_POS: usize = IS_CODEHASH_MOD_POS + COUNTER_WITNESS_LEN;
 
+pub const LEAF_KEY_S_IND: i32 = 0;
+pub const LEAF_VALUE_S_IND: i32 = 1;
+pub const LEAF_KEY_C_IND: i32 = 2;
+pub const LEAF_VALUE_C_IND: i32 = 3;
+pub const LEAF_DRIFTED_IND: i32 = 4;
+
 pub const ACCOUNT_LEAF_KEY_S_IND: i32 = 0;
 pub const ACCOUNT_LEAF_KEY_C_IND: i32 = 1;
 pub const ACCOUNT_LEAF_NONCE_BALANCE_S_IND: i32 = 2;
 pub const ACCOUNT_LEAF_NONCE_BALANCE_C_IND: i32 = 3;
 pub const ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND: i32 = 4;
 pub const ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND: i32 = 5;
-pub const ACCOUNT_LEAF_KEY_IN_ADDED_IND: i32 = 6;
+pub const ACCOUNT_DRIFTED_LEAF_IND: i32 = 6;
 
 pub const EXTENSION_ROWS_NUM: i32 = 2;

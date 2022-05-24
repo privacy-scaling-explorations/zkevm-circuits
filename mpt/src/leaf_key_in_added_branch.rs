@@ -12,7 +12,7 @@ use crate::{
         mult_diff_lookup, range_lookups,
     },
     mpt::FixedTableTag,
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS},
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, BRANCH_ROWS_NUM, LEAF_KEY_S_IND, LEAF_KEY_C_IND},
 };
 
 use crate::param::{
@@ -39,8 +39,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         s_advices: [Column<Advice>; HASH_WIDTH],
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
-        acc: Column<Advice>,
-        acc_mult: Column<Advice>,
+        acc_s: Column<Advice>,
+        acc_mult_s: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -56,8 +56,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         let c16 = Expression::Constant(F::from(16_u64));
         let c32 = Expression::Constant(F::from(32_u64));
         let c48 = Expression::Constant(F::from(48_u64));
-        let rot_branch_init = -23;
-        let rot_into_account = -5;
+        let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
+        let rot_into_account = -LEAF_DRIFTED_IND - 1;
 
         // NOTE: the leaf value is not stored in this row, it needs to be the same
         // as for the leaf before it drifted down to the new branch, thus, it is
@@ -118,7 +118,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let c_rlp2 = meta.query_advice(c_rlp2, Rotation::cur());
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
-            let acc = meta.query_advice(acc, Rotation::cur());
+            let acc = meta.query_advice(acc_s, Rotation::cur());
             constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
 
             constraints
@@ -164,24 +164,33 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         */
 
         // acc_mult corresponds to key length (short):
-        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult, fixed_table);
+        mult_diff_lookup(meta, sel_short, 2, s_rlp2, acc_mult_s, fixed_table);
         // acc_mult corresponds to key length (long):
-        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult, fixed_table);
+        mult_diff_lookup(meta, sel_long, 3, s_advices[0], acc_mult_s, fixed_table);
 
-        // Checking whether leaf key RLC before extension/branch is added is the same as
-        // key RLC of the leaf that drifted into added extension/branch) which would
-        // cover also added extension nodes (where we have more than one nibble
-        // of difference). It would go like this:
-        // We already have leaf key RLC before extension/branch is added. If S is
-        // placeholder, we have this RLC in (3) leaf key S row, in key_rlc
-        // column. What about key RLC of the drifted leaf? Partial value is
-        // already computed in extension node row (key_rlc column) because
-        // extension node "takes" the partial key RLC value at leaf (before
-        // being drifted) and adds extension key bytes to it. It remains to
-        // add drifted_pos and bytes of the drifted leaf. The computations for this are
-        // similar to the ones in extension_node_key, the difference is we have here
-        // drifted_pos instead of modified_node and we have a different key in a
-        // leaf.
+        /*
+        Leaf key S
+        Leaf value S
+        Leaf key C
+        Leaf value C
+        Drifted leaf (leaf in added branch)
+
+        Add case (S branch is placeholder):
+          Branch S           || Branch C             
+          Placeholder branch || Added branch
+          Leaf S             || Leaf C
+                             || Drifted leaf (this is Leaf S drifted into Added branch)
+
+          Leaf S needs to have the same RLC as Drifted leaf.
+          Note that Leaf S RLC is computed by taking key_rlc from Branch S and then adding the bytes in Leaf key S row.
+          Drifted leaf RLC is computed by taking key_rlc from Added branch and then adding the bytes in Drifted leaf row.
+
+        Delete case (C branch is placeholder):
+          Branch S                        || Branch C             
+          Branch to be deleted            || Placeholder branch
+          Leaf S (leaf to be deleted)     || Leaf C
+          Leaf to be drifted one level up || 
+        */
 
         meta.create_gate("Drifted leaf key RLC", |meta| {
             let q_enable = q_enable(meta);
@@ -191,10 +200,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             // for both - extension nodes and branches. That's because branch key RLC is
             // stored in extension node row when there is NO extension node (the
             // constraint is in extension_node_key).
-            let key_rlc_cur = meta.query_advice(key_rlc, Rotation(-6));
-
-            // Now we have key_rlc after extension node key has been added (in ext_key_rlc),
-            // we need to add drifted leaf key now. We need to take into account whether
+            let key_rlc_cur = meta.query_advice(key_rlc, Rotation(-LEAF_DRIFTED_IND-1));
 
             // sel1 and sel2 determines whether drifted_pos needs to be
             // multiplied by 16 or not.
@@ -226,15 +232,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
-            let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-4));
-            let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-2));
+            let leaf_key_s_rlc = meta.query_advice(key_rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_S_IND)));
+            let leaf_key_c_rlc = meta.query_advice(key_rlc, Rotation(-(LEAF_DRIFTED_IND - LEAF_KEY_C_IND)));
 
-            let is_first_storage_level = meta.query_advice(
+            // whether placeholder branch is in the first storage level:
+            let is_branch_in_first_storage_level = meta.query_advice(
                 is_account_leaf_in_added_branch,
                 Rotation(rot_branch_init - 1),
             );
 
-            let is_leaf_without_branch =
+            let is_account_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             let is_one_nibble = get_is_extension_node_one_nibble(meta, s_advices, rot_branch_init);
@@ -243,9 +250,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
             let mut key_mult = branch_rlc_mult.clone()
                 * mult_diff.clone()
-                * (one.clone() - is_first_storage_level.clone())
-                + is_first_storage_level.clone() * is_one_nibble.clone()
-                + is_first_storage_level.clone()
+                * (one.clone() - is_branch_in_first_storage_level.clone())
+                + is_branch_in_first_storage_level.clone() * is_one_nibble.clone()
+                + is_branch_in_first_storage_level.clone()
                     * mult_diff.clone()
                     * (one.clone() - is_one_nibble.clone());
             let drifted_pos_mult =
@@ -265,7 +272,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * (s_advice0.clone() - c32.clone())
                     * sel2.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_account_in_first_storage_level.clone())
                     * is_short.clone(),
             ));
 
@@ -288,7 +295,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_short.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_account_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
             constraints.push((
@@ -296,7 +303,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_short.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_account_in_first_storage_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_short.clone()),
             ));
 
@@ -312,7 +319,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * (s_advice1.clone() - c32.clone())
                     * sel2.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_account_in_first_storage_level.clone())
                     * is_long.clone(),
             ));
 
@@ -336,7 +343,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_long.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_account_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
             ));
             constraints.push((
@@ -344,7 +351,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_long.clone()
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (one.clone() - is_account_in_first_storage_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
             ));
 
@@ -386,8 +393,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut rlc = meta.query_advice(acc, Rotation::cur());
-            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
+            let mut rlc = meta.query_advice(acc_s, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
 
             // If branch placeholder in S, value is 3 above.
             let rot_val = -3;
@@ -446,8 +453,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
-            let mut rlc = meta.query_advice(acc, Rotation::cur());
-            let acc_mult = meta.query_advice(acc_mult, Rotation::cur());
+            let mut rlc = meta.query_advice(acc_s, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
 
             // If branch placeholder in C, value is 1 above.
             let rot_val = -1;

@@ -9,6 +9,7 @@ use std::convert::TryInto;
 
 use crate::{
     account_leaf_key::AccountLeafKeyChip,
+    account_leaf_key_in_added_branch::AccountLeafKeyInAddedBranchChip,
     account_leaf_nonce_balance::AccountLeafNonceBalanceChip,
     account_leaf_storage_codehash::AccountLeafStorageCodehashChip,
     branch::BranchChip,
@@ -766,6 +767,36 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 q_not_first * not_first_level * is_leaf
             },
+            s_rlp1,
+            s_rlp2,
+            c_rlp1,
+            c_rlp2,
+            s_advices,
+            s_mod_node_hash_rlc,
+            c_mod_node_hash_rlc,
+            acc_s,
+            acc_mult_s,
+            key_rlc,
+            key_rlc_mult,
+            mult_diff,
+            drifted_pos,
+            is_account_leaf_in_added_branch,
+            r_table.clone(),
+            fixed_table.clone(),
+            keccak_table.clone(),
+        );
+
+        AccountLeafKeyInAddedBranchChip::<F>::configure(
+            meta,
+            |meta| {
+                let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
+                let not_first_level = meta.query_advice(not_first_level, Rotation::cur());
+                let is_account_leaf_in_added_branch =
+                    meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
+
+                q_not_first * not_first_level * is_account_leaf_in_added_branch
+            },
+            not_first_level,
             s_rlp1,
             s_rlp2,
             c_rlp1,
@@ -2905,6 +2936,28 @@ impl<F: FieldExt> MPTConfig<F> {
                                     self.key_rlc,
                                     offset,
                                     || Ok(pv.extension_node_rlc),
+                                )?;
+                            } else if row[row.len() - 1] == 10 && row[1] != 0 {
+                                // row[1] != 0 just to avoid usize problems below (when row doesn't
+                                // need to be assigned).
+                                pv.acc_s = F::zero();
+                                pv.acc_mult_s = F::one();
+                                let len = (row[2] - 128) as usize + 3;
+                                compute_acc_and_mult(
+                                    row,
+                                    &mut pv.acc_s,
+                                    &mut pv.acc_mult_s,
+                                    0,
+                                    len,
+                                );
+
+                                self.assign_acc(
+                                    &mut region,
+                                    pv.acc_s,
+                                    pv.acc_mult_s,
+                                    F::zero(),
+                                    F::zero(),
+                                    offset,
                                 )?;
                             }
 
