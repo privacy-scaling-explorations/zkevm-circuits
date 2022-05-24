@@ -38,8 +38,6 @@ mod chainid;
 mod codecopy;
 mod codesize;
 mod comparator;
-mod copy_code_to_memory;
-mod copy_to_log;
 mod dummy;
 mod dup;
 mod end_block;
@@ -54,7 +52,6 @@ mod jumpdest;
 mod jumpi;
 mod logs;
 mod memory;
-mod memory_copy;
 mod msize;
 mod mul_div_mod;
 mod mulmod;
@@ -90,8 +87,6 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
-use copy_code_to_memory::CopyCodeToMemoryGadget;
-use copy_to_log::CopyToLogGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -106,7 +101,6 @@ use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use logs::LogGadget;
 use memory::MemoryGadget;
-use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
@@ -154,11 +148,10 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    // internal state gadgets
     height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
-    copy_to_memory_gadget: CopyToMemoryGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
@@ -176,8 +169,6 @@ pub(crate) struct ExecutionConfig<F> {
     codecopy_gadget: CodeCopyGadget<F>,
     codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
-    copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
-    copy_to_log_gadget: CopyToLogGadget<F>,
     dup_gadget: DupGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
@@ -371,9 +362,6 @@ impl<F: Field> ExecutionConfig<F> {
             advices,
             // internal states
             begin_tx_gadget: configure_gadget!(),
-            copy_code_to_memory_gadget: configure_gadget!(),
-            copy_to_memory_gadget: configure_gadget!(),
-            copy_to_log_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
             // opcode gadgets
@@ -600,11 +588,6 @@ impl<F: Field> ExecutionConfig<F> {
                             ExecutionState::EndBlock,
                             vec![ExecutionState::EndTx, ExecutionState::EndBlock],
                         ),
-                        (
-                            "Only ExecutionState which copies memory to memory can transit to CopyToMemory",
-                            ExecutionState::CopyToMemory,
-                            vec![ExecutionState::CopyToMemory, ExecutionState::CALLDATACOPY],
-                        ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
                     .map(|(_, to, _)| {
@@ -830,9 +813,6 @@ impl<F: Field> ExecutionConfig<F> {
         match step.execution_state {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
-            ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
-            ExecutionState::CopyToLog => assign_exec_step!(self.copy_to_log_gadget),
-            ExecutionState::CopyToMemory => assign_exec_step!(self.copy_to_memory_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             // opcode

@@ -19,8 +19,8 @@ impl Opcode for Calldatacopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-        let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
-        exec_steps.extend(memory_copy_steps);
+        // let memory_copy_steps = gen_memory_copy_steps(state, geth_steps)?;
+        // exec_steps.extend(memory_copy_steps);
         Ok(exec_steps)
     }
 }
@@ -84,7 +84,8 @@ fn gen_calldatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_memory_copy_step(
+
+fn memory_copy(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
     src_addr: u64,
@@ -142,7 +143,6 @@ fn gen_memory_copy_steps(
     let mut steps = vec![];
     while copied < length {
         let mut exec_step = state.new_step(&geth_steps[1])?;
-        exec_step.exec_state = ExecState::CopyToMemory;
         gen_memory_copy_step(
             state,
             &mut exec_step,

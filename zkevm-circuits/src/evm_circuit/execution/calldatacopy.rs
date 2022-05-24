@@ -109,44 +109,44 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         );
 
         // Constrain the next step CopyToMemory if length != 0
-        cb.constrain_next_step(
-            ExecutionState::CopyToMemory,
-            Some(memory_address.has_length()),
-            |cb| {
-                let next_src_addr = cb.query_cell();
-                let next_dst_addr = cb.query_cell();
-                let next_bytes_left = cb.query_cell();
-                let next_src_addr_end = cb.query_cell();
-                let next_from_tx = cb.query_cell();
-                let next_src_id = cb.query_cell();
-                cb.require_equal(
-                    "next_src_addr = data_offset + call_data_offset",
-                    next_src_addr.expr(),
-                    from_bytes::expr(&data_offset.cells) + call_data_offset.expr(),
-                );
-                cb.require_equal(
-                    "next_dst_addr = memory_offset",
-                    next_dst_addr.expr(),
-                    memory_address.offset(),
-                );
-                cb.require_equal(
-                    "next_bytes_left = length",
-                    next_bytes_left.expr(),
-                    memory_address.length(),
-                );
-                cb.require_equal(
-                    "next_src_addr_end = call_data_length + call_data_offset",
-                    next_src_addr_end.expr(),
-                    call_data_length.expr() + call_data_offset.expr(),
-                );
-                cb.require_equal(
-                    "next_from_tx = is_root",
-                    next_from_tx.expr(),
-                    cb.curr.state.is_root.expr(),
-                );
-                cb.require_equal("next_src_id = src_id", next_src_id.expr(), src_id.expr());
-            },
-        );
+        // cb.constrain_next_step(
+        //     ExecutionState::CopyToMemory,
+        //     Some(memory_address.has_length()),
+        //     |cb| {
+        //         let next_src_addr = cb.query_cell();
+        //         let next_dst_addr = cb.query_cell();
+        //         let next_bytes_left = cb.query_cell();
+        //         let next_src_addr_end = cb.query_cell();
+        //         let next_from_tx = cb.query_cell();
+        //         let next_src_id = cb.query_cell();
+        //         cb.require_equal(
+        //             "next_src_addr = data_offset + call_data_offset",
+        //             next_src_addr.expr(),
+        //             from_bytes::expr(&data_offset.cells) + call_data_offset.expr(),
+        //         );
+        //         cb.require_equal(
+        //             "next_dst_addr = memory_offset",
+        //             next_dst_addr.expr(),
+        //             memory_address.offset(),
+        //         );
+        //         cb.require_equal(
+        //             "next_bytes_left = length",
+        //             next_bytes_left.expr(),
+        //             memory_address.length(),
+        //         );
+        //         cb.require_equal(
+        //             "next_src_addr_end = call_data_length + call_data_offset",
+        //             next_src_addr_end.expr(),
+        //             call_data_length.expr() + call_data_offset.expr(),
+        //         );
+        //         cb.require_equal(
+        //             "next_from_tx = is_root",
+        //             next_from_tx.expr(),
+        //             cb.curr.state.is_root.expr(),
+        //         );
+        //         cb.require_equal("next_src_id = src_id", next_src_id.expr(), src_id.expr());
+        //     },
+        // );
 
         // State transition
         let step_state_transition = StepStateTransition {

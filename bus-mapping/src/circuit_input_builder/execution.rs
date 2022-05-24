@@ -1,6 +1,6 @@
 //! Execution step related module.
 
-use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter};
+use crate::{error::ExecError, exec_trace::OperationRef, operation::RWCounter, opeation::RW};
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     GethExecStep, U256,
@@ -100,12 +100,6 @@ pub enum ExecState {
     BeginTx,
     /// Virtual step End Tx
     EndTx,
-    /// Virtual step Copy To Memory
-    CopyToMemory,
-    /// Virtual step Copy To Log
-    CopyToLog,
-    /// Virtal step Copy Code To Memory
-    CopyCodeToMemory,
 }
 
 impl ExecState {
@@ -144,6 +138,34 @@ impl ExecState {
             false
         }
     }
+}
+
+pub enum DataType {
+    Bytecode,
+    Memory,
+    TxCalldata,
+    TxLog,
+}
+
+pub struct CopyStep {
+    pub addr: u64,
+    pub addr_end: Option<u64>,
+    pub tag: DataType,
+    pub rw: RW,
+    pub byte: u8,
+    pub is_code: Option<bool>,
+    pub is_pad: bool,
+    pub rwc: Option<RWCounter>,
+}
+
+pub struct CopyEvent {
+    pub src_addr: u64,
+    pub src_addr_end: u64,
+    pub src_type: DataType,
+    pub dst_addr: u64,
+    pub dst_type: DataType,
+    pub length: u64,
+    pub steps: Vec<CopyStep>,
 }
 
 /// Provides specific details about the data copy for which an
