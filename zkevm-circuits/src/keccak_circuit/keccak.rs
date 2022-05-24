@@ -8,7 +8,8 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn},
     poly::Rotation,
 };
-use std::{marker::PhantomData, vec};
+use itertools::Itertools;
+use std::{env::var, marker::PhantomData, vec};
 
 const KECCAK_WIDTH: usize = 5 * 5 * 64;
 const C_WIDTH: usize = 5 * 64;
@@ -47,13 +48,33 @@ const IOTA_ROUND_CST: [u64; 24] = [
 ];
 // Bit positions that have a non-zero value in `IOTA_ROUND_CST`.
 const IOTA_ROUND_BIT_POS: [usize; 7] = [0, 1, 3, 7, 15, 31, 63];
-const NUM_BITS_PER_LOOKUP: usize = 2;
+//const NUM_BITS_PER_THETA_LOOKUP: usize = 3;
+const MAX_INPUT_THETA_LOOKUP: u64 = 5;
+//const NUM_BITS_PER_CHI_LOOKUP: usize = 4;
+//const NUM_CHI_LOOKUP_VALUES: usize = KECCAK_WIDTH / NUM_BITS_PER_CHI_LOOKUP;
+
+fn get_degree() -> usize {
+    var("DEGREE")
+        .unwrap_or_else(|_| "8".to_string())
+        .parse()
+        .expect("Cannot parse DEGREE env var as usize")
+}
+
+fn get_num_bits_per_theta_lookup() -> usize {
+    let degree = get_degree() as u32;
+    let mut num_bits = 1;
+    while (MAX_INPUT_THETA_LOOKUP + 1).pow(num_bits + 1) <= 2u64.pow(degree) {
+        num_bits += 1;
+    }
+    num_bits as usize
+}
 
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct KeccakRow {
     s_bits: [u8; KECCAK_WIDTH],
     c_bits: [u8; C_WIDTH],
+    //chi_lookup_values: [u64; NUM_CHI_LOOKUP_VALUES],
 }
 
 /// KeccakConfig
@@ -62,8 +83,10 @@ pub struct KeccakConfig<F> {
     q_enable: Column<Fixed>,
     s_bits: [Column<Advice>; KECCAK_WIDTH],
     c_bits: [Column<Advice>; C_WIDTH],
+    //chi_lookup_values: [Column<Advice>; KECCAK_WIDTH / NUM_BITS_PER_CHI_LOOKUP],
     iota_bits: [Column<Fixed>; IOTA_ROUND_BIT_POS.len()],
-    c_table: [TableColumn; 5],
+    c_table: Vec<TableColumn>,
+    //chi_table: [TableColumn; 1 + NUM_BITS_PER_CHI_LOOKUP],
     _marker: PhantomData<F>,
 }
 
@@ -106,11 +129,23 @@ impl<F: Field> Circuit<F> for KeccakCircuit<F> {
 
 impl<F: Field> KeccakConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+        let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
+        println!("num_bits_per_theta_lookup: {}", num_bits_per_theta_lookup);
+
         let q_enable = meta.fixed_column();
         let s_bits = array_init::array_init(|_| meta.advice_column());
         let c_bits = array_init::array_init(|_| meta.advice_column());
+        //let chi_lookup_values = array_init::array_init(|_| meta.advice_column());
         let iota_bits = array_init::array_init(|_| meta.fixed_column());
-        let c_table = array_init::array_init(|_| meta.lookup_table_column());
+        //let mut c_table = array_init::array_init(|_| meta.lookup_table_column());
+        // vec![meta.lookup_table_column(); 1 + num_bits_per_theta_lookup];
+
+        let mut c_table = Vec::new();
+        for idx in 0..1 + num_bits_per_theta_lookup {
+            c_table.push(meta.lookup_table_column());
+        }
+
+        //let chi_table = array_init::array_init(|_| meta.lookup_table_column());
 
         let mut b = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
         let mut b_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
@@ -138,38 +173,110 @@ impl<F: Field> KeccakConfig<F> {
             }
             vec![0u64.expr()]
         });
+        /*let mut chi_lookup_inputs = vec![0u64.expr(); chi_lookup_values.len()];
+        meta.create_gate("Query Chi lookup values", |meta| {
+            for idx in 0..chi_lookup_values.len() {
+                chi_lookup_inputs[idx] = meta.query_advice(chi_lookup_values[idx], Rotation::cur());
+            }
+            vec![0u64.expr()]
+        });*/
 
+        // Theta lookups
         // TODO: pack 4 (or even more) of these in a single lookup
         // => Total number of lookups: 5*64/4 = 80
+        let mut theta = Vec::new();
         for i in 0..5 {
             let pi = (5 + i - 1) % 5;
             let ni = (i + 1) % 5;
-            for s in (0..64).step_by(NUM_BITS_PER_LOOKUP) {
-                meta.lookup("Theta c", |_| {
-                    let mut input = 0u64.expr();
-                    let mut tables = Vec::new();
-                    for k in s..s + NUM_BITS_PER_LOOKUP {
-                        let pk = (64 + k - 1) % 64;
-                        input = input * 10u64.expr()
-                            + (b[pi][0][k].clone()
-                                + b[pi][1][k].clone()
-                                + b[pi][2][k].clone()
-                                + b[pi][3][k].clone()
-                                + b[pi][4][k].clone()
-                                + b[ni][0][pk].clone()
-                                + b[ni][1][pk].clone()
-                                + b[ni][2][pk].clone()
-                                + b[ni][3][pk].clone()
-                                + b[ni][4][pk].clone());
-                                tables.push((c[i][k].clone(), c_table[1 + k - s]));
-                    }
-                    tables.push((input, c_table[0]));
-                    tables
-                });
+            for k in 0..64 {
+                let pk = (64 + k - 1) % 64;
+                /*input = input * 10u64.expr()
+                + (b[pi][0][k].clone()
+                    + b[pi][1][k].clone()
+                    + b[pi][2][k].clone()
+                    + b[pi][3][k].clone()
+                    + b[pi][4][k].clone()
+                    + b[ni][0][pk].clone()
+                    + b[ni][1][pk].clone()
+                    + b[ni][2][pk].clone()
+                    + b[ni][3][pk].clone()
+                    + b[ni][4][pk].clone());*/
+                let bit = xor::expr(b[pi][0][k].clone(), b[pi][1][k].clone())
+                    + xor::expr(b[pi][2][k].clone(), b[pi][3][k].clone())
+                    + xor::expr(b[pi][4][k].clone(), b[ni][0][pk].clone())
+                    + xor::expr(b[ni][1][pk].clone(), b[ni][2][pk].clone())
+                    + xor::expr(b[ni][3][pk].clone(), b[ni][4][pk].clone());
+                /*input = input * MAX_INPUT_THETA_LOOKUP.expr()
+                + xor::expr(
+                    xor::expr(b[pi][0][k].clone(), b[pi][1][k].clone()),
+                    xor::expr(b[pi][2][k].clone(), b[pi][3][k].clone()),
+                )
+                + xor::expr(
+                    xor::expr(b[pi][4][k].clone(), b[ni][0][pk].clone()),
+                    xor::expr(b[ni][1][pk].clone(), b[ni][2][pk].clone()),
+                )
+                + xor::expr(b[ni][3][pk].clone(), b[ni][4][pk].clone());*/
+                theta.push((c[i][k].clone(), bit));
             }
         }
 
+        let mut lookup_counter = 0;
+        for chunk in theta.chunks(num_bits_per_theta_lookup) {
+            meta.lookup("Theta c", |_| {
+                let mut factor = 1u64;
+                let mut input = 0u64.expr();
+                let mut tables = Vec::new();
+                for (idx, (bit, expr)) in chunk.iter().enumerate() {
+                    //input = input * MAX_INPUT_THETA_LOOKUP.expr() + expr.clone();
+                    input = input + expr.clone() * factor.expr();
+                    factor *= MAX_INPUT_THETA_LOOKUP;
+                    tables.push((bit.clone(), c_table[1 + idx]));
+                }
+                tables.push((input, c_table[0]));
+                tables
+            });
+            lookup_counter += 1;
+        }
+        println!("Lookups: {}", lookup_counter);
+
+        // Chi lookups
+        // TODO: pack 8 (or even more) of these in a single lookup
+        // => Total number of lookups: 5*5*64/8 = 200
+        /*let mut counter = 0;
+        for i in 0..5 {
+            for j in 0..5 {
+                for s in (0..64).step_by(NUM_BITS_PER_CHI_LOOKUP) {
+                    meta.lookup("Chi lookups", |meta| {
+                        let selector = meta.query_fixed(q_enable, Rotation::cur());
+                        let mut tables = Vec::new();
+                        for (idx, k) in (s..s + NUM_BITS_PER_CHI_LOOKUP).enumerate() {
+                            tables.push((
+                                selector.clone() * b_next[i][j][k].clone(),
+                                chi_table[1 + idx],
+                            ));
+                        }
+                        tables.push((
+                            selector.clone() * chi_lookup_inputs[counter].clone(),
+                            chi_table[0],
+                        ));
+                        counter += 1;
+                        tables
+                    });
+                }
+            }
+        }*/
+
         meta.create_gate("Constrain round bits", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+
+            /*for i in 0..5 {
+                for j in 0..5 {
+                    for k in 0..64 {
+                        cb.require_boolean("boolean state bit", b[i][j][k].clone());
+                    }
+                }
+            }*/
+
             // Theta
             let mut ob = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
             for i in 0..5 {
@@ -192,54 +299,59 @@ impl<F: Field> KeccakConfig<F> {
             b = ob.clone();
 
             // Chi
+            /*let mut count = 0;
+            for i in 0..5 {
+                for j in 0..5 {
+                    for l in (0..64).step_by(NUM_BITS_PER_CHI_LOOKUP) {
+                        let mut offset = 1u64;
+                        let mut compressed_value = 0u64.expr();
+                        for k in l..l + NUM_BITS_PER_CHI_LOOKUP {
+                            compressed_value = compressed_value
+                                + (b[i][j][k].clone()
+                                    + (not::expr(b[(i + 1) % 5][j][k].clone())
+                                        * b[(i + 2) % 5][j][k].clone()))
+                                    * offset.clone().expr();
+                            offset *= 3;
+                        }
+                        cb.require_equal(
+                            "chi lookup table value",
+                            compressed_value,
+                            chi_lookup_inputs[count].clone(),
+                        );
+                        count += 1;
+                    }
+                }
+            }
+            b = ob.clone();
+            */
+
             for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
-                        ob[i][j][k] = xor::expr(
-                            b[i][j][k].clone(),
+                        cb.require_equal(
+                            "state transition",
                             not::expr(b[(i + 1) % 5][j][k].clone()) * b[(i + 2) % 5][j][k].clone(),
+                            xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
+                            /* xor::expr(xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
+                             * b_next[i][j][k].clone()), */
                         );
                     }
                 }
             }
-            // Iota
-            for (idx, iota_bit) in iota_bits.iter().enumerate() {
-                let k = IOTA_ROUND_BIT_POS[idx];
-                ob[0][0][k] = xor::expr(
-                    meta.query_fixed(*iota_bit, Rotation::cur()),
-                    ob[0][0][k].clone(),
-                );
-            }
-            b = ob.clone();
 
-            let mut max_degree = 0;
-            let mut cb = BaseConstraintBuilder::new(9);
-            // TODO: just use lookup columns to enforce this?
-            /*for i in 0..5 {
-                for k in 0..64 {
-                    cb.require_boolean("c bit boolean", c[i][k].clone());
-                }
-            }*/
-            for i in 0..5 {
-                for j in 0..5 {
-                    for k in 0..64 {
-                        if b[i][j][k].degree() > max_degree {
-                            max_degree = b[i][j][k].degree();
-                        }
-                        cb.require_equal("state bit", b[i][j][k].clone(), b_next[i][j][k].clone());
-                    }
-                }
-            }
-            println!("max expression degree: {}", max_degree);
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
+
+        println!("degree: {}", meta.degree());
 
         KeccakConfig {
             q_enable,
             s_bits,
             c_bits,
+            //chi_lookup_values,
             iota_bits,
             c_table,
+            //chi_table,
             _marker: PhantomData,
         }
     }
@@ -255,7 +367,13 @@ impl<F: Field> KeccakConfig<F> {
             |mut region| {
                 let mut offset = 0;
                 for keccak_row in witness.iter() {
-                    self.set_row(&mut region, offset, keccak_row.s_bits, keccak_row.c_bits)?;
+                    self.set_row(
+                        &mut region,
+                        offset,
+                        keccak_row.s_bits,
+                        keccak_row.c_bits,
+                        //keccak_row.chi_lookup_values,
+                    )?;
                     offset += 1;
                 }
                 Ok(())
@@ -269,6 +387,7 @@ impl<F: Field> KeccakConfig<F> {
         offset: usize,
         s_bits: [u8; KECCAK_WIDTH],
         c_bits: [u8; C_WIDTH],
+        //chi_lookup_values: [u64; NUM_CHI_LOOKUP_VALUES],
     ) -> Result<(), Error> {
         let round = offset % 25;
 
@@ -300,6 +419,20 @@ impl<F: Field> KeccakConfig<F> {
             )?;
         }
 
+        // Chi lookup values
+        /*for (idx, (value, column)) in chi_lookup_values
+            .iter()
+            .zip(self.chi_lookup_values.iter())
+            .enumerate()
+        {
+            region.assign_advice(
+                || format!("assign chi lookup value {} {}", idx, offset),
+                *column,
+                offset,
+                || Ok(F::from(*value as u64)),
+            )?;
+        }*/
+
         // Iota bit columns
         if round < 24 {
             for (pos, column) in IOTA_ROUND_BIT_POS.iter().zip(self.iota_bits.iter()) {
@@ -316,96 +449,74 @@ impl<F: Field> KeccakConfig<F> {
     }
 
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
         layouter.assign_table(
             || "c table",
             |mut table| {
-                if NUM_BITS_PER_LOOKUP == 1 {
-                    for idx in 0u64..=10 {
+                for (offset, perm) in (0..num_bits_per_theta_lookup)
+                    .map(|_| 0..=MAX_INPUT_THETA_LOOKUP)
+                    .multi_cartesian_product()
+                    .enumerate()
+                {
+                    let mut compressed_value = 0u64;
+                    let mut factor = 1u64;
+                    for (idx, input) in perm.iter().enumerate() {
+                        compressed_value += input * factor;
+                        factor *= MAX_INPUT_THETA_LOOKUP;
+
                         table.assign_cell(
-                            || "input",
-                            self.c_table[0],
-                            idx as usize,
-                            || Ok(F::from(idx)),
-                        )?;
-                        table.assign_cell(
-                            || "output",
-                            self.c_table[1],
-                            idx as usize,
-                            || Ok(F::from(idx & 1)),
+                            || "theta c output",
+                            self.c_table[idx + 1],
+                            offset,
+                            || Ok(F::from(*input & 1)),
                         )?;
                     }
-                } else if NUM_BITS_PER_LOOKUP == 2 {
-                    let mut offset = 0;
-                    for a in 0u64..=10 {
-                        for b in 0u64..=10 {
-                            table.assign_cell(
-                                || "input",
-                                self.c_table[0],
-                                offset,
-                                || Ok(F::from((a * 10) + b)),
-                            )?;
-                            table.assign_cell(
-                                || "output",
-                                self.c_table[1],
-                                offset,
-                                || Ok(F::from(a & 1)),
-                            )?;
-                            table.assign_cell(
-                                || "output",
-                                self.c_table[2],
-                                offset,
-                                || Ok(F::from(b & 1)),
-                            )?;
-                            offset += 1;
-                        }
-                    }
-                } else if NUM_BITS_PER_LOOKUP == 4 {
-                    let mut offset = 0;
-                    for a in 0u64..=10 {
-                        for b in 0u64..=10 {
-                            for c in 0u64..=10 {
-                                for d in 0u64..=10 {
-                                    table.assign_cell(
-                                        || "input",
-                                        self.c_table[0],
-                                        offset,
-                                        || Ok(F::from((((((a * 10) + b) * 10) + c) * 10) + d)),
-                                    )?;
-                                    table.assign_cell(
-                                        || "output 0",
-                                        self.c_table[1],
-                                        offset,
-                                        || Ok(F::from(a & 1)),
-                                    )?;
-                                    table.assign_cell(
-                                        || "output 1",
-                                        self.c_table[2],
-                                        offset,
-                                        || Ok(F::from(b & 1)),
-                                    )?;
-                                    table.assign_cell(
-                                        || "output 2",
-                                        self.c_table[3],
-                                        offset,
-                                        || Ok(F::from(c & 1)),
-                                    )?;
-                                    table.assign_cell(
-                                        || "output 3",
-                                        self.c_table[4],
-                                        offset,
-                                        || Ok(F::from(d & 1)),
-                                    )?;
-                                    offset += 1;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    unimplemented!();
+
+                    table.assign_cell(
+                        || "theta c input",
+                        self.c_table[0],
+                        offset,
+                        || Ok(F::from(compressed_value)),
+                    )?;
                 }
                 Ok(())
             },
-        )
+        )?;
+
+        /*layouter.assign_table(
+            || "chi table",
+            |mut table| {
+                for (offset, perm) in (0..NUM_BITS_PER_CHI_LOOKUP)
+                    .map(|_| 0..=2)
+                    .multi_cartesian_product()
+                    .enumerate()
+                {
+                    let mut factor = 1u64;
+                    let mut compressed_value = 0u64;
+                    for (idx, input) in perm.iter().enumerate() {
+                        compressed_value = compressed_value + input * factor;
+                        factor *= 3;
+
+                        table.assign_cell(
+                            || "chi output",
+                            self.chi_table[idx + 1],
+                            offset,
+                            || Ok(F::from(*input & 1)),
+                        )?;
+                    }
+
+                    table.assign_cell(
+                        || "chi input",
+                        self.chi_table[0],
+                        offset,
+                        || Ok(F::from(compressed_value)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;*/
+
+        Ok(())
     }
 }
 
@@ -468,8 +579,6 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
             }
         }
 
-        rows.push(KeccakRow { s_bits, c_bits });
-
         // Theta
         for i in 0..5 {
             for j in 0..5 {
@@ -490,6 +599,32 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
         }
         b = ob;
 
+        /*let mut chi_lookup_values = [0u64; NUM_CHI_LOOKUP_VALUES];
+        let mut count = 0;
+        for i in 0..5 {
+            for j in 0..5 {
+                for l in (0..64).step_by(NUM_BITS_PER_CHI_LOOKUP) {
+                    let mut offset = 1u64;
+                    let mut compressed_value = 0u64;
+                    for k in l..l + NUM_BITS_PER_CHI_LOOKUP {
+                        compressed_value = compressed_value
+                            + ((b[i][j][k] + ((1 - b[(i + 1) % 5][j][k]) * b[(i + 2) % 5][j][k]))
+                                as u64)
+                                * offset;
+                        offset *= 3;
+                    }
+                    chi_lookup_values[count] = compressed_value;
+                    count += 1;
+                }
+            }
+        }*/
+
+        rows.push(KeccakRow {
+            s_bits,
+            c_bits,
+            //chi_lookup_values,
+        });
+
         // Chi
         let mut ob = b.clone();
         for i in 0..5 {
@@ -502,11 +637,11 @@ fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
         b = ob;
 
         // Iota
-        if round < 24 {
+        /*if round < 24 {
             for k in IOTA_ROUND_BIT_POS {
                 b[0][0][k] ^= ((IOTA_ROUND_CST[round] >> k) & 1) as u8;
             }
-        }
+        }*/
     }
 
     rows
