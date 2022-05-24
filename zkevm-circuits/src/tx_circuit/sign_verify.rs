@@ -29,7 +29,7 @@ use maingate::{
     RangeConfig, RangeInstructions, RegionCtx, UnassignedValue,
 };
 use secp256k1::Secp256k1Affine;
-use std::{cmp::min, convert::TryInto, io::Cursor, marker::PhantomData};
+use std::{convert::TryInto, io::Cursor, marker::PhantomData};
 
 /// Power of randomness vector size required for the SignVerifyChip
 pub const POW_RAND_SIZE: usize = 63;
@@ -64,22 +64,6 @@ fn int_from_bytes_le<'a, F: FieldExt>(
     let mut res = 0u8.expr();
     for (i, byte) in bytes.into_iter().enumerate() {
         res = res + byte.clone() * Expression::Constant(F::from(256).pow(&[i as u64, 0, 0, 0]))
-    }
-    res
-}
-
-/// Return a list of expression that evaluate to 0 when the `bytes` are a little
-/// endian representation of the integer split into `limbs`.  Assumes `limbs`
-/// are 72 bits (9 bytes).
-fn integer_eq_bytes_le<F: FieldExt>(
-    limbs: &[Expression<F>; 4],
-    bytes: &[Expression<F>; 32],
-) -> Vec<Expression<F>> {
-    let mut res = Vec::new();
-    for (j, limb) in limbs.iter().enumerate() {
-        let limb_bytes = &bytes[j * 9..min((j + 1) * 9, bytes.len())];
-        let limb_exp = int_from_bytes_le(limb_bytes);
-        res.push(limb.clone() - limb_exp);
     }
     res
 }
