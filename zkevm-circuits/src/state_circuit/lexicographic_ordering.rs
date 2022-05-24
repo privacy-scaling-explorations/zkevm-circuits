@@ -61,7 +61,7 @@ use std::ops::Mul;
 // Packing the field into 480 bits:
 //   4 bits for tag,
 // + 5 bits for field_tag
-// + 24 bits for id
+// + 23 bits for id
 // + 160 bits for address,
 // + 256 bits for storage key
 // + 32  bits for rw_counter
@@ -302,8 +302,8 @@ impl<F: Field> Queries<F> {
             .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
             .collect();
-        // most significant 9 bits of id are assumed be 0, so we can overwrite them with
-        // packed tags.
+        // The packed tags are shifted left by 7 bits so that they occupy the most
+        // significant 9 bits of the first 16-bit limb.
         limbs[0] = limbs[0].clone() + self.packed_tags() * (1u64 << 7).expr();
         limbs
     }
@@ -312,8 +312,8 @@ impl<F: Field> Queries<F> {
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     let mut id = row.id().unwrap_or_default() as u32;
     assert_eq!(id.to_be_bytes().len(), 4);
-    // check that the most significant 9 bits of id are 0, and pack tag and then
-    // field_tag into them.
+    // id is u32, but it is at most 2^23 - 1, so the 9 most significant bits will be
+    // 0. We overwrite these 9 bits with the tag and field tag.
     assert!(id < (1 << 23));
     id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
 
