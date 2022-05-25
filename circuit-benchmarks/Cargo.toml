@@ -16,6 +16,9 @@ rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10"
 eth-types = { path = "../eth-types" }
+secp256k1 = { git = "https://github.com/appliedzkp/halo2wrong", rev = "92b96893b5699ff40723e201a2416313aeafd267", features = ["kzg"] }
+group = "0.11"
+env_logger = "0.9"
 
 [features]
 default = []
