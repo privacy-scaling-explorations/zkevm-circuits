@@ -197,7 +197,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 let rows = once(&Rw::Start).chain(&self.rows);
                 let prev_rows = once(&Rw::Start).chain(rows.clone());
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
-                    dbg!(offset, row, prev_row);
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
                     config
                         .rw_counter
