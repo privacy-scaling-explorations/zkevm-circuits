@@ -214,6 +214,23 @@ impl<F: Field> TxCircuitConfig<F> {
             _marker: PhantomData,
         }
     }
+
+    /// Assigns a tx circuit row and returns the assigned cell of the value in
+    /// the row.
+    fn assign_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        tx_id: usize,
+        tag: TxFieldTag,
+        index: usize,
+        value: F,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        region.assign_advice(|| "tx_id", self.tx_id, offset, || Ok(F::from(tx_id as u64)))?;
+        region.assign_advice(|| "tag", self.tag, offset, || Ok(F::from(tag as u64)))?;
+        region.assign_advice(|| "index", self.index, offset, || Ok(F::from(index as u64)))?;
+        region.assign_advice(|| "value", self.value, offset, || Ok(value))
+    }
 }
 
 #[derive(Default)]
@@ -222,33 +239,6 @@ struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     randomness: F,
     txs: Vec<Transaction>,
     chain_id: u64,
-}
-
-/// Assigns a tx circuit row and returns the assigned cell of the value in
-/// the row.
-fn assign_row<F: Field>(
-    region: &mut Region<'_, F>,
-    config: &TxCircuitConfig<F>,
-    offset: usize,
-    tx_id: usize,
-    tag: TxFieldTag,
-    index: usize,
-    value: F,
-) -> Result<AssignedCell<F, F>, Error> {
-    region.assign_advice(
-        || "tx_id",
-        config.tx_id,
-        offset,
-        || Ok(F::from(tx_id as u64)),
-    )?;
-    region.assign_advice(|| "tag", config.tag, offset, || Ok(F::from(tag as u64)))?;
-    region.assign_advice(
-        || "index",
-        config.index,
-        offset,
-        || Ok(F::from(index as u64)),
-    )?;
-    region.assign_advice(|| "value", config.value, offset, || Ok(value))
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
@@ -293,15 +283,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             |mut region| {
                 let mut offset = 0;
                 // Empty entry
-                assign_row(
-                    &mut region,
-                    &config,
-                    offset,
-                    0,
-                    TxFieldTag::Null,
-                    0,
-                    F::zero(),
-                )?;
+                config.assign_row(&mut region, offset, 0, TxFieldTag::Null, 0, F::zero())?;
                 offset += 1;
                 // Assign al Tx fields except for call data
                 let tx_default = Transaction::default();
@@ -354,7 +336,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                         ),
                     ] {
                         let assigned_cell =
-                            assign_row(&mut region, &config, offset, i + 1, *tag, 0, *value)?;
+                            config.assign_row(&mut region, offset, i + 1, *tag, 0, *value)?;
                         offset += 1;
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
@@ -376,9 +358,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 for (i, tx) in self.txs.iter().enumerate() {
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < MAX_CALLDATA);
-                        assign_row(
+                        config.assign_row(
                             &mut region,
-                            &config,
                             offset,
                             i + 1, // tx_id
                             TxFieldTag::CallData,
@@ -390,9 +371,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     }
                 }
                 for _ in calldata_count..MAX_CALLDATA {
-                    assign_row(
+                    config.assign_row(
                         &mut region,
-                        &config,
                         offset,
                         0, // tx_id
                         TxFieldTag::CallData,

@@ -68,27 +68,6 @@ fn int_from_bytes_le<'a, F: FieldExt>(
     res
 }
 
-/// Enable copy constraint between `src` integer limbs and `dst` limbs.  Then
-/// assign the `dst` limbs values from `src`.
-fn copy_integer<F: FieldExt, W: WrongExt>(
-    region: &mut Region<'_, F>,
-    name: &str,
-    src: AssignedInteger<W, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    dst: &[Column<Advice>; 4],
-    offset: usize,
-) -> Result<(), Error> {
-    for (i, limb) in src.limbs().iter().enumerate() {
-        let assigned_cell = region.assign_advice(
-            || format!("{} limb {}", name, i),
-            dst[i],
-            offset,
-            || limb.value().ok_or(Error::Synthesis),
-        )?;
-        region.constrain_equal(assigned_cell.cell(), limb.cell())?;
-    }
-    Ok(())
-}
-
 /// Constraint equality (using copy constraints) between `src` integer bytes and
 /// `dst` integer bytes. Then assign the `dst` values from `src`.
 fn copy_integer_bytes_le<F: FieldExt>(
