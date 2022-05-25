@@ -110,27 +110,6 @@ fn copy_integer_bytes_le<F: FieldExt>(
     Ok(())
 }
 
-fn assign_integer_bytes_le<F: FieldExt, W: BaseExt>(
-    region: &mut Region<'_, F>,
-    name: &str,
-    src: W,
-    dst: &[Column<Advice>],
-    offset: usize,
-) -> Result<(), Error> {
-    let mut src_le = [0u8; 32];
-    src.write(&mut Cursor::new(&mut src_le[..]))
-        .expect("cannot write bytes to array");
-    for (i, byte) in src_le.iter().enumerate() {
-        region.assign_advice(
-            || format!("{} byte {}", name, i),
-            dst[i],
-            offset,
-            || Ok(F::from(*byte as u64)),
-        )?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone)]
 pub struct SignVerifyConfig<F: FieldExt> {
     q_enable: Selector,
