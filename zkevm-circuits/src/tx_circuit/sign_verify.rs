@@ -89,8 +89,8 @@ fn copy_integer<F: FieldExt, W: WrongExt>(
     Ok(())
 }
 
-/// Enable copy constraints between `src` integer bytes and `dst` integer bytes.
-/// Then assign the `dst` values from `src`.
+/// Constraint equality (using copy constraints) between `src` integer bytes and
+/// `dst` integer bytes. Then assign the `dst` values from `src`.
 fn copy_integer_bytes_le<F: FieldExt>(
     region: &mut Region<'_, F>,
     name: &str,
@@ -163,10 +163,11 @@ impl<F: FieldExt> SignVerifyConfig<F> {
         let q_enable = meta.complex_selector();
 
         let pk = [(); 2].map(|_| [(); 32].map(|_| meta.advice_column()));
-        pk.map(|coord| coord.map(|c| meta.enable_equality(c)));
+        pk.iter()
+            .for_each(|coord| coord.iter().for_each(|c| meta.enable_equality(*c)));
 
         let msg_hash = [(); 32].map(|_| meta.advice_column());
-        msg_hash.map(|c| meta.enable_equality(c));
+        msg_hash.iter().for_each(|c| meta.enable_equality(*c));
 
         let address = meta.advice_column();
         meta.enable_equality(address);
@@ -659,15 +660,19 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         ))
     }
 
-    pub fn assign_txs(
+    pub fn assign(
         &self,
         config: &SignVerifyConfig<F>,
         layouter: &mut impl Layouter<F>,
         randomness: F,
-        txs: &[SignData],
+        signatures: &[SignData],
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
-        if txs.len() > MAX_VERIF {
-            error!("txs.len() = {} > MAX_VERIF = {}", txs.len(), MAX_VERIF);
+        if signatures.len() > MAX_VERIF {
+            error!(
+                "signatures.len() = {} > MAX_VERIF = {}",
+                signatures.len(),
+                MAX_VERIF
+            );
             return Err(Error::Synthesis);
         }
         let main_gate = MainGate::new(config.main_gate_config.clone());
@@ -706,13 +711,13 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 let offset = &mut 0;
                 let mut ctx = RegionCtx::new(&mut region, offset);
                 for i in 0..MAX_VERIF {
-                    let tx = if i < txs.len() {
-                        txs[i].clone()
+                    let signature = if i < signatures.len() {
+                        signatures[i].clone()
                     } else {
                         // padding (enabled when address == 0)
                         SignData::default()
                     };
-                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &tx)?;
+                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
                 Ok(())
@@ -726,7 +731,7 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 assigned_sig_verifs.clear();
                 // for i in 0..MAX_VERIF
                 for (i, assigned_ecdsa) in assigned_ecdsas.iter().enumerate() {
-                    let sign_data = txs.get(i); // None when padding (enabled when address == 0)
+                    let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
                     let offset = i;
                     let (assigned_sig_verif, keccak_aux) = self.assign_signature_verify(
                         config,
@@ -737,7 +742,7 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                         sign_data,
                         assigned_ecdsa,
                     )?;
-                    if i < txs.len() {
+                    if i < signatures.len() {
                         keccak_auxs.push(keccak_aux);
                     }
                     assigned_sig_verifs.push(assigned_sig_verif);
@@ -839,6 +844,10 @@ mod sign_verify_tests {
 
     impl<F: FieldExt> TestCircuitSignVerifyConfig<F> {
         pub fn new(meta: &mut ConstraintSystem<F>) -> Self {
+            // This gate is used just to get the array of expressions from the power of
+            // randomness instance column, so that later on we don't need to query
+            // columns everywhere, and can pass the power of randomness array
+            // expression everywhere.  The gate itself doesn't add any constraints.
             let power_of_randomness = {
                 let columns = [(); POW_RAND_SIZE].map(|_| meta.instance_column());
                 let mut power_of_randomness = None;
@@ -862,7 +871,7 @@ mod sign_verify_tests {
     struct TestCircuitSignVerify<F: FieldExt, const MAX_VERIF: usize> {
         sign_verify: SignVerifyChip<F, MAX_VERIF>,
         randomness: F,
-        txs: Vec<SignData>,
+        signatures: Vec<SignData>,
     }
 
     impl<F: FieldExt, const MAX_VERIF: usize> Circuit<F> for TestCircuitSignVerify<F, MAX_VERIF> {
@@ -882,24 +891,26 @@ mod sign_verify_tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            self.sign_verify.assign_txs(
+            self.sign_verify.assign(
                 &config.sign_verify,
                 &mut layouter,
                 self.randomness,
-                &self.txs,
+                &self.signatures,
             )?;
             Ok(())
         }
     }
 
-    fn run<F: FieldExt, const MAX_VERIF: usize>(k: u32, txs: Vec<SignData>) {
+    fn run<F: FieldExt, const MAX_VERIF: usize>(k: u32, signatures: Vec<SignData>) {
         let mut rng = XorShiftRng::seed_from_u64(2);
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
         let randomness = F::random(&mut rng);
         let mut power_of_randomness: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
-            .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); txs.len() * VERIF_HEIGHT])
+            .map(|exp| {
+                vec![randomness.pow(&[exp as u64, 0, 0, 0]); signatures.len() * VERIF_HEIGHT]
+            })
             .collect();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         power_of_randomness.push(vec![]);
@@ -910,7 +921,7 @@ mod sign_verify_tests {
                 _marker: PhantomData,
             },
             randomness,
-            txs,
+            signatures,
         };
 
         let prover = match MockProver::run(k, &circuit, power_of_randomness) {
@@ -946,6 +957,8 @@ mod sign_verify_tests {
         sign(randomness, sk, msg_hash)
     }
 
+    // High memory usage test.  Run in serial with:
+    // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
     #[test]
     fn serial_test_sign_verify() {
@@ -959,13 +972,13 @@ mod sign_verify_tests {
         // addr: 0x7adbe6857c2c733025c0b8938a76beeefc85d6c7
         let mut rng = XorShiftRng::seed_from_u64(1);
         const MAX_VERIF: usize = 3;
-        const NUM_TXS: usize = 2;
-        let mut txs = Vec::new();
-        for _ in 0..NUM_TXS {
+        const NUM_SIGS: usize = 2;
+        let mut signatures = Vec::new();
+        for _ in 0..NUM_SIGS {
             let (sk, pk) = gen_key_pair(&mut rng);
             let msg_hash = gen_msg_hash(&mut rng);
             let sig = sign_with_rng(&mut rng, sk, msg_hash);
-            txs.push(SignData {
+            signatures.push(SignData {
                 signature: sig,
                 pk,
                 msg_hash,
@@ -973,6 +986,6 @@ mod sign_verify_tests {
         }
 
         let k = 19;
-        run::<Fr, MAX_VERIF>(k, txs);
+        run::<Fr, MAX_VERIF>(k, signatures);
     }
 }

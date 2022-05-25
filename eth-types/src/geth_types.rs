@@ -98,7 +98,7 @@ pub struct Transaction {
     pub nonce: Word,
     /// Gas Limit / Supplied gas
     pub gas_limit: Word,
-    /// Transfered value (None for no transfer)
+    /// Transfered value
     pub value: Word,
     /// Gas Price
     pub gas_price: Word,

@@ -284,7 +284,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 })
             })
             .try_collect()?;
-        let assigned_sig_verifs = self.sign_verify.assign_txs(
+        let assigned_sig_verifs = self.sign_verify.assign(
             &config.sign_verify,
             &mut layouter,
             self.randomness,
@@ -494,6 +494,8 @@ mod tx_circuit_tests {
         }
     }
 
+    // High memory usage test.  Run in serial with:
+    // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
     #[test]
     fn serial_test_tx_circuit() {
