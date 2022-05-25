@@ -33,7 +33,8 @@ use std::marker::PhantomData;
 use subtle::CtOption;
 
 lazy_static! {
-    // Scalar
+    // Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended Elliptic Curve
+    // Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
     static ref SECP256K1_Q: BigUint = BigUint::from_slice(&[
         0xd0364141, 0xbfd25e8c,
         0xaf48a03b, 0xbaaedce6,
@@ -43,17 +44,13 @@ lazy_static! {
 }
 
 fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k1Affine, Error> {
-    let r_be = r.to_be_bytes();
-    let s_be = s.to_be_bytes();
-    let mut r = libsecp256k1::curve::Scalar::from_int(0);
-    let r_overflow: bool = r.set_b32(&r_be).into();
-    let mut s = libsecp256k1::curve::Scalar::from_int(0);
-    let s_overflow: bool = s.set_b32(&s_be).into();
-    if r_overflow || s_overflow {
-        error!("Overflow on 'r' or 's' signature values");
-        return Err(Error::Synthesis);
-    }
-    let signature = libsecp256k1::Signature { r, s };
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes[..32].copy_from_slice(&r.to_be_bytes());
+    sig_bytes[32..].copy_from_slice(&s.to_be_bytes());
+    let signature = libsecp256k1::Signature::parse_standard(&sig_bytes).map_err(|e| {
+        error!("Failed parsing signature from (r, s): {:?}", e);
+        Error::Synthesis
+    })?;
     let msg_hash = libsecp256k1::Message::parse_slice(msg_hash.as_slice()).map_err(|e| {
         error!("Message hash parsing from slice failed: {:?}", e);
         Error::Synthesis

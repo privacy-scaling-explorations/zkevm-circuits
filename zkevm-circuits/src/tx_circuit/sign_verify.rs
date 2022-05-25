@@ -711,11 +711,10 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 // for i in 0..MAX_VERIF
                 for (i, assigned_ecdsa) in assigned_ecdsas.iter().enumerate() {
                     let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
-                    let offset = i;
                     let (assigned_sig_verif, keccak_aux) = self.assign_signature_verify(
                         config,
                         &mut region,
-                        offset,
+                        i, // offset
                         randomness,
                         &address_is_zero_chip,
                         sign_data,
