@@ -82,7 +82,14 @@ pub async fn compute_proof(
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         let instance = circuit.instance();
         let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
-        create_proof(params, &pk, &[circuit], &[instances.as_slice()], rng, &mut transcript)?;
+        create_proof(
+            params,
+            &pk,
+            &[circuit],
+            &[instances.as_slice()],
+            rng,
+            &mut transcript,
+        )?;
         state_proof = transcript.finalize();
     }
 
