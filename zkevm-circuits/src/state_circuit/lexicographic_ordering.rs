@@ -70,10 +70,12 @@ use std::ops::Mul;
 
 #[derive(Clone)]
 pub struct Config<F: Field> {
+    pub(crate) selector: Column<Fixed>,
     upper_limb_difference: Column<Advice>,
     pub(crate) upper_limb_difference_is_zero: IsZeroConfig<F>,
     lower_limb_difference: Column<Advice>,
     lower_limb_difference_is_zero: IsZeroConfig<F>,
+    // TODO: remove these columns from the config
     tag: Column<Advice>,
     field_tag: Column<Advice>,
     id_limbs: [Column<Advice>; N_LIMBS_ID],
@@ -95,7 +97,6 @@ impl<F: Field> Chip<F> {
     // TODO: fix this to not have too many arguments?
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        selector: Column<Fixed>,
         tag: Column<Advice>,
         field_tag: Column<Advice>,
         id_limbs: [Column<Advice>; N_LIMBS_ID],
@@ -104,6 +105,7 @@ impl<F: Field> Chip<F> {
         rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
         u16_range: Column<Fixed>,
     ) -> Config<F> {
+        let selector = meta.fixed_column();
         let [upper_limb_difference, upper_limb_difference_inverse, lower_limb_difference, lower_limb_difference_inverse] =
             [0; 4].map(|_| meta.advice_column());
         let [upper_limb_difference_is_zero_config, lower_limb_difference_is_zero_config] = [
@@ -127,6 +129,7 @@ impl<F: Field> Chip<F> {
             .clone();
 
         let config = Config {
+            selector,
             upper_limb_difference,
             upper_limb_difference_is_zero: upper_limb_difference_is_zero_config,
             lower_limb_difference,
@@ -215,6 +218,13 @@ impl<F: Field> Chip<F> {
         cur: &Rw,
         prev: &Rw,
     ) -> Result<(), Error> {
+        region.assign_fixed(
+            || "upper_limb_difference",
+            self.config.selector,
+            offset,
+            || Ok(F::one()),
+        )?;
+
         // this doesn't make sense that we have to "construct" the chip every time we
         // assign?
         let upper_limb_difference_is_zero_chip =
@@ -230,13 +240,17 @@ impl<F: Field> Chip<F> {
             .zip(&prev_be_limbs)
             .enumerate()
             .find(|(_, (a, b))| a != b);
-        let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
+        let (index, (cur_limb, prev_limb)) = if cfg!(test) {
+            find_result.unwrap_or((30, (&0, &0)))
+        } else {
+            find_result.expect("repeated rw counter")
+        };
 
-        let mut upper_limb_difference = F::from((cur_limb - prev_limb) as u64);
+        let mut upper_limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
         let mut lower_limb_difference = lower_limb_difference_value(&cur_be_limbs, &prev_be_limbs);
         if index >= 15 {
+            lower_limb_difference = upper_limb_difference;
             upper_limb_difference = F::zero();
-            lower_limb_difference = F::from((cur_limb - prev_limb) as u64);
         }
 
         region.assign_advice(
