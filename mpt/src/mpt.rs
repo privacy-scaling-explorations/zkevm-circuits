@@ -2258,6 +2258,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.key_rlc_prev = F::zero();
                                 pv.key_rlc_mult_prev = F::one();
                                 pv.key_rlc_sel = true;
+                                // TODO: check whether all constraints are implemented (extension_node_rlc ...)
                             } else if row[row.len() - 1] == 13 {
                                 is_leaf_s_value = true;
                             } else if row[row.len() - 1] == 14 {
@@ -2928,9 +2929,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                     )?;
                                 }
 
-                                // This sets branch Key RLC when it's not extension node (to avoid
-                                // additional rotations).
-                                // It sets extension node RLC otherwise.
                                 region.assign_advice(
                                     || "assign key_rlc".to_string(),
                                     self.key_rlc,

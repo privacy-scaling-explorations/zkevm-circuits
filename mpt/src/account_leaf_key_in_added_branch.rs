@@ -171,8 +171,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // multiplied by 16 or not.
             let sel1 = meta.query_advice(
                 s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
+                // ok: -1, -4
+                // not ok: -6, -7, -8
+                // Rotation(-6),
                 Rotation(rot_branch_init),
             );
+            /*
             let sel2 = meta.query_advice(
                 s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
                 Rotation(rot_branch_init),
@@ -266,6 +270,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                     * is_branch_c_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
+            ));
+            */
+
+            constraints.push((
+                "foo",
+                q_enable.clone()
+                    * sel1.clone()
+                    * (one.clone() - one.clone())
             ));
 
             constraints
