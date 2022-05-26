@@ -5,7 +5,7 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector, TableColumn},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -50,8 +50,6 @@ const IOTA_ROUND_CST: [u64; 24] = [
 const IOTA_ROUND_BIT_POS: [usize; 7] = [0, 1, 3, 7, 15, 31, 63];
 //const NUM_BITS_PER_THETA_LOOKUP: usize = 3;
 const MAX_INPUT_THETA_LOOKUP: u64 = 5;
-//const NUM_BITS_PER_CHI_LOOKUP: usize = 4;
-//const NUM_CHI_LOOKUP_VALUES: usize = KECCAK_WIDTH / NUM_BITS_PER_CHI_LOOKUP;
 
 fn get_degree() -> usize {
     var("DEGREE")
@@ -74,19 +72,22 @@ fn get_num_bits_per_theta_lookup() -> usize {
 pub(crate) struct KeccakRow {
     s_bits: [u8; KECCAK_WIDTH],
     c_bits: [u8; C_WIDTH],
-    //chi_lookup_values: [u64; NUM_CHI_LOOKUP_VALUES],
+    a_bits: [u8; KECCAK_WIDTH / 25],
+    q_end: u64,
 }
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
 pub struct KeccakConfig<F> {
-    q_enable: Column<Fixed>,
+    q_enable: Selector,
+    q_round: Column<Fixed>,
+    q_absorb: Column<Fixed>,
+    q_end: Column<Advice>,
     s_bits: [Column<Advice>; KECCAK_WIDTH],
     c_bits: [Column<Advice>; C_WIDTH],
-    //chi_lookup_values: [Column<Advice>; KECCAK_WIDTH / NUM_BITS_PER_CHI_LOOKUP],
+    a_bits: [Column<Advice>; KECCAK_WIDTH / 25],
     iota_bits: [Column<Fixed>; IOTA_ROUND_BIT_POS.len()],
     c_table: Vec<TableColumn>,
-    //chi_table: [TableColumn; 1 + NUM_BITS_PER_CHI_LOOKUP],
     _marker: PhantomData<F>,
 }
 
@@ -132,20 +133,19 @@ impl<F: Field> KeccakConfig<F> {
         let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
         println!("num_bits_per_theta_lookup: {}", num_bits_per_theta_lookup);
 
-        let q_enable = meta.fixed_column();
+        let q_enable = meta.selector();
+        let q_round = meta.fixed_column();
+        let q_absorb = meta.fixed_column();
+        let q_end = meta.advice_column();
         let s_bits = array_init::array_init(|_| meta.advice_column());
         let c_bits = array_init::array_init(|_| meta.advice_column());
-        //let chi_lookup_values = array_init::array_init(|_| meta.advice_column());
+        let a_bits = array_init::array_init(|_| meta.advice_column());
         let iota_bits = array_init::array_init(|_| meta.fixed_column());
-        //let mut c_table = array_init::array_init(|_| meta.lookup_table_column());
-        // vec![meta.lookup_table_column(); 1 + num_bits_per_theta_lookup];
 
         let mut c_table = Vec::new();
-        for idx in 0..1 + num_bits_per_theta_lookup {
+        for _ in 0..1 + num_bits_per_theta_lookup {
             c_table.push(meta.lookup_table_column());
         }
-
-        //let chi_table = array_init::array_init(|_| meta.lookup_table_column());
 
         let mut b = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
         let mut b_next = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
@@ -173,13 +173,19 @@ impl<F: Field> KeccakConfig<F> {
             }
             vec![0u64.expr()]
         });
-        /*let mut chi_lookup_inputs = vec![0u64.expr(); chi_lookup_values.len()];
-        meta.create_gate("Query Chi lookup values", |meta| {
-            for idx in 0..chi_lookup_values.len() {
-                chi_lookup_inputs[idx] = meta.query_advice(chi_lookup_values[idx], Rotation::cur());
+        let mut a = vec![0u64.expr(); 64];
+        let mut a_next = vec![vec![0u64.expr(); 64]; 25];
+        meta.create_gate("Absorb bits", |meta| {
+            for k in 0..64 {
+                a[k] = meta.query_advice(a_bits[k], Rotation::cur());
+            }
+            for i in 0..25 {
+                for k in 0..64 {
+                    a_next[i][k] = meta.query_advice(a_bits[k], Rotation((i + 1) as i32));
+                }
             }
             vec![0u64.expr()]
-        });*/
+        });
 
         // Theta lookups
         // TODO: pack 4 (or even more) of these in a single lookup
@@ -239,43 +245,31 @@ impl<F: Field> KeccakConfig<F> {
         }
         println!("Lookups: {}", lookup_counter);
 
-        // Chi lookups
-        // TODO: pack 8 (or even more) of these in a single lookup
-        // => Total number of lookups: 5*5*64/8 = 200
-        /*let mut counter = 0;
-        for i in 0..5 {
-            for j in 0..5 {
-                for s in (0..64).step_by(NUM_BITS_PER_CHI_LOOKUP) {
-                    meta.lookup("Chi lookups", |meta| {
-                        let selector = meta.query_fixed(q_enable, Rotation::cur());
-                        let mut tables = Vec::new();
-                        for (idx, k) in (s..s + NUM_BITS_PER_CHI_LOOKUP).enumerate() {
-                            tables.push((
-                                selector.clone() * b_next[i][j][k].clone(),
-                                chi_table[1 + idx],
-                            ));
-                        }
-                        tables.push((
-                            selector.clone() * chi_lookup_inputs[counter].clone(),
-                            chi_table[0],
-                        ));
-                        counter += 1;
-                        tables
-                    });
-                }
-            }
-        }*/
-
-        meta.create_gate("Constrain round bits", |meta| {
+        meta.create_gate("boolean checks", |meta| {
             let mut cb = BaseConstraintBuilder::new(5);
 
-            /*for i in 0..5 {
+            // State bits
+            // TODO: optimize
+            for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
                         cb.require_boolean("boolean state bit", b[i][j][k].clone());
                     }
                 }
-            }*/
+            }
+
+            // Absorb bits
+            for k in 0..64 {
+                cb.require_boolean("boolean state bit", a[k].clone());
+            }
+
+            cb.gate(meta.query_selector(q_enable))
+        });
+
+        meta.create_gate("round", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+
+            let mut b = b.clone();
 
             // Theta
             let mut ob = vec![vec![vec![0u64.expr(); 64]; 5]; 5];
@@ -298,60 +292,82 @@ impl<F: Field> KeccakConfig<F> {
             }
             b = ob.clone();
 
-            // Chi
-            /*let mut count = 0;
-            for i in 0..5 {
-                for j in 0..5 {
-                    for l in (0..64).step_by(NUM_BITS_PER_CHI_LOOKUP) {
-                        let mut offset = 1u64;
-                        let mut compressed_value = 0u64.expr();
-                        for k in l..l + NUM_BITS_PER_CHI_LOOKUP {
-                            compressed_value = compressed_value
-                                + (b[i][j][k].clone()
-                                    + (not::expr(b[(i + 1) % 5][j][k].clone())
-                                        * b[(i + 2) % 5][j][k].clone()))
-                                    * offset.clone().expr();
-                            offset *= 3;
-                        }
-                        cb.require_equal(
-                            "chi lookup table value",
-                            compressed_value,
-                            chi_lookup_inputs[count].clone(),
-                        );
-                        count += 1;
-                    }
-                }
-            }
-            b = ob.clone();
-            */
-
+            let mut iota_counter = 0;
             for i in 0..5 {
                 for j in 0..5 {
                     for k in 0..64 {
-                        cb.require_equal(
-                            "state transition",
-                            not::expr(b[(i + 1) % 5][j][k].clone()) * b[(i + 2) % 5][j][k].clone(),
-                            xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
-                            /* xor::expr(xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
-                             * b_next[i][j][k].clone()), */
-                        );
+                        if i == 0 && j == 0 && IOTA_ROUND_BIT_POS.contains(&k) {
+                            cb.require_equal(
+                                "round state transition with round constant",
+                                not::expr(b[(i + 1) % 5][j][k].clone())
+                                    * b[(i + 2) % 5][j][k].clone(),
+                                xor::expr(
+                                    xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
+                                    meta.query_fixed(iota_bits[iota_counter], Rotation::cur()),
+                                ),
+                            );
+                            iota_counter += 1;
+                        } else {
+                            cb.require_equal(
+                                "round state transition",
+                                not::expr(b[(i + 1) % 5][j][k].clone())
+                                    * b[(i + 2) % 5][j][k].clone(),
+                                xor::expr(b[i][j][k].clone(), b_next[i][j][k].clone()),
+                            );
+                        }
                     }
                 }
             }
 
-            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+            cb.gate(meta.query_fixed(q_round, Rotation::cur()))
+        });
+
+        meta.create_gate("absorb", |meta| {
+            let mut cb = BaseConstraintBuilder::new(5);
+
+            let absorb_positions = get_absorb_positions();
+            let mut a_slice = 0;
+            for i in 0..5 {
+                for j in 0..5 {
+                    if absorb_positions.contains(&(i, j)) {
+                        for k in 0..64 {
+                            cb.require_equal(
+                                "absorb bit",
+                                xor::expr(b[i][j][k].clone(), a_next[a_slice][k].clone()),
+                                b_next[i][j][k].clone(),
+                            );
+                        }
+                        a_slice += 1;
+                    } else {
+                        for k in 0..64 {
+                            cb.require_equal(
+                                "absorb copy",
+                                b[i][j][k].clone(),
+                                b_next[i][j][k].clone(),
+                            );
+                        }
+                    }
+                }
+            }
+
+            cb.gate(
+                meta.query_fixed(q_absorb, Rotation::cur())
+                    * not::expr(meta.query_advice(q_end, Rotation::cur())),
+            )
         });
 
         println!("degree: {}", meta.degree());
 
         KeccakConfig {
             q_enable,
+            q_round,
+            q_absorb,
+            q_end,
             s_bits,
             c_bits,
-            //chi_lookup_values,
+            a_bits,
             iota_bits,
             c_table,
-            //chi_table,
             _marker: PhantomData,
         }
     }
@@ -370,9 +386,10 @@ impl<F: Field> KeccakConfig<F> {
                     self.set_row(
                         &mut region,
                         offset,
+                        keccak_row.q_end,
                         keccak_row.s_bits,
                         keccak_row.c_bits,
-                        //keccak_row.chi_lookup_values,
+                        keccak_row.a_bits,
                     )?;
                     offset += 1;
                 }
@@ -385,18 +402,35 @@ impl<F: Field> KeccakConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
+        q_end: u64,
         s_bits: [u8; KECCAK_WIDTH],
         c_bits: [u8; C_WIDTH],
-        //chi_lookup_values: [u64; NUM_CHI_LOOKUP_VALUES],
+        a_bits: [u8; KECCAK_WIDTH / 25],
     ) -> Result<(), Error> {
         let round = offset % 25;
 
-        // q_enable
+        self.q_enable.enable(region, offset)?;
+
+        // q_round
         region.assign_fixed(
-            || format!("assign q_enable {}", offset),
-            self.q_enable,
+            || format!("assign q_round {}", offset),
+            self.q_round,
             offset,
             || Ok(F::from(round != 24)),
+        )?;
+        // q_absorb
+        region.assign_fixed(
+            || format!("assign q_absorb {}", offset),
+            self.q_absorb,
+            offset,
+            || Ok(F::from(round == 24)),
+        )?;
+        // q_end
+        region.assign_advice(
+            || format!("assign q_end {}", offset),
+            self.q_end,
+            offset,
+            || Ok(F::from(q_end)),
         )?;
 
         // State bits
@@ -419,19 +453,15 @@ impl<F: Field> KeccakConfig<F> {
             )?;
         }
 
-        // Chi lookup values
-        /*for (idx, (value, column)) in chi_lookup_values
-            .iter()
-            .zip(self.chi_lookup_values.iter())
-            .enumerate()
-        {
+        // Absorb c bits
+        for (idx, (bit, column)) in a_bits.iter().zip(self.a_bits.iter()).enumerate() {
             region.assign_advice(
-                || format!("assign chi lookup value {} {}", idx, offset),
+                || format!("assign absorb bits {} {}", idx, offset),
                 *column,
                 offset,
-                || Ok(F::from(*value as u64)),
+                || Ok(F::from(*bit as u64)),
             )?;
-        }*/
+        }
 
         // Iota bit columns
         if round < 24 {
@@ -481,167 +511,152 @@ impl<F: Field> KeccakConfig<F> {
                 }
                 Ok(())
             },
-        )?;
-
-        /*layouter.assign_table(
-            || "chi table",
-            |mut table| {
-                for (offset, perm) in (0..NUM_BITS_PER_CHI_LOOKUP)
-                    .map(|_| 0..=2)
-                    .multi_cartesian_product()
-                    .enumerate()
-                {
-                    let mut factor = 1u64;
-                    let mut compressed_value = 0u64;
-                    for (idx, input) in perm.iter().enumerate() {
-                        compressed_value = compressed_value + input * factor;
-                        factor *= 3;
-
-                        table.assign_cell(
-                            || "chi output",
-                            self.chi_table[idx + 1],
-                            offset,
-                            || Ok(F::from(*input & 1)),
-                        )?;
-                    }
-
-                    table.assign_cell(
-                        || "chi input",
-                        self.chi_table[0],
-                        offset,
-                        || Ok(F::from(compressed_value)),
-                    )?;
-                }
-                Ok(())
-            },
-        )?;*/
-
-        Ok(())
+        )
     }
+}
+
+fn get_absorb_positions() -> Vec<(usize, usize)> {
+    let mut absorb_positions = Vec::new();
+    for i in 0..5 {
+        for j in 0..5 {
+            if i + j * 5 < 17 {
+                absorb_positions.push((i, j));
+            }
+        }
+    }
+    absorb_positions
 }
 
 fn keccak(bytes: Vec<u8>) -> Vec<KeccakRow> {
     let mut rows: Vec<KeccakRow> = Vec::new();
 
-    let bits = into_bits(&bytes);
+    let mut bits = into_bits(&bytes);
+    let rate: usize = 136 * 8;
 
-    let mut counter = 0;
     let mut b = [[[0u8; 64]; 5]; 5];
-    for i in 0..5 {
-        for j in 0..5 {
+
+    let absorb_positions = get_absorb_positions();
+
+    // TODO: correct padding
+    while bits.len() % rate != 0 {
+        bits.push(0);
+    }
+
+    let chunks = bits.chunks(rate);
+    let num_chunks = chunks.len();
+    println!("num_chunks: {}", num_chunks);
+    for (idx, chunk) in chunks.enumerate() {
+        // Absorb
+        let mut counter = 0;
+        for &(i, j) in &absorb_positions {
             for k in 0..64 {
-                b[i][j][k] = bits[counter];
+                b[i][j][k] ^= chunk[counter];
                 counter += 1;
             }
         }
-    }
 
-    for round in 0..25 {
-        let mut c = [[0u8; 64]; 5];
-        for i in 0..5 {
-            let pi = (5 + i - 1) % 5;
-            let ni = (i + 1) % 5;
-            for k in 0..64 {
-                let pk = (64 + k - 1) % 64;
-                c[i][k] = (b[pi][0][k]
-                    + b[pi][1][k]
-                    + b[pi][2][k]
-                    + b[pi][3][k]
-                    + b[pi][4][k]
-                    + b[ni][1][pk]
-                    + b[ni][0][pk]
-                    + b[ni][2][pk]
-                    + b[ni][3][pk]
-                    + b[ni][4][pk])
-                    & 1;
-            }
-        }
-
-        // Flatten bits
         let mut counter = 0;
-        let mut s_bits = [0u8; KECCAK_WIDTH];
-        for i in 0..5 {
-            for j in 0..5 {
+        for round in 0..25 {
+            let mut a_bits = [0u8; 64];
+            if counter < rate {
                 for k in 0..64 {
-                    s_bits[counter] = b[i][j][k];
+                    a_bits[k] = chunk[counter];
                     counter += 1;
                 }
             }
-        }
 
-        // Flatten bits
-        let mut counter = 0;
-        let mut c_bits = [0u8; C_WIDTH];
-        for i in 0..5 {
-            for k in 0..64 {
-                c_bits[counter] = c[i][k];
-                counter += 1;
-            }
-        }
-
-        // Theta
-        for i in 0..5 {
-            for j in 0..5 {
+            let mut c = [[0u8; 64]; 5];
+            for i in 0..5 {
+                let pi = (5 + i - 1) % 5;
+                let ni = (i + 1) % 5;
                 for k in 0..64 {
-                    b[i][j][k] ^= c[i][k];
+                    let pk = (64 + k - 1) % 64;
+                    c[i][k] = (b[pi][0][k]
+                        + b[pi][1][k]
+                        + b[pi][2][k]
+                        + b[pi][3][k]
+                        + b[pi][4][k]
+                        + b[ni][1][pk]
+                        + b[ni][0][pk]
+                        + b[ni][2][pk]
+                        + b[ni][3][pk]
+                        + b[ni][4][pk])
+                        & 1;
                 }
             }
-        }
 
-        // Rho/Pi
-        let mut ob = b.clone();
-        for i in 0..5 {
-            for j in 0..5 {
-                for k in 0..64 {
-                    ob[j][(2 * i + 3 * j) % 5][k] = b[i][j][(64 + k - RHOM[i][j]) % 64]
-                }
-            }
-        }
-        b = ob;
-
-        /*let mut chi_lookup_values = [0u64; NUM_CHI_LOOKUP_VALUES];
-        let mut count = 0;
-        for i in 0..5 {
-            for j in 0..5 {
-                for l in (0..64).step_by(NUM_BITS_PER_CHI_LOOKUP) {
-                    let mut offset = 1u64;
-                    let mut compressed_value = 0u64;
-                    for k in l..l + NUM_BITS_PER_CHI_LOOKUP {
-                        compressed_value = compressed_value
-                            + ((b[i][j][k] + ((1 - b[(i + 1) % 5][j][k]) * b[(i + 2) % 5][j][k]))
-                                as u64)
-                                * offset;
-                        offset *= 3;
+            // Flatten bits
+            let mut counter = 0;
+            let mut s_bits = [0u8; KECCAK_WIDTH];
+            for i in 0..5 {
+                for j in 0..5 {
+                    for k in 0..64 {
+                        s_bits[counter] = b[i][j][k];
+                        counter += 1;
                     }
-                    chi_lookup_values[count] = compressed_value;
-                    count += 1;
                 }
             }
-        }*/
 
-        rows.push(KeccakRow {
-            s_bits,
-            c_bits,
-            //chi_lookup_values,
-        });
-
-        // Chi
-        let mut ob = b.clone();
-        for i in 0..5 {
-            for j in 0..5 {
+            // Flatten bits
+            let mut counter = 0;
+            let mut c_bits = [0u8; C_WIDTH];
+            for i in 0..5 {
                 for k in 0..64 {
-                    ob[i][j][k] = b[i][j][k] ^ ((1 - b[(i + 1) % 5][j][k]) * b[(i + 2) % 5][j][k]);
+                    c_bits[counter] = c[i][k];
+                    counter += 1;
+                }
+            }
+
+            let q_end = round == 24 && idx == num_chunks - 1;
+
+            rows.push(KeccakRow {
+                s_bits,
+                c_bits,
+                a_bits,
+                q_end: q_end as u64,
+            });
+
+            if round < 24 {
+                // Theta
+                for i in 0..5 {
+                    for j in 0..5 {
+                        for k in 0..64 {
+                            b[i][j][k] ^= c[i][k];
+                        }
+                    }
+                }
+
+                // Rho/Pi
+                let mut ob = b.clone();
+                for i in 0..5 {
+                    for j in 0..5 {
+                        for k in 0..64 {
+                            ob[j][(2 * i + 3 * j) % 5][k] = b[i][j][(64 + k - RHOM[i][j]) % 64]
+                        }
+                    }
+                }
+                b = ob;
+
+                // Chi
+                let mut ob = b.clone();
+                for i in 0..5 {
+                    for j in 0..5 {
+                        for k in 0..64 {
+                            ob[i][j][k] =
+                                b[i][j][k] ^ ((1 - b[(i + 1) % 5][j][k]) * b[(i + 2) % 5][j][k]);
+                        }
+                    }
+                }
+                b = ob;
+
+                // Iota
+                if round < 24 {
+                    for k in IOTA_ROUND_BIT_POS {
+                        b[0][0][k] ^= ((IOTA_ROUND_CST[round] >> k) & 1) as u8;
+                    }
                 }
             }
         }
-        b = ob;
-
-        // Iota
-        /*if round < 24 {
-            for k in IOTA_ROUND_BIT_POS {
-                b[0][0][k] ^= ((IOTA_ROUND_CST[round] >> k) & 1) as u8;
-            }
-        }*/
     }
 
     rows
@@ -693,7 +708,7 @@ mod tests {
     #[test]
     fn new_keccak_simple() {
         let k = 8;
-        let inputs = keccak(vec![1u8; 1600]);
+        let inputs = keccak(vec![1u8; 200]);
         verify::<Fr>(k, inputs, true);
     }
 }
