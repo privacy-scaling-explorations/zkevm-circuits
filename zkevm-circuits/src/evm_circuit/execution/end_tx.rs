@@ -254,9 +254,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
         } else {
+            // first receipt only needs TxReceiptFieldTag::COUNT(3) rws
+            // later receipts need 4(with one extra cumulative gas read) rws
             let rw = &block.rws[(
                 RwTableTag::TxReceipt,
-                (tx.id - 1) * (TxReceiptFieldTag::COUNT + 1) - 2,
+                (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
         };
