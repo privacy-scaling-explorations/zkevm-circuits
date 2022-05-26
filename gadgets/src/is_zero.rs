@@ -6,11 +6,10 @@
 
 use halo2_proofs::{
     circuit::{Chip, Region},
+    pairing::arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
-use std::array;
 
 /// Trait that needs to be implemented for any gadget or circuit that wants to
 /// implement `IsZero`.
@@ -82,7 +81,8 @@ impl<F: FieldExt> IsZeroChip<F> {
             // value_inv ⋅ (1 - value ⋅ value_inv)
             let poly2 = value_inv * is_zero_expression.clone();
 
-            array::IntoIter::new([poly1, poly2])
+            [poly1, poly2]
+                .into_iter()
                 .map(move |poly| q_enable.clone() * poly)
         });
 
@@ -139,10 +139,10 @@ mod test {
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
         poly::Rotation,
     };
-    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     macro_rules! try_test_circuit {

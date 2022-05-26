@@ -8,17 +8,14 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, Cell, Word,
+            select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
@@ -94,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
@@ -223,7 +220,7 @@ mod test {
             )
             .unwrap();
             let test_config = BytecodeTestConfig {
-                enable_state_circuit_test: false,
+                enable_state_circuit_test: true,
                 ..Default::default()
             };
             assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));

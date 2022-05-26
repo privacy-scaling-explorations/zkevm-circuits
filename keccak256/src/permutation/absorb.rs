@@ -17,7 +17,6 @@ pub struct AbsorbConfig<F> {
 }
 
 impl<F: Field> AbsorbConfig<F> {
-    pub const OFFSET: usize = 2;
     // We assume state is recieved in base-9.
     // Rows are assigned as:
     // 1) STATE (25 columns) (offset -1)
@@ -179,6 +178,7 @@ mod tests {
     use crate::common::State;
     use crate::keccak_arith::KeccakFArith;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;

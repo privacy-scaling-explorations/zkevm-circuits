@@ -83,6 +83,9 @@ pub struct StateDB {
     // state before current transaction, to calculate gas cost for some opcodes like sstore.
     // So both dirty storage and committed storage are needed.
     dirty_storage: HashMap<(Address, Word), Word>,
+    // Accounts that have been through `SELFDESTRUCT` under the situation that `is_persistent` is
+    // `true`. These accounts will be reset once `commit_tx` is called.
+    destructed_account: HashSet<Address>,
     refund: u64,
 }
 
@@ -94,6 +97,7 @@ impl StateDB {
             access_list_account: HashSet::new(),
             access_list_account_storage: HashSet::new(),
             dirty_storage: HashMap::new(),
+            destructed_account: HashSet::new(),
             refund: 0,
         }
     }
@@ -173,12 +177,23 @@ impl StateDB {
         self.dirty_storage.insert((*addr, *key), *value);
     }
 
+    /// Get nonce of account with `addr`.
+    pub fn get_nonce(&mut self, addr: &Address) -> u64 {
+        let (_, account) = self.get_account(addr);
+        account.nonce.as_u64()
+    }
+
     /// Increase nonce of account with `addr` and return the previous value.
     pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
         let (_, account) = self.get_account_mut(addr);
         let nonce = account.nonce.as_u64();
         account.nonce = account.nonce + 1;
         nonce
+    }
+
+    /// Check whether `addr` exists in account access list.
+    pub fn check_account_in_access_list(&self, addr: &Address) -> bool {
+        self.access_list_account.contains(addr)
     }
 
     /// Add `addr` into account access list. Returns `true` if it's not in the
@@ -189,7 +204,13 @@ impl StateDB {
 
     /// Remove `addr` from account access list.
     pub fn remove_account_from_access_list(&mut self, addr: &Address) {
-        debug_assert!(self.access_list_account.remove(addr));
+        let exist = self.access_list_account.remove(addr);
+        debug_assert!(exist);
+    }
+
+    /// Check whether `(addr, key)` exists in account storage access list.
+    pub fn check_account_storage_in_access_list(&self, pair: &(Address, Word)) -> bool {
+        self.access_list_account_storage.contains(pair)
     }
 
     /// Add `(addr, key)` into account storage access list. Returns `true` if
@@ -200,12 +221,13 @@ impl StateDB {
 
     /// Remove `(addr, key)` from account storage access list.
     pub fn remove_account_storage_from_access_list(&mut self, pair: &(Address, Word)) {
-        debug_assert!(self.access_list_account_storage.remove(pair));
+        let exist = self.access_list_account_storage.remove(pair);
+        debug_assert!(exist);
     }
 
-    /// Check whether `(addr, key)` exists in account storage access list.
-    pub fn check_account_storage_in_access_list(&self, pair: &(Address, Word)) -> bool {
-        self.access_list_account_storage.contains(pair)
+    /// Set account as self destructed.
+    pub fn destruct_account(&mut self, addr: Address) {
+        self.destructed_account.insert(addr);
     }
 
     /// Retrieve refund.
@@ -229,6 +251,10 @@ impl StateDB {
             *ptr = value;
         }
         self.dirty_storage = HashMap::new();
+        for addr in self.destructed_account.clone() {
+            let (_, account) = self.get_account_mut(&addr);
+            *account = ACCOUNT_ZERO.clone();
+        }
         self.refund = 0;
     }
 }

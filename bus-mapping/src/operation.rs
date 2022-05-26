@@ -106,6 +106,8 @@ pub enum Target {
     AccountDestructed,
     /// Means the target of the operation is the CallContext.
     CallContext,
+    /// Means the target of the operation is the TxReceipt.
+    TxReceipt,
 }
 
 /// Trait used for Operation Kinds.
@@ -220,7 +222,7 @@ impl fmt::Debug for StackOp {
 }
 
 impl StackOp {
-    /// Create a new instance of a `MemoryOp` from it's components.
+    /// Create a new instance of a `StackOp` from it's components.
     pub const fn new(call_id: usize, address: StackAddress, value: Word) -> StackOp {
         StackOp {
             call_id,
@@ -550,6 +552,23 @@ pub struct AccountOp {
     pub value_prev: Word,
 }
 
+impl AccountOp {
+    /// Create a new instance of a `AccountOp` from it's components.
+    pub const fn new(
+        address: Address,
+        field: AccountField,
+        value: Word,
+        value_prev: Word,
+    ) -> AccountOp {
+        AccountOp {
+            address,
+            field,
+            value,
+            value_prev,
+        }
+    }
+}
+
 impl fmt::Debug for AccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountOp { ")?;
@@ -734,6 +753,89 @@ impl Op for CallContextOp {
     }
 }
 
+impl CallContextOp {
+    /// Create a new instance of a `CallContextOp` from it's components.
+    pub const fn new(call_id: usize, field: CallContextField, value: Word) -> CallContextOp {
+        CallContextOp {
+            call_id,
+            field,
+            value,
+        }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::CallContext
+    }
+
+    /// Returns the call id associated to this Operation.
+    pub const fn call_id(&self) -> usize {
+        self.call_id
+    }
+
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
+        &self.value
+    }
+}
+
+/// Represents a field parameter of the TxReceipt that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TxReceiptField {
+    /// flag indicates whether a tx succeed or not
+    PostStateOrStatus,
+    /// the cumulative gas used in the block containing the transaction receipt
+    /// as of immediately after the transaction has happened.
+    CumulativeGasUsed,
+    /// record how many log entries in the receipt/tx , 0 if tx fails
+    LogLength,
+}
+
+/// Represents TxReceipt read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxReceiptOp {
+    /// tx_id of TxReceipt
+    pub tx_id: usize,
+    /// field of TxReceipt
+    pub field: TxReceiptField,
+    /// value of TxReceipt
+    pub value: u64,
+}
+
+impl fmt::Debug for TxReceiptOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxReceiptOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, field: {:?}, value: {:?}",
+            self.tx_id, self.field, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxReceiptOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxReceiptOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.field).cmp(&(&other.tx_id, &other.field))
+    }
+}
+
+impl Op for TxReceiptOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxReceipt(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("TxReceiptOp can't be reverted")
+    }
+}
+
 /// Generic enum that wraps over all the operation types possible.
 /// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
@@ -756,6 +858,8 @@ pub enum OpEnum {
     AccountDestructed(AccountDestructedOp),
     /// CallContext
     CallContext(CallContextOp),
+    /// TxReceipt
+    TxReceipt(TxReceiptOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.

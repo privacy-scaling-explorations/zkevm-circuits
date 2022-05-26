@@ -56,7 +56,6 @@
 //! use mock::test_ctx::{TestContext, helpers::*};
 //! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
-//! use pairing::arithmetic::FieldExt;
 //!
 //! let input_trace = r#"
 //! [

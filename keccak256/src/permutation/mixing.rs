@@ -1,8 +1,8 @@
 use super::super::arith_helpers::*;
 use super::tables::FromBase9TableConfig;
 use super::{
-    absorb::AbsorbConfig, iota_b13::IotaB13Config, iota_b9::IotaB9Config,
-    state_conversion::StateBaseConversion,
+    absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota_b13::IotaB13Config,
+    iota_b9::IotaB9Config,
 };
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
@@ -21,7 +21,7 @@ pub struct MixingConfig<F> {
     iota_b9_config: IotaB9Config<F>,
     iota_b13_config: IotaB13Config<F>,
     absorb_config: AbsorbConfig<F>,
-    base_conv_config: StateBaseConversion<F>,
+    base_conv_config: BaseConversionConfig<F>,
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
     q_flag: Selector,
@@ -92,7 +92,9 @@ impl<F: Field> MixingConfig<F> {
         let absorb_config = AbsorbConfig::configure(meta, state);
 
         let base_info = table.get_base_info(false);
-        let base_conv_config = StateBaseConversion::configure(meta, state, base_info, flag);
+        let base_conv_lane = meta.advice_column();
+        let base_conv_config =
+            BaseConversionConfig::configure(meta, base_info, base_conv_lane, flag);
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
@@ -270,7 +272,7 @@ impl<F: Field> MixingConfig<F> {
         // Base conversion assign
         let base_conv_cells =
             self.base_conv_config
-                .assign_region(layouter, &out_state_absorb_cells, flag.clone())?;
+                .assign_state(layouter, &out_state_absorb_cells, flag.clone())?;
 
         // IotaB13
         let mix_res = {
@@ -331,10 +333,10 @@ mod tests {
     use crate::common::{State, PERMUTATION, ROUND_CONSTANTS};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 
@@ -356,13 +358,6 @@ mod tests {
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
             table: FromBase9TableConfig<F>,
-        }
-
-        impl<F: Field> MyConfig<F> {
-            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-                self.table.load(layouter)?;
-                Ok(())
-            }
         }
 
         impl<F: Field> Circuit<F> for MyCircuit<F> {

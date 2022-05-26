@@ -12,14 +12,15 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::MemoryExpansionGadget,
-            select, MemoryAddress, Word,
+            select, CachedRegion, MemoryAddress, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
+
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -135,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
@@ -213,9 +214,6 @@ mod test {
                 + OpcodeId::PUSH32.as_u64()
                 + OpcodeId::PUSH32.as_u64()
                 + gas_cost,
-            // we have to disable state circit now, since the memory size used
-            // here is too large
-            enable_state_circuit_test: false,
             ..Default::default()
         };
 
