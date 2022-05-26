@@ -39,18 +39,8 @@ fn gen_log_step(
 
     let call_id = state.call()?.call_id;
     let mut stack_index = 0;
-    state.push_stack_op(
-        &mut exec_step,
-        RW::READ,
-        geth_step.stack.nth_last_filled(stack_index),
-        mstart,
-    )?;
-    state.push_stack_op(
-        &mut exec_step,
-        RW::READ,
-        geth_step.stack.nth_last_filled(stack_index + 1),
-        msize,
-    )?;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(stack_index), mstart)?;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(stack_index + 1), msize)?;
 
     stack_index += 1;
 
@@ -115,16 +105,9 @@ fn gen_log_step(
         _ => panic!("currently only handle succeful log state"),
     };
 
-    //let mut topics = Vec::with_capacity(topic_length);
-
     for i in 0..topic_length {
         let topic = geth_step.stack.nth_last(2 + i)?;
-        state.push_stack_op(
-            &mut exec_step,
-            RW::READ,
-            geth_step.stack.nth_last_filled(stack_index + 1),
-            topic,
-        )?;
+        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(stack_index + 1), topic)?;
         stack_index += 1;
 
         if state.call()?.is_persistent {
@@ -157,11 +140,13 @@ fn gen_log_copy_step(
     // Get memory data
     let memory_address: MemoryAddress = Word::from(src_addr).try_into()?;
 
-    let mem_read_value = geth_steps[0]
-        .memory
-        .read_word(memory_address)
-        .unwrap_or_else(|_| Word::zero())
-        .to_be_bytes();
+    // let mem_read_value = geth_steps[0]
+    //     .memory
+    //     .read_word(memory_address)
+    //     .unwrap_or_else(|_| Word::zero())
+    //     .to_be_bytes();
+    let mem_read_value = geth_steps[0].memory.read_word(memory_address).to_be_bytes();
+
     
     let data_end_index = std::cmp::min(bytes_left, MAX_COPY_BYTES);
     for idx in 0..data_end_index {

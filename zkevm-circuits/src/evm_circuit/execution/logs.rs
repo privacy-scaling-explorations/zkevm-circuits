@@ -50,10 +50,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         // Pop mstart_address, msize from stack
         cb.stack_pop(mstart.clone().expr());
         cb.stack_pop(msize.expr());
-
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
         cb.require_zero("is_static_call is false", is_static_call.expr());
@@ -213,6 +211,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+
         let memory_address =
             self.memory_address
                 .assign(region, offset, memory_start, msize, block.randomness)?;
@@ -274,28 +273,28 @@ mod test {
         // zero topic: log0
         test_log_ok(&[]);
         // one topic: log1
-        // test_log_ok(&[Word::from(0xA0)]);
-        // // two topics: log2
-        // test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
-        // // three topics: log3
-        // test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
-        // // four topics: log4
-        // test_log_ok(&[
-        //     Word::from(0xA0),
-        //     Word::from(0xef),
-        //     Word::from(0xb0),
-        //     Word::from(0x37),
-        // ]);
+        test_log_ok(&[Word::from(0xA0)]);
+        // two topics: log2
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
+        // three topics: log3
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        // four topics: log4
+        test_log_ok(&[
+            Word::from(0xA0),
+            Word::from(0xef),
+            Word::from(0xb0),
+            Word::from(0x37),
+        ]);
     }
 
     #[test]
     fn multi_log_tests() {
         // zero topic: log0
-        test_log_ok(&[]);
+        test_multi_log_ok(&[]);
         // one topic: log1
         test_multi_log_ok(&[Word::from(0xA0)]);
         // two topics: log2
-        test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
+        test_multi_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
         // // three topics: log3
         // test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
         // // four topics: log4
@@ -331,8 +330,8 @@ mod test {
         let cur_op_code = log_codes[topic_count];
 
         let mstart = 0x00usize;
-        //  let msize = 0x10usize;
-        //  this is hack to test no CopyToLog circuit
+        //let msize = 0x10usize;
+        // this is hack to test no CopyToLog circuit
         let msize = 0x20usize;
         let mut code = Bytecode::default();
         // make dynamic topics push operations
