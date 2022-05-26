@@ -31,8 +31,8 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let code_source = cb.curr.state.code_source.clone();
-        let codesize = cb.bytecode_length(code_source.expr());
+        let code_hash = cb.curr.state.code_hash.clone();
+        let codesize = cb.bytecode_length(code_hash.expr());
         let codesize_rlc = RandomLinearCombination::random_linear_combine_expr(
             [codesize.expr()],
             cb.power_of_randomness(),
