@@ -64,7 +64,7 @@ fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k
         Error::Synthesis
     })?;
     let pk_be = pk.serialize();
-    let pk_le = pk_bytes_swap_endianness(&pk_be[1..64]);
+    let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
     let mut pk_bytes = secp256k1::Serialized::default();
     pk_bytes.as_mut().copy_from_slice(&pk_le[..]);
     let pk = Secp256k1Affine::from_bytes(&pk_bytes);

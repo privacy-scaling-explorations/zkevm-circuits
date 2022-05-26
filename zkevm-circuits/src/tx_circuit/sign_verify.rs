@@ -72,10 +72,7 @@ pub(crate) fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
 
 /// Return an expression that builds an integer element in the field from the
 /// `bytes` in big endian.
-fn int_from_bytes_be<'a, F: FieldExt>(
-    // bytes: impl IntoIterator<Item = &'a Expression<F>>,
-    bytes: &[Expression<F>],
-) -> Expression<F> {
+fn int_from_bytes_be<F: FieldExt>(bytes: &[Expression<F>]) -> Expression<F> {
     // sum_{i = 0}^{N} bytes[i] * 256^i
     let mut res = 0u8.expr();
     for (i, byte) in bytes.iter().rev().enumerate() {
