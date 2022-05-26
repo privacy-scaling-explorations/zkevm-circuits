@@ -98,13 +98,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(rot_branch_init),
             );
-            let is_leaf_without_branch =
+            let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
+
             constraints.push((
                 "is_long + is_short = 1 when leaf drifts",
                 q_enable.clone()
-                    * (is_branch_s_placeholder + is_branch_c_placeholder)
-                    * (one.clone() - is_leaf_without_branch.clone())
+                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (is_long.clone() + is_short.clone() - one.clone()),
             ));
 
@@ -119,22 +120,46 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             rlc = rlc + c_rlp2 * r_table[R_TABLE_LEN - 1].clone() * r_table[2].clone();
 
             let acc = meta.query_advice(acc_s, Rotation::cur());
-            constraints.push(("Leaf key acc", q_enable * (rlc - acc)));
+            constraints.push(("Leaf key acc", q_enable
+                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
+                    * (rlc - acc)));
 
             constraints
         });
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
+            let is_branch_s_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let is_branch_c_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let is_leaf_in_first_storage_level =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
             let is_short = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
 
-            q_enable * is_short
+            q_enable * is_short * (is_branch_s_placeholder + is_branch_c_placeholder)
+                * (one.clone() - is_leaf_in_first_storage_level.clone())
         };
         let sel_long = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
+            let is_branch_s_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let is_branch_c_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+            let is_leaf_in_first_storage_level =
+                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
             let is_long = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
 
-            q_enable * is_long
+            q_enable * is_long * (is_branch_s_placeholder + is_branch_c_placeholder)
+                * (one.clone() - is_leaf_in_first_storage_level.clone())
         };
 
         /*
@@ -241,7 +266,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init - 1),
             );
 
-            let is_account_in_first_storage_level =
+            let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             let is_one_nibble = get_is_extension_node_one_nibble(meta, s_advices, rot_branch_init);
@@ -270,9 +295,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             constraints.push((
                 "Leaf key acc s_advice0",
                 q_enable.clone()
+                    * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (s_advice0.clone() - c32.clone())
                     * sel2.clone()
-                    * (one.clone() - is_account_in_first_storage_level.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * is_short.clone(),
             ));
 
@@ -295,7 +321,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_short.clone()
-                    * (one.clone() - is_account_in_first_storage_level.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_short.clone()),
             ));
             constraints.push((
@@ -303,7 +329,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_short.clone()
-                    * (one.clone() - is_account_in_first_storage_level.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_short.clone()),
             ));
 
@@ -319,7 +345,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * (s_advice1.clone() - c32.clone())
                     * sel2.clone()
-                    * (one.clone() - is_account_in_first_storage_level.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * is_long.clone(),
             ));
 
@@ -343,7 +369,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * is_long.clone()
-                    * (one.clone() - is_account_in_first_storage_level.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
             ));
             constraints.push((
@@ -351,7 +377,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * is_long.clone()
-                    * (one.clone() - is_account_in_first_storage_level.clone())
+                    * (one.clone() - is_leaf_in_first_storage_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
             ));
 

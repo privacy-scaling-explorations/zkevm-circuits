@@ -794,6 +794,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 let is_account_leaf_in_added_branch =
                     meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
 
+                // TODO: first level?
                 q_not_first * not_first_level * is_account_leaf_in_added_branch
             },
             not_first_level,
