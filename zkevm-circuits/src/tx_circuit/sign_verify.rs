@@ -29,7 +29,11 @@ use maingate::{
     RangeConfig, RangeInstructions, RegionCtx, UnassignedValue,
 };
 use secp256k1::Secp256k1Affine;
-use std::{convert::TryInto, io::Cursor, marker::PhantomData};
+use std::{
+    convert::{TryFrom, TryInto},
+    io::Cursor,
+    marker::PhantomData,
+};
 
 /// Power of randomness vector size required for the SignVerifyChip
 pub const POW_RAND_SIZE: usize = 63;
@@ -55,14 +59,26 @@ const KECCAK_OUTPUT_RLC: usize = 3;
 const NUMBER_OF_LIMBS: usize = 4;
 const BIT_LEN_LIMB: usize = 72;
 
+/// Return a copy of the serialized public key with swapped Endianness.
+pub(crate) fn pk_bytes_swap_endianness<T: Clone>(pk: &[T]) -> [T; 64] {
+    assert_eq!(pk.len(), 64);
+    let mut pk_swap = <&[T; 64]>::try_from(pk)
+        .map(|r| r.clone())
+        .expect("pk.len() != 64");
+    pk_swap[..32].reverse();
+    pk_swap[32..].reverse();
+    pk_swap
+}
+
 /// Return an expression that builds an integer element in the field from the
-/// `bytes` in little endian.
-fn int_from_bytes_le<'a, F: FieldExt>(
-    bytes: impl IntoIterator<Item = &'a Expression<F>>,
+/// `bytes` in big endian.
+fn int_from_bytes_be<'a, F: FieldExt>(
+    // bytes: impl IntoIterator<Item = &'a Expression<F>>,
+    bytes: &[Expression<F>],
 ) -> Expression<F> {
     // sum_{i = 0}^{N} bytes[i] * 256^i
     let mut res = 0u8.expr();
-    for (i, byte) in bytes.into_iter().enumerate() {
+    for (i, byte) in bytes.iter().rev().enumerate() {
         res = res + byte.clone() * Expression::Constant(F::from(256).pow(&[i as u64, 0, 0, 0]))
     }
     res
@@ -165,7 +181,7 @@ impl<F: FieldExt> SignVerifyConfig<F> {
             // Column 1: input_rlc (pk_rlc)
             let keccak_input_rlc =
                 meta.query_advice(keccak_table[KECCAK_INPUT_RLC], Rotation::cur());
-            let mut pk_be: [Expression<F>; 64] = pk
+            let pk_le: [Expression<F>; 64] = pk
                 .map(|coord| coord.map(|c| meta.query_advice(c, Rotation::cur())))
                 .iter()
                 .flatten()
@@ -173,8 +189,7 @@ impl<F: FieldExt> SignVerifyConfig<F> {
                 .collect::<Vec<Expression<F>>>()
                 .try_into()
                 .expect("vector to array of size 64");
-            pk_be[..32].reverse();
-            pk_be[32..].reverse();
+            let pk_be = pk_bytes_swap_endianness(&pk_le);
             let pk_rlc =
                 RandomLinearCombination::random_linear_combine_expr(pk_be, &power_of_randomness);
             table_map.push((selector.clone() * pk_rlc, keccak_input_rlc));
@@ -202,7 +217,7 @@ impl<F: FieldExt> SignVerifyConfig<F> {
             let pk_hash = pk_hash.map(|c| meta.query_advice(c, Rotation::cur()));
             let address = meta.query_advice(address, Rotation::cur());
 
-            let addr_from_pk = int_from_bytes_le(pk_hash[32 - 20..].iter().rev());
+            let addr_from_pk = int_from_bytes_be(&pk_hash[32 - 20..]);
 
             vec![q_enable * (address - addr_from_pk)]
         });
@@ -567,15 +582,12 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             )?;
         }
 
-        let mut pk_x_be = pk_x_le;
-        pk_x_be.reverse();
-        let mut pk_y_be = pk_y_le;
-        pk_y_be.reverse();
-        let mut pk_bytes_be = [0u8; 64];
-        pk_bytes_be[..32].copy_from_slice(&pk_x_be);
-        pk_bytes_be[32..].copy_from_slice(&pk_y_be);
+        let mut pk_le = [0u8; 64];
+        pk_le[..32].copy_from_slice(&pk_x_le);
+        pk_le[32..].copy_from_slice(&pk_y_le);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
         let mut keccak = Keccak::default();
-        keccak.update(&pk_bytes_be);
+        keccak.update(&pk_be);
         let pk_hash = keccak.digest();
         let address = pub_key_hash_to_address(&pk_hash);
 
@@ -612,7 +624,7 @@ impl<F: FieldExt, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
                 msg_hash_rlc: msg_hash_rlc_assigned,
             },
             KeccakAux {
-                input: pk_bytes_be,
+                input: pk_be,
                 output: pk_hash.try_into().expect("vec to array of size 32"),
             },
         ))

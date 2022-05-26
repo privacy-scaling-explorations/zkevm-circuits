@@ -26,7 +26,7 @@ use num_bigint::BigUint;
 use rlp::RlpStream;
 use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
-use sign_verify::{SignData, SignVerifyChip, SignVerifyConfig};
+use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerifyConfig};
 pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 use std::convert::TryInto;
 use std::marker::PhantomData;
@@ -64,10 +64,7 @@ fn recover_pk(v: u8, r: &Word, s: &Word, msg_hash: &[u8; 32]) -> Result<Secp256k
         Error::Synthesis
     })?;
     let pk_be = pk.serialize();
-    let mut pk_le = [0u8; 64];
-    pk_le.copy_from_slice(&pk_be[1..]);
-    pk_le[..32].reverse();
-    pk_le[32..].reverse();
+    let pk_le = pk_bytes_swap_endianness(&pk_be[1..64]);
     let mut pk_bytes = secp256k1::Serialized::default();
     pk_bytes.as_mut().copy_from_slice(&pk_le[..]);
     let pk = Secp256k1Affine::from_bytes(&pk_bytes);
