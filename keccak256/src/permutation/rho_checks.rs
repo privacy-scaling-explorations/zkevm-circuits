@@ -138,23 +138,18 @@ impl<F: Field> LaneRotateConversionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         base13_to_9_table: &Base13toBase9TableConfig<F>,
         special_chunk_table: &SpecialChunkTableConfig<F>,
+        advices: [Column<Advice>; 5],
+        fixed: [Column<Fixed>; 3],
     ) -> Self {
         let q_normal = meta.complex_selector();
         let q_special = meta.complex_selector();
-        let input_coef = meta.advice_column();
-        let input_pob = meta.fixed_column();
-        let input_acc = meta.advice_column();
-        let output_coef = meta.advice_column();
-        let output_pob = meta.fixed_column();
-        let output_acc = meta.advice_column();
-        let overflow_detector = meta.advice_column();
-
-        let constant = meta.fixed_column();
-        meta.enable_constant(constant);
+        let [input_coef, input_acc, output_coef, output_acc, overflow_detector] = advices;
+        let [input_pob, output_pob, constant] = fixed;
 
         meta.enable_equality(input_acc);
         meta.enable_equality(output_acc);
         meta.enable_equality(overflow_detector);
+        meta.enable_constant(constant);
 
         // | coef | 13**x | acc       |
         // |------|-------|-----------|

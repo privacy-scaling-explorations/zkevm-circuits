@@ -44,10 +44,16 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
+        let fixed = [
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column()
+        ];
+
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state);
+        let rho_config = RhoConfig::configure(meta, state, fixed);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
