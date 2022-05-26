@@ -33,7 +33,7 @@ struct Args {
     #[clap(
         short,
         long,
-        default_value = "tests/src/GeneralStateTestsFiller/VMTests/**"
+        default_value = "tests/src/GeneralStateTestsFiller/**"
     )]
     path: String,
 

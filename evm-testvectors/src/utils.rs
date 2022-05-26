@@ -1,5 +1,5 @@
 use anyhow::Result;
-use eth_types::{evm_types::OpcodeId, GethExecTrace, U256};
+use eth_types::{evm_types::OpcodeId, GethExecTrace, U256, H256};
 use prettytable::Table;
 use zkevm_circuits::test_util::{get_fixed_table, BytecodeTestConfig, FixedTableConfig};
 
@@ -54,11 +54,18 @@ pub fn config_bytecode_test_config<OPS: Iterator<Item = OpcodeId>>(
 }
 
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
+    fn  u256_to_str(u: &U256) -> String {
+        if u.leading_zeros() < 26 {
+            format!("{:x}",u)
+        } else {
+            u.to_string()
+        }
+    }
     fn kv(storage: std::collections::HashMap<U256, U256>) -> Vec<String> {
         let mut keys: Vec<_> = storage.keys().collect();
         keys.sort();
         keys.iter()
-            .map(|k| format!("{:?}: {:?}", k, storage[k]))
+            .map(|k| format!("{}: {}", u256_to_str(k), u256_to_str(&storage[k])))
             .collect()
     }
     fn split(strs: Vec<String>, len: usize) -> String {
@@ -105,7 +112,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
             step.error.unwrap_or("".to_string()),
-            split(step.stack.0.iter().map(ToString::to_string).collect(), 30),
+            split(step.stack.0.iter().map(u256_to_str).collect(), 30),
             split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
             split(kv(step.storage.0), 30)
         ]);
