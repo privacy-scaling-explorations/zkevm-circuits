@@ -194,7 +194,12 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             selectors[idx] = true;
             bytes[idx] = if selectors[idx] && src_addr < aux.src_addr_end() as usize {
                 let indice = step.rw_indices[rw_idx];
-                rw_idx += 2;
+                if is_persistent {
+                    rw_idx += 2;
+                } else {
+                    rw_idx += 1;
+                }
+
                 block.rws[indice].memory_value()
             } else {
                 0
@@ -260,8 +265,10 @@ pub mod test {
         let mut selectors = vec![0u8; MAX_COPY_BYTES];
         let mut rw_offset: usize = 0;
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
-        let memory_idx_start = memory_rws.len();
         let mut txlog_rws: Vec<Rw> = Vec::new();
+        let mut rw_indices: Vec<(RwTableTag, usize)> = Vec::new();
+        let mut memory_indice = 0;
+        let mut log_data_indice = 0;
 
         for (idx, selector) in selectors.iter_mut().enumerate() {
             if idx < bytes_left {
@@ -276,6 +283,8 @@ pub mod test {
                         memory_address: src_addr + idx as u64,
                         byte: bytes_map[&addr],
                     });
+                    rw_indices.push((RwTableTag::Memory, memory_indice + data_start_index));
+                    memory_indice += 1;
                     rw_offset += 1;
                     bytes_map[&addr]
                 } else {
@@ -291,12 +300,13 @@ pub mod test {
                         index: data_start_index + idx,
                         value: Word::from(byte),
                     });
+                    rw_indices.push((RwTableTag::TxLog, log_data_indice + data_start_index));
+                    log_data_indice += 1;
                     rw_offset += 1;
                 }
             }
         }
         let log_rws: &mut Vec<_> = rws.0.entry(RwTableTag::TxLog).or_insert_with(Vec::new);
-        let log_idx_start = log_rws.len();
         log_rws.extend(txlog_rws);
 
         let aux_data = StepAuxiliaryData::new(
@@ -307,17 +317,9 @@ pub mod test {
             CopyDetails::Log((is_persistent, tx_id, data_start_index)),
         );
 
-        let memory_indices: Vec<(RwTableTag, usize)> = (memory_idx_start
-            ..memory_idx_start + bytes_left)
-            .map(|idx| (RwTableTag::Memory, idx))
-            .collect();
-        let log_indices: Vec<(RwTableTag, usize)> = (log_idx_start..log_idx_start + bytes_left)
-            .map(|idx| (RwTableTag::TxLog, idx))
-            .collect();
-
         let step = ExecStep {
             execution_state: ExecutionState::CopyToLog,
-            rw_indices: [memory_indices.as_slice(), log_indices.as_slice()].concat(),
+            rw_indices,
             rw_counter,
             program_counter,
             stack_pointer,
