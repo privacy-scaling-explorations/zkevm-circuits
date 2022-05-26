@@ -94,7 +94,7 @@ impl<F: Field> MixingConfig<F> {
         let base_info = table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
         let base_conv_config =
-            BaseConversionConfig::configure(meta, base_info, base_conv_lane, flag);
+            BaseConversionConfig::configure(meta, base_info, base_conv_lane, flag, state[0..5].try_into().unwrap());
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);

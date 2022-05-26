@@ -47,7 +47,7 @@ impl<F: Field> KeccakFConfig<F> {
         let fixed = [
             meta.fixed_column(),
             meta.fixed_column(),
-            meta.fixed_column()
+            meta.fixed_column(),
         ];
 
         // theta
@@ -80,8 +80,13 @@ impl<F: Field> KeccakFConfig<F> {
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
-        let base_conversion_config =
-            BaseConversionConfig::configure(meta, base_info, base_conv_lane, base_conv_activator);
+        let base_conversion_config = BaseConversionConfig::configure(
+            meta,
+            base_info,
+            base_conv_lane,
+            base_conv_activator,
+            state[0..5].try_into().unwrap(),
+        );
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
