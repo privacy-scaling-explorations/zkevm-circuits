@@ -61,11 +61,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Construct memory address in the destionation (memory) to which we copy code.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size.clone());
 
-        // Fetch the source code running in current environment.
-        let code_source = cb.curr.state.code_source.clone();
+        // Fetch the hash of bytecode running in current environment.
+        let code_hash = cb.curr.state.code_hash.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        let code_size = cb.bytecode_length(code_source.expr());
+        let code_size = cb.bytecode_length(code_hash.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 let next_dst_addr = cb.query_cell();
                 let next_bytes_left = cb.query_cell();
                 let next_src_addr_end = cb.query_cell();
-                let next_code_source = cb.query_word();
+                let next_code_hash = cb.query_word();
 
                 cb.require_equal(
                     "next_src_addr == code_offset",
@@ -114,9 +114,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                     code_size.expr(),
                 );
                 cb.require_equal(
-                    "next_code_source == code_source",
-                    next_code_source.expr(),
-                    code_source.expr(),
+                    "next_code_hash == code_hash",
+                    next_code_hash.expr(),
+                    code_hash.expr(),
                 );
             },
         );
@@ -179,8 +179,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             .bytecodes
             .iter()
             .find(|b| {
-                let CodeSource::Account(code_source) = &call.code_source;
-                b.hash == *code_source
+                let CodeSource::Account(code_hash) = &call.code_source;
+                b.hash == *code_hash
             })
             .expect("could not find current environment's bytecode");
         self.code_size
