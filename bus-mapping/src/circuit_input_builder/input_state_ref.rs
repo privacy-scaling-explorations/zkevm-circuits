@@ -280,9 +280,9 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    /// Push a read type [`AccountOp`] into the
+    /// Push a write type [`TxLogOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter)  and `call_id`, and then
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
