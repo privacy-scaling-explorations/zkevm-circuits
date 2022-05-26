@@ -5,7 +5,7 @@ help: ## Display this help screen
 
 clippy: ## Run clippy checks over all workspace members
 	@cargo check --all-features
-	@cargo clippy --all-features --all-targets -- -D clippy::all
+	@cargo clippy --all-features --all-targets -- -D warnings
 
 doc: ## Generate and tests docs including private items
 	@cargo doc --no-deps --all --document-private-items
@@ -17,10 +17,13 @@ fmt: ## Check whether the code is formated correctly
 test: ## Run tests for all the workspace members
 	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
 
+test_doc: ## Test the docs
+	@cargo test --release --all --all-features --doc
+
 test_benches: ## Compiles the benchmarks
 	@cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
 
-test-all: fmt doc clippy test_benches test ## Run all the CI checks locally (in your actual toolchain) 
+test-all: fmt doc clippy test_doc test_benches test ## Run all the CI checks locally (in your actual toolchain) 
 
 evm_bench: ## Run Evm Circuit benchmarks
 	@cargo test --profile bench bench_evm_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
