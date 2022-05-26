@@ -389,10 +389,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // we only check the key in leaf_key_in_added_branch corresponds to the
         // one in leaf_key.
 
-        // If the branch is placeholder, we need to check that the leaf without the
-        // first nibble has a hash which is in the branch at drifted_pos
-        // position.
-
         // In case we have a placeholder branch at position S:
         // (1) branch (17 rows) which contains leaf that turns into branch at
         // is_modified position (S positions) |     branch (17 rows) that
@@ -415,14 +411,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
         // is_leaf_in_added_branch and the value is the same as it is in the
         // leaf value S (3).
 
-        meta.lookup_any("leaf_key_in_added_branch 1", |meta| {
+        meta.lookup_any("leaf_key_in_added_branch: drifted leaf hash the branch (S)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
             let mut rlc = meta.query_advice(acc_s, Rotation::cur());
             let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
 
-            // If branch placeholder in S, value is 3 above.
+            // If branch placeholder in S, leaf value is 3 above.
             let rot_val = -3;
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation(rot_val));
@@ -431,6 +427,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
             let s_rlp2 = meta.query_advice(s_rlp2, Rotation(rot_val));
             rlc = rlc + s_rlp2 * acc_mult.clone() * r_table[0].clone();
 
+            // TODO: use already computed RLC value in leaf row
             rlc = rlc
                 + compute_rlc(
                     meta,
@@ -442,8 +439,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 );
             // Note: value doesn't reach c_rlp1.
 
-            // If leaf without branch, then there is no added branch.
-            let is_leaf_without_branch =
+            let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Any rotation that lands into branch children can be used.
@@ -457,25 +453,27 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * rlc
                     * is_branch_s_placeholder.clone()
-                    * (one.clone() - is_leaf_without_branch.clone()),
+                    * (one.clone() - is_leaf_in_first_storage_level.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            // placeholder branch contains hash of a leaf that moved to added branch
+            // s_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
+            // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
+            // is checked in branch_parallel)
             let s_mod_node_hash_rlc = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 q_enable.clone()
                     * s_mod_node_hash_rlc
                     * is_branch_s_placeholder.clone()
-                    * (one.clone() - is_leaf_without_branch),
+                    * (one.clone() - is_leaf_in_first_storage_level),
                 keccak_table_i,
             ));
 
             constraints
         });
 
-        meta.lookup_any("leaf_key_in_added_branch 2", |meta| {
+        meta.lookup_any("leaf_key_in_added_branch: drifted leaf hash the branch (C)", |meta| {
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
 
@@ -502,8 +500,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 );
             // Note: value doesn't reach c_rlp1.
 
-            // If leaf without branch, then there is no added branch.
-            let is_leaf_without_branch =
+            let is_leaf_in_first_storage_level =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
 
             // Any rotation that lands into branch children can be used.
@@ -517,18 +514,20 @@ impl<F: FieldExt> LeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * rlc
                     * is_branch_c_placeholder.clone()
-                    * (one.clone() - is_leaf_without_branch.clone()),
+                    * (one.clone() - is_leaf_in_first_storage_level.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            // placeholder branch contains hash of a leaf that moved to added branch
+            // c_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
+            // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
+            // is checked in branch_parallel)
             let c_mod_node_hash_rlc = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 q_enable.clone()
                     * c_mod_node_hash_rlc
                     * is_branch_c_placeholder.clone()
-                    * (one - is_leaf_without_branch),
+                    * (one - is_leaf_in_first_storage_level),
                 keccak_table_i,
             ));
 

@@ -12,7 +12,7 @@ use crate::{
         mult_diff_lookup, range_lookups,
     },
     mpt::FixedTableTag,
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND},
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND},
 };
 
 use crate::param::{
@@ -38,10 +38,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         c_rlp1: Column<Advice>,
         c_rlp2: Column<Advice>,
         s_advices: [Column<Advice>; HASH_WIDTH],
+        c_advices0: Column<Advice>,
         s_mod_node_hash_rlc: Column<Advice>,
         c_mod_node_hash_rlc: Column<Advice>,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
+        acc_mult_c: Column<Advice>,
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -277,18 +279,18 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                     * (one.clone() - is_leaf_in_first_level.clone())
             ));
 
-            let mut key_rlc_long = key_rlc_start.clone()
+            let mut key_rlc = key_rlc_start.clone()
                 + (s_advice1.clone() - c48.clone()) * sel1.clone() * key_mult.clone();
 
             for ind in 2..HASH_WIDTH {
                 let s = meta.query_advice(s_advices[ind], Rotation::cur());
                 key_mult = key_mult * r_table[0].clone();
-                key_rlc_long = key_rlc_long + s * key_mult.clone();
+                key_rlc = key_rlc + s * key_mult.clone();
             }
 
             key_mult = key_mult * r_table[0].clone();
             let c_rlp1 = meta.query_advice(c_rlp1, Rotation::cur());
-            key_rlc_long = key_rlc_long + c_rlp1.clone() * key_mult;
+            key_rlc = key_rlc + c_rlp1.clone() * key_mult;
 
             // No need to distinguish between sel1 and sel2 here as it was already
             // when computing key_rlc.
@@ -297,21 +299,119 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
-                    * (leaf_key_s_rlc.clone() - key_rlc_long.clone()),
+                    * (leaf_key_s_rlc.clone() - key_rlc.clone()),
             ));
             constraints.push((
                 "Drifted leaf key placeholder C",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone())
-                    * (leaf_key_c_rlc.clone() - key_rlc_long.clone()),
+                    * (leaf_key_c_rlc.clone() - key_rlc.clone()),
             ));
 
+            constraints
+        });
+
+        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash the branch (S)", |meta| {
+            let q_enable = q_enable(meta);
+            let mut constraints = vec![];
+
+            let mut rlc = meta.query_advice(acc_s, Rotation::cur());
+            let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
+
+            /*
+            Leaf key S
+            Leaf key C
+            Nonce balance S
+            Nonce balance C
+            Storage codehash S
+            Storage codehash C
+            Drifted leaf (leaf in added branch)
+            */
+
+            let nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND);
+            let storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+
+            let acc_mult_after_nonce = meta.query_advice(acc_mult_c, Rotation(nonce_rot));
+
+            let s_rlp1_nonce = meta.query_advice(s_rlp1, Rotation(nonce_rot));
+            rlc = rlc + s_rlp1_nonce * acc_mult.clone();
+
+            let s_rlp2_nonce = meta.query_advice(s_rlp2, Rotation(nonce_rot));
+            let mut rind = 0;
+            rlc = rlc + s_rlp2_nonce * acc_mult.clone() * r_table[rind].clone();
+            rind += 1;
+
+            let c_rlp1_nonce = meta.query_advice(c_rlp1, Rotation(nonce_rot));
+            let c_rlp2_nonce = meta.query_advice(c_rlp2, Rotation(nonce_rot));
+            rlc = rlc + c_rlp1_nonce.clone() * acc_mult.clone() * r_table[rind].clone();
+            rind += 1;
+            rlc = rlc + c_rlp2_nonce.clone() * acc_mult.clone() * r_table[rind].clone();
+            rind += 1;
+
+            let s_advices0_nonce = meta.query_advice(s_advices[0], Rotation(nonce_rot));
+            rlc = rlc + s_advices0_nonce * r_table[rind].clone() * acc_mult.clone();
+            rind +=1;
+
+            let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(nonce_rot));
+            rlc = rlc + nonce_stored * r_table[rind].clone() * acc_mult.clone();
+            rind +=1;
+
+            let c_advices0_nonce = meta.query_advice(c_advices0, Rotation(nonce_rot));
+            rlc = rlc + c_advices0_nonce * r_table[rind].clone() * acc_mult.clone();
+            rind +=1;
+
+            let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(nonce_rot));
+            rlc = rlc + balance_stored * acc_mult_after_nonce.clone();
+
+            let s_rlp2_storage = meta.query_advice(s_rlp2, Rotation(storage_codehash_rot));
+            let c_rlp2_storage = meta.query_advice(c_rlp2, Rotation(storage_codehash_rot));
+
+            let acc_mult_prev = meta.query_advice(acc_mult_s, Rotation(nonce_rot));
+
+            rlc = rlc + s_rlp2_storage * acc_mult_prev.clone();
+
+            let storage_root_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(storage_codehash_rot));
+            let mut curr_r = acc_mult_prev.clone() * r_table[0].clone();
+            rlc = rlc + storage_root_stored * curr_r.clone();
+
+            curr_r = curr_r * r_table[31].clone();
+            rlc = rlc + c_rlp2_storage * curr_r.clone();
+
+            let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(storage_codehash_rot));
+            rlc = rlc + codehash_stored * curr_r.clone() * r_table[0].clone();
+
+            let is_leaf_in_first_level = one.clone() -  meta.query_advice(
+                not_first_level,
+                Rotation::cur(),
+            );
+
+            // Any rotation that lands into branch children can be used.
+            let rot = -17;
+            let is_branch_s_placeholder = meta.query_advice(
+                s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                Rotation(rot_branch_init),
+            );
+
             constraints.push((
-                "foo",
                 q_enable.clone()
-                    * sel1.clone()
-                    * (one.clone() - one.clone())
+                    * rlc
+                    * is_branch_s_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_level.clone()),
+                meta.query_fixed(keccak_table[0], Rotation::cur()),
+            ));
+
+            // s_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
+            // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
+            // is checked in branch_parallel)
+            let s_mod_node_hash_rlc = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
+            constraints.push((
+                q_enable.clone()
+                    * s_mod_node_hash_rlc
+                    * is_branch_s_placeholder.clone()
+                    * (one.clone() - is_leaf_in_first_level),
+                keccak_table_i,
             ));
 
             constraints
