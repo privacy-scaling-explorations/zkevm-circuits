@@ -80,11 +80,11 @@ fn gen_memory_copy_steps(
     let code_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
     let length = geth_steps[0].stack.nth_last(2)?.as_u64();
 
-    let code_source = state.call()?.code_hash;
-    let code = state.code(code_source)?;
+    let code_hash = state.call()?.code_hash;
+    let code = state.code(code_hash)?;
     let src_addr_end = code.len() as u64;
 
-    let code_source = code_source.to_word();
+    let code_hash = code_hash.to_word();
     let mut copied = 0;
     let mut steps = vec![];
     while copied < length {
@@ -98,7 +98,7 @@ fn gen_memory_copy_steps(
                 dest_offset + copied,
                 length - copied,
                 src_addr_end,
-                CopyDetails::Code(code_source),
+                CopyDetails::Code(code_hash),
             ),
             &code,
         )?;
