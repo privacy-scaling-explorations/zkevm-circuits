@@ -1,6 +1,6 @@
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 use crate::{
     evm_circuit::{
@@ -8,7 +8,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            Cell, RandomLinearCombination,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _transaction: &Transaction,

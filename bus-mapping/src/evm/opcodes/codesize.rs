@@ -1,6 +1,5 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::RW,
     Error,
 };
 
@@ -25,9 +24,8 @@ impl Opcode for Codesize {
 
         assert_eq!(codesize, geth_steps[1].stack.last()?.as_usize());
 
-        state.push_stack_op(
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled().map(|a| a - 1),
             codesize.into(),
         )?;
