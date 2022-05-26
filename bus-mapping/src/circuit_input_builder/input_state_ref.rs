@@ -9,7 +9,7 @@ use crate::{
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, RW,
+        StackOp, Target, TxLogField, TxLogOp, RW,
     },
     state_db::{CodeDB, StateDB},
     Error,
@@ -276,6 +276,29 @@ impl<'a> CircuitInputStateRef<'a> {
             step,
             RW::READ,
             AccountOp::new(address, field, value, value_prev),
+        );
+        Ok(())
+    }
+
+    /// Push a read type [`AccountOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter)  and `call_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn tx_log_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        log_id: usize,
+        field: TxLogField,
+        index: usize,
+        value: Word,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
+            TxLogOp::new(tx_id, log_id, field, index, value),
         );
         Ok(())
     }

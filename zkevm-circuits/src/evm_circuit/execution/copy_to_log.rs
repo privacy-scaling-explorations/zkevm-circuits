@@ -150,7 +150,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {

@@ -814,20 +814,19 @@ impl Rw {
             }
             Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
-            | Self::Stack { value, .. }=> {
+            | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+            }
+
+            Self::TxLog {
+                field_tag, value, ..
+            } => match field_tag {
+                TxLogFieldTag::Address => value.to_scalar().unwrap(),
+                _ => {
+                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                }
             },
 
-            Self::TxLog {field_tag, value, .. } =>{
-                match field_tag {
-                    TxLogFieldTag::Address => value.to_scalar().unwrap(),
-                    _ => RandomLinearCombination::random_linear_combine(
-                        value.to_le_bytes(),
-                        randomness,
-                    ),
-                }
-            }
-            
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),

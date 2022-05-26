@@ -62,7 +62,7 @@ impl ExecStep {
             call_index,
             rwc,
             reversible_write_counter,
-            log_id: log_id,
+            log_id,
             bus_mapping_instance: Vec::new(),
             error: None,
             aux_data: None,

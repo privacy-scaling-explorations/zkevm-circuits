@@ -268,6 +268,7 @@ mod test {
 
     use crate::test_util::run_test_circuits;
 
+    //TODO：add is_persistent = false cases
     #[test]
     fn log_tests() {
         // zero topic: log0
@@ -295,28 +296,22 @@ mod test {
         test_multi_log_ok(&[Word::from(0xA0)]);
         // two topics: log2
         test_multi_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
-        // // three topics: log3
-        // test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
-        // // four topics: log4
-        // test_log_ok(&[
-        //     Word::from(0xA0),
-        //     Word::from(0xef),
-        //     Word::from(0xb0),
-        //     Word::from(0x37),
-        // ]);
+        // three topics: log3
+        test_multi_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        // four topics: log4
+        test_multi_log_ok(&[
+            Word::from(0xA0),
+            Word::from(0xef),
+            Word::from(0xb0),
+            Word::from(0x37),
+        ]);
     }
 
-
+    // test single log code and single copy log step
     fn test_log_ok(topics: &[Word]) {
-        // prepare memory data
-        let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
-
-        let mut code_prepare = bytecode! {
-            // populate memory.
-            PUSH16(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-        };
+        let pushdata = "1234567890abcdef1234567890abcdef";
+        // prepare first 32 bytes for memory reading
+        let mut code_prepare = prepare_code(pushdata, 0);
 
         let log_codes = [
             OpcodeId::LOG0,
@@ -330,13 +325,11 @@ mod test {
         let cur_op_code = log_codes[topic_count];
 
         let mstart = 0x00usize;
-        //let msize = 0x10usize;
-        // this is hack to test no CopyToLog circuit
         let msize = 0x20usize;
         let mut code = Bytecode::default();
         // make dynamic topics push operations
-        for i in 0..topic_count {
-            code.push(32, topics[i]);
+        for topic in topics {
+            code.push(32, *topic);
         }
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
@@ -352,24 +345,13 @@ mod test {
             Ok(()),
         );
     }
-    
+
+    // test multi log op codes and multi copy log steps
     fn test_multi_log_ok(topics: &[Word]) {
         // prepare memory data
-        let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
-
-        let mut code_prepare = bytecode! {
-            // populate memory.
-            PUSH16(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-        };
-
-        let mut code_prepare2 = bytecode! {
-            // populate memory.
-            PUSH16(Word::from_big_endian(&pushdata))
-            PUSH1(0x05) // offset
-            MSTORE
-        };
+        let pushdata = "1234567890abcdef1234567890abcdef";
+        // prepare first 32 bytes for memory reading
+        let mut code_prepare = prepare_code(pushdata, 0);
 
         let log_codes = [
             OpcodeId::LOG0,
@@ -383,31 +365,29 @@ mod test {
         let cur_op_code = log_codes[topic_count];
 
         let mut mstart = 0x00usize;
-        //  let msize = 0x10usize;
-        //  this is hack to test no CopyToLog circuit
         let mut msize = 0x10usize;
-         // first log op code 
+        // first log op code
         let mut code = Bytecode::default();
         // make dynamic topics push operations
-        for i in 0..topic_count {
-            code.push(32, topics[i]);
+        for topic in topics {
+            code.push(32, *topic);
         }
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
-
 
         // second log op code
-        code.append(&code_prepare2.clone()); 
-        mstart = 0x05usize;
-        msize = 0x10usize;
-        for i in 0..topic_count {
-            code.push(32, topics[i]);
+        // prepare additinal bytes for memory reading
+        code.append(&prepare_code(pushdata, 0x20));
+        mstart = 0x00usize;
+        // when mszie > 0x20 (32) needs multi copy steps
+        msize = 0x30usize;
+        for topic in topics {
+            code.push(32, *topic);
         }
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
-
 
         code.write_op(OpcodeId::STOP);
         code_prepare.append(&code);
@@ -419,5 +399,19 @@ mod test {
             ),
             Ok(()),
         );
+    }
+
+    /// prepare memory reading data
+    fn prepare_code(data: &str, offset: u32) -> Bytecode {
+        // data is in hex format
+        assert_eq!(data.bytes().len(), 32);
+        // prepare memory data
+        let pushdata = hex::decode(data).unwrap();
+        return bytecode! {
+            // populate memory.
+            PUSH16(Word::from_big_endian(&pushdata))
+            PUSH1(offset) // offset
+            MSTORE
+        };
     }
 }
