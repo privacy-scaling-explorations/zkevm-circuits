@@ -29,14 +29,11 @@ impl<F: Field> BaseConversionConfig<F> {
         base_info: BaseInfo<F>,
         input_lane: Column<Advice>,
         parent_flag: Column<Advice>,
+        advices: [Column<Advice>; 5],
     ) -> Self {
         let q_running_sum = meta.selector();
         let q_lookup = meta.complex_selector();
-        let flag = meta.advice_column();
-        let input_coef = meta.advice_column();
-        let input_acc = meta.advice_column();
-        let output_coef = meta.advice_column();
-        let output_acc = meta.advice_column();
+        let [flag, input_coef, input_acc, output_coef, output_acc] = advices;
 
         meta.enable_equality(flag);
         meta.enable_equality(input_coef);
@@ -189,6 +186,7 @@ mod tests {
         pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
+    use itertools::Itertools;
     use num_bigint::BigUint;
     use pretty_assertions::assert_eq;
     #[test]
@@ -207,8 +205,14 @@ mod tests {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
                 let flag = meta.advice_column();
+                let advices = (0..5)
+                    .map(|_| meta.advice_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
                 let base_info = table.get_base_info(false);
-                let conversion = BaseConversionConfig::configure(meta, base_info, lane, flag);
+                let conversion =
+                    BaseConversionConfig::configure(meta, base_info, lane, flag, advices);
                 Self {
                     lane,
                     flag,
@@ -317,8 +321,14 @@ mod tests {
                 let table = FromBase9TableConfig::configure(meta);
                 let lane = meta.advice_column();
                 let flag = meta.advice_column();
+                let advices = (0..5)
+                    .map(|_| meta.advice_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
                 let base_info = table.get_base_info(false);
-                let conversion = BaseConversionConfig::configure(meta, base_info, lane, flag);
+                let conversion =
+                    BaseConversionConfig::configure(meta, base_info, lane, flag, advices);
                 Self {
                     lane,
                     flag,
@@ -424,8 +434,13 @@ mod tests {
                     .unwrap();
                 let flag = meta.advice_column();
                 let lane = meta.advice_column();
+                let advices = (0..5)
+                    .map(|_| meta.advice_column())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
                 let bi = table.get_base_info(false);
-                let conversion = BaseConversionConfig::configure(meta, bi, lane, flag);
+                let conversion = BaseConversionConfig::configure(meta, bi, lane, flag, advices);
                 Self {
                     flag,
                     state,
