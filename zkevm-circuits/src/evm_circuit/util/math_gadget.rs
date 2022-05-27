@@ -999,25 +999,20 @@ impl<F: Field> ShrWordsGadget<F> {
                         - shf_div64_eq2.expr()),
         );
         cb.require_equal(
-            "b64s[1] == \
-                (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq0 + \
-                (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq1 + \
-                a64s_hi[3] * shf_div64_eq2",
+            "Constrain b64s[1]",
             b64s[1].expr(),
             (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr()
                 + a64s_hi[3].expr() * shf_div64_eq2.expr(),
         );
         cb.require_equal(
-            "b64s[2] == \
-                (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq0 + \
-                a64s_hi[3] * shf_div64_eq1",
+            "Constrain b64s[2]",
             b64s[2].expr(),
             (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + a64s_hi[3].expr() * shf_div64_eq1.expr(),
         );
         cb.require_equal(
-            "b64s[3] == a64s_hi[3] * shf_div64_eq0",
+            "Constrain b64s[3]",
             b64s[3].expr(),
             a64s_hi[3].expr() * shf_div64_eq0.expr(),
         );
