@@ -97,6 +97,7 @@ impl<F: Field> KeccakFConfig<F> {
             round_ctant_b13,
             round_constants_b9,
             round_constants_b13,
+            state,
         );
 
         // Allocate the `out state correctness` gate selector
