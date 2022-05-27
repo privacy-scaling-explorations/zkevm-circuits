@@ -3,7 +3,7 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig, iota_b9::IotaB9Config, mixing::MixingConfig,
+        base_conversion::BaseConversionConfig, iota::IotaConfig, mixing::MixingConfig,
         pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
         xi::XiConfig,
     },
@@ -22,7 +22,7 @@ pub struct KeccakFConfig<F: Field> {
     theta_config: ThetaConfig<F>,
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
-    iota_b9_config: IotaB9Config<F>,
+    iota_config: IotaConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
@@ -44,6 +44,7 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
+        let flag = meta.advice_column();
         let fixed = [
             meta.fixed_column(),
             meta.fixed_column(),
@@ -57,21 +58,8 @@ impl<F: Field> KeccakFConfig<F> {
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
-        // Allocate space for the round constants in base-9 which is an
-        // instance column
-        let round_ctant_b9 = meta.advice_column();
-        meta.enable_equality(round_ctant_b9);
-        let round_constants_b9 = meta.instance_column();
-
-        // Allocate space for the round constants in base-13 which is an
-        // instance column
-        let round_ctant_b13 = meta.advice_column();
-        meta.enable_equality(round_ctant_b13);
-        let round_constants_b13 = meta.instance_column();
-
         // Iotab9
-        let iota_b9_config =
-            IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
+        let iota_config = IotaConfig::configure(meta, state[0], flag, fixed[0]);
 
         // Allocate space for the activation flag of the base_conversion.
         let base_conv_activator = meta.advice_column();
@@ -160,10 +148,7 @@ impl<F: Field> KeccakFConfig<F> {
             };
 
             // rho
-            state = {
-                // assignment
-                self.rho_config.assign_rotation_checks(layouter, &state)?
-            };
+            state = self.rho_config.assign_rotation_checks(layouter, &state)?;
             // Outputs in base-9 which is what Pi requires
 
             // Apply Pi permutation
