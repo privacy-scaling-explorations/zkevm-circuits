@@ -987,11 +987,7 @@ impl<F: Field> ShrWordsGadget<F> {
         let shf_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
         let shf_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
         cb.require_equal(
-            "b64s[0] == \
-                (a64s_hi[0] + a64s_lo[1] * p_hi) * shf_div64_eq0 + \
-                (a64s_hi[1] + a64s_lo[2] * p_hi) * shf_div64_eq1 + \
-                (a64s_hi[2] + a64s_lo[3] * p_hi) * shf_div64_eq2 + \
-                a64s_hi[3] * (1 - shf_div64_eq0 - shf_div64_eq1 - shf_div64_eq2)",
+            "Constrain b64s[0]",
             b64s[0].expr(),
             (a64s_hi[0].expr() + a64s_lo[1].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq1.expr()
