@@ -101,6 +101,16 @@ mod test {
         test_ok(OpcodeId::SHR, 0x1234.into(), 7.into());
         test_ok(OpcodeId::SHR, 0x8765.into(), 17.into());
         test_ok(OpcodeId::SHR, 0x4321.into(), 0.into());
+        test_ok(
+            OpcodeId::SHR,
+            Word::from_big_endian(&[128_u8; 32]),
+            127.into(),
+        );
+        test_ok(
+            OpcodeId::SHR,
+            Word::from_big_endian(&[255_u8; 32]),
+            129.into(),
+        );
     }
 
     #[test]
@@ -113,9 +123,13 @@ mod test {
 
     #[test]
     fn shr_gadget_rand_overflow_shift() {
-        let a = rand_word();
-        let shift = Word::from_big_endian(&[255_u8; 32]);
-        test_ok(OpcodeId::SHR, a, shift);
+        test_ok(OpcodeId::SHR, rand_word(), 256.into());
+        test_ok(OpcodeId::SHR, rand_word(), 0x1234.into());
+        test_ok(
+            OpcodeId::SHR,
+            rand_word(),
+            Word::from_big_endian(&[255_u8; 32]),
+        );
     }
 
     // This case validates if the split is correct.
