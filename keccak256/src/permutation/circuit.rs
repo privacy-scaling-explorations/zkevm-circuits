@@ -57,8 +57,6 @@ impl<F: Field> KeccakFConfig<F> {
         let rho_config = RhoConfig::configure(meta, state, fixed);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
-
-        // Iotab9
         let iota_config = IotaConfig::configure(meta, state[0], flag, fixed[0]);
 
         // Allocate space for the activation flag of the base_conversion.
@@ -78,15 +76,8 @@ impl<F: Field> KeccakFConfig<F> {
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
-        let mixing_config = MixingConfig::configure(
-            meta,
-            &from_b9_table,
-            round_ctant_b9,
-            round_ctant_b13,
-            round_constants_b9,
-            round_constants_b13,
-            state,
-        );
+        let mixing_config =
+            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), state);
 
         // Allocate the `out state correctness` gate selector
         let q_out = meta.selector();
@@ -108,7 +99,7 @@ impl<F: Field> KeccakFConfig<F> {
             theta_config,
             rho_config,
             xi_config,
-            iota_b9_config,
+            iota_config,
             from_b9_table,
             base_conversion_config,
             mixing_config,
@@ -134,7 +125,7 @@ impl<F: Field> KeccakFConfig<F> {
         let mut state = in_state;
 
         // First 23 rounds
-        for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {
+        for round_idx in 0..PERMUTATION {
             // State in base-13
             // theta
             state = {
@@ -170,15 +161,9 @@ impl<F: Field> KeccakFConfig<F> {
             }
 
             // iota_b9
-            state = {
-                let out_state = KeccakFArith::iota_b9(
-                    &state_to_biguint(split_state_cells(state.clone())),
-                    *round_val,
-                );
-                let out_state = state_bigint_to_field(out_state);
-                self.iota_b9_config
-                    .not_last_round(layouter, &state, out_state, round_idx)?
-            };
+            state[0] = self
+                .iota_config
+                .assign_round_b9(layouter, state[0].clone(), round_idx)?;
 
             // The resulting state is in Base-9 now. We now convert it to
             // base_13 which is what Theta requires again at the
@@ -216,8 +201,6 @@ impl<F: Field> KeccakFConfig<F> {
             state_bigint_to_field(mix_res),
             flag,
             next_mixing,
-            // Last round = PERMUTATION - 1
-            PERMUTATION - 1,
         )?;
 
         self.constrain_out_state(layouter, &mix_res, out_state)
