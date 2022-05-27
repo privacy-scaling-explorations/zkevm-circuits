@@ -236,7 +236,7 @@ impl<F: Field> MixingConfig<F> {
 
         // IotaB13
         let mix_res = {
-            let mut base_conv_cells = base_conv_cells.clone();
+            let mut base_conv_cells = base_conv_cells;
 
             base_conv_cells[0] =
                 self.iota_config
