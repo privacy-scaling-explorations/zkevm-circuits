@@ -388,13 +388,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 #[cfg(test)]
 mod tx_circuit_tests {
     use super::*;
+    use eth_types::{address, word, Bytes};
     use ethers_core::{
         types::{NameOrAddress, TransactionRequest},
         utils::keccak256,
     };
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
-    use halo2_proofs::{arithmetic::CurveAffine, dev::MockProver, pairing::bn256::Fr};
+    use halo2_proofs::{
+        arithmetic::CurveAffine,
+        dev::{MockProver, VerifyFailure},
+        pairing::bn256::Fr,
+    };
     use pretty_assertions::assert_eq;
     use rand::{CryptoRng, Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
@@ -403,7 +408,7 @@ mod tx_circuit_tests {
         k: u32,
         txs: Vec<Transaction>,
         chain_id: u64,
-    ) {
+    ) -> Result<(), Vec<VerifyFailure>> {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
@@ -429,7 +434,7 @@ mod tx_circuit_tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));
+        prover.verify()
     }
 
     fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64) -> Transaction {
@@ -472,7 +477,7 @@ mod tx_circuit_tests {
     // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
     #[test]
-    fn serial_test_tx_circuit() {
+    fn serial_test_tx_circuit_rng() {
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
@@ -485,6 +490,70 @@ mod tx_circuit_tests {
         }
 
         let k = 19;
-        run::<Fr, MAX_TXS, MAX_CALLDATA>(k, txs, chain_id);
+        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, txs, chain_id), Ok(()));
+    }
+
+    // High memory usage test.  Run in serial with:
+    // `cargo test [...] serial_ -- --ignored --test-threads 1`
+    #[ignore]
+    #[test]
+    fn serial_test_tx_circuit_fixed() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = 1337;
+        // Transaction generated with `rand_tx` using `rng =
+        // ChaCha20Rng::seed_from_u64(42)`
+        let tx = Transaction {
+            from: address!("0x5f9b7e36af4ff81688f712fb738bbbc1b7348aae"),
+            to: Some(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926")),
+            nonce: word!("0x3"),
+            gas_limit: word!("0x7a120"),
+            value: word!("0x3e8"),
+            gas_price: word!("0x4d2"),
+            gas_fee_cap: word!("0x0"),
+            gas_tip_cap: word!("0x0"),
+            call_data: Bytes::from(b"hello"),
+            access_list: None,
+            v: 2710,
+            r: word!("0xaf180d27f90b2b20808bc7670ce0aca862bc2b5fa39c195ab7b1a96225ee14d7"),
+            s: word!("0x61159fa4664b698ea7d518526c96cd94cf4d8adf418000754be106a3a133f866"),
+        };
+
+        let k = 19;
+        assert_eq!(
+            run::<Fr, MAX_TXS, MAX_CALLDATA>(k, vec![tx], chain_id),
+            Ok(())
+        );
+    }
+
+    // High memory usage test.  Run in serial with:
+    // `cargo test [...] serial_ -- --ignored --test-threads 1`
+    #[ignore]
+    #[test]
+    fn serial_test_tx_circuit_bad_address() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = 1337;
+        let tx = Transaction {
+            // This address doesn't correspond to the account that signed this tx.
+            from: address!("0x1230000000000000000000000000000000000456"),
+            to: Some(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926")),
+            nonce: word!("0x3"),
+            gas_limit: word!("0x7a120"),
+            value: word!("0x3e8"),
+            gas_price: word!("0x4d2"),
+            gas_fee_cap: word!("0x0"),
+            gas_tip_cap: word!("0x0"),
+            call_data: Bytes::from(b"hello"),
+            access_list: None,
+            v: 2710,
+            r: word!("0xaf180d27f90b2b20808bc7670ce0aca862bc2b5fa39c195ab7b1a96225ee14d7"),
+            s: word!("0x61159fa4664b698ea7d518526c96cd94cf4d8adf418000754be106a3a133f866"),
+        };
+
+        let k = 19;
+        assert!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, vec![tx], chain_id).is_err(),);
     }
 }
