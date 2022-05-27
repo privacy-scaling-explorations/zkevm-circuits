@@ -6,7 +6,6 @@ use halo2_proofs::{
 
 use super::tables::BaseInfo;
 use eth_types::Field;
-use itertools::Itertools;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -187,6 +186,7 @@ mod tests {
         pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
+    use itertools::Itertools;
     use num_bigint::BigUint;
     use pretty_assertions::assert_eq;
     #[test]
