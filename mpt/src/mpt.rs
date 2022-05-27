@@ -794,7 +794,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 let is_account_leaf_in_added_branch =
                     meta.query_advice(is_account_leaf_in_added_branch, Rotation::cur());
 
-                // TODO: first level?
                 q_not_first * not_first_level * is_account_leaf_in_added_branch
             },
             not_first_level,
@@ -808,7 +807,6 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
-            acc_mult_c,
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -3004,10 +3002,11 @@ impl<F: FieldExt> MPTConfig<F> {
                     let mut rlc = F::zero();
                     let mut mult = F::one();
 
-                    for i in t.iter() {
+                    for (ind, i) in t.iter().enumerate() {
                         rlc += F::from(*i as u64) * mult;
                         mult *= self.acc_r;
                     }
+
                     region.assign_fixed(
                         || "Keccak table",
                         self.keccak_table[0],

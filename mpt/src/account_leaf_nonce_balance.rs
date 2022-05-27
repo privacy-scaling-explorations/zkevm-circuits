@@ -162,6 +162,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             let nonce_rlc = nonce_long_rlc * is_nonce_long.clone()
                 + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
 
+            // TODO: nonce_stored and balance_stored should store RLC of the actual value,
+            // without the first byte when long (fix also account_leaf_key_in_added_branch)
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
                 "nonce RLC",
