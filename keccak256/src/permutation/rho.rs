@@ -41,8 +41,12 @@ impl<F: Field> RhoConfig<F> {
             fixed,
         );
 
-        let overflow_check_config =
-            OverflowCheckConfig::configure(meta, &step2_range_table, &step3_range_table);
+        let overflow_check_config = OverflowCheckConfig::configure(
+            meta,
+            &step2_range_table,
+            &step3_range_table,
+            state[5..7].try_into().unwrap(),
+        );
         Self {
             lane_config,
             overflow_check_config,

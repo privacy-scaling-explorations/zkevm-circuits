@@ -383,10 +383,9 @@ pub struct SumConfig<F> {
 }
 impl<F: Field> SumConfig<F> {
     // We assume the input columns are all copiable
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>, advices: [Column<Advice>; 2]) -> Self {
         let q_enable = meta.selector();
-        let x = meta.advice_column();
-        let sum = meta.advice_column();
+        let [x, sum] = advices;
 
         meta.enable_equality(x);
         meta.enable_equality(sum);
@@ -443,12 +442,13 @@ impl<F: Field> OverflowCheckConfig<F> {
         meta: &mut ConstraintSystem<F>,
         step2_range_table: &RangeCheckConfig<F, STEP2_RANGE>,
         step3_range_table: &RangeCheckConfig<F, STEP3_RANGE>,
+        advices: [Column<Advice>; 2],
     ) -> Self {
-        let sum_config = SumConfig::configure(meta);
+        let sum_config = SumConfig::configure(meta, advices);
 
         let q_step2 = meta.complex_selector();
         let q_step3 = meta.complex_selector();
-        let acc = meta.advice_column();
+        let acc = advices[0];
         meta.enable_equality(acc);
 
         meta.lookup("Overflow check step2", |meta| {
