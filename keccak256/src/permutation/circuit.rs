@@ -454,13 +454,25 @@ mod tests {
                 next_mixing: None,
                 is_mixing: true,
             };
-
+            let k = 17;
             let prover = MockProver::<Fp>::run(
-                17,
+                k,
                 &circuit,
                 vec![constants_b9.clone(), constants_b13.clone()],
             )
             .unwrap();
+
+            #[cfg(feature = "dev-graph")]
+            {
+                use plotters::prelude::*;
+                let root = BitMapBackend::new("keccak-f.png", (1024, 16384)).into_drawing_area();
+                root.fill(&WHITE).unwrap();
+                let root = root.titled("Keccak-F", ("sans-serif", 60)).unwrap();
+                halo2_proofs::dev::CircuitLayout::default()
+                    .show_labels(false)
+                    .render(k, &circuit, &root)
+                    .unwrap();
+            }
 
             assert!(prover.verify().is_err());
         }
