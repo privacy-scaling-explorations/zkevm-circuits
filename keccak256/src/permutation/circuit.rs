@@ -3,9 +3,9 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig, iota::IotaConfig, mixing::MixingConfig,
-        pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
-        xi::XiConfig,
+        add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
+        mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
+        tables::FromBase9TableConfig, theta::ThetaConfig, xi::XiConfig,
     },
 };
 use eth_types::Field;
@@ -44,20 +44,24 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
-        let flag = meta.advice_column();
         let fixed = [
             meta.fixed_column(),
             meta.fixed_column(),
             meta.fixed_column(),
+            meta.fixed_column(),
         ];
+        let input = meta.advice_column();
+        let x = meta.advice_column();
+
+        let add_config = AddConfig::configure(meta, input, x, fixed[3]);
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed);
+        let rho_config = RhoConfig::configure(meta, state, fixed[0..3].try_into().unwrap());
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
-        let iota_config = IotaConfig::configure(meta, state[0], flag, fixed[0]);
+        let iota_config = IotaConfig::configure(add_config.clone());
 
         // Allocate space for the activation flag of the base_conversion.
         let base_conv_activator = meta.advice_column();

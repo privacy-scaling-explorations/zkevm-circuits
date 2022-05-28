@@ -285,7 +285,7 @@ impl<F: Field> MixingConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, ROUND_CONSTANTS};
-    use crate::permutation::iota::IotaConfig;
+    use crate::permutation::{iota::IotaConfig, add::AddConfig};
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
@@ -332,7 +332,8 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let fixed = meta.fixed_column();
-                let iota_config = IotaConfig::configure(meta, state[0], state[1], fixed);
+                let add = AddConfig::configure(meta, state[0], state[1], fixed);
+                let iota_config = IotaConfig::configure(add.clone());
 
                 MyConfig {
                     mixing_conf: MixingConfig::configure(meta, &table, iota_config, state),
