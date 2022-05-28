@@ -7,7 +7,7 @@ use crate::permutation::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use std::convert::TryInto;
 
@@ -22,18 +22,31 @@ pub struct RhoConfig<F> {
 }
 
 impl<F: Field> RhoConfig<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>, state: [Column<Advice>; 25]) -> Self {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        state: [Column<Advice>; 25],
+        fixed: [Column<Fixed>; 3],
+    ) -> Self {
         state.iter().for_each(|col| meta.enable_equality(*col));
         let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
         let special_chunk_table = SpecialChunkTableConfig::configure(meta);
         let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
         let step3_range_table = RangeCheckConfig::<F, STEP3_RANGE>::configure(meta);
 
-        let lane_config =
-            LaneRotateConversionConfig::configure(meta, &base13_to_9_table, &special_chunk_table);
+        let lane_config = LaneRotateConversionConfig::configure(
+            meta,
+            &base13_to_9_table,
+            &special_chunk_table,
+            state[0..5].try_into().unwrap(),
+            fixed,
+        );
 
-        let overflow_check_config =
-            OverflowCheckConfig::configure(meta, &step2_range_table, &step3_range_table);
+        let overflow_check_config = OverflowCheckConfig::configure(
+            meta,
+            &step2_range_table,
+            &step3_range_table,
+            state[5..7].try_into().unwrap(),
+        );
         Self {
             lane_config,
             overflow_check_config,
@@ -138,7 +151,13 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                let rho_config = RhoConfig::configure(meta, state);
+                let fixed = [
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                ];
+
+                let rho_config = RhoConfig::configure(meta, state, fixed);
 
                 let q_enable = meta.selector();
                 meta.create_gate("Check states", |meta| {
