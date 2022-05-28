@@ -24,6 +24,22 @@ pub struct IotaConfig<F> {
 
 impl<F: Field> IotaConfig<F> {
     /// Iota step adds a round constant to the first lane.
+    ///
+    /// We enable the gate to handle 3 different cases:
+    ///
+    /// The first case takes place in the first 23 rounds, the prover MUST add
+    /// the `A4` times round constant in base 9. We enforce it by requiring the
+    /// flag equal to one.
+    ///
+    /// The second the third cases happen in the 24-th
+    /// round. It depends if prover wants to absorb new input or not, which is
+    /// indicated by the flag.
+    ///
+    /// If prover doesn't want to absorb new input,
+    /// then add `A4 * round_constant_b9` as the previous 23-th round did.
+    ///
+    /// Otherwise, apply the round constant in base 13 to the state, which has
+    /// been mixed with new input and converted form base 9 to base 13.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         lane00: Column<Advice>,
@@ -63,6 +79,7 @@ impl<F: Field> IotaConfig<F> {
         }
     }
 
+    /// The first 23 rounds
     pub fn assign_round_b9(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -99,6 +116,10 @@ impl<F: Field> IotaConfig<F> {
         )
     }
 
+    /// The 24-th round. Copy the flag `no_mixing` here.
+    ///
+    /// If `no_mixing` is true: add `A4 * round_constant_b9`
+    /// Otherwise, do nothing and return the orignal lane value in the next cell
     pub fn assign_b9_last_round(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -136,6 +157,11 @@ impl<F: Field> IotaConfig<F> {
             },
         )
     }
+
+    /// The 24-th round. Copy the flag `mixing` here.
+    ///
+    /// If `mixing` is true: add round constant in base 13.
+    /// Otherwise, do nothing and return the orignal lane value in the next cell
     pub fn assign_round_b13(
         &self,
         layouter: &mut impl Layouter<F>,
