@@ -405,12 +405,7 @@ mod tests {
                 is_mixing: false,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
@@ -423,12 +418,7 @@ mod tests {
                 is_mixing: true,
             };
             let k = 17;
-            let prover = MockProver::<Fp>::run(
-                k,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
             #[cfg(feature = "dev-graph")]
             {
@@ -455,12 +445,7 @@ mod tests {
                 is_mixing: true,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
