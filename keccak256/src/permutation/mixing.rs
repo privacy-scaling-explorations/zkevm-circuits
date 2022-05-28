@@ -26,7 +26,6 @@ pub struct MixingConfig<F> {
     flag: Column<Advice>,
     q_flag: Selector,
     q_out_copy: Selector,
-    out_mixing: [Column<Advice>; 25],
 }
 
 impl<F: Field> MixingConfig<F> {
@@ -37,6 +36,7 @@ impl<F: Field> MixingConfig<F> {
         round_ctant_b13: Column<Advice>,
         round_constants_b9: Column<Instance>,
         round_constants_b13: Column<Instance>,
+        state: [Column<Advice>; 25],
     ) -> MixingConfig<F> {
         // Allocate space for the flag column from which we will copy to all of
         // the sub-configs.
@@ -74,17 +74,6 @@ impl<F: Field> MixingConfig<F> {
             ]
         });
 
-        // Allocate state columns and enable copy constraints for them.
-        let state: [Column<Advice>; 25] = (0..25)
-            .map(|_| {
-                let column = meta.advice_column();
-                meta.enable_equality(column);
-                column
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
         // We don't mix -> Flag = false
         let iota_b9_config =
             IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
@@ -93,24 +82,16 @@ impl<F: Field> MixingConfig<F> {
 
         let base_info = table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
-        let base_conv_config =
-            BaseConversionConfig::configure(meta, base_info, base_conv_lane, flag);
+        let base_conv_config = BaseConversionConfig::configure(
+            meta,
+            base_info,
+            base_conv_lane,
+            flag,
+            state[0..5].try_into().unwrap(),
+        );
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
-
-        // Allocate out_mixing columns and enable copy constraints for them.
-        // Offset = 0 (Non mixing)
-        // Offset = 1 (Mixing)
-        let out_mixing: [Column<Advice>; 25] = (0..25)
-            .map(|_| {
-                let column = meta.advice_column();
-                meta.enable_equality(column);
-                column
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
 
         let q_out_copy = meta.selector();
 
@@ -121,9 +102,9 @@ impl<F: Field> MixingConfig<F> {
             let flag = meta.query_advice(flag, Rotation::cur());
 
             // Multiply by flag and negated_flag the out mixing results.
-            let left_side = meta.query_advice(out_mixing[0], Rotation::cur()) * negated_flag;
-            let right_side = meta.query_advice(out_mixing[0], Rotation::next()) * flag;
-            let out_state = meta.query_advice(state[0], Rotation::cur());
+            let left_side = meta.query_advice(state[0], Rotation::cur()) * negated_flag;
+            let right_side = meta.query_advice(state[0], Rotation::next()) * flag;
+            let out_state = meta.query_advice(state[0], Rotation(2));
 
             // We add the results of the mixing gate if/else branches multiplied
             // by it's corresponding flags so that we always
@@ -141,7 +122,6 @@ impl<F: Field> MixingConfig<F> {
             flag,
             q_flag,
             q_out_copy,
-            out_mixing,
         }
     }
 
@@ -203,9 +183,9 @@ impl<F: Field> MixingConfig<F> {
                 negated_flag.copy_advice(|| "witness is_mixing", &mut region, self.flag, 1)?;
 
                 // Copy-constrain both out states.
-                self.copy_state(&mut region, 0, self.out_mixing, out_non_mixing_circ)?;
+                self.copy_state(&mut region, 0, self.state, out_non_mixing_circ)?;
 
-                self.copy_state(&mut region, 1, self.out_mixing, out_mixing_circ)?;
+                self.copy_state(&mut region, 1, self.state, out_mixing_circ)?;
 
                 let out_state: [AssignedCell<F, F>; 25] = {
                     let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
@@ -213,7 +193,7 @@ impl<F: Field> MixingConfig<F> {
                         let out_cell = region.assign_advice(
                             || format!("assign out_state [{}]", idx),
                             self.state[idx],
-                            0,
+                            2,
                             || Ok(*lane),
                         )?;
                         out_vec.push(out_cell);
@@ -381,6 +361,15 @@ mod tests {
                 let round_ctant_b13 = meta.advice_column();
                 meta.enable_equality(round_ctant_b13);
                 let round_constants_b13 = meta.instance_column();
+                let state: [Column<Advice>; 25] = (0..25)
+                    .map(|_| {
+                        let col = meta.advice_column();
+                        meta.enable_equality(col);
+                        col
+                    })
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
 
                 MyConfig {
                     mixing_conf: MixingConfig::configure(
@@ -390,6 +379,7 @@ mod tests {
                         round_ctant_b13,
                         round_constants_b9,
                         round_constants_b13,
+                        state,
                     ),
                     table,
                 }
