@@ -45,11 +45,12 @@ impl<F: Field> AddConfig<F> {
         }
     }
 
-    pub fn add_advice(
+    fn add_generic(
         &self,
         layouter: &mut impl Layouter<F>,
         input: AssignedCell<F, F>,
-        x: AssignedCell<F, F>,
+        x: Option<AssignedCell<F, F>>,
+        value: Option<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "add advice",
@@ -57,10 +58,28 @@ impl<F: Field> AddConfig<F> {
                 let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
                 input.copy_advice(|| "input", &mut region, self.input, offset)?;
-                x.copy_advice(|| "x", &mut region, self.x, offset)?;
-
-                // constrain fixed to 1 for a simple add.
-                region.assign_fixed(|| "1", self.fixed, offset, || Ok(F::one()))?;
+                let x = match &x {
+                    Some(x) => {
+                        // copy x to use as a flag
+                        (*x).copy_advice(|| "x", &mut region, self.x, offset)?;
+                        x.clone()
+                    }
+                    None => {
+                        // constrain advice to 1 for a simple add.
+                        let x = region.assign_advice(|| "x", self.x, offset, || Ok(F::one()))?;
+                        region.constrain_constant(x.cell(), F::one())?;
+                        x
+                    }
+                };
+                let value = match value {
+                    Some(value) => {
+                        region.assign_fixed(|| "fixed value", self.fixed, offset, || Ok(value))?
+                    }
+                    None => {
+                        // constrain fixed to 1 for a simple add.
+                        region.assign_fixed(|| "1", self.fixed, offset, || Ok(F::one()))?
+                    }
+                };
 
                 let offset = 1;
                 region.assign_advice(
@@ -69,41 +88,42 @@ impl<F: Field> AddConfig<F> {
                     offset,
                     || {
                         Ok(input.value().cloned().ok_or(Error::Synthesis)?
-                            + x.value().cloned().ok_or(Error::Synthesis)?)
+                            + x.value().cloned().ok_or(Error::Synthesis)?
+                                * value.value().cloned().ok_or(Error::Synthesis)?)
                     },
                 )
             },
         )
     }
+    /// input += x
+    pub fn add_advice(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: AssignedCell<F, F>,
+        x: AssignedCell<F, F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.add_generic(layouter, input, Some(x), None)
+    }
+    /// input += v
     pub fn add_fixed(
         &self,
         layouter: &mut impl Layouter<F>,
         input: AssignedCell<F, F>,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        layouter.assign_region(
-            || "add fixed",
-            |mut region| {
-                let offset = 0;
-                self.q_enable.enable(&mut region, offset)?;
-                input.copy_advice(|| "input", &mut region, self.input, offset)?;
-
-                {
-                    // constrain advice to 1 for a simple add.
-                    let x = region.assign_advice(|| "x", self.x, offset, || Ok(F::one()))?;
-                    region.constrain_constant(x.cell(), F::one())?;
-                }
-                region.assign_fixed(|| "fixed value", self.fixed, offset, || Ok(value))?;
-
-                let offset = 1;
-                region.assign_advice(
-                    || "input + x",
-                    self.input,
-                    offset,
-                    || Ok(input.value().cloned().ok_or(Error::Synthesis)? + value),
-                )
-            },
-        )
+        self.add_generic(layouter, input, None, Some(value))
+    }
+    /// input += flag * v
+    /// No boolean check on the flag, we assume the flag is checked before
+    /// copied to here
+    pub fn conditional_add(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: AssignedCell<F, F>,
+        flag: AssignedCell<F, F>,
+        value: F,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.add_generic(layouter, input, Some(flag), Some(value))
     }
     pub fn linear_combine<const N: usize>(
         &self,
