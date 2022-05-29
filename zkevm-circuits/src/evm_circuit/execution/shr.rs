@@ -101,24 +101,10 @@ mod test {
         test_ok(OpcodeId::SHR, 0x1234.into(), 7.into());
         test_ok(OpcodeId::SHR, 0x8765.into(), 17.into());
         test_ok(OpcodeId::SHR, 0x4321.into(), 0.into());
-        test_ok(
-            OpcodeId::SHR,
-            Word::from_big_endian(&[128_u8; 32]),
-            127.into(),
-        );
-        test_ok(
-            OpcodeId::SHR,
-            Word::from_big_endian(&[255_u8; 32]),
-            129.into(),
-        );
-    }
-
-    #[test]
-    fn shr_gadget_rand_normal_shift() {
-        let a = rand_word();
-        let mut rng = rand::thread_rng();
-        let shift = rng.gen_range(0..=255);
-        test_ok(OpcodeId::SHR, a, shift.into());
+        test_ok(OpcodeId::SHR, rand_word(), 127.into());
+        test_ok(OpcodeId::SHR, rand_word(), 129.into());
+        let rand_shift = rand::thread_rng().gen_range(0..=255);
+        test_ok(OpcodeId::SHR, rand_word(), rand_shift.into());
     }
 
     #[test]
