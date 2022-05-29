@@ -376,31 +376,20 @@ pub struct GethExecTrace {
     pub struct_logs: Vec<GethExecStep>,
 }
 
-/// Truncate the memory in each step to the memory size before the step is
-/// executed (and before the memory is expanded).  This is required because geth
-/// sets the memory in each step as the memory before execution but after
-/// expansion.
-pub fn fix_geth_trace_memory_size(trace: &mut [GethExecStep]) {
-    let mut mem_sizes = vec![0; trace.len()];
-    let mut call_mem_size_stack = Vec::new();
-    for i in 1..trace.len() {
-        let step_prev = &trace[i - 1];
-        let step = &trace[i];
-        mem_sizes[i] = match step.depth as isize - step_prev.depth as isize {
-            // Same call context
-            0 => step_prev.memory.0.len(),
-            // into new call context
-            1 => {
-                call_mem_size_stack.push(step_prev.memory.0.len());
-                0
-            }
-            // return from call context
-            -1 => call_mem_size_stack.pop().expect("call stack is empty"),
-            _ => unreachable!(),
-        };
-    }
-    for i in 0..trace.len() {
-        trace[i].memory.0.truncate(mem_sizes[i]);
+impl From<GethExecTraceInternal> for GethExecTrace {
+    fn from(trace: GethExecTraceInternal) -> Self {
+        let GethExecTraceInternal {
+            gas,
+            failed,
+            struct_logs,
+            return_value,
+        } = trace;
+        Self {
+            gas,
+            failed,
+            struct_logs,
+            return_value,
+        }
     }
 }
 
@@ -409,19 +398,7 @@ impl<'de> Deserialize<'de> for GethExecTrace {
     where
         D: serde::Deserializer<'de>,
     {
-        let GethExecTraceInternal {
-            gas,
-            failed,
-            mut struct_logs,
-            return_value,
-        } = GethExecTraceInternal::deserialize(deserializer)?;
-        fix_geth_trace_memory_size(&mut struct_logs);
-        Ok(Self {
-            gas,
-            failed,
-            struct_logs,
-            return_value,
-        })
+        GethExecTraceInternal::deserialize(deserializer).map(GethExecTrace::from)
     }
 }
 
