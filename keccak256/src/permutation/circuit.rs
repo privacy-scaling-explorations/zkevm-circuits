@@ -43,12 +43,8 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
-        let fixed = [
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-        ];
-        let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
+        let fixed = meta.fixed_column();
+        let generic = GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);

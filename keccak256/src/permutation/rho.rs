@@ -26,7 +26,7 @@ impl<F: Field> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        fixed: [Column<Fixed>; 3],
+        fixed: Column<Fixed>,
         generic: &GenericConfig<F>,
     ) -> Self {
         state.iter().for_each(|col| meta.enable_equality(*col));
@@ -39,15 +39,16 @@ impl<F: Field> RhoConfig<F> {
             meta,
             &base13_to_9_table,
             &special_chunk_table,
-            state[0..5].try_into().unwrap(),
+            state[0..3].try_into().unwrap(),
             fixed,
+            generic.clone(),
         );
 
         let overflow_check_config = OverflowCheckConfig::configure(
             meta,
             &step2_range_table,
             &step3_range_table,
-            state[5..7].try_into().unwrap(),
+            state[3],
             generic.clone(),
         );
         Self {
@@ -155,13 +156,9 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                let fixed = [
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                ];
+                let fixed = meta.fixed_column();
                 let generic =
-                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
+                    GenericConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
                 let rho_config = RhoConfig::configure(meta, state, fixed, &generic);
 
