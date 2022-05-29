@@ -56,7 +56,7 @@ impl<F: Field> KeccakFConfig<F> {
         let add = AddConfig::configure(meta, input, x, fixed[3]);
 
         // theta
-        let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
+        let theta_config = ThetaConfig::configure(add.clone());
         // rho
         let rho_config = RhoConfig::configure(meta, state, fixed[0], add.clone());
         // xi
@@ -132,15 +132,7 @@ impl<F: Field> KeccakFConfig<F> {
         for round_idx in 0..PERMUTATION {
             // State in base-13
             // theta
-            state = {
-                // Apply theta outside circuit
-                let out_state =
-                    KeccakFArith::theta(&state_to_biguint(split_state_cells(state.clone())));
-                let out_state = state_bigint_to_field(out_state);
-                // assignment
-                self.theta_config
-                    .assign_state(layouter, &state, out_state)?
-            };
+            state = self.theta_config.assign_state(layouter, &state)?;
 
             // rho
             state = self.rho_config.assign_rotation_checks(layouter, &state)?;
