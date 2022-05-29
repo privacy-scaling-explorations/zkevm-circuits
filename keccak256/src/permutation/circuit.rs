@@ -265,7 +265,7 @@ impl<F: Field> KeccakFConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
+    use crate::common::{State, NEXT_INPUTS_LANES};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
@@ -383,16 +383,6 @@ mod tests {
         let next_input_fp: [Fp; NEXT_INPUTS_LANES] =
             state_bigint_to_field(StateBigInt::from(next_input));
 
-        let constants_b13: Vec<Fp> = ROUND_CONSTANTS
-            .iter()
-            .map(|num| biguint_to_f(&convert_b2_to_b13(*num)))
-            .collect();
-
-        let constants_b9: Vec<Fp> = ROUND_CONSTANTS
-            .iter()
-            .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
-            .collect();
-
         // When we pass no `mixing_inputs`, we perform the full keccak round
         // ending with Mixing executing IotaB9
         {
@@ -458,8 +448,7 @@ mod tests {
                 is_mixing: true,
             };
 
-            let prover =
-                MockProver::<Fp>::run(17, &circuit, vec![constants_b9, constants_b13]).unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert!(prover.verify().is_err());
         }
