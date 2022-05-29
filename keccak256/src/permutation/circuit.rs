@@ -53,15 +53,15 @@ impl<F: Field> KeccakFConfig<F> {
         let input = meta.advice_column();
         let x = meta.advice_column();
 
-        let add_config = AddConfig::configure(meta, input, x, fixed[3]);
+        let add = AddConfig::configure(meta, input, x, fixed[3]);
 
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed[0..3].try_into().unwrap());
+        let rho_config = RhoConfig::configure(meta, state, fixed[0], add.clone());
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
-        let iota_config = IotaConfig::configure(add_config.clone());
+        let iota_config = IotaConfig::configure(add.clone());
 
         // Allocate space for the activation flag of the base_conversion.
         let base_conv_activator = meta.advice_column();

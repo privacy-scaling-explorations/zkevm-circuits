@@ -1,4 +1,5 @@
 use crate::permutation::{
+    add::AddConfig,
     rho_checks::{LaneRotateConversionConfig, OverflowCheckConfig},
     rho_helpers::{STEP2_RANGE, STEP3_RANGE},
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
@@ -25,7 +26,8 @@ impl<F: Field> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        fixed: [Column<Fixed>; 3],
+        fixed: Column<Fixed>,
+        add: AddConfig<F>,
     ) -> Self {
         state.iter().for_each(|col| meta.enable_equality(*col));
         let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
@@ -37,15 +39,17 @@ impl<F: Field> RhoConfig<F> {
             meta,
             &base13_to_9_table,
             &special_chunk_table,
-            state[0..5].try_into().unwrap(),
+            state[0..3].try_into().unwrap(),
             fixed,
+            add.clone(),
         );
 
         let overflow_check_config = OverflowCheckConfig::configure(
             meta,
             &step2_range_table,
             &step3_range_table,
-            state[5..7].try_into().unwrap(),
+            add.clone(),
+            state[3],
         );
         Self {
             lane_config,
@@ -151,13 +155,10 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                let fixed = [
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                ];
+                let fixed = meta.fixed_column();
+                let add = AddConfig::configure(meta, state[0], state[1], fixed);
 
-                let rho_config = RhoConfig::configure(meta, state, fixed);
+                let rho_config = RhoConfig::configure(meta, state, fixed, add);
 
                 let q_enable = meta.selector();
                 meta.create_gate("Check states", |meta| {

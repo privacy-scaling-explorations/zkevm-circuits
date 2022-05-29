@@ -5,6 +5,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
+use itertools::Itertools;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -104,6 +105,15 @@ impl<F: Field> AddConfig<F> {
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, input, Some(x), None)
     }
+    /// input -= x
+    pub fn sub_advice(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: AssignedCell<F, F>,
+        x: AssignedCell<F, F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.add_generic(layouter, input, Some(x), Some(-F::one()))
+    }
     /// input += v
     pub fn add_fixed(
         &self,
@@ -125,12 +135,13 @@ impl<F: Field> AddConfig<F> {
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add_generic(layouter, input, Some(flag), Some(value))
     }
-    pub fn linear_combine<const N: usize>(
+    pub fn linear_combine(
         &self,
         layouter: &mut impl Layouter<F>,
-        xs: [AssignedCell<F, F>; N],
-        vs: [F; N],
+        xs: Vec<AssignedCell<F, F>>,
+        vs: Vec<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
+        debug_assert_eq!(xs.len(), vs.len());
         layouter.assign_region(
             || "linear combine",
             |mut region| {
@@ -146,9 +157,9 @@ impl<F: Field> AddConfig<F> {
                     region.assign_advice(|| "input 0", self.input, 0, || Ok(F::zero()))?;
                 region.constrain_constant(acc.cell(), F::zero())?;
                 let mut sum = F::zero();
-                for offset in 0..N {
+                for (offset, x) in xs.iter().enumerate() {
                     self.q_enable.enable(&mut region, offset)?;
-                    let x = xs[offset].copy_advice(|| "x", &mut region, self.x, offset)?;
+                    x.copy_advice(|| "x", &mut region, self.x, offset)?;
                     let v = region.assign_fixed(|| "v", self.fixed, offset, || Ok(vs[offset]))?;
                     acc = region.assign_advice(
                         || "accumulation",
@@ -166,11 +177,12 @@ impl<F: Field> AddConfig<F> {
         )
     }
 
-    pub fn running_sum<const N: usize>(
+    pub fn running_sum(
         &self,
         layouter: &mut impl Layouter<F>,
-        xs: [AssignedCell<F, F>; N],
+        xs: Vec<AssignedCell<F, F>>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.linear_combine(layouter, xs, [F::one(); N])
+        let len = xs.len();
+        self.linear_combine(layouter, xs, (0..len).map(|_| F::one()).collect_vec())
     }
 }
