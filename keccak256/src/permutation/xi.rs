@@ -1,100 +1,46 @@
+use crate::arith_helpers::{A1, A2, A3};
+use crate::permutation::add::AddConfig;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
-    poly::Rotation,
+    plonk::Error,
 };
 use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub struct XiConfig<F> {
-    #[allow(dead_code)]
-    q_enable: Selector,
-    state: [Column<Advice>; 25],
-    _marker: PhantomData<F>,
+    add: AddConfig<F>,
 }
 
 impl<F: Field> XiConfig<F> {
     // We assume state is recieved in base-9.
-    pub fn configure(
-        q_enable: Selector,
-        meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
-    ) -> XiConfig<F> {
-        meta.create_gate("xi", |meta| {
-            //  state in base 9, coefficient in 0~1
-            //  def xi(state: List[List[int]]):
-            //      new_state = [[0 for x in range(5)] for y in range(5)]
-            //      # Xi step
-            //      for x in range(5):
-            //          for y in range(5):
-            //              # a, b, c, d are base9, coefficient in 0~1
-            //              a = state[x][y]
-            //              b = state[(x + 1) % 5][y]
-            //              c = state[(x + 2) % 5][y]
-            //              # coefficient in 0~6
-            //              new_state[x][y] = 2*a + b + 3*c
-            //      return new_state
-            (0..5)
-                .cartesian_product(0..5usize)
-                .map(|(x, y)| {
-                    let a = meta.query_advice(state[5 * x + y], Rotation::cur());
-                    let b = meta.query_advice(state[5 * ((x + 1) % 5) + y], Rotation::cur());
-                    let c = meta.query_advice(state[5 * ((x + 2) % 5) + y], Rotation::cur());
-                    let next_lane = meta.query_advice(state[5 * x + y], Rotation::next());
-                    meta.query_selector(q_enable)
-                        * ((Expression::Constant(F::from(2)) * a
-                            + b
-                            + Expression::Constant(F::from(3)) * c)
-                            - next_lane)
-                })
-                .collect::<Vec<_>>()
-        });
-
-        XiConfig {
-            q_enable,
-            state,
-            _marker: PhantomData,
-        }
+    pub fn configure(add: AddConfig<F>) -> Self {
+        Self { add }
     }
 
     pub fn assign_state(
         &self,
         layouter: &mut impl Layouter<F>,
         state: &[AssignedCell<F, F>; 25],
-        out_state: [F; 25],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        layouter.assign_region(
-            || "Xi assignation",
-            |mut region| {
-                let offset = 0;
-                self.q_enable.enable(&mut region, offset)?;
-                for (idx, state_item) in state.iter().enumerate() {
-                    state_item.copy_advice(
-                        || format!("assign state {}", idx),
-                        &mut region,
-                        self.state[idx],
-                        offset,
-                    )?;
-                }
-
-                let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
-                let out_state: [AssignedCell<F, F>; 25] = {
-                    for (idx, lane) in out_state.iter().enumerate() {
-                        let out_cell = region.assign_advice(
-                            || format!("assign out_state {}", idx),
-                            self.state[idx],
-                            offset + 1,
-                            || Ok(*lane),
-                        )?;
-                        out_vec.push(out_cell);
-                    }
-                    out_vec.try_into().unwrap()
-                };
-                Ok(out_state)
-            },
-        )
+        let out_state: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
+            .cartesian_product(0..5)
+            .map(|(x, y)| {
+                let cells = vec![
+                    state[5 * x + y].clone(),
+                    state[5 * ((x + 1) % 5) + y].clone(),
+                    state[5 * ((x + 2) % 5) + y].clone(),
+                ];
+                let vs = vec![F::from(A1), F::from(A2), F::from(A3)];
+                let new_lane = self.add.linear_combine(layouter, cells, vs)?;
+                Ok(new_lane)
+            })
+            .into_iter()
+            .collect();
+        let out_state = out_state?;
+        let out_state: [AssignedCell<F, F>; 25] = out_state.try_into().unwrap();
+        Ok(out_state)
     }
 }
 
@@ -115,25 +61,15 @@ mod tests {
 
     #[test]
     fn test_xi_gate() {
-        #[derive(Default)]
-        struct MyCircuit<F> {
-            in_state: [F; 25],
-            out_state: [F; 25],
-            _marker: PhantomData<F>,
+        #[derive(Clone, Debug)]
+        struct MyConfig<F> {
+            lane: Column<Advice>,
+            xi: XiConfig<F>,
         }
 
-        impl<F: Field> Circuit<F> for MyCircuit<F> {
-            type Config = XiConfig<F>;
-            type FloorPlanner = SimpleFloorPlanner;
-
-            fn without_witnesses(&self) -> Self {
-                Self::default()
-            }
-
-            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let q_enable = meta.complex_selector();
-
-                let state: [Column<Advice>; 25] = (0..25)
+        impl<F: Field> MyConfig<F> {
+            pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| {
                         let column = meta.advice_column();
                         meta.enable_equality(column);
@@ -142,8 +78,34 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
+                let fixed = meta.fixed_column();
 
-                XiConfig::configure(q_enable, meta, state)
+                let lane = advices[0];
+                let add = AddConfig::configure(meta, advices[1], advices[2], fixed);
+                let xi = XiConfig::configure(add);
+                Self { lane, xi }
+            }
+        }
+        #[derive(Default)]
+        struct MyCircuit<F> {
+            in_state: [F; 25],
+            out_state: [F; 25],
+            _marker: PhantomData<F>,
+        }
+
+        impl<F: Field> Circuit<F> for MyCircuit<F> {
+            type Config = MyConfig<F>;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                // this column is required by `constrain_constant`
+                let constant = meta.fixed_column();
+                meta.enable_constant(constant);
+                Self::Config::configure(meta)
             }
 
             fn synthesize(
@@ -151,17 +113,16 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let offset = 0;
                 let in_state = layouter.assign_region(
                     || "Wittnes & assignation",
                     |mut region| {
                         // Witness `state`
                         let in_state: [AssignedCell<F, F>; 25] = {
                             let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
-                            for (idx, val) in self.in_state.iter().enumerate() {
+                            for (offset, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.state[idx],
+                                    config.lane,
                                     offset,
                                     || Ok(*val),
                                 )?;
@@ -173,7 +134,17 @@ mod tests {
                     },
                 )?;
 
-                config.assign_state(&mut layouter, &in_state, self.out_state)?;
+                let out_state = config.xi.assign_state(&mut layouter, &in_state)?;
+
+                layouter.assign_region(
+                    || "Check outstate",
+                    |mut region| {
+                        for (assigned, value) in out_state.iter().zip(self.out_state.iter()) {
+                            region.constrain_constant(assigned.cell(), value)?;
+                        }
+                        Ok(())
+                    },
+                )?;
                 Ok(())
             }
         }

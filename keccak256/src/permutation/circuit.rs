@@ -60,7 +60,7 @@ impl<F: Field> KeccakFConfig<F> {
         // rho
         let rho_config = RhoConfig::configure(meta, state, fixed[0], add.clone());
         // xi
-        let xi_config = XiConfig::configure(meta.selector(), meta, state);
+        let xi_config = XiConfig::configure(add.clone());
         let iota_config = IotaConfig::configure(add.clone());
 
         // Allocate space for the activation flag of the base_conversion.
@@ -142,14 +142,7 @@ impl<F: Field> KeccakFConfig<F> {
             state = pi_gate_permutation(state.clone());
 
             // xi
-            state = {
-                // Apply xi outside circuit
-                let out_state =
-                    KeccakFArith::xi(&state_to_biguint(split_state_cells(state.clone())));
-                let out_state = state_bigint_to_field(out_state);
-                // assignment
-                self.xi_config.assign_state(layouter, &state, out_state)?
-            };
+            state = self.xi_config.assign_state(layouter, &state)?;
 
             // Last round before Mixing does not run IotaB9 nor BaseConversion
             if round_idx == PERMUTATION - 1 {
