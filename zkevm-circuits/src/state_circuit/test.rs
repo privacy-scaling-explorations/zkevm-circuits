@@ -12,7 +12,7 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use halo2_proofs::{
-    arithmetic::BaseExt,
+    arithmetic::{BaseExt, Field as halo2_field},
     dev::{MockProver, VerifyFailure},
     pairing::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem},
@@ -25,6 +25,10 @@ pub enum AdviceColumn {
     Address,
     AddressLimb0,
     AddressLimb1,
+    StorageKey,
+    StorageKeyByte0,
+    StorageKeyByte1,
+    StorageKeyChangeInverse,
 }
 
 impl AdviceColumn {
@@ -34,6 +38,10 @@ impl AdviceColumn {
             Self::Address => config.address.value,
             Self::AddressLimb0 => config.address.limbs[0],
             Self::AddressLimb1 => config.address.limbs[1],
+            Self::StorageKey => config.storage_key.encoded,
+            Self::StorageKeyByte0 => config.storage_key.bytes[0],
+            Self::StorageKeyByte1 => config.storage_key.bytes[1],
+            Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
         }
     }
 }
@@ -309,6 +317,74 @@ fn address_limb_out_of_range() {
 }
 
 #[test]
+fn storage_key_mismatch() {
+    let rows = vec![Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::from(6),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    }];
+    let overrides = HashMap::from([
+        ((AdviceColumn::StorageKey, 1), Fr::from(10)),
+        (
+            (AdviceColumn::StorageKeyChangeInverse, 1),
+            Fr::from(10).invert().unwrap(),
+        ),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "rlc encoded value matches bytes");
+}
+
+#[test]
+fn storage_key_byte_out_of_range() {
+    let rows = vec![Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::from(256),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    }];
+    let overrides = HashMap::from([
+        ((AdviceColumn::StorageKey, 1), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte0, 1), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte1, 1), Fr::zero()),
+        (
+            (AdviceColumn::StorageKeyChangeInverse, 1),
+            Fr::from(256).invert().unwrap(),
+        ),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "rlc bytes fit into u8");
+}
+
+#[test]
+fn is_write_nonbinary() {
+    let rows = vec![Rw::CallContext {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::TxId,
+        value: U256::one(),
+    }];
+    let overrides = HashMap::from([((AdviceColumn::IsWrite, 1), Fr::from(4))]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "is_write is boolean");
+}
+
+#[test]
 fn nonlexicographic_order_tag() {
     let first = Rw::Memory {
         rw_counter: 1,
@@ -386,7 +462,7 @@ fn verify_with_overrides(
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.err().expect("result is not an error");
-    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.len(), 1, "{:?}", errors);
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
             // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
