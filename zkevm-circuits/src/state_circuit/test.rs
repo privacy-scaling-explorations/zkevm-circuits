@@ -566,6 +566,31 @@ fn nonlexicographic_order_rw_counter() {
     );
 }
 
+#[test]
+fn invalid_stack_address_change() {
+    let rows = vec![
+        Rw::Stack {
+            rw_counter: 9,
+            is_write: true,
+            call_id: 3,
+            stack_pointer: 100,
+            value: U256::from(10),
+        },
+        Rw::Stack {
+            rw_counter: 13,
+            is_write: true,
+            call_id: 3,
+            stack_pointer: 102,
+            value: U256::from(20),
+        },
+    ];
+
+    assert_error_matches(
+        verify(rows),
+        "if call id is the same, address change is 0 or 1",
+    );
+}
+
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
     let randomness = Fr::rand();
     let circuit = StateCircuit {
