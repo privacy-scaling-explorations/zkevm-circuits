@@ -9,7 +9,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use num_bigint::BigUint;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -19,7 +18,7 @@ pub struct IotaConfig<F> {
     flag: Column<Advice>,
     round_constant: Column<Fixed>,
     round_constant_b13: F,
-    round_constants_b9: [BigUint; PERMUTATION],
+    a4_times_round_constants_b9: [F; PERMUTATION],
 }
 
 impl<F: Field> IotaConfig<F> {
@@ -62,9 +61,12 @@ impl<F: Field> IotaConfig<F> {
         let round_constant_b13 =
             biguint_to_f::<F>(&convert_b2_to_b13(ROUND_CONSTANTS[PERMUTATION - 1]));
 
-        let round_constants_b9: [BigUint; 24] = ROUND_CONSTANTS
+        let a4_times_round_constants_b9: [F; 24] = ROUND_CONSTANTS
             .iter()
-            .map(|&x| convert_b2_to_b9(x))
+            .map(|&x| {
+                let constant = A4 * convert_b2_to_b9(x);
+                biguint_to_f::<F>(&constant)
+            })
             .collect_vec()
             .try_into()
             .unwrap();
@@ -75,7 +77,7 @@ impl<F: Field> IotaConfig<F> {
             flag,
             round_constant,
             round_constant_b13,
-            round_constants_b9,
+            a4_times_round_constants_b9,
         }
     }
 
@@ -99,8 +101,7 @@ impl<F: Field> IotaConfig<F> {
                 let flag = region.assign_advice(|| "flag", self.flag, offset, || Ok(F::one()))?;
                 region.constrain_constant(flag.cell(), F::one())?;
 
-                let constant = A4 * self.round_constants_b9[round].clone();
-                let constant = biguint_to_f::<F>(&constant);
+                let constant = self.a4_times_round_constants_b9[round];
                 region.assign_fixed(
                     || "A4 * round_constant_b9",
                     self.round_constant,
@@ -137,8 +138,7 @@ impl<F: Field> IotaConfig<F> {
                 lane00.copy_advice(|| "lane 00", &mut region, self.lane00, offset)?;
                 flag.copy_advice(|| "flag", &mut region, self.flag, offset)?;
 
-                let constant = A4 * self.round_constants_b9[PERMUTATION - 1].clone();
-                let constant = biguint_to_f::<F>(&constant);
+                let constant = self.a4_times_round_constants_b9[PERMUTATION - 1];
                 region.assign_fixed(
                     || "A4 * round_constant_b9",
                     self.round_constant,
