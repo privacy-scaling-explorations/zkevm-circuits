@@ -56,23 +56,6 @@ impl<T, const N: usize> Config<T, N>
 where
     T: AsBits<N>,
 {
-    pub fn assign<F: Field>(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        value: RwTableTag,
-    ) -> Result<(), Error> {
-        for (&column, &bit) in self.bits.iter().zip(&value.as_bits()) {
-            region.assign_advice(
-                || format!("RwTableTag bit {:?}", column),
-                column,
-                offset,
-                || Ok(if bit { F::one() } else { F::zero() }),
-            )?;
-        }
-        Ok(())
-    }
-
     pub fn value<F: Field>(
         &self,
         rotation: Rotation,
@@ -158,7 +141,12 @@ where
         value: RwTableTag,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
-            region.assign_advice(|| "bit column", column, offset, || Ok(F::from(bit)))?;
+            region.assign_advice(
+                || format!("binary number {:?}", column),
+                column,
+                offset,
+                || Ok(F::from(bit)),
+            )?;
         }
         Ok(())
     }
