@@ -29,6 +29,7 @@ pub enum AdviceColumn {
     StorageKeyByte0,
     StorageKeyByte1,
     StorageKeyChangeInverse,
+    Value,
 }
 
 impl AdviceColumn {
@@ -42,6 +43,7 @@ impl AdviceColumn {
             Self::StorageKeyByte0 => config.storage_key.bytes[0],
             Self::StorageKeyByte1 => config.storage_key.bytes[1],
             Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
+            Self::Value => config.value,
         }
     }
 }
@@ -388,7 +390,7 @@ fn is_write_nonbinary() {
 fn nonlexicographic_order_tag() {
     let first = Rw::Memory {
         rw_counter: 1,
-        is_write: false,
+        is_write: true,
         call_id: 1,
         memory_address: 10,
         byte: 12,
@@ -564,6 +566,48 @@ fn nonlexicographic_order_rw_counter() {
         verify(vec![second, first]),
         "upper_limb_difference is zero or lower_limb_difference fits into u16",
     );
+}
+
+#[test]
+fn invalid_memory_address() {
+    let rows = vec![Rw::Memory {
+        rw_counter: 1,
+        is_write: true,
+        call_id: 1,
+        memory_address: 1u64 << 32,
+        byte: 12,
+    }];
+
+    assert_error_matches(verify(rows), "memory address fits into 2 limbs");
+}
+
+#[test]
+fn first_memory_read_nonzero() {
+    let rows = vec![Rw::Memory {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 1,
+        memory_address: 10,
+        byte: 200,
+    }];
+
+    assert_error_matches(verify(rows), "read from a fresh key is 0");
+}
+
+#[test]
+fn invalid_memory_value() {
+    let rows = vec![Rw::Memory {
+        rw_counter: 1,
+        is_write: true,
+        call_id: 1,
+        memory_address: 10,
+        byte: 0,
+    }];
+    let overrides = HashMap::from([((AdviceColumn::Value, 1), Fr::from(256))]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "memory value is a byte");
 }
 
 #[test]
