@@ -1,12 +1,10 @@
-use crate::evm_circuit::table::RwTableTag;
-use crate::util::Expr;
-use eth_types::{Address, Field, ToScalar};
+use crate::{evm_circuit::table::RwTableTag, util::Expr};
+use eth_types::Field;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region},
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::convert::TryInto;
 use std::marker::PhantomData;
 
 pub trait ToBits<const N: usize> {
@@ -56,7 +54,6 @@ impl Config<RwTableTag, 4> {
         &self,
         rotation: Rotation,
     ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + '_ {
-        let bits = self.bits.clone();
         move |meta: &mut VirtualCells<'_, F>| {
             let bits = self.bits.map(|bit| meta.query_advice(bit, rotation));
             bits.iter()
