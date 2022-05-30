@@ -205,6 +205,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
                 let nonce_s_from_cur = meta.query_advice(sel1, Rotation::cur());
                 let balance_s_from_prev = meta.query_advice(c_mod_node_hash_rlc, Rotation::prev());
                 let balance_s_from_cur = meta.query_advice(sel2, Rotation::cur());
+
+                // Note: when nonce or balance is 0, the actual value in the RLP encoding is 128!
+
                 // We need correct previous nonce to enable lookup in nonce balance C row:
                 constraints.push((
                     "nonce prev RLC",

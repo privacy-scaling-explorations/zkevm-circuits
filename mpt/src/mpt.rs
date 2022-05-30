@@ -2609,7 +2609,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
                                 let mut nonce_len: usize = 1;
-                                if row[S_START] >= 128 {
+                                // Note: when nonce or balance is 0, the actual value stored in RLP encoding is 128.
+                                if row[S_START] > 128 {
                                     nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
                                     region.assign_advice(
                                         || "assign sel1".to_string(),
@@ -2633,7 +2634,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 }
 
                                 let mut balance_len: usize = 1;
-                                if row[C_START] >= 128 {
+                                if row[C_START] > 128 {
                                     balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
                                     region.assign_advice(
                                         || "assign sel2".to_string(),
