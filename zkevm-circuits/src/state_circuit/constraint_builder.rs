@@ -1,7 +1,9 @@
 use super::{
-    lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    binary_number::{Config as BinaryNumberConfig, ToBits},
+    lookups::Queries as LookupsQueries,
+    multiple_precision_integer::Queries as MpiQueries,
+    random_linear_combination::Queries as RlcQueries,
+    N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER,
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
@@ -20,6 +22,7 @@ pub struct Queries<F: Field> {
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
     pub prev_tag: Expression<F>,
+    pub tag_bits: [Expression<F>; 4],
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
@@ -291,11 +294,16 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        generate_lagrange_base_polynomial(
-            self.tag.clone(),
-            tag as usize,
-            RwTableTag::iter().map(|x| x as usize),
-        )
+        tag.to_bits()
+            .iter()
+            .zip(&self.tag_bits)
+            .fold(1.expr(), |product, (&bit, query)| {
+                (if bit {
+                    query.clone()
+                } else {
+                    not::expr(query.clone())
+                }) * product
+            })
     }
 
     fn first_access(&self) -> Expression<F> {
