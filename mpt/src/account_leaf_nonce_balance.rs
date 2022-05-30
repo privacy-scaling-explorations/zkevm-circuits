@@ -128,6 +128,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
 
             let key_len = meta.query_advice(s_advices[0], Rotation(rot)) - c128.clone();
             let s_advices0_cur = meta.query_advice(s_advices[0], Rotation::cur());
+            let s_advices1_cur = meta.query_advice(s_advices[1], Rotation::cur());
 
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
             let rlp_len = meta.query_advice(s_rlp2, Rotation(rot));
@@ -149,47 +150,54 @@ impl<F: FieldExt> AccountLeafNonceBalanceChip<F> {
             expr = expr + c_rlp2.clone() * acc_mult_prev.clone() * r_table[rind].clone();
             rind += 1;
 
-            let nonce_long_rlc = s_advices0_cur.clone()
+            let nonce_value_long_rlc = s_advices1_cur.clone()
                 + compute_rlc(
                     meta,
-                    s_advices.iter().skip(1).map(|v| *v).collect_vec(),
+                    s_advices.iter().skip(2).map(|v| *v).collect_vec(),
                     0,
                     one.clone(),
                     0,
                     r_table.clone(),
                 );
 
-            let nonce_rlc = nonce_long_rlc * is_nonce_long.clone()
+            let nonce_rlc = (s_advices0_cur.clone() + nonce_value_long_rlc.clone() * r_table[0].clone()) * is_nonce_long.clone()
                 + s_advices0_cur.clone() * (one.clone() - is_nonce_long.clone());
 
-            // TODO: nonce_stored and balance_stored should store RLC of the actual value,
-            // without the first byte when long (fix also account_leaf_key_in_added_branch)
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation::cur());
             constraints.push((
-                "nonce RLC",
-                q_enable.clone() * (nonce_rlc.clone() - nonce_stored.clone()),
+                "nonce RLC long",
+                q_enable.clone() * is_nonce_long.clone() * (nonce_value_long_rlc.clone() - nonce_stored.clone()),
+            ));
+            constraints.push((
+                "nonce RLC short",
+                q_enable.clone() * (one.clone() - is_nonce_long.clone()) * (s_advices0_cur.clone() - nonce_stored.clone()),
             ));
 
             expr = expr + nonce_rlc * r_table[rind].clone() * acc_mult_prev.clone();
 
             let c_advices0_cur = meta.query_advice(c_advices[0], Rotation::cur());
+            let c_advices1_cur = meta.query_advice(c_advices[1], Rotation::cur());
             let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation::cur());
-            let balance_long_rlc = c_advices0_cur.clone()
+            let balance_value_long_rlc = c_advices1_cur.clone()
                 + compute_rlc(
                     meta,
-                    c_advices.iter().skip(1).map(|v| *v).collect_vec(),
+                    c_advices.iter().skip(2).map(|v| *v).collect_vec(),
                     0,
                     one.clone(),
                     0,
                     r_table.clone(),
                 );
 
-            let balance_rlc = balance_long_rlc * is_balance_long.clone()
+            let balance_rlc = (c_advices0_cur.clone() + balance_value_long_rlc.clone() * r_table[0].clone()) * is_balance_long.clone()
                 + c_advices0_cur.clone() * (one.clone() - is_balance_long.clone());
 
             constraints.push((
-                "balance RLC",
-                q_enable.clone() * (balance_rlc.clone() - balance_stored.clone()),
+                "balance RLC long",
+                q_enable.clone() * is_balance_long.clone() * (balance_value_long_rlc.clone() - balance_stored.clone()),
+            ));
+            constraints.push((
+                "balance RLC short",
+                q_enable.clone() * (one.clone() - is_balance_long.clone()) * (c_advices0_cur.clone() - balance_stored.clone()),
             ));
 
             if !is_s {

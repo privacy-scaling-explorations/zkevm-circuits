@@ -199,6 +199,8 @@ struct ProofVariables<F> {
     is_long: bool,
     rlc1: F,
     rlc2: F,
+    nonce_value_s: F,
+    balance_value_s: F,
     before_account_leaf: bool,
 }
 
@@ -240,6 +242,8 @@ impl<F: FieldExt> ProofVariables<F> {
             is_long: false,
             rlc1: F::zero(),
             rlc2: F::zero(),
+            nonce_value_s: F::zero(),
+            balance_value_s: F::zero(),
             before_account_leaf: true,
         }
     }
@@ -1563,13 +1567,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         |region: &mut Region<'_, F>,
                          row: &Vec<u8>,
                          pv: &mut ProofVariables<F>,
-                         offset: usize| {
+                         offset: usize,
+                         s_start: usize, c_start: usize, len_s: usize, len_c: usize| {
                             compute_acc_and_mult(
                                 row,
                                 &mut pv.rlc1,
                                 &mut F::one(),
-                                S_START,
-                                HASH_WIDTH,
+                                s_start,
+                                len_s,
                             );
                             region.assign_advice(
                                 || "assign s_mod_node_hash_rlc".to_string(),
@@ -1582,8 +1587,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 row,
                                 &mut pv.rlc2,
                                 &mut F::one(),
-                                C_START,
-                                HASH_WIDTH,
+                                c_start,
+                                len_c,
                             );
                             region.assign_advice(
                                 || "assign c_mod_node_hash_rlc".to_string(),
@@ -2601,13 +2606,93 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else if row[row.len() - 1] == 7 || row[row.len() - 1] == 8 {
+                                let mut nonce_len: usize = 1;
+                                if row[S_START] >= 128 {
+                                    nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
+                                    region.assign_advice(
+                                        || "assign sel1".to_string(),
+                                        self.sel1,
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
+                                                - ACCOUNT_LEAF_KEY_S_IND)
+                                                as usize,
+                                        || Ok(F::one()),
+                                    )?;
+                                } else {
+                                    region.assign_advice(
+                                        || "assign sel1".to_string(),
+                                        self.sel1,
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
+                                                - ACCOUNT_LEAF_KEY_C_IND)
+                                                as usize,
+                                        || Ok(F::zero()),
+                                    )?;
+                                }
+
+                                let mut balance_len: usize = 1;
+                                if row[C_START] >= 128 {
+                                    balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
+                                    region.assign_advice(
+                                        || "assign sel2".to_string(),
+                                        self.sel2,
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
+                                                - ACCOUNT_LEAF_KEY_S_IND)
+                                                as usize,
+                                        || Ok(F::one()),
+                                    )?;
+                                } else {
+                                    region.assign_advice(
+                                        || "assign sel2".to_string(),
+                                        self.sel2,
+                                        offset
+                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
+                                                - ACCOUNT_LEAF_KEY_C_IND)
+                                                as usize,
+                                        || Ok(F::zero()),
+                                    )?;
+                                }
+
+                                // nonce value RLC and balance value RLC:
+                                pv.rlc1 = F::zero();
+                                pv.rlc2 = F::zero();
+                                // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
+                                // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
+                                // It then computes the whole nonce RLC and balance RLC (with RLP specific byte) -
+                                // stored in pv.rlc1 and pv.rlc2
+                                if nonce_len == 1 && balance_len == 1 {
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
+                                    if row[row.len() - 1] == 7 {
+                                        pv.nonce_value_s = pv.rlc1;
+                                        pv.balance_value_s = pv.rlc2;
+                                    }
+                                } else if nonce_len > 1 && balance_len == 1 {
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH);
+                                    if row[row.len() - 1] == 7 {
+                                        pv.nonce_value_s = pv.rlc1;
+                                        pv.balance_value_s = pv.rlc2;
+                                    }
+                                } else if nonce_len == 1 && balance_len > 1 {
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1);
+                                    if row[row.len() - 1] == 7 {
+                                        pv.nonce_value_s = pv.rlc1;
+                                        pv.balance_value_s = pv.rlc2;
+                                    }
+                                } else if nonce_len > 1 && balance_len > 1 {
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1);
+                                    if row[row.len() - 1] == 7 {
+                                        pv.nonce_value_s = pv.rlc1;
+                                        pv.balance_value_s = pv.rlc2;
+                                    }
+                                }
+
                                 let mut acc_account;
                                 let mut acc_mult_account;
                                 if row[row.len() - 1] == 7 {
                                     acc_account = pv.acc_account_s;
                                     acc_mult_account = pv.acc_mult_account_s;
-                                    // nonce RLC and balance RLC
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
+                                    
                                 } else {
                                     acc_account = pv.acc_account_c;
                                     acc_mult_account = pv.acc_mult_account_c;
@@ -2617,20 +2702,15 @@ impl<F: FieldExt> MPTConfig<F> {
                                         || "assign sel1".to_string(),
                                         self.sel1,
                                         offset,
-                                        || Ok(pv.rlc1),
+                                        || Ok(pv.nonce_value_s),
                                     )?;
                                     // assign balance S
                                     region.assign_advice(
                                         || "assign sel2".to_string(),
                                         self.sel2,
                                         offset,
-                                        || Ok(pv.rlc2),
+                                        || Ok(pv.balance_value_s),
                                     )?;
-
-                                    // assign nonce RLC and balance RLC for this row
-                                    pv.rlc1 = F::zero();
-                                    pv.rlc2 = F::zero();
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
                                 }
 
                                 // s_rlp1, s_rlp2
@@ -2665,29 +2745,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     - sel1/sel2: 1/0 (how to check: sel1*(1-sel2))
                                     - sel1/sel2: 1/1 (how to check: sel1*sel2)
                                 */
-                                let mut nonce_len: usize = 1;
-                                if row[S_START] >= 128 {
-                                    nonce_len = row[S_START] as usize - 128 + 1; // +1 for byte with length info
-                                    region.assign_advice(
-                                        || "assign sel1".to_string(),
-                                        self.sel1,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-                                                - ACCOUNT_LEAF_KEY_S_IND)
-                                                as usize,
-                                        || Ok(F::one()),
-                                    )?;
-                                } else {
-                                    region.assign_advice(
-                                        || "assign sel1".to_string(),
-                                        self.sel1,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-                                                - ACCOUNT_LEAF_KEY_C_IND)
-                                                as usize,
-                                        || Ok(F::zero()),
-                                    )?;
-                                }
+                                
                                 compute_acc_and_mult(
                                     row,
                                     &mut acc_account,
@@ -2706,30 +2764,8 @@ impl<F: FieldExt> MPTConfig<F> {
                                 // the multiplier if we store acc_mult both after nonce and after
                                 // balance.
                                 let acc_mult_tmp = acc_mult_account;
-                                // balance contribution to leaf RLC
-                                let mut balance_len: usize = 1;
-                                if row[C_START] >= 128 {
-                                    balance_len = row[C_START] as usize - 128 + 1; // +1 for byte with length info
-                                    region.assign_advice(
-                                        || "assign sel2".to_string(),
-                                        self.sel2,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-                                                - ACCOUNT_LEAF_KEY_S_IND)
-                                                as usize,
-                                        || Ok(F::one()),
-                                    )?;
-                                } else {
-                                    region.assign_advice(
-                                        || "assign sel2".to_string(),
-                                        self.sel2,
-                                        offset
-                                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-                                                - ACCOUNT_LEAF_KEY_C_IND)
-                                                as usize,
-                                        || Ok(F::zero()),
-                                    )?;
-                                }
+                                
+                                // balance contribution to leaf RLC 
                                 compute_acc_and_mult(
                                     row,
                                     &mut acc_account,
@@ -2779,7 +2815,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // storage root RLC and code hash RLC
                                     pv.rlc1 = F::zero();
                                     pv.rlc2 = F::zero();
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
                                 } else {
                                     pv.acc_s = pv.acc_nonce_balance_c;
                                     pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
@@ -2802,7 +2838,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     // assign storage root RLC and code hash RLC for this row
                                     pv.rlc1 = F::zero();
                                     pv.rlc2 = F::zero();
-                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset);
+                                    compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
                                 }
                                 // storage
                                 compute_acc_and_mult(
