@@ -347,59 +347,23 @@ pub struct ResultGethExecTrace {
     pub result: GethExecTrace,
 }
 
-#[derive(Deserialize, Debug, Eq, PartialEq)]
-#[doc(hidden)]
-pub struct GethExecTraceInternal {
-    pub gas: Gas,
-    pub failed: bool,
-    // return_value is a hex encoded byte array
-    #[serde(rename = "returnValue")]
-    pub return_value: String,
-    #[serde(rename = "structLogs")]
-    pub struct_logs: Vec<GethExecStep>,
-}
-
 /// The execution trace type returned by geth RPC debug_trace* methods.
 /// Corresponds to `ExecutionResult` in `go-ethereum/internal/ethapi/api.go`.
 /// The deserialization truncates the memory of each step in `struct_logs` to
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
     /// Used gas
     pub gas: Gas,
     /// True when the transaction has failed.
     pub failed: bool,
-    /// Return value of execution
+    /// Return value of execution which is a hex encoded byte array
+    #[serde(rename = "returnValue")]
     pub return_value: String,
     /// Vector of geth execution steps of the trace.
+    #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
-}
-
-impl From<GethExecTraceInternal> for GethExecTrace {
-    fn from(trace: GethExecTraceInternal) -> Self {
-        let GethExecTraceInternal {
-            gas,
-            failed,
-            struct_logs,
-            return_value,
-        } = trace;
-        Self {
-            gas,
-            failed,
-            struct_logs,
-            return_value,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for GethExecTrace {
-    fn deserialize<D>(deserializer: D) -> Result<GethExecTrace, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        GethExecTraceInternal::deserialize(deserializer).map(GethExecTrace::from)
-    }
 }
 
 #[macro_export]
@@ -504,11 +468,11 @@ mod tests {
     ]
   }
         "#;
-        let trace: GethExecTraceInternal =
-            serde_json::from_str(trace_json).expect("json-deserialize GethExecTraceInternal");
+        let trace: GethExecTrace =
+            serde_json::from_str(trace_json).expect("json-deserialize GethExecTrace");
         assert_eq!(
             trace,
-            GethExecTraceInternal {
+            GethExecTrace {
                 gas: Gas(26809),
                 failed: false,
                 return_value: "".to_owned(),
