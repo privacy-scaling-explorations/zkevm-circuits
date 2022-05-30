@@ -1,5 +1,5 @@
 use super::{
-    binary_number::{Config as BinaryNumberConfig, ToBits},
+    binary_number::AsBits,
     lookups::Queries as LookupsQueries,
     multiple_precision_integer::Queries as MpiQueries,
     random_linear_combination::Queries as RlcQueries,
@@ -8,7 +8,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
+    util::{not, or},
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -294,7 +294,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        tag.to_bits()
+        tag.as_bits()
             .iter()
             .zip(&self.tag_bits)
             .fold(1.expr(), |product, (&bit, query)| {
