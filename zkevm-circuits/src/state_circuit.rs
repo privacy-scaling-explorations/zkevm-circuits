@@ -92,7 +92,7 @@ impl<F: Field> StateCircuit<F> {
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
         (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len()])
+            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len() + 1])
             .collect()
     }
 }
