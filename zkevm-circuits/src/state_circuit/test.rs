@@ -573,6 +573,29 @@ fn nonlexicographic_order_rw_counter() {
 }
 
 #[test]
+#[ignore = "read consistency constraint not implemented"]
+fn read_inconsistency() {
+    let rows = vec![
+        Rw::Memory {
+            rw_counter: 10,
+            is_write: false,
+            call_id: 1,
+            memory_address: 10,
+            byte: 0,
+        },
+        Rw::Memory {
+            rw_counter: 40,
+            is_write: false,
+            call_id: 1,
+            memory_address: 10,
+            byte: 200,
+        },
+    ];
+
+    assert_error_matches(verify(rows), "read consistency");
+}
+
+#[test]
 fn invalid_start_rw_counter() {
     // Start row is included automatically.
     let rows = vec![];
