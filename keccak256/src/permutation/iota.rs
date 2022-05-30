@@ -79,7 +79,10 @@ impl<F: Field> IotaConfig<F> {
         }
     }
 
-    /// The first 23 rounds
+    /// The first 23 rounds. (No mixing logic involved).
+    ///
+    /// Applies IotaB9 steady-step logic.
+    /// It consists of: `new_lane_00 - (lane00 * ROUND_CTANTS[round]) == 0`.
     pub fn assign_round_b9(
         &self,
         layouter: &mut impl Layouter<F>,
