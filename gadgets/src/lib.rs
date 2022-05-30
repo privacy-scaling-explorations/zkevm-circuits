@@ -12,6 +12,7 @@
 #![deny(clippy::debug_assert_with_mut_call)]
 
 pub mod evm_word;
+pub mod expression;
 pub mod is_zero;
 pub mod monotone;
 
