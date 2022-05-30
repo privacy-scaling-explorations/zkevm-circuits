@@ -33,7 +33,7 @@ pub(crate) struct CopyCodeToMemoryGadget<F> {
     /// Source (bytecode) bytes end here.
     src_addr_end: Cell<F>,
     /// Keccak-256 hash of the bytecode source.
-    code_source: Word<F>,
+    code_hash: Word<F>,
     /// Array of booleans to mark whether or not the byte in question is an
     /// opcode byte or an argument that follows the opcode. For example,
     /// `is_code = true` for `POP`, `is_code = true` for `PUSH32`, but
@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         let dst_addr = cb.query_cell();
         let bytes_left = cb.query_cell();
         let src_addr_end = cb.query_cell();
-        let code_source = cb.query_word();
+        let code_hash = cb.query_word();
         let is_codes = array_init(|_| cb.query_bool());
         let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end.expr());
 
@@ -68,7 +68,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             // memory address from the buffer.
             cb.condition(buffer_reader.read_flag(idx), |cb| {
                 cb.bytecode_lookup(
-                    code_source.expr(),
+                    code_hash.expr(),
                     src_addr.expr() + idx.expr(),
                     is_code.expr(),
                     buffer_reader.byte(idx),
@@ -112,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
                 let next_dst_addr = cb.query_cell();
                 let next_bytes_left = cb.query_cell();
                 let next_src_addr_end = cb.query_cell();
-                let next_code_source = cb.query_word();
+                let next_code_hash = cb.query_word();
 
                 cb.require_equal(
                     "next_src_addr == src_addr + copied_size",
@@ -135,9 +135,9 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
                     src_addr_end.expr(),
                 );
                 cb.require_equal(
-                    "next_code_sourcec == code_source",
-                    next_code_source.expr(),
-                    code_source.expr(),
+                    "next_code_hash == code_hash",
+                    next_code_hash.expr(),
+                    code_hash.expr(),
                 );
             },
         );
@@ -156,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             dst_addr,
             bytes_left,
             src_addr_end,
-            code_source,
+            code_hash,
             is_codes,
             buffer_reader,
             finish_gadget,
@@ -180,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             step.aux_data.unwrap()
         };
 
-        let code_source = match aux.copy_details() {
+        let code_hash = match aux.copy_details() {
             CopyDetails::Code(code) => code,
             _ => unreachable!("the source has to come from code not calldata"),
         };
@@ -188,8 +188,8 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         let code = block
             .bytecodes
             .iter()
-            .find(|b| b.hash == code_source)
-            .unwrap_or_else(|| panic!("could not find bytecode for source {:?}", code_source));
+            .find(|b| b.hash == code_hash)
+            .unwrap_or_else(|| panic!("could not find bytecode with hash={:?}", code_hash));
         // Assign to the appropriate cells.
         self.src_addr
             .assign(region, offset, Some(F::from(aux.src_addr())))?;
@@ -199,7 +199,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .assign(region, offset, Some(F::from(aux.bytes_left())))?;
         self.src_addr_end
             .assign(region, offset, Some(F::from(aux.src_addr_end())))?;
-        self.code_source
+        self.code_hash
             .assign(region, offset, Some(code.hash.to_le_bytes()))?;
 
         // Initialise selectors and bytes for the buffer reader.

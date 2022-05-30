@@ -326,8 +326,8 @@ impl<F: Field> Queries<F> {
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     let mut id = row.id().unwrap_or_default() as u32;
     assert_eq!(id.to_be_bytes().len(), 4);
-    // id is u32, but it is at most 2^23 - 1, so the 9 most significant bits will be
-    // 0. We overwrite these 9 bits with the tag and field tag.
+    // The max value of `id` is 2^23 - 1, so the 9 most significant bits should be
+    // 0. We use these 9 bits to hold value of `tag` and `field_tag`.
     assert!(id < (1 << 23));
     id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
 
