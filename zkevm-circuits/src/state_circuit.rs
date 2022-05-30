@@ -235,6 +235,12 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             storage_key,
                         )?;
                     }
+                    region.assign_advice(
+                        || "value",
+                        config.value,
+                        offset,
+                        || Ok(row.value_assignment(self.randomness)),
+                    )?;
 
                     if offset != 0 {
                         lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;
