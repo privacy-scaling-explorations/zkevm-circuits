@@ -285,6 +285,10 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
         tag: c.tag.value(Rotation::cur())(meta),
         prev_tag: c.tag.value(Rotation::prev())(meta),
+        tag_bits: c
+            .tag
+            .bits
+            .map(|bit| meta.query_advice(bit, Rotation::cur())),
         id: MpiQueries::new(meta, c.id),
         is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
         address: MpiQueries::new(meta, c.address),

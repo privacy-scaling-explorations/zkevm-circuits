@@ -7,6 +7,7 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
+// TODO: rename to as_bits
 pub trait ToBits<const N: usize> {
     fn to_bits(&self) -> [bool; N];
 }
