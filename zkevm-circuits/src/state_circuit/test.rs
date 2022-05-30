@@ -30,6 +30,8 @@ pub enum AdviceColumn {
     StorageKeyByte1,
     StorageKeyChangeInverse,
     Value,
+    RwCounter,
+    RwCounterLimb0,
 }
 
 impl AdviceColumn {
@@ -44,6 +46,8 @@ impl AdviceColumn {
             Self::StorageKeyByte1 => config.storage_key.bytes[1],
             Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
             Self::Value => config.value,
+            Self::RwCounter => config.rw_counter.value,
+            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
         }
     }
 }
@@ -566,6 +570,20 @@ fn nonlexicographic_order_rw_counter() {
         verify(vec![second, first]),
         "upper_limb_difference is zero or lower_limb_difference fits into u16",
     );
+}
+
+#[test]
+fn invalid_start_rw_counter() {
+    // Start row is included automatically.
+    let rows = vec![];
+    let overrides = HashMap::from([
+        ((AdviceColumn::RwCounter, 0), Fr::from(2)),
+        ((AdviceColumn::RwCounterLimb0, 0), Fr::from(2)),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "rw_counter is 0 for Start");
 }
 
 #[test]
