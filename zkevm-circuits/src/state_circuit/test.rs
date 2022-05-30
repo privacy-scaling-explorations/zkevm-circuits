@@ -567,6 +567,32 @@ fn nonlexicographic_order_rw_counter() {
 }
 
 #[test]
+fn stack_read_before_write() {
+    let rows = vec![Rw::Stack {
+        rw_counter: 9,
+        is_write: false,
+        call_id: 3,
+        stack_pointer: 200,
+        value: U256::from(10),
+    }];
+
+    assert_error_matches(verify(rows), "first access to new stack address is a write");
+}
+
+#[test]
+fn invalid_stack_address() {
+    let rows = vec![Rw::Stack {
+        rw_counter: 9,
+        is_write: true,
+        call_id: 3,
+        stack_pointer: 3000,
+        value: U256::from(10),
+    }];
+
+    assert_error_matches(verify(rows), "stack address fits into 10 bits");
+}
+
+#[test]
 fn invalid_stack_address_change() {
     let rows = vec![
         Rw::Stack {
