@@ -409,6 +409,140 @@ fn nonlexicographic_order_tag() {
 }
 
 #[test]
+fn nonlexicographic_order_field_tag() {
+    let first = Rw::CallContext {
+        rw_counter: 5,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+        value: U256::from(100),
+    };
+    let second = Rw::CallContext {
+        rw_counter: 2,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::CallerId,
+        value: U256::from(200),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_id() {
+    let first = Rw::CallContext {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+        value: U256::from(100),
+    };
+    let second = Rw::CallContext {
+        rw_counter: 2,
+        is_write: false,
+        call_id: 1,
+        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+        value: U256::from(200),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_address() {
+    let first = Rw::Account {
+        rw_counter: 50,
+        is_write: true,
+        account_address: address!("0x1000000000000000000000000000000000000000"),
+        field_tag: AccountFieldTag::CodeHash,
+        value: U256::zero(),
+        value_prev: U256::zero(),
+    };
+    let second = Rw::Account {
+        rw_counter: 30,
+        is_write: true,
+        account_address: address!("0x2000000000000000000000000000000000000000"),
+        field_tag: AccountFieldTag::CodeHash,
+        value: U256::one(),
+        value_prev: U256::one(),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_storage_key_upper() {
+    let first = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::zero(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+    let second = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::MAX - U256::one(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_storage_key_lower() {
+    let first = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::zero(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+    let second = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::one(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference is zero or lower_limb_difference fits into u16",
+    );
+}
+
+#[test]
 fn nonlexicographic_order_rw_counter() {
     let first = Rw::CallContext {
         rw_counter: 1,
