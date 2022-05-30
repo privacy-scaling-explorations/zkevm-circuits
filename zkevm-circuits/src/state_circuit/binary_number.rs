@@ -8,12 +8,12 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 // TODO: rename to as_bits
-pub trait ToBits<const N: usize> {
-    fn to_bits(&self) -> [bool; N];
+pub trait AsBits<const N: usize> {
+    fn as_bits(&self) -> [bool; N];
 }
 
-impl ToBits<4> for RwTableTag {
-    fn to_bits(&self) -> [bool; 4] {
+impl AsBits<4> for RwTableTag {
+    fn as_bits(&self) -> [bool; 4] {
         let mut bits = [false; 4];
         let mut x = *self as u8;
         for i in 0..4 {
@@ -27,7 +27,7 @@ impl ToBits<4> for RwTableTag {
 #[derive(Clone, Copy)]
 pub struct Config<T, const N: usize>
 where
-    T: ToBits<N>,
+    T: AsBits<N>,
 {
     pub bits: [Column<Advice>; N],
     _marker: PhantomData<T>,
@@ -40,7 +40,7 @@ impl Config<RwTableTag, 4> {
         offset: usize,
         value: RwTableTag,
     ) -> Result<(), Error> {
-        for (&column, &bit) in self.bits.iter().zip(&value.to_bits()) {
+        for (&column, &bit) in self.bits.iter().zip(&value.as_bits()) {
             region.assign_advice(
                 || format!("RwTableTag bit {:?}", column),
                 column,
@@ -65,7 +65,7 @@ impl Config<RwTableTag, 4> {
 
 pub struct Chip<F: Field, T, const N: usize>
 where
-    T: ToBits<N>,
+    T: AsBits<N>,
 {
     config: Config<T, N>,
     _marker: PhantomData<F>,
@@ -73,7 +73,7 @@ where
 
 impl<F: Field, T, const N: usize> Chip<F, T, N>
 where
-    T: ToBits<N>,
+    T: AsBits<N>,
 {
     pub fn construct(config: Config<T, N>) -> Self {
         Self {
@@ -104,7 +104,7 @@ where
         offset: usize,
         value: RwTableTag,
     ) -> Result<(), Error> {
-        for (&bit, &column) in value.to_bits().iter().zip(&self.config.bits) {
+        for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
             region.assign_advice(|| "bit column", column, offset, || Ok(F::from(bit)))?;
         }
         Ok(())
