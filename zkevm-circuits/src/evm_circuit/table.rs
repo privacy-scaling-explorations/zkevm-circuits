@@ -133,7 +133,7 @@ pub enum BlockContextFieldTag {
     ChainId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter, EnumCount)]
 pub enum RwTableTag {
     Start = 1,
     Stack,

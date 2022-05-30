@@ -1,8 +1,9 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
     witness::{Rw, RwMap},
 };
+use crate::state_circuit::binary_number::AsBits;
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
@@ -18,6 +19,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem},
 };
 use std::collections::HashMap;
+use strum::EnumCount;
 
 #[derive(Hash, Eq, PartialEq)]
 pub enum AdviceColumn {
@@ -32,6 +34,10 @@ pub enum AdviceColumn {
     Value,
     RwCounter,
     RwCounterLimb0,
+    TagBit0,
+    TagBit1,
+    TagBit2,
+    TagBit3,
 }
 
 impl AdviceColumn {
@@ -48,6 +54,10 @@ impl AdviceColumn {
             Self::Value => config.value,
             Self::RwCounter => config.rw_counter.value,
             Self::RwCounterLimb0 => config.rw_counter.limbs[0],
+            Self::TagBit0 => config.tag.bits[0],
+            Self::TagBit1 => config.tag.bits[1],
+            Self::TagBit2 => config.tag.bits[2],
+            Self::TagBit3 => config.tag.bits[3],
         }
     }
 }
@@ -573,6 +583,7 @@ fn nonlexicographic_order_rw_counter() {
 }
 
 #[test]
+<<<<<<< HEAD
 #[ignore = "read consistency constraint not implemented"]
 fn read_inconsistency() {
     let rows = vec![
@@ -700,6 +711,24 @@ fn invalid_stack_address_change() {
         verify(rows),
         "if call id is the same, address change is 0 or 1",
     );
+=======
+fn invalid_tags() {
+    for i in RwTableTag::COUNT..16 {
+        let bits: [Fr; 4] = i
+            .as_bits()
+            .map(|bit| if bit { Fr::one() } else { Fr::zero() });
+        let overrides = HashMap::from([
+            ((AdviceColumn::TagBit0, 0), bits[0]),
+            ((AdviceColumn::TagBit1, 0), bits[1]),
+            ((AdviceColumn::TagBit2, 0), bits[2]),
+            ((AdviceColumn::TagBit3, 0), bits[3]),
+        ]);
+
+        let result = verify_with_overrides(vec![], overrides);
+
+        assert_error_matches(result, "binary number value in range");
+    }
+>>>>>>> 7914dc82 (Add check that RwTableTag is in allowed range)
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
