@@ -815,6 +815,8 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc_mult,
             mult_diff,
             drifted_pos,
+            sel1,
+            sel2,
             is_account_leaf_in_added_branch,
             r_table.clone(),
             fixed_table.clone(),
@@ -2659,32 +2661,18 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.rlc2 = F::zero();
                                 // Note: Below, it first computes and assigns the nonce RLC and balance RLC without
                                 // RLP specific byte (there is a RLP specific byte when nonce/balance RLP length > 1).
-                                // It then computes the whole nonce RLC and balance RLC (with RLP specific byte) -
-                                // stored in pv.rlc1 and pv.rlc2
                                 if nonce_len == 1 && balance_len == 1 {
                                     compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START, HASH_WIDTH, HASH_WIDTH);
-                                    if row[row.len() - 1] == 7 {
-                                        pv.nonce_value_s = pv.rlc1;
-                                        pv.balance_value_s = pv.rlc2;
-                                    }
                                 } else if nonce_len > 1 && balance_len == 1 {
                                     compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START, HASH_WIDTH-1, HASH_WIDTH);
-                                    if row[row.len() - 1] == 7 {
-                                        pv.nonce_value_s = pv.rlc1;
-                                        pv.balance_value_s = pv.rlc2;
-                                    }
                                 } else if nonce_len == 1 && balance_len > 1 {
                                     compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START, C_START+1, HASH_WIDTH, HASH_WIDTH-1);
-                                    if row[row.len() - 1] == 7 {
-                                        pv.nonce_value_s = pv.rlc1;
-                                        pv.balance_value_s = pv.rlc2;
-                                    }
                                 } else if nonce_len > 1 && balance_len > 1 {
                                     compute_rlc_and_assign(&mut region, row, &mut pv, offset, S_START+1, C_START+1, HASH_WIDTH-1, HASH_WIDTH-1);
-                                    if row[row.len() - 1] == 7 {
-                                        pv.nonce_value_s = pv.rlc1;
-                                        pv.balance_value_s = pv.rlc2;
-                                    }
+                                }
+                                if row[row.len() - 1] == 7 {
+                                    pv.nonce_value_s = pv.rlc1;
+                                    pv.balance_value_s = pv.rlc2;
                                 }
 
                                 let mut acc_account;

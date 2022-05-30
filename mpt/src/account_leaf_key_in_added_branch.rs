@@ -47,6 +47,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
         drifted_pos: Column<Advice>,
+        sel1: Column<Advice>,
+        sel2: Column<Advice>,
         is_account_leaf_in_added_branch: Column<Advice>,
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
@@ -209,9 +211,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             // multiplied by 16 or not.
             let sel1 = meta.query_advice(
                 s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
-                // ok: -1, -4
-                // not ok: -6, -7, -8
-                // Rotation(-6),
                 Rotation(rot_branch_init),
             );
             let sel2 = meta.query_advice(
@@ -350,27 +349,28 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             rlc = rlc + c_rlp2_nonce.clone() * acc_mult.clone() * r_table[rind].clone();
             rind += 1;
 
-            /*
-            // TODO: fix nonce_stored in account_leaf_nonce_balance
+            let mut is_nonce_long = meta.query_advice(
+                sel1,
+                Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)),
+            );
+            let mut is_balance_long = meta.query_advice(
+                sel2,
+                Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)),
+            );
+
             let s_advices0_nonce = meta.query_advice(s_advices[0], Rotation(nonce_rot));
-            rlc = rlc + s_advices0_nonce * r_table[rind].clone() * acc_mult.clone();
-            rind +=1;
-            */
-
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(nonce_rot));
-            rlc = rlc + nonce_stored * r_table[rind].clone() * acc_mult.clone();
+            let nonce_rlc = (s_advices0_nonce.clone() + nonce_stored.clone() * r_table[0].clone()) * is_nonce_long.clone()
+                + nonce_stored.clone() * (one.clone() - is_nonce_long.clone()); 
+            rlc = rlc + nonce_rlc * r_table[rind].clone() * acc_mult.clone();
             rind +=1;
 
-            /*
-            // TODO: fix balance_stored in account_leaf_nonce_balance
             let c_advices0_nonce = meta.query_advice(c_advices0, Rotation(nonce_rot));
-            rlc = rlc + c_advices0_nonce * r_table[rind].clone() * acc_mult.clone();
-            rind +=1;
-            */
-
             let balance_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(nonce_rot));
+            let balance_rlc = (c_advices0_nonce.clone() + balance_stored.clone() * r_table[0].clone()) * is_balance_long.clone()
+                + balance_stored.clone() * (one.clone() - is_balance_long.clone()); 
             let mut curr_r = mult_diff_nonce.clone() * acc_mult.clone();
-            rlc = rlc + balance_stored * curr_r.clone();
+            rlc = rlc + balance_rlc * curr_r.clone();
 
             let s_rlp2_storage = meta.query_advice(s_rlp2, Rotation(storage_codehash_rot));
             let c_rlp2_storage = meta.query_advice(c_rlp2, Rotation(storage_codehash_rot));
