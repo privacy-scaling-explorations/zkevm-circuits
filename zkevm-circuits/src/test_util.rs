@@ -5,9 +5,16 @@ use crate::{
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
+use halo2_proofs::pairing::bn256::Fr;
 use mock::TestContext;
-use pairing::bn256::Fr;
+use strum::IntoEnumIterator;
 
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
+}
 pub enum FixedTableConfig {
     Incomplete,
     Complete,
@@ -17,16 +24,19 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     match conf {
         FixedTableConfig::Incomplete => {
             vec![
+                FixedTableTag::Zero,
                 FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,
+                FixedTableTag::Range64,
                 FixedTableTag::Range256,
                 FixedTableTag::Range512,
+                FixedTableTag::Range1024,
                 FixedTableTag::SignByte,
                 FixedTableTag::ResponsibleOpcode,
             ]
         }
-        FixedTableConfig::Complete => FixedTableTag::iterator().collect(),
+        FixedTableConfig::Complete => FixedTableTag::iter().collect(),
     }
 }
 
@@ -76,16 +86,13 @@ pub fn test_circuits_using_witness_block(
     }
 
     // run state circuit test
-    // TODO:
-    //     (1) calculate circuit size(like MEMORY_ROWS_MAX etc) from block
-    // rather than hard code  (2) use randomness as one of the circuit
-    // public input, since randomness in state circuit and evm
-    // circuit must be same
+    // TODO: use randomness as one of the circuit public input, since randomness in
+    // state circuit and evm circuit must be same
     if config.enable_state_circuit_test {
-        let state_circuit =
-            StateCircuit::<Fr, true, 2000, 200, 1023, 2000>::new(block.randomness, &block.rws);
-        let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
-        prover.verify()?;
+        let state_circuit = StateCircuit::new(block.randomness, block.rws);
+        let power_of_randomness = state_circuit.instance();
+        let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
+        prover.verify_at_rows(0..state_circuit.rows.len(), 0..state_circuit.rows.len())?
     }
 
     Ok(())

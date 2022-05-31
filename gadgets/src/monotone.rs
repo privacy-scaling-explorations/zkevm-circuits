@@ -1,11 +1,16 @@
+//! # Monotone mod
+//! Monotone gadget helps to check if an advice column is monotonically
+//! increasing within a range. With strict enabled, it disallows equality of two
+//! cell.
+use halo2_proofs::pairing::arithmetic::FieldExt;
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use pairing::arithmetic::FieldExt;
 use std::{marker::PhantomData, u64};
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct MonotoneConfig {
     range_table: Column<Fixed>,
@@ -19,6 +24,7 @@ pub(crate) struct MonotoneChip<F, const RANGE: usize, const INCR: bool, const ST
     _marker: PhantomData<F>,
 }
 
+#[allow(dead_code)]
 impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
     MonotoneChip<F, RANGE, INCR, STRICT>
 {
@@ -109,9 +115,9 @@ mod test {
             FailureLocation, MockProver,
             VerifyFailure::{self, Lookup},
         },
+        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     };
-    use pairing::bn256::Fr as Fp;
     use std::marker::PhantomData;
 
     #[derive(Clone, Debug)]

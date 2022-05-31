@@ -3,8 +3,8 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        iota_b9::IotaB9Config, mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
-        state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
+        base_conversion::BaseConversionConfig, iota_b9::IotaB9Config, mixing::MixingConfig,
+        pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
         xi::XiConfig,
     },
 };
@@ -24,7 +24,7 @@ pub struct KeccakFConfig<F: Field> {
     xi_config: XiConfig<F>,
     iota_b9_config: IotaB9Config<F>,
     from_b9_table: FromBase9TableConfig<F>,
-    base_conversion_config: StateBaseConversion<F>,
+    base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
     pub state: [Column<Advice>; 25],
     q_out: Selector,
@@ -44,10 +44,16 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
+        let fixed = [
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+        ];
+
         // theta
         let theta_config = ThetaConfig::configure(meta.selector(), meta, state);
         // rho
-        let rho_config = RhoConfig::configure(meta, state);
+        let rho_config = RhoConfig::configure(meta, state, fixed);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
 
@@ -73,8 +79,14 @@ impl<F: Field> KeccakFConfig<F> {
         // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
-        let base_conversion_config =
-            StateBaseConversion::configure(meta, state, base_info, base_conv_activator);
+        let base_conv_lane = meta.advice_column();
+        let base_conversion_config = BaseConversionConfig::configure(
+            meta,
+            base_info,
+            base_conv_lane,
+            base_conv_activator,
+            state[0..5].try_into().unwrap(),
+        );
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
@@ -85,6 +97,7 @@ impl<F: Field> KeccakFConfig<F> {
             round_ctant_b13,
             round_constants_b9,
             round_constants_b13,
+            state,
         );
 
         // Allocate the `out state correctness` gate selector
@@ -199,7 +212,7 @@ impl<F: Field> KeccakFConfig<F> {
                 )?;
 
                 self.base_conversion_config
-                    .assign_region(layouter, &state, activation_flag)?
+                    .assign_state(layouter, &state, activation_flag)?
             }
         }
 
@@ -287,9 +300,9 @@ mod tests {
     use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
+    use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-    use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     use std::convert::TryInto;
 

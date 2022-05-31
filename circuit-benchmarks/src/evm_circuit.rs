@@ -23,7 +23,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = [(); 4].map(|_| meta.advice_column());
         let rw_table = [(); 11].map(|_| meta.advice_column());
-        let bytecode_table = [(); 4].map(|_| meta.advice_column());
+        let bytecode_table = [(); 5].map(|_| meta.advice_column());
         let block_table = [(); 3].map(|_| meta.advice_column());
         // Use constant expression to mock constant instance column for a more
         // reasonable benchmark.
@@ -32,10 +32,10 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         EvmCircuit::configure(
             meta,
             power_of_randomness,
-            tx_table,
-            rw_table,
-            bytecode_table,
-            block_table,
+            &tx_table,
+            &rw_table,
+            &bytecode_table,
+            &block_table,
         )
     }
 
@@ -56,10 +56,10 @@ mod evm_circ_benches {
     use ark_std::{end_timer, start_timer};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
+        pairing::bn256::{Bn256, Fr, G1Affine},
         poly::commitment::{Params, ParamsVerifier},
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
-    use pairing::bn256::{Bn256, Fr, G1Affine};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
@@ -91,7 +91,7 @@ mod evm_circ_benches {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("EVM Proof generation with {} rows", degree);
+        let proof_message = format!("EVM Proof generation with {} degree", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof(
             &general_params,

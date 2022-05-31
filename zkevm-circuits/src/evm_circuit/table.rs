@@ -4,26 +4,33 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum::IntoEnumIterator;
+use strum_macros::{EnumCount, EnumIter};
 
-pub trait LookupTable<F: FieldExt, const W: usize> {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
+pub trait LookupTable<F: FieldExt> {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Advice>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W] {
-        self.map(|column| meta.query_advice(column, Rotation::cur()))
+impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Advice>; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_advice(*column, Rotation::cur()))
+            .collect()
     }
 }
 
-impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W] {
-        self.map(|column| meta.query_fixed(column, Rotation::cur()))
+impl<F: FieldExt, const W: usize> LookupTable<F> for [Column<Fixed>; W] {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|column| meta.query_fixed(*column, Rotation::cur()))
+            .collect()
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
-    Range5 = 1,
+    Zero = 0,
+    Range5,
     Range16,
     Range32,
     Range64,
@@ -38,28 +45,10 @@ pub enum FixedTableTag {
 }
 
 impl FixedTableTag {
-    pub fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::Range5,
-            Self::Range16,
-            Self::Range32,
-            Self::Range64,
-            Self::Range256,
-            Self::Range512,
-            Self::Range1024,
-            Self::SignByte,
-            Self::BitwiseAnd,
-            Self::BitwiseOr,
-            Self::BitwiseXor,
-            Self::ResponsibleOpcode,
-        ]
-        .iter()
-        .copied()
-    }
-
     pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
+            Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
             Self::Range5 => {
                 Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
@@ -99,7 +88,7 @@ impl FixedTableTag {
                 (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)])
             })),
             Self::ResponsibleOpcode => {
-                Box::new(ExecutionState::iterator().flat_map(move |execution_state| {
+                Box::new(ExecutionState::iter().flat_map(move |execution_state| {
                     execution_state
                         .responsible_opcodes()
                         .into_iter()
@@ -131,21 +120,24 @@ pub enum TxContextFieldTag {
     CallData,
 }
 
+// Keep the sequence consistent with OpcodeId for scalar
 #[derive(Clone, Copy, Debug)]
 pub enum BlockContextFieldTag {
     Coinbase = 1,
-    GasLimit,
-    Number,
     Timestamp,
+    Number,
     Difficulty,
-    BaseFee,
+    GasLimit,
+    BaseFee = 8,
     BlockHash,
+    ChainId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
-    Memory = 2,
+    Start = 1,
     Stack,
+    Memory,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -153,6 +145,8 @@ pub enum RwTableTag {
     Account,
     AccountDestructed,
     CallContext,
+    TxLog,
+    TxReceipt,
 }
 
 impl RwTableTag {
@@ -169,14 +163,35 @@ impl RwTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
     CodeHash,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum BytecodeFieldTag {
+    Length,
+    Byte,
+    Padding,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TxLogFieldTag {
+    Address = 1,
+    Topic,
+    Data,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter, EnumCount)]
+pub enum TxReceiptFieldTag {
+    PostStateOrStatus = 1,
+    CumulativeGasUsed,
+    LogLength,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,
@@ -211,16 +226,20 @@ impl_expr!(FixedTableTag);
 impl_expr!(TxContextFieldTag);
 impl_expr!(RwTableTag);
 impl_expr!(AccountFieldTag);
+impl_expr!(BytecodeFieldTag);
 impl_expr!(CallContextFieldTag);
 impl_expr!(BlockContextFieldTag);
+impl_expr!(TxLogFieldTag);
+impl_expr!(TxReceiptFieldTag);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
     Fixed,
     Tx,
     Rw,
     Bytecode,
     Block,
+    Byte,
 }
 
 #[derive(Clone, Debug)]
@@ -264,13 +283,16 @@ pub(crate) enum Lookup<F> {
     Bytecode {
         /// Hash to specify which code to read.
         hash: Expression<F>,
+        /// Tag to specify whether its the bytecode length or byte value in the
+        /// bytecode.
+        tag: Expression<F>,
         /// Index to specify which byte of bytecode.
         index: Expression<F>,
-        /// Value of the index.
-        value: Expression<F>,
         /// A boolean value to specify if the value is executable opcode or the
         /// data portion of PUSH* operations.
         is_code: Expression<F>,
+        /// Value corresponding to the tag.
+        value: Expression<F>,
     },
     /// Lookup to block table, which contains constants of this block.
     Block {
@@ -279,6 +301,11 @@ pub(crate) enum Lookup<F> {
         /// Stores the block number only when field_tag is BlockHash, otherwise
         /// should be set to 0.
         number: Expression<F>,
+        /// Value of the field.
+        value: Expression<F>,
+    },
+    /// Lookup to byte value.
+    Byte {
         /// Value of the field.
         value: Expression<F>,
     },
@@ -298,6 +325,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
+            Self::Byte { .. } => Table::Byte,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -323,11 +351,18 @@ impl<F: FieldExt> Lookup<F> {
             .concat(),
             Self::Bytecode {
                 hash,
+                tag,
                 index,
-                value,
                 is_code,
+                value,
             } => {
-                vec![hash.clone(), index.clone(), value.clone(), is_code.clone()]
+                vec![
+                    hash.clone(),
+                    tag.clone(),
+                    index.clone(),
+                    is_code.clone(),
+                    value.clone(),
+                ]
             }
             Self::Block {
                 field_tag,
@@ -335,6 +370,9 @@ impl<F: FieldExt> Lookup<F> {
                 value,
             } => {
                 vec![field_tag.clone(), number.clone(), value.clone()]
+            }
+            Self::Byte { value } => {
+                vec![value.clone()]
             }
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

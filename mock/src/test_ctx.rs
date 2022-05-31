@@ -1,6 +1,6 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{MockAccount, MockBlock, MockTransaction};
+use crate::{eth, MockAccount, MockBlock, MockTransaction};
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
@@ -13,7 +13,7 @@ use itertools::Itertools;
 /// required to build the circuit inputs.
 ///
 /// It is specifically used to generate Test cases with very precise information
-/// details about any specific part of a block. That includes of course, it's
+/// details about any specific part of a block. That includes of course, its
 /// transactions too and the accounts involved in all of them.
 ///
 /// The intended way to interact with the structure is through the fn `new`
@@ -161,12 +161,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         block.transactions.extend_from_slice(&transactions);
         func_block(&mut block, transactions).build();
 
-        let transactions: Vec<Transaction> = block
-            .transactions
-            .iter()
-            .cloned()
-            .map(Transaction::from)
-            .collect();
+        let chain_id = block.chain_id;
         let block = Block::<Transaction>::from(block);
         let accounts: [Account; NACC] = accounts
             .iter()
@@ -179,7 +174,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         let geth_traces = gen_geth_traces(block.clone(), accounts.clone(), history_hashes.clone())?;
 
         Ok(Self {
-            chain_id: transactions[0].chain_id.unwrap_or_default(),
+            chain_id,
             accounts,
             history_hashes: history_hashes.unwrap_or_default(),
             eth_block: block,
@@ -243,11 +238,9 @@ pub mod helpers {
         |accs| {
             accs[0]
                 .address(MOCK_ACCOUNTS[0])
-                .balance(Word::from(10u64.pow(19)))
+                .balance(eth(10))
                 .code(code);
-            accs[1]
-                .address(MOCK_ACCOUNTS[1])
-                .balance(Word::from(10u64.pow(19)));
+            accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
         }
     }
 

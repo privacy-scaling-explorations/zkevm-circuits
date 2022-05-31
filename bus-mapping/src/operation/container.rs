@@ -1,6 +1,7 @@
 use super::{
-    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, StackOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
+    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter,
+    StackOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxReceiptOp,
+    TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -39,6 +40,8 @@ pub struct OperationContainer {
     pub account_destructed: Vec<Operation<AccountDestructedOp>>,
     /// Operations of CallContextOp
     pub call_context: Vec<Operation<CallContextOp>>,
+    /// Operations of TxReceiptOp
+    pub tx_receipt: Vec<Operation<TxReceiptOp>>,
 }
 
 impl Default for OperationContainer {
@@ -61,6 +64,7 @@ impl OperationContainer {
             account: Vec::new(),
             account_destructed: Vec::new(),
             call_context: Vec::new(),
+            tx_receipt: Vec::new(),
         }
     }
 
@@ -72,7 +76,21 @@ impl OperationContainer {
         let rwc = op.rwc();
         let rw = op.rw();
         let reversible = op.reversible();
-        match op.op.into_enum() {
+        self.insert_op_enum(rwc, rw, reversible, op.op.into_enum())
+    }
+
+    /// Inserts an [`OpEnum`] into the  container returning a lightweight
+    /// reference to it in the form of an [`OperationRef`] which points to the
+    /// location of the inserted operation inside the corresponding container
+    /// vector.
+    pub fn insert_op_enum(
+        &mut self,
+        rwc: RWCounter,
+        rw: RW,
+        reversible: bool,
+        op_enum: OpEnum,
+    ) -> OperationRef {
+        match op_enum {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::Memory, self.memory.len() - 1))
@@ -138,6 +156,10 @@ impl OperationContainer {
             OpEnum::CallContext(op) => {
                 self.call_context.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::CallContext, self.call_context.len() - 1))
+            }
+            OpEnum::TxReceipt(op) => {
+                self.tx_receipt.push(Operation::new(rwc, rw, op));
+                OperationRef::from((Target::TxReceipt, self.tx_receipt.len() - 1))
             }
         }
     }

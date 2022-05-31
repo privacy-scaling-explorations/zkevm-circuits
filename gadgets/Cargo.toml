@@ -1,0 +1,15 @@
+[package]
+name = "gadgets"
+version = "0.1.0"
+edition = "2021"
+authors = ["The appliedzkp team"]
+
+[dependencies]
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_05_09" }
+sha3 = "0.7.2"
+eth-types = { path = "../eth-types" }
+digest = "0.7.6"
+
+[dev-dependencies]
+rand_xorshift = "0.3"
+rand = "0.8"

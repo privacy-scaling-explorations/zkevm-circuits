@@ -106,6 +106,8 @@ pub enum Target {
     AccountDestructed,
     /// Means the target of the operation is the CallContext.
     CallContext,
+    /// Means the target of the operation is the TxReceipt.
+    TxReceipt,
 }
 
 /// Trait used for Operation Kinds.
@@ -220,7 +222,7 @@ impl fmt::Debug for StackOp {
 }
 
 impl StackOp {
-    /// Create a new instance of a `MemoryOp` from it's components.
+    /// Create a new instance of a `StackOp` from it's components.
     pub const fn new(call_id: usize, address: StackAddress, value: Word) -> StackOp {
         StackOp {
             call_id,
@@ -382,18 +384,19 @@ pub struct TxAccessListAccountOp {
     pub tx_id: usize,
     /// Account Address
     pub address: Address,
-    /// Value after the operation
-    pub value: bool,
-    /// Value before the operation
-    pub value_prev: bool,
+    /// Represents whether we can classify the access to the value as `WARM`.
+    pub is_warm: bool,
+    /// Represents whether we can classify the access to the previous value as
+    /// `WARM`.
+    pub is_warm_prev: bool,
 }
 
 impl fmt::Debug for TxAccessListAccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
-            self.tx_id, self.address, self.value_prev, self.value
+            "tx_id: {:?}, addr: {:?}, is_warm_prev: {:?}, is_warm: {:?}",
+            self.tx_id, self.address, self.is_warm_prev, self.is_warm
         ))?;
         f.write_str(" }")
     }
@@ -418,7 +421,7 @@ impl Op for TxAccessListAccountOp {
 
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
-        swap(&mut rev.value, &mut rev.value_prev);
+        swap(&mut rev.is_warm, &mut rev.is_warm_prev);
         rev
     }
 }
@@ -433,18 +436,18 @@ pub struct TxAccessListAccountStorageOp {
     pub address: Address,
     /// Storage Key
     pub key: Word,
-    /// Value after the operation
-    pub value: bool,
-    /// Value before the operation
-    pub value_prev: bool,
+    /// Whether the access was classified as `WARM` or not.
+    pub is_warm: bool,
+    /// Whether the prev_value access was classified as `WARM` or not.
+    pub is_warm_prev: bool,
 }
 
 impl fmt::Debug for TxAccessListAccountStorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountStorageOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, val_prev: {:?}, val: {:?}",
-            self.tx_id, self.address, self.key, self.value_prev, self.value
+            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, is_warm_prev: {:?}, is_warm: {:?}",
+            self.tx_id, self.address, self.key, self.is_warm_prev, self.is_warm
         ))?;
         f.write_str(" }")
     }
@@ -469,7 +472,7 @@ impl Op for TxAccessListAccountStorageOp {
 
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
-        swap(&mut rev.value, &mut rev.value_prev);
+        swap(&mut rev.is_warm, &mut rev.is_warm_prev);
         rev
     }
 }
@@ -549,6 +552,23 @@ pub struct AccountOp {
     pub value_prev: Word,
 }
 
+impl AccountOp {
+    /// Create a new instance of a `AccountOp` from it's components.
+    pub const fn new(
+        address: Address,
+        field: AccountField,
+        value: Word,
+        value_prev: Word,
+    ) -> AccountOp {
+        AccountOp {
+            address,
+            field,
+            value,
+            value_prev,
+        }
+    }
+}
+
 impl fmt::Debug for AccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountOp { ")?;
@@ -592,18 +612,18 @@ pub struct AccountDestructedOp {
     pub tx_id: usize,
     /// Account Address
     pub address: Address,
-    /// Value after the operation
-    pub value: bool,
-    /// Value before the operation
-    pub value_prev: bool,
+    /// Whether the account is destructed.
+    pub is_destructed: bool,
+    /// Whether the account was previously destructed.
+    pub is_destructed_prev: bool,
 }
 
 impl fmt::Debug for AccountDestructedOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountDestructedOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
-            self.tx_id, self.address, self.value_prev, self.value
+            "tx_id: {:?}, addr: {:?}, is_destructed_prev: {:?}, is_destructed: {:?}",
+            self.tx_id, self.address, self.is_destructed_prev, self.is_destructed
         ))?;
         f.write_str(" }")
     }
@@ -628,7 +648,7 @@ impl Op for AccountDestructedOp {
 
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
-        swap(&mut rev.value, &mut rev.value_prev);
+        swap(&mut rev.is_destructed, &mut rev.is_destructed_prev);
         rev
     }
 }
@@ -733,6 +753,89 @@ impl Op for CallContextOp {
     }
 }
 
+impl CallContextOp {
+    /// Create a new instance of a `CallContextOp` from it's components.
+    pub const fn new(call_id: usize, field: CallContextField, value: Word) -> CallContextOp {
+        CallContextOp {
+            call_id,
+            field,
+            value,
+        }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::CallContext
+    }
+
+    /// Returns the call id associated to this Operation.
+    pub const fn call_id(&self) -> usize {
+        self.call_id
+    }
+
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
+        &self.value
+    }
+}
+
+/// Represents a field parameter of the TxReceipt that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TxReceiptField {
+    /// flag indicates whether a tx succeed or not
+    PostStateOrStatus,
+    /// the cumulative gas used in the block containing the transaction receipt
+    /// as of immediately after the transaction has happened.
+    CumulativeGasUsed,
+    /// record how many log entries in the receipt/tx , 0 if tx fails
+    LogLength,
+}
+
+/// Represents TxReceipt read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxReceiptOp {
+    /// tx_id of TxReceipt
+    pub tx_id: usize,
+    /// field of TxReceipt
+    pub field: TxReceiptField,
+    /// value of TxReceipt
+    pub value: u64,
+}
+
+impl fmt::Debug for TxReceiptOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxReceiptOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, field: {:?}, value: {:?}",
+            self.tx_id, self.field, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxReceiptOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxReceiptOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.field).cmp(&(&other.tx_id, &other.field))
+    }
+}
+
+impl Op for TxReceiptOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxReceipt(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("TxReceiptOp can't be reverted")
+    }
+}
+
 /// Generic enum that wraps over all the operation types possible.
 /// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
@@ -755,6 +858,8 @@ pub enum OpEnum {
     AccountDestructed(AccountDestructedOp),
     /// CallContext
     CallContext(CallContextOp),
+    /// TxReceipt
+    TxReceipt(TxReceiptOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.
