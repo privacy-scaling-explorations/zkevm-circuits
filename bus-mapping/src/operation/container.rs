@@ -42,7 +42,7 @@ pub struct OperationContainer {
     pub call_context: Vec<Operation<CallContextOp>>,
     /// Operations of TxReceiptOp
     pub tx_receipt: Vec<Operation<TxReceiptOp>>,
-    /// Operations of CallContextOp
+    /// Operations of TxLogOp
     pub tx_log: Vec<Operation<TxLogOp>>,
 }
 

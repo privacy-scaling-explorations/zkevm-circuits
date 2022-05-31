@@ -833,7 +833,7 @@ impl TxLogOp {
         Target::TxLog
     }
 
-    /// Returns the log id associated to this Operation.
+    /// Returns the tx id associated to this Operation.
     pub const fn tx_id(&self) -> usize {
         self.tx_id
     }
@@ -856,7 +856,7 @@ impl TxLogOp {
 
 impl fmt::Debug for TxLogOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TxReceiptContextOp { ")?;
+        f.write_str("TxLogOp { ")?;
         f.write_fmt(format_args!(
             "tx_id: {:?}, log_id: {:?}, field: {:?}, index: {:?}, value: {:?}",
             self.tx_id, self.log_id, self.field, self.index, self.value,
