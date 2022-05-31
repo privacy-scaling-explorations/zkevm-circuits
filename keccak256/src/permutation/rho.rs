@@ -276,7 +276,7 @@ mod tests {
         {
             use plotters::prelude::*;
             let root =
-                BitMapBackend::new("rho-test-circuit.png", (16384, 65536)).into_drawing_area();
+                BitMapBackend::new("rho-test-circuit.png", (1024, 16384)).into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
             halo2_proofs::dev::CircuitLayout::default()
