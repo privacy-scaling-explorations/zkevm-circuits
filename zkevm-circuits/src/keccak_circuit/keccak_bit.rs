@@ -78,7 +78,7 @@ pub(crate) struct KeccakRow {
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
-pub struct KeccakConfig<F> {
+pub struct KeccakBitConfig<F> {
     q_enable: Selector,
     q_round: Column<Fixed>,
     q_absorb: Column<Fixed>,
@@ -91,22 +91,22 @@ pub struct KeccakConfig<F> {
     _marker: PhantomData<F>,
 }
 
-/// KeccakCircuit
+/// KeccakBitircuit
 #[derive(Default)]
-pub struct KeccakCircuit<F: Field> {
+pub struct KeccakBitCircuit<F: Field> {
     inputs: Vec<KeccakRow>,
     size: usize,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> KeccakCircuit<F> {
+impl<F: Field> KeccakBitCircuit<F> {
     fn r() -> F {
         F::from(123456)
     }
 }
 
-impl<F: Field> Circuit<F> for KeccakCircuit<F> {
-    type Config = KeccakConfig<F>;
+impl<F: Field> Circuit<F> for KeccakBitCircuit<F> {
+    type Config = KeccakBitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -114,7 +114,7 @@ impl<F: Field> Circuit<F> for KeccakCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        KeccakConfig::configure(meta)
+        KeccakBitConfig::configure(meta)
     }
 
     fn synthesize(
@@ -128,7 +128,7 @@ impl<F: Field> Circuit<F> for KeccakCircuit<F> {
     }
 }
 
-impl<F: Field> KeccakConfig<F> {
+impl<F: Field> KeccakBitConfig<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let num_bits_per_theta_lookup = get_num_bits_per_theta_lookup();
         println!("num_bits_per_theta_lookup: {}", num_bits_per_theta_lookup);
@@ -358,7 +358,7 @@ impl<F: Field> KeccakConfig<F> {
 
         println!("degree: {}", meta.degree());
 
-        KeccakConfig {
+        KeccakBitConfig {
             q_enable,
             q_round,
             q_absorb,
@@ -685,7 +685,7 @@ mod tests {
     use halo2_proofs::{dev::MockProver, pairing::bn256::Fr};
 
     fn verify<F: Field>(k: u32, inputs: Vec<KeccakRow>, success: bool) {
-        let circuit = KeccakCircuit::<F> {
+        let circuit = KeccakBitCircuit::<F> {
             inputs,
             size: 2usize.pow(k),
             _marker: PhantomData,

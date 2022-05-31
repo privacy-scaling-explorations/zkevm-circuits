@@ -1,4 +1,7 @@
 //! The keccak circuit implementation.
 
-/// Keccak
-pub mod keccak;
+/// Keccak bit
+pub mod keccak_bit;
+
+/// Keccak packed
+pub mod keccak_packed;

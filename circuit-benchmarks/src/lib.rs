@@ -14,4 +14,4 @@ pub mod keccak_permutation;
 
 #[cfg(test)]
 #[cfg(feature = "benches")]
-pub mod new_keccak;
+pub mod bit_keccak;
