@@ -28,3 +28,17 @@ pub fn generate_lagrange_base_polynomial<F: Field, R: Iterator<Item = usize>>(
 pub fn bool_constraint_expr<F: Field>(exp: Expression<F>) -> Expression<F> {
     (Expression::Constant(F::one()) - exp.clone()) * exp
 }
+
+/// Generates an expression which equals 0 if the expr is within the range
+/// provided by the user. It does so by: `(range[0] - expr) * ... * (range[N-1]
+/// - expr)`.
+pub fn is_within_range<F: Field, R: Iterator<Item = usize>>(
+    expr: Expression<F>,
+    range: R,
+) -> Expression<F> {
+    range
+        .into_iter()
+        .fold(Expression::Constant(F::one()), |acc, x| {
+            acc * (Expression::Constant(F::from(x as u64)) - expr.clone())
+        })
+}

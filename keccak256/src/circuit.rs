@@ -89,21 +89,32 @@ impl<F: Field> KeccakConfig<F> {
             let acc_input = meta.query_advice(acc_input, Rotation::cur());
             let output_rlc = meta.query_advice(output_rlc, Rotation::cur());
 
-            // We expect this to be `1`
-            let state_start = generate_lagrange_base_polynomial(state_tag, 0, 0..=3);
-            // We expect this to be `0`
-            let next_state_start = generate_lagrange_base_polynomial(next_state_tag, 0, 0..=3);
+            let state_start = generate_lagrange_base_polynomial(state_tag.clone(), 0, 0..=3);
+            let state_continue = generate_lagrange_base_polynomial(state_tag.clone(), 1, 0..=3);
+            let state_finalize = generate_lagrange_base_polynomial(state_tag.clone(), 2, 0..=3);
+            let state_end = generate_lagrange_base_polynomial(state_tag, 3, 0..=3);
+
+            let next_state_start =
+                generate_lagrange_base_polynomial(next_state_tag.clone(), 0, 0..=3);
 
             // We need to make sure that the lagrange interpolation results are boolean.
             // This expressions will be zero if the values are boolean.
             let is_bool_cur_state_start = bool_constraint_expr(state_start.clone());
+            let is_bool_cur_state_continue = bool_constraint_expr(state_continue.clone());
+            let is_bool_cur_state_finalize = bool_constraint_expr(state_finalize.clone());
+            let is_bool_cur_state_end = bool_constraint_expr(state_end.clone());
+
             let is_bool_next_state_start = bool_constraint_expr(next_state_start.clone());
+
+            // ------------------------------------------------------- //
+            // --------------------- Start State --------------------- //
+            // ------------------------------------------------------- //
 
             // Constrain `current_state_tag = Start` && `next_state_tag in (Continue,
             // Finalize, End)` Note that the second condition is constrained via
             // negation. If it's not within `(Continue, Finalize, End)` it has to be
             // `Start`.
-            let tag_correctness = (Expression::Constant(F::one()) - next_state_start)
+            let start_tag_correctness = (Expression::Constant(F::one()) - next_state_start)
                 + is_bool_cur_state_start
                 + is_bool_next_state_start;
 
@@ -111,17 +122,35 @@ impl<F: Field> KeccakConfig<F> {
             // We do also need to make sure that we can't add non-binary numbers and get a
             // 0.
             let zero_assumptions = bool_constraint_expr(input_len.clone())
-                + input_len
+                + input_len.clone()
                 + bool_constraint_expr(input_no_padding.clone())
                 + input_no_padding
                 + bool_constraint_expr(perm_count.clone())
-                + perm_count
+                + perm_count.clone()
                 + bool_constraint_expr(acc_input.clone())
                 + acc_input
                 + bool_constraint_expr(output_rlc.clone())
                 + output_rlc;
 
-            [(q_enable * state_start) * (tag_correctness + zero_assumptions)]
+            // ------------------------------------------------------- //
+            // -------------------- Continue State ------------------- //
+            // ------------------------------------------------------- //
+
+            let next_state_is_finalize =
+                generate_lagrange_base_polynomial(next_state_tag, 1, 0..=3);
+
+            // We need to make sure that the lagrange interpolation results are boolean.
+            // This expressions will be zero if the values are boolean.
+            let is_bool_next_finalize_state = bool_constraint_expr(next_state_is_finalize.clone());
+
+            // We check: `input_len - (136 * (perm_count + 1))`. If it evaluates to 0, we
+            // need to pad and absorb.
+            let have_to_pad_and_absorb = input_len
+                - (Expression::Constant(F::from(136u64))
+                    * (perm_count + Expression::Constant(F::one())));
+
+            vec![Expression::Constant(F::zero())]
+            //[(q_enable * state_start) * (start_tag_correctness + zero_assumptions)]
         });
 
         unimplemented!()
