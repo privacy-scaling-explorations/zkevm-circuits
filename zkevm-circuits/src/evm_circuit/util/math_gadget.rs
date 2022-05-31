@@ -948,7 +948,7 @@ impl<F: Field> AbsWordGadget<F> {
     }
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         x: Word,
     ) -> Result<(), Error> {

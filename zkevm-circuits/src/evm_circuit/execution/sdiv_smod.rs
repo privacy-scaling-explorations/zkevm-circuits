@@ -1,3 +1,4 @@
+use super::CachedRegion;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -14,7 +15,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct SignedDivModGadget<F> {
@@ -128,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
