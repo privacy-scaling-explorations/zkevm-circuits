@@ -97,14 +97,15 @@ impl<F: Field> AddConfig<F> {
             },
         )
     }
-    /// input += x
-    pub fn add_advice(
+    /// input += v * x
+    pub fn add_advice_mul_const(
         &self,
         layouter: &mut impl Layouter<F>,
         input: AssignedCell<F, F>,
         x: AssignedCell<F, F>,
+        v: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add_generic(layouter, input, Some(x), None)
+        self.add_generic(layouter, input, Some(x), Some(v))
     }
     /// input -= x
     pub fn sub_advice(

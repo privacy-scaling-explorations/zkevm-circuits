@@ -1,7 +1,7 @@
 use super::super::arith_helpers::*;
 use super::tables::FromBase9TableConfig;
 use super::{
-    absorb::AbsorbConfig, add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
+    absorb::apply_absorb, add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
 };
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
@@ -18,7 +18,6 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub struct MixingConfig<F> {
     iota_config: IotaConfig<F>,
-    absorb_config: AbsorbConfig<F>,
     base_conv_config: BaseConversionConfig<F>,
     add: AddConfig<F>,
     state: [Column<Advice>; 25],
@@ -71,9 +70,6 @@ impl<F: Field> MixingConfig<F> {
             ]
         });
 
-        // We mix -> Flag = true
-        let absorb_config = AbsorbConfig::configure(meta, state);
-
         let base_info = table.get_base_info(false);
         let base_conv_config =
             BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
@@ -100,7 +96,6 @@ impl<F: Field> MixingConfig<F> {
 
         Self {
             iota_config,
-            absorb_config,
             base_conv_config,
             add: add.clone(),
             state,
@@ -169,7 +164,7 @@ impl<F: Field> MixingConfig<F> {
                     self.flag,
                     0,
                     || {
-                        flag.and_then(|flag| Some(F::from(flag as u64)))
+                        flag.map(|flag| F::from(flag as u64))
                             .ok_or(Error::Synthesis)
                     },
                 )?;
@@ -206,7 +201,7 @@ impl<F: Field> MixingConfig<F> {
         in_state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
         flag: Option<bool>,
-        next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
+        next_mixing: [Option<F>; NEXT_INPUTS_LANES],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         // Enforce flag constraints and witness them.
         let (f_pos, f_neg) = self.enforce_flag_consistency(layouter, flag)?;
@@ -223,17 +218,8 @@ impl<F: Field> MixingConfig<F> {
 
         // If we mix:
         // Absorb
-        let (out_state_absorb_cells, _) = self.absorb_config.copy_state_flag_next_inputs(
-            layouter,
-            in_state,
-            // Compute out_absorb state.
-            state_bigint_to_field(KeccakFArith::absorb(
-                &state_to_biguint(split_state_cells(in_state.clone())),
-                &state_to_state_bigint::<F, NEXT_INPUTS_LANES>(next_mixing.unwrap_or_default()),
-            )),
-            next_mixing.unwrap_or_default(),
-            f_pos.clone(),
-        )?;
+        let out_state_absorb_cells =
+            apply_absorb(&self.add, layouter, self.state[0], in_state, &next_mixing)?;
 
         // Base conversion assign
         let base_conv_cells = self
