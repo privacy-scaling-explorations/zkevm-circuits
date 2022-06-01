@@ -263,7 +263,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                     ))
                 },
             )?;
-        let input_from_chunks = self.add.linear_combine(layouter, input_coefs, input_pobs)?;
+        let input_from_chunks = self.add.linear_combine(layouter, input_coefs, input_pobs, None)?;
         let diff = self
             .add
             .sub_advice(layouter, lane_base_13, input_from_chunks)?;
@@ -291,7 +291,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
 
         let output_lane = self
             .add
-            .linear_combine(layouter, output_coefs, output_pobs)?;
+            .linear_combine(layouter, output_coefs, output_pobs, None)?;
         Ok((output_lane, step2_od, step3_od))
     }
 }
@@ -339,8 +339,8 @@ impl<F: Field> OverflowCheckConfig<F> {
         step2_cells: Vec<AssignedCell<F, F>>,
         step3_cells: Vec<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
-        let step2_sum = self.add.running_sum(layouter, step2_cells)?;
-        let step3_sum = self.add.running_sum(layouter, step3_cells)?;
+        let step2_sum = self.add.running_sum(layouter, step2_cells, None)?;
+        let step3_sum = self.add.running_sum(layouter, step3_cells, None)?;
         layouter.assign_region(
             || "Overflow range check",
             |mut region| {

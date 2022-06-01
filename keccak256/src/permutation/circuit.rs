@@ -64,19 +64,13 @@ impl<F: Field> KeccakFConfig<F> {
         // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
-        let base_conv_lane = meta.advice_column();
-        let base_conversion_config = BaseConversionConfig::configure(
-            meta,
-            base_info,
-            base_conv_lane,
-            base_conv_activator,
-            state[0..5].try_into().unwrap(),
-        );
+        let base_conversion_config =
+            BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
         let mixing_config =
-            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), state);
+            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), &add, state);
 
         // Allocate the `out state correctness` gate selector
         let q_out = meta.selector();
@@ -164,8 +158,7 @@ impl<F: Field> KeccakFConfig<F> {
                     },
                 )?;
 
-                self.base_conversion_config
-                    .assign_state(layouter, &state, activation_flag)?
+                self.base_conversion_config.assign_state(layouter, &state)?
             }
         }
 

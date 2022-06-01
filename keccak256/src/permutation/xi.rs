@@ -22,7 +22,7 @@ pub fn assign_xi<F: Field>(
                 state[5 * ((x + 2) % 5) + y].clone(),
             ];
             let vs = vec![F::from(A1), F::from(A2), F::from(A3)];
-            let new_lane = add.linear_combine(layouter, cells, vs)?;
+            let new_lane = add.linear_combine(layouter, cells, vs, None)?;
             Ok(new_lane)
         })
         .into_iter()

@@ -140,6 +140,7 @@ impl<F: Field> AddConfig<F> {
         layouter: &mut impl Layouter<F>,
         xs: Vec<AssignedCell<F, F>>,
         vs: Vec<F>,
+        outcome: Option<AssignedCell<F, F>>,
     ) -> Result<AssignedCell<F, F>, Error> {
         debug_assert_eq!(xs.len(), vs.len());
         layouter.assign_region(
@@ -172,6 +173,9 @@ impl<F: Field> AddConfig<F> {
                         },
                     )?;
                 }
+                if let Some(outcome) = &outcome {
+                    region.constrain_equal(outcome.cell(), acc.cell())?;
+                }
                 Ok(acc)
             },
         )
@@ -181,8 +185,9 @@ impl<F: Field> AddConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         xs: Vec<AssignedCell<F, F>>,
+        outcome: Option<AssignedCell<F, F>>,
     ) -> Result<AssignedCell<F, F>, Error> {
         let len = xs.len();
-        self.linear_combine(layouter, xs, (0..len).map(|_| F::one()).collect_vec())
+        self.linear_combine(layouter, xs, (0..len).map(|_| F::one()).collect_vec(), outcome)
     }
 }

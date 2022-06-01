@@ -4,22 +4,19 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::permutation::add::AddConfig;
+
 use super::tables::BaseInfo;
 use eth_types::Field;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BaseConversionConfig<F> {
-    q_running_sum: Selector,
     q_lookup: Selector,
     base_info: BaseInfo<F>,
-    // Flag is copied from the parent flag. Parent flag is assumed to be binary
-    // constrained.
-    flag: Column<Advice>,
     input_coef: Column<Advice>,
-    input_acc: Column<Advice>,
     output_coef: Column<Advice>,
-    output_acc: Column<Advice>,
+    add: AddConfig<F>,
 }
 
 impl<F: Field> BaseConversionConfig<F> {
@@ -27,63 +24,31 @@ impl<F: Field> BaseConversionConfig<F> {
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         base_info: BaseInfo<F>,
-        input_lane: Column<Advice>,
-        parent_flag: Column<Advice>,
-        advices: [Column<Advice>; 5],
+        advices: [Column<Advice>; 2],
+        add: &AddConfig<F>,
     ) -> Self {
-        let q_running_sum = meta.selector();
         let q_lookup = meta.complex_selector();
-        let [flag, input_coef, input_acc, output_coef, output_acc] = advices;
+        let [input_coef, output_coef] = advices;
 
-        meta.enable_equality(flag);
         meta.enable_equality(input_coef);
-        meta.enable_equality(input_acc);
         meta.enable_equality(output_coef);
-        meta.enable_equality(output_acc);
-        meta.enable_equality(input_lane);
-        meta.enable_equality(parent_flag);
 
-        meta.create_gate("input running sum", |meta| {
-            let q_enable = meta.query_selector(q_running_sum);
-            let flag = meta.query_advice(flag, Rotation::cur());
-            let coef = meta.query_advice(input_coef, Rotation::cur());
-            let acc_prev = meta.query_advice(input_acc, Rotation::prev());
-            let acc = meta.query_advice(input_acc, Rotation::cur());
-            let power_of_base = base_info.input_pob();
-            vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
-        });
-        meta.create_gate("output running sum", |meta| {
-            let q_enable = meta.query_selector(q_running_sum);
-            let flag = meta.query_advice(flag, Rotation::cur());
-            let coef = meta.query_advice(output_coef, Rotation::cur());
-            let acc_prev = meta.query_advice(output_acc, Rotation::prev());
-            let acc = meta.query_advice(output_acc, Rotation::cur());
-            let power_of_base = base_info.output_pob();
-            vec![q_enable * flag * (acc - acc_prev * power_of_base - coef)]
-        });
         meta.lookup("Lookup i/o_coeff at Base conversion table", |meta| {
             let q_enable = meta.query_selector(q_lookup);
-            let flag = meta.query_advice(flag, Rotation::cur());
             let input_slices = meta.query_advice(input_coef, Rotation::cur());
             let output_slices = meta.query_advice(output_coef, Rotation::cur());
             vec![
-                (
-                    q_enable.clone() * flag.clone() * input_slices,
-                    base_info.input_tc,
-                ),
-                (q_enable * flag * output_slices, base_info.output_tc),
+                (q_enable.clone() * input_slices, base_info.input_tc),
+                (q_enable * output_slices, base_info.output_tc),
             ]
         });
 
         Self {
-            q_running_sum,
             q_lookup,
             base_info,
-            flag,
             input_coef,
-            input_acc,
             output_coef,
-            output_acc,
+            add: add.clone(),
         }
     }
 
@@ -91,27 +56,22 @@ impl<F: Field> BaseConversionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         input: AssignedCell<F, F>,
-        flag: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         let (input_coefs, output_coefs, _) = self
             .base_info
             .compute_coefs(input.value().copied().unwrap_or_default())?;
+        let input_pobs = self.base_info.input_pobs();
+        let output_pobs = self.base_info.output_pobs();
 
-        layouter.assign_region(
+        let (input_coef_cells, output_coef_cells) = layouter.assign_region(
             || "Base conversion",
             |mut region| {
-                let mut input_acc = F::zero();
-                let input_pob = self.base_info.input_pob();
-                let mut output_acc = F::zero();
-                let output_pob = self.base_info.output_pob();
+                let mut input_coef_cells = vec![];
+                let mut output_coef_cells = vec![];
                 for (offset, (&input_coef, &output_coef)) in
                     input_coefs.iter().zip(output_coefs.iter()).enumerate()
                 {
                     self.q_lookup.enable(&mut region, offset)?;
-                    if offset != 0 {
-                        self.q_running_sum.enable(&mut region, offset)?;
-                    }
-                    flag.copy_advice(|| "Base conv flag", &mut region, self.flag, offset)?;
 
                     let input_coef_cell = region.assign_advice(
                         || "Input Coef",
@@ -119,51 +79,36 @@ impl<F: Field> BaseConversionConfig<F> {
                         offset,
                         || Ok(input_coef),
                     )?;
-                    input_acc = input_acc * input_pob + input_coef;
-                    let input_acc_cell = region.assign_advice(
-                        || "Input Acc",
-                        self.input_acc,
-                        offset,
-                        || Ok(input_acc),
-                    )?;
+                    input_coef_cells.push(input_coef_cell);
                     let output_coef_cell = region.assign_advice(
                         || "Output Coef",
                         self.output_coef,
                         offset,
                         || Ok(output_coef),
                     )?;
-                    output_acc = output_acc * output_pob + output_coef;
-                    let output_acc_cell = region.assign_advice(
-                        || "Output Acc",
-                        self.output_acc,
-                        offset,
-                        || Ok(output_acc),
-                    )?;
-
-                    if offset == 0 {
-                        // bind first acc to first coef
-                        region.constrain_equal(input_acc_cell.cell(), input_coef_cell.cell())?;
-                        region.constrain_equal(output_acc_cell.cell(), output_coef_cell.cell())?;
-                    } else if offset == input_coefs.len() - 1 {
-                        //region.constrain_equal(input_acc_cell, input.0)?;
-                        return Ok(output_acc_cell);
-                    }
+                    output_coef_cells.push(output_coef_cell);
                 }
-                unreachable!();
+                Ok((input_coef_cells, output_coef_cells))
             },
-        )
+        )?;
+        self.add
+            .linear_combine(layouter, input_coef_cells, input_pobs, Some(input))?;
+        let output_lane =
+            self.add
+                .linear_combine(layouter, output_coef_cells, output_pobs, None)?;
+
+        Ok(output_lane)
     }
 
     pub(crate) fn assign_state(
         &self,
         layouter: &mut impl Layouter<F>,
         state: &[AssignedCell<F, F>; 25],
-        flag: AssignedCell<F, F>,
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         let state: Result<Vec<AssignedCell<F, F>>, Error> = state
             .iter()
             .map(|lane| {
-                let output = self.assign_lane(layouter, lane.clone(), flag.clone())?;
+                let output = self.assign_lane(layouter, lane.clone())?;
                 Ok(output)
             })
             .into_iter()

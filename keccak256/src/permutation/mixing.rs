@@ -1,6 +1,8 @@
 use super::super::arith_helpers::*;
 use super::tables::FromBase9TableConfig;
-use super::{absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota::IotaConfig};
+use super::{
+    absorb::AbsorbConfig, add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
+};
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
 use eth_types::Field;
@@ -18,6 +20,7 @@ pub struct MixingConfig<F> {
     iota_config: IotaConfig<F>,
     absorb_config: AbsorbConfig<F>,
     base_conv_config: BaseConversionConfig<F>,
+    add: AddConfig<F>,
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
     q_flag: Selector,
@@ -29,8 +32,9 @@ impl<F: Field> MixingConfig<F> {
         meta: &mut ConstraintSystem<F>,
         table: &FromBase9TableConfig<F>,
         iota_config: IotaConfig<F>,
+        add: &AddConfig<F>,
         state: [Column<Advice>; 25],
-    ) -> MixingConfig<F> {
+    ) -> Self {
         // Allocate space for the flag column from which we will copy to all of
         // the sub-configs.
         let flag = meta.advice_column();
@@ -71,14 +75,8 @@ impl<F: Field> MixingConfig<F> {
         let absorb_config = AbsorbConfig::configure(meta, state);
 
         let base_info = table.get_base_info(false);
-        let base_conv_lane = meta.advice_column();
-        let base_conv_config = BaseConversionConfig::configure(
-            meta,
-            base_info,
-            base_conv_lane,
-            flag,
-            state[0..5].try_into().unwrap(),
-        );
+        let base_conv_config =
+            BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
 
         let q_out_copy = meta.selector();
 
@@ -100,10 +98,11 @@ impl<F: Field> MixingConfig<F> {
             [q_enable * ((left_side + right_side) - out_state)]
         });
 
-        MixingConfig {
+        Self {
             iota_config,
             absorb_config,
             base_conv_config,
+            add: add.clone(),
             state,
             flag,
             q_flag,
@@ -230,9 +229,9 @@ impl<F: Field> MixingConfig<F> {
         )?;
 
         // Base conversion assign
-        let base_conv_cells =
-            self.base_conv_config
-                .assign_state(layouter, &out_state_absorb_cells, flag.clone())?;
+        let base_conv_cells = self
+            .base_conv_config
+            .assign_state(layouter, &out_state_absorb_cells)?;
 
         // IotaB13
         let mix_res = {
@@ -285,7 +284,7 @@ impl<F: Field> MixingConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, ROUND_CONSTANTS};
-    use crate::permutation::{iota::IotaConfig, add::AddConfig};
+    use crate::permutation::{add::AddConfig, iota::IotaConfig};
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};

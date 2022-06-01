@@ -181,6 +181,21 @@ impl<F: Field> BaseInfo<F> {
     pub fn output_pob(&self) -> F {
         F::from(self.output_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
+    fn num_slices(&self) -> usize {
+        self.max_chunks / self.num_chunks
+    }
+    pub fn input_pobs(&self) -> Vec<F> {
+        (0..self.num_slices())
+            .map(|i| self.input_pob().pow(&[i as u64, 0, 0, 0]))
+            .rev()
+            .collect_vec()
+    }
+    pub fn output_pobs(&self) -> Vec<F> {
+        (0..self.num_slices())
+            .map(|i| self.input_pob().pow(&[i as u64, 0, 0, 0]))
+            .rev()
+            .collect_vec()
+    }
 
     pub fn compute_coefs(&self, input: F) -> Result<(Vec<F>, Vec<F>, F), Error> {
         // big-endian
