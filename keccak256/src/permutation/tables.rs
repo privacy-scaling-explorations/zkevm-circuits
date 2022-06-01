@@ -182,7 +182,7 @@ impl<F: Field> BaseInfo<F> {
         F::from(self.output_base as u64).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
     fn num_slices(&self) -> usize {
-        self.max_chunks / self.num_chunks
+        ((self.max_chunks as f32) / (self.num_chunks as f32)).ceil() as usize
     }
     pub fn input_pobs(&self) -> Vec<F> {
         (0..self.num_slices())
@@ -192,7 +192,7 @@ impl<F: Field> BaseInfo<F> {
     }
     pub fn output_pobs(&self) -> Vec<F> {
         (0..self.num_slices())
-            .map(|i| self.input_pob().pow(&[i as u64, 0, 0, 0]))
+            .map(|i| self.output_pob().pow(&[i as u64, 0, 0, 0]))
             .rev()
             .collect_vec()
     }

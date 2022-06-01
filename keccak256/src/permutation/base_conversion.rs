@@ -124,7 +124,10 @@ mod tests {
     use super::*;
     use crate::arith_helpers::{convert_b2_to_b13, convert_b9_lane_to_b13};
     use crate::gate_helpers::biguint_to_f;
-    use crate::permutation::tables::{FromBase9TableConfig, FromBinaryTableConfig};
+    use crate::permutation::{
+        add::AddConfig,
+        tables::{FromBase9TableConfig, FromBinaryTableConfig},
+    };
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
@@ -141,7 +144,6 @@ mod tests {
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
             lane: Column<Advice>,
-            flag: Column<Advice>,
             table: FromBinaryTableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
@@ -149,18 +151,23 @@ mod tests {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
-                let flag = meta.advice_column();
-                let advices = (0..5)
-                    .map(|_| meta.advice_column())
+                meta.enable_equality(lane);
+                let advices: [Column<Advice>; 2] = (0..2)
+                    .map(|_| {
+                        let col = meta.advice_column();
+                        meta.enable_equality(col);
+                        col
+                    })
                     .collect_vec()
                     .try_into()
                     .unwrap();
                 let base_info = table.get_base_info(false);
-                let conversion =
-                    BaseConversionConfig::configure(meta, base_info, lane, flag, advices);
+                let fixed = meta.fixed_column();
+                meta.enable_constant(fixed);
+                let add = AddConfig::configure(meta, advices[0], advices[1], fixed);
+                let conversion = BaseConversionConfig::configure(meta, base_info, advices, &add);
                 Self {
                     lane,
-                    flag,
                     table,
                     conversion,
                 }
@@ -175,23 +182,11 @@ mod tests {
                 layouter: &mut impl Layouter<F>,
                 input: F,
             ) -> Result<AssignedCell<F, F>, Error> {
-                // The main flag is enabled
-                let flag_value = F::one();
-                let (lane, flag) = layouter.assign_region(
+                let lane = layouter.assign_region(
                     || "Input lane",
-                    |mut region| {
-                        let lane =
-                            region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input))?;
-                        let flag = region.assign_advice(
-                            || "main flag",
-                            self.flag,
-                            0,
-                            || Ok(flag_value),
-                        )?;
-                        Ok((lane, flag))
-                    },
+                    |mut region| region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input)),
                 )?;
-                let output = self.conversion.assign_lane(layouter, lane, flag)?;
+                let output = self.conversion.assign_lane(layouter, lane)?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
@@ -257,7 +252,6 @@ mod tests {
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
             lane: Column<Advice>,
-            flag: Column<Advice>,
             table: FromBase9TableConfig<F>,
             conversion: BaseConversionConfig<F>,
         }
@@ -265,18 +259,23 @@ mod tests {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBase9TableConfig::configure(meta);
                 let lane = meta.advice_column();
-                let flag = meta.advice_column();
-                let advices = (0..5)
-                    .map(|_| meta.advice_column())
+                meta.enable_equality(lane);
+                let advices: [Column<Advice>; 2] = (0..2)
+                    .map(|_| {
+                        let col = meta.advice_column();
+                        meta.enable_equality(col);
+                        col
+                    })
                     .collect_vec()
                     .try_into()
                     .unwrap();
                 let base_info = table.get_base_info(false);
-                let conversion =
-                    BaseConversionConfig::configure(meta, base_info, lane, flag, advices);
+                let fixed = meta.fixed_column();
+                meta.enable_constant(fixed);
+                let add = AddConfig::configure(meta, advices[0], advices[1], fixed);
+                let conversion = BaseConversionConfig::configure(meta, base_info, advices, &add);
                 Self {
                     lane,
-                    flag,
                     table,
                     conversion,
                 }
@@ -291,24 +290,12 @@ mod tests {
                 layouter: &mut impl Layouter<F>,
                 input: F,
             ) -> Result<AssignedCell<F, F>, Error> {
-                // The main flag is enabled
-                let flag_value = F::one();
-                let (lane, flag) = layouter.assign_region(
+                let lane = layouter.assign_region(
                     || "Input lane",
-                    |mut region| {
-                        let lane =
-                            region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input))?;
-                        let flag = region.assign_advice(
-                            || "main flag",
-                            self.flag,
-                            0,
-                            || Ok(flag_value),
-                        )?;
-                        Ok((lane, flag))
-                    },
+                    |mut region| region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input)),
                 )?;
 
-                let output = self.conversion.assign_lane(layouter, lane, flag)?;
+                let output = self.conversion.assign_lane(layouter, lane)?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| output.copy_advice(|| "Output lane", &mut region, self.lane, 0),
@@ -364,7 +351,6 @@ mod tests {
         // We need to load the table
         #[derive(Debug, Clone)]
         struct MyConfig<F> {
-            flag: Column<Advice>,
             state: [Column<Advice>; 25],
             table: FromBinaryTableConfig<F>,
             conversion: BaseConversionConfig<F>,
@@ -373,21 +359,30 @@ mod tests {
             pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
                 let table = FromBinaryTableConfig::configure(meta);
                 let state: [Column<Advice>; 25] = (0..25)
-                    .map(|_| meta.advice_column())
+                    .map(|_| {
+                        let col = meta.advice_column();
+                        meta.enable_equality(col);
+                        col
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let flag = meta.advice_column();
-                let lane = meta.advice_column();
-                let advices = (0..5)
-                    .map(|_| meta.advice_column())
+                let advices: [Column<Advice>; 2] = (0..2)
+                    .map(|_| {
+                        let col = meta.advice_column();
+                        meta.enable_equality(col);
+                        col
+                    })
                     .collect_vec()
                     .try_into()
                     .unwrap();
                 let bi = table.get_base_info(false);
-                let conversion = BaseConversionConfig::configure(meta, bi, lane, flag, advices);
+                let fixed = meta.fixed_column();
+                meta.enable_equality(fixed);
+                meta.enable_constant(fixed);
+                let add = AddConfig::configure(meta, advices[0], advices[1], fixed);
+                let conversion = BaseConversionConfig::configure(meta, bi, advices, &add);
                 Self {
-                    flag,
                     state,
                     table,
                     conversion,
@@ -403,8 +398,7 @@ mod tests {
                 layouter: &mut impl Layouter<F>,
                 input: [F; 25],
             ) -> Result<[F; 25], Error> {
-                let flag_value = F::one();
-                let (state, flag) = layouter.assign_region(
+                let state = layouter.assign_region(
                     || "Input state",
                     |mut region| {
                         let state: [AssignedCell<F, F>; 25] = input
@@ -423,12 +417,10 @@ mod tests {
                             .collect::<Vec<_>>()
                             .try_into()
                             .unwrap();
-                        let flag =
-                            region.assign_advice(|| "Flag", self.flag, 0, || Ok(flag_value))?;
-                        Ok((state, flag))
+                        Ok(state)
                     },
                 )?;
-                let output_state = self.conversion.assign_state(layouter, &state, flag)?;
+                let output_state = self.conversion.assign_state(layouter, &state)?;
                 let output_state: [F; 25] = output_state
                     .iter()
                     .map(|cell| cell.value().copied().unwrap_or_default())

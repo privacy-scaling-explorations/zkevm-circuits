@@ -310,7 +310,7 @@ mod tests {
                     &mut layouter,
                     in_state,
                     self.out_state,
-                    self.is_mixing,
+                    Some(self.is_mixing),
                     self.next_mixing,
                 )?;
                 Ok(())

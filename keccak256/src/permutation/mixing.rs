@@ -338,7 +338,7 @@ mod tests {
                 let iota_config = IotaConfig::configure(add.clone());
 
                 MyConfig {
-                    mixing_conf: MixingConfig::configure(meta, &table, iota_config, state),
+                    mixing_conf: MixingConfig::configure(meta, &table, iota_config, &add, state),
                     table,
                 }
             }
@@ -378,7 +378,7 @@ mod tests {
                     &mut layouter,
                     &in_state,
                     self.out_state,
-                    self.is_mixing,
+                    Some(self.is_mixing),
                     self.next_mixing,
                 )?;
 
