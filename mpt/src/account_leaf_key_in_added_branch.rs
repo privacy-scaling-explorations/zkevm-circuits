@@ -12,7 +12,7 @@ use crate::{
         mult_diff_lookup, range_lookups,
     },
     mpt::FixedTableTag,
-    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND},
+    param::{IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, ACCOUNT_DRIFTED_LEAF_IND, BRANCH_ROWS_NUM, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND},
 };
 
 use crate::param::{
@@ -312,10 +312,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             constraints
         });
 
-        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash the branch (S)", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
+        let add_constraints =
+            |meta: &mut VirtualCells<F>,
+            constraints: &mut Vec<(Expression<F>, Expression<F>)>,
+            is_s: bool | {
 
+            let q_enable = q_enable(meta);
             let mut rlc = meta.query_advice(acc_s, Rotation::cur());
             let acc_mult = meta.query_advice(acc_mult_s, Rotation::cur());
 
@@ -329,8 +331,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             Drifted leaf (leaf in added branch)
             */
 
-            let nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND);
-            let storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+            let mut nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND);
+            if !is_s {
+                nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_NONCE_BALANCE_C_IND);
+            }
+            let mut storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+            if !is_s {
+                storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
+            }
 
             let mult_diff_nonce = meta.query_advice(key_rlc, Rotation(nonce_rot));
 
@@ -339,6 +347,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             let s_rlp2_nonce = meta.query_advice(s_rlp2, Rotation(nonce_rot));
             let mut rind = 0;
+        
             rlc = rlc + s_rlp2_nonce * acc_mult.clone() * r_table[rind].clone();
             rind += 1;
 
@@ -353,10 +362,22 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 sel1,
                 Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
+            if !is_s {
+                is_nonce_long = meta.query_advice(
+                    sel1,
+                    Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)),
+                );
+            }
             let mut is_balance_long = meta.query_advice(
                 sel2,
                 Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)),
             );
+            if !is_s {
+                is_balance_long = meta.query_advice(
+                    sel2,
+                    Rotation(-(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)),
+                );
+            }
 
             let s_advices0_nonce = meta.query_advice(s_advices[0], Rotation(nonce_rot));
             let nonce_stored = meta.query_advice(s_mod_node_hash_rlc, Rotation(nonce_rot));
@@ -396,34 +417,68 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             // Any rotation that lands into branch children can be used.
             let rot = -17;
-            let is_branch_s_placeholder = meta.query_advice(
+            let mut is_branch_placeholder = meta.query_advice(
                 s_advices[IS_BRANCH_S_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(rot_branch_init),
             );
+            if !is_s {
+                is_branch_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(rot_branch_init),
+                );
+            }
 
             constraints.push((
                 q_enable.clone()
                     * rlc
-                    * is_branch_s_placeholder.clone()
+                    * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level.clone()),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
-            // s_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
+            // s(c)_mod_node_hash_rlc in placeholder branch contains hash of a drifted leaf
             // (that this value corresponds to the value in the non-placeholder branch at drifted_pos
             // is checked in branch_parallel)
-            let s_mod_node_hash_rlc = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            let mut mod_node_hash_rlc = meta.query_advice(s_mod_node_hash_rlc, Rotation(rot));
+            if !is_s {
+                mod_node_hash_rlc = meta.query_advice(c_mod_node_hash_rlc, Rotation(rot));
+            }
             let keccak_table_i = meta.query_fixed(keccak_table[1], Rotation::cur());
             constraints.push((
                 q_enable.clone()
-                    * s_mod_node_hash_rlc
-                    * is_branch_s_placeholder.clone()
+                    * mod_node_hash_rlc
+                    * is_branch_placeholder.clone()
                     * (one.clone() - is_leaf_in_first_level),
                 keccak_table_i,
             ));
+            };
 
+        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash the branch (S)", |meta| {
+            let mut constraints = vec![];
+            add_constraints(meta, &mut constraints, true);
             constraints
         });
+
+        meta.lookup_any("account_leaf_key_in_added_branch: drifted leaf hash the branch (C)", |meta| {
+            let mut constraints = vec![];
+            add_constraints(meta, &mut constraints, false);
+            constraints
+        });
+
+        range_lookups(
+            meta,
+            q_enable,
+            s_advices.to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
+        range_lookups(
+            meta,
+            q_enable,
+            [s_rlp1, s_rlp2, c_rlp1, c_rlp2].to_vec(),
+            FixedTableTag::Range256,
+            fixed_table,
+        );
 
         config
     }
