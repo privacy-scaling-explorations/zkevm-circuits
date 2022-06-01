@@ -49,31 +49,33 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let is_mod = (opcode.expr() - OpcodeId::MUL.expr())
             * (opcode.expr() - OpcodeId::DIV.expr())
             * F::from(8).invert().unwrap();
-        let mul_add_words = MulAddWordsGadget::construct(cb);
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&mul_add_words.b.cells));
-        let lt_word = LtWordGadget::construct(cb, &mul_add_words.c, &mul_add_words.b);
+        let a = cb.query_word();
+        let b = cb.query_word();
+        let c = cb.query_word();
+        let d = cb.query_word();
+
+        let mul_add_words =
+            MulAddWordsGadget::construct(cb, a.clone(), b.clone(), c.clone(), d.clone());
+        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
+        let lt_word = LtWordGadget::construct(cb, &c, &b);
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
         // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
-        cb.stack_pop(select::expr(
-            is_mul.clone(),
-            mul_add_words.a.expr(),
-            mul_add_words.d.expr(),
-        ));
+        cb.stack_pop(select::expr(is_mul.clone(), a.expr(), d.expr()));
         cb.stack_pop(mul_add_words.b.expr());
         cb.stack_push(
-            is_mul.clone() * mul_add_words.d.expr()
-                + is_div * mul_add_words.a.expr() * (1.expr() - divisor_is_zero.expr())
-                + is_mod * mul_add_words.c.expr() * (1.expr() - divisor_is_zero.expr()),
+            is_mul.clone() * d.expr()
+                + is_div * a.expr() * (1.expr() - divisor_is_zero.expr())
+                + is_mod * c.expr() * (1.expr() - divisor_is_zero.expr()),
         );
 
         // Constraint for MUL case
         cb.add_constraint(
             "c == 0 for opcode MUL",
-            is_mul.clone() * sum::expr(&mul_add_words.c.cells),
+            is_mul.clone() * sum::expr(&c.cells),
         );
 
         // Constraints for DIV and MOD cases
