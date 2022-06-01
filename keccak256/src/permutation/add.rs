@@ -27,6 +27,7 @@ impl<F: Field> AddConfig<F> {
         let q_enable = meta.selector();
         meta.enable_equality(x);
         meta.enable_equality(input);
+        meta.enable_constant(fixed);
 
         meta.create_gate("add", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -188,6 +189,11 @@ impl<F: Field> AddConfig<F> {
         outcome: Option<AssignedCell<F, F>>,
     ) -> Result<AssignedCell<F, F>, Error> {
         let len = xs.len();
-        self.linear_combine(layouter, xs, (0..len).map(|_| F::one()).collect_vec(), outcome)
+        self.linear_combine(
+            layouter,
+            xs,
+            (0..len).map(|_| F::one()).collect_vec(),
+            outcome,
+        )
     }
 }
