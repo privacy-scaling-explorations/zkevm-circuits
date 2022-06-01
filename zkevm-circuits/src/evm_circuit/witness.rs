@@ -804,7 +804,7 @@ impl Rw {
         }
     }
 
-    fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
             Self::Start => F::zero(),
             Self::CallContext {
