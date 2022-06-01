@@ -3,7 +3,7 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        base_conversion::BaseConversionConfig, iota_b9::IotaB9Config, mixing::MixingConfig,
+        base_conversion::BaseConversionConfig, iota::IotaConfig, mixing::MixingConfig,
         pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
         xi::XiConfig,
     },
@@ -22,7 +22,7 @@ pub struct KeccakFConfig<F: Field> {
     theta_config: ThetaConfig<F>,
     rho_config: RhoConfig<F>,
     xi_config: XiConfig<F>,
-    iota_b9_config: IotaB9Config<F>,
+    iota_config: IotaConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
@@ -44,6 +44,7 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
+        let flag = meta.advice_column();
         let fixed = [
             meta.fixed_column(),
             meta.fixed_column(),
@@ -56,22 +57,7 @@ impl<F: Field> KeccakFConfig<F> {
         let rho_config = RhoConfig::configure(meta, state, fixed);
         // xi
         let xi_config = XiConfig::configure(meta.selector(), meta, state);
-
-        // Allocate space for the round constants in base-9 which is an
-        // instance column
-        let round_ctant_b9 = meta.advice_column();
-        meta.enable_equality(round_ctant_b9);
-        let round_constants_b9 = meta.instance_column();
-
-        // Allocate space for the round constants in base-13 which is an
-        // instance column
-        let round_ctant_b13 = meta.advice_column();
-        meta.enable_equality(round_ctant_b13);
-        let round_constants_b13 = meta.instance_column();
-
-        // Iotab9
-        let iota_b9_config =
-            IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
+        let iota_config = IotaConfig::configure(meta, state[0], flag, fixed[0]);
 
         // Allocate space for the activation flag of the base_conversion.
         let base_conv_activator = meta.advice_column();
@@ -90,15 +76,8 @@ impl<F: Field> KeccakFConfig<F> {
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
-        let mixing_config = MixingConfig::configure(
-            meta,
-            &from_b9_table,
-            round_ctant_b9,
-            round_ctant_b13,
-            round_constants_b9,
-            round_constants_b13,
-            state,
-        );
+        let mixing_config =
+            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), state);
 
         // Allocate the `out state correctness` gate selector
         let q_out = meta.selector();
@@ -120,7 +99,7 @@ impl<F: Field> KeccakFConfig<F> {
             theta_config,
             rho_config,
             xi_config,
-            iota_b9_config,
+            iota_config,
             from_b9_table,
             base_conversion_config,
             mixing_config,
@@ -146,7 +125,7 @@ impl<F: Field> KeccakFConfig<F> {
         let mut state = in_state;
 
         // First 23 rounds
-        for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {
+        for round_idx in 0..PERMUTATION {
             // State in base-13
             // theta
             state = {
@@ -160,10 +139,7 @@ impl<F: Field> KeccakFConfig<F> {
             };
 
             // rho
-            state = {
-                // assignment
-                self.rho_config.assign_rotation_checks(layouter, &state)?
-            };
+            state = self.rho_config.assign_rotation_checks(layouter, &state)?;
             // Outputs in base-9 which is what Pi requires
 
             // Apply Pi permutation
@@ -185,15 +161,9 @@ impl<F: Field> KeccakFConfig<F> {
             }
 
             // iota_b9
-            state = {
-                let out_state = KeccakFArith::iota_b9(
-                    &state_to_biguint(split_state_cells(state.clone())),
-                    *round_val,
-                );
-                let out_state = state_bigint_to_field(out_state);
-                self.iota_b9_config
-                    .not_last_round(layouter, &state, out_state, round_idx)?
-            };
+            state[0] = self
+                .iota_config
+                .assign_round_b9(layouter, state[0].clone(), round_idx)?;
 
             // The resulting state is in Base-9 now. We now convert it to
             // base_13 which is what Theta requires again at the
@@ -231,8 +201,6 @@ impl<F: Field> KeccakFConfig<F> {
             state_bigint_to_field(mix_res),
             flag,
             next_mixing,
-            // Last round = PERMUTATION - 1
-            PERMUTATION - 1,
         )?;
 
         self.constrain_out_state(layouter, &mix_res, out_state)
@@ -297,7 +265,7 @@ impl<F: Field> KeccakFConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{State, NEXT_INPUTS_LANES, ROUND_CONSTANTS};
+    use crate::common::{State, NEXT_INPUTS_LANES};
     use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
@@ -415,16 +383,6 @@ mod tests {
         let next_input_fp: [Fp; NEXT_INPUTS_LANES] =
             state_bigint_to_field(StateBigInt::from(next_input));
 
-        let constants_b13: Vec<Fp> = ROUND_CONSTANTS
-            .iter()
-            .map(|num| biguint_to_f(&convert_b2_to_b13(*num)))
-            .collect();
-
-        let constants_b9: Vec<Fp> = ROUND_CONSTANTS
-            .iter()
-            .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
-            .collect();
-
         // When we pass no `mixing_inputs`, we perform the full keccak round
         // ending with Mixing executing IotaB9
         {
@@ -437,12 +395,7 @@ mod tests {
                 is_mixing: false,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
@@ -454,13 +407,20 @@ mod tests {
                 next_mixing: None,
                 is_mixing: true,
             };
+            let k = 17;
+            let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
+            #[cfg(feature = "dev-graph")]
+            {
+                use plotters::prelude::*;
+                let root = BitMapBackend::new("keccak-f.png", (1024, 16384)).into_drawing_area();
+                root.fill(&WHITE).unwrap();
+                let root = root.titled("Keccak-F", ("sans-serif", 60)).unwrap();
+                halo2_proofs::dev::CircuitLayout::default()
+                    .show_labels(false)
+                    .render(k, &circuit, &root)
+                    .unwrap();
+            }
 
             assert!(prover.verify().is_err());
         }
@@ -475,12 +435,7 @@ mod tests {
                 is_mixing: true,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9.clone(), constants_b13.clone()],
-            )
-            .unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
 
@@ -493,8 +448,7 @@ mod tests {
                 is_mixing: true,
             };
 
-            let prover =
-                MockProver::<Fp>::run(17, &circuit, vec![constants_b9, constants_b13]).unwrap();
+            let prover = MockProver::<Fp>::run(17, &circuit, vec![]).unwrap();
 
             assert!(prover.verify().is_err());
         }

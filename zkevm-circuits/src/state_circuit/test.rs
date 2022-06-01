@@ -256,6 +256,22 @@ fn diff_1_problem_repro() {
 }
 
 #[test]
+fn storage_key_rlc() {
+    let rows = vec![Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::from(256),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    }];
+
+    assert_eq!(verify(rows), Ok(()));
+}
+
+#[test]
 fn address_limb_mismatch() {
     let rows = vec![Rw::Account {
         rw_counter: 1,
