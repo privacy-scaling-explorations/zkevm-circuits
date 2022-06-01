@@ -8,52 +8,40 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::convert::TryInto;
 
-#[derive(Clone, Debug)]
-pub struct ThetaConfig<F> {
-    add: AddConfig<F>,
-}
+pub fn assign_theta<F: Field>(
+    add: &AddConfig<F>,
+    layouter: &mut impl Layouter<F>,
+    state: &[AssignedCell<F, F>; 25],
+) -> Result<[AssignedCell<F, F>; 25], Error> {
+    let theta_col_sums: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
+        .map(|x| {
+            let col_sum =
+                add.running_sum(layouter, (0..5).map(|y| state[5 * x + y].clone()).collect())?;
+            Ok(col_sum)
+        })
+        .into_iter()
+        .collect();
+    let theta_col_sums = theta_col_sums?;
+    let theta_col_sums: [AssignedCell<F, F>; 5] = theta_col_sums.try_into().unwrap();
 
-impl<F: Field> ThetaConfig<F> {
-    pub fn configure(add: AddConfig<F>) -> Self {
-        Self { add }
-    }
+    let out_state: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
+        .cartesian_product(0..5)
+        .map(|(x, y)| {
+            let cells = vec![
+                state[5 * x + y].clone(),
+                theta_col_sums[(x + 4) % 5].clone(),
+                theta_col_sums[(x + 1) % 5].clone(),
+            ];
+            let vs = vec![F::one(), F::one(), F::from(B13 as u64)];
+            let new_lane = add.linear_combine(layouter, cells, vs)?;
+            Ok(new_lane)
+        })
+        .into_iter()
+        .collect();
+    let out_state = out_state?;
+    let out_state: [AssignedCell<F, F>; 25] = out_state.try_into().unwrap();
 
-    pub fn assign_state(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        state: &[AssignedCell<F, F>; 25],
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        let theta_col_sums: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
-            .map(|x| {
-                let col_sum = self
-                    .add
-                    .running_sum(layouter, (0..5).map(|y| state[5 * x + y].clone()).collect())?;
-                Ok(col_sum)
-            })
-            .into_iter()
-            .collect();
-        let theta_col_sums = theta_col_sums?;
-        let theta_col_sums: [AssignedCell<F, F>; 5] = theta_col_sums.try_into().unwrap();
-
-        let out_state: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
-            .cartesian_product(0..5)
-            .map(|(x, y)| {
-                let cells = vec![
-                    state[5 * x + y].clone(),
-                    theta_col_sums[(x + 4) % 5].clone(),
-                    theta_col_sums[(x + 1) % 5].clone(),
-                ];
-                let vs = vec![F::one(), F::one(), F::from(B13 as u64)];
-                let new_lane = self.add.linear_combine(layouter, cells, vs)?;
-                Ok(new_lane)
-            })
-            .into_iter()
-            .collect();
-        let out_state = out_state?;
-        let out_state: [AssignedCell<F, F>; 25] = out_state.try_into().unwrap();
-
-        Ok(out_state)
-    }
+    Ok(out_state)
 }
 
 #[cfg(test)]
@@ -78,7 +66,7 @@ mod tests {
         #[derive(Clone, Debug)]
         struct MyConfig<F> {
             lane: Column<Advice>,
-            theta: ThetaConfig<F>,
+            add: AddConfig<F>,
         }
 
         impl<F: Field> MyConfig<F> {
@@ -96,8 +84,7 @@ mod tests {
 
                 let lane = advices[0];
                 let add = AddConfig::configure(meta, advices[1], advices[2], fixed);
-                let theta = ThetaConfig::configure(add);
-                Self { lane, theta }
+                Self { lane, add }
             }
         }
         #[derive(Default)]
@@ -147,7 +134,7 @@ mod tests {
                     },
                 )?;
 
-                let out_state = config.theta.assign_state(&mut layouter, &in_state)?;
+                let out_state = assign_theta(&config.add, &mut layouter, &in_state)?;
 
                 layouter.assign_region(
                     || "Check outstate",

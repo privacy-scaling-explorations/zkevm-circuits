@@ -8,40 +8,28 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::convert::TryInto;
 
-#[derive(Clone, Debug)]
-pub struct XiConfig<F> {
-    add: AddConfig<F>,
-}
-
-impl<F: Field> XiConfig<F> {
-    // We assume state is recieved in base-9.
-    pub fn configure(add: AddConfig<F>) -> Self {
-        Self { add }
-    }
-
-    pub fn assign_state(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        state: &[AssignedCell<F, F>; 25],
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        let out_state: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
-            .cartesian_product(0..5)
-            .map(|(x, y)| {
-                let cells = vec![
-                    state[5 * x + y].clone(),
-                    state[5 * ((x + 1) % 5) + y].clone(),
-                    state[5 * ((x + 2) % 5) + y].clone(),
-                ];
-                let vs = vec![F::from(A1), F::from(A2), F::from(A3)];
-                let new_lane = self.add.linear_combine(layouter, cells, vs)?;
-                Ok(new_lane)
-            })
-            .into_iter()
-            .collect();
-        let out_state = out_state?;
-        let out_state: [AssignedCell<F, F>; 25] = out_state.try_into().unwrap();
-        Ok(out_state)
-    }
+pub fn assign_xi<F: Field>(
+    add: &AddConfig<F>,
+    layouter: &mut impl Layouter<F>,
+    state: &[AssignedCell<F, F>; 25],
+) -> Result<[AssignedCell<F, F>; 25], Error> {
+    let out_state: Result<Vec<AssignedCell<F, F>>, Error> = (0..5)
+        .cartesian_product(0..5)
+        .map(|(x, y)| {
+            let cells = vec![
+                state[5 * x + y].clone(),
+                state[5 * ((x + 1) % 5) + y].clone(),
+                state[5 * ((x + 2) % 5) + y].clone(),
+            ];
+            let vs = vec![F::from(A1), F::from(A2), F::from(A3)];
+            let new_lane = add.linear_combine(layouter, cells, vs)?;
+            Ok(new_lane)
+        })
+        .into_iter()
+        .collect();
+    let out_state = out_state?;
+    let out_state: [AssignedCell<F, F>; 25] = out_state.try_into().unwrap();
+    Ok(out_state)
 }
 
 #[cfg(test)]
@@ -64,7 +52,7 @@ mod tests {
         #[derive(Clone, Debug)]
         struct MyConfig<F> {
             lane: Column<Advice>,
-            xi: XiConfig<F>,
+            add: AddConfig<F>,
         }
 
         impl<F: Field> MyConfig<F> {
@@ -82,8 +70,7 @@ mod tests {
 
                 let lane = advices[0];
                 let add = AddConfig::configure(meta, advices[1], advices[2], fixed);
-                let xi = XiConfig::configure(add);
-                Self { lane, xi }
+                Self { lane, add }
             }
         }
         #[derive(Default)]
@@ -134,7 +121,7 @@ mod tests {
                     },
                 )?;
 
-                let out_state = config.xi.assign_state(&mut layouter, &in_state)?;
+                let out_state = assign_xi(&config.add, &mut layouter, &in_state)?;
 
                 layouter.assign_region(
                     || "Check outstate",

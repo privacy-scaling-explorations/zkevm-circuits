@@ -5,7 +5,7 @@ use crate::{
     permutation::{
         add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
         mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
-        tables::FromBase9TableConfig, theta::ThetaConfig, xi::XiConfig,
+        tables::FromBase9TableConfig, theta::assign_theta, xi::assign_xi,
     },
 };
 use eth_types::Field;
@@ -19,9 +19,8 @@ use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub struct KeccakFConfig<F: Field> {
-    theta_config: ThetaConfig<F>,
+    add: AddConfig<F>,
     rho_config: RhoConfig<F>,
-    xi_config: XiConfig<F>,
     iota_config: IotaConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: BaseConversionConfig<F>,
@@ -55,12 +54,8 @@ impl<F: Field> KeccakFConfig<F> {
 
         let add = AddConfig::configure(meta, input, x, fixed[3]);
 
-        // theta
-        let theta_config = ThetaConfig::configure(add.clone());
         // rho
         let rho_config = RhoConfig::configure(meta, state, fixed[0], add.clone());
-        // xi
-        let xi_config = XiConfig::configure(add.clone());
         let iota_config = IotaConfig::configure(add.clone());
 
         // Allocate space for the activation flag of the base_conversion.
@@ -99,10 +94,9 @@ impl<F: Field> KeccakFConfig<F> {
                 .collect_vec()
         });
 
-        KeccakFConfig {
-            theta_config,
+        Self {
+            add,
             rho_config,
-            xi_config,
             iota_config,
             from_b9_table,
             base_conversion_config,
@@ -132,17 +126,17 @@ impl<F: Field> KeccakFConfig<F> {
         for round_idx in 0..PERMUTATION {
             // State in base-13
             // theta
-            state = self.theta_config.assign_state(layouter, &state)?;
+            state = assign_theta(&self.add, layouter, &state)?;
 
             // rho
             state = self.rho_config.assign_rotation_checks(layouter, &state)?;
             // Outputs in base-9 which is what Pi requires
 
             // Apply Pi permutation
-            state = pi_gate_permutation(state.clone());
+            state = pi_gate_permutation(&state);
 
             // xi
-            state = self.xi_config.assign_state(layouter, &state)?;
+            state = assign_xi(&self.add, layouter, &state)?;
 
             // Last round before Mixing does not run IotaB9 nor BaseConversion
             if round_idx == PERMUTATION - 1 {
