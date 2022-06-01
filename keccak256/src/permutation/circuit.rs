@@ -111,7 +111,7 @@ impl<F: Field> KeccakFConfig<F> {
         layouter: &mut impl Layouter<F>,
         in_state: [AssignedCell<F, F>; 25],
         out_state: [F; 25],
-        flag: bool,
+        flag: Option<bool>,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         let mut state = in_state;

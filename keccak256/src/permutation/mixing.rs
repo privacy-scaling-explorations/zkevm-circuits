@@ -114,29 +114,35 @@ impl<F: Field> MixingConfig<F> {
     pub fn enforce_flag_consistency(
         &self,
         layouter: &mut impl Layouter<F>,
-        flag_bool: bool,
+        flag: Option<bool>,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
         layouter.assign_region(
             || "Flag and Negated flag assignation",
             |mut region| {
                 self.q_flag.enable(&mut region, 0)?;
                 // Witness `is_mixing` flag
-                let flag = region.assign_advice(
+                let positive = region.assign_advice(
                     || "witness is_mixing",
                     self.flag,
                     0,
-                    || Ok(F::from(flag_bool as u64)),
+                    || {
+                        flag.and_then(|flag| Some(F::from(flag as u64)))
+                            .ok_or(Error::Synthesis)
+                    },
                 )?;
 
                 // Witness negated `is_mixing` flag
-                let negated_flag = region.assign_advice(
+                let negative = region.assign_advice(
                     || "witness negated is_mixing",
                     self.flag,
                     1,
-                    || Ok(F::from(!flag_bool as u64)),
+                    || {
+                        flag.and_then(|flag| Some(F::from(!flag as u64)))
+                            .ok_or(Error::Synthesis)
+                    },
                 )?;
 
-                Ok((flag, negated_flag))
+                Ok((positive, negative))
             },
         )
     }
@@ -145,7 +151,7 @@ impl<F: Field> MixingConfig<F> {
     pub fn assign_out_mixing_states(
         &self,
         layouter: &mut impl Layouter<F>,
-        flag_bool: bool,
+        flag: Option<bool>,
         negated_flag: AssignedCell<F, F>,
         out_mixing_circ: &[AssignedCell<F, F>; 25],
         out_non_mixing_circ: &[AssignedCell<F, F>; 25],
@@ -162,7 +168,10 @@ impl<F: Field> MixingConfig<F> {
                     || "witness is_mixing",
                     self.flag,
                     0,
-                    || Ok(F::from(flag_bool as u64)),
+                    || {
+                        flag.and_then(|flag| Some(F::from(flag as u64)))
+                            .ok_or(Error::Synthesis)
+                    },
                 )?;
 
                 negated_flag.copy_advice(|| "witness is_mixing", &mut region, self.flag, 1)?;
@@ -196,21 +205,19 @@ impl<F: Field> MixingConfig<F> {
         layouter: &mut impl Layouter<F>,
         in_state: &[AssignedCell<F, F>; 25],
         out_state: [F; 25],
-        flag_bool: bool,
+        flag: Option<bool>,
         next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         // Enforce flag constraints and witness them.
-        let (flag, negated_flag) = self.enforce_flag_consistency(layouter, flag_bool)?;
+        let (f_pos, f_neg) = self.enforce_flag_consistency(layouter, flag)?;
 
         // If we don't mix:
         // IotaB9
         let non_mix_res = {
             let mut state = in_state.clone();
-            state[0] = self.iota_config.assign_b9_last_round(
-                layouter,
-                state[0].clone(),
-                negated_flag.clone(),
-            )?;
+            state[0] =
+                self.iota_config
+                    .assign_b9_last_round(layouter, state[0].clone(), f_neg.clone())?;
             state
         };
 
@@ -225,7 +232,7 @@ impl<F: Field> MixingConfig<F> {
                 &state_to_state_bigint::<F, NEXT_INPUTS_LANES>(next_mixing.unwrap_or_default()),
             )),
             next_mixing.unwrap_or_default(),
-            flag.clone(),
+            f_pos.clone(),
         )?;
 
         // Base conversion assign
@@ -239,24 +246,20 @@ impl<F: Field> MixingConfig<F> {
 
             base_conv_cells[0] =
                 self.iota_config
-                    .assign_round_b13(layouter, base_conv_cells[0].clone(), flag)?;
+                    .assign_round_b13(layouter, base_conv_cells[0].clone(), f_pos)?;
             base_conv_cells
         };
 
         let mixing_res = self.assign_out_mixing_states(
             layouter,
-            flag_bool,
-            negated_flag,
+            flag,
+            f_neg.clone(),
             &mix_res,
             &non_mix_res,
             out_state,
-        );
+        )?;
 
-        if !flag_bool {
-            Ok(non_mix_res)
-        } else {
-            mixing_res
-        }
+        Ok(mixing_res)
     }
 
     /// Copies the `[(Cell,F);25]` to the passed [Column<Advice>; 25].
