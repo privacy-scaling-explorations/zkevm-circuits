@@ -793,11 +793,13 @@ pub(crate) struct MulAddWordsGadget<F> {
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
-        let d = cb.query_word();
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        a: util::Word<F>,
+        b: util::Word<F>,
+        c: util::Word<F>,
+        d: util::Word<F>,
+    ) -> Self {
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
         let carry_lo_expr = from_bytes::expr(&carry_lo);
