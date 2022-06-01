@@ -10,7 +10,7 @@ use crate::{
     helpers::{compute_rlc, key_len_lookup, mult_diff_lookup, range_lookups},
     mpt::FixedTableTag,
     param::{
-        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, 
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, LAYOUT_OFFSET, R_TABLE_LEN,
     },
 };
@@ -347,6 +347,7 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
             /*
+            TODO: check this note, it's probably not a problem anymore.
             Note: if using directly:
             let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
             let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot_level_above));
@@ -355,18 +356,85 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let key_rlc_acc_start = meta.query_advice(key_rlc_prev, Rotation::cur());
             let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
 
-            // sel1, sel2 is in init branch
-            let sel1 = meta.query_advice(
+            let sel1p = meta.query_advice(
                 s_advices[IS_BRANCH_C16_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_first_branch_child - 1),
             );
-            let sel2 = meta.query_advice(
+            let sel2p = meta.query_advice(
                 s_advices[IS_BRANCH_C1_POS - LAYOUT_OFFSET],
                 Rotation(rot_into_first_branch_child - 1),
             );
 
             let c32 = Expression::Constant(F::from(32));
             let c48 = Expression::Constant(F::from(48));
+ 
+            /*
+            Branch 1S || Branch 1C
+            Branch 2S (placeholder) || Branch 2C
+            Leaf S
+            Leaf C
+
+            We need to know sel1/sel2 for Branch S to compute key RLC of a Leaf S. The rotation
+            back into Branch 1S causes PoisonedConstraint in extension_node_key.
+
+            Instead, we can rotate into branch parallel to the placeholder branch and compute sel1/sel2 with info from there.
+            Let's denote sel1/sel2 from this branch by sel1p/sel2p.
+    
+            There are a couple of different cases, for example when branch/extension node parallel
+            to the placeholder branch is a regular branch.
+            There is only one nibble taken by Branch 2C, so sel1/sel2 simply turns around compared to sel1p/sel2p:
+            sel1 = sel2p
+            sel2 = sel1p
+
+            When branch/extension node parallel to the placeholder branch is an extension node, it depends on the
+            number of nibbles. If there is an odd number of nibbles: sel1 = sel1p, sel2 = sel2p. If there is
+            an even number of nibbles, it turns around.
+
+            Note: _c16 presents the same info as sel1, _c1 presents the same info as sel2 (this information is doubled 
+            to reduce the degree when handling different cases in extension_node_key).
+            */
+
+            let is_ext_short_c16 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_init),
+            );
+            let is_ext_short_c1 = meta.query_advice(
+                s_advices[IS_EXT_SHORT_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_init),
+            );
+            let is_ext_long_even_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_init),
+            );
+            let is_ext_long_even_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_EVEN_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_init),
+            );
+            let is_ext_long_odd_c16 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C16_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_init),
+            );
+            let is_ext_long_odd_c1 = meta.query_advice(
+                s_advices[IS_EXT_LONG_ODD_C1_POS - LAYOUT_OFFSET],
+                Rotation(rot_into_init),
+            );
+
+            let is_extension_node = is_ext_short_c16.clone()
+                + is_ext_short_c1.clone()
+                + is_ext_long_even_c16.clone()
+                + is_ext_long_even_c1.clone()
+                + is_ext_long_odd_c16.clone()
+                + is_ext_long_odd_c1.clone();
+
+            let sel1 = (one.clone() - is_extension_node.clone()) * sel2p.clone()
+                + is_ext_short_c16.clone() * sel1p.clone()
+                + is_ext_short_c1.clone() * sel2p.clone()
+                + is_ext_long_even_c16.clone() * sel2p.clone()
+                + is_ext_long_even_c1.clone() * sel1p.clone()
+                + is_ext_long_odd_c16.clone() * sel1p.clone()
+                + is_ext_long_odd_c1.clone() * sel2p.clone();
+
+            let sel2 = one.clone() - sel1.clone();
 
             // If sel1 = 1, we have nibble+48 in s_advices[0].
             let s_advice1 = meta.query_advice(s_advices[1], Rotation::cur());
