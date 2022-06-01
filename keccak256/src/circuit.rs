@@ -40,8 +40,8 @@ pub struct KeccakConfig<F: Field> {
     q_enable: Selector,
     state_tag: Column<Advice>,
     input_len: Column<Advice>,
-    input_no_padding: Column<Advice>,
-    input_rlc: Column<Advice>,
+    input: Column<Advice>,
+    input_padded: Column<Advice>,
     perm_count: Column<Advice>,
     acc_input: Column<Advice>,
     output_rlc: Column<Advice>,
@@ -70,22 +70,26 @@ impl<F: Field> KeccakConfig<F> {
         );
 
         let q_enable = meta.selector();
+        let randomness = meta.instance_column();
         let state_tag = meta.advice_column();
         let input_len = meta.advice_column();
-        let input_no_padding = meta.advice_column();
-        let input_rlc = meta.advice_column();
+        let input = meta.advice_column();
+        let input_padded = meta.advice_column();
         let perm_count = meta.advice_column();
         let acc_input = meta.advice_column();
         let output_rlc = meta.advice_column();
 
         meta.create_gate("Start State", |meta| {
             let q_enable = meta.query_selector(q_enable);
+            let randomness = meta.query_instance(randomness, Rotation::cur());
             let next_state_tag = meta.query_advice(state_tag, Rotation::next());
             let state_tag = meta.query_advice(state_tag, Rotation::cur());
             let input_len = meta.query_advice(input_len, Rotation::cur());
-            let input_no_padding = meta.query_advice(input_no_padding, Rotation::cur());
-            let input_rlc = meta.query_advice(input_rlc, Rotation::cur());
+            let next_input = meta.query_advice(input, Rotation::next());
+            let input = meta.query_advice(input, Rotation::cur());
+            let next_perm_count = meta.query_advice(perm_count, Rotation::next());
             let perm_count = meta.query_advice(perm_count, Rotation::cur());
+            let next_acc_input = meta.query_advice(acc_input, Rotation::next());
             let acc_input = meta.query_advice(acc_input, Rotation::cur());
             let output_rlc = meta.query_advice(output_rlc, Rotation::cur());
 
@@ -96,6 +100,12 @@ impl<F: Field> KeccakConfig<F> {
 
             let next_state_start =
                 generate_lagrange_base_polynomial(next_state_tag.clone(), 0, 0..=3);
+            let next_state_continue =
+                generate_lagrange_base_polynomial(next_state_tag.clone(), 1, 0..=3);
+            let next_state_finalize =
+                generate_lagrange_base_polynomial(next_state_tag.clone(), 2, 0..=3);
+            let next_state_end =
+                generate_lagrange_base_polynomial(next_state_tag.clone(), 3, 0..=3);
 
             // We need to make sure that the lagrange interpolation results are boolean.
             // This expressions will be zero if the values are boolean.
@@ -105,6 +115,11 @@ impl<F: Field> KeccakConfig<F> {
             let is_bool_cur_state_end = bool_constraint_expr(state_end.clone());
 
             let is_bool_next_state_start = bool_constraint_expr(next_state_start.clone());
+            let is_bool_next_state_continue = bool_constraint_expr(next_state_continue.clone());
+            let is_bool_next_state_finalize = bool_constraint_expr(next_state_finalize.clone());
+            let is_bool_next_state_end = bool_constraint_expr(next_state_end.clone());
+            
+
 
             // ------------------------------------------------------- //
             // --------------------- Start State --------------------- //
@@ -123,34 +138,46 @@ impl<F: Field> KeccakConfig<F> {
             // 0.
             let zero_assumptions = bool_constraint_expr(input_len.clone())
                 + input_len.clone()
-                + bool_constraint_expr(input_no_padding.clone())
-                + input_no_padding
+                + bool_constraint_expr(input.clone())
+                + input
                 + bool_constraint_expr(perm_count.clone())
                 + perm_count.clone()
                 + bool_constraint_expr(acc_input.clone())
-                + acc_input
+                + acc_input.clone()
                 + bool_constraint_expr(output_rlc.clone())
                 + output_rlc;
+            
+            //[(q_enable * state_start) * (start_tag_correctness + zero_assumptions)]
 
             // ------------------------------------------------------- //
             // -------------------- Continue State ------------------- //
             // ------------------------------------------------------- //
 
-            let next_state_is_finalize =
-                generate_lagrange_base_polynomial(next_state_tag, 1, 0..=3);
-
-            // We need to make sure that the lagrange interpolation results are boolean.
-            // This expressions will be zero if the values are boolean.
-            let is_bool_next_finalize_state = bool_constraint_expr(next_state_is_finalize.clone());
+            // `next.state_tag === Finalize`
+            let next_state_tag_absortion = is_bool_next_state_finalize + (Expression::Constant(F::one()) - next_state_finalize.clone());
+            let next_input_is_zero = next_input.clone() + bool_constraint_expr(next_input.clone());
 
             // We check: `input_len - (136 * (perm_count + 1))`. If it evaluates to 0, we
             // need to pad and absorb.
             let have_to_pad_and_absorb = input_len
                 - (Expression::Constant(F::from(136u64))
-                    * (perm_count + Expression::Constant(F::one())));
+                    * (perm_count.clone() + Expression::Constant(F::one())));
 
+
+            // Absortion check 
+            // TODO: Add absortion lookup.
+            //vec![have_to_pad_and_absorb * (next_state_tag_absortion + next_input_is_zero)];
+
+            // `next.acc_input === curr.acc_input * r**136 + next.input`
+            let next_row_validity_input = next_acc_input - (acc_input * square_and_multiply(randomness, 136)) + next_input;
+            // `next.perm_count === curr.perm_count + 1`
+            let next_row_validity_perm_count = next_perm_count - perm_count + Expression::Constant(F::one());
+            // `next.state_tag in (Continue, Finalize)`
+            let next_state_continue_or_finalize = Expression::Constant(F::one()) - (next_state_finalize + next_state_continue);
+
+            // Next Row validity + State transition Continue
+            // vec![next_row_validity_input + next_row_validity_input + next_state_continue_or_finalize];
             vec![Expression::Constant(F::zero())]
-            //[(q_enable * state_start) * (start_tag_correctness + zero_assumptions)]
         });
 
         unimplemented!()
