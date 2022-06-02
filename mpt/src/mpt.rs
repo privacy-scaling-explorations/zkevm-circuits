@@ -811,6 +811,7 @@ impl<F: FieldExt> MPTConfig<F> {
             c_mod_node_hash_rlc,
             acc_s,
             acc_mult_s,
+            acc_c, // mult_diff_nonce
             key_rlc,
             key_rlc_mult,
             mult_diff,
@@ -950,7 +951,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_mult_c,
-            key_rlc,
+            acc_c,
             key_rlc_mult,
             r_table.clone(),
             s_mod_node_hash_rlc,
@@ -982,7 +983,7 @@ impl<F: FieldExt> MPTConfig<F> {
             acc_s,
             acc_mult_s,
             acc_mult_c,
-            key_rlc,
+            acc_c,
             key_rlc_mult,
             r_table.clone(),
             s_mod_node_hash_rlc,
@@ -2779,7 +2780,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                                 region.assign_advice(
                                     || "assign mult diff".to_string(),
-                                    self.key_rlc,
+                                    self.acc_c, // assigning key_rlc leads into PoisonedConstraint
                                     offset,
                                     || Ok(mult_diff_s),
                                 )?;

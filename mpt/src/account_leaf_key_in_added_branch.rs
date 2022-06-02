@@ -43,6 +43,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
         c_mod_node_hash_rlc: Column<Advice>,
         acc_s: Column<Advice>,
         acc_mult_s: Column<Advice>,
+        acc_c: Column<Advice>, // initially, key_rlc was used for mult_diff_nonce, but it caused PoisonedConstraint in extension_node_key
         key_rlc: Column<Advice>,
         key_rlc_mult: Column<Advice>,
         mult_diff: Column<Advice>,
@@ -340,7 +341,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
             }
 
-            let mult_diff_nonce = meta.query_advice(key_rlc, Rotation(nonce_rot));
+            let mult_diff_nonce = meta.query_advice(acc_c, Rotation(nonce_rot));
 
             let s_rlp1_nonce = meta.query_advice(s_rlp1, Rotation(nonce_rot));
             rlc = rlc + s_rlp1_nonce * acc_mult.clone();
