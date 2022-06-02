@@ -902,6 +902,7 @@ impl<F: Field> MulAddWordsGadget<F> {
     }
 }
 
+/// Construction of word shift right for `a >> shift == b`.
 #[derive(Clone, Debug)]
 pub(crate) struct ShrWordsGadget<F> {
     a: util::Word<F>,
@@ -911,9 +912,10 @@ pub(crate) struct ShrWordsGadget<F> {
     a64s: [Cell<F>; 4],
     // four 64-bit limbs of word `b`
     b64s: [Cell<F>; 4],
-    // lower `n` bits
+    // Each of the four `a64s` limbs is split into two parts (`a64s_lo` and `a64s_hi`) at
+    // position `shf_mod64`. `a64s_lo` is the lower `shf_mod64` bits.
     a64s_lo: [Cell<F>; 4],
-    // higher `64 - n` bits
+    // `a64s_hi` is the higher `64 - shf_mod64` bits.
     a64s_hi: [Cell<F>; 4],
     // shift[0] / 64
     shf_div64: Cell<F>,
