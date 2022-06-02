@@ -606,6 +606,8 @@ impl<F: FieldExt> MPTConfig<F> {
             key_rlc,
             key_rlc_mult,
             mult_diff,
+            is_extension_node_s,
+            is_extension_node_c,
             fixed_table.clone(),
             r_table.clone(),
         );

@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::Chip,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, Instance, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -124,7 +124,9 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
     ) -> ExtensionNodeConfig {
         let config = ExtensionNodeConfig {};
         let one = Expression::Constant(F::from(1_u64));
+        let c33 = Expression::Constant(F::from(33));
         let c128 = Expression::Constant(F::from(128));
+        let c192 = Expression::Constant(F::from(192));
         let c226 = Expression::Constant(F::from(226));
         let mut rot_into_branch_init = -17;
         if !is_s {
@@ -137,7 +139,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
         // constraints (the final key RLC will fail if is_extension_node is set
         // to 1 for a regular branch or if is_extension_node is set to 0 for an
         // extension node).
-        meta.create_gate("Extension node selectors", |meta| {
+        meta.create_gate("Extension node selectors & RLP", |meta| {
             let q_not_first = meta.query_fixed(q_not_first, Rotation::cur());
             let q_enable = q_enable(meta);
             let mut constraints = vec![];
@@ -295,7 +297,7 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                     q_not_first.clone()
                         * q_enable.clone()
                         * (is_ext_short_c16.clone() + is_ext_short_c1.clone())
-                        * (s_rlp1 - c226),
+                        * (s_rlp1.clone() - c226),
                 ));
 
                 // This prevents setting to even when it's not even,
@@ -306,6 +308,30 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
                         * q_enable.clone()
                         * (is_ext_long_even_c16.clone() + is_ext_long_even_c1.clone())
                         * s_advices0,
+                ));
+
+                // RLP:
+                // If only one nibble
+                // [226,16,160,172,105,12...
+                constraints.push((
+                    "short RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (is_ext_short_c16.clone() + is_ext_short_c1.clone())
+                        * (s_rlp1.clone() - c192.clone() - c33.clone() - one.clone()),
+                ));
+
+                // [228,130,0,149,160,114,253...
+                let s_rlp2 = meta.query_advice(s_rlp2, Rotation::cur());
+                constraints.push((
+                    "long RLP",
+                    q_not_first.clone()
+                        * q_enable.clone()
+                        * (is_ext_long_even_c16.clone()
+                        + is_ext_long_even_c1.clone()
+                        + is_ext_long_odd_c16.clone()
+                        + is_ext_long_odd_c1.clone())
+                        * (s_rlp1 - c192.clone() - (s_rlp2 - c128.clone()) - one.clone() - c33.clone()),
                 ));
             }
 
@@ -501,6 +527,8 @@ impl<F: FieldExt> ExtensionNodeChip<F> {
 
             constraints
         });
+
+        // Note: range_lookups are in extension_node_key.
 
         config
     }
