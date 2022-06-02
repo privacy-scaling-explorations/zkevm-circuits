@@ -25,11 +25,10 @@ pub struct RhoConfig<F> {
 impl<F: Field> RhoConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        state: [Column<Advice>; 25],
+        advices: [Column<Advice>; 3],
         fixed: Column<Fixed>,
         add: AddConfig<F>,
     ) -> Self {
-        state.iter().for_each(|col| meta.enable_equality(*col));
         let base13_to_9_table = Base13toBase9TableConfig::configure(meta);
         let special_chunk_table = SpecialChunkTableConfig::configure(meta);
         let step2_range_table = RangeCheckConfig::<F, STEP2_RANGE>::configure(meta);
@@ -39,7 +38,7 @@ impl<F: Field> RhoConfig<F> {
             meta,
             &base13_to_9_table,
             &special_chunk_table,
-            state[0..3].try_into().unwrap(),
+            advices,
             fixed,
             add.clone(),
         );
@@ -49,7 +48,7 @@ impl<F: Field> RhoConfig<F> {
             &step2_range_table,
             &step3_range_table,
             add.clone(),
-            state[3],
+            advices[0],
         );
         Self {
             lane_config,
@@ -121,7 +120,6 @@ mod tests {
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::Selector;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2_proofs::poly::Rotation;
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
     use itertools::Itertools;
     use std::convert::TryInto;
@@ -138,7 +136,7 @@ mod tests {
         struct MyConfig<F> {
             q_enable: Selector,
             rho_config: RhoConfig<F>,
-            state: [Column<Advice>; 25],
+            advices: [Column<Advice>; 3],
         }
         impl<F: Field> Circuit<F> for MyCircuit<F> {
             type Config = MyConfig<F>;
@@ -149,34 +147,23 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                let state: [Column<Advice>; 25] = (0..25)
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| meta.advice_column())
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
 
                 let fixed = meta.fixed_column();
-                let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+                let add = AddConfig::configure(meta, advices, fixed);
 
-                let rho_config = RhoConfig::configure(meta, state, fixed, add);
+                let rho_config = RhoConfig::configure(meta, advices, fixed, add);
 
                 let q_enable = meta.selector();
-                meta.create_gate("Check states", |meta| {
-                    let q_enable = meta.query_selector(q_enable);
-                    state
-                        .iter()
-                        .map(|col| {
-                            let final_state = meta.query_advice(*col, Rotation::cur());
-                            let expected_final_state = meta.query_advice(*col, Rotation::next());
-                            q_enable.clone() * (final_state - expected_final_state)
-                        })
-                        .collect::<Vec<_>>()
-                });
 
                 MyConfig {
                     q_enable,
                     rho_config,
-                    state,
+                    advices,
                 }
             }
 
@@ -189,16 +176,15 @@ mod tests {
                 let state = layouter.assign_region(
                     || "assign input state",
                     |mut region| {
-                        let offset = 0;
                         let state: [AssignedCell<F, F>; 25] = self
                             .in_state
                             .iter()
                             .enumerate()
-                            .map(|(idx, &value)| {
+                            .map(|(offset, &value)| {
                                 region
                                     .assign_advice(
-                                        || format!("lane {}", idx),
-                                        config.state[idx],
+                                        || "lane",
+                                        config.advices[0],
                                         offset,
                                         || Ok(value),
                                     )
@@ -217,26 +203,9 @@ mod tests {
                     || "check final states",
                     |mut region| {
                         config.q_enable.enable(&mut region, 0)?;
-                        out_state.iter().enumerate().for_each(|(idx, cell)| {
-                            cell.copy_advice(
-                                || "out_state obtained",
-                                &mut region,
-                                config.state[idx],
-                                0,
-                            )
-                            .unwrap();
-                        });
-
-                        self.out_state.iter().enumerate().for_each(|(idx, &value)| {
-                            region
-                                .assign_advice(
-                                    || format!("lane {}", idx),
-                                    config.state[idx],
-                                    1,
-                                    || Ok(value),
-                                )
-                                .unwrap();
-                        });
+                        for (lane, value) in out_state.iter().zip(self.out_state.iter()) {
+                            region.constrain_constant(lane.cell(), value)?;
+                        }
 
                         Ok(())
                     },

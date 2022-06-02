@@ -17,7 +17,7 @@ pub struct MixingConfig<F> {
     iota_config: IotaConfig<F>,
     base_conv_config: BaseConversionConfig<F>,
     add: AddConfig<F>,
-    state: [Column<Advice>; 25],
+    advices: [Column<Advice>; 2],
     flag: FlagConfig<F>,
 }
 
@@ -27,18 +27,17 @@ impl<F: Field> MixingConfig<F> {
         table: &FromBase9TableConfig<F>,
         iota_config: IotaConfig<F>,
         add: &AddConfig<F>,
-        state: [Column<Advice>; 25],
+        advices: [Column<Advice>; 2],
         flag: FlagConfig<F>,
     ) -> Self {
         let base_info = table.get_base_info(false);
-        let base_conv_config =
-            BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
+        let base_conv_config = BaseConversionConfig::configure(meta, base_info, advices, &add);
 
         Self {
             iota_config,
             base_conv_config,
             add: add.clone(),
-            state,
+            advices,
             flag,
         }
     }
@@ -64,7 +63,7 @@ impl<F: Field> MixingConfig<F> {
 
         // If we mix:
         // Absorb
-        let state_mix = apply_absorb(&self.add, layouter, self.state[0], in_state, &next_mixing)?;
+        let state_mix = apply_absorb(&self.add, layouter, self.advices[0], in_state, &next_mixing)?;
 
         // Base conversion assign
         let state_mix = self.base_conv_config.assign_state(layouter, &state_mix)?;
@@ -135,7 +134,7 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let table = FromBase9TableConfig::configure(meta);
 
-                let state: [Column<Advice>; 25] = (0..25)
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| {
                         let col = meta.advice_column();
                         meta.enable_equality(col);
@@ -145,9 +144,9 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let fixed = meta.fixed_column();
-                let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+                let add = AddConfig::configure(meta, advices, fixed);
                 let iota_config = IotaConfig::configure(add.clone());
-                let flag = FlagConfig::configure(meta, state[0]);
+                let flag = FlagConfig::configure(meta, advices[0]);
 
                 MyConfig {
                     mixing_conf: MixingConfig::configure(
@@ -155,7 +154,7 @@ mod tests {
                         &table,
                         iota_config,
                         &add,
-                        state,
+                        advices[0..2].try_into().unwrap(),
                         flag,
                     ),
                     table,
@@ -169,7 +168,6 @@ mod tests {
             ) -> Result<(), Error> {
                 // Load the table
                 config.table.load(&mut layouter)?;
-                let offset: usize = 0;
 
                 let in_state = layouter.assign_region(
                     || "Mixing Wittnes assignment",
@@ -177,10 +175,10 @@ mod tests {
                         // Witness `in_state`
                         let in_state: [AssignedCell<F, F>; 25] = {
                             let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
-                            for (idx, val) in self.in_state.iter().enumerate() {
+                            for (offset, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.mixing_conf.state[idx],
+                                    config.mixing_conf.advices[0],
                                     offset,
                                     || Ok(*val),
                                 )?;

@@ -22,13 +22,12 @@ pub struct KeccakFConfig<F: Field> {
     from_b9_table: FromBase9TableConfig<F>,
     base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
-    pub state: [Column<Advice>; 25],
 }
 
 impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let state: [Column<Advice>; 25] = (0..25)
+        let advices: [Column<Advice>; 3] = (0..3)
             .map(|_| {
                 let column = meta.advice_column();
                 meta.enable_equality(column);
@@ -40,23 +39,33 @@ impl<F: Field> KeccakFConfig<F> {
 
         let fixed = meta.fixed_column();
 
-        let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
-        let flag = FlagConfig::configure(meta, state[0]);
+        let add = AddConfig::configure(meta, advices, fixed);
+        let flag = FlagConfig::configure(meta, advices[0]);
 
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed, add.clone());
+        let rho_config = RhoConfig::configure(meta, advices, fixed, add.clone());
         let iota_config = IotaConfig::configure(add.clone());
 
         // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
-        let base_conversion_config =
-            BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
+        let base_conversion_config = BaseConversionConfig::configure(
+            meta,
+            base_info,
+            advices[0..2].try_into().unwrap(),
+            &add,
+        );
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
-        let mixing_config =
-            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), &add, state, flag);
+        let mixing_config = MixingConfig::configure(
+            meta,
+            &from_b9_table,
+            iota_config.clone(),
+            &add,
+            advices[0..2].try_into().unwrap(),
+            flag,
+        );
 
         Self {
             add,
@@ -65,7 +74,6 @@ impl<F: Field> KeccakFConfig<F> {
             from_b9_table,
             base_conversion_config,
             mixing_config,
-            state,
         }
     }
 
@@ -168,7 +176,6 @@ mod tests {
             ) -> Result<(), Error> {
                 // Load the table
                 config.load(&mut layouter)?;
-                let offset: usize = 0;
 
                 let in_state = layouter.assign_region(
                     || "Keccak round Wittnes & flag assignation",
@@ -176,10 +183,10 @@ mod tests {
                         // Witness `state`
                         let in_state: [AssignedCell<F, F>; 25] = {
                             let mut state: Vec<AssignedCell<F, F>> = Vec::with_capacity(25);
-                            for (idx, val) in self.in_state.iter().enumerate() {
+                            for (offset, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.state[idx],
+                                    config.advices[0],
                                     offset,
                                     || Ok(*val),
                                 )?;
