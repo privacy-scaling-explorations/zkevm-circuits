@@ -1,15 +1,11 @@
 use crate::arith_helpers::*;
 use crate::common::*;
 use crate::gate_helpers::*;
-use crate::permutation::{add::AddConfig, base_conversion::BaseConversionConfig};
+use crate::permutation::add::AddConfig;
 use eth_types::Field;
-use halo2_proofs::circuit::{AssignedCell, Layouter, Region};
-use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
-    poly::Rotation,
-};
-use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use halo2_proofs::circuit::{AssignedCell, Layouter};
+use halo2_proofs::plonk::{Advice, Column, Error};
+use std::convert::TryInto;
 
 // TODO: should do proper base conv here
 pub(crate) fn apply_absorb<F: Field>(

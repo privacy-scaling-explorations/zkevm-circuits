@@ -92,10 +92,10 @@ impl<F: Field> BaseConversionConfig<F> {
             },
         )?;
         self.add
-            .linear_combine(layouter, input_coef_cells, input_pobs, Some(input))?;
+            .linear_combine_consts(layouter, input_coef_cells, input_pobs, Some(input))?;
         let output_lane =
             self.add
-                .linear_combine(layouter, output_coef_cells, output_pobs, None)?;
+                .linear_combine_consts(layouter, output_coef_cells, output_pobs, None)?;
 
         Ok(output_lane)
     }

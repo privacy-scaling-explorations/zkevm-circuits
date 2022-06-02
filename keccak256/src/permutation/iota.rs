@@ -79,7 +79,7 @@ impl<F: Field> IotaConfig<F> {
         lane00: AssignedCell<F, F>,
         flag: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.add.conditional_add(
+        self.add.conditional_add_const(
             layouter,
             lane00,
             flag,
@@ -98,6 +98,6 @@ impl<F: Field> IotaConfig<F> {
         flag: AssignedCell<F, F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.add
-            .conditional_add(layouter, lane00, flag, self.round_constant_b13)
+            .conditional_add_const(layouter, lane00, flag, self.round_constant_b13)
     }
 }

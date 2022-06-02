@@ -1,7 +1,5 @@
 use crate::{
-    arith_helpers::*,
-    common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
-    keccak_arith::*,
+    common::{NEXT_INPUTS_LANES, PERMUTATION},
     permutation::{
         add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
         mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
@@ -10,8 +8,8 @@ use crate::{
 };
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+    circuit::{AssignedCell, Layouter},
+    plonk::{Advice, Column, ConstraintSystem, Error},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -26,14 +24,12 @@ pub struct KeccakFConfig<F: Field> {
     base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
     pub state: [Column<Advice>; 25],
-    q_out: Selector,
-    base_conv_activator: Column<Advice>,
 }
 
 impl<F: Field> KeccakFConfig<F> {
     // We assume state is received in base-9.
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let state = (0..25)
+        let state: [Column<Advice>; 25] = (0..25)
             .map(|_| {
                 let column = meta.advice_column();
                 meta.enable_equality(column);
@@ -49,10 +45,8 @@ impl<F: Field> KeccakFConfig<F> {
             meta.fixed_column(),
             meta.fixed_column(),
         ];
-        let input = meta.advice_column();
-        let x = meta.advice_column();
 
-        let add = AddConfig::configure(meta, input, x, fixed[3]);
+        let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
 
         // rho
         let rho_config = RhoConfig::configure(meta, state, fixed[0], add.clone());
@@ -96,8 +90,6 @@ impl<F: Field> KeccakFConfig<F> {
             base_conversion_config,
             mixing_config,
             state,
-            q_out,
-            base_conv_activator,
         }
     }
 
@@ -110,7 +102,6 @@ impl<F: Field> KeccakFConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         in_state: [AssignedCell<F, F>; 25],
-        out_state: [F; 25],
         flag: Option<bool>,
         next_mixing: [Option<F>; NEXT_INPUTS_LANES],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
@@ -145,96 +136,13 @@ impl<F: Field> KeccakFConfig<F> {
             // The resulting state is in Base-9 now. We now convert it to
             // base_13 which is what Theta requires again at the
             // start of the loop.
-            state = {
-                let activation_flag = layouter.assign_region(
-                    || "Base conversion enable",
-                    |mut region| {
-                        region.assign_advice(
-                            || "Enable base conversion",
-                            self.base_conv_activator,
-                            0,
-                            || Ok(F::one()),
-                        )
-                    },
-                )?;
-
-                self.base_conversion_config.assign_state(layouter, &state)?
-            }
+            state = self.base_conversion_config.assign_state(layouter, &state)?;
         }
 
-        // Mixing step
-        let mix_res = KeccakFArith::mixing(
-            &state_to_biguint(split_state_cells(state.clone())),
-            next_mixing
-                .map(|state| state_to_state_bigint::<F, NEXT_INPUTS_LANES>(state))
-                .as_ref(),
-            *ROUND_CONSTANTS.last().unwrap(),
-        );
-
-        let mix_res = self.mixing_config.assign_state(
-            layouter,
-            &state,
-            state_bigint_to_field(mix_res),
-            flag,
-            next_mixing,
-        )?;
-
-        self.constrain_out_state(layouter, &mix_res, out_state)
-    }
-
-    pub fn constrain_out_state(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        out_mixing: &[AssignedCell<F, F>; 25],
-        out_state: [F; 25],
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        layouter.assign_region(
-            || "Constraint out_state and out_mixing",
-            |mut region| {
-                // Enable selector at offset = 0
-                self.q_out.enable(&mut region, 0)?;
-
-                // Allocate out_mixing at offset = 0 in `state` column.
-                self.copy_state(&mut region, 0, self.state, out_mixing)?;
-
-                // Witness out_state at offset = 1 in `state` column.
-                let out_state: [AssignedCell<F, F>; 25] = {
-                    let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
-                    for (idx, lane) in out_state.iter().enumerate() {
-                        let out_cell = region.assign_advice(
-                            || format!("assign out_state [{}]", idx),
-                            self.state[idx],
-                            1,
-                            || Ok(*lane),
-                        )?;
-                        out_vec.push(out_cell);
-                    }
-                    out_vec.try_into().unwrap()
-                };
-
-                Ok(out_state)
-            },
-        )
-    }
-
-    /// Copies the `state` cells to the passed [Column<Advice>; 25].
-    fn copy_state(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        columns: [Column<Advice>; 25],
-        state: &[AssignedCell<F, F>; 25],
-    ) -> Result<(), Error> {
-        for (idx, cell) in state.iter().enumerate() {
-            cell.copy_advice(
-                || format!("Copy state {}", idx),
-                region,
-                columns[idx],
-                offset,
-            )?;
-        }
-
-        Ok(())
+        let mix_res = self
+            .mixing_config
+            .assign_state(layouter, &state, flag, next_mixing)?;
+        Ok(mix_res)
     }
 }
 
@@ -306,10 +214,9 @@ mod tests {
                     },
                 )?;
 
-                config.assign_all(
+                let out_state = config.assign_all(
                     &mut layouter,
                     in_state,
-                    self.out_state,
                     Some(self.is_mixing),
                     self.next_mixing,
                 )?;

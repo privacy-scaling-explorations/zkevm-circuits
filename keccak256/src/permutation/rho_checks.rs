@@ -263,7 +263,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                     ))
                 },
             )?;
-        let input_from_chunks = self.add.linear_combine(layouter, input_coefs, input_pobs, None)?;
+        let input_from_chunks = self.add.linear_combine_consts(layouter, input_coefs, input_pobs, None)?;
         let diff = self
             .add
             .sub_advice(layouter, lane_base_13, input_from_chunks)?;
@@ -291,7 +291,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
 
         let output_lane = self
             .add
-            .linear_combine(layouter, output_coefs, output_pobs, None)?;
+            .linear_combine_consts(layouter, output_coefs, output_pobs, None)?;
         Ok((output_lane, step2_od, step3_od))
     }
 }

@@ -1,18 +1,17 @@
-use super::super::arith_helpers::*;
 use super::tables::FromBase9TableConfig;
 use super::{
     absorb::apply_absorb, add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
 };
 use crate::common::*;
-use crate::keccak_arith::KeccakFArith;
 use eth_types::Field;
-use halo2_proofs::circuit::{AssignedCell, Region};
+use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::plonk::{Expression, Selector};
 use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
+use itertools::izip;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -23,7 +22,6 @@ pub struct MixingConfig<F> {
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
     q_flag: Selector,
-    q_out_copy: Selector,
 }
 
 impl<F: Field> MixingConfig<F> {
@@ -101,7 +99,6 @@ impl<F: Field> MixingConfig<F> {
             state,
             flag,
             q_flag,
-            q_out_copy,
         }
     }
 
@@ -121,7 +118,7 @@ impl<F: Field> MixingConfig<F> {
                     self.flag,
                     0,
                     || {
-                        flag.and_then(|flag| Some(F::from(flag as u64)))
+                        flag.map(|flag| F::from(flag as u64))
                             .ok_or(Error::Synthesis)
                     },
                 )?;
@@ -132,7 +129,7 @@ impl<F: Field> MixingConfig<F> {
                     self.flag,
                     1,
                     || {
-                        flag.and_then(|flag| Some(F::from(!flag as u64)))
+                        flag.map(|flag| F::from(!flag as u64))
                             .ok_or(Error::Synthesis)
                     },
                 )?;
@@ -142,64 +139,10 @@ impl<F: Field> MixingConfig<F> {
         )
     }
 
-    /// Enforce flag constraints
-    pub fn assign_out_mixing_states(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        flag: Option<bool>,
-        negated_flag: AssignedCell<F, F>,
-        out_mixing_circ: &[AssignedCell<F, F>; 25],
-        out_non_mixing_circ: &[AssignedCell<F, F>; 25],
-        out_state: [F; 25],
-    ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        layouter.assign_region(
-            || "Out Mixing states assignation",
-            |mut region| {
-                // Enable selector
-                self.q_out_copy.enable(&mut region, 0)?;
-
-                // Copy constrain flags.
-                let _flag_cell = region.assign_advice(
-                    || "witness is_mixing",
-                    self.flag,
-                    0,
-                    || {
-                        flag.map(|flag| F::from(flag as u64))
-                            .ok_or(Error::Synthesis)
-                    },
-                )?;
-
-                negated_flag.copy_advice(|| "witness is_mixing", &mut region, self.flag, 1)?;
-
-                // Copy-constrain both out states.
-                self.copy_state(&mut region, 0, self.state, out_non_mixing_circ)?;
-
-                self.copy_state(&mut region, 1, self.state, out_mixing_circ)?;
-
-                let out_state: [AssignedCell<F, F>; 25] = {
-                    let mut out_vec: Vec<AssignedCell<F, F>> = vec![];
-                    for (idx, lane) in out_state.iter().enumerate() {
-                        let out_cell = region.assign_advice(
-                            || format!("assign out_state [{}]", idx),
-                            self.state[idx],
-                            2,
-                            || Ok(*lane),
-                        )?;
-                        out_vec.push(out_cell);
-                    }
-                    out_vec.try_into().unwrap()
-                };
-
-                Ok(out_state)
-            },
-        )
-    }
-
     pub fn assign_state(
         &self,
         layouter: &mut impl Layouter<F>,
         in_state: &[AssignedCell<F, F>; 25],
-        out_state: [F; 25],
         flag: Option<bool>,
         next_mixing: [Option<F>; NEXT_INPUTS_LANES],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
@@ -208,7 +151,7 @@ impl<F: Field> MixingConfig<F> {
 
         // If we don't mix:
         // IotaB9
-        let non_mix_res = {
+        let state_non_mix = {
             let mut state = in_state.clone();
             state[0] =
                 self.iota_config
@@ -218,54 +161,31 @@ impl<F: Field> MixingConfig<F> {
 
         // If we mix:
         // Absorb
-        let out_state_absorb_cells =
-            apply_absorb(&self.add, layouter, self.state[0], in_state, &next_mixing)?;
+        let state_mix = apply_absorb(&self.add, layouter, self.state[0], in_state, &next_mixing)?;
 
         // Base conversion assign
-        let base_conv_cells = self
-            .base_conv_config
-            .assign_state(layouter, &out_state_absorb_cells)?;
+        let state_mix = self.base_conv_config.assign_state(layouter, &state_mix)?;
 
         // IotaB13
-        let mix_res = {
-            let mut base_conv_cells = base_conv_cells;
+        let state_mix = {
+            let mut state = state_mix;
 
-            base_conv_cells[0] =
+            state[0] =
                 self.iota_config
-                    .assign_round_b13(layouter, base_conv_cells[0].clone(), f_pos)?;
-            base_conv_cells
+                    .assign_round_b13(layouter, state[0].clone(), f_pos.clone())?;
+            state
         };
-
-        let mixing_res = self.assign_out_mixing_states(
-            layouter,
-            flag,
-            f_neg.clone(),
-            &mix_res,
-            &non_mix_res,
-            out_state,
-        )?;
-
-        Ok(mixing_res)
-    }
-
-    /// Copies the `[(Cell,F);25]` to the passed [Column<Advice>; 25].
-    fn copy_state(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        columns: [Column<Advice>; 25],
-        state: &[AssignedCell<F, F>; 25],
-    ) -> Result<(), Error> {
-        for (idx, state_cell) in state.iter().enumerate() {
-            state_cell.copy_advice(
-                || format!("Copy state {}", idx),
-                region,
-                columns[idx],
-                offset,
+        let mut out_state: Vec<AssignedCell<F, F>> = vec![];
+        for (mix, non_mix) in izip!(state_mix, state_non_mix) {
+            let out_lane = self.add.linear_combine_advices(
+                layouter,
+                vec![mix, non_mix],
+                vec![f_pos.clone(), f_neg.clone()],
+                None,
             )?;
+            out_state.push(out_lane)
         }
-
-        Ok(())
+        Ok(out_state.try_into().unwrap())
     }
 }
 

@@ -36,7 +36,7 @@ pub fn assign_theta<F: Field>(
                 theta_col_sums[(x + 1) % 5].clone(),
             ];
             let vs = vec![F::one(), F::one(), F::from(B13 as u64)];
-            let new_lane = add.linear_combine(layouter, cells, vs, None)?;
+            let new_lane = add.linear_combine_consts(layouter, cells, vs, None)?;
             Ok(new_lane)
         })
         .into_iter()
