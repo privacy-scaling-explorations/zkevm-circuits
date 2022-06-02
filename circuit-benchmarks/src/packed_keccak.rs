@@ -12,17 +12,17 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::keccak_bit::KeccakBitCircuit;
+    use zkevm_circuits::keccak_circuit::keccak_packed::KeccakPackedCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
-    fn bench_bit_keccak_circuit_prover() {
+    fn bench_packed_keccak_circuit_prover() {
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = KeccakBitCircuit::<Fr>::default();
+        let empty_circuit = KeccakPackedCircuit::<Fr>::default();
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
@@ -46,7 +46,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Bit Keccak Proof generation with {} rows", degree);
+        let proof_message = format!("Packed Keccak Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof(
             &general_params,
