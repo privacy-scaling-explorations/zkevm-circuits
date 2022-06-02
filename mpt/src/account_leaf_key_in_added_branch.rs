@@ -57,7 +57,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
     ) -> AccountLeafKeyInAddedBranchConfig {
         let config = AccountLeafKeyInAddedBranchConfig {};
 
-        // TODO: q_enable switches off first level, so no need for checks for first level below
+        // Note: q_enable switches off first level, so no need for checks for first level below.
 
         let one = Expression::Constant(F::one());
         let c16 = Expression::Constant(F::from(16_u64));
@@ -91,10 +91,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(rot_branch_init),
             );
-            let is_leaf_in_first_level = one.clone() -  meta.query_advice(
-                not_first_level,
-                Rotation::cur(),
-            );
 
             let c248 = Expression::Constant(F::from(248));
             let s_rlp1 = meta.query_advice(s_rlp1, Rotation::cur());
@@ -102,7 +98,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 "account leaf key s_rlp1 = 248",
                 q_enable.clone()
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
-                    * (one.clone() - is_leaf_in_first_level.clone())
                     * (s_rlp1.clone() - c248),
             ));
 
@@ -130,7 +125,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
 
             constraints.push(("leaf key acc", q_enable.clone()
                 * (is_branch_s_placeholder + is_branch_c_placeholder) // drifted leaf appears only when there is a placeholder branch
-                * (one.clone() - is_leaf_in_first_level.clone())
                 * (expr - acc)));
 
             constraints
@@ -146,12 +140,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
                 Rotation(rot_branch_init),
             );
-            let is_leaf_in_first_level = one.clone() -  meta.query_advice(
-                not_first_level,
-                Rotation::cur(),
-            );
 
-            q_enable * (is_branch_s_placeholder + is_branch_c_placeholder) * (one.clone() - is_leaf_in_first_level.clone())
+            q_enable * (is_branch_s_placeholder + is_branch_c_placeholder) 
         };
 
         /*
@@ -243,11 +233,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 Rotation(rot_branch_init),
             );
 
-            let is_leaf_in_first_level = one.clone() -  meta.query_advice(
-                not_first_level,
-                Rotation::cur(),
-            );
-
             let is_one_nibble = get_is_extension_node_one_nibble(meta, s_advices, rot_branch_init);
 
             // Any rotation that lands into branch children can be used.
@@ -277,7 +262,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                     * (is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone()) // drifted leaf appears only when there is a placeholder branch
                     * (s_advice1.clone() - c32.clone())
                     * sel2.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
             ));
 
             let mut key_rlc = key_rlc_start.clone()
@@ -299,14 +283,12 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
                 "Drifted leaf key placeholder S",
                 q_enable.clone()
                     * is_branch_s_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
                     * (leaf_key_s_rlc.clone() - key_rlc.clone()),
             ));
             constraints.push((
                 "Drifted leaf key placeholder C",
                 q_enable.clone()
                     * is_branch_c_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone())
                     * (leaf_key_c_rlc.clone() - key_rlc.clone()),
             ));
 
@@ -411,11 +393,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             let codehash_stored = meta.query_advice(c_mod_node_hash_rlc, Rotation(storage_codehash_rot));
             rlc = rlc + codehash_stored * curr_r.clone() * r_table[0].clone();
 
-            let is_leaf_in_first_level = one.clone() -  meta.query_advice(
-                not_first_level,
-                Rotation::cur(),
-            );
-
             // Any rotation that lands into branch children can be used.
             let rot = -17;
             let mut is_branch_placeholder = meta.query_advice(
@@ -432,8 +409,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             constraints.push((
                 q_enable.clone()
                     * rlc
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level.clone()),
+                    * is_branch_placeholder.clone(),
                 meta.query_fixed(keccak_table[0], Rotation::cur()),
             ));
 
@@ -448,8 +424,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchChip<F> {
             constraints.push((
                 q_enable.clone()
                     * mod_node_hash_rlc
-                    * is_branch_placeholder.clone()
-                    * (one.clone() - is_leaf_in_first_level),
+                    * is_branch_placeholder.clone(),
                 keccak_table_i,
             ));
             };
