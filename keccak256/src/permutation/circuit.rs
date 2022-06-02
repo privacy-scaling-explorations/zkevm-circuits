@@ -10,7 +10,6 @@ use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
-    poly::Rotation,
 };
 use itertools::Itertools;
 use std::convert::TryInto;
@@ -39,22 +38,14 @@ impl<F: Field> KeccakFConfig<F> {
             .try_into()
             .unwrap();
 
-        let fixed = [
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-        ];
+        let fixed = meta.fixed_column();
 
-        let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed[0]);
+        let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
         // rho
-        let rho_config = RhoConfig::configure(meta, state, fixed[0], add.clone());
+        let rho_config = RhoConfig::configure(meta, state, fixed, add.clone());
         let iota_config = IotaConfig::configure(add.clone());
 
-        // Allocate space for the activation flag of the base_conversion.
-        let base_conv_activator = meta.advice_column();
-        meta.enable_equality(base_conv_activator);
         // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
@@ -65,22 +56,6 @@ impl<F: Field> KeccakFConfig<F> {
         // the out state matches the expected result.
         let mixing_config =
             MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), &add, state);
-
-        // Allocate the `out state correctness` gate selector
-        let q_out = meta.selector();
-        // Constraint the out of the mixing gate to be equal to the out state
-        // announced.
-        meta.create_gate("Constraint out_state correctness", |meta| {
-            (0..25usize)
-                .into_iter()
-                .map(|idx| {
-                    let q_out = meta.query_selector(q_out);
-                    let out_mixing = meta.query_advice(state[idx], Rotation::cur());
-                    let out_expected_state = meta.query_advice(state[idx], Rotation::next());
-                    q_out * (out_mixing - out_expected_state)
-                })
-                .collect_vec()
-        });
 
         Self {
             add,
@@ -221,6 +196,15 @@ mod tests {
                     in_state,
                     Some(self.is_mixing),
                     self.next_mixing,
+                )?;
+                layouter.assign_region(
+                    || "State check",
+                    |mut region| {
+                        for (lane, value) in out_state.iter().zip(self.out_state.iter()) {
+                            region.constrain_constant(lane.cell(), value)?;
+                        }
+                        Ok(())
+                    },
                 )?;
                 Ok(())
             }
