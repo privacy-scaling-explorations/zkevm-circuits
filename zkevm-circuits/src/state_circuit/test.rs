@@ -18,8 +18,8 @@ use halo2_proofs::{
     pairing::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem},
 };
-use std::collections::HashMap;
-use strum::EnumCount;
+use std::collections::{BTreeSet, HashMap};
+use strum::IntoEnumIterator;
 
 #[derive(Hash, Eq, PartialEq)]
 pub enum AdviceColumn {
@@ -583,7 +583,6 @@ fn nonlexicographic_order_rw_counter() {
 }
 
 #[test]
-<<<<<<< HEAD
 #[ignore = "read consistency constraint not implemented"]
 fn read_inconsistency() {
     let rows = vec![
@@ -711,9 +710,15 @@ fn invalid_stack_address_change() {
         verify(rows),
         "if call id is the same, address change is 0 or 1",
     );
-=======
+}
+
+#[test]
 fn invalid_tags() {
-    for i in RwTableTag::COUNT..16 {
+    let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
+    for i in 0..16 {
+        if tags.contains(&i) {
+            continue;
+        }
         let bits: [Fr; 4] = i
             .as_bits()
             .map(|bit| if bit { Fr::one() } else { Fr::zero() });
@@ -728,7 +733,6 @@ fn invalid_tags() {
 
         assert_error_matches(result, "binary number value in range");
     }
->>>>>>> 7914dc82 (Add check that RwTableTag is in allowed range)
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
