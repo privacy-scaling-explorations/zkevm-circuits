@@ -49,7 +49,9 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let is_mod = (opcode.expr() - OpcodeId::MUL.expr())
             * (opcode.expr() - OpcodeId::DIV.expr())
             * F::from(8).invert().unwrap();
-        let mul_add_words = MulAddWordsGadget::construct(cb);
+        let (a,b,c,d) = (cb.query_word(), cb.query_word(), cb.query_word(), cb.query_word());
+
+        let mul_add_words = MulAddWordsGadget::construct(cb, a,b,c,d);
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&mul_add_words.b.cells));
         let lt_word = LtWordGadget::construct(cb, &mul_add_words.c, &mul_add_words.b);
 
@@ -130,7 +132,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
             ),
             _ => unreachable!(),
         };
-        self.mul_add_words.assign(region, offset, [a, b, c, d])?;
+        self.mul_add_words.assign(region, offset, a, b, c, d)?;
         self.lt_word.assign(region, offset, c, b)?;
         let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
         self.divisor_is_zero

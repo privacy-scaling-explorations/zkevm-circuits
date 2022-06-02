@@ -5,8 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes,
-            math_gadget::{ComparisonGadget, IsEqualGadget},
+            math_gadget::{CmpWordsGadget, IsEqualGadget},
             select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
