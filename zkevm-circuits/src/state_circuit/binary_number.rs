@@ -11,10 +11,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use std::collections::BTreeSet;
 use std::marker::PhantomData;
-use strum::EnumCount;
+use strum::IntoEnumIterator;
 
-// TODO: rename to as_bits
 pub trait AsBits<const N: usize> {
     fn as_bits(&self) -> [bool; N];
 }
@@ -97,7 +97,7 @@ where
     _marker: PhantomData<F>,
 }
 
-impl<F: Field, T: EnumCount, const N: usize> Chip<F, T, N>
+impl<F: Field, T: IntoEnumIterator, const N: usize> Chip<F, T, N>
 where
     T: AsBits<N>,
 {
@@ -123,12 +123,19 @@ where
             _marker: PhantomData,
         };
 
-        for i in T::COUNT..T::COUNT.next_power_of_two() {
+        // Disallow bit patterns (if any) that don't correspond to a variant of T.
+        let valid_values: BTreeSet<usize> = T::iter().map(|t| from_bits(&t.as_bits())).collect();
+        let mut invalid_values = (0..1 << N).filter(|i| !valid_values.contains(i)).peekable();
+        if invalid_values.peek().is_some() {
             meta.create_gate("binary number value in range", |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
-                let value_equals_i = config.value_equals(&i, Rotation::cur());
-                vec![selector * value_equals_i(meta)]
-            })
+                invalid_values
+                    .map(|i| {
+                        let value_equals_i = config.value_equals(&i, Rotation::cur());
+                        selector.clone() * value_equals_i(meta)
+                    })
+                    .collect::<Vec<_>>()
+            });
         }
 
         config
@@ -150,4 +157,9 @@ where
         }
         Ok(())
     }
+}
+
+fn from_bits(bits: &[bool]) -> usize {
+    bits.iter()
+        .fold(0, |result, &bit| bit as usize + 2 * result)
 }
