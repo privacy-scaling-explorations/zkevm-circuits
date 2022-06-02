@@ -149,8 +149,10 @@ impl<F: Field> KeccakFConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arith_helpers::*;
     use crate::common::{State, NEXT_INPUTS_LANES};
     use crate::gate_helpers::biguint_to_f;
+    use crate::keccak_arith::*;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
@@ -166,7 +168,7 @@ mod tests {
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
-            next_mixing: Option<[F; NEXT_INPUTS_LANES]>,
+            next_mixing: [Option<F>; NEXT_INPUTS_LANES],
             // flag
             is_mixing: bool,
         }
@@ -263,8 +265,13 @@ mod tests {
 
         // Generate next_input (tho one that is not None) in the form `[F;17]`
         // Generate next_input as `[Fp;NEXT_INPUTS_LANES]`
-        let next_input_fp: [Fp; NEXT_INPUTS_LANES] =
-            state_bigint_to_field(StateBigInt::from(next_input));
+        let next_input_fp: [Option<Fp>; NEXT_INPUTS_LANES] =
+            state_bigint_to_field::<_, NEXT_INPUTS_LANES>(StateBigInt::from(next_input))
+                .iter()
+                .map(|&x| Some(x))
+                .collect_vec()
+                .try_into()
+                .unwrap();
 
         // When we pass no `mixing_inputs`, we perform the full keccak round
         // ending with Mixing executing IotaB9
@@ -274,7 +281,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state: in_state_fp,
                 out_state: out_state_non_mix,
-                next_mixing: None,
+                next_mixing: [None; NEXT_INPUTS_LANES],
                 is_mixing: false,
             };
 
@@ -287,7 +294,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state: out_state_non_mix,
                 out_state: out_state_non_mix,
-                next_mixing: None,
+                next_mixing: [None; NEXT_INPUTS_LANES],
                 is_mixing: true,
             };
             let k = 17;
@@ -314,7 +321,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state: in_state_fp,
                 out_state: out_state_mix,
-                next_mixing: Some(next_input_fp),
+                next_mixing: next_input_fp,
                 is_mixing: true,
             };
 
@@ -327,7 +334,7 @@ mod tests {
             let circuit = MyCircuit::<Fp> {
                 in_state: out_state_non_mix,
                 out_state: out_state_non_mix,
-                next_mixing: Some(next_input_fp),
+                next_mixing: next_input_fp,
                 is_mixing: true,
             };
 

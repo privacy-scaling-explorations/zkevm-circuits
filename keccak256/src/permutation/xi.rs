@@ -69,7 +69,7 @@ mod tests {
                 let fixed = meta.fixed_column();
 
                 let lane = advices[0];
-                let add = AddConfig::configure(meta, advices[1], advices[2], fixed);
+                let add = AddConfig::configure(meta, advices, fixed);
                 Self { lane, add }
             }
         }

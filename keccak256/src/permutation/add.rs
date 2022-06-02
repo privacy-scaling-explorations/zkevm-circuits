@@ -62,7 +62,7 @@ impl<F: Field> AddConfig<F> {
                 let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
                 input.copy_advice(|| "input", &mut region, self.io, offset)?;
-                let x = match &left {
+                let left = match &left {
                     Some(x) => {
                         // copy x to use as a flag
                         (*x).copy_advice(|| "left adv", &mut region, self.left, offset)?
@@ -71,34 +71,38 @@ impl<F: Field> AddConfig<F> {
                         // constrain advice to 1 for a simple add.
                         region.assign_advice_from_constant(
                             || "left const",
-                            self.right,
+                            self.left,
                             offset,
                             F::one(),
                         )?
                     }
                 };
-                if let Some(right) = &right {
-                    if value.is_some() {
-                        panic!("right and value can't be both some");
-                    }
-                    right.copy_advice(|| "right adv", &mut region, self.right, offset)?;
-                }
 
-                let value = match value {
-                    Some(value) => region.assign_advice_from_constant(
-                        || "fixed value",
-                        self.right,
-                        offset,
-                        value,
-                    )?,
+                let right = match &right {
+                    Some(right) => {
+                        if value.is_some() {
+                            panic!("right and value can't be both some");
+                        }
+                        right.copy_advice(|| "right adv", &mut region, self.right, offset)?
+                    }
                     None => {
-                        // constrain fixed to 1 for a simple add.
-                        region.assign_advice_from_constant(
-                            || "fixed value",
-                            self.right,
-                            offset,
-                            F::one(),
-                        )?
+                        match value {
+                            Some(value) => region.assign_advice_from_constant(
+                                || "fixed value",
+                                self.right,
+                                offset,
+                                value,
+                            )?,
+                            None => {
+                                // constrain fixed to 1 for a simple add.
+                                region.assign_advice_from_constant(
+                                    || "fixed value",
+                                    self.right,
+                                    offset,
+                                    F::one(),
+                                )?
+                            }
+                        }
                     }
                 };
 
@@ -109,8 +113,8 @@ impl<F: Field> AddConfig<F> {
                     offset,
                     || {
                         Ok(input.value().cloned().ok_or(Error::Synthesis)?
-                            + x.value().cloned().ok_or(Error::Synthesis)?
-                                * value.value().cloned().ok_or(Error::Synthesis)?)
+                            + left.value().cloned().ok_or(Error::Synthesis)?
+                                * right.value().cloned().ok_or(Error::Synthesis)?)
                     },
                 )
             },
@@ -178,7 +182,7 @@ impl<F: Field> AddConfig<F> {
     ) -> Result<AssignedCell<F, F>, Error> {
         debug_assert_eq!(
             ys.is_some(),
-            vs.is_some(),
+            vs.is_none(),
             "They can't both some or both none"
         );
         if let Some(ref vs) = vs {

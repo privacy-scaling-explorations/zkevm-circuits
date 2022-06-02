@@ -25,14 +25,15 @@ pub(crate) fn apply_absorb<F: Field>(
                     next_input_col,
                     offset,
                     || {
-                        input
+                        Ok(input
                             .map(|input| {
                                 let input = f_to_biguint(input);
-                                let input =
-                                    convert_b2_to_b9(*input.to_u64_digits().first().unwrap());
+                                let input = convert_b2_to_b9(
+                                    *input.to_u64_digits().first().unwrap_or(&0u64),
+                                );
                                 biguint_to_f(&input)
                             })
-                            .ok_or(Error::Synthesis)
+                            .unwrap_or(F::zero()))
                     },
                 )?;
                 next_input_b9.push(cell);
@@ -46,6 +47,9 @@ pub(crate) fn apply_absorb<F: Field>(
         let out_lane =
             add.add_advice_mul_const(layouter, state[i].clone(), input.clone(), F::from(A4))?;
         out_state.push(out_lane);
+    }
+    for i in NEXT_INPUTS_LANES..25 {
+        out_state.push(state[i].clone());
     }
     Ok(out_state.try_into().unwrap())
 }

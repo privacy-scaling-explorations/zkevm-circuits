@@ -156,7 +156,7 @@ mod tests {
                     .unwrap();
 
                 let fixed = meta.fixed_column();
-                let add = AddConfig::configure(meta, state[0], state[1], fixed);
+                let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
 
                 let rho_config = RhoConfig::configure(meta, state, fixed, add);
 

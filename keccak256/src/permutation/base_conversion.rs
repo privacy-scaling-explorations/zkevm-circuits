@@ -152,7 +152,7 @@ mod tests {
                 let table = FromBinaryTableConfig::configure(meta);
                 let lane = meta.advice_column();
                 meta.enable_equality(lane);
-                let advices: [Column<Advice>; 2] = (0..2)
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| {
                         let col = meta.advice_column();
                         meta.enable_equality(col);
@@ -164,8 +164,13 @@ mod tests {
                 let base_info = table.get_base_info(false);
                 let fixed = meta.fixed_column();
                 meta.enable_constant(fixed);
-                let add = AddConfig::configure(meta, advices[0], advices[1], fixed);
-                let conversion = BaseConversionConfig::configure(meta, base_info, advices, &add);
+                let add = AddConfig::configure(meta, advices, fixed);
+                let conversion = BaseConversionConfig::configure(
+                    meta,
+                    base_info,
+                    advices[0..2].try_into().unwrap(),
+                    &add,
+                );
                 Self {
                     lane,
                     table,
@@ -260,7 +265,7 @@ mod tests {
                 let table = FromBase9TableConfig::configure(meta);
                 let lane = meta.advice_column();
                 meta.enable_equality(lane);
-                let advices: [Column<Advice>; 2] = (0..2)
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| {
                         let col = meta.advice_column();
                         meta.enable_equality(col);
@@ -272,8 +277,13 @@ mod tests {
                 let base_info = table.get_base_info(false);
                 let fixed = meta.fixed_column();
                 meta.enable_constant(fixed);
-                let add = AddConfig::configure(meta, advices[0], advices[1], fixed);
-                let conversion = BaseConversionConfig::configure(meta, base_info, advices, &add);
+                let add = AddConfig::configure(meta, advices, fixed);
+                let conversion = BaseConversionConfig::configure(
+                    meta,
+                    base_info,
+                    advices[0..2].try_into().unwrap(),
+                    &add,
+                );
                 Self {
                     lane,
                     table,
@@ -367,7 +377,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let advices: [Column<Advice>; 2] = (0..2)
+                let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| {
                         let col = meta.advice_column();
                         meta.enable_equality(col);
@@ -380,8 +390,13 @@ mod tests {
                 let fixed = meta.fixed_column();
                 meta.enable_equality(fixed);
                 meta.enable_constant(fixed);
-                let add = AddConfig::configure(meta, advices[0], advices[1], fixed);
-                let conversion = BaseConversionConfig::configure(meta, bi, advices, &add);
+                let add = AddConfig::configure(meta, advices, fixed);
+                let conversion = BaseConversionConfig::configure(
+                    meta,
+                    bi,
+                    advices[0..2].try_into().unwrap(),
+                    &add,
+                );
                 Self {
                     state,
                     table,

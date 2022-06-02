@@ -72,26 +72,6 @@ impl<F: Field> MixingConfig<F> {
         let base_conv_config =
             BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
 
-        let q_out_copy = meta.selector();
-
-        meta.create_gate("Mixing result copies and constraints", |meta| {
-            let q_enable = meta.query_selector(q_out_copy);
-            // Add out mixing states together multiplied by the mixing_flag.
-            let negated_flag = meta.query_advice(flag, Rotation::next());
-            let flag = meta.query_advice(flag, Rotation::cur());
-
-            // Multiply by flag and negated_flag the out mixing results.
-            let left_side = meta.query_advice(state[0], Rotation::cur()) * negated_flag;
-            let right_side = meta.query_advice(state[0], Rotation::next()) * flag;
-            let out_state = meta.query_advice(state[0], Rotation(2));
-
-            // We add the results of the mixing gate if/else branches multiplied
-            // by it's corresponding flags so that we always
-            // copy from the same place on the copy_constraints while enforcing
-            // the equality with the out_state of the permutation.
-            [q_enable * ((left_side + right_side) - out_state)]
-        });
-
         Self {
             iota_config,
             base_conv_config,
@@ -192,7 +172,9 @@ impl<F: Field> MixingConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arith_helpers::*;
     use crate::common::{State, ROUND_CONSTANTS};
+    use crate::keccak_arith::KeccakFArith;
     use crate::permutation::{add::AddConfig, iota::IotaConfig};
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::pairing::bn256::Fr as Fp;
@@ -204,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_mixing_gate() {
-        #[derive(Default)]
+        #[derive(Default, Debug)]
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
@@ -240,7 +222,7 @@ mod tests {
                     .try_into()
                     .unwrap();
                 let fixed = meta.fixed_column();
-                let add = AddConfig::configure(meta, state[0], state[1], fixed);
+                let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
                 let iota_config = IotaConfig::configure(add.clone());
 
                 MyConfig {
@@ -280,14 +262,23 @@ mod tests {
                     },
                 )?;
 
-                config.mixing_conf.assign_state(
+                let out_state = config.mixing_conf.assign_state(
                     &mut layouter,
                     &in_state,
-                    self.out_state,
                     Some(self.is_mixing),
-                    self.next_mixing,
+                    self.next_mixing.map_or([None; NEXT_INPUTS_LANES], |x| {
+                        x.iter().map(|&x| Some(x)).collect_vec().try_into().unwrap()
+                    }),
                 )?;
-
+                layouter.assign_region(
+                    || "State check",
+                    |mut region| {
+                        for (lane, value) in out_state.iter().zip(self.out_state.iter()) {
+                            region.constrain_constant(lane.cell(), value)?;
+                        }
+                        Ok(())
+                    },
+                )?;
                 Ok(())
             }
         }
