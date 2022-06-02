@@ -12,7 +12,7 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use halo2_proofs::{
-    arithmetic::BaseExt,
+    arithmetic::{BaseExt, Field as halo2_field},
     dev::{MockProver, VerifyFailure},
     pairing::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem},
@@ -25,6 +25,13 @@ pub enum AdviceColumn {
     Address,
     AddressLimb0,
     AddressLimb1,
+    StorageKey,
+    StorageKeyByte0,
+    StorageKeyByte1,
+    StorageKeyChangeInverse,
+    Value,
+    RwCounter,
+    RwCounterLimb0,
 }
 
 impl AdviceColumn {
@@ -34,6 +41,13 @@ impl AdviceColumn {
             Self::Address => config.address.value,
             Self::AddressLimb0 => config.address.limbs[0],
             Self::AddressLimb1 => config.address.limbs[1],
+            Self::StorageKey => config.storage_key.encoded,
+            Self::StorageKeyByte0 => config.storage_key.bytes[0],
+            Self::StorageKeyByte1 => config.storage_key.bytes[1],
+            Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
+            Self::Value => config.value,
+            Self::RwCounter => config.rw_counter.value,
+            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
         }
     }
 }
@@ -309,10 +323,78 @@ fn address_limb_out_of_range() {
 }
 
 #[test]
+fn storage_key_mismatch() {
+    let rows = vec![Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::from(6),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    }];
+    let overrides = HashMap::from([
+        ((AdviceColumn::StorageKey, 1), Fr::from(10)),
+        (
+            (AdviceColumn::StorageKeyChangeInverse, 1),
+            Fr::from(10).invert().unwrap(),
+        ),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "rlc encoded value matches bytes");
+}
+
+#[test]
+fn storage_key_byte_out_of_range() {
+    let rows = vec![Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::from(256),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    }];
+    let overrides = HashMap::from([
+        ((AdviceColumn::StorageKey, 1), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte0, 1), Fr::from(256)),
+        ((AdviceColumn::StorageKeyByte1, 1), Fr::zero()),
+        (
+            (AdviceColumn::StorageKeyChangeInverse, 1),
+            Fr::from(256).invert().unwrap(),
+        ),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "rlc bytes fit into u8");
+}
+
+#[test]
+fn is_write_nonbinary() {
+    let rows = vec![Rw::CallContext {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::TxId,
+        value: U256::one(),
+    }];
+    let overrides = HashMap::from([((AdviceColumn::IsWrite, 1), Fr::from(4))]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "is_write is boolean");
+}
+
+#[test]
 fn nonlexicographic_order_tag() {
     let first = Rw::Memory {
         rw_counter: 1,
-        is_write: false,
+        is_write: true,
         call_id: 1,
         memory_address: 10,
         byte: 12,
@@ -329,6 +411,140 @@ fn nonlexicographic_order_tag() {
     assert_error_matches(
         verify(vec![second, first]),
         "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_field_tag() {
+    let first = Rw::CallContext {
+        rw_counter: 5,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+        value: U256::from(100),
+    };
+    let second = Rw::CallContext {
+        rw_counter: 2,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::CallerId,
+        value: U256::from(200),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_id() {
+    let first = Rw::CallContext {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 0,
+        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+        value: U256::from(100),
+    };
+    let second = Rw::CallContext {
+        rw_counter: 2,
+        is_write: false,
+        call_id: 1,
+        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+        value: U256::from(200),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_address() {
+    let first = Rw::Account {
+        rw_counter: 50,
+        is_write: true,
+        account_address: address!("0x1000000000000000000000000000000000000000"),
+        field_tag: AccountFieldTag::CodeHash,
+        value: U256::zero(),
+        value_prev: U256::zero(),
+    };
+    let second = Rw::Account {
+        rw_counter: 30,
+        is_write: true,
+        account_address: address!("0x2000000000000000000000000000000000000000"),
+        field_tag: AccountFieldTag::CodeHash,
+        value: U256::one(),
+        value_prev: U256::one(),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_storage_key_upper() {
+    let first = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::zero(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+    let second = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::MAX - U256::one(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn nonlexicographic_order_storage_key_lower() {
+    let first = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::zero(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+    let second = Rw::AccountStorage {
+        rw_counter: 1,
+        is_write: false,
+        account_address: Address::default(),
+        storage_key: U256::one(),
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        tx_id: 4,
+        committed_value: U256::from(5),
+    };
+
+    assert_eq!(verify(vec![first, second]), Ok(()));
+    assert_error_matches(
+        verify(vec![second, first]),
+        "upper_limb_difference is zero or lower_limb_difference fits into u16",
     );
 }
 
@@ -353,6 +569,136 @@ fn nonlexicographic_order_rw_counter() {
     assert_error_matches(
         verify(vec![second, first]),
         "upper_limb_difference is zero or lower_limb_difference fits into u16",
+    );
+}
+
+#[test]
+#[ignore = "read consistency constraint not implemented"]
+fn read_inconsistency() {
+    let rows = vec![
+        Rw::Memory {
+            rw_counter: 10,
+            is_write: false,
+            call_id: 1,
+            memory_address: 10,
+            byte: 0,
+        },
+        Rw::Memory {
+            rw_counter: 40,
+            is_write: false,
+            call_id: 1,
+            memory_address: 10,
+            byte: 200,
+        },
+    ];
+
+    assert_error_matches(verify(rows), "read consistency");
+}
+
+#[test]
+fn invalid_start_rw_counter() {
+    // Start row is included automatically.
+    let rows = vec![];
+    let overrides = HashMap::from([
+        ((AdviceColumn::RwCounter, 0), Fr::from(2)),
+        ((AdviceColumn::RwCounterLimb0, 0), Fr::from(2)),
+    ]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "rw_counter is 0 for Start");
+}
+
+#[test]
+fn invalid_memory_address() {
+    let rows = vec![Rw::Memory {
+        rw_counter: 1,
+        is_write: true,
+        call_id: 1,
+        memory_address: 1u64 << 32,
+        byte: 12,
+    }];
+
+    assert_error_matches(verify(rows), "memory address fits into 2 limbs");
+}
+
+#[test]
+fn first_memory_read_nonzero() {
+    let rows = vec![Rw::Memory {
+        rw_counter: 1,
+        is_write: false,
+        call_id: 1,
+        memory_address: 10,
+        byte: 200,
+    }];
+
+    assert_error_matches(verify(rows), "read from a fresh key is 0");
+}
+
+#[test]
+fn invalid_memory_value() {
+    let rows = vec![Rw::Memory {
+        rw_counter: 1,
+        is_write: true,
+        call_id: 1,
+        memory_address: 10,
+        byte: 0,
+    }];
+    let overrides = HashMap::from([((AdviceColumn::Value, 1), Fr::from(256))]);
+
+    let result = verify_with_overrides(rows, overrides);
+
+    assert_error_matches(result, "memory value is a byte");
+}
+
+#[test]
+fn stack_read_before_write() {
+    let rows = vec![Rw::Stack {
+        rw_counter: 9,
+        is_write: false,
+        call_id: 3,
+        stack_pointer: 200,
+        value: U256::from(10),
+    }];
+
+    assert_error_matches(verify(rows), "first access to new stack address is a write");
+}
+
+#[test]
+fn invalid_stack_address() {
+    let rows = vec![Rw::Stack {
+        rw_counter: 9,
+        is_write: true,
+        call_id: 3,
+        stack_pointer: 3000,
+        value: U256::from(10),
+    }];
+
+    assert_error_matches(verify(rows), "stack address fits into 10 bits");
+}
+
+#[test]
+fn invalid_stack_address_change() {
+    let rows = vec![
+        Rw::Stack {
+            rw_counter: 9,
+            is_write: true,
+            call_id: 3,
+            stack_pointer: 100,
+            value: U256::from(10),
+        },
+        Rw::Stack {
+            rw_counter: 13,
+            is_write: true,
+            call_id: 3,
+            stack_pointer: 102,
+            value: U256::from(20),
+        },
+    ];
+
+    assert_error_matches(
+        verify(rows),
+        "if call id is the same, address change is 0 or 1",
     );
 }
 
@@ -386,7 +732,7 @@ fn verify_with_overrides(
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.err().expect("result is not an error");
-    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.len(), 1, "{:?}", errors);
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
             // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
