@@ -165,7 +165,7 @@ pub enum TxFieldTag {
     CallData,
 }
 
-/// COnfig for TxCircuit
+/// Config for TxCircuit
 #[derive(Clone, Debug)]
 pub struct TxCircuitConfig<F: Field> {
     tx_id: Column<Advice>,
