@@ -375,6 +375,10 @@ pub mod test {
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
+            // This gate is used just to get the array of expressions from the power of
+            // randomness instance column, so that later on we don't need to query
+            // columns everywhere, and can pass the power of randomness array
+            // expression everywhere.  The gate itself doesn't add any constraints.
             let power_of_randomness = {
                 let columns = [(); 31].map(|_| meta.instance_column());
                 let mut power_of_randomness = None;
