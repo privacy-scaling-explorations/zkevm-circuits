@@ -1,7 +1,10 @@
 use self::padding::PaddingConfig;
 use crate::{
     keccak_arith::Keccak,
-    permutation::{mixing::MixingConfig, tables::FromBase9TableConfig},
+    permutation::{
+        mixing::MixingConfig,
+        tables::{FromBase9TableConfig, RangeCheckConfig},
+    },
 };
 use eth_types::Field;
 use gadgets::expression::*;
@@ -45,6 +48,7 @@ pub struct KeccakConfig<F: Field> {
     perm_count: Column<Advice>,
     acc_input: Column<Advice>,
     output_rlc: Column<Advice>,
+    range_check_config: RangeCheckConfig<F, 136>,
 }
 
 impl<F: Field> KeccakConfig<F> {
@@ -78,6 +82,49 @@ impl<F: Field> KeccakConfig<F> {
         let perm_count = meta.advice_column();
         let acc_input = meta.advice_column();
         let output_rlc = meta.advice_column();
+        let range_check_136 = RangeCheckConfig::<F, 136>::configure(meta);
+
+        // Lookup to activate the valid Finalize place check
+        // `(curr.perm_count * 136 - input_len) in 1~136`
+        meta.lookup("Valid Finalize place", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let state_tag = meta.query_advice(state_tag, Rotation::cur());
+            let input_len = meta.query_advice(input_len, Rotation::cur());
+            let perm_count = meta.query_advice(perm_count, Rotation::cur());
+            let state_finalize = generate_lagrange_base_polynomial(state_tag, 2, 0..=3);
+            let perm_lookup_val = perm_count * Expression::Constant(F::from(136u64)) - input_len;
+            // TODO: Permutation + Padding
+            vec![(
+                q_enable * state_finalize * perm_lookup_val,
+                range_check_136.range,
+            )]
+        });
+
+        // TODO: Pending to do the Lookup for the Permutation RLC check multipliyng the
+        // selector by the is_continue_state tag
+        meta.lookup("Valid permutation + padding", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let state_tag = meta.query_advice(state_tag, Rotation::cur());
+            let input_len = meta.query_advice(input_len, Rotation::cur());
+            let perm_count = meta.query_advice(perm_count, Rotation::cur());
+            let state_continue = generate_lagrange_base_polynomial(state_tag, 1, 0..=3);
+
+            // We check: `input_len - (136 * (perm_count + 1))`. If it evaluates to 0, we
+            // need to pad and absorb.
+            let have_to_pad_and_absorb = input_len
+                - (Expression::Constant(F::from(136u64))
+                    * (perm_count.clone() + Expression::Constant(F::one())));
+            vec![(
+                q_enable * state_con * perm_lookup_val,
+                range_check_136.range,
+            )]
+        });
+
+        /*
+        1. Send to NewConfig: input_RLC, padded_input_RLC and output_RLC
+        2. get_allocated_state and next_inputs and check `input_rlc` matches.
+        3. Compute permutation with padde_input and check output_rlc
+        */
 
         meta.create_gate("Start State", |meta| {
             let q_enable = meta.query_selector(q_enable);
@@ -118,8 +165,6 @@ impl<F: Field> KeccakConfig<F> {
             let is_bool_next_state_continue = bool_constraint_expr(next_state_continue.clone());
             let is_bool_next_state_finalize = bool_constraint_expr(next_state_finalize.clone());
             let is_bool_next_state_end = bool_constraint_expr(next_state_end.clone());
-            
-
 
             // ------------------------------------------------------- //
             // --------------------- Start State --------------------- //
@@ -146,40 +191,100 @@ impl<F: Field> KeccakConfig<F> {
                 + acc_input.clone()
                 + bool_constraint_expr(output_rlc.clone())
                 + output_rlc;
-            
-            //[(q_enable * state_start) * (start_tag_correctness + zero_assumptions)]
+
+            let start_constraint =
+                (q_enable.clone() * state_start) * (start_tag_correctness + zero_assumptions);
 
             // ------------------------------------------------------- //
             // -------------------- Continue State ------------------- //
             // ------------------------------------------------------- //
 
-            // `next.state_tag === Finalize`
-            let next_state_tag_absortion = is_bool_next_state_finalize + (Expression::Constant(F::one()) - next_state_finalize.clone());
-            let next_input_is_zero = next_input.clone() + bool_constraint_expr(next_input.clone());
+            let absortion_check = {
+                // `next.state_tag === Finalize`
+                let next_state_tag_absortion = is_bool_next_state_finalize
+                    + (Expression::Constant(F::one()) - next_state_finalize.clone());
+                let next_input_is_zero =
+                    next_input.clone() + bool_constraint_expr(next_input.clone());
+                let have_to_pad_and_absorb = input_len
+                    - (Expression::Constant(F::from(136u64))
+                        * (perm_count.clone() + Expression::Constant(F::one())));
 
-            // We check: `input_len - (136 * (perm_count + 1))`. If it evaluates to 0, we
-            // need to pad and absorb.
-            let have_to_pad_and_absorb = input_len
-                - (Expression::Constant(F::from(136u64))
-                    * (perm_count.clone() + Expression::Constant(F::one())));
-
-
-            // Absortion check 
-            // TODO: Add absortion lookup.
-            //vec![have_to_pad_and_absorb * (next_state_tag_absortion + next_input_is_zero)];
+                // Absortion check
+                state_continue.clone()
+                    * have_to_pad_and_absorb
+                    * (next_state_tag_absortion + next_input_is_zero)
+            };
 
             // `next.acc_input === curr.acc_input * r**136 + next.input`
-            let next_row_validity_input = next_acc_input - (acc_input * square_and_multiply(randomness, 136)) + next_input;
+            let next_row_validity_input = next_acc_input.clone()
+                - (acc_input.clone() * square_and_multiply(randomness, 136))
+                + next_input;
             // `next.perm_count === curr.perm_count + 1`
-            let next_row_validity_perm_count = next_perm_count - perm_count + Expression::Constant(F::one());
+            let next_row_validity_perm_count =
+                next_perm_count.clone() - perm_count + Expression::Constant(F::one());
             // `next.state_tag in (Continue, Finalize)`
-            let next_state_continue_or_finalize = Expression::Constant(F::one()) - (next_state_finalize + next_state_continue);
+            let next_state_continue_or_finalize = (Expression::Constant(F::one())
+                - next_state_finalize.clone())
+                * (Expression::Constant(F::one()) - next_state_continue.clone());
 
             // Next Row validity + State transition Continue
-            // vec![next_row_validity_input + next_row_validity_input + next_state_continue_or_finalize];
-            vec![Expression::Constant(F::zero())]
+            let continue_constraint = (q_enable.clone() * state_continue)
+                * (next_row_validity_input
+                    + next_row_validity_perm_count
+                    + next_state_continue_or_finalize);
+
+            // ------------------------------------------------------- //
+            // -------------------- Finalize State ------------------- //
+            // ------------------------------------------------------- //
+
+            // Note that `(curr.perm_count * 136 - input_len) in 1~136` is checked in the
+            // lookup table above.
+
+            let next_row_validity_perm_count = next_perm_count - Expression::Constant(F::one());
+            let next_row_validity_input = next_acc_input - acc_input;
+
+            // State transition: (Continue, Finalize, End) all 3 states allowed
+            let state_transition_finalize = (Expression::Constant(F::one()) - next_state_continue)
+                * (Expression::Constant(F::one()) - next_state_finalize)
+                * (Expression::Constant(F::one()) - next_state_end.clone());
+
+            let finalize_constraint = (q_enable * state_finalize)
+                * (state_transition_finalize
+                    + next_row_validity_input
+                    + next_row_validity_perm_count);
+
+            // ------------------------------------------------------- //
+            // ---------------------- End State ---------------------- //
+            // ------------------------------------------------------- //
+
+            // State transition: next.state_tag === End
+            let end_constraint = state_end * (Expression::Constant(F::one()) - next_state_end);
+
+            vec![
+                start_constraint,
+                continue_constraint,
+                finalize_constraint,
+                end_constraint,
+            ]
         });
 
-        unimplemented!()
+        Self {
+            table,
+            round_ctant_b9,
+            round_ctant_b13,
+            round_constants_b9,
+            round_constants_b13,
+            mixing_config,
+            padding_config,
+            q_enable,
+            state_tag,
+            input_len,
+            input,
+            input_padded,
+            perm_count,
+            acc_input,
+            output_rlc,
+            range_check_config: range_check_136,
+        }
     }
 }
