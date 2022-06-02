@@ -24,14 +24,13 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 # Definition of benchmarks profile to use.
 [profile.bench]
 opt-level = 3
-# debug = false # TODO: Uncomment
-debug = true
+debug = false
 debug-assertions = false
 overflow-checks = false
 rpath = false
-# lto = "thin" # TODO: Uncomment
+lto = "thin"
 incremental = false
-# codegen-units = 1 # TODO: Uncomment
+codegen-units = 1
 
 [profile.release]
 opt-level = 3
