@@ -1,14 +1,12 @@
 use super::tables::FromBase9TableConfig;
 use super::{
-    absorb::apply_absorb, add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
+    absorb::apply_absorb, add::AddConfig, base_conversion::BaseConversionConfig, flag::FlagConfig,
+    iota::IotaConfig,
 };
 use crate::common::*;
 use eth_types::Field;
-use halo2_proofs::circuit::AssignedCell;
-use halo2_proofs::plonk::{Expression, Selector};
-use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
-    circuit::Layouter,
+    circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use itertools::izip;
@@ -20,8 +18,7 @@ pub struct MixingConfig<F> {
     base_conv_config: BaseConversionConfig<F>,
     add: AddConfig<F>,
     state: [Column<Advice>; 25],
-    flag: Column<Advice>,
-    q_flag: Selector,
+    flag: FlagConfig<F>,
 }
 
 impl<F: Field> MixingConfig<F> {
@@ -31,43 +28,8 @@ impl<F: Field> MixingConfig<F> {
         iota_config: IotaConfig<F>,
         add: &AddConfig<F>,
         state: [Column<Advice>; 25],
+        flag: FlagConfig<F>,
     ) -> Self {
-        // Allocate space for the flag column from which we will copy to all of
-        // the sub-configs.
-        let flag = meta.advice_column();
-        meta.enable_equality(flag);
-
-        let q_flag = meta.selector();
-
-        meta.create_gate("Ensure flag consistency", |meta| {
-            let q_flag = meta.query_selector(q_flag);
-
-            let negated_flag = meta.query_advice(flag, Rotation::next());
-            let flag = meta.query_advice(flag, Rotation::cur());
-            // We do a trick which consists on multiplying an internal selector
-            // which is always active by the actual `negated_flag`
-            // which will then enable or disable the gate.
-            //
-            // Force that `flag + negated_flag = 1`.
-            // This ensures that flag = !negated_flag.
-            let flag_consistency =
-                (flag.clone() + negated_flag.clone()) - Expression::Constant(F::one());
-
-            // Define bool constraint for flags.
-            // Based on: `(1-flag) * flag = 0` only if `flag` is boolean.
-            let bool_constraint = |flag: Expression<F>| -> Expression<F> {
-                (Expression::Constant(F::one()) - flag.clone()) * flag
-            };
-
-            // Add a constraint that sums up the results of the two branches
-            // constraining it to be equal to `out_state`.
-            [
-                q_flag.clone() * flag_consistency,
-                q_flag.clone() * bool_constraint(flag),
-                q_flag * bool_constraint(negated_flag),
-            ]
-        });
-
         let base_info = table.get_base_info(false);
         let base_conv_config =
             BaseConversionConfig::configure(meta, base_info, state[0..2].try_into().unwrap(), &add);
@@ -78,45 +40,7 @@ impl<F: Field> MixingConfig<F> {
             add: add.clone(),
             state,
             flag,
-            q_flag,
         }
-    }
-
-    /// Enforce flag constraints
-    pub fn enforce_flag_consistency(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        flag: Option<bool>,
-    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
-        layouter.assign_region(
-            || "Flag and Negated flag assignation",
-            |mut region| {
-                self.q_flag.enable(&mut region, 0)?;
-                // Witness `is_mixing` flag
-                let positive = region.assign_advice(
-                    || "witness is_mixing",
-                    self.flag,
-                    0,
-                    || {
-                        flag.map(|flag| F::from(flag as u64))
-                            .ok_or(Error::Synthesis)
-                    },
-                )?;
-
-                // Witness negated `is_mixing` flag
-                let negative = region.assign_advice(
-                    || "witness negated is_mixing",
-                    self.flag,
-                    1,
-                    || {
-                        flag.map(|flag| F::from(!flag as u64))
-                            .ok_or(Error::Synthesis)
-                    },
-                )?;
-
-                Ok((positive, negative))
-            },
-        )
     }
 
     pub fn assign_state(
@@ -126,8 +50,7 @@ impl<F: Field> MixingConfig<F> {
         flag: Option<bool>,
         next_mixing: [Option<F>; NEXT_INPUTS_LANES],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
-        // Enforce flag constraints and witness them.
-        let (f_pos, f_neg) = self.enforce_flag_consistency(layouter, flag)?;
+        let (f_pos, f_neg) = self.flag.assign_flag(layouter, flag)?;
 
         // If we don't mix:
         // IotaB9
@@ -224,9 +147,17 @@ mod tests {
                 let fixed = meta.fixed_column();
                 let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
                 let iota_config = IotaConfig::configure(add.clone());
+                let flag = FlagConfig::configure(meta, state[0]);
 
                 MyConfig {
-                    mixing_conf: MixingConfig::configure(meta, &table, iota_config, &add, state),
+                    mixing_conf: MixingConfig::configure(
+                        meta,
+                        &table,
+                        iota_config,
+                        &add,
+                        state,
+                        flag,
+                    ),
                     table,
                 }
             }

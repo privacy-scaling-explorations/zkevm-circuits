@@ -4,6 +4,7 @@ pub(crate) mod absorb;
 pub(crate) mod add;
 pub(crate) mod base_conversion;
 pub mod circuit;
+pub(crate) mod flag;
 pub(crate) mod iota;
 pub(crate) mod mixing;
 pub(crate) mod pi;

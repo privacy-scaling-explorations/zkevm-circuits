@@ -1,7 +1,7 @@
 use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION},
     permutation::{
-        add::AddConfig, base_conversion::BaseConversionConfig, iota::IotaConfig,
+        add::AddConfig, base_conversion::BaseConversionConfig, flag::FlagConfig, iota::IotaConfig,
         mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
         tables::FromBase9TableConfig, theta::assign_theta, xi::assign_xi,
     },
@@ -41,6 +41,7 @@ impl<F: Field> KeccakFConfig<F> {
         let fixed = meta.fixed_column();
 
         let add = AddConfig::configure(meta, state[0..3].try_into().unwrap(), fixed);
+        let flag = FlagConfig::configure(meta, state[0]);
 
         // rho
         let rho_config = RhoConfig::configure(meta, state, fixed, add.clone());
@@ -55,7 +56,7 @@ impl<F: Field> KeccakFConfig<F> {
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
         let mixing_config =
-            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), &add, state);
+            MixingConfig::configure(meta, &from_b9_table, iota_config.clone(), &add, state, flag);
 
         Self {
             add,
