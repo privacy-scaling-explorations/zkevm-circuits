@@ -831,10 +831,10 @@ impl Rw {
             Self::TxLog {
                 field_tag, value, ..
             } => match field_tag {
-                TxLogFieldTag::Address => value.to_scalar().unwrap(),
-                _ => {
+                TxLogFieldTag::Topic => {
                     RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
                 }
+                _ => value.to_scalar().unwrap(),
             },
 
             Self::TxAccessListAccount { is_warm, .. }
@@ -1084,15 +1084,15 @@ impl From<&operation::OperationContainer> for RwMap {
                 .map(|op| Rw::TxLog {
                     rw_counter: op.rwc().into(),
                     is_write: op.rw().is_write(),
-                    tx_id: op.op().tx_id(),
-                    log_id: op.op().log_id() as u64,
+                    tx_id: op.op().tx_id,
+                    log_id: op.op().log_id as u64,
                     field_tag: match op.op().field {
                         TxLogField::Address => TxLogFieldTag::Address,
                         TxLogField::Topic => TxLogFieldTag::Topic,
                         TxLogField::Data => TxLogFieldTag::Data,
                     },
-                    index: op.op().index(),
-                    value: op.op().value(),
+                    index: op.op().index,
+                    value: op.op().value,
                 })
                 .collect(),
         );

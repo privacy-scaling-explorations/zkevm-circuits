@@ -785,7 +785,7 @@ impl CallContextOp {
 /// execution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TxLogField {
-    /// contrac address
+    /// contract address
     Address,
     /// topic of log entry
     Topic,
@@ -796,7 +796,7 @@ pub enum TxLogField {
 /// Represents TxLog read/write operation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxLogOp {
-    /// tx_id of TxLog
+    /// tx_id of TxLog, starts with 1 in rw table, and it's unique per Tx
     pub tx_id: usize,
     /// id of log entry
     pub log_id: usize,
@@ -826,31 +826,6 @@ impl TxLogOp {
             index,
             value,
         }
-    }
-
-    /// Returns the [`Target`] (operation type) of this operation.
-    pub const fn target(&self) -> Target {
-        Target::TxLog
-    }
-
-    /// Returns the tx id associated to this Operation.
-    pub const fn tx_id(&self) -> usize {
-        self.tx_id
-    }
-
-    /// Returns the log id associated to this Operation.
-    pub const fn log_id(&self) -> usize {
-        self.log_id
-    }
-
-    /// Returns the index associated to this Operation.
-    pub const fn index(&self) -> usize {
-        self.index
-    }
-
-    /// Returns the bytes read or written by this operation.
-    pub fn value(&self) -> Word {
-        self.value
     }
 }
 

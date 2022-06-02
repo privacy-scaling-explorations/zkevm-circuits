@@ -193,14 +193,14 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             let src_addr = aux.src_addr() as usize + idx;
             selectors[idx] = true;
             bytes[idx] = if selectors[idx] && src_addr < aux.src_addr_end() as usize {
-                let indice = step.rw_indices[rw_idx];
+                let index = step.rw_indices[rw_idx];
                 if is_persistent {
                     rw_idx += 2;
                 } else {
                     rw_idx += 1;
                 }
 
-                block.rws[indice].memory_value()
+                block.rws[index].memory_value()
             } else {
                 0
             };
@@ -267,8 +267,8 @@ pub mod test {
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
         let mut txlog_rws: Vec<Rw> = Vec::new();
         let mut rw_indices: Vec<(RwTableTag, usize)> = Vec::new();
-        let mut memory_indice = 0;
-        let mut log_data_indice = 0;
+        let mut memory_index = 0;
+        let mut log_data_index = 0;
 
         for (idx, selector) in selectors.iter_mut().enumerate() {
             if idx < bytes_left {
@@ -283,8 +283,8 @@ pub mod test {
                         memory_address: src_addr + idx as u64,
                         byte: bytes_map[&addr],
                     });
-                    rw_indices.push((RwTableTag::Memory, memory_indice + data_start_index));
-                    memory_indice += 1;
+                    rw_indices.push((RwTableTag::Memory, memory_index + data_start_index));
+                    memory_index += 1;
                     rw_offset += 1;
                     bytes_map[&addr]
                 } else {
@@ -300,8 +300,8 @@ pub mod test {
                         index: data_start_index + idx,
                         value: Word::from(byte),
                     });
-                    rw_indices.push((RwTableTag::TxLog, log_data_indice + data_start_index));
-                    log_data_indice += 1;
+                    rw_indices.push((RwTableTag::TxLog, log_data_index + data_start_index));
+                    log_data_index += 1;
                     rw_offset += 1;
                 }
             }
