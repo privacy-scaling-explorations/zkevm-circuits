@@ -1,4 +1,3 @@
-use super::tables::FromBase9TableConfig;
 use super::{
     absorb::apply_absorb, add::AddConfig, base_conversion::BaseConversionConfig, flag::FlagConfig,
     iota::IotaConfig,
@@ -7,38 +6,34 @@ use crate::common::*;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    plonk::{Advice, Column, Error},
 };
 use itertools::izip;
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
-pub struct MixingConfig<F> {
+pub(crate) struct MixingConfig<F> {
     iota_config: IotaConfig<F>,
-    base_conv_config: BaseConversionConfig<F>,
+    from9_config: BaseConversionConfig<F>,
     add: AddConfig<F>,
-    advices: [Column<Advice>; 2],
     flag: FlagConfig<F>,
+    advice: Column<Advice>,
 }
 
 impl<F: Field> MixingConfig<F> {
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        table: &FromBase9TableConfig<F>,
+        from9_config: BaseConversionConfig<F>,
         iota_config: IotaConfig<F>,
         add: &AddConfig<F>,
-        advices: [Column<Advice>; 2],
         flag: FlagConfig<F>,
+        advice: Column<Advice>,
     ) -> Self {
-        let base_info = table.get_base_info(false);
-        let base_conv_config = BaseConversionConfig::configure(meta, base_info, advices, &add);
-
         Self {
+            from9_config,
             iota_config,
-            base_conv_config,
             add: add.clone(),
-            advices,
             flag,
+            advice,
         }
     }
 
@@ -63,10 +58,10 @@ impl<F: Field> MixingConfig<F> {
 
         // If we mix:
         // Absorb
-        let state_mix = apply_absorb(&self.add, layouter, self.advices[0], in_state, &next_mixing)?;
+        let state_mix = apply_absorb(&self.add, layouter, self.advice, in_state, &next_mixing)?;
 
         // Base conversion assign
-        let state_mix = self.base_conv_config.assign_state(layouter, &state_mix)?;
+        let state_mix = self.from9_config.assign_state(layouter, &state_mix)?;
 
         // IotaB13
         let state_mix = {
@@ -121,6 +116,7 @@ mod tests {
         struct MyConfig<F> {
             mixing_conf: MixingConfig<F>,
             table: FromBase9TableConfig<F>,
+            advices: [Column<Advice>; 3],
         }
 
         impl<F: Field> Circuit<F> for MyCircuit<F> {
@@ -133,7 +129,7 @@ mod tests {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let table = FromBase9TableConfig::configure(meta);
-
+                let base_info = table.get_base_info(false);
                 let advices: [Column<Advice>; 3] = (0..3)
                     .map(|_| {
                         let col = meta.advice_column();
@@ -147,17 +143,23 @@ mod tests {
                 let add = AddConfig::configure(meta, advices, fixed);
                 let iota_config = IotaConfig::configure(add.clone());
                 let flag = FlagConfig::configure(meta, advices[0]);
+                let from9_config = BaseConversionConfig::configure(
+                    meta,
+                    base_info,
+                    advices[0..2].try_into().unwrap(),
+                    &add,
+                );
 
                 MyConfig {
                     mixing_conf: MixingConfig::configure(
-                        meta,
-                        &table,
+                        from9_config,
                         iota_config,
                         &add,
-                        advices[0..2].try_into().unwrap(),
                         flag,
+                        advices[0],
                     ),
                     table,
+                    advices,
                 }
             }
 
@@ -178,7 +180,7 @@ mod tests {
                             for (offset, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
-                                    config.mixing_conf.advices[0],
+                                    config.advices[0],
                                     offset,
                                     || Ok(*val),
                                 )?;

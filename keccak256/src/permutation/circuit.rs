@@ -20,8 +20,9 @@ pub struct KeccakFConfig<F: Field> {
     rho_config: RhoConfig<F>,
     iota_config: IotaConfig<F>,
     from_b9_table: FromBase9TableConfig<F>,
-    base_conversion_config: BaseConversionConfig<F>,
+    from9_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
+    pub advices: [Column<Advice>; 3],
 }
 
 impl<F: Field> KeccakFConfig<F> {
@@ -49,7 +50,7 @@ impl<F: Field> KeccakFConfig<F> {
         // Base conversion config.
         let from_b9_table = FromBase9TableConfig::configure(meta);
         let base_info = from_b9_table.get_base_info(false);
-        let base_conversion_config = BaseConversionConfig::configure(
+        let from9_config = BaseConversionConfig::configure(
             meta,
             base_info,
             advices[0..2].try_into().unwrap(),
@@ -59,12 +60,11 @@ impl<F: Field> KeccakFConfig<F> {
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
         let mixing_config = MixingConfig::configure(
-            meta,
-            &from_b9_table,
+            from9_config.clone(),
             iota_config.clone(),
             &add,
-            advices[0..2].try_into().unwrap(),
             flag,
+            advices[0],
         );
 
         Self {
@@ -72,8 +72,9 @@ impl<F: Field> KeccakFConfig<F> {
             rho_config,
             iota_config,
             from_b9_table,
-            base_conversion_config,
+            from9_config,
             mixing_config,
+            advices,
         }
     }
 
@@ -120,7 +121,7 @@ impl<F: Field> KeccakFConfig<F> {
             // The resulting state is in Base-9 now. We now convert it to
             // base_13 which is what Theta requires again at the
             // start of the loop.
-            state = self.base_conversion_config.assign_state(layouter, &state)?;
+            state = self.from9_config.assign_state(layouter, &state)?;
         }
 
         let mix_res = self
