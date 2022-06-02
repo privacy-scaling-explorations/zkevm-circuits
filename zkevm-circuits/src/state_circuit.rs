@@ -123,11 +123,7 @@ impl<F: Field, const QUICK_CHECK: bool, const N_ROWS: usize>
         region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
 
         config
-            .rw_table
-            .assign_row(region, offset, self.randomness, &row)?;
-
         tag_chip.assign(region, offset, &row.tag)?;
-        config
             .rw_counter_mpi
             .assign(region, offset, row.rw_counter as u32)?;
         config.id_mpi.assign(region, offset, row.id as u32)?;
@@ -280,6 +276,9 @@ where
         layouter.assign_region(
             || "rw table",
             |mut region| {
+                config
+                    .rw_table
+                    .assign(&mut region, self.randomness, &self.rows)?;
                 let padding_length = N_ROWS - self.rows.len();
                 let padding = (1..=padding_length)
                     .map(|rw_counter| (Rw::Start { rw_counter }).table_assignment(self.randomness));
@@ -352,5 +351,6 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
             .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
+        rw_rlc: meta.query_advice(c.rw_table.rlc, Rotation::cur()),
     }
 }
