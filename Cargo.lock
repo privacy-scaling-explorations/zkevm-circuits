@@ -1056,7 +1056,7 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/halo2wrong?rev=92b96893b5699ff40723e201a2416313aeafd267#92b96893b5699ff40723e201a2416313aeafd267"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "cfg-if 0.1.10",
  "group 0.11.0",
@@ -1071,7 +1071,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/halo2wrong?rev=92b96893b5699ff40723e201a2416313aeafd267#92b96893b5699ff40723e201a2416313aeafd267"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "cfg-if 0.1.10",
  "ecc",
@@ -1843,7 +1843,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_05_09#9992785dca35926ded74f6ec7c8dfbac507317d0"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03#1fc67702da729b41bfeebc9764c4c6effbd1f9ad"
 dependencies = [
  "blake2b_simd 1.0.0",
  "bumpalo",
@@ -1876,7 +1876,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/halo2wrong?rev=92b96893b5699ff40723e201a2416313aeafd267#92b96893b5699ff40723e201a2416313aeafd267"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "cfg-if 0.1.10",
  "halo2_proofs 0.1.0-beta.1",
@@ -2139,7 +2139,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/halo2wrong?rev=92b96893b5699ff40723e201a2416313aeafd267#92b96893b5699ff40723e201a2416313aeafd267"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "cfg-if 0.1.10",
  "group 0.11.0",
@@ -2331,7 +2331,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/halo2wrong?rev=92b96893b5699ff40723e201a2416313aeafd267#92b96893b5699ff40723e201a2416313aeafd267"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "cfg-if 0.1.10",
  "group 0.11.0",
@@ -3357,7 +3357,7 @@ dependencies = [
 [[package]]
 name = "secp256k1"
 version = "0.0.1"
-source = "git+https://github.com/appliedzkp/halo2wrong?rev=92b96893b5699ff40723e201a2416313aeafd267#92b96893b5699ff40723e201a2416313aeafd267"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
 dependencies = [
  "blake2b_simd 0.5.11",
  "cfg-if 0.1.10",
