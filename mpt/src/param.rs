@@ -35,8 +35,9 @@ pub const IS_STORAGE_MOD_POS: usize = 3;
 pub const IS_NONCE_MOD_POS: usize = 4;
 pub const IS_BALANCE_MOD_POS: usize = 5;
 pub const IS_CODEHASH_MOD_POS: usize = 6;
+pub const IS_ACCOUNT_DELETE_MOD_POS: usize = 7;
 pub const COUNTER_WITNESS_LEN: usize = 4;
-pub const COUNTER_POS: usize = IS_CODEHASH_MOD_POS + COUNTER_WITNESS_LEN;
+pub const COUNTER_POS: usize = IS_ACCOUNT_DELETE_MOD_POS + COUNTER_WITNESS_LEN;
 
 pub const LEAF_KEY_S_IND: i32 = 0;
 pub const LEAF_VALUE_S_IND: i32 = 1;

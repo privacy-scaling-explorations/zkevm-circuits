@@ -49,6 +49,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
         is_nonce_mod: Column<Advice>,
         is_balance_mod: Column<Advice>,
         is_codehash_mod: Column<Advice>,
+        is_account_delete_mod: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafStorageCodehashConfig {
         let config = AccountLeafStorageCodehashConfig {};
@@ -152,17 +153,20 @@ impl<F: FieldExt> AccountLeafStorageCodehashChip<F> {
                 let is_nonce_mod = meta.query_advice(is_nonce_mod, Rotation::cur());
                 let is_balance_mod = meta.query_advice(is_balance_mod, Rotation::cur());
                 let is_codehash_mod = meta.query_advice(is_codehash_mod, Rotation::cur());
+                let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
 
                 constraints.push((
                     "if nonce / balance / codehash mod: storage_root_s = storage_root_c",
                     q_enable.clone()
                         * (is_nonce_mod.clone() + is_balance_mod.clone() + is_codehash_mod.clone())
+                        * (one.clone() - is_account_delete_mod.clone())
                         * (storage_root_s_from_cur.clone() - storage_root_stored.clone()),
                 ));
                 constraints.push((
                     "if nonce / balance / storage mod: codehash_s = codehash_c",
                     q_enable.clone()
                         * (is_nonce_mod.clone() + is_balance_mod.clone() + is_storage_mod.clone())
+                        * (one.clone() - is_account_delete_mod.clone())
                         * (codehash_s_from_cur.clone() - codehash_stored.clone()),
                 ));
             }
