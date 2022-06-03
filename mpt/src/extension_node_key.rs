@@ -172,14 +172,9 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     * (mult_diff_cur.clone() - mult_diff_prev.clone()),
             ));
 
-            // TODO: check if ConstraintPoisoned hack is still needed
-            let not_branch_or_ext_s = (one.clone() - is_branch_init_prev.clone())
-                    * (one.clone() - is_branch_child_prev.clone()); // to prevent ConstraintPoisoned error
-
             constraints.push((
                 "extension node row S and C key RLC are the same",
                 q_not_first.clone()
-                    * not_branch_or_ext_s.clone()
                     * is_extension_c_row.clone()
                     * is_extension_node.clone()
                     * (key_rlc_cur.clone() - key_rlc_prev.clone()),
@@ -187,7 +182,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
             constraints.push((
                 "extension node row S and C mult key RLC are the same",
                 q_not_first.clone()
-                    * not_branch_or_ext_s.clone()
                     * is_extension_c_row.clone()
                     * is_extension_node.clone()
                     * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
@@ -225,7 +219,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "long even sel1 extension",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
-                    * not_branch_or_ext_s.clone()
                     * is_extension_c_row.clone()
                     * (key_rlc_cur.clone() - long_even_rlc_sel1.clone())
             ));
@@ -235,7 +228,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "long even sel1 branch",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
-                    * not_branch_or_ext_s.clone()
                     * is_extension_c_row.clone()
                     * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                         c16.clone() * modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
@@ -244,7 +236,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "long even sel1 branch mult",
                     q_not_first.clone()
                     * is_ext_long_even_c16.clone()
-                    * not_branch_or_ext_s.clone()
                     * is_extension_c_row.clone()
                     * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone())
                     // mult_diff is checked in a lookup below
@@ -271,7 +262,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
                         * is_extension_c_row.clone()
-                        * not_branch_or_ext_s.clone()
                         * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
                 ));
 
@@ -286,7 +276,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "long odd sel2 extension",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
-                        * not_branch_or_ext_s.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_cur.clone() - long_odd_sel2_rlc.clone())
             ));
@@ -296,7 +285,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "long odd sel2 branch",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
-                        * not_branch_or_ext_s.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                             modified_node_cur.clone() * mult_prev.clone() * mult_diff.clone())
@@ -305,7 +293,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "long odd sel2 branch mult",
                     q_not_first.clone()
                         * is_ext_long_odd_c1.clone()
-                        * not_branch_or_ext_s.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_mult_branch.clone() - mult_prev.clone() * mult_diff.clone() * r_table[0].clone())
                         // mult_diff is checked in a lookup below
@@ -319,7 +306,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "short sel1 extension",
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
-                        * not_branch_or_ext_s.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_cur.clone() - short_sel1_rlc.clone())
             ));
@@ -329,7 +315,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "short sel1 branch",
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
-                        * not_branch_or_ext_s.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_branch.clone() - key_rlc_cur.clone() -
                             c16.clone() * modified_node_cur.clone() * mult_prev.clone() * r_table[0].clone())
@@ -338,7 +323,6 @@ impl<F: FieldExt> ExtensionNodeKeyChip<F> {
                 "short sel1 branch mult",
                     q_not_first.clone()
                         * is_ext_short_c16.clone()
-                        * not_branch_or_ext_s.clone()
                         * is_extension_c_row.clone()
                         * (key_rlc_mult_branch.clone() - mult_prev.clone() * r_table[0].clone())
             ));
