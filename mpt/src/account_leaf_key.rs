@@ -44,6 +44,8 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
         r_table: Vec<Expression<F>>,
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
+        sel2: Column<Advice>,
+        is_account_delete_mod: Column<Advice>,
         is_s: bool,
     ) -> AccountLeafKeyConfig {
         let config = AccountLeafKeyConfig {};
@@ -346,13 +348,6 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
             let is_leaf_in_first_level =
                 one.clone() - meta.query_advice(not_first_level, Rotation::cur());
 
-            /*
-            TODO: check this note, it's probably not a problem anymore.
-            Note: if using directly:
-            let rot_level_above = rot_into_init + 1 - BRANCH_ROWS_NUM;
-            let key_rlc_acc_start = meta.query_advice(key_rlc, Rotation(rot_level_above));
-            The ConstraintPoisoned error is thrown in extension_node_key.
-            */
             let key_rlc_acc_start = meta.query_advice(key_rlc_prev, Rotation::cur());
             let key_mult_start = meta.query_advice(key_rlc_mult_prev, Rotation::cur());
 
@@ -482,6 +477,40 @@ impl<F: FieldExt> AccountLeafKeyChip<F> {
 
             constraints
         });
+
+        if !is_s {
+            meta.create_gate("Account delete", |meta| {
+                // We need to make sure there is no leaf when account is deleted. Two possible cases:
+                // 1. Account leaf is deleted and there is a nil object in branch. In this case we have 
+                //    a placeholder leaf.
+                // 2. Account leaf is deleted from a branch with two leaves, the remaining leaf moves one level up
+                //    and replaces the branch. In this case we have a branch placeholder.
+
+                // Note: there will always be at least two leaves (the genesis account) when account will be deleted,
+                // so there will always be a branch / extension node (and thus placeholder branch).
+                let mut constraints = vec![];
+                let q_enable = q_enable(meta);
+                // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
+                let is_leaf_placeholder = meta.query_advice(sel2, Rotation(rot_into_init+1));
+                let is_account_delete_mod = meta.query_advice(is_account_delete_mod, Rotation::cur());
+                let is_branch_placeholder = meta.query_advice(
+                    s_advices[IS_BRANCH_C_PLACEHOLDER_POS - LAYOUT_OFFSET],
+                    Rotation(rot_into_init),
+                );
+
+                // Note: this constraint suffices because the proper transition from branch to a leaf (2. case)
+                // is checked by constraints in account_leaf_key_in_added_branch.
+                constraints.push((
+                    "If account delete, there is either a placeholder leaf or a placeholder branch",
+                    q_enable.clone()
+                        * is_account_delete_mod.clone()
+                        * (one.clone() - is_leaf_placeholder.clone())
+                        * (one.clone() - is_branch_placeholder.clone()),
+                ));
+
+                constraints
+            });
+        }
 
         range_lookups(
             meta,

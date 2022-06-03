@@ -908,6 +908,8 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
+            sel2,
+            is_account_delete_mod,
             true,
         );
 
@@ -936,6 +938,8 @@ impl<F: FieldExt> MPTConfig<F> {
             r_table.clone(),
             fixed_table.clone(),
             address_rlc,
+            sel2,
+            is_account_delete_mod,
             false,
         );
 
